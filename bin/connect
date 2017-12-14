@@ -1,0 +1,2 @@
+#!/bin/sh
+ssh -p 222 jynelson@129.252.130.195
