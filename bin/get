@@ -1,0 +1,2 @@
+#!/bin/sh
+sftp -P 222 jynelson@129.252.130.195

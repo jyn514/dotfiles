@@ -1,0 +1,10 @@
+#!/bin/sh
+# bandit - will automatically login to last available user in $file
+# $file must be of format "$num - $pass"
+
+line=$(tail --lines=1 bandit.txt | tr " - " "\n")
+num=$(echo "$line" | head --lines=1)
+SSHPASS=$(echo "$line" | tail --lines=1)
+
+sshpass -p "$SSHPASS" ssh -p 2220 "bandit$num@bandit.labs.overthewire.org"
+
