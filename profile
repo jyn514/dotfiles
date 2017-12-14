@@ -137,6 +137,8 @@ if [ -f ~/.config/exercism/exercism_completion.bash ]; then
   . ~/.config/exercism/exercism_completion.bash
 fi
 
+export EDITOR=emacs
+export VISUAL=emacs
 export PATH="/sbin:/usr/sbin:$PATH:/usr/local/lib/miniconda/bin:/usr/local/lib/node-v8.9.3-linux-x64/bin"
 export GOPATH='/usr/local/lib/go'
 

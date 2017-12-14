@@ -4,3 +4,4 @@ alias serach='search' # don't judge me
 alias vpn='sudo openvpn --config /usr/local/etc/client.ovpn'
 alias make='make --warn-undefined-variables'
 alias '?'='help'
+alias weather='curl wttr.in'
