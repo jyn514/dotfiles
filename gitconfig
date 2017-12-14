@@ -13,3 +13,5 @@
 	editor = vim
 [commit]
 	gpgsign = true
+[alias]
+	save = git-save
