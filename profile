@@ -128,6 +128,10 @@ function updateWebsite {
 	unset current
 }
 
+function cdl {
+	cd $@ && ls
+}
+
 PROGRAMMING='/home/joshua/Programming'
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
@@ -139,7 +143,7 @@ fi
 
 export EDITOR=emacs
 export VISUAL=emacs
-export PATH="/sbin:/usr/sbin:$PATH:/usr/local/lib/miniconda/bin:/usr/local/lib/node-v8.9.3-linux-x64/bin"
+export PATH="~/.local/bin:/sbin:/usr/sbin:$PATH:/usr/local/lib/miniconda/bin:/usr/local/lib/node-v8.9.3-linux-x64/bin"
 export GOPATH='/usr/local/lib/go'
 
 # for http://overthewire.org
