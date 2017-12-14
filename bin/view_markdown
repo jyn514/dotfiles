@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if ! [ $# -eq 1 ]; then
+	echo Usage: `basename $0` [markdown]
+	exit 1
+fi
+
+markdown_py $1 | lynx -stdin
