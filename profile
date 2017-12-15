@@ -138,7 +138,11 @@ MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
 
 if [ -f ~/.config/exercism/exercism_completion.bash ]; then
-  . ~/.config/exercism/exercism_completion.bash
+	. ~/.config/exercism/exercism_completion.bash
+fi
+
+if [ -f ~/.local/profile ]; then
+	. ~/.local/profile
 fi
 
 export EDITOR=emacs
