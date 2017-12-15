@@ -12,7 +12,7 @@
 	eol = lf
 	editor = vim
 [commit]
-	gpgsign = true
+	autosign = true
 [alias]
 	save = git-save
 	update = submodule update
