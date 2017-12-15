@@ -132,7 +132,6 @@ function cdl {
 	cd $@ && ls
 }
 
-PROGRAMMING='/home/joshua/Programming'
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
@@ -145,10 +144,16 @@ if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
 fi
 
+if [ -f ~/.local/profile ]; then
+  . ~/.local/profile
+fi
+
+if [ -d ~/.local/bin ]; then
+	PATH="~/.local/bin:$PATH"
+fi
+
 export EDITOR=emacs
 export VISUAL=emacs
-export PATH="~/.local/bin:/sbin:/usr/sbin:$PATH:/usr/local/lib/miniconda/bin:/usr/local/lib/node-v8.9.3-linux-x64/bin"
-export GOPATH='/usr/local/lib/go'
 
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind
