@@ -18,3 +18,5 @@
 	update = submodule update
 [diff]
 	noprefix = true
+[submodule]
+	fetchJobs = 4
