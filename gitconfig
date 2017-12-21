@@ -4,15 +4,15 @@
 	signingkey = E655823D8D8B1088
 [credential]
 	helper = store
-[pull]
-	rebase = true
 [push]
 	default = simple
 [core]
 	eol = lf
 	editor = vim
+	preloadindex = true
+	excludesfile = ~/.gitignore
 [commit]
-	autosign = true
+	gpgSign = true
 [alias]
 	save = git-save
 	update = submodule update
