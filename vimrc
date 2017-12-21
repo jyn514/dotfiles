@@ -12,6 +12,7 @@ syntax on
 set number
 set ignorecase "for searching"
 set ruler
+set ffs=unix,dos
 
 """"""""10""""""""20""""""""3 platform detection 0""""""""60""""""""70""""""""80
 
