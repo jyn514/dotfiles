@@ -1,4 +1,3 @@
-alias jekyll='bundle exec jekyll'
 alias serach='search' # don't judge me
 # sudo is necessary, don't ask
 alias vpn='sudo openvpn --config /usr/local/etc/client.ovpn'
