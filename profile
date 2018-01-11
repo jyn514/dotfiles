@@ -53,6 +53,7 @@ if [ -d ~/.local/bin ]; then
 	PATH="$HOME/.local/bin:$PATH"
 fi
 
+export ENV="$HOME/.profile"
 export MANPAGER=most
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
 export GEM_PATH="$GEM_HOME:/var/lib/ruby/gems/1.8"
