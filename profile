@@ -6,12 +6,13 @@ case $- in
 esac
 
 ## History ##
-# don't put duplicate lines or lines starting with space in the history.
-HISTCONTROL=ignoreboth
+# don't put duplicate lines in the history.
+HISTCONTROL=ignoreups
 
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
-HISTSIZE=100
-HISTFILESIZE=2000
+HISTSIZE=200
+# anything non-numeric means no truncation
+HISTFILESIZE=no_delete
 #############
 
 ### shell options ###
@@ -159,6 +160,10 @@ export EDITOR=emacs
 export VISUAL=emacs
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
+# parallel even when invoked by a script
+export MAKEFLAGS='-j4'
+# only when invoked by interactive shell
+MAKEFLAGS+=' --warn-undefined-variables'
 
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind
