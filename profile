@@ -14,6 +14,10 @@ cdl () {
 	cd "$@" && ls -CF
 }
 
+purge_removed () {
+	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
+}
+
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
