@@ -18,6 +18,29 @@ purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
 
+status () {
+	git status
+}
+
+dad () {
+	curl https://icanhazdadjoke.com
+	echo
+}
+
+weather () {
+	curl wttr.in
+}
+
+pytime () {
+	python -m timeit
+}
+
+alert () {
+	notify-send --urgency=low \
+	"$([ $? = 0 ] && echo terminal || echo error)" \
+	"$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
+}
+
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
@@ -41,7 +64,7 @@ export JAVA_HOME=/usr/lib/jvm/default-java
 # parallel even when invoked by a script
 export MAKEFLAGS='-j4'
 # only when invoked by interactive shell
-MAKEFLAGS+=' --warn-undefined-variables'
+MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind

@@ -81,6 +81,12 @@ function which_branch {
 	unset ref
 }
 
+alert () {
+        notify-send --urgency=low \
+        "$([ $? = 0 ] && echo terminal || echo error)" \
+        "$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
+}
+
 if [ -f ~/.config/exercism/exercism_completion.bash ]; then
 	. ~/.config/exercism/exercism_completion.bash
 fi
