@@ -1,5 +1,6 @@
 # dotfiles
-Configuration and options for various common Unix commands.https://github.com/charlesdaniels/dotfiles
+Configuration and options for various common Unix commands.
+
 Partly taken (with love) from Charles Daniels' [excellent repository](https://github.com/charlesdaniels/dotfiles).
 
 
