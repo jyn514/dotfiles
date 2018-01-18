@@ -1,0 +1,4 @@
+#!/bin/sh
+PROGRAM="$1"
+shift
+valgrind "$PROGRAM" -q --tool=memcheck --leak-check=yes "$@"
