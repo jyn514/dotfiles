@@ -12,7 +12,7 @@ syntax on
 set number
 set ignorecase "for searching"
 set ruler
-set ffs=unix,dos
+set ffs=unix
 
 """"""""10""""""""20""""""""3 platform detection 0""""""""60""""""""70""""""""80
 
@@ -131,7 +131,7 @@ autocmd BufNewFile,BufRead *.yml,*.yaml,Sakefile set filetype=yaml
 autocmd BufEnter CHANGELOG setlocal filetype=text
 
 " set up tab & space behaviour sensibly
-autocmd FileType c call EightSpacesHardTabs()
+autocmd FileType c call TwoSpacesSoftTabs()
 autocmd FileType java call FourSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call EightSpacesHardTabs()
