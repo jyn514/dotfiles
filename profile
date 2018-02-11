@@ -18,6 +18,8 @@ purge_removed () {
 
 restart () { shutdown -r now; }
 
+sl () { ls; }
+
 ll () { ls -g "$@"; }
 
 la () { ls -A "$@"; }
