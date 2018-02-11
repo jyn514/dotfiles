@@ -12,6 +12,10 @@ umask 077
 
 cdl () { cd "$@" && ls -CF; }
 
+ls () { /bin/ls --color=auto "$@"; }
+
+rm () { /bin/rm -i "$@"; }
+
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
