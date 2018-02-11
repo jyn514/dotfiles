@@ -10,30 +10,33 @@ esac
 ## Custom
 umask 077
 
-cdl () {
-	cd "$@" && ls -CF
-}
+cdl () { cd "$@" && ls -CF; }
 
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
 
-status () {
-	git status
-}
+restart () { shutdown -r now; }
 
-dad () {
-	curl https://icanhazdadjoke.com
-	echo
-}
+ll () { ls -g "$@"; }
 
-weather () {
-	curl wttr.in
-}
+la () { ls -A "$@"; }
 
-pytime () {
-	python -m timeit
-}
+l () { ls -CF "$@"; }
+
+ascii () { man ascii; }
+
+status () { git status; }
+
+dad () { curl https://icanhazdadjoke.com && echo; }
+
+weather () { curl wttr.in; }
+
+pytime () { python -m timeit; }
+
+ubuntu () { docker run -it ubuntu; }
+
+vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
 
 # Add an "alert" alias for long running commands.  Use like so:
 #   sleep 10; alert
@@ -63,8 +66,9 @@ export ENV="$HOME/.profile"
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
 export GEM_PATH="$GEM_HOME:/var/lib/ruby/gems/1.8"
 PATH="$PATH:$GEM_HOME/bin"
-export EDITOR=emacs
-export VISUAL=emacs
+export EDITOR=vim
+export VISUAL=vim
+export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 # parallel even when invoked by a script
@@ -77,7 +81,8 @@ MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-if ps -p $$ -oargs= | grep bash > /dev/null && ! [ -v $BASH_PROFILE_READ ] ; then
+if ps -p $$ -oargs= | grep bash > /dev/null && \
+   ! [ -v $BASH_PROFILE_READ ] ; then
 	. ~/.bashrc
 fi
 

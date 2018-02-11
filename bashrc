@@ -6,7 +6,6 @@ shopt -s histappend
 shopt -s checkwinsize
 shopt -s globstar
 shopt -s checkhash
-# enable` color support of ls and also add handy aliases
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors)"
     alias ls='ls --color=always'
@@ -16,14 +15,6 @@ if [ -x /usr/bin/dircolors ]; then
     alias shellcheck='shellcheck --color=always'
     alias less='less -R'
 fi
-
-# colored GCC warnings and errors
-export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
-# some more ls aliases
-alias ll='ls -g'
-alias la='ls -A'
-alias l='ls -CF'
 
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
@@ -49,7 +40,6 @@ if [ -x /usr/bin/tput ] && tput setaf 1 >/dev/null 2>&1; then
 else
     PS1="${debian_chroot:+($debian_chroot)}\u@\h:\w\$ "
 fi
-unset color_prompt
 
 # use command-not-found package if installed
 if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
@@ -81,11 +71,10 @@ function which_branch {
 	unset ref
 }
 
-alert () {
-        notify-send --urgency=low \
-        "$([ $? = 0 ] && echo terminal || echo error)" \
-        "$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
-}
+# the name npm-exec breaks sh for some reason
+# https://stackoverflow.com/questions/9679932
+npm-exec () { npm bin "$@"; }
+
 
 if [ -f ~/.config/exercism/exercism_completion.bash ]; then
 	. ~/.config/exercism/exercism_completion.bash
