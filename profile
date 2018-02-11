@@ -35,6 +35,8 @@ pytime () {
 	python -m timeit
 }
 
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
 alert () {
 	notify-send --urgency=low \
 	"$([ $? = 0 ] && echo terminal || echo error)" \
@@ -53,8 +55,11 @@ if [ -d ~/.local/bin ]; then
 	PATH="$HOME/.local/bin:$PATH"
 fi
 
+if [ -x $(which most) ]; then
+	export MANPAGER=most
+fi
+
 export ENV="$HOME/.profile"
-export MANPAGER=most
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
 export GEM_PATH="$GEM_HOME:/var/lib/ruby/gems/1.8"
 PATH="$PATH:$GEM_HOME/bin"
