@@ -8,10 +8,10 @@ shopt -s globstar
 shopt -s checkhash
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors)"
-    alias ls='ls --color=always'
-    alias dir='dir --color=always'
-    alias vdir='vdir --color=always'
-    alias grep='grep --color=always'
+    alias ls='ls --color'
+    alias dir='dir --color'
+    alias vdir='vdir --color'
+    alias grep='grep --color'
     alias shellcheck='shellcheck --color=always'
     alias less='less -R'
 fi
