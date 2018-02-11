@@ -1,0 +1,16 @@
+# Should be placed in either
+# - ~/.config/youtube-dl/config
+# /etc/youtube-dl.conf
+
+-o "~/Documents/Music/%(creator)s/%(playlist_title)s/%(playlist_index)s - %(title)s.%(ext)s"
+
+# best quality
+--audio-quality 0
+
+--recode-video mp4
+--embed-subs
+--embed-thumbnail
+--add-metadata
+--prefer-free-formats
+
+# --extract-audio
