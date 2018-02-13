@@ -10,7 +10,6 @@
 --recode-video mp4
 --embed-subs
 --embed-thumbnail
---add-metadata
 --prefer-free-formats
 
 # --extract-audio
