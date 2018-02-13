@@ -16,7 +16,7 @@
 	gpgSign = true
 [alias]
 	save = git-save
-	update = submodule update
+	update = submodule update --remote
 [diff]
 	noprefix = true
 [submodule]
