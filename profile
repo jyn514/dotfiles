@@ -64,9 +64,7 @@ if [ -d ~/.local/bin ]; then
 	PATH="$HOME/.local/bin:$PATH"
 fi
 
-if [ -x $(which most) ]; then
-	export MANPAGER=most
-fi
+which most && export MANPAGER=most
 
 export ENV="$HOME/.profile"
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
