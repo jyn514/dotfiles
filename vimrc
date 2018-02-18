@@ -1,4 +1,11 @@
+call plug#begin('~/.vim/plugged')
+Plug 'mzlogin/vim-markdown-toc'
+Plug 'csexton/trailertrash.vim'
+Plug 'Chiel92/vim-autoformat'
+call plug#end()
+
 nmap <Enter> o<Esc>
+nnoremap tt :TrailerTrim<Enter>
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!
