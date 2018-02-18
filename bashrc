@@ -58,7 +58,7 @@ if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-no
         }
 fi
 
-export NVM_DIR="~/.local/lib/nvm"
+export NVM_DIR="$HOME/.local/lib/nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
@@ -73,7 +73,14 @@ function which_branch {
 
 # the name npm-exec breaks sh for some reason
 # https://stackoverflow.com/questions/9679932
-npm-exec () { npm bin "$@"; }
+npm-exec () {
+	COMMAND="npm bin"
+	if [ $# -gt 0 ] && [ "$1" = "-g" ]
+		then COMMAND="$COMMAND --global"
+		shift
+	fi
+	PATH="$($COMMAND):$PATH" "$@";
+}
 
 
 if [ -f ~/.config/exercism/exercism_completion.bash ]; then
