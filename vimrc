@@ -14,6 +14,9 @@ set ignorecase "for searching"
 set ruler
 set ffs=unix
 
+if exists("+relativenumber")
+	set relativenumber
+endif
 """"""""10""""""""20""""""""3 platform detection 0""""""""60""""""""70""""""""80
 
 let g:uname = substitute(system("uname"), '\n\+$', '', '')
@@ -113,13 +116,14 @@ function FourSpacesHardTabs()
 	set noexpandtab
 endfunction
 
-" use "normal" tabs n spaces by default
+" use "normal" tabs 8 spaces by default
 call EightSpacesHardTabs()
+
 
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
 
 " forcibly use the c filetype for all header files
-autocmd BufNewFile,BufRead *.h,*.c set filetype=c
+autocmd BufNewFile,BufRead *.h,*.c,*.cc,*.cpp,*.C set filetype=c
 
 " use tex filetype for *.tex
 autocmd BufNewFile,BufRead *.tex,*.sty set filetype=tex
@@ -136,7 +140,18 @@ autocmd FileType java call FourSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call EightSpacesHardTabs()
 autocmd FileType yaml call FourSpacesSoftTabs()
-autocmd FileType sh call EightSpacesHardTabs()
+autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
 autocmd FileType html call TwoSpacesSoftTabs()
 
+if has("spell")
+	" enable spell checking
+	set spell spelllang=en_us
+	set complete+=kspell " allow words as completions
+	highlight clear SpellBad
+	highlight clear SpellCap
+	highlight clear SpellRare
+	highlight clear SpellLocal
+	highlight SpellBad cterm=underline gui=underline
+	highlight SpellLocal cterm=underline gui=underline
+endif
