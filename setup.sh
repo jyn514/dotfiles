@@ -30,6 +30,7 @@ VIMDIR="$HOME/.vim/autoload"
 if ! [ -e "$VIMDIR/plug.vim" ]; then
 	curl -Lo "$VIMDIR/plug.vim" --create-dirs \
 		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+	vim -c PlugUpdate -c q -c q
 fi
 
 unset LOCAL CONFIG DEST VIMDIR
