@@ -21,3 +21,8 @@ mv ~/.youtube-dl ~/.config/youtube-dl/config
 # may take a while
 /usr/bin/env python -m pip install --user -r "$CONFIG/../python.txt"
 
+VIMDIR="$HOME/.vim/autoload"
+if ! [ -e "$VIMDIR/plug.vim" ]; then
+	curl -Lo "$VIMDIR/plug.vim" --create-dirs \
+		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+fi
