@@ -1,4 +1,12 @@
+call plug#begin('~/.vim/plugged')
+Plug 'mzlogin/vim-markdown-toc'
+Plug 'csexton/trailertrash.vim'
+Plug 'Chiel92/vim-autoformat'
+call plug#end()
+
 nmap <Enter> o<Esc>
+nnoremap rr :Autoformat<Enter>
+nnoremap tt :TrailerTrim<Enter>
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!
@@ -12,8 +20,11 @@ syntax on
 set number
 set ignorecase "for searching"
 set ruler
-set ffs=unix,dos
+set ffs=unix
 
+if exists("+relativenumber")
+	set relativenumber
+endif
 """"""""10""""""""20""""""""3 platform detection 0""""""""60""""""""70""""""""80
 
 let g:uname = substitute(system("uname"), '\n\+$', '', '')
@@ -48,6 +59,24 @@ if g:uname =~ "Darwin"
 	let g:platform = "POSIX"
 	let g:variant = "MACOS"
 endif
+
+""""""""10""""""""20"""" text wrapping (gq) behaviour """"60""""""""70""""""""80
+
+" configure indenting to work gqap correctly - not working quite right at the
+" moment
+set showbreak=\ \\_
+if exists('+breakindent')  " breakindent was not merged until 2014
+	set breakindent
+else
+	" a more primative and hacky solution - does not work as well as
+	" breakindent
+	set formatoptions=l
+	set lbr
+endif
+set formatoptions+=q  " allow gqq to wrap comments
+
+" disable hard wrapping
+set wrap linebreak textwidth=0
 
 """"""""10""""""""20""""""""3 shell configuration """"""""60""""""""70""""""""80
 
@@ -113,13 +142,14 @@ function FourSpacesHardTabs()
 	set noexpandtab
 endfunction
 
-" use "normal" tabs n spaces by default
+" use "normal" tabs 8 spaces by default
 call EightSpacesHardTabs()
+
 
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
 
 " forcibly use the c filetype for all header files
-autocmd BufNewFile,BufRead *.h,*.c set filetype=c
+autocmd BufNewFile,BufRead *.h,*.c,*.cc,*.cpp,*.C set filetype=c
 
 " use tex filetype for *.tex
 autocmd BufNewFile,BufRead *.tex,*.sty set filetype=tex
@@ -131,12 +161,23 @@ autocmd BufNewFile,BufRead *.yml,*.yaml,Sakefile set filetype=yaml
 autocmd BufEnter CHANGELOG setlocal filetype=text
 
 " set up tab & space behaviour sensibly
-autocmd FileType c call EightSpacesHardTabs()
+autocmd FileType c call TwoSpacesSoftTabs()
 autocmd FileType java call FourSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call EightSpacesHardTabs()
 autocmd FileType yaml call FourSpacesSoftTabs()
-autocmd FileType sh call EightSpacesHardTabs()
+autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
 autocmd FileType html call TwoSpacesSoftTabs()
 
+if has("spell")
+	" enable spell checking
+	set spell spelllang=en_us
+	set complete+=kspell " allow words as completions
+	highlight clear SpellBad
+	highlight clear SpellCap
+	highlight clear SpellRare
+	highlight clear SpellLocal
+	highlight SpellBad cterm=underline gui=underline
+	highlight SpellLocal cterm=underline gui=underline
+endif
