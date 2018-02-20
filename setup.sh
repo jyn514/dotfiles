@@ -1,5 +1,4 @@
 #!/bin/sh
-set -u
 set -e
 set -v
 
@@ -18,7 +17,11 @@ done
 mkdir -p ~/.config/youtube-dl
 mv ~/.youtube-dl ~/.config/youtube-dl/config
 
-chsh -s zsh
+if [ -z $ZSH_NAME ] && which zsh; then
+	chsh -s $(which zsh)
+elif [ -z $BASH ] && which bash; then
+	chsh -s $(which bash)
+fi
 
 # may take a while
 /usr/bin/env python -m pip install --user -r "$CONFIG/../python.txt"
