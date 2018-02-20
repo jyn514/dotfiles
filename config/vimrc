@@ -60,6 +60,24 @@ if g:uname =~ "Darwin"
 	let g:variant = "MACOS"
 endif
 
+""""""""10""""""""20"""" text wrapping (gq) behaviour """"60""""""""70""""""""80
+
+" configure indenting to work gqap correctly - not working quite right at the
+" moment
+set showbreak=\ \\_
+if exists('+breakindent')  " breakindent was not merged until 2014
+	set breakindent
+else
+	" a more primative and hacky solution - does not work as well as
+	" breakindent
+	set formatoptions=l
+	set lbr
+endif
+set formatoptions+=q  " allow gqq to wrap comments
+
+" disable hard wrapping
+set wrap linebreak textwidth=0
+
 """"""""10""""""""20""""""""3 shell configuration """"""""60""""""""70""""""""80
 
 set shell=/bin/sh

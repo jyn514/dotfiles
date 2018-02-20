@@ -1,0 +1,15 @@
+# Machine learning
+scikit-learn
+Keras
+pandas
+
+# Useful
+docker-compose
+PyInstaller
+virtualenv
+
+# My stuff
+notebook
+youtube-dl
+Flask
+

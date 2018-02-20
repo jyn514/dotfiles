@@ -36,7 +36,7 @@ status () { git status; }
 
 dad () { curl https://icanhazdadjoke.com && echo; }
 
-weather () { curl wttr.in; }
+weather () { curl wttr.in/~University+Of+South+Carolina; }
 
 pytime () { python -m timeit; }
 
