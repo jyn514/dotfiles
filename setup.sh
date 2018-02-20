@@ -19,3 +19,4 @@ mkdir -p ~/.config/youtube-dl
 mv ~/.youtube-dl ~/.config/youtube-dl/config
 
 /usr/bin/env python -m pip install -r "$CONFIG/../python.txt"
+chsh -s zsh
