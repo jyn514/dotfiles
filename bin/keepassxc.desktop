@@ -1,0 +1,8 @@
+# Created manually because GNOME is stupid
+[Desktop Entry]
+Name=Keepassxc
+Type=Application
+GenericName=Password Manager
+Comment=Keepass Community Edition
+Exec=keepassxc %f
+MimeType=application/x-keepass2
