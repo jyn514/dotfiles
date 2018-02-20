@@ -18,4 +18,6 @@ done
 mkdir -p ~/.config/youtube-dl
 mv ~/.youtube-dl ~/.config/youtube-dl/config
 
-/usr/bin/env python -m pip install -r "$CONFIG/../python.txt"
+# may take a while
+/usr/bin/env python -m pip install --user -r "$CONFIG/../python.txt"
+
