@@ -17,6 +17,10 @@
 [alias]
 	save = git-save
 	update = submodule update
+	conf = config
+	module = submodule
+	deepen = git pull --unshallow
+	unshallow = git pull --unshallow
 [diff]
 	noprefix = true
 [submodule]
