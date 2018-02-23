@@ -4,6 +4,7 @@ Keras
 pandas
 
 # Useful
+pytest
 docker-compose
 PyInstaller
 virtualenv
