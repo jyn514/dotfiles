@@ -1,5 +1,4 @@
 #!/bin/sh
-set -u
 set -e
 set -v
 
@@ -18,5 +17,20 @@ done
 mkdir -p ~/.config/youtube-dl
 mv ~/.youtube-dl ~/.config/youtube-dl/config
 
-/usr/bin/env python -m pip install -r "$CONFIG/../python.txt"
-chsh -s zsh
+if [ -z $ZSH_NAME ] && which zsh; then
+	chsh -s $(which zsh)
+elif [ -z $BASH ] && which bash; then
+	chsh -s $(which bash)
+fi
+
+# may take a while
+/usr/bin/env python -m pip install --user -r "$CONFIG/../python.txt"
+
+VIMDIR="$HOME/.vim/autoload"
+if ! [ -e "$VIMDIR/plug.vim" ]; then
+	curl -Lo "$VIMDIR/plug.vim" --create-dirs \
+		https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+	vim -c PlugUpdate -c q -c q
+fi
+
+unset LOCAL CONFIG DEST VIMDIR
