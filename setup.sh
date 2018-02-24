@@ -4,9 +4,13 @@ set -v
 
 # base config
 LOCAL="$HOME/.local/config"
-CONFIG="$(realpath "$(dirname "$0")/config")"
-for f in $(ls --quoting-style=shell-escape "$CONFIG"); do
-	DEST="$HOME/.$f"
+CONFIG=config
+for f in "$CONFIG"/*; do
+	if [ "$f" = "youtube-dl" ]; then
+		DEST="$HOME/.config/youtube-dl/config"
+	else
+		DEST="$HOME/.$f"
+	fi
 	if [ -L "$DEST" ]; then rm "$DEST"
 	elif [ -e "$DEST" ]; then
 			if ! [ -d "$LOCAL" ]; then mkdir "$LOCAL"; fi
@@ -14,17 +18,29 @@ for f in $(ls --quoting-style=shell-escape "$CONFIG"); do
 	fi
 	ln -s "$CONFIG/$f" "$DEST"
 done
-mkdir -p ~/.config/youtube-dl
-mv ~/.youtube-dl ~/.config/youtube-dl/config
 
-if [ -z $ZSH_NAME ] && which zsh; then
-	chsh -s $(which zsh)
-elif [ -z $BASH ] && which bash; then
-	chsh -s $(which bash)
+setup_shell () {
+	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
+	if   ! grep zsh "$default_shell"; then
+		if which zsh ; then chsh -s "$(which zsh)" ; fi
+	elif ! grep bash "$default_shell"; then
+		if which bash; then chsh -s "$(which bash)"; fi
+	fi
+	unset default_shell
+}
+
+setup_shell
+
+if [ -x "$(which pip)" ]; then
+	PYTHON="$(which pip)"
+elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
+	PYTHON="$(which python) -m pip"
 fi
 
 # may take a while
-/usr/bin/env python -m pip install --user -r "$CONFIG/../python.txt"
+if ! [ -z "$PYTHON" ]; then
+	$PYTHON install --user -r "$CONFIG/../python.txt"
+fi
 
 VIMDIR="$HOME/.vim/autoload"
 if ! [ -e "$VIMDIR/plug.vim" ]; then
