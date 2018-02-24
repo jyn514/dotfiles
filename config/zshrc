@@ -2,6 +2,7 @@
 . ~/.profile
 
 alias help=run-help
+alias stauts=status
 
 autoload -Uz promptinit
 promptinit
