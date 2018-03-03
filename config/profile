@@ -12,6 +12,8 @@ umask 077
 
 cdl () { cd "$@" && ls -CF; }
 
+cls () { clear; }
+
 ls () { /bin/ls --color=auto "$@"; }
 
 rm () { /bin/rm -i "$@"; }
