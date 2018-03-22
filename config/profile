@@ -10,13 +10,15 @@ esac
 ## Custom
 umask 077
 
-cdl () { cd "$@" && ls -CF; }
+yts () { youtube_search "$@" }
 
 cls () { clear; }
 
-ls () { /bin/ls --color=auto "$@"; }
+cdl () { cd "$@" && l; }
 
-rm () { /bin/rm -i "$@"; }
+ls () { command ls --color=auto "$@"; }
+
+rm () { command rm -i "$@"; }
 
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge

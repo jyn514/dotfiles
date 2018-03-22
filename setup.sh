@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
-set -v
 
 setup_basics () {
 	LOCAL="$HOME/.local/config"
@@ -8,26 +7,28 @@ setup_basics () {
 		if [ "$f" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
 		else
-			DEST="$HOME/.$(basename $f)"
+			DEST="$HOME/.$(basename "$f")"
 		fi
 		if [ -L "$DEST" ]; then rm -f "$DEST"
 		elif [ -e "$DEST" ]; then
 				if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 				mv "$DEST" "$LOCAL"
 		fi
-		ln -s "$f" "$DEST"
+		mkdir -p "$(dirname "$DEST")"
+		ln -s "$(realpath "$f")" "$DEST"
 	done
 unset DEST LOCAL f
 }
 
 setup_shell () {
 	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
-	if   ! grep zsh "$default_shell"; then
-		if which zsh ; then chsh -s "$(which zsh)" ; fi
-	elif ! grep bash "$default_shell"; then
-		if which bash; then chsh -s "$(which bash)"; fi
-	fi
-unset default_shell
+	for shell in fish zsh bash; do
+		if echo "$default_shell" | grep $shell > /dev/null; then
+			echo using default shell "$shell"
+			break;
+		elif which $shell ; then chsh -s "$(which $shell)" ; fi
+	done
+unset default_shell shell
 }
 
 setup_python () {
@@ -54,8 +55,32 @@ VIMDIR="$HOME/.vim/autoload"
 unset VIMDIR
 }
 
+setup_all () {
+	setup_basics
+	setup_shell
+	setup_python
+	setup_vim
+	exit 0
+}
+
 cd "$(realpath "$(dirname "$0")")"
-setup_basics
-setup_shell
-setup_python
-setup_vim
+MESSAGE="[0] exit
+[1] dotfiles
+[2] shell
+[3] python
+[4] vim
+[5] all
+Choose setup to run: "
+
+printf "$MESSAGE"
+while read choice; do
+	case $choice in
+		0) exit 0;;
+		1) setup_basics; printf "$MESSAGE";;
+		2) setup_shell; printf "$MESSAGE";;
+		3) setup_python; printf "$MESSAGE";;
+		4) setup_vim; printf "$MESSAGE";;
+		5) setup_all;;
+		*) printf "Please enter a number 0-5: ";;
+	esac
+done
