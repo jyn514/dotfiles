@@ -5,7 +5,7 @@ Plug 'Chiel92/vim-autoformat'
 call plug#end()
 
 nmap <Enter> o<Esc>
-nnoremap rr :Autoformat<Enter>
+nnoremap yy :Autoformat<Enter>
 nnoremap tt :TrailerTrim<Enter>
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
@@ -128,6 +128,13 @@ function EightSpacesHardTabs()
 	set noexpandtab
 endfunction
 
+function EightSpacesSoftTabs()
+	set tabstop=8
+	set shiftwidth=4
+	set softtabstop=8
+	set expandtab
+endfunction
+
 function FourSpacesSoftTabs()
 	set tabstop=4
 	set shiftwidth=4
@@ -149,7 +156,7 @@ call EightSpacesHardTabs()
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
 
 " forcibly use the c filetype for all header files
-autocmd BufNewFile,BufRead *.h,*.c,*.cc,*.cpp,*.C set filetype=c
+autocmd BufNewFile,BufRead *.h,*.c,*.cc,*.cpp,*.C,*.ino set filetype=c
 
 " use tex filetype for *.tex
 autocmd BufNewFile,BufRead *.tex,*.sty set filetype=tex
