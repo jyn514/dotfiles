@@ -10,7 +10,7 @@ esac
 ## Custom
 umask 077
 
-yts () { youtube_search "$@" }
+yts () { youtube_search "$@"; }
 
 cls () { clear; }
 
@@ -89,7 +89,7 @@ MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-if ps $$ -oargs= | grep bash > /dev/null && \
+if ps $$ | grep bash > /dev/null && \
    ! [ -v $BASH_PROFILE_READ ] ; then
 	. ~/.bashrc
 fi
