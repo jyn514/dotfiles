@@ -10,11 +10,15 @@ esac
 ## Custom
 umask 077
 
-cdl () { cd "$@" && ls -CF; }
+yts () { youtube_search "$@" }
 
-ls () { /bin/ls --color=auto "$@"; }
+cls () { clear; }
 
-rm () { /bin/rm -i "$@"; }
+cdl () { cd "$@" && l; }
+
+ls () { command ls --color=auto "$@"; }
+
+rm () { command rm -i "$@"; }
 
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
@@ -85,7 +89,7 @@ MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-if ps -p $$ -oargs= | grep bash > /dev/null && \
+if ps $$ -oargs= | grep bash > /dev/null && \
    ! [ -v $BASH_PROFILE_READ ] ; then
 	. ~/.bashrc
 fi

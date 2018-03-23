@@ -12,8 +12,6 @@
 	preloadindex = true
 	excludesfile = ~/.gitignore
 	autocrlf = false
-[commit]
-	gpgSign = true
 [alias]
 	save = git-save
 	update = submodule update
@@ -21,6 +19,7 @@
 	module = submodule
 	deepen = git pull --unshallow
 	unshallow = git pull --unshallow
+	gitk = !gitk
 [diff]
 	noprefix = true
 [submodule]
