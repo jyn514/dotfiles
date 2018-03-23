@@ -1,4 +1,6 @@
 .ipynb_checkpoints/
+tmp
+temp
 *.~lock.*
 *.o
 *.class
