@@ -176,6 +176,7 @@ autocmd FileType yaml call FourSpacesSoftTabs()
 autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
 autocmd FileType html call TwoSpacesSoftTabs()
+autocmd FileType haskell call TwoSpacesSoftTabs()
 
 if has("spell")
 	" enable spell checking
