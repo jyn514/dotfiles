@@ -10,11 +10,20 @@ esac
 ## Custom
 umask 077
 
-yts () { youtube_search "$@" }
+yts () { youtube_search "$@"; }
+
+ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
-cdl () { cd "$@" && l; }
+cdl () {
+	cd "$1"; shift;
+	ls "$@"
+}
+
+powershell () {
+	pwsh "$@"
+}
 
 ls () { command ls --color=auto "$@"; }
 
@@ -36,6 +45,12 @@ l () { ls -CF "$@"; }
 
 ascii () { man ascii; }
 
+file_count () { locate -S; }
+
+excuse () {
+	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f tux
+}
+
 status () { git status; }
 
 dad () { curl https://icanhazdadjoke.com && echo; }
@@ -47,6 +62,10 @@ pytime () { python -m timeit; }
 ubuntu () { docker run -it ubuntu; }
 
 vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
+
+pip_upgrade_all () {
+	pip freeze --local | grep -v '^\-e' | cut -d = -f 1  | xargs -n1 pip install -U | grep -v Requirement already satisfied
+}
 
 # Add an "alert" alias for long running commands.  Use like so:
 #   sleep 10; alert
@@ -79,6 +98,7 @@ export VISUAL=vim
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
+
 # parallel even when invoked by a script
 export MAKEFLAGS='-j4'
 # only when invoked by interactive shell
