@@ -33,6 +33,8 @@ purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
 
+purge () { sudo apt autoremove --purge "$@"; }
+
 restart () { shutdown -r now; }
 
 sl () { ls; }
@@ -109,7 +111,7 @@ MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-if ps -p $$ -oargs= | grep bash > /dev/null && \
+if ps $$ | grep bash > /dev/null && \
    ! [ -v $BASH_PROFILE_READ ] ; then
 	. ~/.bashrc
 fi

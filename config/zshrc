@@ -60,4 +60,7 @@ zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
 zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
 zstyle ':completion:*' rehash true
 
-. /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+COMPLETION=/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+if [ -e "$COMPLETION" ]; then
+	. "$COMPLETION"
+fi
