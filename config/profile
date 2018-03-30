@@ -24,6 +24,8 @@ purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
 
+purge () { sudo apt autoremove --purge "$@"; }
+
 restart () { shutdown -r now; }
 
 sl () { ls; }
