@@ -5,6 +5,7 @@ Plug 'Chiel92/vim-autoformat'
 call plug#end()
 
 nmap <Enter> o<Esc>
+cmap Q q
 nnoremap yy :Autoformat<Enter>
 nnoremap tt :TrailerTrim<Enter>
 
