@@ -7,9 +7,12 @@
 # best quality
 --audio-quality 0
 
---recode-video mp4
+# optionally, convert to different format
+# --recode-video <mp4|flv|ogg|webm|mkv|avi>
 --embed-subs
+# only supported for mp4
 --embed-thumbnail
+--recode-video mp4
 --prefer-free-formats
 
 # --extract-audio
