@@ -25,8 +25,11 @@ setup_shell () {
 	for shell in fish zsh bash; do
 		if echo "$default_shell" | grep $shell > /dev/null; then
 			echo using default shell "$shell"
-			break;
-		elif which $shell ; then chsh -s "$(which $shell)" ; fi
+			break
+		elif which $shell ; then
+			chsh -s "$(which $shell)"
+			break
+		fi
 	done
 unset default_shell shell
 }
@@ -50,7 +53,7 @@ VIMDIR="$HOME/.vim/autoload"
 	if ! [ -e "$VIMDIR/plug.vim" ]; then
 		curl -Lo "$VIMDIR/plug.vim" --create-dirs \
 			https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-		vim -c PlugUpdate -c q -c q
+		vim -c PlugInstall -c q -c q
 	fi
 unset VIMDIR
 }
