@@ -34,18 +34,16 @@ setup_shell () {
 unset default_shell shell
 }
 
-setup_python () {
+setup_PIP () {
 	if [ -x "$(which pip)" ]; then
-		PYTHON="$(which pip)"
+		PIP="$(which pip)"
 	elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
-		PYTHON="$(which python) -m pip"
+		PIP="$(which python) -m pip"
 	fi
 
 	# may take a while
-	if ! [ -z "$PYTHON" ]; then
-		$PYTHON install --user -r python.txt
-	fi
-unset PYTHON
+	if ! [ -z "$PIP" ]; then $PIP install --user -r python.txt; fi
+unset PIP
 }
 
 setup_vim () {
@@ -78,12 +76,12 @@ Choose setup to run: "
 printf "$MESSAGE"
 while read choice; do
 	case $choice in
-		0) exit 0;;
-		1) setup_basics; printf "$MESSAGE";;
-		2) setup_shell; printf "$MESSAGE";;
-		3) setup_python; printf "$MESSAGE";;
-		4) setup_vim; printf "$MESSAGE";;
-		5) setup_all;;
+		q*|exit|0) exit 0;;
+		dotfiles|basic*|1) setup_basics; printf "$MESSAGE";;
+		sh*|2) setup_shell; printf "$MESSAGE";;
+		py*|3) setup_python; printf "$MESSAGE";;
+		vi*|4) setup_vim; printf "$MESSAGE";;
+		all|5) setup_all;;
 		*) printf "Please enter a number 0-5: ";;
 	esac
 done
