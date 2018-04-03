@@ -19,7 +19,15 @@
 	module = submodule
 	deepen = git pull --unshallow
 	unshallow = git pull --unshallow
+	gui = !gitk
 	gitk = !gitk
+	s = status -sb --ignore-submodules
+	a = add
+	h = help
+	v = version
+	d = diff
+	c = commit
+	con = config
 [diff]
 	noprefix = true
 [submodule]
