@@ -21,13 +21,14 @@
 	unshallow = git pull --unshallow
 	gui = !gitk
 	gitk = !gitk
-	s = status -sb --ignore-submodules
 	a = add
-	h = help
-	v = version
-	d = diff
+	b = branch
 	c = commit
-	con = config
+	conf = config
+	d = diff
+	h = help
+	s = status -sb --ignore-submodules
+	v = version
 [diff]
 	noprefix = true
 [submodule]
