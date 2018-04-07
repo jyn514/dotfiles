@@ -7,3 +7,4 @@ temp
 *.o
 *.class
 *.out
+*.pyc
