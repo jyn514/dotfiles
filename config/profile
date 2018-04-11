@@ -21,9 +21,16 @@ cdl () {
 	ls "$@"
 }
 
-powershell () {
-	pwsh "$@"
+# for use with a makefile in the current directory
+tasks () {
+	make -npRr | \
+	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
+	grep -v "^[#\t]" | sed 's/:$//'
 }
+
+zip () { command zip -r "$@"; }
+
+powershell () { pwsh "$@"; }
 
 ls () { command ls --color=auto "$@"; }
 
@@ -66,7 +73,8 @@ ubuntu () { docker run -it ubuntu; }
 vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
 
 pip_upgrade_all () {
-	pip freeze --local | grep -v '^\-e' | cut -d = -f 1  | xargs -n1 pip install -U | grep -v Requirement already satisfied
+	pip freeze --local | grep -v '^\-e' | cut -d = -f 1 \
+	| xargs -n1 pip install -U | grep -v Requirement already satisfied
 }
 
 # Add an "alert" alias for long running commands.  Use like so:
@@ -119,4 +127,3 @@ fi
 # these look nice but are very slow
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
-
