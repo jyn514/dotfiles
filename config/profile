@@ -28,6 +28,12 @@ tasks () {
 	grep -v "^[#\t]" | sed 's/:$//'
 }
 
+recipies () {
+	make -npRr | \
+	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
+	grep -v "^#"
+}
+
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
