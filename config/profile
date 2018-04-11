@@ -25,7 +25,7 @@ cdl () {
 tasks () {
 	make -npRr | \
 	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
-	grep -v "^[#\t]" | sed 's/:$//'
+	grep -v "^[#`printf '\t'`]" | sed 's/:$//'
 }
 
 recipies () {
