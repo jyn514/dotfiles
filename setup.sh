@@ -34,7 +34,7 @@ setup_shell () {
 unset default_shell shell
 }
 
-setup_PIP () {
+setup_python () {
 	if [ -x "$(which pip)" ]; then
 		PIP="$(which pip)"
 	elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
