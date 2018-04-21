@@ -16,8 +16,8 @@ ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
-cdl () {
-	cd "$1"; shift;
+cd () {
+	builtin cd "$1"; shift;
 	ls "$@"
 }
 
