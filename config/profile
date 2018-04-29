@@ -17,7 +17,7 @@ ytd () { youtube-dl "$@"; }
 cls () { clear; }
 
 cdl () {
-	cd "$1"; shift;
+	cd "$1"; shift 2>/dev/null;
 	ls "$@"
 }
 
@@ -37,6 +37,8 @@ recipies () {
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
+
+save_power () { sudo powertop --auto-tune; }
 
 ls () { command ls --color=auto "$@"; }
 
@@ -79,8 +81,7 @@ ubuntu () { docker run -it ubuntu; }
 vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
 
 pip_upgrade_all () {
-	pip freeze --local | grep -v '^\-e' | cut -d = -f 1 \
-	| xargs -n1 pip install -U | grep -v Requirement already satisfied
+	pip list | awk '{print $1}' | tail +3 | xargs pip install -U
 }
 
 # Add an "alert" alias for long running commands.  Use like so:
@@ -90,6 +91,17 @@ alert () {
 	"$([ $? = 0 ] && echo terminal || echo error)" \
 	"$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
 }
+
+# https://stackoverflow.com/questions/9679932
+npm_exec () {
+	COMMAND="npm bin"
+	if [ $# -gt 0 ] && [ "$1" = "-g" ]
+		then COMMAND="$COMMAND --global"
+		shift
+	fi
+	PATH="$($COMMAND):$PATH" "$@";
+}
+
 
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
