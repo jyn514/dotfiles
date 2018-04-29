@@ -27,6 +27,7 @@
 	conf = config
 	d = diff
 	h = help
+	l = log --graph --oneline
 	s = status -sb --ignore-submodules
 	v = version
 [diff]
