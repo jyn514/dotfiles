@@ -22,7 +22,7 @@ unset DEST LOCAL f
 
 setup_shell () {
 	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
-	for shell in fish zsh bash; do
+	for shell in zsh fish bash; do
 		if echo "$default_shell" | grep $shell > /dev/null; then
 			echo using default shell "$shell"
 			break
