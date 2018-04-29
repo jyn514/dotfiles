@@ -17,7 +17,9 @@ ytd () { youtube-dl "$@"; }
 cls () { clear; }
 
 cd () {
-	builtin cd "$1"; shift; 2>/dev/null
+	if [ -z "$1" ]; then builtin cd
+	else builtin cd "$1"; shift 2>/dev/null
+	fi
 	ls "$@"
 }
 
