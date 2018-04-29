@@ -15,6 +15,11 @@ setopt incappendhistory
 # Use emacs keybindings even if our EDITOR is set to vi
 bindkey -e
 
+# properly bind Home, End, Delete (had trouble with this at one point)
+bindkey '[7~' beginning-of-line
+bindkey '[8~' end-of-line
+bindkey '[3~' delete-char
+
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
 SAVEHIST=10000000
