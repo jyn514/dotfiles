@@ -81,6 +81,10 @@ ubuntu () { docker run -it ubuntu; }
 
 vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
 
+view_markdown () {
+	markdown_py "$1" > tmp.html && firefox tmp.html && sleep 1 && rm -f tmp.html
+}
+
 pip_upgrade_all () {
 	pip list | awk '{print $1}' | tail +3 | xargs pip install -U
 }
