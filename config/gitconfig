@@ -32,5 +32,8 @@
 	v = !git --version
 [diff]
 	noprefix = true
+	algorithm = minimal
 [submodule]
 	fetchJobs = 4
+[merge]
+	tool = vimdiff
