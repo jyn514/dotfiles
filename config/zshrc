@@ -2,7 +2,8 @@
 . ~/.profile
 
 alias help=run-help
-alias stauts=status
+alias -g stauts=status
+alias -g serach=search
 
 autoload -Uz promptinit
 promptinit
