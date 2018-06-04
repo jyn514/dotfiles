@@ -35,6 +35,16 @@ recipies () {
 	grep -v "^#"
 }
 
+background () {
+	if [ $# -eq 0 ]
+		then echo usage: background '<command>'
+		return 1
+	else
+		"$@" &
+		disown
+	fi
+}
+
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
