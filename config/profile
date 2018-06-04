@@ -96,7 +96,7 @@ view_markdown () {
 }
 
 pip_upgrade_all () {
-	pip list | awk '{print $1}' | tail +3 | xargs pip install -U
+	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
 }
 
 # Add an "alert" alias for long running commands.  Use like so:
