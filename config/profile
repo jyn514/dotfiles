@@ -51,7 +51,7 @@ powershell () { pwsh "$@"; }
 
 save_power () { sudo powertop --auto-tune; }
 
-ls () { command ls --color=auto "$@"; }
+ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 
 rm () { command rm -i "$@"; }
 
