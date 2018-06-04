@@ -13,13 +13,19 @@ setopt histignorealldups sharehistory correct
 # append immediately, not on close
 setopt incappendhistory
 
-# Use emacs keybindings even if our EDITOR is set to vi
-bindkey -e
-
 # properly bind Home, End, Delete (had trouble with this at one point)
-bindkey '[7~' beginning-of-line
-bindkey '[8~' end-of-line
+bindkey '^[[H' beginning-of-line
+bindkey '^[[F' end-of-line
 bindkey '[3~' delete-char
+
+# save command in buffer before executing
+bindkey "^Q" push-line
+bindkey "^G" get-line
+
+# emacs line editing
+bindkey -e
+bindkey ";5C" forward-word
+bindkey ";5D" backward-word
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
