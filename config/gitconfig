@@ -29,7 +29,7 @@
 	h = help
 	l = log --graph --oneline
 	s = status -sb --ignore-submodules
-	v = version
+	v = !git --version
 [diff]
 	noprefix = true
 [submodule]
