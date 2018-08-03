@@ -13,11 +13,6 @@ setopt histignorealldups sharehistory correct
 # append immediately, not on close
 setopt incappendhistory
 
-# properly bind Home, End, Delete (had trouble with this at one point)
-bindkey '^[[H' beginning-of-line
-bindkey '^[[F' end-of-line
-bindkey '[3~' delete-char
-
 # save command in buffer before executing
 bindkey "^Q" push-line
 bindkey "^G" get-line
@@ -26,6 +21,12 @@ bindkey "^G" get-line
 bindkey -e
 bindkey ";5C" forward-word
 bindkey ";5D" backward-word
+
+# properly bind Home, End, Delete (had trouble with this at one point)
+# note: MUST come after 'bindkey -e'
+bindkey "\e[H" beginning-of-line
+bindkey "\e[F" end-of-line
+bindkey "\e[3~" delete-char
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
