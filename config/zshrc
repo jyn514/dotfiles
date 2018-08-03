@@ -19,8 +19,10 @@ bindkey "^G" get-line
 
 # emacs line editing
 bindkey -e
-bindkey ";5C" forward-word
-bindkey ";5D" backward-word
+# Alt + Right
+bindkey ";3C" forward-word
+# Alt + Left
+bindkey ";3D" backward-word
 
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'
