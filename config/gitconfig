@@ -29,9 +29,13 @@
 	s = status -sb --ignore-submodules
 	v = !git --version
 [diff]
-	noprefix = true
 	algorithm = minimal
 [submodule]
 	fetchJobs = 4
 [merge]
 	tool = vimdiff
+[sendemail]
+	smtpserver = smtp.gmail.com
+	smtpserverport = 587
+	smtpencryption = tls
+	smtpuser = jyn514@gmail.com
