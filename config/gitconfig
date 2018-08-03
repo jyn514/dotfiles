@@ -19,8 +19,6 @@
 	module = submodule
 	deepen = git pull --unshallow
 	unshallow = git pull --unshallow
-	gui = !gitk
-	gitk = !gitk
 	a = add
 	b = branch
 	c = commit
