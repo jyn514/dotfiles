@@ -76,7 +76,7 @@ ascii () { man ascii; }
 file_count () { locate -S; }
 
 excuse () {
-	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f tux
+	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
 }
 
 status () { git status; }
