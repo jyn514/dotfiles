@@ -17,6 +17,11 @@ setup_basics () {
 		mkdir -p "$(dirname "$DEST")"
 		ln -s "$(realpath "$f")" "$DEST"
 	done
+	if gpg -K | grep ultimate > /dev/null; then
+		echo '
+[commit]
+	gpgsign = true' >> ~/.config/git/config
+	fi
 unset DEST LOCAL f
 }
 
