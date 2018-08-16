@@ -1,0 +1,4 @@
+#!/bin/sh
+rsync -a --progress --human-readable --append-verify --exclude-from=backup-exclude --cvs-exclude -e ssh --no-perms --no-owner --no-group ~/Documents/ home:/home/joshua/Documents
+
+
