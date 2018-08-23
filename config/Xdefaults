@@ -1,0 +1,12 @@
+# add tabs for terminal, make urls clickable
+URxvt.perl-ext-common: tabbed,default,matcher,resize-font
+URxvt.url-launcher: /usr/bin/xdg-open
+URxvt.matcher.button: 1
+# remove default solarization
+URxvt.background: black
+URxvt.foreground: white
+# make font resizable
+URxvt.keysym.C-minus:     resize-font:smaller
+URxvt.keysym.C-plus:      resize-font:bigger
+URxvt.keysym.C-equal:     resize-font:reset
+URxvt.keysym.C-question:  resize-font:show

@@ -2,7 +2,8 @@
 . ~/.profile
 
 alias help=run-help
-alias stauts=status
+alias -g stauts=status
+alias -g serach=search
 
 autoload -Uz promptinit
 promptinit
@@ -12,8 +13,22 @@ setopt histignorealldups sharehistory correct
 # append immediately, not on close
 setopt incappendhistory
 
-# Use emacs keybindings even if our EDITOR is set to vi
+# save command in buffer before executing
+bindkey "^Q" push-line
+bindkey "^G" get-line
+
+# emacs line editing
 bindkey -e
+# Alt + Right
+bindkey ";3C" forward-word
+# Alt + Left
+bindkey ";3D" backward-word
+
+# properly bind Home, End, Delete (had trouble with this at one point)
+# note: MUST come after 'bindkey -e'
+bindkey "\e[H" beginning-of-line
+bindkey "\e[F" end-of-line
+bindkey "\e[3~" delete-char
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
