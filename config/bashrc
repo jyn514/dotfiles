@@ -6,23 +6,8 @@ shopt -s histappend
 shopt -s checkwinsize
 shopt -s globstar
 shopt -s checkhash
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors)"
-    alias ls='ls --color'
-    alias dir='dir --color'
-    alias vdir='vdir --color'
-    alias grep='grep --color'
-    alias shellcheck='shellcheck --color=always'
-    alias less='less -R'
-fi
-
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
-fi
-
-# set variable identifying the chroot you work in (used in the prompt below)
-if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
-   debian_chroot=$(cat /etc/debian_chroot)
 fi
 
 ## History ##
@@ -34,6 +19,11 @@ HISTSIZE=200
 # non-numeric means no truncation
 HISTFILESIZE=no_delete
 #############
+
+# set variable identifying the chroot you work in (used in the prompt below)
+if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
+   debian_chroot=$(cat /etc/debian_chroot)
+fi
 
 if [ -x /usr/bin/tput ] && tput setaf 1 >/dev/null 2>&1; then
     PS1="${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]$ "
@@ -61,27 +51,6 @@ fi
 export NVM_DIR="$HOME/.local/lib/nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-
-# custom (2017-10-22)
-function which_branch {
-	# ask for ref from git, discarding all errors
-	ref="$(cd $PWD && git symbolic-ref HEAD 2> /dev/null)" || return
-	# get only the last file of $ref
-	echo "(${ref#refs/heads/})"
-	unset ref
-}
-
-# the name npm-exec breaks sh for some reason
-# https://stackoverflow.com/questions/9679932
-npm-exec () {
-	COMMAND="npm bin"
-	if [ $# -gt 0 ] && [ "$1" = "-g" ]
-		then COMMAND="$COMMAND --global"
-		shift
-	fi
-	PATH="$($COMMAND):$PATH" "$@";
-}
-
 
 if [ -f ~/.config/exercism/exercism_completion.bash ]; then
 	. ~/.config/exercism/exercism_completion.bash

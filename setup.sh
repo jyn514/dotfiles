@@ -17,12 +17,17 @@ setup_basics () {
 		mkdir -p "$(dirname "$DEST")"
 		ln -s "$(realpath "$f")" "$DEST"
 	done
+	if gpg -K | grep ultimate > /dev/null; then
+		echo '
+[commit]
+	gpgsign = true' >> ~/.config/git/config
+	fi
 unset DEST LOCAL f
 }
 
 setup_shell () {
 	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
-	for shell in fish zsh bash; do
+	for shell in zsh fish bash; do
 		if echo "$default_shell" | grep $shell > /dev/null; then
 			echo using default shell "$shell"
 			break
@@ -34,7 +39,7 @@ setup_shell () {
 unset default_shell shell
 }
 
-setup_PIP () {
+setup_python () {
 	if [ -x "$(which pip)" ]; then
 		PIP="$(which pip)"
 	elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
