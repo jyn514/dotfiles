@@ -16,9 +16,10 @@ ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
-cdl () {
-	cd "$1"; shift;
-	ls "$@"
+cd () {
+	if [ -z "$1" ]; then builtin cd && ls
+	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
+	fi
 }
 
 # for use with a makefile in the current directory
@@ -34,11 +35,23 @@ recipies () {
 	grep -v "^#"
 }
 
+background () {
+	if [ $# -eq 0 ]
+		then echo usage: background '<command>'
+		return 1
+	else
+		"$@" &
+		disown
+	fi
+}
+
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
 
-ls () { command ls --color=auto "$@"; }
+save_power () { sudo powertop --auto-tune; }
+
+ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 
 rm () { command rm -i "$@"; }
 
@@ -63,7 +76,7 @@ ascii () { man ascii; }
 file_count () { locate -S; }
 
 excuse () {
-	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f tux
+	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
 }
 
 status () { git status; }
@@ -78,9 +91,12 @@ ubuntu () { docker run -it ubuntu; }
 
 vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
 
+view_markdown () {
+	markdown_py "$1" > tmp.html && firefox tmp.html && sleep 1 && rm -f tmp.html
+}
+
 pip_upgrade_all () {
-	pip freeze --local | grep -v '^\-e' | cut -d = -f 1 \
-	| xargs -n1 pip install -U | grep -v Requirement already satisfied
+	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
 }
 
 # Add an "alert" alias for long running commands.  Use like so:
@@ -90,6 +106,17 @@ alert () {
 	"$([ $? = 0 ] && echo terminal || echo error)" \
 	"$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
 }
+
+# https://stackoverflow.com/questions/9679932
+npm_exec () {
+	COMMAND="npm bin"
+	if [ $# -gt 0 ] && [ "$1" = "-g" ]
+		then COMMAND="$COMMAND --global"
+		shift
+	fi
+	PATH="$($COMMAND):$PATH" "$@";
+}
+
 
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
@@ -102,8 +129,6 @@ fi
 if [ -d ~/.local/bin ]; then
 	PATH="$HOME/.local/bin:$PATH"
 fi
-
-which most >/dev/null && export MANPAGER=most
 
 export ENV="$HOME/.profile"
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0

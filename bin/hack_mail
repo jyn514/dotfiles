@@ -1,0 +1,5 @@
+#!/bin/sh
+# Our university has absolutely no security on its email servers.
+# It's just as bad as it sounds.
+telnet 129.252.158.13 25
+

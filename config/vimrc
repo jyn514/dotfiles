@@ -6,8 +6,10 @@ call plug#end()
 
 nmap <Enter> o<Esc>
 cmap Q q
-nnoremap yy :Autoformat<Enter>
+nnoremap <C-f> :Autoformat<Enter>
 nnoremap tt :TrailerTrim<Enter>
+" https://superuser.com/a/1249453
+nnoremap <C-i> i_<Esc>r
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!
@@ -22,6 +24,8 @@ set number
 set ignorecase "for searching"
 set ruler
 set ffs=unix
+set mouse=a
+set hidden
 
 if exists("+relativenumber")
 	set relativenumber
@@ -169,7 +173,7 @@ autocmd BufNewFile,BufRead *.yml,*.yaml,Sakefile set filetype=yaml
 autocmd BufEnter CHANGELOG setlocal filetype=text
 
 " set up tab & space behaviour sensibly
-autocmd FileType c call TwoSpacesSoftTabs()
+autocmd FileType c call FourSpacesHardTabs()
 autocmd FileType java call FourSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call EightSpacesHardTabs()

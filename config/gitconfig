@@ -19,17 +19,23 @@
 	module = submodule
 	deepen = git pull --unshallow
 	unshallow = git pull --unshallow
-	gui = !gitk
-	gitk = !gitk
 	a = add
 	b = branch
 	c = commit
 	conf = config
 	d = diff
 	h = help
+	l = log --graph --oneline
 	s = status -sb --ignore-submodules
-	v = version
+	v = !git --version
 [diff]
-	noprefix = true
+	algorithm = minimal
 [submodule]
 	fetchJobs = 4
+[merge]
+	tool = vimdiff
+[sendemail]
+	smtpserver = smtp.gmail.com
+	smtpserverport = 587
+	smtpencryption = tls
+	smtpuser = jyn514@gmail.com
