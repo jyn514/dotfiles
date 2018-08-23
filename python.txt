@@ -1,13 +1,7 @@
-# Machine learning
-scikit-learn
-Keras
-pandas
-
 # Useful
 pytest
 pylint
 pycodestyle
-docker-compose
 PyInstaller
 virtualenv
 
