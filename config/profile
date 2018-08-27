@@ -162,3 +162,5 @@ fi
 # these look nice but are very slow
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
+
+PATH=/home/joshua/Documents/Programming/resources/dotfiles/bin:$PATH

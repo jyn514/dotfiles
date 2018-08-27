@@ -22,6 +22,7 @@ setup_basics () {
 [commit]
 	gpgsign = true' >> ~/.config/git/config
 	fi
+	printf '\nPATH=%s:$PATH\n' "$(realpath ./bin)" >> ~/.profile
 unset DEST LOCAL f
 }
 
