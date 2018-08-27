@@ -62,11 +62,23 @@ VIMDIR="$HOME/.vim/autoload"
 unset VIMDIR
 }
 
+setup_backup () {
+	TMP_FILE=/tmp/tmp_cronjob
+	which backup || { echo "need to run setup_basics first"; exit 1; }
+	# tried piping this straight to `crontab -`
+	# it failed when non-interactive for some reason
+	crontab -l > $TMP_FILE || true;  # ignore missing crontab
+	echo '0 12 * * * backup' >> $TMP_FILE && crontab $TMP_FILE
+	rm -f $TMP_FILE
+	unset TMP_FILE
+}
+
 setup_all () {
 	setup_basics
 	setup_shell
 	setup_python
 	setup_vim
+	setup_backup
 	exit 0
 }
 
@@ -76,7 +88,8 @@ MESSAGE="[0] exit
 [2] shell
 [3] python
 [4] vim
-[5] all
+[5] backup
+[6] all
 Choose setup to run: "
 
 printf "$MESSAGE"
@@ -87,7 +100,8 @@ while read choice; do
 		sh*|2) setup_shell; printf "$MESSAGE";;
 		py*|3) setup_python; printf "$MESSAGE";;
 		vi*|4) setup_vim; printf "$MESSAGE";;
-		all|5) setup_all;;
+		b*|5) setup_backup; printf "$MESSAGE";;
+		all|6) setup_all;;
 		*) printf "Please enter a number 0-5: ";;
 	esac
 done
