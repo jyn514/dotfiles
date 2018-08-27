@@ -51,6 +51,10 @@ powershell () { pwsh "$@"; }
 
 save_power () { sudo powertop --auto-tune; }
 
+clean_shell () {
+    env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
+}
+
 ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 
 rm () { command rm -i "$@"; }
