@@ -1,4 +1,9 @@
 #!/bin/sh
-rsync -a --progress --human-readable --append-verify --exclude-from=backup-exclude --cvs-exclude -e ssh --no-perms --no-owner --no-group ~/Documents/ home:/home/joshua/Documents
+TYPE="$(command which type)"
+SCRIPT_DIR="$(dirname "$("$TYPE" -p "$0")")"
+rsync -a --progress --human-readable --append-verify \
+	--exclude-from="$SCRIPT_DIR/backup-exclude" --cvs-exclude \
+	-e ssh --no-perms --no-owner --no-group "$@" \
+	~/Documents/ home:/home/joshua/Documents
 
 
