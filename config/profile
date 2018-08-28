@@ -51,6 +51,10 @@ powershell () { pwsh "$@"; }
 
 save_power () { sudo powertop --auto-tune; }
 
+clean_shell () {
+    env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
+}
+
 ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 
 rm () { command rm -i "$@"; }
@@ -158,3 +162,5 @@ fi
 # these look nice but are very slow
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
+
+PATH=/home/joshua/Documents/Programming/resources/dotfiles/bin:$PATH
