@@ -27,6 +27,11 @@ set ffs=unix
 set mouse=a
 set hidden
 
+" highlighting
+set hlsearch
+hi Visual ctermbg=Yellow
+hi Visual ctermfg=Black
+
 if exists("+relativenumber")
 	set relativenumber
 endif
@@ -69,7 +74,6 @@ endif
 
 " configure indenting to work gqap correctly - not working quite right at the
 " moment
-set showbreak=\ \\_
 if exists('+breakindent')  " breakindent was not merged until 2014
 	set breakindent
 else
