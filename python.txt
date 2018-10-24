@@ -4,6 +4,7 @@ pylint
 pycodestyle
 PyInstaller
 virtualenv
+xdot
 
 # My stuff
 notebook
