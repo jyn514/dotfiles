@@ -2,6 +2,7 @@ call plug#begin('~/.vim/plugged')
 Plug 'mzlogin/vim-markdown-toc'
 Plug 'csexton/trailertrash.vim'
 Plug 'Chiel92/vim-autoformat'
+Plug 'vim-latex/vim-latex'
 call plug#end()
 
 nmap <Enter> o<Esc>
@@ -35,6 +36,11 @@ hi Visual ctermfg=Black
 if exists("+relativenumber")
 	set relativenumber
 endif
+
+if has("clipboard")
+    set clipboard=unnamedplus
+endif
+
 """"""""10""""""""20""""""""3 platform detection 0""""""""60""""""""70""""""""80
 
 let g:uname = substitute(system("uname"), '\n\+$', '', '')
@@ -199,3 +205,5 @@ if has("spell")
 	highlight SpellBad cterm=underline gui=underline
 	highlight SpellLocal cterm=underline gui=underline
 endif
+
+unmap <TAB>
