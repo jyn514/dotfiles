@@ -1,0 +1,59 @@
+\documentclass[a4paper]{article}
+
+%% Language and font encodings
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+%% Sets page size and margins
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+%% Math packages
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+
+% forget what these do
+\usepackage{chngcntr}
+%\usepackage{shortlabels}
+\usepackage{enumerate}
+
+% enable quotes with \say{}
+% https://www.overleaf.com/learn/latex/Typesetting_quotations#dirtytalk
+\usepackage{dirtytalk}
+
+% use alphabet instead of letters for lists
+\renewcommand{\theenumi}{\alph{enumi}}
+
+% use black square for QED (default is empty white)
+\renewcommand\qedsymbol{$\blacksquare$}
+
+% double space
+\usepackage{setspace}
+\usepackage{etoolbox}
+\AtBeginEnvironment{proof}{\begin{doublespace}}
+\AtEndEnvironment{proof}{\end{doublespace}}
+
+% use math font for tables
+\usepackage{array}
+\newcolumntype{C}{>$c<$}
+\usepackage{tabularx}
+
+
+% use custom numbering for theorems
+% https://tex.stackexchange.com/a/53981
+\newtheorem{innercustomthm}{Theorem}
+\newenvironment{theorem*}[1]
+{\renewcommand\theinnercustomthm{#1}\innercustomthm}
+{\endinnercustomthm}
+
+\newtheorem*{theorem}{Theorem}
+% enable to use alphabet numbering
+% since we use unnumbered theorems, \thetheorem is undefined.
+%\renewcommand*{\thetheorem}{\alph{theorem}}
+
+\author{Joshua Nelson (Pin 114)}
+
+% use \begin{equation} \begin{aligned} for multi-line equations
+% use \label{...} and \ref{...} for cross-referencing
