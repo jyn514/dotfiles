@@ -159,7 +159,7 @@ function FourSpacesHardTabs()
 endfunction
 
 " use "normal" tabs 4 spaces by default
-call FourSpacesHardTabs()
+call FourSpacesSoftTabs()
 
 
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
@@ -186,6 +186,7 @@ autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
 autocmd FileType html call TwoSpacesSoftTabs()
 autocmd FileType haskell call TwoSpacesSoftTabs()
+autocmd FileType scheme call TwoSpacesSoftTabs()
 
 if has("spell")
 	" enable spell checking
