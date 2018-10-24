@@ -16,11 +16,23 @@ ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
+# list directory after changing
 cd () {
 	if [ -z "$1" ]; then builtin cd && ls
 	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
 	fi
 }
+
+# don't replace crontab without warning
+crontab () { crontab -i "$@"; }
+
+# show a makefile as a dependency graph
+visualize () {
+	makefile2graph | dot | xdot /dev/stdin
+}
+
+# don't show copyright every time (super annoying)
+gdb () { command gdb -q "$@"; }
 
 # for use with a makefile in the current directory
 tasks () {
@@ -29,12 +41,14 @@ tasks () {
 	grep -v "^[#`printf '\t'`]" | sed 's/:$//'
 }
 
+# same as tasks, but show body of recipe
 recipies () {
 	make -npRr | \
 	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
 	grep -v "^#"
 }
 
+# launch and disown a command
 background () {
 	if [ $# -eq 0 ]
 		then echo usage: background '<command>'
@@ -45,6 +59,7 @@ background () {
 	fi
 }
 
+# zip recursively by default
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
@@ -57,6 +72,7 @@ clean_shell () {
 
 ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 
+# prompt before removing
 rm () { command rm -i "$@"; }
 
 purge_removed () {
@@ -75,8 +91,13 @@ la () { ls -A "$@"; }
 
 l () { ls -CF "$@"; }
 
+webpaste () {
+   cat "$@"| nc termbin.com 9999
+}
+
 ascii () { man ascii; }
 
+# files on disk
 file_count () { locate -S; }
 
 excuse () {
@@ -154,7 +175,8 @@ MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-if ps $$ | grep bash > /dev/null && \
+# -p excludes parent processes (cygwin has habit of running 'bash' then forking)
+if ps -p $$ | grep bash > /dev/null && \
    ! [ -v $BASH_PROFILE_READ ] ; then
 	. ~/.bashrc
 fi
