@@ -45,6 +45,8 @@ background () {
 	fi
 }
 
+show_time () { watch -n 1 -t date; }
+
 zip () { command zip -r "$@"; }
 
 powershell () { pwsh "$@"; }
