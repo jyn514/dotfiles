@@ -188,3 +188,9 @@ fi
 PATH=/home/joshua/Documents/Programming/resources/dotfiles/bin:$PATH
 # https://askubuntu.com/questions/145618
 PROMPT_DIRTRIM=3
+
+# https://stackoverflow.com/a/30228376
+set_ps1 () { PS1='\[\033[01;34m\]\w\[\033[00m\] ▶️ '; }
+PROMPT_COMMAND=set_ps1
+
+ls
