@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# replicate the 'drag and drop' directory merge of Windows Explorer
+
+if [ $# -eq 0 ]; then
+	echo "Usage: $(basename "$0") <source> [target]"
+	exit 1
+fi
+
+source="$(realpath "$1")"
+if [ $# -gt 1 ]; then
+	dest="$2"
+else
+	dest=.
+fi
+
+dest="$(realpath "$dest")"
+
+# https://unix.stackexchange.com/a/172402
+# -v: verbose
+# -l: use hard links to reduce IO
+# -n: don't copy files that already exist
+# -r: recursive
+cp -rnlv "$source"/* "$dest"
+
+rm -r "$1"
