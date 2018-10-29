@@ -6,11 +6,14 @@ Plug 'vim-latex/vim-latex'
 call plug#end()
 
 nmap <Enter> o<Esc>
+" allow forgetting to release shift
 cmap Q q
+cmap W w
 nnoremap <C-f> :Autoformat<Enter>
 nnoremap tt :TrailerTrim<Enter>
 " https://superuser.com/a/1249453
 nnoremap <C-i> i_<Esc>r
+inoremap <S-Insert> <Esc>pi
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!
