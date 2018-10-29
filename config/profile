@@ -92,7 +92,7 @@ la () { ls -A "$@"; }
 l () { ls -CF "$@"; }
 
 webpaste () {
-   cat "$@"| nc termbin.com 9999
+   nc termbin.com 9999 < "$@"
 }
 
 ascii () { man ascii; }
@@ -186,3 +186,5 @@ fi
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
 
 PATH=/home/joshua/Documents/Programming/resources/dotfiles/bin:$PATH
+# https://askubuntu.com/questions/145618
+PROMPT_DIRTRIM=3
