@@ -23,6 +23,12 @@ cd () {
 	fi
 }
 
+# UUOC
+cat () {
+	[ -t 1 ] || ansi -n --red --bold --underline 'UUOC' > /dev/tty
+	command cat "$@"
+}
+
 # don't replace crontab without warning
 crontab () { crontab -i "$@"; }
 
@@ -109,6 +115,7 @@ status () { git status; }
 dad () { curl https://icanhazdadjoke.com && echo; }
 
 weather () { curl wttr.in/~University+Of+South+Carolina; }
+wttr () { weather; }
 
 pytime () { python -m timeit; }
 
@@ -140,6 +147,39 @@ npm_exec () {
 		shift
 	fi
 	PATH="$($COMMAND):$PATH" "$@";
+}
+
+# modified from https://github.com/charlesdaniels/dotfiles/blob/master/overlay/.zsh/zsh-ocd.zsh
+# when run without arguments, print all directories where there's an open file handle
+# for the programs listed in FILTER_REGEX (currently bash and vim)
+# when run with arguments,
+#  if there is a unique match for the argument as a extended regex, change to that directory
+#  else, print all directories which did match
+ocd () {
+	OCD_BLACKLIST_REGEX='(^[/]lib)|(^[/]usr[/]lib)|(^[/]$)|(^[/]var)|(^[/]bin)|(^[/]usr[/]share)|(^[/]usr[/]bin)|(^[/]usr[/]local[/]bin)|(^[/]tmp)|(^[/]dev)|(share[/]fonts)|([/][.]cache[/])|([.]swp$)|(^[/]run)'
+	OCD_FILTER_REGEX='(^(ba|z)?sh)|(^[gn]?vim)'
+	OCD_FILE_LIST=""
+
+	if [ -x "$(which lsof 2>/dev/null)" ] ; then
+		OCD_FILE_LIST="$(lsof -u $(whoami) | grep -E $OCD_FILTER_REGEX | awk '{print($9);}' | grep -P '^[/]' | grep -P -v $OCD_BLACKLIST_REGEX | sort | uniq)"
+	fi
+
+	# make sure everything in the file list is a directory
+	OCD_DIRLIST=""
+	for ocd_fpath in $(echo $OCD_FILE_LIST | tr '\n' ' ') ; do
+		if [ -f "$ocd_fpath" ] ; then
+			ocd_fpath="$(dirname "$ocd_fpath")"
+		fi
+		OCD_DIRLIST="$ocd_fpath
+$OCD_DIRLIST"
+	done
+
+	OCD_TARGET="$(echo "$OCD_DIRLIST" | sort | uniq | grep -v -P '^$' | grep -P "$1")"
+	if [ "$(echo "$OCD_TARGET" | wc -l)" -eq 1 ] ; then
+		cd "$OCD_TARGET"
+	else
+		echo "$OCD_TARGET"
+	fi
 }
 
 
@@ -193,4 +233,5 @@ PROMPT_DIRTRIM=3
 set_ps1 () { PS1='\[\033[01;34m\]\w\[\033[00m\] ▶️ '; }
 PROMPT_COMMAND=set_ps1
 
+stty -ixon
 ls
