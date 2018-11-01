@@ -1,16 +1,13 @@
 #!/bin/bash
 # Replaces $1 with $2 for all files in current directory
-# don't try to understand how it works, god knows I don't
-
 
 if [ $# -ne 2 ]; then
 	echo "Usage: `basename $0` <current> <replace-with>"
 else
 	# sed accepts anything as delimeter, not just '/'
-	# need to escape backslashes and quotes (curse you, bash)
+	# need to escape backslashes and quotes
 
 	first=`echo $1  | sed 's%"%\\"%g'`
 	second=`echo $2 | sed 's%"%\\"%g'`
 	sed -i "s%$first%$second%g" `find . -type f`
 fi
-
