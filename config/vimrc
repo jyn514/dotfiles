@@ -167,6 +167,11 @@ function FourSpacesHardTabs()
 	set noexpandtab
 endfunction
 
+function CompileTex()
+    silent !pdflatex %
+    redraw!
+endfunction
+
 " use "normal" tabs 4 spaces by default
 call FourSpacesSoftTabs()
 
@@ -189,7 +194,7 @@ autocmd BufEnter CHANGELOG setlocal filetype=text
 autocmd FileType c call TwoSpacesSoftTabs()
 autocmd FileType java call FourSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
-autocmd FileType tex call EightSpacesHardTabs()
+autocmd FileType tex call FourSpacesSoftTabs()
 autocmd FileType yaml call FourSpacesSoftTabs()
 autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
