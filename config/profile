@@ -10,6 +10,14 @@ esac
 ## Custom
 umask 077
 
+# don't add path if already present
+add_path () {
+	# (start or ':') $1 (end or ':')
+	if ! echo "$PATH" | grep "\(^\|:\)$1\(\$\|:\)" > /dev/null; then
+		PATH="$PATH:$1"
+	fi
+}
+
 yts () { youtube_search "$@"; }
 
 ytd () { youtube-dl "$@"; }
@@ -154,13 +162,13 @@ if [ -f ~/.local/profile ]; then
 fi
 
 if [ -d ~/.local/bin ]; then
-	PATH="$HOME/.local/bin:$PATH"
+	add_path "$HOME/.local/bin"
 fi
 
 export ENV="$HOME/.profile"
 export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
 export GEM_PATH="$GEM_HOME:/var/lib/ruby/gems/1.8"
-PATH="$PATH:$GEM_HOME/bin"
+add_path "$GEM_HOME/bin"
 export EDITOR=vim
 export VISUAL=vim
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
@@ -187,12 +195,5 @@ fi
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
 
-PATH=/home/joshua/Documents/Programming/resources/dotfiles/bin:$PATH
-# https://askubuntu.com/questions/145618
-PROMPT_DIRTRIM=3
-
-# https://stackoverflow.com/a/30228376
-set_ps1 () { PS1='\[\033[01;34m\]\w\[\033[00m\] ▶️ '; }
-PROMPT_COMMAND=set_ps1
-
+add_path ~/src/resources/dotfiles/bin
 ls
