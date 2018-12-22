@@ -122,6 +122,10 @@ la () { ls -A "$@"; }
 
 l () { ls -CF "$@"; }
 
+webpaste () {
+   nc termbin.com 9999 < "$@"
+}
+
 ascii () { man ascii; }
 
 # files on disk
