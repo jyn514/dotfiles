@@ -16,12 +16,34 @@ ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
+# follow symlinks by default
+rg () { command rg -L "$@"; }
+
 # list directory after changing
 cd () {
 	if [ -z "$1" ]; then builtin cd && ls
 	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
 	fi
 }
+
+.. () { cd ..; }
+
+what_belongs () {
+	if which dpkg > /dev/null; then
+		dpkg -L "$@"
+	elif which rpm > /dev/null; then
+		rpm -ql "$@"
+	fi
+}
+
+what_runs () {
+	for file in `what_belongs "$@"`; do
+		[ -f "$file" ] && [ -x "$file" ] && echo "$file"
+	done
+}
+
+belongs () { what_belongs "$@"; }
+runs () { what_runs "$@"; }
 
 # UUOC
 cat () {
@@ -30,10 +52,13 @@ cat () {
 }
 
 # don't replace crontab without warning
-crontab () { crontab -i "$@"; }
+crontab () { command crontab -i "$@"; }
 
 # show a makefile as a dependency graph
 visualize () {
+	which makefile2graph > /dev/null || { echo "makefile2graph not found"; return 1; }
+	which dot > /dev/null || { echo "dot not found"; return 1; }
+	which xdot > /dev/null || { echo "xdot not found"; return 1; }
 	makefile2graph | dot | xdot /dev/stdin
 }
 
@@ -230,4 +255,5 @@ set_ps1 () { PS1='\[\033[01;34m\]\w\[\033[00m\] ▶️ '; }
 PROMPT_COMMAND=set_ps1
 
 stty -ixon
+eval $(dircolors)
 ls
