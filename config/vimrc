@@ -14,6 +14,8 @@ nnoremap tt :TrailerTrim<Enter>
 " https://superuser.com/a/1249453
 nnoremap <C-i> i_<Esc>r
 inoremap <S-Insert> <Esc>pi
+" copy the current character until the 80th column (i.e. block comments)
+nnoremap <C-b> y $80p079ld$
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!
@@ -168,12 +170,15 @@ function FourSpacesHardTabs()
 endfunction
 
 function CompileTex()
+    w
     silent !pdflatex %
     redraw!
 endfunction
+inoremap <C-l> <Esc>:call CompileTex()<Enter>i
+nnoremap <C-l> :call CompileTex()<Enter>
 
-" use "normal" tabs 4 spaces by default
-call FourSpacesSoftTabs()
+" use 2 spaces by default
+call TwoSpacesSoftTabs()
 
 
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
@@ -192,7 +197,7 @@ autocmd BufEnter CHANGELOG setlocal filetype=text
 
 " set up tab & space behaviour sensibly
 autocmd FileType c call TwoSpacesSoftTabs()
-autocmd FileType java call FourSpacesSoftTabs()
+autocmd FileType java call TwoSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call FourSpacesSoftTabs()
 autocmd FileType yaml call FourSpacesSoftTabs()
