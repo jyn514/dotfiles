@@ -3,6 +3,7 @@ set -e
 
 setup_basics () {
 	LOCAL="$HOME/.local/config"
+	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
 		if [ "$f" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
@@ -11,7 +12,6 @@ setup_basics () {
 		fi
 		if [ -L "$DEST" ]; then rm -f "$DEST"
 		elif [ -e "$DEST" ]; then
-				if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 				mv "$DEST" "$LOCAL"
 		fi
 		mkdir -p "$(dirname "$DEST")"
@@ -30,7 +30,7 @@ setup_shell () {
 	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
 	for shell in zsh fish bash; do
 		if echo "$default_shell" | grep $shell > /dev/null; then
-			echo using default shell "$shell"
+			echo using current shell "$shell"
 			break
 		elif which $shell ; then
 			chsh -s "$(which $shell)"
@@ -48,7 +48,11 @@ setup_python () {
 	fi
 
 	# may take a while
-	if ! [ -z "$PIP" ]; then $PIP install --user -r python.txt; fi
+	if ! [ -z "$PIP" ]; then
+		$PIP install --user -r python.txt
+	else
+		echo pip not found
+	fi
 unset PIP
 }
 
@@ -64,7 +68,7 @@ unset VIMDIR
 
 setup_backup () {
 	TMP_FILE=/tmp/tmp_cronjob
-	which backup || { echo "need to run setup_basics first"; exit 1; }
+	which backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
 	crontab -l > $TMP_FILE || true;  # ignore missing crontab
@@ -95,13 +99,13 @@ Choose setup to run: "
 printf "$MESSAGE"
 while read choice; do
 	case $choice in
-		q*|exit|0) exit 0;;
-		dotfiles|basic*|1) setup_basics; printf "$MESSAGE";;
+		q*|e*|0) exit 0;;
+		dot*|bas*|1) setup_basics; printf "$MESSAGE";;
 		sh*|2) setup_shell; printf "$MESSAGE";;
 		py*|3) setup_python; printf "$MESSAGE";;
 		vi*|4) setup_vim; printf "$MESSAGE";;
-		b*|5) setup_backup; printf "$MESSAGE";;
+		bac*|5) setup_basics; setup_backup; printf "$MESSAGE";;
 		all|6) setup_all;;
-		*) printf "Please enter a number 0-5: ";;
+		*) printf "Please enter a number 0-6: ";;
 	esac
 done
