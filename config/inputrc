@@ -1,0 +1,13 @@
+## enable Alt-arrows
+"\e[1;3D": backward-word ### Alt left
+"\e[1;3C": forward-word ### Alt right
+
+# mappings for Ctrl-left-arrow and Ctrl-right-arrow for word moving
+"\e[1;5C": forward-word
+"\e[1;5D": backward-word
+"\e[5C": forward-word
+"\e[5D": backward-word
+"\e\e[C": forward-word
+"\e\e[D": backward-word
+
+$include /etc/inputrc
