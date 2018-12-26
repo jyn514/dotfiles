@@ -10,4 +10,6 @@ xdot
 notebook
 youtube-dl
 Flask
-
+# for xdot
+pycairo
+pygobject
