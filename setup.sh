@@ -21,8 +21,13 @@ setup_basics () {
 		echo '
 [commit]
 	gpgsign = true' >> ~/.config/git/config
+	else
+		echo not setting up GPG-signed commits, no ultimate key found
 	fi
-	printf '\nPATH=%s:$PATH\n' "$(realpath ./bin)" >> ~/.profile
+	# only add to path if not already present
+	if ! echo "$PATH" | grep ":$(realpath ./bin):" > /dev/null; then
+		printf '\nPATH=%s:$PATH\n' "$(realpath ./bin)" >> ~/.profile
+	fi
 unset DEST LOCAL f
 }
 
