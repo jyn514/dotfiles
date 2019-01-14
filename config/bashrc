@@ -65,5 +65,15 @@ if ! shopt -oq posix; then
   fi
 fi
 
+# https://unix.stackexchange.com/questions/245331
+.. () { cd ..; }
+
+# list directory after changing
+cd () {
+	if [ -z "$1" ]; then builtin cd && ls
+	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
+	fi
+}
+
 # https://askubuntu.com/questions/145618
 PROMPT_DIRTRIM=3
