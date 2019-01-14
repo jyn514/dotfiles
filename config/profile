@@ -27,15 +27,6 @@ cls () { clear; }
 # follow symlinks by default
 rg () { command rg -L "$@"; }
 
-# list directory after changing
-cd () {
-	if [ -z "$1" ]; then builtin cd && ls
-	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
-	fi
-}
-
-.. () { cd ..; }
-
 what_belongs () {
 	if which dpkg > /dev/null; then
 		dpkg -L "$@"
