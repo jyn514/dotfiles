@@ -64,10 +64,14 @@ unset PIP
 setup_vim () {
 VIMDIR="$HOME/.vim/autoload"
 	if ! [ -e "$VIMDIR/plug.vim" ]; then
-		curl -Lo "$VIMDIR/plug.vim" --create-dirs \
-			https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-		vim -c PlugInstall -c q -c q
+		mkdir -p "$VIMDIR"
+		if which curl >/dev/null; then
+			curl -Lo "$VIMDIR/plug.vim" https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+		else
+			wget -O "$VIMDIR/plug.vim" https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+		fi
 	fi
+	vim -c PlugInstall -c q -c q
 unset VIMDIR
 }
 
