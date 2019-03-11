@@ -83,7 +83,16 @@ setup_backup () {
 	unset TMP_FILE
 }
 
+setup_sudo () {
+	if which sudo 2>&1 >/dev/null; then
+		sudo ./setup_sudo.sh
+	else
+		su -c './setup_sudo.sh';
+	fi
+}
+
 setup_all () {
+	setup_sudo  # so we know we have vim, git, etc.
 	setup_basics
 	setup_shell
 	setup_python
@@ -99,7 +108,8 @@ MESSAGE="[0] exit
 [3] python
 [4] vim
 [5] backup
-[6] all
+[6] sudo
+[7] all
 Choose setup to run: "
 
 printf "$MESSAGE"
@@ -111,7 +121,8 @@ while read choice; do
 		py*|3) setup_python; printf "$MESSAGE";;
 		vi*|4) setup_vim; printf "$MESSAGE";;
 		bac*|5) setup_basics; setup_backup; printf "$MESSAGE";;
-		all|6) setup_all;;
+		su*|6) setup_sudo; printf "$MESSAGE";;
+		all|7) setup_all;;
 		*) printf "Please enter a number 0-6: ";;
 	esac
 done
