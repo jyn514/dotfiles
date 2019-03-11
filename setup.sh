@@ -74,7 +74,7 @@ unset VIMDIR
 
 setup_backup () {
 	TMP_FILE=/tmp/tmp_cronjob
-	which backup || { echo "need to run setup_basics first"; return 1; }
+	which backup >/dev/null 2>&1 || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
 	crontab -l > $TMP_FILE || true;  # ignore missing crontab
