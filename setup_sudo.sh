@@ -63,7 +63,9 @@ install_graphics () {
 
 install_opinionated () {
 	apt-get install unattended-upgrades
-	ln -s "$(which bat)" ~/.local/bin/cat
+	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(which bat)" ~/.local/bin/cat; fi
+	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(which python3)" ~/.local/bin/python; fi
+	if ! exists pip && exists pip3; then ln -sf "$(which pip3)" ~/.local/bin/pip; fi
 }
 
 if exists dpkg; then
