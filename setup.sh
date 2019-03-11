@@ -24,10 +24,7 @@ setup_basics () {
 	else
 		echo not setting up GPG-signed commits, no ultimate key found
 	fi
-	# only add to path if not already present
-	if ! echo "$PATH" | grep ":$(realpath ./bin):" > /dev/null; then
-		printf '\nPATH=%s:$PATH\n' "$(realpath ./bin)" >> ~/.profile
-	fi
+	. ~/.profile
 unset DEST LOCAL f
 }
 
