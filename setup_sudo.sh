@@ -43,8 +43,8 @@ install_features () {
 		[ -n "$PACKAGES" ] && dpkg -i $PACKAGES
 		rm -f $PACKAGES
 		apt-get update
-		apt-get install vim git build-essential cowsay default-jre shellcheck nmap texlive
-	fi
+		apt-get install vim git build-essential cowsay default-jre shellcheck nmap texlive-base python3-pip graphviz xdot
+		fi
 }
 
 install_graphics () {
