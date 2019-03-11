@@ -84,7 +84,7 @@ setup_backup () {
 }
 
 setup_sudo () {
-	if which sudo 2>&1 >/dev/null; then
+	if which sudo >/dev/null 2>&1; then
 		sudo ./setup_sudo.sh
 	else
 		su -c './setup_sudo.sh';
@@ -101,8 +101,8 @@ setup_all () {
 	exit 0
 }
 
-cd "$(realpath "$(dirname "$0")")"
-MESSAGE="[0] exit
+message () {
+	printf "%s" "[0] exit
 [1] dotfiles
 [2] shell
 [3] python
@@ -111,18 +111,21 @@ MESSAGE="[0] exit
 [6] sudo
 [7] all
 Choose setup to run: "
+}
 
-printf "$MESSAGE"
+cd "$(realpath "$(dirname "$0")")"
+
+message
 while read choice; do
 	case $choice in
 		q*|e*|0) exit 0;;
-		dot*|bas*|1) setup_basics; printf "$MESSAGE";;
-		sh*|2) setup_shell; printf "$MESSAGE";;
-		py*|3) setup_python; printf "$MESSAGE";;
-		vi*|4) setup_vim; printf "$MESSAGE";;
-		bac*|5) setup_basics; setup_backup; printf "$MESSAGE";;
-		su*|6) setup_sudo; printf "$MESSAGE";;
-		all|7) setup_all;;
+		dot*|bas*|1) setup_basics; message;;
+		sh*|2) setup_shell; message;;
+		py*|3) setup_python; message;;
+		vi*|4) setup_vim; message;;
+		bac*|5) setup_basics; setup_backup; message;;
+		su*|6) setup_sudo; message;;
+		all|7) setup_all; exit 0;;
 		*) printf "Please enter a number 0-6: ";;
 	esac
 done
