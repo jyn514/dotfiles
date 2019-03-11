@@ -251,7 +251,7 @@ fi
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
 
-add_path ~/src/resources/dotfiles/bin
+add_path "$(dirname "$(realpath "$0")")/bin"
 stty -ixon
 eval $(dircolors)
 ls
