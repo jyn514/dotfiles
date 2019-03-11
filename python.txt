@@ -4,12 +4,8 @@ pylint
 pycodestyle
 PyInstaller
 virtualenv
-xdot
 
 # My stuff
 notebook
 youtube-dl
 Flask
-# for xdot
-pycairo
-pygobject
