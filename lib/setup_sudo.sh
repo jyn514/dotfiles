@@ -39,8 +39,8 @@ install_security () {
 		read -r force
 		[ "$force" = y ] && mv "$DEST" "$DEST".bak
 	fi
-	[ "$force" = y ] && ln -s "$DIR/../config/iptables" "$DEST" || true
-	iptables-restore "$DIR/../config/iptables"
+	[ "$force" = y ] && ln -s "$DIR/iptables" "$DEST" || true
+	iptables-restore "$DIR/iptables"
 	unattended-upgrades
 }
 
