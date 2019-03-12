@@ -36,7 +36,7 @@ setup_shell () {
 		if echo "$default_shell" | grep $shell > /dev/null; then
 			echo using current shell "$shell"
 			break
-		elif which $shell ; then
+		elif exists shell; then
 			chsh -s "$(which $shell)"
 			break
 		fi
@@ -64,11 +64,7 @@ setup_vim () {
 VIMDIR="$HOME/.vim/autoload"
 	if ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
-		if which curl >/dev/null; then
-			curl -Lo "$VIMDIR/plug.vim" https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-		else
-			wget -O "$VIMDIR/plug.vim" https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-		fi
+		download https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim "$VIMDIR/plug.vim"
 	fi
 	vim -c PlugInstall -c q -c q
 unset VIMDIR
@@ -76,7 +72,7 @@ unset VIMDIR
 
 setup_backup () {
 	TMP_FILE=/tmp/tmp_cronjob
-	which backup >/dev/null 2>&1 || { echo "need to run setup_basics first"; return 1; }
+	exists backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
 	crontab -l > $TMP_FILE || true;  # ignore missing crontab
@@ -86,7 +82,7 @@ setup_backup () {
 }
 
 setup_install () {
-	if which sudo >/dev/null 2>&1; then
+	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
 	else
 		su -c './setup_sudo.sh';
