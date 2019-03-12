@@ -85,16 +85,27 @@ setup_backup () {
 	unset TMP_FILE
 }
 
-setup_sudo () {
+setup_install () {
 	if which sudo >/dev/null 2>&1; then
-		sudo ./setup_sudo.sh
+		sudo ./lib/setup_sudo.sh
 	else
 		su -c './setup_sudo.sh';
 	fi
+	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
+		download "https://github.com/keepassxreboot/keepassxc/releases/                 download/2.3.4/KeePassXC-2.3.4-x86_64.AppImage" keepassxc
+		mv keepassxc bin
+		chmod +x bin/keepassxc
+		bin/keepassxc >/dev/null 2>&1 &
+	fi
+	mkdir -p ~/.local/bin
+	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(which bat)" ~/.local/bin/cat; fi
+	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(which python3)" ~/.local/bin/python; fi
+	if ! exists pip && exists pip3; then ln -sf "$(which pip3)" ~/.local/bin/pip; fi
 }
 
+
 setup_all () {
-	setup_sudo  # so we know we have vim, git, etc.
+	setup_install  # so we know we have vim, git, etc.
 	setup_basics
 	setup_shell
 	setup_python
@@ -110,12 +121,15 @@ message () {
 [3] python
 [4] vim
 [5] backup
-[6] sudo
+[6] install (uses sudo)
 [7] all
 Choose setup to run: "
 }
 
+# main
+
 cd "$(realpath "$(dirname "$0")")"
+. lib/lib.sh
 
 message
 while read choice; do
@@ -126,7 +140,7 @@ while read choice; do
 		py*|3) setup_python; message;;
 		vi*|4) setup_vim; message;;
 		bac*|5) setup_basics; setup_backup; message;;
-		su*|6) setup_sudo; message;;
+		su*|i*|6) setup_install; message;;
 		all|7) setup_all; exit 0;;
 		*) printf "Please enter a number 0-6: ";;
 	esac
