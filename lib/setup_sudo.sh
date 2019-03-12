@@ -30,9 +30,18 @@ install_features () {
 }
 
 install_security () {
+	echo Installing security updates
 	apt-get update
 	apt-get install unattended-upgrades
-	unattended-upgrades
+	# for some reason Ubuntu disables unattended upgrades for security repos (!!)
+	if ! apt-config dump | grep 'Unattended-Upgrade::Allowed-Origins::.*-security' >/dev/null; then
+	echo // added automatically by setup.sh on "$(date -I)" '
+Unattended-Upgrade::Allowed-Origins {
+	"${distro_id}:${distro_codename}-security";
+}' >> /etc/apt/apt.conf.d/50unattended-upgrades
+	fi
+	echo this may take a while...
+	unattended-upgrades -v
 }
 
 . "$(dirname "$(realpath "$0")")"/lib.sh
