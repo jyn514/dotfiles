@@ -80,7 +80,7 @@ setup_backup () {
 	exists backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
-	crontab -l > $TMP_FILE || true;  # ignore missing crontab
+	crontab -l > $TMP_FILE 2>/dev/null || true;  # ignore missing crontab
 	echo '0 12 * * * backup' >> $TMP_FILE && crontab $TMP_FILE
 	rm -f $TMP_FILE
 	unset TMP_FILE
@@ -95,7 +95,7 @@ setup_install () {
 	fi
 	echo Installing user packages
 	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
-		download "https://github.com/keepassxreboot/keepassxc/releases/                 download/2.3.4/KeePassXC-2.3.4-x86_64.AppImage" keepassxc
+		download "https://github.com/keepassxreboot/keepassxc/releases/download/2.3.4/KeePassXC-2.3.4-x86_64.AppImage" keepassxc
 		mv keepassxc bin
 		chmod +x bin/keepassxc
 		bin/keepassxc >/dev/null 2>&1 &
