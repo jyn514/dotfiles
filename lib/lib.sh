@@ -1,11 +1,11 @@
 exists () {
 	which "$1" >/dev/null 2>&1
-	return $?;
+	return $?
 }
 
 # takes two parameters:
 # $1 - the URL to download. required.
-# $2 - the file to save to. optional. defaults to $(mktemp). specify this for max compatiblity.
+# $2 - the file to save to. optional. defaults to $(mktemp). specify this for max compatibility.
 download () {
 	if [ -n "$2" ]; then
 		OUTPUT="$2"
