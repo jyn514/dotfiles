@@ -31,11 +31,21 @@ install_features () {
 
 install_security () {
 	apt-get update
-	apt-get install unattended-upgrades
+	apt-get install unattended-upgrades iptables-persistent
+	DEST=/etc/iptables/rules.v4
+	force=y
+	if [ -e "$DEST" ]; then
+		printf "$DEST already exists, overwrite? y/[n]:"
+		read -r force
+		[ "$force" = y ] && mv "$DEST" "$DEST".bak
+	fi
+	[ "$force" = y ] && ln -s "$DIR/../config/iptables" "$DEST" || true
+	iptables-restore "$DIR/../config/iptables"
 	unattended-upgrades
 }
 
-. "$(dirname "$(realpath "$0")")"/lib.sh
+DIR="$(dirname "$(realpath "$0")")"
+. "$DIR"/lib.sh
 if exists dpkg; then
 	IS_DEB=true
 else
