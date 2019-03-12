@@ -2,6 +2,7 @@
 set -e
 
 setup_basics () {
+	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
@@ -31,6 +32,7 @@ unset DEST LOCAL f
 }
 
 setup_shell () {
+	echo Changing default shell
 	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
 	for shell in zsh fish bash; do
 		if echo "$default_shell" | grep $shell > /dev/null; then
@@ -45,6 +47,7 @@ unset default_shell shell
 }
 
 setup_python () {
+	echo Installing python packages in python.txt
 	if [ -x "$(which pip)" ]; then
 		PIP="$(which pip)"
 	elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
@@ -61,6 +64,7 @@ unset PIP
 }
 
 setup_vim () {
+	echo Installing vim plugins
 VIMDIR="$HOME/.vim/autoload"
 	if ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
@@ -71,6 +75,7 @@ unset VIMDIR
 }
 
 setup_backup () {
+	echo Setting up daily backup
 	TMP_FILE=/tmp/tmp_cronjob
 	exists backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
@@ -82,11 +87,13 @@ setup_backup () {
 }
 
 setup_install () {
+	echo Installing global packages
 	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
 	else
 		su -c './setup_sudo.sh';
 	fi
+	echo Installing user packages
 	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
 		download "https://github.com/keepassxreboot/keepassxc/releases/                 download/2.3.4/KeePassXC-2.3.4-x86_64.AppImage" keepassxc
 		mv keepassxc bin
@@ -101,6 +108,7 @@ setup_install () {
 
 
 setup_all () {
+	echo Doing everything
 	setup_install  # so we know we have vim, git, etc.
 	setup_basics
 	setup_shell
