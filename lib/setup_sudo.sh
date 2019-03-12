@@ -25,8 +25,8 @@ install_features () {
 			add-apt-repository universe
 			apt-get update
 		fi
-		apt-get install vim git build-essential cowsay default-jre shellcheck nmap texlive-base python3-pip graphviz xdot xdg-utils traceroute
-		fi
+		apt-get install vim git build-essential cowsay default-jre shellcheck nmap texlive-base python3-pip graphviz xdot xdg-utils traceroute bison flex
+	fi
 }
 
 install_security () {
