@@ -24,6 +24,8 @@ setup_basics () {
 	else
 		echo not setting up GPG-signed commits, no ultimate key found
 	fi
+	# don't break when sourcing .bashrc
+	if alias | grep -q ' ls='; then unalias ls; fi
 	. ~/.profile
 unset DEST LOCAL f
 }
