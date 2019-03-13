@@ -223,6 +223,7 @@ export VISUAL=vim
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
+export BAT_TABS=8
 
 # parallel even when invoked by a script
 export MAKEFLAGS='-j4'
