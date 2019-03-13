@@ -245,7 +245,7 @@ fi
 #GIT_PROMPT_ONLY_IN_REPO=1
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
 
-add_path "$(dirname "$(realpath "$0")")/bin"
+add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 stty -ixon
 eval $(dircolors)
 ls
