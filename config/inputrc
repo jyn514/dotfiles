@@ -10,4 +10,7 @@
 "\e\e[C": forward-word
 "\e\e[D": backward-word
 
+# only require a single tab to complete directories
+set mark-symlinked-directories on
+
 $include /etc/inputrc

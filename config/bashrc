@@ -67,6 +67,7 @@ fi
 
 # https://unix.stackexchange.com/questions/245331
 .. () { cd ..; }
+? () { help; }
 
 # list directory after changing
 cd () {
