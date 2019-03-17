@@ -11,3 +11,4 @@ node_modules
 *.out
 *.pyc
 .idea/
+.gdb_history

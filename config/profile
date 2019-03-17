@@ -18,14 +18,21 @@ add_path () {
 	fi
 }
 
+open () { xdg-open "$@"; }
+
 yts () { youtube_search "$@"; }
 
 ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
+mkdc () { mkdir -p "$@" && cd "$1"; }
+
 # follow symlinks by default
 rg () { command rg -L "$@"; }
+
+dkr () { docker "$@"; }
+dkrc () { docker-compose "$@"; }
 
 what_belongs () {
 	if which dpkg > /dev/null; then
@@ -43,6 +50,8 @@ what_runs () {
 
 belongs () { what_belongs "$@"; }
 runs () { what_runs "$@"; }
+
+exa () { command exa --git "$@"; }
 
 # UUOC
 cat () {
@@ -102,7 +111,7 @@ clean_shell () {
     env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
 }
 
-ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
+ls () { command ls --color=auto -I__pycache__ "$@"; }
 
 # prompt before removing
 rm () { command rm -i "$@"; }
@@ -117,11 +126,11 @@ restart () { shutdown -r now; }
 
 sl () { ls; }
 
-ll () { ls -g "$@"; }
+ll () { ls -l "$@"; }
 
 la () { ls -A "$@"; }
 
-l () { ls -CF "$@"; }
+l () { ls -F "$@"; }
 
 webpaste () {
    nc termbin.com 9999 < "$@"
@@ -231,10 +240,8 @@ export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quo
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 
-# parallel even when invoked by a script
-export MAKEFLAGS='-j4'
-# only when invoked by interactive shell
-MAKEFLAGS="$MAKEFLAGS --warn-undefined-variables"
+MAKEFLAGS='-j4'
+GNUMAKEFLAGS='--warn-undefined-variables'
 
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind
@@ -254,4 +261,4 @@ fi
 add_path ~/src/resources/dotfiles/bin
 stty -ixon
 eval $(dircolors)
-ls
+l
