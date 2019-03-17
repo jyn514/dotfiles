@@ -1,6 +1,7 @@
 # Useful
 pytest
 pylint
+psutil
 pycodestyle
 PyInstaller
 virtualenv
