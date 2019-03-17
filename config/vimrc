@@ -6,6 +6,7 @@ Plug 'vim-latex/vim-latex'
 Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
+Plug 'editorconfig/editorconfig-vim'
 if has('nvim')
   source ~/.nvimrc
 endif
@@ -201,5 +202,4 @@ if has("spell")
 endif
 
 unmap <TAB>
-
 set viminfo+=n/~.vim/viminfo
