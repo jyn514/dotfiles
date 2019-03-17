@@ -4,10 +4,17 @@ Plug 'csexton/trailertrash.vim'
 Plug 'Chiel92/vim-autoformat'
 Plug 'vim-latex/vim-latex'
 Plug 'roxma/vim-paste-easy'
+Plug 'tpope/vim-fugitive'
+Plug 'airblade/vim-gitgutter'
+if has('nvim')
+  source ~/.nvimrc
+endif
 call plug#end()
 
-nmap <Enter> o<Esc>
-nmap <S-Enter> O<Esc>
+if !has('nvim')
+  nmap <Enter> o<Esc>
+  nmap <S-Enter> O<Esc>
+endif
 " allow forgetting to release shift
 cmap Q q
 cmap W w
@@ -44,7 +51,6 @@ set ignorecase "for searching"
 set ruler
 set ffs=unix
 set mouse=a
-set hidden
 " reduce pause after <Esc-O>
 set ttimeoutlen=50
 
@@ -195,3 +201,5 @@ if has("spell")
 endif
 
 unmap <TAB>
+
+set viminfo+=n/~.vim/viminfo
