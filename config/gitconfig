@@ -34,7 +34,6 @@
 	fetchJobs = 4
 [merge]
 	tool = vimdiff
-	conflictstyle = diff3
 [sendemail]
 	smtpserver = smtp.gmail.com
 	smtpserverport = 587
