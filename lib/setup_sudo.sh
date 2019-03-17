@@ -44,6 +44,11 @@ install_security () {
 	unattended-upgrades
 }
 
+remove_unwanted () {
+	dpkg --purge apt-xapian-index
+	purge
+}
+
 DIR="$(dirname "$(realpath "$0")")"
 . "$DIR"/lib.sh
 if exists dpkg; then
@@ -55,3 +60,4 @@ fi
 
 install_security
 install_features
+remove_unwanted
