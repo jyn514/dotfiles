@@ -14,7 +14,7 @@ umask 077
 add_path () {
 	# (start or ':') $1 (end or ':')
 	if ! echo "$PATH" | grep "\(^\|:\)$1\(\$\|:\)" > /dev/null; then
-		PATH="$PATH:$1"
+		PATH="$1:$PATH"
 	fi
 }
 
@@ -259,6 +259,7 @@ fi
 #source /usr/local/src/bash-git-prompt/gitprompt.sh
 
 add_path ~/src/resources/dotfiles/bin
+add_path ~/.node/bin
 stty -ixon
 eval $(dircolors)
 l
