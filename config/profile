@@ -252,9 +252,17 @@ if ps -p $$ | grep bash > /dev/null && \
 	. ~/.bashrc
 fi
 
-# these look nice but are very slow
-#GIT_PROMPT_ONLY_IN_REPO=1
-#source /usr/local/src/bash-git-prompt/gitprompt.sh
+ansi_escape () {
+	# dash does not respect command
+	"$(which printf)" "\x01$1\x02"
+}
+
+YELLOW="$(ansi_escape "\033[0;33m")"
+BLUE="$(ansi_escape "\033[0;34m")"
+RESET="$(ansi_escape "\033[0;0m")"
+PS1="($YELLOW$(basename "$0")$RESET) $BLUE"\
+'$(pwd)'\
+"$RESET ▶️ "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
