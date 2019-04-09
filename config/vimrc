@@ -7,6 +7,7 @@ Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
 Plug 'editorconfig/editorconfig-vim'
+Plug 'aliou/bats.vim'
 if has('nvim')
   source ~/.nvimrc
 endif
