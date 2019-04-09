@@ -19,19 +19,24 @@ ytd () { youtube-dl "$@"; }
 
 cls () { clear; }
 
-mkdc () { mkdir -p "$@" && cd "$1"; }
+mkcd () { mkdir -p "$@" && cd "$1"; }
+mkdc () { mkcd "$@"; }
 
 # follow symlinks by default
 rg () { command rg -L "$@"; }
 
 dkr () { docker "$@"; }
 dkrc () { docker-compose "$@"; }
+# this shadows a mailcap command, but I've never used mailcap in my life
+compose () { docker-compose "$@"; }
 
 what_belongs () {
 	if which dpkg > /dev/null; then
 		dpkg -L "$@"
 	elif which rpm > /dev/null; then
 		rpm -ql "$@"
+	else
+		echo "no supported package manager found" >&2
 	fi
 }
 
@@ -41,8 +46,20 @@ what_runs () {
 	done
 }
 
+what_package () {
+	prog="$1"; shift
+	if which dpkg > /dev/null; then
+		dpkg -S "$(which "$prog")" "$@"
+	elif which rpm > /dev/null; then
+		rpm -qf "$(which "$prog")" "$@"
+	else
+		echo "no supported package manager found" >&2
+	fi
+}
+
 belongs () { what_belongs "$@"; }
 runs () { what_runs "$@"; }
+package () { what_package "$@"; }
 
 exa () { command exa --git "$@"; }
 
