@@ -121,7 +121,7 @@ clean_shell () {
     env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
 }
 
-ls () { command ls --color=auto -I__pycache__ "$@"; }
+ls () { command ls --color=auto "$@"; }
 
 # prompt before removing
 rm () { command rm -i "$@"; }
@@ -272,7 +272,7 @@ fi
 ansi_escape () {
 	# dash does not respect command
 	# TODO: find a workaround for zsh
-	"$(which printf)" "\x01$1\x02"
+	"$(which printf)" "\01$1\02"
 }
 
 RED="$(ansi_escape "\033[0;31m")"
