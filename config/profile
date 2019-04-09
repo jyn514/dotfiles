@@ -254,14 +254,19 @@ fi
 
 ansi_escape () {
 	# dash does not respect command
+	# TODO: find a workaround for zsh
 	"$(which printf)" "\x01$1\x02"
 }
 
+RED="$(ansi_escape "\033[0;31m")"
+GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
-PS1="($YELLOW$(basename "$0")$RESET) $BLUE"\
-'$(pwd)'\
+PS1="($YELLOW$(basename -- "$0")"
+[ $(id -u) -eq 0 ] && PS1="$PS1$RESET,${RED}root"
+PS1="$PS1$RESET) $BLUE"\
+'$(pwd'"|sed s#$HOME#~#)"\
 "$RESET ▶️ "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
