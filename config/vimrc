@@ -179,7 +179,7 @@ autocmd BufNewFile,BufRead *.yml,*.yaml,Sakefile set filetype=yaml
 autocmd BufEnter CHANGELOG setlocal filetype=text
 
 " set up tab & space behaviour sensibly
-autocmd FileType c call TwoSpacesSoftTabs()
+autocmd FileType c call FourSpacesSoftTabs()
 autocmd FileType java call TwoSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call FourSpacesSoftTabs()
@@ -189,6 +189,7 @@ autocmd FileType perl call EightSpacesHardTabs()
 autocmd FileType html call TwoSpacesSoftTabs()
 autocmd FileType haskell call TwoSpacesSoftTabs()
 autocmd FileType scheme call TwoSpacesSoftTabs()
+autocmd FileType yacc call FourSpacesHardTabs()
 
 if has("spell")
 	" enable spell checking
