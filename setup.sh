@@ -91,7 +91,7 @@ setup_install () {
 	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
 	else
-		su -c './setup_sudo.sh';
+		su root -c ./lib/setup_sudo.sh;
 	fi
 	echo Installing user packages
 	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
