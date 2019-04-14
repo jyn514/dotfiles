@@ -275,6 +275,17 @@ ansi_escape () {
 	"$(which printf)" "\01$1\02"
 }
 
+PROMPT_DIRTRIM=2
+
+display_pwd () {
+	# reimplementation of PROMPT_DIRTRIM in pure shell
+	# 1. substitue $HOME with ~
+	# 2. first group: match first character (~ or /)
+	# 3. anything in the middle
+	# 4. second group: last $PROMPT_DIRTRIM directories
+	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
+}
+
 RED="$(ansi_escape "\033[0;31m")"
 GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
@@ -282,9 +293,7 @@ BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 PS1="($YELLOW$(basename -- "$0")"
 [ $(id -u) -eq 0 ] && PS1="$PS1$RESET,${RED}root"
-PS1="$PS1$RESET) $BLUE"\
-'$(pwd'"|sed s#$HOME#~#)"\
-"$RESET ▶️ "
+PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET ▶️ "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
