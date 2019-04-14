@@ -69,6 +69,3 @@ cd () {
 	else builtin cd "$1" && shift 2>/dev/null && ls "$@"
 	fi
 }
-
-# https://askubuntu.com/questions/145618
-PROMPT_DIRTRIM=3
