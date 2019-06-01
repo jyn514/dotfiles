@@ -224,4 +224,4 @@ if has("spell")
 endif
 
 unmap <TAB>
-set viminfo+=n/~.vim/viminfo
+set viminfo+=n~/.vim/viminfo
