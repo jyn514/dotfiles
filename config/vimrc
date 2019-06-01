@@ -8,10 +8,16 @@ Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
 Plug 'editorconfig/editorconfig-vim'
 Plug 'aliou/bats.vim'
+Plug 'rust-lang/rust.vim'
+Plug 'majutsushi/tagbar'
+Plug 'xolox/vim-easytags'
+Plug 'xolox/vim-misc'
 if has('nvim')
   source ~/.nvimrc
 endif
 call plug#end()
+
+let g:rustfmt_autosave = 1
 
 if !has('nvim')
   nmap <Enter> o<Esc>
@@ -26,7 +32,13 @@ nnoremap tt :TrailerTrim<Enter>
 nnoremap <C-i> i_<Esc>r
 inoremap <S-Insert> <Esc>pi
 " copy the current character until the 80th column (i.e. block comments)
-nnoremap <C-b> y $80p079ld$
+nnoremap <C-k> y $80p079ld$
+nnoremap <C-b> :TagbarToggle<Enter>
+
+" prompt to reload buffer _before_ saving
+" https://vi.stackexchange.com/a/13092/15711
+set autoread
+au FocusGained,BufEnter * :checktime
 
 " o<pre><code>^M - insert '<pre><code>' on the next line
 " </code></pre> - insert on the following line
@@ -38,6 +50,14 @@ nnoremap <C-b> y $80p079ld$
 " A^[[3~ - go to the end of the line and delete forwards
 " use case: insert a code literal containing '>' in an html document
 let @c='o<pre><code></code></pre>^P?<code>?1:.,/<\/code>/-1s/>/\&gt;/g``kA[3~'
+
+" converts SCREAMING_SNAKE_CASE to PascalCase
+" \u - uppercase letter
+" \(\u\)\(\u*\) - the first uppercase letter than 0+ following
+"   (we need them separate for the backreferences later)
+" \(\(\u\)\(\u*\)_\)* - it can happen 0+ times
+" \L - the backreference, but with all the letters converted to lowercase
+let @C='%s#\(\(\u\)\(\u*\)_\)*\(\u\)\(\u*\) #\u\2\L\3\u\4\L\5 #'
 
 " mostly copied from https://github.com/charlesdaniels/dotfiles/blob/master/provision/overlay/.vimrc
 " Thanks, Charles!

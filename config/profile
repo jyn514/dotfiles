@@ -297,6 +297,7 @@ PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET ▶️ "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
+add_path ~/.cargo/bin
 stty -ixon
 eval $(dircolors)
 l
