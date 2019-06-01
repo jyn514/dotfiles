@@ -12,13 +12,33 @@ Plug 'rust-lang/rust.vim'
 Plug 'majutsushi/tagbar'
 Plug 'xolox/vim-easytags'
 Plug 'xolox/vim-misc'
+Plug 'dhruvasagar/vim-markify'
+Plug 'prabirshrestha/async.vim'
+Plug 'prabirshrestha/vim-lsp'
+Plug 'prabirshrestha/asyncomplete.vim'
+Plug 'prabirshrestha/asyncomplete-lsp.vim'
+
+if executable('rls')
+    au User lsp_setup call lsp#register_server({
+        \ 'name': 'rls',
+        \ 'cmd': {server_info->['rls']},
+        \ 'whitelist': ['rust'],
+        \ })
+endif
+
 if has('nvim')
   source ~/.nvimrc
 endif
 call plug#end()
 
+" run `cargo fmt` on save
 let g:rustfmt_autosave = 1
+" ctags for rust
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
+
+" https://stackoverflow.com/a/563625/7669110
+cnoremap <M-Left> <C-T>
+cnoremap <M-Right> <C-]>
 
 if !has('nvim')
   nmap <Enter> o<Esc>
@@ -76,6 +96,7 @@ set ffs=unix
 set mouse=a
 " reduce pause after <Esc-O>
 set ttimeoutlen=50
+set autowrite
 
 " highlighting
 set hlsearch
