@@ -18,6 +18,7 @@ endif
 call plug#end()
 
 let g:rustfmt_autosave = 1
+let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
 
 if !has('nvim')
   nmap <Enter> o<Esc>
