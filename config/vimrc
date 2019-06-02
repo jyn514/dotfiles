@@ -13,18 +13,15 @@ Plug 'majutsushi/tagbar'
 Plug 'xolox/vim-easytags'
 Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
-Plug 'prabirshrestha/async.vim'
-Plug 'prabirshrestha/vim-lsp'
-Plug 'prabirshrestha/asyncomplete.vim'
-Plug 'prabirshrestha/asyncomplete-lsp.vim'
+" these work but are kind of distracting, I turned them off
+"Plug 'w0rp/ale' " Async vim language server client
+"Plug 'Valloric/YouCompleteMe', {'do': './install.py --rust-completer'} " autocomplete
 
-if executable('rls')
-    au User lsp_setup call lsp#register_server({
-        \ 'name': 'rls',
-        \ 'cmd': {server_info->['rls']},
-        \ 'whitelist': ['rust'],
-        \ })
-endif
+" Auto completion
+let g:ycm_autoclose_preview_window_after_completion = 1
+let g:ale_completion_enabled = 1
+let g:ale_linters = {'rust': ['rls']}
+let g:ale_set_highlights = 0
 
 if has('nvim')
   source ~/.nvimrc
@@ -37,8 +34,8 @@ let g:rustfmt_autosave = 1
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
 
 " https://stackoverflow.com/a/563625/7669110
-cnoremap <M-Left> <C-T>
-cnoremap <M-Right> <C-]>
+nnoremap <M-Left> <C-T>
+nnoremap <M-Right> <C-]>
 
 if !has('nvim')
   nmap <Enter> o<Esc>
