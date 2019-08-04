@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -eu
+
 # replicate the 'drag and drop' directory merge of Windows Explorer
 
 if [ $# -eq 0 ]; then
@@ -16,11 +18,23 @@ fi
 
 dest="$(realpath "$dest")"
 
+device_number() {
+	stat -c "%d" "$1"
+}
+
 # https://unix.stackexchange.com/a/172402
 # -v: verbose
-# -l: use hard links to reduce IO
 # -n: don't copy files that already exist
 # -r: recursive
-cp -rnlv "$source"/* "$dest"
+FLAGS=vnr
 
-rm -r "$1"
+if [ $(device_number "$source") = $(device_number "$dest") ]; then
+	# -l: use hard links to reduce IO
+	FLAGS=l$FLAGS
+fi
+cp -$FLAGS "$source"/* "$dest"
+
+read -p "Remove old directory? y/[n] " REPLY
+if [ $REPLY = y ]; then
+	rm -r "$1"
+fi
