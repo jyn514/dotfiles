@@ -25,6 +25,9 @@ mkdc () { mkcd "$@"; }
 # follow symlinks by default
 rg () { command rg -L "$@"; }
 
+# show human-readable dates with offsets by default
+dmesg () { command dmesg -e "$@"; }
+
 dkr () { docker "$@"; }
 dkrc () { docker-compose "$@"; }
 # this shadows a mailcap command, but I've never used mailcap in my life
@@ -87,7 +90,7 @@ gdb () { command gdb -q "$@"; }
 tasks () {
 	make -npRr | \
 	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
-	grep -v "^[#`printf '\t'`]" | sed 's/:$//'
+	grep -v "^[#`printf '\t'`]" | sed 's/:.*$//'
 }
 
 # same as tasks, but show body of recipe
@@ -270,9 +273,7 @@ if ps -p $$ | grep bash > /dev/null && \
 fi
 
 ansi_escape () {
-	# dash does not respect command
-	# TODO: find a workaround for zsh
-	"$(which printf)" "\01$1\02"
+	command printf "\01$1\02"
 }
 
 PROMPT_DIRTRIM=2
