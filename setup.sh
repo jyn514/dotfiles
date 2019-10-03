@@ -69,7 +69,7 @@ setup_shell () {
 			echo using current shell "$shell"
 			break
 		elif exists shell; then
-			chsh -s "$(which $shell)"
+			chsh -s "$(command -v $shell)"
 			break
 		fi
 	done
@@ -78,14 +78,14 @@ unset default_shell shell
 
 setup_python () {
 	echo Installing python packages in python.txt
-	if [ -x "$(which pip)" ]; then
-		PIP="$(which pip)"
-	elif [ -x "$(which python)" ] && "$(which python)" -m pip > /dev/null; then
-		PIP="$(which python) -m pip"
+	if [ -x "$(command -v pip)" ]; then
+		PIP="$(command -v pip)"
+	elif [ -x "$(command -v python)" ] && "$(command -v python)" -m pip > /dev/null; then
+		PIP="$(command -v python) -m pip"
 	fi
 
 	# may take a while
-	if ! [ -z "$PIP" ]; then
+	if [ -n "$PIP" ]; then
 		$PIP install --user -r python.txt
 	else
 		echo pip not found
@@ -131,9 +131,9 @@ setup_install () {
 		bin/keepassxc >/dev/null 2>&1 &
 	fi
 	mkdir -p ~/.local/bin
-	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(which bat)" ~/.local/bin/cat; fi
-	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(which python3)" ~/.local/bin/python; fi
-	if ! exists pip && exists pip3; then ln -sf "$(which pip3)" ~/.local/bin/pip; fi
+	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
+	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
+	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 }
 
 setup_all () {
@@ -165,7 +165,7 @@ cd "$(realpath "$(dirname "$0")")"
 . lib/lib.sh
 
 message
-while read choice; do
+while read -r choice; do
 	case $choice in
 		q*|e*|0) exit 0;;
 		dot*|bas*|1) setup_basics; message;;
