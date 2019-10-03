@@ -124,7 +124,11 @@ clean_shell () {
     env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
 }
 
-ls () { command ls --color=auto "$@"; }
+if ls --color=auto 2>/dev/null; then
+   ls () { command ls --color=auto "$@"; }
+else
+   ls () { command ls -G "$@"; }
+fi
 
 # prompt before removing
 rm () { command rm -i "$@"; }
@@ -300,5 +304,5 @@ add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
 add_path ~/.cargo/bin
 stty -ixon
-eval $(dircolors)
+command -v dircolors >/dev/null 2>&1 && eval $(dircolors)
 l
