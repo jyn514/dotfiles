@@ -1,4 +1,4 @@
 #!/bin/sh
 echo
-echo $PATH | tr ':' '\n' | sort
+echo "$PATH" | tr ':' '\n' | sort
 echo

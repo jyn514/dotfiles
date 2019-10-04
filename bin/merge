@@ -28,13 +28,14 @@ device_number() {
 # -r: recursive
 FLAGS=vnr
 
-if [ $(device_number "$source") = $(device_number "$dest") ]; then
+if [ "$(device_number "$source")" = "$(device_number "$dest")" ]; then
 	# -l: use hard links to reduce IO
 	FLAGS=l$FLAGS
 fi
 cp -$FLAGS "$source"/* "$dest"
 
-read -p "Remove old directory? y/[n] " REPLY
-if [ $REPLY = y ]; then
+printf "Remove old directory? y/[n] "
+read -r REPLY
+if [ "$REPLY" = y ]; then
 	rm -r "$1"
 fi

@@ -1,10 +1,8 @@
 #!/bin/sh
 
 if [ $# -eq 0 ]; then
-	echo usage: $(basename "$0") [query [queries . . . ]]
+	echo "usage: $(basename "$0") [query [queries . . . ]]"
 	exit 1
 fi
 
-COMMAND="$(realpath "$(dirname "$0")")/ddg"
-
-"$COMMAND" site:youtube.com/playlist "$@"
+"$(realpath "$(dirname "$0")")/ddg" "$COMMAND" site:youtube.com/playlist "$@"
