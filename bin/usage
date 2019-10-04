@@ -1,4 +1,4 @@
 #!/bin/sh
-[ $# -eq 1 ] || { echo "Usage: `basename $0` <path>"; exit 1; }
+[ $# -eq 1 ] || { echo "usage: $(basename "$0") <path>"; exit 1; }
 
 du -h -x -d 1 "$1" 2>/dev/null | sort -h -r
