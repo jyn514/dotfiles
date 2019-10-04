@@ -1,10 +1,10 @@
-declare -r BASH_PROFILE_READ
+BASH_PROFILE_READ=1
 if [ -z $MY_GITHUB ]; then
 	source ~/.profile
 fi
 shopt -s histappend
 shopt -s checkwinsize
-shopt -s globstar
+[ "$BASH_VERSINFO" -gt 3 ] && shopt -s globstar
 shopt -s checkhash
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
@@ -61,7 +61,6 @@ fi
 
 # https://unix.stackexchange.com/questions/245331
 .. () { cd ..; }
-? () { help; }
 
 # list directory after changing
 cd () {
