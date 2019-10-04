@@ -1,36 +1,6 @@
 #!/bin/sh
 set -eu
 
-startswith() {
-	case "$1" in
-		"$2"*) return 0;;
-		*) return 1;;
-	esac
-}
-
-realdir() {
-	cd "$1" && pwd -P
-}
-
-command -v realpath >/dev/null 2>&1 || realpath() {
-	if [ -d "$1" ]; then
-		realdir "$1"
-		return
-	fi
-	dir="$(realdir "$(dirname "$1")")"
-	if [ -L "$1" ]; then
-		file="$(readlink "$1")"
-	else
-		file="$1"
-	fi
-	# absolute path, ignore directory
-	if startswith "$file" /; then
-		echo "$file"
-		return
-	fi
-	echo "$dir/$file"
-}
-
 setup_basics () {
 	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
@@ -57,6 +27,9 @@ setup_basics () {
 	fi
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
+	if [ "$HAS_REALPATH" = 0 ]; then
+		cat < lib/realpath.sh >> ~/.local/profile
+	fi
 	. ~/.profile
 unset DEST LOCAL f
 }
@@ -161,8 +134,14 @@ Choose setup to run: "
 
 # main
 
-cd "$(realpath "$(dirname "$0")")"
+cd "$(dirname "$0")"
 . lib/lib.sh
+if ! exists realpath; then
+	. lib/realpath.sh
+	HAS_REALPATH=0
+else
+	HAS_REALPATH=1
+fi
 
 message
 while read -r choice; do
