@@ -62,6 +62,7 @@ fi
 # https://unix.stackexchange.com/questions/245331
 .. () { cd ..; }
 ? () { help; }
+rust-gdb () { command rust-gdb -q "$@"; }
 
 # list directory after changing
 cd () {

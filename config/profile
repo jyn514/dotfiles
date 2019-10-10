@@ -66,12 +66,6 @@ package () { what_package "$@"; }
 
 exa () { command exa --git "$@"; }
 
-# UUOC
-cat () {
-	[ -t 1 ] || ansi -n --red --bold --underline 'UUOC' > /dev/tty
-	command cat "$@"
-}
-
 # don't replace crontab without warning
 crontab () { command crontab -i "$@"; }
 
