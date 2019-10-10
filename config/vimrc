@@ -1,16 +1,16 @@
 call plug#begin('~/.vim/plugged')
-Plug 'mzlogin/vim-markdown-toc'
-Plug 'csexton/trailertrash.vim'
+Plug 'mzlogin/vim-markdown-toc', { 'for': 'markdown' }
+Plug 'csexton/trailertrash.vim', { 'on': 'TrailerTrim' }
 Plug 'Chiel92/vim-autoformat'
-Plug 'vim-latex/vim-latex'
+Plug 'vim-latex/vim-latex', { 'for': 'latex' }
 Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
 Plug 'editorconfig/editorconfig-vim'
-Plug 'aliou/bats.vim'
-Plug 'rust-lang/rust.vim'
-Plug 'majutsushi/tagbar'
 Plug 'xolox/vim-easytags'
+Plug 'aliou/bats.vim', { 'for': 'bats' }
+Plug 'rust-lang/rust.vim', { 'for': 'rust' }
+Plug 'majutsushi/tagbar', { 'on': 'TagbarToggle' }
 Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
 " these work but are kind of distracting, I turned them off
