@@ -34,9 +34,9 @@ dkrc () { docker-compose "$@"; }
 compose () { docker-compose "$@"; }
 
 what_belongs () {
-	if which dpkg > /dev/null; then
+	if command -v dpkg > /dev/null; then
 		dpkg -L "$@"
-	elif which rpm > /dev/null; then
+	elif command -v rpm > /dev/null; then
 		rpm -ql "$@"
 	else
 		echo "no supported package manager found" >&2
@@ -44,17 +44,17 @@ what_belongs () {
 }
 
 what_runs () {
-	for file in `what_belongs "$@"`; do
+	for file in $(what_belongs "$@"); do
 		[ -f "$file" ] && [ -x "$file" ] && echo "$file"
 	done
 }
 
 what_package () {
 	prog="$1"; shift
-	if which dpkg > /dev/null; then
-		dpkg -S "$(which "$prog")" "$@"
-	elif which rpm > /dev/null; then
-		rpm -qf "$(which "$prog")" "$@"
+	if command -v dpkg > /dev/null; then
+		dpkg -S "$(command -v "$prog")" "$@"
+	elif command -v rpm > /dev/null; then
+		rpm -qf "$(command -v "$prog")" "$@"
 	else
 		echo "no supported package manager found" >&2
 	fi
@@ -71,9 +71,9 @@ crontab () { command crontab -i "$@"; }
 
 # show a makefile as a dependency graph
 visualize () {
-	which makefile2graph > /dev/null || { echo "makefile2graph not found"; return 1; }
-	which dot > /dev/null || { echo "dot not found"; return 1; }
-	which xdot > /dev/null || { echo "xdot not found"; return 1; }
+	command -v makefile2graph > /dev/null || { echo "makefile2graph not found"; return 1; }
+	command -v dot > /dev/null || { echo "dot not found"; return 1; }
+	command -v xdot > /dev/null || { echo "xdot not found"; return 1; }
 	makefile2graph | dot | xdot /dev/stdin
 }
 
@@ -84,7 +84,7 @@ gdb () { command gdb -q "$@"; }
 tasks () {
 	make -npRr | \
 	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
-	grep -v "^[#`printf '\t'`]" | sed 's/:.*$//'
+	grep -v "^[#$(printf '\t')]" | sed 's/:.*$//'
 }
 
 # same as tasks, but show body of recipe
@@ -115,10 +115,14 @@ powershell () { pwsh "$@"; }
 save_power () { sudo powertop --auto-tune; }
 
 clean_shell () {
-    env -i HOME=$HOME TERM=$TERM $(which bash) --noprofile --rcfile /etc/profile
+    env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-ls () { command ls --color=auto "$@"; }
+if ls --color=auto 2>/dev/null; then
+   ls () { command ls --color=auto "$@"; }
+else
+   ls () { command ls -G "$@"; }
+fi
 
 # prompt before removing
 rm () { command rm -i "$@"; }
@@ -206,7 +210,7 @@ ocd () {
 	OCD_FILTER_REGEX='(^(ba|z)?sh)|(^[gn]?vim)'
 	OCD_FILE_LIST=""
 
-	if [ -x "$(which lsof 2>/dev/null)" ] ; then
+	if [ -x "$(command -v lsof 2>/dev/null)" ] ; then
 		OCD_FILE_LIST="$(lsof -u $(whoami) | grep -E $OCD_FILTER_REGEX | awk '{print($9);}' | grep -P '^[/]' | grep -P -v $OCD_BLACKLIST_REGEX | sort | uniq)"
 	fi
 
@@ -252,9 +256,7 @@ export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
 
-MAKEFLAGS='-j4'
-GNUMAKEFLAGS='--warn-undefined-variables'
-
+export MAKEFLAGS='-j4'
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
@@ -262,7 +264,7 @@ export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 # bash shell and haven't sourced bashrc
 # -p excludes parent processes (cygwin has habit of running 'bash' then forking)
 if ps -p $$ | grep bash > /dev/null && \
-   ! [ -v $BASH_PROFILE_READ ] ; then
+   ! [ -v "$BASH_PROFILE_READ" ] ; then
 	. ~/.bashrc
 fi
 
@@ -287,12 +289,12 @@ YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 PS1="($YELLOW$(basename -- "$0")"
-[ $(id -u) -eq 0 ] && PS1="$PS1$RESET,${RED}root"
+[ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET ▶️ "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
 add_path ~/.cargo/bin
 stty -ixon
-eval $(dircolors)
+command -v dircolors >/dev/null 2>&1 && eval "$(dircolors)"
 l
