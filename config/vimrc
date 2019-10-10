@@ -7,21 +7,14 @@ Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
 Plug 'editorconfig/editorconfig-vim'
-Plug 'xolox/vim-easytags'
 Plug 'aliou/bats.vim', { 'for': 'bats' }
 Plug 'rust-lang/rust.vim', { 'for': 'rust' }
 Plug 'majutsushi/tagbar', { 'on': 'TagbarToggle' }
 Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
-" these work but are kind of distracting, I turned them off
-"Plug 'w0rp/ale' " Async vim language server client
-"Plug 'Valloric/YouCompleteMe', {'do': './install.py --rust-completer'} " autocomplete
-
-" Auto completion
-let g:ycm_autoclose_preview_window_after_completion = 1
-let g:ale_completion_enabled = 1
-let g:ale_linters = {'rust': ['rls']}
-let g:ale_set_highlights = 0
+Plug 'SirVer/ultisnips'
+Plug 'honza/vim-snippets'
+call plug#end()
 
 if has('nvim')
   source ~/.nvimrc
