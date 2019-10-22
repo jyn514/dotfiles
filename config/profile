@@ -262,9 +262,7 @@ export MAKEFLAGS='-j4'
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-# -p excludes parent processes (cygwin has habit of running 'bash' then forking)
-if ps -p $$ | grep bash > /dev/null && \
-   ! [ -v "$BASH_PROFILE_READ" ] ; then
+if [ "$BASH_VERSION" ] && ! [ -v "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
 
