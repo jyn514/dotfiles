@@ -294,5 +294,4 @@ add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
 add_path ~/.cargo/bin
 stty -ixon
-command -v dircolors >/dev/null 2>&1 && eval "$(dircolors)"
 l
