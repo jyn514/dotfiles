@@ -50,7 +50,7 @@ what_runs () {
 }
 
 what_package () {
-	prog="$1"; shift
+	prog="$(realpath "$1")"; shift
 	if command -v dpkg > /dev/null; then
 		dpkg -S "$(command -v "$prog")" "$@"
 	elif command -v rpm > /dev/null; then
