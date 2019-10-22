@@ -19,12 +19,27 @@ call plug#end()
 if has('nvim')
   source ~/.nvimrc
 endif
-call plug#end()
 
-" run `cargo fmt` on save
-let g:rustfmt_autosave = 1
+function Paste()
+  put
+endfunction
+
+" Auto completion
+let g:UltiSnipsExpandTrigger="<tab>"
+let g:UltiSnipsJumpForwardTrigger="<tab>"
+let g:UltiSnipsJumpBackwardTrigger="<s-tab>"
+
 " ctags for rust
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
+
+autocmd BufRead,BufNewFile /home/joshua/src/oil/* call TwoSpacesSoftTabs()
+autocmd BufRead,BufNewFile /home/joshua/Documents/Programming/oil/* call TwoSpacesSoftTabs()
+" run `cargo fmt` on save
+autocmd BufRead /home/joshua/Documents/Programming/rust/rcc/* let g:rustfmt_autosave = 1
+" this comes with security issues, see https://vi.stackexchange.com/a/5059
+"set exrc
+" this sort of helps, but it doesn't apply to files owned by you
+"set secure
 
 " https://stackoverflow.com/a/563625/7669110
 nnoremap <M-Left> <C-T>
