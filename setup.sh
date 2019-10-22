@@ -124,8 +124,10 @@ setup_install () {
 	echo Installing global packages
 	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
+	elif exists su; then
+		su root -c ./lib/setup_sudo.sh
 	else
-		su root -c ./lib/setup_sudo.sh;
+		./lib/setup_sudo.sh
 	fi
 	echo Installing user packages
 	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
