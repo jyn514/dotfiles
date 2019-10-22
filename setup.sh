@@ -38,6 +38,8 @@ setup_basics () {
 	for f in "$(realpath config)"/*; do
 		if [ "$f" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
+		elif [ "$f" = "config.fish" ]; then
+			DEST="$HOME/.config/fish/config.fish"
 		else
 			DEST="$HOME/.$(basename "$f")"
 		fi
@@ -57,6 +59,7 @@ setup_basics () {
 	fi
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
+	set +ue
 	. ~/.profile
 unset DEST LOCAL f
 }
