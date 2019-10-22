@@ -36,9 +36,10 @@ setup_basics () {
 	LOCAL="$HOME/.local/config"
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
-		if [ "$f" = "youtube-dl" ]; then
+		base="$(basename "$f")"
+		if [ "$base" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
-		elif [ "$f" = "config.fish" ]; then
+		elif [ "$base" = "config.fish" ]; then
 			DEST="$HOME/.config/fish/config.fish"
 		else
 			DEST="$HOME/.$(basename "$f")"
