@@ -118,7 +118,7 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls --color=auto 2>/dev/null; then
+if ls --color=auto >/dev/null 2>/dev/null; then
    ls () { command ls --color=auto "$@"; }
 else
    ls () { command ls -G "$@"; }
