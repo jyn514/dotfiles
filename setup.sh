@@ -67,17 +67,16 @@ unset DEST LOCAL f
 
 setup_shell () {
 	echo Changing default shell
-	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
 	for shell in zsh fish bash; do
-		if echo "$default_shell" | grep $shell > /dev/null; then
+		if echo "$SHELL" | grep $shell; then
 			echo using current shell "$shell"
 			break
-		elif exists shell; then
-			chsh -s "$(command -v $shell)"
+		elif exists $shell; then
+			chsh -s $shell
 			break
 		fi
 	done
-unset default_shell shell
+unset shell
 }
 
 setup_python () {
