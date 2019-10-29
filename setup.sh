@@ -28,7 +28,7 @@ setup_basics () {
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
 	if [ "$HAS_REALPATH" = 0 ]; then
-		cat < lib/realpath.sh >> ~/.local/profile
+		grep -v 'set -.*e' < lib/realpath.sh >> ~/.local/profile
 	fi
 	. ~/.profile
 unset DEST LOCAL f
