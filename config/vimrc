@@ -1,37 +1,45 @@
 call plug#begin('~/.vim/plugged')
-Plug 'mzlogin/vim-markdown-toc'
-Plug 'csexton/trailertrash.vim'
+Plug 'mzlogin/vim-markdown-toc', { 'for': 'markdown' }
+Plug 'csexton/trailertrash.vim', { 'on': 'TrailerTrim' }
 Plug 'Chiel92/vim-autoformat'
-Plug 'vim-latex/vim-latex'
+Plug 'vim-latex/vim-latex', { 'for': 'latex' }
 Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
 Plug 'editorconfig/editorconfig-vim'
-Plug 'aliou/bats.vim'
-Plug 'rust-lang/rust.vim'
-Plug 'majutsushi/tagbar'
-Plug 'xolox/vim-easytags'
+Plug 'aliou/bats.vim', { 'for': 'bats' }
+Plug 'rust-lang/rust.vim', { 'for': 'rust' }
+Plug 'majutsushi/tagbar', { 'on': 'TagbarToggle' }
 Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
-" these work but are kind of distracting, I turned them off
-"Plug 'w0rp/ale' " Async vim language server client
-"Plug 'Valloric/YouCompleteMe', {'do': './install.py --rust-completer'} " autocomplete
-
-" Auto completion
-let g:ycm_autoclose_preview_window_after_completion = 1
-let g:ale_completion_enabled = 1
-let g:ale_linters = {'rust': ['rls']}
-let g:ale_set_highlights = 0
+Plug 'SirVer/ultisnips'
+Plug 'honza/vim-snippets'
+call plug#end()
 
 if has('nvim')
   source ~/.nvimrc
 endif
-call plug#end()
 
-" run `cargo fmt` on save
-let g:rustfmt_autosave = 1
+function Paste()
+  put
+endfunction
+
+" Auto completion
+let g:UltiSnipsExpandTrigger="<tab>"
+let g:UltiSnipsJumpForwardTrigger="<tab>"
+let g:UltiSnipsJumpBackwardTrigger="<s-tab>"
+
 " ctags for rust
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
+
+autocmd BufRead,BufNewFile /home/joshua/src/oil/* call TwoSpacesSoftTabs()
+autocmd BufRead,BufNewFile /home/joshua/Documents/Programming/oil/* call TwoSpacesSoftTabs()
+" run `cargo fmt` on save
+autocmd BufRead /home/joshua/Documents/Programming/rust/rcc/* let g:rustfmt_autosave = 1
+" this comes with security issues, see https://vi.stackexchange.com/a/5059
+"set exrc
+" this sort of helps, but it doesn't apply to files owned by you
+"set secure
 
 " https://stackoverflow.com/a/563625/7669110
 nnoremap <M-Left> <C-T>

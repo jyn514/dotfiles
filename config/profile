@@ -50,7 +50,7 @@ what_runs () {
 }
 
 what_package () {
-	prog="$1"; shift
+	prog="$(realpath "$1")"; shift
 	if command -v dpkg > /dev/null; then
 		dpkg -S "$(command -v "$prog")" "$@"
 	elif command -v rpm > /dev/null; then
@@ -65,12 +65,6 @@ runs () { what_runs "$@"; }
 package () { what_package "$@"; }
 
 exa () { command exa --git "$@"; }
-
-# UUOC
-cat () {
-	[ -t 1 ] || ansi -n --red --bold --underline 'UUOC' > /dev/tty
-	command cat "$@"
-}
 
 # don't replace crontab without warning
 crontab () { command crontab -i "$@"; }
@@ -124,7 +118,7 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls --color=auto 2>/dev/null; then
+if ls --color=auto >/dev/null 2>/dev/null; then
    ls () { command ls --color=auto "$@"; }
 else
    ls () { command ls -G "$@"; }
@@ -268,9 +262,7 @@ export MAKEFLAGS='-j4'
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 # bash shell and haven't sourced bashrc
-# -p excludes parent processes (cygwin has habit of running 'bash' then forking)
-if ps -p $$ | grep bash > /dev/null && \
-   [ -z "$BASH_PROFILE_READ" ] ; then
+if [ "$BASH_VERSION" ] && ! [ -v "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
 
@@ -302,5 +294,4 @@ add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path ~/.node/bin
 add_path ~/.cargo/bin
 stty -ixon
-command -v dircolors >/dev/null 2>&1 && eval "$(dircolors)"
 l
