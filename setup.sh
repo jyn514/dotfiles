@@ -6,8 +6,11 @@ setup_basics () {
 	LOCAL="$HOME/.local/config"
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
-		if [ "$f" = "youtube-dl" ]; then
+		base="$(basename "$f")"
+		if [ "$base" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
+		elif [ "$base" = "config.fish" ]; then
+			DEST="$HOME/.config/fish/config.fish"
 		else
 			DEST="$HOME/.$(basename "$f")"
 		fi
@@ -30,23 +33,23 @@ setup_basics () {
 	if [ "$HAS_REALPATH" = 0 ]; then
 		grep -v 'set -.*e' < lib/realpath.sh >> ~/.local/profile
 	fi
+	set +ue
 	. ~/.profile
 unset DEST LOCAL f
 }
 
 setup_shell () {
 	echo Changing default shell
-	default_shell=$(grep "$USER" /etc/passwd | cut -d ':' -f 7)
 	for shell in zsh fish bash; do
-		if echo "$default_shell" | grep $shell > /dev/null; then
+		if echo "$SHELL" | grep $shell; then
 			echo using current shell "$shell"
 			break
-		elif exists shell; then
-			chsh -s "$(command -v $shell)"
+		elif exists $shell; then
+			chsh -s $shell
 			break
 		fi
 	done
-unset default_shell shell
+unset shell
 }
 
 setup_python () {
@@ -93,8 +96,10 @@ setup_install () {
 	echo Installing global packages
 	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
+	elif exists su; then
+		su root -c ./lib/setup_sudo.sh
 	else
-		su root -c ./lib/setup_sudo.sh;
+		./lib/setup_sudo.sh
 	fi
 	echo Installing user packages
 	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then

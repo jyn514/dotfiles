@@ -38,6 +38,7 @@ TIMESTAMP="$(date +"%Y-%m-%d_%H-%M-%S")"
 GS_LOG_PATH="/tmp/pdf-optimize-$TIMESTAMP.log"
 GS_OPTS=" -sDEVICE=pdfwrite \
 -dDetectDuplicateImages=true \
+-dPDFSETTINGS=/ebook
 -dCompatibilityLevel=1.4 \
 -dColorConversionStrategy=/LeaveColorUnchanged \
 -dDownsampleMonoImages=false \
