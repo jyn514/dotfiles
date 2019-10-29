@@ -11,7 +11,9 @@ add_path () {
 	fi
 }
 
-open () { xdg-open "$@"; }
+if ! [ -x "$(command -v open)" ]; then
+	open () { xdg-open "$@"; }
+fi
 
 yts () { youtube_search "$@"; }
 
