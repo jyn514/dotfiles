@@ -288,7 +288,7 @@ GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
-PS1="($YELLOW$(basename -- "$0")"
+PS1="($YELLOW$(basename -- "$0")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET ▶️ "
 
