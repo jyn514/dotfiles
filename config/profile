@@ -248,9 +248,6 @@ if [ -d ~/.local/bin ]; then
 fi
 
 export ENV="$HOME/.profile"
-export GEM_HOME=~/.local/lib/gem/ruby/2.3.0
-export GEM_PATH="$GEM_HOME:/var/lib/ruby/gems/1.8"
-add_path "$GEM_HOME/bin"
 export EDITOR=vim
 export VISUAL=vim
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
