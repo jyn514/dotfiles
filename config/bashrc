@@ -15,9 +15,7 @@ fi
 HISTCONTROL=ignoredups
 
 # for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
-HISTSIZE=200
-# non-numeric means no truncation
-HISTFILESIZE=no_delete
+HISTSIZE=-1  # never delete
 #############
 
 # set variable identifying the chroot you work in (used in the prompt below)

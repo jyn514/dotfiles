@@ -12,3 +12,4 @@ node_modules
 *.pyc
 .idea/
 .gdb_history
+.vscode/

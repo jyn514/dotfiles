@@ -39,3 +39,5 @@
 	smtpserverport = 587
 	smtpencryption = tls
 	smtpuser = jyn514@gmail.com
+[pull]
+	rebase = true
