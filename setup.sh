@@ -45,7 +45,7 @@ setup_shell () {
 			echo using current shell "$shell"
 			break
 		elif exists $shell; then
-			chsh -s $shell
+			chsh -s "$(command -v $shell)"
 			break
 		fi
 	done
