@@ -11,7 +11,7 @@ add_path () {
 	fi
 }
 
-if ! [ -x "$(command -v open)" ]; then
+if [ -x "$(command -v xdg-open)" ]; then
 	open () { xdg-open "$@"; }
 fi
 
