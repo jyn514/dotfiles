@@ -25,6 +25,5 @@ download () {
 # $1 should have the format username/repo
 latest_release() {
 	curl --silent https://api.github.com/repos/"$1"/releases/latest | \
-		jq --raw-output '.assets | .[].browser_download_url' | \
-		grep .deb
+		jq --raw-output '.name'
 }
