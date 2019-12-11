@@ -15,15 +15,19 @@ install_features () {
 		   texlive-base python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
 		   curl jq
+		# TODO: this should work for platforms besides amd64 :(
 		if ! exists bat; then
-			download "$(latest_version sharkdp/bat)" bat.deb
-			PACKAGES="$PACKAGES bat.deb"
+			VERSION="$(latest_release sharkdp/bat)"
+			VERSION_NO_V="$(echo "$VERSION" | tr -d v)"
+			download https://github.com/sharkdp/bat/releases/download/"$VERSION/bat_$VERSION_NO_V"_amd64.deb bat.deb
+			PACKAGES="$PACKAGES ./bat.deb"
 		fi
 		if ! exists rg; then
-			download "$(latest_version BurntSushi/ripgrep)" rg.deb
-			PACKAGES="$PACKAGES rg.deb"
+			VERSION="$(latest_release BurntSushi/ripgrep)"
+			download https://github.com/burntsushi/ripgrep/releases/download/"$VERSION"/ripgrep_"$VERSION"_amd64.deb rg.deb
+			PACKAGES="$PACKAGES ./rg.deb"
 		fi
-		[ -n "$PACKAGES" ] && apt install $PACKAGES
+		[ -n "$PACKAGES" ] && chmod a+r $PACKAGES && apt install $PACKAGES
 	fi
 }
 
@@ -44,7 +48,7 @@ install_security () {
 
 remove_unwanted () {
 	dpkg --purge apt-xapian-index
-	purge
+	apt autoremove --purge
 }
 
 DIR="$(dirname "$(realpath "$0")")"
