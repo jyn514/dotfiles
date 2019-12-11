@@ -55,7 +55,7 @@
 <theme>
   <!--  Lubuntu specific : Theme = Lubuntu and font = Ubuntu
   -->
-  <name>Lubuntu-default</name>
+  <name>Lubuntu Arc</name>
   <titleLayout>NLIMC</titleLayout>
   <!--
     available characters are NDSLIMC, each can occur at most once.
@@ -528,6 +528,14 @@
       <command>lxsession-default quit</command>
     </action>
   </keybind>
+
+  <!-- Custom -->
+  <keybind key="C-W-k">
+    <action name="Execute">
+      <command>keepassxc</command>
+    </action>
+  </keybind>
+
 </keyboard>
 
 <mouse>
