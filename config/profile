@@ -254,6 +254,8 @@ export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quo
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
+export GOPATH=~/.local/lib/go
+export GOBIN="$GOPATH/bin"
 
 export MAKEFLAGS='-j4'
 # for http://overthewire.org
