@@ -13,6 +13,7 @@ download () {
 	else
 		OUTPUT="$(mktemp)"
 	fi
+	echo "downloading $1"
 	if exists curl; then
 		curl -L "$1" > "$OUTPUT"
 	else
