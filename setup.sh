@@ -102,12 +102,6 @@ setup_install () {
 		./lib/setup_sudo.sh
 	fi
 	echo Installing user packages
-	if ! { exists keepassxc || [ -x bin/keepassxc ]; }; then
-		download "https://github.com/keepassxreboot/keepassxc/releases/download/2.3.4/KeePassXC-2.3.4-x86_64.AppImage" keepassxc
-		mv keepassxc bin
-		chmod +x bin/keepassxc
-		bin/keepassxc >/dev/null 2>&1 &
-	fi
 	mkdir -p ~/.local/bin
 	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
 	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
