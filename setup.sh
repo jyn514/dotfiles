@@ -11,6 +11,8 @@ setup_basics () {
 			DEST="$HOME/.config/youtube-dl/config"
 		elif [ "$base" = "config.fish" ]; then
 			DEST="$HOME/.config/fish/config.fish"
+		elif [ "$base" = openbox.xml ]; then
+			DEST="$HOME/.config/openbox/rc.xml"
 		else
 			DEST="$HOME/.$(basename "$f")"
 		fi
