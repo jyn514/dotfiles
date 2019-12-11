@@ -20,3 +20,11 @@ download () {
 	fi
 	printf "%s" "$OUTPUT"
 }
+
+# get the link for the latest github release of "$1"
+# $1 should have the format username/repo
+latest_release() {
+	curl --silent https://api.github.com/repos/"$1"/releases/latest | \
+		jq --raw-output '.assets | .[].browser_download_url' | \
+		grep .deb
+}
