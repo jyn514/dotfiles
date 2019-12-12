@@ -13,6 +13,8 @@ setup_basics () {
 			DEST="$HOME/.config/fish/config.fish"
 		elif [ "$base" = openbox.xml ]; then
 			DEST="$HOME/.config/openbox/rc.xml"
+		elif [ "$base" = grepme.toml ]; then
+			DEST="$HOME/.config/grepme.toml"
 		else
 			DEST="$HOME/.$(basename "$f")"
 		fi
@@ -24,6 +26,7 @@ setup_basics () {
 		ln -s "$(realpath "$f")" "$DEST"
 	done
 	if gpg -K | grep ultimate > /dev/null; then
+		mkdir -p ~/.config/git
 		echo '
 [commit]
 	gpgsign = true' >> ~/.config/git/config
