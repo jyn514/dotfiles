@@ -1,13 +1,5 @@
-# Useful
 pytest
 pylint
-psutil
-pycodestyle
-PyInstaller
-virtualenv
 xdot
-
-# My stuff
-notebook
-youtube-dl
-Flask
+grepme
+toml
