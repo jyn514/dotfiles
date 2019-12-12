@@ -30,8 +30,7 @@ rg () { command rg -L "$@"; }
 # show human-readable dates with offsets by default
 dmesg () { command dmesg -e "$@"; }
 
-dkr () { docker "$@"; }
-dkrc () { docker-compose "$@"; }
+dc () { docker-compose "$@"; }
 # this shadows a mailcap command, but I've never used mailcap in my life
 compose () { docker-compose "$@"; }
 
