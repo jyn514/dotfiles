@@ -536,6 +536,9 @@
     </action>
   </keybind>
 
+  <keybind key="W-1">
+    <action name="ToggleShade"/>
+  </keybind>
 </keyboard>
 
 <mouse>
