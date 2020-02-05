@@ -142,11 +142,7 @@ la () { ls -A "$@"; }
 l () { ls -F "$@"; }
 
 webpaste () {
-   nc termbin.com 9999 < "$@"
-}
-
-webpaste () {
-   nc termbin.com 9999 < "$@"
+   nc termbin.com 9999
 }
 
 ascii () { man ascii; }
