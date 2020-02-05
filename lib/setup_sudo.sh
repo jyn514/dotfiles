@@ -27,7 +27,10 @@ install_features () {
 			download https://github.com/burntsushi/ripgrep/releases/download/"$VERSION"/ripgrep_"$VERSION"_amd64.deb rg.deb
 			PACKAGES="$PACKAGES ./rg.deb"
 		fi
-		[ -n "$PACKAGES" ] && chmod a+r $PACKAGES && apt install $PACKAGES
+		if [ -n "$PACKAGES" ]; then
+			chmod a+r $PACKAGES
+			apt install $PACKAGES
+		fi
 	fi
 }
 
@@ -37,8 +40,10 @@ install_security () {
 	DEST=/etc/iptables/rules.v4
 	force=y
 	if [ -e "$DEST" ]; then
+		set +x
 		printf "$DEST already exists, overwrite? y/[n]: "
 		read -r force
+		set -x
 		[ "$force" = y ] && mv "$DEST" "$DEST".bak
 	fi
 	[ "$force" = y ] && ln -s "$DIR/iptables" "$DEST" || true
@@ -47,8 +52,7 @@ install_security () {
 }
 
 remove_unwanted () {
-	dpkg --purge apt-xapian-index
-	apt autoremove --purge
+	apt autoremove --purge apt-xapian-index
 }
 
 DIR="$(dirname "$(realpath "$0")")"
@@ -60,6 +64,8 @@ else
 	exit 1
 fi
 
+set -x
 install_security
 install_features
 remove_unwanted
+set +x
