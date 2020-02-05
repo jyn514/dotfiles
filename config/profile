@@ -165,8 +165,6 @@ pytime () { python -m timeit; }
 
 ubuntu () { docker run -it ubuntu; }
 
-vpn () { sudo openvpn --config /usr/local/etc/client.ovpn; }
-
 pip_upgrade_all () {
 	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
 }
