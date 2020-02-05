@@ -111,7 +111,34 @@ setup_install () {
 	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
 	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
+	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
+	install_rust
 }
+
+install_rust() {
+	if ! exists code; then
+		download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
+		PACKAGES="$PACKAGES ./code.deb"
+	fi
+	code --install-extension vscodevim.vim
+	if ! exists cargo; then
+		t=/tmp/rustup-init.sh
+		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
+		. "$CARGO_HOME/env"
+		rustup toolchain add nightly --profile minimal -c clippy -c miri
+		unset t
+	fi
+	mkdir -p ~/src/rust && cd ~/src/rust
+	for repo in https://github.com/jyn514/rcc https://github.com/rust-lang/docs.rs https://github.com/rust-analyzer/rust-analyzer; do
+		if ! [ -e "$(basename $repo)" ]; then
+			git clone $repo
+		fi
+	done
+	cd "$OLDPWD"
+	bin/reinstall-ra
+	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree
+}
+
 
 setup_all () {
 	echo Doing everything
