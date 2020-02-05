@@ -14,3 +14,6 @@
 set mark-symlinked-directories on
 
 $include /etc/inputrc
+
+# tab-complete case-insensitive
+set completion-ignore-case On
