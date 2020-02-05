@@ -1,8 +1,5 @@
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
-## Custom
-umask 077
-
 # don't add path if already present
 add_path () {
 	# (start or ':') $1 (end or ':')
