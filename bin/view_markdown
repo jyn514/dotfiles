@@ -5,4 +5,4 @@ if ! [ $# -eq 1 ]; then
 	exit 1
 fi
 
-markdown_py "$1" | lynx -stdin
+pulldown-cmark < "$1" > tmp.html && x-www-browser tmp.html && sleep 1 && rm -f tmp.html
