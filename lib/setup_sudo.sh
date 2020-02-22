@@ -14,7 +14,7 @@ install_features () {
 		apt-get install vim git build-essential cowsay shellcheck nmap \
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
-		   curl jq tree pkg-config libssl-dev
+		   curl jq tree pkg-config libssl-dev manpages manpages-dev
 		PACKAGES=
 		# TODO: this should work for platforms besides amd64 :(
 		if ! exists bat; then
