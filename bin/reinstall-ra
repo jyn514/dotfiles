@@ -1,5 +1,0 @@
-#!/bin/sh
-set -ev
-cd ~/src/rust/rust-analyzer
-git pull
-cargo +nightly xtask install

@@ -12,9 +12,10 @@ install_features () {
 			apt-get update
 		fi
 		apt-get install vim git build-essential cowsay shellcheck nmap \
-		   texlive-base python3-pip graphviz xdot xdg-utils \
+		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
-		   curl jq tree
+		   curl jq tree pkg-config libssl-dev
+		PACKAGES=
 		# TODO: this should work for platforms besides amd64 :(
 		if ! exists bat; then
 			VERSION="$(latest_release sharkdp/bat)"

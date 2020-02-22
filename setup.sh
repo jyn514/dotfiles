@@ -118,9 +118,13 @@ setup_install () {
 install_rust() {
 	if ! exists code; then
 		download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
-		PACKAGES="$PACKAGES ./code.deb"
+		sudo apt install ./code.deb
 	fi
 	code --install-extension vscodevim.vim
+	code --install-extension matklad.rust-analyzer
+	set +ue
+	. config/profile
+	set -ue
 	if ! exists cargo; then
 		t=/tmp/rustup-init.sh
 		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
@@ -129,13 +133,12 @@ install_rust() {
 		unset t
 	fi
 	mkdir -p ~/src/rust && cd ~/src/rust
-	for repo in https://github.com/jyn514/rcc https://github.com/rust-lang/docs.rs https://github.com/rust-analyzer/rust-analyzer; do
+	for repo in https://github.com/jyn514/rcc https://github.com/rust-lang/docs.rs; do
 		if ! [ -e "$(basename $repo)" ]; then
 			git clone $repo
 		fi
 	done
 	cd "$OLDPWD"
-	bin/reinstall-ra
 	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree
 }
 
