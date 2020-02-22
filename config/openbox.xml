@@ -513,12 +513,12 @@
   -->
   <keybind key="Print">
     <action name="Execute">
-      <command>lxsession-default screenshot</command>
+      <command>scrot ~/Documents/Pictures/Screenshots/"%F-%T.png"</command>
     </action>
   </keybind>
   <keybind key="A-Print">
     <action name="Execute">
-      <command>lxsession-default screenshot window</command>
+      <command>scrot -u ~/Documents/Pictures/Screenshots/"%F-%T.png"</command>
     </action>
   </keybind>
 
