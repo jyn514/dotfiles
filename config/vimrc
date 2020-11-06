@@ -12,8 +12,6 @@ Plug 'rust-lang/rust.vim', { 'for': 'rust' }
 Plug 'majutsushi/tagbar', { 'on': 'TagbarToggle' }
 Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
-Plug 'SirVer/ultisnips'
-Plug 'honza/vim-snippets'
 call plug#end()
 
 if has('nvim')
@@ -23,11 +21,6 @@ endif
 function Paste()
   put
 endfunction
-
-" Auto completion
-let g:UltiSnipsExpandTrigger="<tab>"
-let g:UltiSnipsJumpForwardTrigger="<tab>"
-let g:UltiSnipsJumpBackwardTrigger="<s-tab>"
 
 " ctags for rust
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
