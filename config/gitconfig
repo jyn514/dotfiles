@@ -41,3 +41,5 @@
 	smtpuser = jyn514@gmail.com
 [pull]
 	rebase = true
+[feature]
+	manyFiles = true
