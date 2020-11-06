@@ -130,7 +130,7 @@ purge () { sudo apt autoremove --purge "$@"; }
 
 restart () { shutdown -r now; }
 
-sl () { ls; }
+sl () { ls "$@"; }
 
 ll () { ls -l "$@"; }
 
