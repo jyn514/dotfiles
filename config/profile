@@ -122,9 +122,6 @@ else
    ls () { command ls -G "$@"; }
 fi
 
-# prompt before removing
-rm () { command rm -i "$@"; }
-
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
