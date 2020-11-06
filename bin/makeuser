@@ -1,0 +1,18 @@
+#!/bin/sh
+
+# N.B. this script must be run as root
+set -euv
+
+printf "create user $1 with ssh public key $2? y/[n] "
+read REPLY
+
+if ! [ $REPLY = y ]; then
+	echo "error: aborting"
+fi
+
+user=$1
+adduser $user
+cd /home/$user
+mkdir .ssh
+echo "$2" > .ssh/authorized_keys
+chown -R $user:$user .ssh
