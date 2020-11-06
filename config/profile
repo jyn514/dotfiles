@@ -283,4 +283,7 @@ add_path ~/.node/bin
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
 stty -ixon
-l
+case "$-" in
+	*i*) l;;
+	*)	;;
+esac
