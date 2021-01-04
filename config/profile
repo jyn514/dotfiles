@@ -117,9 +117,9 @@ clean_shell () {
 }
 
 if ls --color=auto >/dev/null 2>/dev/null; then
-   ls () { command ls --color=auto "$@"; }
+   ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 else
-   ls () { command ls -G "$@"; }
+   ls () { command ls -G --ignore=__pycache__ "$@"; }
 fi
 
 purge_removed () {
