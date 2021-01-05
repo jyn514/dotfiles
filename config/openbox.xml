@@ -427,12 +427,12 @@
     <!-- Launch a terminal on Ctrl + Alt + T-->
     <keybind key="C-A-T">
       <action name="Execute">
-        <command>lxterminal</command>
+        <command>kitty</command>
       </action>
     </keybind>
     <keybind key="W-Return">
       <action name="Execute">
-        <command>lxterminal</command>
+        <command>kitty</command>
       </action>
     </keybind>
     <!-- Launch a filemanager on Ctrl + Alt + D-->
