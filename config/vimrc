@@ -10,7 +10,7 @@ Plug 'editorconfig/editorconfig-vim'
 Plug 'aliou/bats.vim', { 'for': 'bats' }
 Plug 'rust-lang/rust.vim', { 'for': 'rust' }
 Plug 'majutsushi/tagbar', { 'on': 'TagbarToggle' }
-Plug 'xolox/vim-misc'
+"Plug 'xolox/vim-misc'
 Plug 'dhruvasagar/vim-markify'
 call plug#end()
 
@@ -193,8 +193,12 @@ function FourSpacesHardTabs()
 endfunction
 
 function CompileTex()
+    " save the file first
     w
-    silent !pdflatex %
+    " put build artifacts in a subdirectory so they're not so annoying
+    silent !mkdir -p build && pdflatex -output-directory build %
+    " link the outputs into the current directory
+    "silent !ln -s build/*.pdf .
     redraw!
 endfunction
 inoremap <C-l> <Esc>:call CompileTex()<Enter>i
@@ -214,6 +218,9 @@ autocmd BufNewFile,BufRead *.tex,*.sty set filetype=tex
 
 " Handle YAML files correctly
 autocmd BufNewFile,BufRead *.yml,*.yaml,Sakefile set filetype=yaml
+
+" make .pl prolog by default
+autocmd BufNewFile,BufRead *.pl set filetype=prolog
 
 " fix broken behaviour for CHANGELOG files
 autocmd BufEnter CHANGELOG setlocal filetype=text
@@ -241,6 +248,7 @@ if has("spell")
 	highlight clear SpellLocal
 	highlight SpellBad cterm=underline gui=underline
 	highlight SpellLocal cterm=underline gui=underline
+	set spellcapcheck=
 endif
 
 unmap <TAB>
