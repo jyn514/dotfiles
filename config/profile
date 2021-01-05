@@ -5,7 +5,6 @@
 
 v () { vim "$@"; }
 
-# don't add path if already present
 add_path () {
 	PATH="$1:$PATH"
 }
@@ -123,6 +122,8 @@ if ls --color=auto >/dev/null 2>/dev/null; then
 else
    ls () { command ls -G --ignore=__pycache__ "$@"; }
 fi
+
+ip() { command ip --color "$@"; }
 
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
@@ -278,10 +279,9 @@ BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 PS1="($YELLOW$(basename -- "$0")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
-PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET ▶️ "
+PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET "'[$(date +%T)]'"\n> "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
-add_path ~/.node/bin
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
 stty -ixon
