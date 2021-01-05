@@ -1,3 +1,4 @@
+# See https://git-scm.com/docs/git-config#_configuration_file for docs
 [user]
 	name = Joshua Nelson
 	email = jyn514@gmail.com
