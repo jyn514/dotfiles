@@ -26,8 +26,12 @@
 	d = diff
 	h = help
 	l = log --graph --oneline
+	r = remote
 	s = status -sb --ignore-submodules
+	t = tag
 	v = !git --version
+	recent = for-each-ref --sort=-committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/
+	signed = log --show-signature
 [diff]
 	algorithm = minimal
 [submodule]
