@@ -12,6 +12,7 @@
 	preloadindex = true
 	excludesfile = ~/.gitignore
 	autocrlf = false
+	pager = delta
 [alias]
 	save = git-save
 	update = submodule update
@@ -47,3 +48,6 @@
 	rebase = true
 [feature]
 	manyFiles = true
+# otherwise git has a nasty habit of putting stmpPass in a common file
+[include]
+	path = ~/.local/gitconfig
