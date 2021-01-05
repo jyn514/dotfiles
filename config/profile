@@ -1,11 +1,13 @@
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+[ -x /usr/bin/lesspipe ] && {
+	export LESSOPEN="| /usr/bin/lesspipe %s";
+	export LESSCLOSE="/usr/bin/lesspipe %s %s";
+}
+
+v () { vim "$@"; }
 
 # don't add path if already present
 add_path () {
-	# (start or ':') $1 (end or ':')
-	if ! echo "$PATH" | grep "\(^\|:\)$1\(\$\|:\)" > /dev/null; then
-		PATH="$1:$PATH"
-	fi
+	PATH="$1:$PATH"
 }
 
 if [ -x "$(command -v xdg-open)" ]; then
