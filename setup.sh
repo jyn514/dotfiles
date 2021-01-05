@@ -10,13 +10,15 @@ setup_basics () {
 		if [ "$base" = "youtube-dl" ]; then
 			DEST="$HOME/.config/youtube-dl/config"
 		elif [ "$base" = "config.fish" ]; then
-			DEST="$HOME/.config/fish/config.fish"
+			DEST="$HOME/.config/fish/$base"
 		elif [ "$base" = openbox.xml ]; then
-			DEST="$HOME/.config/openbox/rc.xml"
+			DEST="$HOME/.config/openbox/lubuntu-rc.xml"
 		elif [ "$base" = grepme.toml ]; then
-			DEST="$HOME/.config/grepme.toml"
+			DEST="$HOME/.config/$base"
+		elif [ "$base" = kitty.conf ]; then
+			DEST="$HOME/.config/kitty/$base"
 		else
-			DEST="$HOME/.$(basename "$f")"
+			DEST="$HOME/.$base"
 		fi
 		if [ -L "$DEST" ]; then rm -f "$DEST"
 		elif [ -e "$DEST" ]; then
