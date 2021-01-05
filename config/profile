@@ -284,8 +284,7 @@ PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET "'[$(date +%T)]'"\n> "
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
-stty -ixon
 case "$-" in
-	*i*) l;;
+	*i*) l; stty -ixon;;
 	*)	;;
 esac
