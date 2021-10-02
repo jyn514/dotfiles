@@ -32,7 +32,7 @@
 	s = status -sb --ignore-submodules
 	t = tag
 	v = !git --version
-	recent = for-each-ref --sort=-committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/
+	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/
 	signed = log --show-signature
 [diff]
 	algorithm = minimal
@@ -40,6 +40,7 @@
 	fetchJobs = 4
 [merge]
 	tool = vimdiff
+	conflictstyle = diff3
 [sendemail]
 	smtpserver = smtp.gmail.com
 	smtpserverport = 587
