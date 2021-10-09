@@ -42,6 +42,7 @@ setup_basics () {
 	fi
 	set +ue
 	. ~/.profile
+	setup_vim # otherwise vim will error out the next time it starts up
 unset DEST LOCAL f
 }
 
@@ -132,15 +133,19 @@ install_rust() {
 		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
 		. "$CARGO_HOME/env"
 		rustup toolchain add nightly --profile minimal -c clippy -c miri
+		rustup default nightly
 		unset t
 	fi
 	mkdir -p ~/src/rust && cd ~/src/rust
-	for repo in https://github.com/jyn514/rcc https://github.com/rust-lang/docs.rs; do
+	for repo in https://github.com/rust-lang/docs.rs https://github.com/rust-lang/rust; do
 		if ! [ -e "$(basename $repo)" ]; then
 			git clone $repo
 		fi
 	done
 	cd "$OLDPWD"
+	# avoid recompiling so much
+	CARGO_TARGET_DIR=/tmp/cargo
+	mkdir -p $CARGO_TARGET_DIR
 	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree
 }
 
