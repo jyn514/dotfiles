@@ -146,7 +146,7 @@ install_rust() {
 	# avoid recompiling so much
 	CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
-	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree
+	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree cargo-edit
 }
 
 
