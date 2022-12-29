@@ -14,7 +14,11 @@ install_features () {
 		apt-get install vim git build-essential cowsay shellcheck nmap \
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
-		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop
+		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop fd-find git-absorb
+
+		# Ubuntu is annoying and installs `fd` as `fd-find`
+		update-alternatives --install /usr/bin/fd fd /usr/lib/cargo/bin/fd 30
+
 		PACKAGES=
 		# TODO: this should work for platforms besides amd64 :(
 		if ! exists bat; then
@@ -31,6 +35,18 @@ install_features () {
 		if [ -n "$PACKAGES" ]; then
 			chmod a+r $PACKAGES
 			apt install $PACKAGES
+		fi
+
+		# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu
+		if ! exists pwsh; then
+			# Download the Microsoft repository GPG keys
+			wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+			# Register the Microsoft repository GPG keys
+			sudo dpkg -i packages-microsoft-prod.deb
+			# Update the list of packages after we added packages.microsoft.com
+			sudo apt-get update
+			# Install PowerShell
+			sudo apt-get install -y powershell
 		fi
 	fi
 }

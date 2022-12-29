@@ -124,10 +124,12 @@ install_rust() {
 		sudo apt install ./code.deb
 	fi
 	code --install-extension vscodevim.vim
-	code --install-extension matklad.rust-analyzer
+	code --install-extension rust-lang.rust-analyzer
+
 	set +ue
 	. config/profile
 	set -ue
+
 	if ! exists cargo; then
 		t=/tmp/rustup-init.sh
 		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
@@ -137,16 +139,19 @@ install_rust() {
 		unset t
 	fi
 	mkdir -p ~/src/rust && cd ~/src/rust
-	for repo in https://github.com/rust-lang/docs.rs https://github.com/rust-lang/rust; do
-		if ! [ -e "$(basename $repo)" ]; then
-			git clone $repo
+	for repo in docs.rs rustc-dev-guide rust; do
+		if ! [ -e $repo ]; then
+			fork_github rust-lang/$repo
 		fi
 	done
+	if ! exists x; then
+		cargo install --path rust/src/tools/x
+	fi
 	cd "$OLDPWD"
 	# avoid recompiling so much
-	CARGO_TARGET_DIR=/tmp/cargo
+	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
-	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree cargo-edit
+	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree cargo-edit git-delta
 }
 
 
