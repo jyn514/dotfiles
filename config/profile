@@ -15,6 +15,8 @@ if [ -x "$(command -v xdg-open)" ]; then
 	open () { xdg-open "$@"; }
 fi
 
+exists () { command -v "$1" >/dev/null 2>&1; }
+
 yts () { youtube_search "$@"; }
 
 ytd () { youtube-dl "$@"; }
@@ -26,6 +28,7 @@ mkdc () { mkcd "$@"; }
 
 # follow symlinks by default
 rg () { command rg -L "$@"; }
+vrg () { rg --no-heading "$@"; }
 
 c () { cargo "$@"; }
 
@@ -121,10 +124,10 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls --color=auto >/dev/null 2>/dev/null; then
+if ls --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
    ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
 else
-   ls () { command ls -G --ignore=__pycache__ "$@"; }
+   ls () { command ls -G "$@"; }
 fi
 
 ip() { command ip --color "$@"; }
@@ -298,9 +301,10 @@ GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
-PS1="($YELLOW$(basename -- "$0")$RESET@$GREEN$(hostname)"
+PS1="($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
-PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET "'[$(date +%T)]'"\n> "
+PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET "'[$(date +%T)]'"
+; "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
