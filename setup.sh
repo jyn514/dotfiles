@@ -138,10 +138,11 @@ install_rust() {
 		rustup default nightly
 		unset t
 	fi
-	mkdir -p ~/src/rust && cd ~/src/rust
+	mkdir -p ~/src && cd ~/src
 	for repo in docs.rs rustc-dev-guide rust; do
 		if ! [ -e $repo ]; then
 			fork_github rust-lang/$repo
+			command cd ..
 		fi
 	done
 	if ! exists x; then
