@@ -37,7 +37,7 @@
 	signed = log --show-signature
 	default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
 	autosquash = !git revise $(git merge-base HEAD origin/HEAD) --autosquash -i
-  fixup = commit --fixup
+	fixup = commit --fixup
 [diff]
 	algorithm = minimal
 [submodule]
