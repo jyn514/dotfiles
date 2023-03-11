@@ -59,5 +59,7 @@
 	path = ~/.local/gitconfig
 [rebase]
 	autostash = true
+[commit]
+	verbose = true
 [protocol "file"]
 	allow = always
