@@ -11,32 +11,11 @@ install_features () {
 			add-apt-repository universe
 			apt-get update
 		fi
-		apt-get install vim git build-essential cowsay shellcheck nmap \
+		apt-get install -y vim git build-essential cowsay shellcheck nmap \
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
-		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop fd-find git-absorb \
+		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
 		   ninja-build
-
-		# Ubuntu is annoying and installs `fd` as `fd-find`
-		update-alternatives --install /usr/bin/fd fd /usr/lib/cargo/bin/fd 30
-
-		PACKAGES=
-		# TODO: this should work for platforms besides amd64 :(
-		if ! exists bat; then
-			VERSION="$(latest_release sharkdp/bat)"
-			VERSION_NO_V="$(echo "$VERSION" | tr -d v)"
-			download https://github.com/sharkdp/bat/releases/download/"$VERSION/bat_$VERSION_NO_V"_amd64.deb bat.deb
-			PACKAGES="$PACKAGES ./bat.deb"
-		fi
-		if ! exists rg; then
-			VERSION="$(latest_release BurntSushi/ripgrep)"
-			download https://github.com/burntsushi/ripgrep/releases/download/"$VERSION"/ripgrep_"$VERSION"_amd64.deb rg.deb
-			PACKAGES="$PACKAGES ./rg.deb"
-		fi
-		if [ -n "$PACKAGES" ]; then
-			chmod a+r $PACKAGES
-			apt install $PACKAGES
-		fi
 
 		# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu
 		if ! exists pwsh; then

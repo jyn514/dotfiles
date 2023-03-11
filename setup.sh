@@ -115,6 +115,7 @@ setup_install () {
 	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
+	python3 -m pip install --user git-revise
 	install_rust
 }
 
@@ -123,8 +124,11 @@ install_rust() {
 		download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
 		sudo apt install ./code.deb
 	fi
-	code --install-extension vscodevim.vim
-	code --install-extension rust-lang.rust-analyzer
+	for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
+			   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
+	do
+		code --install-extension $ext
+	done
 
 	set +ue
 	. config/profile
@@ -152,7 +156,10 @@ install_rust() {
 	# avoid recompiling so much
 	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
-	cargo install broot cargo-audit cargo-outdated cargo-sweep cargo-tree cargo-edit git-delta
+	cargo install cargo-binstall
+	cargo binstall -y --rate-limit 10/1 \
+			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
+			fd-find ripgrep
 }
 
 
