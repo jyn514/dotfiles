@@ -27,7 +27,8 @@
 	conf = config
 	d = diff
 	h = help
-	l = log --graph --oneline
+	l = log --graph --all --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %C(green)%cd%C(auto) %s%d'
+	graph = l
 	r = remote
 	s = status -sb --ignore-submodules
 	t = tag
@@ -35,7 +36,7 @@
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/
 	signed = log --show-signature
 	default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
-	autosquash = !git rebase $(git merge-base HEAD origin/$(git default-branch)) --autosquash -i
+	autosquash = !git revise $(git merge-base HEAD origin/HEAD) --autosquash -i
   fixup = commit --fixup
 [diff]
 	algorithm = minimal

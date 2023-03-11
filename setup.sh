@@ -100,7 +100,7 @@ setup_backup () {
 	unset TMP_FILE
 }
 
-setup_install () {
+setup_install_global () {
 	echo Installing global packages
 	if exists sudo; then
 		sudo ./lib/setup_sudo.sh
@@ -109,6 +109,9 @@ setup_install () {
 	else
 		./lib/setup_sudo.sh
 	fi
+}
+
+setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
@@ -165,7 +168,8 @@ install_rust() {
 
 setup_all () {
 	echo Doing everything
-	setup_install  # so we know we have vim, git, etc.
+	setup_install_global  # so we know we have vim, git, etc.
+	setup_install_local
 	setup_basics
 	setup_shell
 	setup_python
@@ -181,8 +185,9 @@ message () {
 [3] python
 [4] vim
 [5] backup
-[6] install (uses sudo)
-[7] all
+[6] install (local packages)
+[7] install (global packages; uses sudo)
+[8] all
 Choose setup to run: "
 }
 
@@ -206,8 +211,9 @@ while read -r choice; do
 		py*|3) setup_python; message;;
 		vi*|4) setup_vim; message;;
 		bac*|5) setup_basics; setup_backup; message;;
-		su*|i*|6) setup_install; message;;
-		all|7) setup_all; exit 0;;
+		su*|l*|6) setup_install_local; message;;
+		i*|7) setup_install_global; message;;
+		all|8) setup_all; exit 0;;
 		*) printf "Please enter a number 0-6: ";;
 	esac
 done
