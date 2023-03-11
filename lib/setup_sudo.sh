@@ -14,7 +14,8 @@ install_features () {
 		apt-get install vim git build-essential cowsay shellcheck nmap \
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
-		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop fd-find git-absorb
+		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop fd-find git-absorb \
+		   ninja-build
 
 		# Ubuntu is annoying and installs `fd` as `fd-find`
 		update-alternatives --install /usr/bin/fd fd /usr/lib/cargo/bin/fd 30
