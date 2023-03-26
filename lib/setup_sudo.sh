@@ -28,10 +28,21 @@ install_features () {
 			# Install PowerShell
 			sudo apt-get install -y powershell
 		fi
+
+		if ! exists code; then
+			download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
+			sudo apt install ./code.deb
+		fi
+	elif [ -n "$IS_ALPINE" ]; then
+		# Use GNU less so Delta works properly
+		apk add less py3-pip
 	fi
 }
 
 install_security () {
+	if ! [ -n "$IS_DEB" ]; then
+		return
+	fi
 	apt-get update
 	apt-get install unattended-upgrades iptables-persistent
 	DEST=/etc/iptables/rules.v4
@@ -49,13 +60,18 @@ install_security () {
 }
 
 remove_unwanted () {
+	if ! [ -n "$IS_DEB" ]; then
+		return
+	fi
 	apt autoremove --purge apt-xapian-index
 }
 
 DIR="$(dirname "$(realpath "$0")")"
 . "$DIR"/lib.sh
 if exists dpkg; then
-	IS_DEB=true
+	IS_DEB=1
+elif exists apk; then
+	IS_ALPINE=1
 else
 	echo "$0: Unsupported distro"
 	exit 1

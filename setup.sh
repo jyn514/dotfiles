@@ -114,8 +114,8 @@ setup_install_global () {
 setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
-	if ! [ -x ~/.local/bin/cat ]; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
-	if ! [ -x ~/.local/bin/python ]; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
+	if ! [ -x ~/.local/bin/cat ] && exists bat; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
+	if ! [ -x ~/.local/bin/python ] && exists python3; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
 	python3 -m pip install --user git-revise
@@ -123,15 +123,13 @@ setup_install_local () {
 }
 
 install_rust() {
-	if ! exists code; then
-		download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
-		sudo apt install ./code.deb
+	if exists code; then
+		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
+				   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
+		do
+			code --install-extension $ext
+		done
 	fi
-	for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
-			   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
-	do
-		code --install-extension $ext
-	done
 
 	set +ue
 	. config/profile
@@ -159,7 +157,9 @@ install_rust() {
 	# avoid recompiling so much
 	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
-	cargo install cargo-binstall
+	if ! exists cargo-binstall; then
+		cargo install cargo-binstall
+	fi
 	cargo binstall -y --rate-limit 10/1 \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
 			fd-find ripgrep

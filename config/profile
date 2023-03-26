@@ -74,7 +74,9 @@ package () { what_package "$@"; }
 exa () { command exa --git "$@"; }
 
 # don't replace crontab without warning
-crontab () { command crontab -i "$@"; }
+if crontab -i -l >/dev/null 2>/dev/null; then
+  crontab () { command crontab -i "$@"; }
+fi
 
 # show a makefile as a dependency graph
 visualize () {
@@ -125,10 +127,8 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
-   ls () { command ls --color=auto --ignore=__pycache__ "$@"; }
-else
-   ls () { command ls -G "$@"; }
+if ls -G --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
+   ls () { command ls -G --color=auto --ignore=__pycache__ "$@"; }
 fi
 
 ip() { command ip --color "$@"; }
@@ -271,6 +271,12 @@ export GOBIN="$GOPATH/bin"
 export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_HOME="$HOME/.local/lib/cargo"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
+
+# Delta is bad at doing version detection.
+# https://github.com/dandavison/delta/issues/488
+if ! less --version >/dev/null 2>&1; then
+  export GIT_PAGER=less
+fi
 
 export MAKEFLAGS='-j4'
 # for http://overthewire.org
