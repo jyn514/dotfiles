@@ -1,6 +1,6 @@
 # See https://git-scm.com/docs/git-config#_configuration_file for docs
 [user]
-	name = Joshua Nelson
+	name = jyn
 	email = github@jyn.dev
 	signingkey = E655823D8D8B1088
 [credential]
@@ -38,6 +38,7 @@
 	default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
 	autosquash = !git revise $(git merge-base HEAD origin/HEAD) --autosquash -i
 	fixup = commit --fixup
+	delete-merged = !git branch -a --merged | grep personal | tail -n+2  | cut -d/ -f3- | xargs git push personal --delete --no-verify
 [diff]
 	algorithm = minimal
 [submodule]
