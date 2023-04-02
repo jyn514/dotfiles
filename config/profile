@@ -206,7 +206,7 @@ fork_github() {
 	DIR=$(echo "$URL" | sed -e 's|/$||' -e 's|:*/*\.git$||' -e 's|.*[/:]||g')
 	git clone $URL $DIR
 
-	command cd $DIR
+	builtin cd $DIR
 	git remote add personal git@github.com:jyn514/$DIR.git
 	git remote set-url --push origin git@github.com:jyn514/$DIR.git
 	echo $DIR
