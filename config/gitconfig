@@ -30,7 +30,7 @@
 	l = log --graph --all --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %C(green)%cd%C(auto) %s%d'
 	graph = l
 	r = remote
-	s = status -sb --ignore-submodules
+	s = status -sb
 	t = tag
 	v = !git --version
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/

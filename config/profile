@@ -40,6 +40,11 @@ dc () { docker-compose "$@"; }
 # this shadows a mailcap command, but I've never used mailcap in my life
 compose () { docker-compose "$@"; }
 
+whatismyip() {
+	# https://unix.stackexchange.com/a/194136
+	dig +short myip.opendns.com @resolver4.opendns.com
+}
+
 what_belongs () {
 	if command -v dpkg > /dev/null; then
 		dpkg -L "$@"
@@ -162,7 +167,13 @@ excuse () {
 	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
 }
 
-status () { git status; }
+status () {
+	if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+		git s
+	else
+		l
+	fi
+}
 
 dad () { curl https://icanhazdadjoke.com && echo; }
 
@@ -317,6 +328,6 @@ add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
 case "$-" in
-	*i*) l; stty -ixon;;
+	*i*) status; stty -ixon;;
 	*)	;;
 esac

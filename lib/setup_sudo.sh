@@ -44,7 +44,7 @@ install_security () {
 		return
 	fi
 	apt-get update
-	apt-get install unattended-upgrades iptables-persistent
+	apt-get install -y unattended-upgrades iptables-persistent
 	DEST=/etc/iptables/rules.v4
 	force=y
 	if [ -e "$DEST" ]; then

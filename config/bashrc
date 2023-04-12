@@ -63,7 +63,7 @@ rust-gdb () { command rust-gdb -q "$@"; }
 
 # list directory after changing
 cd () {
-	builtin cd "$@" && ls
+	builtin cd "$@" && status
 }
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
