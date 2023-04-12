@@ -114,12 +114,14 @@ setup_install_global () {
 setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
+
+	install_rust
+	python3 -m pip install --user git-revise
+
 	if ! [ -x ~/.local/bin/cat ] && exists bat; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
 	if ! [ -x ~/.local/bin/python ] && exists python3; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
-	python3 -m pip install --user git-revise
-	install_rust
 }
 
 install_rust() {
