@@ -43,6 +43,8 @@
 	algorithm = minimal
 [submodule]
 	fetchJobs = 4
+[fetch]
+	recurseSubmodules = no
 [merge]
 	tool = vimdiff
 	conflictstyle = diff3

@@ -282,6 +282,7 @@ export GOBIN="$GOPATH/bin"
 export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_HOME="$HOME/.local/lib/cargo"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
+export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 # Delta is bad at doing version detection.
 # https://github.com/dandavison/delta/issues/488
