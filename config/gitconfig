@@ -66,3 +66,5 @@
 	verbose = true
 [protocol "file"]
 	allow = always
+[rerere]
+	enabled = true
