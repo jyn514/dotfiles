@@ -32,6 +32,8 @@ vrg () { rg --no-heading "$@"; }
 
 c () { cargo "$@"; }
 g() { git "$@"; }
+gs() { git s "$@"; }
+gits() { git s "$@"; }
 
 # show human-readable dates with offsets by default
 dmesg () { command dmesg -e "$@"; }
