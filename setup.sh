@@ -172,7 +172,8 @@ install_rust() {
 	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
 	if ! exists cargo-binstall; then
-		cargo install cargo-binstall
+		# https://github.com/cargo-bins/cargo-binstall#installation
+		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 	fi
 	cargo binstall -y --rate-limit 10/1 --disable-strategies crate-meta-data \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
