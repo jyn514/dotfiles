@@ -119,7 +119,11 @@ setup_install_local () {
 	python3 -m pip install --user git-revise
 
 	if ! [ -x ~/.local/bin/cat ] && exists bat; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
-	if ! [ -x ~/.local/bin/python ] && exists python3; then ln -sf "$(command -v python3)" ~/.local/bin/python; fi
+	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
+	if ! [ -x ~/.local/bin/python ] && exists python3; then
+		echo 'exec python3 "$@"' > ~/.local/bin/python
+		chmod +x ~/.local/bin/python
+	fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
 }
