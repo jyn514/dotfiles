@@ -68,3 +68,5 @@
 	allow = always
 [rerere]
 	enabled = true
+[advice]
+	detachedHead = false
