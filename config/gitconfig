@@ -9,7 +9,7 @@
 	default = current
 [core]
 	eol = lf
-	editor = vim
+	editor = code --wait
 	preloadindex = true
 	excludesfile = ~/.gitignore
 	autocrlf = false
