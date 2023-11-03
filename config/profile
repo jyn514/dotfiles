@@ -210,7 +210,7 @@ npm_exec () {
 
 fork_github() {
 	case $1 in
-		https://github.com/*) URL=$1;;
+		https://*|ssh://*) URL=$1;;
 		*) URL=https://github.com/$1;;
 	esac
 
