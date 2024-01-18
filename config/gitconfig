@@ -72,3 +72,7 @@
 	detachedHead = false
 [init]
 	defaultBranch = main
+[am]
+	threeWay = true
+[log]
+	follow = true
