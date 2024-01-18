@@ -318,11 +318,6 @@ display_pwd () {
 }
 
 git_info() {
-	# b=$(git log -n1 --pretty=%D | sed 's/^HEAD -> \([^,]*\).*/\1/')
-	# first, check if HEAD is detached at 	
-	# first, see if we're on a branch.
-	# b=$(git rev-parse --abbrev-ref @ 2>/dev/null)
-
 	# if HEAD is on a branch, point to that branch
 	if git symbolic-ref --short HEAD 2>/dev/null; then
 		return
