@@ -317,6 +317,43 @@ display_pwd () {
 	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
 }
 
+git_info() {
+	# b=$(git log -n1 --pretty=%D | sed 's/^HEAD -> \([^,]*\).*/\1/')
+	# first, check if HEAD is detached at 	
+	# first, see if we're on a branch.
+	# b=$(git rev-parse --abbrev-ref @ 2>/dev/null)
+
+	# if HEAD is on a branch, point to that branch
+	if git symbolic-ref --short HEAD 2>/dev/null; then
+		return
+	fi
+
+	# next, see if this is a tag
+	t=$(git tag --points-at HEAD)
+	if [ "$t" ]; then
+		echo "$t"
+		return
+	fi
+
+	# see if this is a remote branch
+	# note this prioritizes origin/HEAD over origin/main
+	r=$(git show-ref | grep ^"$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
+	if [ "$r" ]; then
+		echo "$r"
+		return
+	fi
+
+	# see if this is a detached local branch
+	l=$(git show-ref | grep ^"$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
+	if [ "$l" ]; then
+		echo "(detached at $l)"
+		return
+	fi
+
+	# give up
+	echo "(detached HEAD)"
+}
+
 RED="$(ansi_escape "\033[0;31m")"
 GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
@@ -324,7 +361,9 @@ BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 PS1="($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
-PS1="$PS1$RESET) $BLUE"'$(display_pwd)'"$RESET "'[$(date +%T)]'"
+PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
+PS1="$PS1 $GREEN"'$(git_info)'"$RESET"
+PS1="$PS1 "'[$(date +%T)]'"
 ; "
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
