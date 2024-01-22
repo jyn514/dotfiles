@@ -3,3 +3,4 @@ pylint
 xdot
 grepme
 toml
+yt-dlp
