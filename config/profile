@@ -323,7 +323,20 @@ display_pwd () {
 	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
 }
 
+RED="$(ansi_escape "\033[0;31m")"
+GREEN="$(ansi_escape "\033[0;32m")"
+YELLOW="$(ansi_escape "\033[0;33m")"
+BLUE="$(ansi_escape "\033[0;34m")"
+RESET="$(ansi_escape "\033[0;0m")"
+
 git_info() {
+	# if we have local modifications, show the status in red
+	if git diff-index --quiet HEAD --; then
+		printf %s "$GREEN"
+	else
+		printf %s "$RED"
+	fi
+
 	# if HEAD is on a branch, point to that branch
 	if git symbolic-ref --short HEAD 2>/dev/null; then
 		return
@@ -355,16 +368,11 @@ git_info() {
 	echo "(detached HEAD)"
 }
 
-RED="$(ansi_escape "\033[0;31m")"
-GREEN="$(ansi_escape "\033[0;32m")"
-YELLOW="$(ansi_escape "\033[0;33m")"
-BLUE="$(ansi_escape "\033[0;34m")"
-RESET="$(ansi_escape "\033[0;0m")"
 PS1='$(if [ $? = 0 ]; then CARGO=true cargo-mommy; else CARGO=false cargo-mommy; fi)'
 PS1="$PS1($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
-PS1="$PS1 $GREEN"'$(git_info)'"$RESET"
+PS1="$PS1"' $(git_info)'"$RESET"
 PS1="$PS1 "'[$(date +%T)]'"
 ; "
 
