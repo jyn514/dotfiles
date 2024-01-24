@@ -330,6 +330,13 @@ BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 
 git_info() {
+  # if this isn't a git repo, we can't show anything useful
+	if ! git rev-parse --git-dir >/dev/null 2>&1; then
+		return
+	else
+		printf ' '
+	fi
+
 	# if we have local modifications, show the status in red
 	if git diff-index --quiet HEAD --; then
 		printf %s "$GREEN"
@@ -372,7 +379,7 @@ PS1='$(if [ $? = 0 ]; then CARGO=true cargo-mommy; else CARGO=false cargo-mommy;
 PS1="$PS1($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
-PS1="$PS1"' $(git_info)'"$RESET"
+PS1="$PS1"'$(git_info)'"$RESET"
 PS1="$PS1 "'[$(date +%T)]'"
 ; "
 
