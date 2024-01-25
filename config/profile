@@ -375,7 +375,11 @@ git_info() {
 	echo "(detached HEAD)"
 }
 
-PS1='$(if [ $? = 0 ]; then CARGO=true cargo-mommy; else CARGO=false cargo-mommy; fi)'
+if exists cargo-mommy; then
+	PS1='$(if [ $? = 0 ]; then CARGO=true cargo-mommy; else CARGO=false cargo-mommy; fi)'
+else
+	PS1=
+fi
 PS1="$PS1($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
