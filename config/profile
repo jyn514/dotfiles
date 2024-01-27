@@ -1,5 +1,5 @@
 # TODO: work this into gitconfig somehow
-git-reset-author() {
+git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
 } 
 
@@ -140,7 +140,7 @@ clean_shell () {
 }
 
 if ls -G --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
-   ls () { command ls -G --color=auto --ignore=__pycache__ "$@"; }
+    ls () { command ls -G --color=auto --ignore=__pycache__ "$@"; }
 fi
 
 ip() { command ip --color "$@"; }
@@ -154,11 +154,8 @@ purge () { sudo apt autoremove --purge "$@"; }
 restart () { shutdown -r now; }
 
 sl () { ls "$@"; }
-
 ll () { ls -l "$@"; }
-
 la () { ls -A "$@"; }
-
 l () { ls -F "$@"; }
 
 webpaste () {

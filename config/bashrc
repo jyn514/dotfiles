@@ -1,5 +1,6 @@
 BASH_PROFILE_READ=1
 if [ -z $MY_GITHUB ]; then
+   unalias ls la ll l alert
 	source ~/.profile
 fi
 shopt -s histappend
