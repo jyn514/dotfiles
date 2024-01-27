@@ -162,15 +162,6 @@ install_rust() {
 		unset t
 	fi
 	mkdir -p ~/src && cd ~/src
-	for repo in docs.rs rustc-dev-guide rust; do
-		if ! [ -e $repo ]; then
-			fork_github rust-lang/$repo
-			command cd ..
-		fi
-	done
-	if ! exists x; then
-		cargo install --path rust/src/tools/x
-	fi
 	cd "$OLDPWD"
 	# avoid recompiling so much
 	export CARGO_TARGET_DIR=/tmp/cargo
