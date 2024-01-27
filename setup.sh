@@ -144,7 +144,7 @@ install_rust() {
 	if ! exists cargo; then
 		# Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
 		# Do it manually here.
-		if [ "$OSTYPE" = msys ]; then
+		if [ "${OSTYPE:-}" = msys ]; then
 			t=/tmp/vs_community.exe
 			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o $t
 			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
@@ -152,7 +152,7 @@ install_rust() {
 		fi
 		t=/tmp/rustup-init.sh
 		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
-		if [ "$OSTYPE" = msys ]; then
+		if [ "${OSTYPE:-}" = msys ]; then
 			PATH="$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
 		else
 			. "${CARGO_HOME:-$HOME/.cargo}/env"
