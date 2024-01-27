@@ -233,6 +233,6 @@ while read -r choice; do
 		su*|l*|6) setup_install_local; message;;
 		i*|7) setup_install_global; message;;
 		all|8) setup_all; exit 0;;
-		*) printf "Please enter a number 0-6: ";;
+		*) printf "Please enter a number 0-8: ";;
 	esac
 done
