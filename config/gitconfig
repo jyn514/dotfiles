@@ -13,7 +13,6 @@
 	preloadindex = true
 	excludesfile = ~/.gitignore
 	autocrlf = false
-	pager = delta
 [alias]
 	save = git-save
 	update = submodule update
@@ -25,7 +24,7 @@
 	b = branch
 	c = commit
 	conf = config
-	d = diff
+	d = -c core.pager=delta diff
 	h = help
 	l = log --graph --all --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %C(green)%cd%C(auto) %s%d'
 	graph = l

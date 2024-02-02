@@ -1,6 +1,6 @@
 BASH_PROFILE_READ=1
 if [ -z $MY_GITHUB ]; then
-   unalias ls la ll l alert
+   unalias ls la ll l alert 2>/dev/null
 	source ~/.profile
 fi
 shopt -s histappend
@@ -65,6 +65,10 @@ rust-gdb () { command rust-gdb -q "$@"; }
 # list directory after changing
 cd () {
 	builtin cd "$@" && status
+}
+
+pure_shell() {
+   env PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
 }
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
