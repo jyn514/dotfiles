@@ -35,6 +35,7 @@ mkdc () { mkcd "$@"; }
 rg () { command rg -L "$@"; }
 vrg () { rg --no-heading "$@"; }
 
+b () { bacon "$@"; }
 c () { cargo "$@"; }
 g() { git "$@"; }
 gs() { git s "$@"; }
@@ -375,17 +376,16 @@ git_info() {
 	echo "(detached HEAD)"
 }
 
-if exists cargo-mommy; then
-	PS1='$(if [ $? = 0 ]; then CARGO=true cargo-mommy; else CARGO=false cargo-mommy; fi)'
-else
-	PS1=
-fi
-PS1="$PS1($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
+PS1="($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
 [ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
 PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
 PS1="$PS1"'$(git_info)'"$RESET"
 PS1="$PS1 "'[$(date +%T)]'"
-; "
+"
+# vscode already shows the cursor indented a bit, as well as the status from the last command
+if ! [ VSCODE_SHELL_INTEGRATION = 1 ]; then
+	PS1="$PS1"'$(if [ $? = 0 ];then echo "$GREEN";else echo "$RED";fi)'";$RESET "
+fi
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
