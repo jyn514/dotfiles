@@ -7,6 +7,7 @@
 	helper = store
 [push]
 	default = current
+	autoSetupRemote = true
 [core]
 	eol = lf
 	editor = code --wait
@@ -14,6 +15,8 @@
 	autocrlf = false
 	excludesfile = ~/.config/git/ignore
 	hooksPath = ~/.config/git/hooks
+[interactive]
+	diffFilter = delta --color-only
 [alias]
 	save = git-save
 	update = submodule update
@@ -27,8 +30,9 @@
 	conf = config
 	d = -c core.pager=delta diff
 	h = help
-	l = log --graph --all --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %C(green)%cd%C(auto) %s%d'
-	graph = l
+	l = log --graph --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %s%d %C(green)%cr %C(bold blue)<%an>%C(auto)'
+	branch-log = !git l $(git merge-base HEAD origin/HEAD)..
+	graph = l --all
 	r = remote
 	s = status -sb
 	t = tag
@@ -39,12 +43,17 @@
 	autosquash = !git revise $(git merge-base HEAD origin/HEAD) --autosquash -i
 	fixup = commit --fixup
 	delete-merged = !git branch -a --merged | grep personal | tail -n+2  | cut -d/ -f3- | xargs git push personal --delete --no-verify
+[status]
+	showUntrackedFiles = all
 [diff]
 	algorithm = minimal
-[submodule]
-	fetchJobs = 4
+	colorMoved = dimmed-zebra
+	colorMovedWS = allow-indentation-change
+[checkout]
+	workers = 0
 [fetch]
 	recurseSubmodules = no
+	parallel = 0
 [merge]
 	tool = vimdiff
 	conflictstyle = diff3
