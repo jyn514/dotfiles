@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -eu
+files=$(git diff --name-only --cached --no-ext-diff)
+if echo "$files" | rg '\.rs$' -q && [ -e Cargo.toml ]; then
+    cargo fmt --check
+fi
