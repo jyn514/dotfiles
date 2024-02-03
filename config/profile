@@ -376,17 +376,28 @@ git_info() {
 	echo "(detached HEAD)"
 }
 
-PS1="($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN$(hostname)"
-[ "$(id -u)" -eq 0 ] && PS1="$PS1$RESET,${RED}root"
-PS1="$PS1$RESET) $BLUE"'$(display_pwd)'
-PS1="$PS1"'$(git_info)'"$RESET "
-# vscode already shows the cursor indented a bit, as well as the status from the last command
-# if ! [ VSCODE_SHELL_INTEGRATION = 1 ]; then
-	PS1="$PS1"'$(if [ $? = 0 ]; then echo "$GREEN"; else echo "$RED"; fi);'"$RESET "
-# fi
+prompt_command() {
+	# save the status code before anything else; commands we execute in PS1 will overwrite it
+	status=$?
+	printf %s "($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN"; hostname | tr -d '\n'
+	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
+	printf %s "$RESET) $BLUE"
+	display_pwd | tr -d '\n'
+	git_info | tr -d '\n'
+	# bash appears to strip trailing newlines from PS1, so we need RESET to come *after* the newline
+	printf "\n%s" "$RESET"
+	# vscode already shows the cursor indented a bit, as well as the status from the last command
+	if ! [ "$VSCODE_SHELL_INTEGRATION" = 1 ]; then
+		if [ "$status" = 0 ]; then printf %s "$GREEN"; else printf %s "$RED"; fi
+		printf ';%s ' "$RESET"
+	fi
+}
 
+PS1='$(prompt_command)'
 # on executing the command, overwrite `;` with the timestamp
-PS0="$(ansi_escape "\033[1A")$(ansi_escape "\033[1000C")$(ansi_escape "\033[10D") "'[$(date +%T)]
+PS0="$(ansi_escape "\033[2A")$(ansi_escape "\033[1000C")$(ansi_escape "\033[10D") "'[$(date +%T)]
+
+'
 
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
