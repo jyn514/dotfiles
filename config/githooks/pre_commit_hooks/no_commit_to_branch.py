@@ -5,8 +5,8 @@ import re
 from typing import AbstractSet
 from typing import Sequence
 
-from pre_commit_hooks.util import CalledProcessError
-from pre_commit_hooks.util import cmd_output
+from util import CalledProcessError
+from util import cmd_output
 
 
 def is_on_branch(

@@ -4,7 +4,7 @@ import argparse
 import os
 from typing import Sequence
 
-from pre_commit_hooks.util import cmd_output
+from util import cmd_output
 
 
 def main(argv: Sequence[str] | None = None) -> int:
