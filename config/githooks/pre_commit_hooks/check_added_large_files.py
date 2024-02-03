@@ -6,8 +6,8 @@ import os
 import subprocess
 from typing import Sequence
 
-from pre_commit_hooks.util import added_files
-from pre_commit_hooks.util import zsplit
+from util import added_files
+from util import zsplit
 
 
 def filter_lfs_files(filenames: set[str]) -> None:  # pragma: no cover (lfs)

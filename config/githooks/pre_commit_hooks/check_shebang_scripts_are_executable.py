@@ -6,9 +6,9 @@ import shlex
 import sys
 from typing import Sequence
 
-from pre_commit_hooks.check_executables_have_shebangs import EXECUTABLE_VALUES
-from pre_commit_hooks.check_executables_have_shebangs import git_ls_files
-from pre_commit_hooks.check_executables_have_shebangs import has_shebang
+from check_executables_have_shebangs import EXECUTABLE_VALUES
+from check_executables_have_shebangs import git_ls_files
+from check_executables_have_shebangs import has_shebang
 
 
 def check_shebangs(paths: list[str]) -> int:

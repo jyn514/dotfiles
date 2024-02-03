@@ -5,8 +5,8 @@ import shlex
 import subprocess
 from typing import Sequence
 
-from pre_commit_hooks.util import cmd_output
-from pre_commit_hooks.util import zsplit
+from util import cmd_output
+from util import zsplit
 
 ORDINARY_CHANGED_ENTRIES_MARKER = '1'
 PERMS_LINK = '120000'

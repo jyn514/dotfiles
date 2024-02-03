@@ -8,8 +8,8 @@ from typing import Generator
 from typing import NamedTuple
 from typing import Sequence
 
-from pre_commit_hooks.util import cmd_output
-from pre_commit_hooks.util import zsplit
+from util import cmd_output
+from util import zsplit
 
 EXECUTABLE_VALUES = frozenset(('1', '3', '5', '7'))
 

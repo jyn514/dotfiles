@@ -1,4 +1,4 @@
 set -eu
-for c in case-conflict executables-have-shebangs json merge-conflicts shebang-scripts-are-executable symlinks toml vcs-permalinks; do
-    pre-commit-hooks/check-$c.py
+for c in case_conflict executables_have_shebangs json merge_conflicts shebang_scripts_are_executable symlinks toml vcs_permalinks; do
+    python3 $(dirname "$0")/pre_commit_hooks/check_$c.py
 done

@@ -5,8 +5,8 @@ from typing import Iterable
 from typing import Iterator
 from typing import Sequence
 
-from pre_commit_hooks.util import added_files
-from pre_commit_hooks.util import cmd_output
+from util import added_files
+from util import cmd_output
 
 
 def lower_set(iterable: Iterable[str]) -> set[str]:
