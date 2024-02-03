@@ -11,8 +11,9 @@
 	eol = lf
 	editor = code --wait
 	preloadindex = true
-	excludesfile = ~/.gitignore
 	autocrlf = false
+	excludesfile = ~/.config/git/ignore
+	hooksPath = ~/.config/git/hooks
 [alias]
 	save = git-save
 	update = submodule update

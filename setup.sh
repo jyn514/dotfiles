@@ -6,20 +6,18 @@ setup_basics () {
 	LOCAL="$HOME/.local/config"
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
-		base="$(basename "$f")"
-		if [ "$base" = "youtube-dl" ]; then
-			DEST="$HOME/.config/youtube-dl/config"
-		elif [ "$base" = "config.fish" ]; then
-			DEST="$HOME/.config/fish/$base"
-		elif [ "$base" = openbox.xml ]; then
-			DEST="$HOME/.config/openbox/lubuntu-rc.xml"
-		elif [ "$base" = grepme.toml ]; then
-			DEST="$HOME/.config/$base"
-		elif [ "$base" = kitty.conf ]; then
-			DEST="$HOME/.config/kitty/$base"
-		else
-			DEST="$HOME/.$base"
-		fi
+		base=$(basename "$f")
+		case $(basename "$f") in
+			youtube-dl) DEST="$HOME/.config/youtube-dl/config";;
+			config.fish) DEST="$HOME/.config/fish/$base";;
+			openbox.xml) DEST="$HOME/.config/openbox/lubuntu-rc.xml";;
+			grepme.toml) DEST="$HOME/.config/$base";;
+			kitty.conf) DEST="$HOME/.config/kitty/$base";;
+			gitconfig) DEST="$HOME/.$base";;
+			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
+			*) DEST="$HOME/.$base"
+		esac
+
 		if [ -L "$DEST" ]; then rm -f "$DEST"
 		elif [ -e "$DEST" ]; then
 				mv "$DEST" "$LOCAL"
