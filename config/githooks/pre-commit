@@ -1,0 +1,4 @@
+set -eu
+for c in case-conflict executables-have-shebangs json merge-conflicts shebang-scripts-are-executable symlinks toml vcs-permalinks; do
+    pre-commit-hooks/check-$c.py
+done
