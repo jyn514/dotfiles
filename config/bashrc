@@ -71,4 +71,18 @@ pure_shell() {
    env PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
 }
 
+# completion
+complete_alias() {
+   # https://unix.stackexchange.com/questions/4219/how-do-i-get-bash-completion-for-command-aliases#comment1466732_570866
+   alias="$1"
+   cmd="$2"
+   if ! __load_completion "$cmd"; then
+      echo "error: failed to load completion for $cmd" >&2
+      return
+   fi
+   $(complete -p "$cmd" | rev | cut -d' ' -f 2- | rev) "$alias"
+}
+complete_alias c cargo
+complete_alias g git
+
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
