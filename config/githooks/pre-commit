@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 files=$(git diff --name-only --cached --no-ext-diff)
+if ! [ "$files" ]; then exit 0; fi
 for c in symlinks case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do
     IFS='\n' python3 $(realpath "$(dirname "$0")")/pre_commit_hooks/check_$c.py $files
 done

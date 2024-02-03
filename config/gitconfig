@@ -15,6 +15,7 @@
 	autocrlf = false
 	excludesfile = ~/.config/git/ignore
 	hooksPath = ~/.config/git/hooks
+	pager = delta
 [interactive]
 	diffFilter = delta --color-only
 [alias]
@@ -28,7 +29,8 @@
 	b = branch
 	c = commit
 	conf = config
-	d = -c core.pager=delta diff
+	pure-diff = -c core.pager= diff
+	d = diff
 	h = help
 	l = log --graph --oneline --date=format:'%Y-%m-%d %H:%M' --format=format:'%C(auto)%h %s%d %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	branch-log = !git l $(git merge-base HEAD origin/HEAD)..
