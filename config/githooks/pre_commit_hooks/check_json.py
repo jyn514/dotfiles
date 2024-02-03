@@ -25,6 +25,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     retval = 0
     for filename in args.filenames:
+        if not filename.endswith(".json"):
+            continue
         with open(filename, 'rb') as f:
             try:
                 json.load(f, object_pairs_hook=raise_duplicate_keys)
