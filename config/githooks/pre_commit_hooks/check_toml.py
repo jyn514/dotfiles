@@ -17,6 +17,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     retval = 0
     for filename in args.filenames:
+        if not filename.endswith(".json"):
+            continue
         try:
             with open(filename, mode='rb') as fp:
                 tomllib.load(fp)
