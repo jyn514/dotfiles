@@ -86,3 +86,4 @@ COMPLETION=/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 if [ -e "$COMPLETION" ]; then
 	. "$COMPLETION"
 fi
+if exists jj; then source <(jj util completion --zsh); fi
