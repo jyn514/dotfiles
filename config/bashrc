@@ -60,6 +60,7 @@ fi
 
 # https://unix.stackexchange.com/questions/245331
 .. () { cd ..; }
+function @ { HEAD "$@"; }
 rust-gdb () { command rust-gdb -q "$@"; }
 
 # list directory after changing
