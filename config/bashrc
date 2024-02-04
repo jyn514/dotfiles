@@ -84,5 +84,6 @@ complete_alias() {
 }
 complete_alias c cargo
 complete_alias g git
+if exists jj; then source <(jj util completion --bash); fi
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc

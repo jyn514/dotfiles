@@ -180,6 +180,7 @@ status () {
 		l
 	fi
 }
+s() { status "$@"; }
 
 dad () { curl https://icanhazdadjoke.com && echo; }
 
@@ -328,9 +329,27 @@ YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 
+jj_info() {
+	# jj doesn't really use branches, so we don't print anything other than whether the workspace is modified
+	# if there are branches, this is probably a co-located git repo, so `git_info` will just work without having to call this function.
+
+	# NOTE: as a side effect, this saves the working copy :3
+	# if there's an error here, we'll see it because we don't redirect stderr.
+	if [ $(jj diff --summary | wc -l) = 0 ]; then
+		printf %s "$GREEN"
+	else
+		printf %s "$RED"
+	fi
+	printf ' jj'
+}
+
 git_info() {
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
+		# don't try to save the working copy, in case that hits an error.
+		if jj workspace root --ignore-working-copy >/dev/null 2>/dev/null; then
+			jj_info
+		fi
 		return
 	else
 		printf ' '
