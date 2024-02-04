@@ -1,7 +1,10 @@
 # TODO: work this into gitconfig somehow
 git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
-} 
+}
+HEAD() {
+	git fetch --quiet origin && git switch --detach origin/HEAD "$@"
+}
 
 [ -x /usr/bin/lesspipe ] && {
 	export LESSOPEN="| /usr/bin/lesspipe %s";
