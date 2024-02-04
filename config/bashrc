@@ -77,7 +77,9 @@ complete_alias() {
    # https://unix.stackexchange.com/questions/4219/how-do-i-get-bash-completion-for-command-aliases#comment1466732_570866
    alias="$1"
    cmd="$2"
-   if ! __load_completion "$cmd"; then
+   # if this command's completion doesn't live on disk (e.g. zoxide), __load_completion will fail,
+   # even though `complete -p` succeeds.
+   if ! __load_completion "$cmd" && ! complete -p "$cmd" >/dev/null 2>&1; then
       echo "error: failed to load completion for $cmd" >&2
       return
    fi
@@ -85,6 +87,11 @@ complete_alias() {
 }
 complete_alias c cargo
 complete_alias g git
-if exists jj; then source <(jj util completion --bash); fi
+if exists jj;     then source <(jj     util completion --bash); fi
+if exists zoxide; then
+   source <(zoxide init bash)
+   cd() { z "$@" && status; }
+   complete_alias cd z
+fi
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
