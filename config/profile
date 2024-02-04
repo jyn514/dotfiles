@@ -2,8 +2,18 @@
 git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
 }
+
+is_jj_repo() {
+	# don't try to save the working copy, in case that hits an error
+	jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
+}
+
 HEAD() {
-	git fetch --quiet origin && git switch --detach origin/HEAD "$@"
+	if is_jj_repo; then
+		jj git fetch && jj new -r 'trunk()'
+	else
+		git fetch --quiet origin && git switch --detach origin/HEAD "$@"
+	fi
 }
 
 [ -x /usr/bin/lesspipe ] && {
@@ -177,7 +187,9 @@ excuse () {
 }
 
 status () {
-	if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
+	if is_jj_repo; then
+		jj status
+	elif [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
 		git s
 	else
 		l
@@ -349,10 +361,7 @@ jj_info() {
 git_info() {
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		# don't try to save the working copy, in case that hits an error.
-		if jj workspace root --ignore-working-copy >/dev/null 2>/dev/null; then
-			jj_info
-		fi
+		if is_jj_repo; then jj_info; fi
 		return
 	else
 		printf ' '

@@ -26,19 +26,24 @@ fi
 
 # use command-not-found package if installed
 if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
-        function command_not_found_handle {
-                # check because c-n-f could've been removed in the meantime
-                if [ -x /usr/lib/command-not-found ]; then
-                   /usr/lib/command-not-found -- "$1"
-                   return $?
-                elif [ -x /usr/share/command-not-found/command-not-found ]; then
-                   /usr/share/command-not-found/command-not-found -- "$1"
-                   return $?
-                else
-                   printf "%s: command not found\n" "$1" >&2
-                   return 127
-                fi
-        }
+   function command_not_found_handle {
+      # awawawa!
+      case "$1" in
+         awa|awawa|awawawa*) echo "$1!!!"; return $?;;
+      esac
+
+      # check because c-n-f could've been removed in the meantime
+      if [ -x /usr/lib/command-not-found ]; then
+         /usr/lib/command-not-found -- "$1"
+         return $?
+      elif [ -x /usr/share/command-not-found/command-not-found ]; then
+         /usr/share/command-not-found/command-not-found -- "$1"
+         return $?
+      else
+         printf "%s: command not found\n" "$1" >&2
+         return 127
+      fi
+   }
 fi
 
 export NVM_DIR="$HOME/.local/lib/nvm"
