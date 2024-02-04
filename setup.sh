@@ -170,7 +170,7 @@ install_rust() {
 	fi
 	cargo binstall -y --rate-limit 10/1 --disable-strategies crate-meta-data \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
-			fd-find ripgrep
+			fd-find ripgrep zoxide
 }
 
 
