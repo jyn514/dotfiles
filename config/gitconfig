@@ -1,8 +1,6 @@
 # See https://git-scm.com/docs/git-config#_configuration_file for docs
 [user]
 	name = jyn
-	email = github@jyn.dev
-	signingkey = E655823D8D8B1088
 [credential]
 	helper = store
 [push]
@@ -69,7 +67,6 @@
 	smtpserver = smtp.gmail.com
 	smtpserverport = 587
 	smtpencryption = tls
-	smtpuser = jyn514@gmail.com
 [pull]
 	rebase = true
 [feature]
