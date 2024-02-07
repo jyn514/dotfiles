@@ -124,7 +124,6 @@ setup_install_local () {
 		chmod +x ~/.local/bin/python
 	fi
 	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
-	ln -sf "$(realpath bin/reinstall-ra)" ~/.local/bin
 }
 
 install_rust() {
@@ -168,8 +167,11 @@ install_rust() {
 	if ! exists cargo-binstall; then
 		# https://github.com/cargo-bins/cargo-binstall#installation
 		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+	else
+		# update to latest version; old versions often hit a rate limit
+		cargo binstall cargo-binstall
 	fi
-	cargo binstall -y --rate-limit 10/1 --disable-strategies crate-meta-data \
+	cargo binstall -y --rate-limit 10/1 \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
 			fd-find ripgrep zoxide difftastic
 }
