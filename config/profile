@@ -291,9 +291,14 @@ if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"
 fi
 
+if exists code; then
+	export {EDITOR,VISUAL}="code --wait"
+else
+	export EDITOR=vim
+	export VISUAL=vim
+fi
+
 export ENV="$HOME/.profile"
-export EDITOR=vim
-export VISUAL=vim
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
