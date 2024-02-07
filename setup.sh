@@ -61,19 +61,14 @@ unset shell
 
 setup_python () {
 	echo Installing python packages in python.txt
-	if [ -x "$(command -v pip)" ]; then
-		PIP="$(command -v pip)"
-	elif [ -x "$(command -v python)" ] && "$(command -v python)" -m pip > /dev/null; then
-		PIP="$(command -v python) -m pip"
-	fi
-
-	# may take a while
-	if [ -n "$PIP" ]; then
-		$PIP install --user -r python.txt
+	# `pip` on MacOS is an xcode symlink that doesn't work >:(
+	if exists python && python -m pip > /dev/null; then
+		# may take a while
+		python -m pip install --user -r python.txt
 	else
-		echo pip not found
+		echo pip not found >&2
+		return 1
 	fi
-unset PIP
 }
 
 setup_vim () {
