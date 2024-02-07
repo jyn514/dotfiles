@@ -52,6 +52,7 @@
 [status]
 	showUntrackedFiles = all
 [diff]
+	external = difft
 	algorithm = minimal
 	colorMoved = dimmed-zebra
 	colorMovedWS = allow-indentation-change
