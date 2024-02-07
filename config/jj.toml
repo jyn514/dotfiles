@@ -15,6 +15,7 @@ n = ["new"]
 l = ["log"]
 d = ["diff"]
 s = ["status"]
+r = ["rebase"]
 sh = ["show"]
 push = ["git", "push"]
 p = ["push"]
@@ -23,5 +24,34 @@ f = ["fetch"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 
 
+[templates]
+log = 'log_compact'
+
 [template-aliases]
+'format_short_signature(signature)' = 'label("username", signature.name())'
 'format_timestamp(timestamp)' = 'timestamp.ago()'
+
+log_compact = '''
+if(root,
+  builtin_log_root(change_id, commit_id),
+  label(if(current_working_copy, "working_copy"),
+    concat(
+      separate(" ",
+        builtin_change_id_with_hidden_and_divergent_info,
+        if(conflict, label("conflict", "conflict")),
+        branches,
+        tags,
+        working_copies,
+        git_head,
+        format_short_signature(author),
+        format_short_commit_id(commit_id),
+        format_timestamp(committer.timestamp()),
+      ) ++ "\n",
+      separate(" ",
+        if(empty, label("empty", "(empty)")),
+        if(description, description.first_line(), description_placeholder),
+      ) ++ "\n",
+    ),
+  )
+)
+'''

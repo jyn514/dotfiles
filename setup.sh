@@ -26,6 +26,7 @@ setup_basics () {
 		mkdir -p "$(dirname "$DEST")"
 		ln -s "$(realpath "$f")" "$DEST"
 	done
+
 	if gpg -K | grep ultimate > /dev/null; then
 		mkdir -p ~/.config/git
 		echo '
@@ -34,6 +35,14 @@ setup_basics () {
 	else
 		echo not setting up GPG-signed commits, no ultimate key found
 	fi
+
+	discord=$HOME/.config/discord/settings.json
+	if [ -e $discord ]; then
+		devtools=DANGEROUS_ENABLE_DEVTOOLS_ONLY_ENABLE_IF_YOU_KNOW_WHAT_YOURE_DOING 
+		# don't have `sponge` installed yet
+		jq ".$devtools = true" < $discord > tmp.json && mv tmp.json $discord
+	fi
+
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
 	if [ "$HAS_REALPATH" = 0 ]; then
