@@ -1,7 +1,9 @@
 [ui]
 default-command = "status"
-editor = "code --wait"
 diff.tool=["difft", "--color=always", "$left", "$right"]
+
+[revsets]
+log = "trunk()..mine()"
 
 [user]
 name = "jyn"
