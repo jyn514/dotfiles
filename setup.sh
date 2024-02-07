@@ -13,6 +13,7 @@ setup_basics () {
 			openbox.xml) DEST="$HOME/.config/openbox/lubuntu-rc.xml";;
 			grepme.toml) DEST="$HOME/.config/$base";;
 			kitty.conf) DEST="$HOME/.config/kitty/$base";;
+			jj.toml) DEST="$HOME/.config/jj/config.toml";;
 			gitconfig) DEST="$HOME/.$base";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) DEST="$HOME/.$base"
@@ -170,7 +171,7 @@ install_rust() {
 	fi
 	cargo binstall -y --rate-limit 10/1 --disable-strategies crate-meta-data \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
-			fd-find ripgrep zoxide
+			fd-find ripgrep zoxide difftastic
 }
 
 

@@ -22,16 +22,24 @@ install_features () {
 			# Download the Microsoft repository GPG keys
 			wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
 			# Register the Microsoft repository GPG keys
-			sudo dpkg -i packages-microsoft-prod.deb
+			dpkg -i packages-microsoft-prod.deb
 			# Update the list of packages after we added packages.microsoft.com
-			sudo apt-get update
+			apt-get update
 			# Install PowerShell
-			sudo apt-get install -y powershell
+			apt-get install -y powershell
 		fi
 
 		if ! exists code; then
 			download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
-			sudo apt install ./code.deb
+			apt install ./code.deb
+		fi
+
+		if ! exists gh; then
+			curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg > /usr/share/keyrings/githubcli-archive-keyring.gpg
+			chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+			echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+			apt update
+			apt install gh -y
 		fi
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
