@@ -1,6 +1,6 @@
 pytest
 pylint
 xdot
-grepme
 toml
+tomli
 yt-dlp

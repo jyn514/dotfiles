@@ -292,7 +292,8 @@ if [ -d ~/.local/bin ]; then
 fi
 
 if exists code; then
-	export {EDITOR,VISUAL}="code --wait"
+	export EDITOR="code --wait"
+	export VISUAL="code --wait"
 else
 	export EDITOR=vim
 	export VISUAL=vim
