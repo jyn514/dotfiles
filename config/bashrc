@@ -27,10 +27,18 @@ fi
 # use command-not-found package if installed
 if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
    function command_not_found_handle {
-      # awawawa!
       case "$1" in
+         # awawawa!
          awa|awawa|awawawa*) echo "$1!!!"; return $?;;
+         # check if we forgot to put a space between `g` and the git subcommand
+         g*) sub=${1#*g}
+            if git config --name-only --get-regexp '^alias\..*' | grep "\.$sub$" --quiet; then
+               shift
+               g "$sub" "$@"
+               return $?
+            fi
       esac
+
 
       # check because c-n-f could've been removed in the meantime
       if [ -x /usr/lib/command-not-found ]; then
