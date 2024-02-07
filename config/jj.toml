@@ -22,3 +22,6 @@ fetch = ["git", "fetch"]
 f = ["fetch"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 
+
+[template-aliases]
+'format_timestamp(timestamp)' = 'timestamp.ago()'
