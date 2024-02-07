@@ -8,6 +8,8 @@ name = "jyn"
 email = "github@jyn.dev"
 
 [aliases]
+c = ["commit"]
+n = ["new"]
 l = ["log"]
 d = ["diff"]
 s = ["status"]
