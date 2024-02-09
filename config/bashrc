@@ -32,7 +32,7 @@ if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-no
          awa|awawa|awawawa*) echo "$1!!!"; return $?;;
          # check if we forgot to put a space between `g` and the git subcommand
          g*) sub=${1#*g}
-            if git config --name-only --get-regexp '^alias\..*' | grep "\.$sub$" --quiet; then
+            if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" --quiet; then
                shift
                g "$sub" "$@"
                return $?
