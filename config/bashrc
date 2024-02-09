@@ -24,44 +24,6 @@ if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
    debian_chroot=$(cat /etc/debian_chroot)
 fi
 
-# use command-not-found package if installed
-if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
-   function command_not_found_handle {
-      case "$1" in
-         # awawawa!
-         awa|awawa|awawawa*) echo "$1!!!"; return $?;;
-         # check if we forgot to put a space between `g` and the git subcommand
-         g*) sub=${1#*g}
-            if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" --quiet; then
-               shift
-               g "$sub" "$@"
-               return $?
-            fi
-      esac
-
-
-      # check because c-n-f could've been removed in the meantime
-      if [ -x /usr/lib/command-not-found ]; then
-         /usr/lib/command-not-found -- "$1"
-         return $?
-      elif [ -x /usr/share/command-not-found/command-not-found ]; then
-         /usr/share/command-not-found/command-not-found -- "$1"
-         return $?
-      else
-         printf "%s: command not found\n" "$1" >&2
-         return 127
-      fi
-   }
-fi
-
-export NVM_DIR="$HOME/.local/lib/nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-
-if [ -f ~/.config/exercism/exercism_completion.bash ]; then
-	. ~/.config/exercism/exercism_completion.bash
-fi
-
 # enable programmable completion features
 if ! shopt -oq posix; then
   if [ -f /usr/share/bash-completion/bash_completion ]; then

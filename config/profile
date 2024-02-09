@@ -332,6 +332,35 @@ if [ "$BASH_VERSION" ] && [ -n "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
 
+# really this is a bash/zsh thing, but sh just ignores this function if it doesn't support it
+command_not_found_handle() {
+	case "$1" in
+		# awawawa!
+		awa|awawa|awawawa*) echo "$1!!!"; return 0;;
+		# check if we forgot to put a space between `g` and the git subcommand
+		g*) sub=${1#*g}
+		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" --quiet; then
+			shift
+			git "$sub" "$@"
+			return $?
+		fi
+	esac
+
+	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
+	if CNF=$(command -v command-not-found 2>/dev/null); then
+		$CNF -- "$1"
+		return $?
+	# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
+	elif BREW=$(command -v brew 2>/dev/null) && CMD=$($BREW which-formula --explain "$1") && [ "$CMD" ]; then
+		echo "$CMD"
+		return 127
+	else
+		printf "%s: command not found\n" "$1" >&2
+		return 127
+	fi
+}
+command_not_found_handler() { command_not_found_handle "$@"; }
+
 # zsh uses `{%` instead of `\01`: https://zsh.sourceforge.io/Doc/Release/Prompt-Expansion.html#Visual-effects
 if [ -n "$ZSH_VERSION" ]; then
 	ansi_escape () { command printf "%%{$1%%}"; }
