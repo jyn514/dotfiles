@@ -62,7 +62,26 @@ complete_alias() {
 }
 complete_alias c cargo
 complete_alias g git
-if exists jj;     then source <(jj     util completion --bash); fi
+if exists jj; then
+   __jj_dynamic() {
+      source <(jj util completion bash)
+      _jj "$@"
+      # `jj util completion` overrides our `complete` >:(
+      complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
+   }
+   complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
+fi
+# jj has support for user-defined aliases. these can change between invocations, and even between
+# one command ending and the other starting. refresh the completions between each invocation of jj.
+if exists jj; then
+   __jj_dynamic() {
+      source <(jj util completion bash)
+      _jj "$@"
+      # `jj util completion` overrides our `complete` >:(
+      complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
+   }
+   complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
+fi
 if exists zoxide; then
    source <(zoxide init bash)
    cd() { z "$@" && status; }
