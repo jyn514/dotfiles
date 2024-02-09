@@ -57,7 +57,7 @@
 	# diff.external is configured in .profile; see the comment there
 	algorithm = minimal
 	colorMoved = dimmed-zebra
-	colorMovedWS = allow-indentation-change
+	colorMovedWS = ignore-space-change
 [checkout]
 	workers = 0
 [fetch]
