@@ -3,7 +3,7 @@ default-command = "status"
 diff.tool=["difft", "--color=always", "$left", "$right"]
 
 [revsets]
-log = "trunk()..mine()"
+log = "trunk()..mine() | trunk()"
 
 [user]
 name = "jyn"
