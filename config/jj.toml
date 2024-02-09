@@ -23,7 +23,6 @@ fetch = ["git", "fetch"]
 f = ["fetch"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 
-
 [templates]
 log = 'log_compact'
 
