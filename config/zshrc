@@ -87,3 +87,8 @@ if [ -e "$COMPLETION" ]; then
 	. "$COMPLETION"
 fi
 if exists jj; then source <(jj util completion --zsh); fi
+if exists zoxide; then
+   source <(zoxide init zsh)
+   # zoxide is annoying and makes `z` an alias instead of a function
+   cd() { __zoxide_z "$@" && status; }
+fi
