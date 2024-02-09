@@ -32,9 +32,11 @@
 	a = add
 	b = branch
 	c = commit
+	co = checkout
 	conf = config
-	pure-diff = -c core.pager= diff
+	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
 	d = diff
+	f = fetch
 	h = help
 	l = log --graph --oneline --format=format:'%C(auto)%h %s%d %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	branch-log = !git l $(git merge-base HEAD origin/HEAD)..
@@ -52,7 +54,7 @@
 [status]
 	showUntrackedFiles = all
 [diff]
-	external = difft
+	# diff.external is configured in .profile; see the comment there
 	algorithm = minimal
 	colorMoved = dimmed-zebra
 	colorMovedWS = allow-indentation-change
