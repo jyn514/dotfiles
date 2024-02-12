@@ -337,7 +337,8 @@ command_not_found_handle() {
 	case "$1" in
 		# awawawa!
 		awa|awawa|awawawa*) echo "$1!!!"; return 0;;
-		# check if we forgot to put a space between `g` and the git subcommand
+		# check if we forgot to put a space between `g` and the git subcommand, but not for `gh`, which is its own command
+		gh) ;;
 		g*) sub=${1#*g}
 		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" --quiet; then
 			shift
