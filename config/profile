@@ -373,7 +373,10 @@ PROMPT_DIRTRIM=2
 
 display_pwd () {
 	# reimplementation of PROMPT_DIRTRIM in pure shell
-	# 1. substitue $HOME with ~
+	# is this good
+	# do you like this
+
+	# 1. substitute $HOME with ~
 	# 2. first group: match first character (~ or /)
 	# 3. anything in the middle
 	# 4. second group: last $PROMPT_DIRTRIM directories
