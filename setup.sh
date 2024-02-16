@@ -13,7 +13,7 @@ setup_basics () {
 			openbox.xml) DEST="$HOME/.config/openbox/lubuntu-rc.xml";;
 			grepme.toml) DEST="$HOME/.config/$base";;
 			kitty.conf) DEST="$HOME/.config/kitty/$base";;
-			jj.toml) DEST=$(jj config edit --user --config-toml=ui.editor=\"echo\");;
+			jj.toml) DEST=$(jj config path --user);;
 			gitconfig) DEST="$HOME/.$base";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) DEST="$HOME/.$base"
