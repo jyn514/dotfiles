@@ -485,6 +485,11 @@ PS0='$(preexec)'
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
+
+if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
+	eval `keychain --quiet --eval --agents ssh id_rsa`
+fi
+
 case "$-" in
 	*i*) status; stty -ixon;;
 	*)	;;
