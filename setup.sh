@@ -131,14 +131,6 @@ setup_install_local () {
 }
 
 install_rust() {
-	if exists code; then
-		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
-				   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
-		do
-			code --install-extension $ext
-		done
-	fi
-
 	set +ue
 	. config/profile
 	set -ue
@@ -178,6 +170,14 @@ install_rust() {
 	cargo binstall -y --rate-limit 10/1 \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
 			fd-find ripgrep zoxide difftastic
+
+	if exists code; then
+		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
+				   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
+		do
+			code --install-extension $ext
+		done
+	fi
 }
 
 
