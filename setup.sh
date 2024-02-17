@@ -169,7 +169,7 @@ install_rust() {
 	fi
 	cargo binstall -y --rate-limit 10/1 \
 			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
-			fd-find ripgrep zoxide difftastic
+			fd-find ripgrep zoxide difftastic jj-cli
 
 	if exists code; then
 		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
