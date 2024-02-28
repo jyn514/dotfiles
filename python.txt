@@ -1,6 +1,5 @@
 pytest
 pylint
-xdot
 toml
 tomli
 yt-dlp
