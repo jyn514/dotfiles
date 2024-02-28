@@ -1,0 +1,13 @@
+bat
+broot
+cargo-audit
+cargo-outdated
+cargo-sweep
+cargo-tree
+difftastic
+fd-find
+git-absorb
+git-delta
+jj-cli
+ripgrep
+zoxide
