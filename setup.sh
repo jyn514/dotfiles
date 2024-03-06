@@ -167,9 +167,7 @@ install_rust() {
 		# update to latest version; old versions often hit a rate limit
 		cargo binstall cargo-binstall
 	fi
-	cargo binstall -y --rate-limit 10/1 \
-			bat broot cargo-audit cargo-outdated cargo-sweep cargo-tree git-absorb git-delta \
-			fd-find ripgrep zoxide difftastic jj-cli
+	xargs <rust.txt cargo binstall -y --rate-limit 10/1
 
 	if exists code; then
 		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
