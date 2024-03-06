@@ -55,7 +55,7 @@
 	showUntrackedFiles = all
 [diff]
 	# diff.external is configured in .profile; see the comment there
-	algorithm = minimal
+	algorithm = histogram
 	colorMoved = dimmed-zebra
 	colorMovedWS = ignore-space-change
 [checkout]
@@ -65,7 +65,7 @@
 	parallel = 0
 [merge]
 	tool = vimdiff
-	conflictstyle = diff3
+	conflictstyle = zdiff3
 [sendemail]
 	smtpserver = smtp.gmail.com
 	smtpserverport = 587
@@ -73,7 +73,8 @@
 [pull]
 	rebase = true
 [feature]
-	manyFiles = true
+	# breaks libgit on windows: https://github.com/libgit2/libgit2/issues/6531
+	# manyFiles = true
 # otherwise git has a nasty habit of putting stmpPass in a common file
 [include]
 	path = ~/.local/gitconfig
@@ -81,6 +82,7 @@
 	autostash = true
 [commit]
 	verbose = true
+	cleanup = scissors
 [protocol "file"]
 	allow = always
 [rerere]
@@ -93,6 +95,10 @@
 	threeWay = true
 [log]
 	follow = true
+[branch]
+	sort = committerdate
+[tag]
+	sort = taggerdate
 
 [url "git@github.com:"]
     pushInsteadOf = https://github.com/
