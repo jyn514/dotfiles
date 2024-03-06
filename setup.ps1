@@ -27,7 +27,7 @@ function Install-Dotfiles() {
     $git_config_dir = Join-Path $HOME ".config" "git"
     New-Item -ItemType Directory -Path $git_config_dir -Force | Out-Null
     foreach ($conf in "gitignore", "githooks") {
-        Install-ConfigLink $conf $(Join-Path $git_config_dir $conf)
+        Install-ConfigLink $conf $(Join-Path $git_config_dir ($conf -replace "^git",""))
     }
     Install-ConfigLink "gitconfig" $(Join-Path $HOME ".gitconfig")
     Install-ConfigLink jj.toml $(jj config path --user)
@@ -41,8 +41,8 @@ function Install-Programs() {
     # [Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User)
 
     if (! $(Test-Application cargo)) {
-                # Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
-                # Do it manually here.
+        # Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
+        # Do it manually here.
         $t = Join-Path $env:TEMP vs_community.exe
         curl.exe -L "https://aka.ms/vs/17/release/vs_community.exe" -o $t
         & $t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"

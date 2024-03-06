@@ -10,7 +10,7 @@
 	eol = lf
 	editor = code --wait
 	preloadindex = true
-	autocrlf = false
+	autocrlf = input
 	excludesfile = ~/.config/git/ignore
 	hooksPath = ~/.config/git/hooks
 	pager = delta
