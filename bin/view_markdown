@@ -5,4 +5,19 @@ if ! [ $# -eq 1 ]; then
 	exit 1
 fi
 
-pulldown-cmark < "$1" > tmp.html && x-www-browser tmp.html && sleep 1 && rm -f tmp.html
+. $(dirname "$0")/../lib/lib.sh
+open_html() {
+	if exists open; then open "$1"; return; fi
+	for b in x-www-browser firefox google-chrome; do
+		if exists $b; then $b "$1"; return; fi
+	done
+	# probably we're on windows 
+	if exists cmd.exe; then
+		cmd.exe /c "start $1"
+		return
+	fi
+	# out of ideas
+	return 1
+}
+
+pulldown-cmark < "$1" > tmp.html && open_html tmp.html && sleep 1 && rm -f tmp.html

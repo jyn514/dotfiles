@@ -11,3 +11,4 @@ git-delta
 jj-cli
 ripgrep
 zoxide
+pulldown-cmark
