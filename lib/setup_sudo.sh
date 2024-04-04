@@ -34,6 +34,11 @@ install_features () {
 			apt install ./code.deb
 		fi
 
+		if [ "$(git --version | cut -d ' ' -f3 | cut -d. -f2)" -lt 35 ]; then
+			# this often happens on WSL and borks because of zdiff3; install a newer version of git
+			add-apt-repository ppa:git-core/ppa && apt update && apt install git
+		fi
+
 		if ! exists gh; then
 			curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg > /usr/share/keyrings/githubcli-archive-keyring.gpg
 			chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
