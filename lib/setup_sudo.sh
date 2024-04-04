@@ -29,7 +29,7 @@ install_features () {
 			apt-get install -y powershell
 		fi
 
-		if ! exists code; then
+		if ! exists code && ! is_wsl; then
 			download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
 			apt install ./code.deb
 		fi

@@ -28,3 +28,8 @@ latest_release() {
 	curl --silent https://api.github.com/repos/"$1"/releases/latest | \
 		jq --raw-output '.name'
 }
+
+is_wsl() {
+	# https://superuser.com/questions/1749781/how-can-i-check-if-the-environment-is-wsl-from-a-shell-script
+	[ -e /proc/sys/fs/binfmt_misc/WSLInterop ]
+}
