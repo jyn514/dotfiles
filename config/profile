@@ -456,12 +456,27 @@ git_info() {
 prompt_command() {
 	# save the status code before anything else; commands we execute in PS1 will overwrite it
 	last_status=$?
+	now=$(date +%s.%N)
+	if [ -e ~/.cache/$$-start ]; then
+		read start_time < ~/.cache/$$-start
+		elapsed=$(awk "BEGIN {printf \"%.3f\", $now - $start_time}")
+		printf %s "$elapsed" > ~/.cache/$$-elapsed
+		# delete this file now, so if we hit <ENTER> without running a command it doesn't show an elapsed time
+		rm ~/.cache/$$-start
+	fi
 	printf %s "($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN"; hostname | tr -d '\n'
 	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
 	printf %s "$RESET) $BLUE"
 	display_pwd | tr -d '\n'
 	git_info | tr -d '\n'
-	# bash appears to strip trailing newlines from PS1, so we need RESET to come *after* the newline
+	# show the time the last command took to execute
+	if [ "$start_time" ]; then
+		printf %s "$RESET"
+		time="[+$elapsed]"
+		printf "\033[1000C"
+		printf "\033[$(printf %s "$time" | wc -c)D$time"
+	fi
+	# bash appears to strip trailing newlines from PS1, so we need something to come *after* the newline
 	printf "\n%s" "$RESET"
 	# vscode already shows the cursor indented a bit, as well as the status from the last command
 	if ! [ "$VSCODE_SHELL_INTEGRATION" = 1 ]; then
@@ -474,10 +489,20 @@ preexec() {
   # on executing the command, overwrite `;` with the timestamp
   printf "\033[2A"
   printf "\033[1000C"
-  printf "\033[10D["
-  date +%T | tr -d '\n'
-  printf "]\n\n\033[0;0m"
+  # show the elapsed time
+  if [ -e ~/.cache/$$-elapsed ]; then
+	read elapsed < ~/.cache/$$-elapsed
+	rm ~/.cache/$$-elapsed
+	s="[+$elapsed|$(date +%T | tr -d '\n')]"
+  else
+	s="[$(date +%T | tr -d '\n')]"
+  fi
+  len=$(printf %s "$s" | wc -c)
+  printf "\033[${len}D%s\n\n\033[0;0m" "$s"
+  date +%s.%N | tr -d '\n' > ~/.cache/$$-start
 }
+
+trap 'rm -f ~/.cache/$$-start ~/.cache/$$-elapsed' EXIT
 
 PS1='$(prompt_command)'
 PS0='$(preexec)'
