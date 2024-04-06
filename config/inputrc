@@ -17,3 +17,5 @@ $include /etc/inputrc
 
 # tab-complete case-insensitive
 set completion-ignore-case On
+# only require <tab> a single time to show options
+set show-all-if-ambiguous on
