@@ -15,7 +15,7 @@ install_features () {
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
-		   ninja-build
+		   ninja-build zsh-antigen
 
 		# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu
 		if ! exists pwsh; then
