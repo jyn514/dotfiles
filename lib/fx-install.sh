@@ -1,7 +1,7 @@
 #!/bin/sh
 
 version=${fx_version:-'34.0.0'}
-dst=${dst:-$(dirname $(realpath "$0"))/../bin}
+dst=${dst:-$HOME/.local/bin}
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 machine=$(uname -m)
