@@ -187,7 +187,8 @@ setup_all () {
 	setup_shell
 	setup_python
 	setup_vim
-	setup_backup
+	# this is a mess rn
+	# setup_backup
 	exit 0
 }
 
