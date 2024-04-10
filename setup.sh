@@ -15,6 +15,7 @@ setup_basics () {
 			kitty.conf) DEST="$HOME/.config/kitty/$base";;
 			jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
 			gitconfig) DEST="$HOME/.$base";;
+			kakrc) DEST="$HOME/.config/kak/kakrc";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) DEST="$HOME/.$base"
 		esac
