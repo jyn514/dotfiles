@@ -61,7 +61,8 @@ setup_shell () {
 			echo using current shell "$shell"
 			break
 		elif exists $shell; then
-			chsh -s "$(command -v $shell)"
+			echo "Changing default shell to $shell"
+			chsh -s "$(command -v $shell)" >/dev/null
 			break
 		fi
 	done

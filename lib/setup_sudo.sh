@@ -48,7 +48,7 @@ install_features () {
 		fi
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
-		apk add less py3-pip
+		apk add less py3-pip zsh
 	fi
 }
 
