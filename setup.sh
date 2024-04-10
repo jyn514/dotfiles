@@ -1,5 +1,5 @@
 #!/bin/sh
-set -eu
+set -u
 
 setup_basics () {
 	echo Installing configuration to ~
@@ -167,7 +167,7 @@ install_rust() {
 		# update to latest version; old versions often hit a rate limit
 		cargo binstall cargo-binstall
 	fi
-	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1
+	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile
 
 	if exists code; then
 		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
