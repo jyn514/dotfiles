@@ -12,3 +12,4 @@ jj-cli
 ripgrep
 zoxide
 pulldown-cmark
+atuin
