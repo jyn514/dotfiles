@@ -121,6 +121,7 @@ setup_install_local () {
 
 	install_rust
 	python3 -m pip install --user git-revise
+	lib/fx-install.sh
 
 	if ! [ -x ~/.local/bin/cat ] && exists bat; then ln -sf "$(command -v bat)" ~/.local/bin/cat; fi
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
