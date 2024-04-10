@@ -28,12 +28,21 @@ bindkey -e
 bindkey ";3C" forward-word
 # Alt + Left
 bindkey ";3D" backward-word
+# ctrl+left
+bindkey ";5D" backward-word
+# ctrl+right
+bindkey ";5C" forward-word
 
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'
 bindkey "\e[H" beginning-of-line
 bindkey "\e[F" end-of-line
 bindkey "\e[3~" delete-char
+# ctrl+del
+bindkey "5~" delete-word
+# alt+del
+bindkey "3~" backward-delete-word
+
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
