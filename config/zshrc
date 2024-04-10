@@ -70,7 +70,7 @@ if [ -e "$COMPLETION" ]; then
 	. "$COMPLETION"
 fi
 
-. /usr/share/zsh-antigen/antigen.zsh
+. $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
 antigen bundle zsh-users/zsh-autosuggestions
 antigen apply
 
