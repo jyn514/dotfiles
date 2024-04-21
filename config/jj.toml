@@ -1,6 +1,7 @@
 [ui]
 default-command = "status"
 diff.tool=["difft", "--color=always", "$left", "$right"]
+diff-editor = ":builtin"
 
 [revsets]
 log = "trunk()..mine() | trunk()"
