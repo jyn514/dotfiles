@@ -350,7 +350,15 @@ command_not_found_handle() {
 			shift
 			git "$sub" "$@"
 			return $?
-		fi
+		fi;;
+		# this is kinda cursed
+		cc) ;;
+		c*) sub=${1#*c}
+		if cargo --list | awk '{print $1}' | grep "^$sub$" --quiet; then
+			shift
+			cargo "$sub" "$@"
+			return $?
+		fi;;
 	esac
 
 	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
