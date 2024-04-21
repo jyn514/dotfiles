@@ -17,6 +17,8 @@ PROMPT="$PS1"
 setopt histignorealldups sharehistory correct
 # append immediately, not on close
 setopt incappendhistory
+# allow `cd ..`
+setopt autocd
 
 # save command in buffer before executing
 bindkey "^Q" push-line
