@@ -4,7 +4,8 @@ diff.tool=["difft", "--color=always", "$left", "$right"]
 diff-editor = ":builtin"
 
 [revsets]
-log = "trunk()..mine() | trunk()"
+# i use a bunch of emails; easier to just track author name
+log = "trunk()..author(\"jyn\") | trunk()"
 
 [user]
 name = "jyn"
