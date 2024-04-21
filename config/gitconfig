@@ -34,6 +34,7 @@
 	c = commit
 	co = checkout
 	conf = config
+	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
 	d = diff
 	f = fetch
