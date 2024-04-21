@@ -1,0 +1,11 @@
+$the_cow = <<EOT;
+  $thoughts
+   $thoughts
+EOT
+$the_cow .= <<'EOC';
+      ==
+   <^\()/^>
+    \/  \/
+     /  \
+     `''`
+EOC

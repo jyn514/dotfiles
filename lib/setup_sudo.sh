@@ -11,7 +11,7 @@ install_features () {
 			add-apt-repository universe
 			apt-get update
 		fi
-		apt-get install -y vim git build-essential cowsay shellcheck nmap \
+		apt-get install -y vim git build-essential cowsay figlet shellcheck  nmap \
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \

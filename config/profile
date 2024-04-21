@@ -282,6 +282,7 @@ $OCD_DIRLIST"
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
+DOTFILES="$(dirname "$(dirname "$(realpath ~/.profile)")")"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
@@ -332,11 +333,16 @@ if [ "$BASH_VERSION" ] && [ -n "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
 
+awawa_handler() {
+	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
+        } | cowsay -f "$DOTFILES"/lib/angel.cow -n
+}
+
 # really this is a bash/zsh thing, but sh just ignores this function if it doesn't support it
 command_not_found_handle() {
 	case "$1" in
 		# awawawa!
-		awa|awawa|awawawa*) echo "$1!!!"; return 0;;
+		awa|awawa*) awawa_handler "$@"; return 0;;
 		# check if we forgot to put a space between `g` and the git subcommand, but not for `gh`, which is its own command
 		gh) ;;
 		g*) sub=${1#*g}
