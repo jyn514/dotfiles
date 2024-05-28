@@ -319,7 +319,8 @@ export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export CARGO_MOMMYS_MOODS=ominous
 # git treats `diff.external` extremely poorly; there's no way to unset it temporarily because `-c diff.external` tries to run an empty program.
 # instead, set this through an external env variable so we can unset it with `env -u`.
-export GIT_EXTERNAL_DIFF=difft
+# difft is super buggy though :( ignoring it for now
+# export GIT_EXTERNAL_DIFF=difft
 
 # Delta is bad at doing version detection.
 # https://github.com/dandavison/delta/issues/488

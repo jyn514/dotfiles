@@ -1,11 +1,17 @@
 [ui]
-default-command = "status"
-diff.tool=["difft", "--color=always", "$left", "$right"]
+default-command = "log"
+# diff.tool=["difft", "--color=always", "$left", "$right"]
+diff.tool=["delta", "$left", "$right"]
 diff-editor = ":builtin"
+merge-editor = "meld"
 
 [revsets]
 # i use a bunch of emails; easier to just track author name
 log = "trunk()..author(\"jyn\") | trunk()"
+
+[revset-aliases]
+'trunk' = 'trunk()'
+'0' = 'trunk()'
 
 [user]
 name = "jyn"
