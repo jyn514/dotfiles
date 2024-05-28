@@ -60,9 +60,6 @@ vrg () { rg --no-heading "$@"; }
 b () { bacon "$@"; }
 c () { cargo "$@"; }
 g() { git "$@"; }
-gl() { git l "$@"; }
-gs() { git s "$@"; }
-gits() { git s "$@"; }
 
 # show human-readable dates with offsets by default
 dmesg () { command dmesg -e "$@"; }
