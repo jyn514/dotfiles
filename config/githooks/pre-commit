@@ -2,6 +2,13 @@
 set -eu
 files=$(git diff --name-only --cached --no-ext-diff)
 if ! [ "$files" ]; then exit 0; fi
+
+tmpdir=$(mktemp -d --tmpdir "$(basename "$(realpath .)")-pre-commit.XXXX")
+trap 'rm -r "$tmpdir"' EXIT
+IFS='\n' printf %s "$files" | xargs -d '\n' git checkout-index --prefix="$tmpdir/"
+
+export GIT_DIR=$(realpath $(git rev-parse --git-dir))
+cd "$tmpdir"
 for c in symlinks case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do
-    IFS='\n' python $(realpath "$(dirname "$0")")/pre_commit_hooks/check_$c.py $files
+    find -type f -print0 | xargs -0 python $(realpath "$(dirname "$0")")/pre_commit_hooks/check_$c.py
 done
