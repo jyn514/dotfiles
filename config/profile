@@ -8,6 +8,10 @@ is_jj_repo() {
 	jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
 }
 
+show_conflicts() {
+	jj diff --from @-- --to @- $(jj resolve --list | awk '{print $1}') --git | grepdiff --output-matching=hunk '<<<<<<<' | less
+}
+
 HEAD() {
 	if is_jj_repo; then
 		jj git fetch && jj new -r 'trunk()'
