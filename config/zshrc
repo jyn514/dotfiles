@@ -10,6 +10,10 @@ alias help=run-help
 alias -g stauts=status
 alias -g serach=search
 
+pure_shell() {
+   env -u HISTFILE PS1='; ' zsh --no-rcs --no-globalrcs
+}
+
 autoload -Uz promptinit
 promptinit
 PROMPT="$PS1"
@@ -32,8 +36,11 @@ bindkey ";3C" forward-word
 bindkey ";3D" backward-word
 # ctrl+left
 bindkey ";5D" backward-word
+# kitty passes \e[ but gnome-terminal doesn't :(
+bindkey "\e[1;5D" backward-word
 # ctrl+right
 bindkey ";5C" forward-word
+bindkey "\e[1;5C" forward-word
 
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'
@@ -44,7 +51,12 @@ bindkey "\e[3~" delete-char
 bindkey "5~" delete-word
 # alt+del
 bindkey "3~" backward-delete-word
+# ctrl+backspace
+bindkey '^H' backward-delete-word
 
+# space expands !... history
+# TODO: see if we can make this more useful?
+bindkey ' ' magic-space
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
@@ -54,6 +66,9 @@ HISTFILE=~/.zsh_history
 # Use modern completion system
 autoload -Uz compinit
 compinit
+
+# shift-tab cycles backwards through choices
+bindkey '^[[Z' reverse-menu-complete
 
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate

@@ -1,3 +1,8 @@
+case "$-" in
+	*i*) ;;
+	*)	return 0;;
+esac
+
 # TODO: work this into gitconfig somehow
 git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
@@ -534,7 +539,5 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	eval `keychain --quiet --eval --agents ssh`
 fi
 
-case "$-" in
-	*i*) status; stty -ixon;;
-	*)	;;
-esac
+status
+stty -ixon
