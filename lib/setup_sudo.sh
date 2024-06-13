@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -e
+set -ex
 
 # this script is very opinionated. you may not want to run everything here.
 
@@ -16,6 +16,9 @@ install_features () {
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
 		   ninja-build
+		if is_wsl; then
+			apt install -y keychain
+		fi
 
 		# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu
 		if ! exists pwsh; then
@@ -58,7 +61,7 @@ install_security () {
 	fi
 	apt-get update
 	apt-get install -y unattended-upgrades
-	unattended-upgrades
+	unattended-upgrades || true
 }
 
 remove_unwanted () {
