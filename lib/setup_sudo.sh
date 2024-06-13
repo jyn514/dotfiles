@@ -57,18 +57,7 @@ install_security () {
 		return
 	fi
 	apt-get update
-	apt-get install -y unattended-upgrades iptables-persistent
-	DEST=/etc/iptables/rules.v4
-	force=y
-	if [ -e "$DEST" ]; then
-		set +x
-		printf "$DEST already exists, overwrite? y/[n]: "
-		read -r force
-		set -x
-		[ "$force" = y ] && mv "$DEST" "$DEST".bak
-	fi
-	[ "$force" = y ] && ln -s "$DIR/iptables" "$DEST" || true
-	iptables-restore "$DIR/iptables"
+	apt-get install -y unattended-upgrades
 	unattended-upgrades
 }
 
