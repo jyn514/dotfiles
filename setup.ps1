@@ -1,12 +1,27 @@
 # Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 $ErrorActionPreference = "Stop"
 
+# check if this is powershell 5
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Output "Re-execing with powershell 7"
+    if (! (where.exe pwsh)) {
+        curl.exe https://github.com/PowerShell/PowerShell/releases/download/v7.4.2/PowerShell-7.4.2-win-x64.msi -L -o powershell.msi
+        .\powershell.msi /quiet
+        Remove-Item powershell.msi    
+    }
+    pwsh $PSCommandPath
+    exit $LASTEXITCODE
+}
+
 function Test-Application($cmd) {
     return (Get-Command $cmd -ErrorAction SilentlyContinue -CommandType Application | Measure-Object).Count -gt 0
 }
 
 function Install-ConfigLink($existing, $new) {
-    $existing = Join-Path $PSScriptRoot "config" $existing
+    Install-Link (Join-Path $PSScriptRoot "config" $existing) $new
+}
+
+function Install-Link($existing, $new) {
     if ((! (Test-Path $new)) -or ($null -ne (Get-Member -InputObject (Get-Item $new) -name LinkType))) {
         if ((Get-Item $existing).PSIsContainer) {
             $type = "Junction"
@@ -31,6 +46,12 @@ function Install-Dotfiles() {
     }
     Install-ConfigLink "gitconfig" $(Join-Path $HOME ".gitconfig")
     Install-ConfigLink jj.toml $(jj config path --user)
+
+    $bin_dir = Join-Path $HOME ".local" "bin"
+    New-Item -ItemType Directory -Path $bin_dir -Force | Out-Null
+    foreach ($cmd in Get-ChildItem bin/*.bat) {
+        Install-Link (Join-Path $PSScriptRoot "bin" $cmd.Name) $(Join-Path $bin_dir $cmd.Name)
+    }
     # TODO: install vscode settings to %APPDATA%\Code\User\settings.json
 }
 
