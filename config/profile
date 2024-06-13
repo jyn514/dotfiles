@@ -1,3 +1,9 @@
+# do this even for non-interactive shells so `mosh home` works even if we're not already in a WSL session
+exists () { command -v "$1" >/dev/null 2>&1; }
+if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
+	eval `keychain --quiet --eval --agents ssh`
+fi
+
 case "$-" in
 	*i*) ;;
 	*)	return 0;;
@@ -37,8 +43,6 @@ r () { R "$@"; }
 add_path () {
 	PATH="$1:$PATH"
 }
-
-exists () { command -v "$1" >/dev/null 2>&1; }
 
 if exists xdg-open; then
 	open () { for f in "$@"; do xdg-open "$f"; done; }
@@ -496,10 +500,6 @@ PS1='$(prompt_command)'
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
 add_path ~/.local/bin
-
-if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
-	eval `keychain --quiet --eval --agents ssh`
-fi
 
 status
 stty -ixon
