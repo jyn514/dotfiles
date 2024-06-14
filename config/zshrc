@@ -42,13 +42,21 @@ bindkey "\e[1;5D" backward-word
 bindkey ";5C" forward-word
 bindkey "\e[1;5C" forward-word
 
+# by analogy with ^H
+# this overrides clear-screen, but i don't care about clear-screen
+bindkey "^L" forward-word
+
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'
 bindkey "\e[H" beginning-of-line
 bindkey "\e[F" end-of-line
 bindkey "\e[3~" delete-char
+# tmux gets these as different scancodes apparently?
+bindkey "\e[1~" beginning-of-line
+bindkey "\e[4~" end-of-line
 # ctrl+del
 bindkey "5~" delete-word
+bindkey "\e[3;5~" delete-word # tmux
 # alt+del
 bindkey "3~" backward-delete-word
 # ctrl+backspace
