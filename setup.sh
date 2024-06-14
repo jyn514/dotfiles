@@ -7,17 +7,16 @@ setup_basics () {
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
 	for f in "$(realpath config)"/*; do
 		base=$(basename "$f")
-		case $(basename "$f") in
-			youtube-dl) DEST="$HOME/.config/youtube-dl/config";;
-			config.fish) DEST="$HOME/.config/fish/$base";;
-			openbox.xml) DEST="$HOME/.config/openbox/lubuntu-rc.xml";;
-			grepme.toml) DEST="$HOME/.config/$base";;
-			kitty.conf) DEST="$HOME/.config/kitty/$base";;
+		case $base in
 			jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
-			gitconfig) DEST="$HOME/.$base";;
-			kakrc) DEST="$HOME/.config/kak/kakrc";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
-			*) DEST="$HOME/.$base"
+			*) while IFS="=" read local home; do
+					if [ "$local" = "$base" ]; then
+						DEST=$HOME/$home
+						break
+					fi
+				done < config.txt
+				DEST=${DEST:-$HOME/."$base"}
 		esac
 
 		if [ -L "$DEST" ]; then rm -f "$DEST"
