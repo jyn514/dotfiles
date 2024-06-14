@@ -1,0 +1,2 @@
+#!/bin/sh
+npm exec --package=linux-window-session-manager -- lwsm "$@"

@@ -4,6 +4,17 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	eval `keychain --quiet --eval --agents ssh`
 fi
 
+add_path () {
+	PATH="$1:$PATH"
+}
+
+if [ -d ~/.local/bin ]; then
+	add_path "$HOME/.local/bin"
+fi
+add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
+export CARGO_HOME="$HOME/.local/lib/cargo"
+add_path "$CARGO_HOME"/bin
+
 case "$-" in
 	*i*) ;;
 	*)	return 0;;
@@ -39,10 +50,6 @@ HEAD() {
 v () { vim "$@"; }
 # uppercase is bad and it should feel bad
 r () { R "$@"; }
-
-add_path () {
-	PATH="$1:$PATH"
-}
 
 if exists xdg-open; then
 	open () { for f in "$@"; do xdg-open "$f"; done; }
@@ -319,7 +326,6 @@ export BAT_STYLE=numbers
 export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
 export RUSTUP_HOME="$HOME/.local/lib/rustup"
-export CARGO_HOME="$HOME/.local/lib/cargo"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export CARGO_MOMMYS_MOODS=ominous
@@ -496,10 +502,6 @@ prompt_command() {
 }
 
 PS1='$(prompt_command)'
-
-add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
-add_path "$CARGO_HOME"/bin
-add_path ~/.local/bin
 
 status
 stty -ixon

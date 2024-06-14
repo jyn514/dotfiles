@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Whatsapp
+Type=Application
+GenericName=Chat Application
+Comment=Proxied through firefox
+Exec=firefox --new-window https://web.whatsapp.com
