@@ -18,4 +18,6 @@ else
 	tmux select-pane -t $pane -Z
 fi
 
-tmux run-shell -t $pane 'xdotool windowactivate $WINDOWID'
+if [ "$DISPLAY" ]; then
+    tmux run-shell -t $pane 'xdotool windowactivate $WINDOWID'
+fi
