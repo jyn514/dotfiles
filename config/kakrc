@@ -1,1 +1,40 @@
-map global prompt x 'write-quit'
+add-highlighter global/ wrap
+
+# vim and helix mappings
+map global normal D 'Gld'  # note: also deletes the current selection
+# doesn't work because kak doesn't allow remapping C-c
+# map global normal <c-c> ':comment-line<ret>'
+# none of these work because kak doesn't receive the keypresses :(
+# map global normal <c-/> ':comment-line<ret>'
+# map global normal <c-_> ':comment-line<ret>'
+alias global x write-quit
+alias global buffer-close delete-buffer
+alias global bc delete-buffer
+alias global open edit
+alias global o edit
+
+# computer-touching bullshit
+define-command edit-config "edit ~/.config/kak/kakrc" -docstring "edit user kakrc"
+alias global ec edit-config
+define-command logs "edit *debug*" -docstring "view *debug* logs"
+alias global log logs
+
+# add some common features from helix
+declare-user-mode picker
+map global normal <space> ":enter-user-mode picker<ret>" -docstring "picker mode (helix emulator)"
+map global picker f ':edit ' -docstring "file picker"
+map global picker b ':buffer ' -docstring "buffer picker"
+map global picker s ': lsp-document-symbol<ret>' -docstring "symbol picker"
+map global picker d ': lsp-diagnostics<ret>' -docstring "workspace diagnostic picker"
+map global picker r ': lsp-rename-prompt<ret>' -docstring "rename the selection"
+map global picker c ': comment-line<ret>' -docstring "comment out the current line"
+# map global picker a ': lsp-code-actions<ret>' -docstring "show LSP actions"
+map global picker . ': lsp-code-actions<ret>' -docstring "show LSP actions"
+
+# LSP
+eval %sh{kak-lsp --kakoune -s $kak_session}  # Not needed if you load it with plug.kak.
+hook global WinSetOption filetype=(rust|python|go|javascript|typescript|c|cpp) %{
+        lsp-enable-window
+}
+
+hook global -always RawKey .* %{ echo -debug %val{hook_param} }
