@@ -9,11 +9,13 @@ EOF
 
 if ! [ "$pane" ]; then
 	# start a new pane
-	exec tmux split-window hx "$1"
+	pane=$(tmux split-window -P -F "#{pane_id}" hx "$1")
+else
+	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
+	tmux send-keys -t $pane Escape
+	tmux send-keys -t $pane ":o $1" Enter
+	tmux select-window -t $window
+	tmux select-pane -t $pane -Z
 fi
 
-# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
-tmux send-keys -t $pane Escape
-tmux send-keys -t $pane ":o $1" Enter
-tmux select-window -t $window
-tmux select-pane -t $pane -Z
+tmux run-shell -t $pane 'xdotool windowactivate $WINDOWID'
