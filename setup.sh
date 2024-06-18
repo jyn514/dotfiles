@@ -25,6 +25,7 @@ setup_basics () {
 		fi
 		mkdir -p "$(dirname "$DEST")"
 		ln -s "$(realpath "$f")" "$DEST"
+		unset DEST
 	done
 
 	if gpg -K | grep ultimate > /dev/null; then
