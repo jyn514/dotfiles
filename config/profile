@@ -227,22 +227,17 @@ pip_upgrade_all () {
 	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
 }
 
+# show default tmux config https://superuser.com/a/560941
+tmux_default() {
+	tmux -L unconfigured -f /dev/null start-server \; list-keys \;
+}
+
 # Add an "alert" alias for long running commands.  Use like so:
 #   sleep 10; alert
 alert () {
 	notify-send --urgency=low \
 	"$([ $? = 0 ] && echo terminal || echo error)" \
 	"$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
-}
-
-# https://stackoverflow.com/questions/9679932
-npm_exec () {
-	COMMAND="npm bin"
-	if [ $# -gt 0 ] && [ "$1" = "-g" ]
-		then COMMAND="$COMMAND --global"
-		shift
-	fi
-	PATH="$($COMMAND):$PATH" "$@";
 }
 
 fork_github() {

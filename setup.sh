@@ -50,8 +50,9 @@ setup_basics () {
 		grep -v 'set -.*e' < lib/realpath.sh >> ~/.local/profile
 	fi
 	set +ue
-	. ~/.profile
+	. config/profile
 	setup_vim # otherwise vim will error out the next time it starts up
+	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
 unset DEST LOCAL f
 }
 
