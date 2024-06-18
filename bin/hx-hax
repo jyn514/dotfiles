@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# find a pane that already has hx running
+read pane window << EOF
+$(tmux list-panes -a -f '#{==:#{pane_current_command},hx}' \
+	-F '#{pane_id} #{window_id} #{window_activity}' \
+	| sort  -k3 | tail -n1 | cut -d ' ' -f 1-2)
+EOF
+
+if ! [ "$pane" ]; then
+	# start a new pane
+	exec tmux split-window hx "$1"
+fi
+
+# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
+tmux send-keys -t $pane Escape
+tmux send-keys -t $pane ":o $1" Enter
+tmux select-window -t $window
+tmux select-pane -t $pane -Z
