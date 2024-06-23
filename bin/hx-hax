@@ -1,19 +1,29 @@
 #!/bin/sh
 
 # find a pane that already has hx running
+editor=kak
+current_session=$(tmux display-message -p "#{session_id}")
+# TODO: this will break if this is running in an X session outside a tmux session
+editor_panes=$(tmux list-panes -a \
+    -f "#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}" \
+    -F '#{pane_id} #{window_id} #{window_activity}' \
+    | sort  -k3 | tail -n1)
 read pane window << EOF
-$(tmux list-panes -a -f '#{==:#{pane_current_command},hx}' \
-	-F '#{pane_id} #{window_id} #{window_activity}' \
-	| sort  -k3 | tail -n1 | cut -d ' ' -f 1-2)
+$(echo "$editor_panes" | cut -d ' ' -f 1-2)
 EOF
 
 if ! [ "$pane" ]; then
 	# start a new pane
-	pane=$(tmux split-window -P -F "#{pane_id}" hx "$1")
+	pane=$(tmux split-window -P -F "#{pane_id}" $editor "$@")
 else
 	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
 	tmux send-keys -t $pane Escape
-	tmux send-keys -t $pane ":o $1" Enter
+	if [ $editor = kak ] && [ $# -gt 1 ]; then
+    		args="$1 "
+    		shift
+    		args="$args $(echo "$@" | tr ':' ' ' | tr -d +)"
+    	fi
+	tmux send-keys -t $pane ":o ${args:-@}" Enter
 	tmux select-window -t $window
 	tmux select-pane -t $pane -Z
 fi
