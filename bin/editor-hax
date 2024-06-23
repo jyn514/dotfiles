@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import subprocess
+import os
+import sys
+import re
+
+LINE = re.compile("(.*):([0-9]+):([0-9]+)$")
+
+def split_line(filename):
+  # TODO: don't split if this file exists on disk
+  # TODO: make filename an abasolute path
+  if match := LINE.search(filename):
+    return match.group(1, 2, 3)
+  return filename, None, None
+
+def join_line(filename, line, column):
+    if line is None or column is None:
+        return [filename]
+    if EDITOR == "kak":  # add more here whenever
+        return [filename, f"+{line}:{column}"]
+    return [filename]
+
+EDITOR = os.environ.get("REAL_EDITOR") or "kak"
+SPLIT_ONLY = os.environ.get("EDITOR_HAX_SPLIT_ONLY") is not None
+if len(sys.argv) > 1:
+  if SPLIT_ONLY:
+      args = list(split_line(sys.argv[1])) + sys.argv[2:]
+  else:
+      args = join_line(*split_line(sys.argv[1])) + sys.argv[2:]
+else:
+  args = sys.argv[1:]
+
+if SPLIT_ONLY:
+  print(" ".join(args), end="")
+else:
+  subprocess.run([EDITOR] + args)

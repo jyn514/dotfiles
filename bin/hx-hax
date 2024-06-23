@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -x
 
 # find a pane that already has hx running
@@ -13,13 +13,12 @@ read pane window << EOF
 $(echo "$editor_panes" | cut -d ' ' -f 1-2)
 EOF
 
-if [ $editor = kak ] && echo "$1" | rg ':[0-9]+:[0-9]+$' -q; then
-    	# regex=':[0-9]\+:[0-9]\+$'
-    	# file=$(echo "$1" | sed "s/\(.*\)$regex/\1/")
-    	# line=$(echo "$1" | sed "s/\($regex\)/\1/")
-    	args=$(echo "$1" | sed 's/:\([0-9]\+:[0-9]\+$\)/ +\1/')
-    	shift
-    	args="$args $*"
+# if [ $editor = kak ] && echo "$1" | rg ':[0-9]+:[0-9]+$' -q; then
+    	# regex='[0-9]\+:[0-9]\+$'
+    	# file=$(echo "$1" | sed "s/\(.*\):$regex/\1/" | xargs realpath)
+    	# line=$(echo "$1" | sed "s/.*:\($regex\)/\1/")
+    	# shift
+# fi
 	# args="$file +$line"
 	# shift
 	# if [ "$pane" ]; then
@@ -27,14 +26,18 @@ if [ $editor = kak ] && echo "$1" | rg ':[0-9]+:[0-9]+$' -q; then
 	# else
  #    		args="$args +""$@"
  #    	fi
-fi
+# fi
 if ! [ "$pane" ]; then
 	# start a new pane
-	pane=$(tmux split-window -P -F "#{pane_id}" $editor ${args:-@})
+    	# args=$(echo "$1" | sed 's/:\([0-9]\+:[0-9]\+$\)/ +\1/')
+    	# shif
+	pane=$(tmux split-window -P -F "#{pane_id}" env REAL_EDITOR=$editor editor-hax "$@")
 else
+	# args="$(echo "$line" | tr ':' ' ' | tr -d +)"
+	args=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$1")
 	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
 	tmux send-keys -t $pane Escape
-	tmux send-keys -t $pane ":o ${args:-@}" Enter
+	tmux send-keys -t $pane ":edit $args" Enter
 	tmux select-window -t $window
 	tmux select-pane -t $pane -Z
 fi
