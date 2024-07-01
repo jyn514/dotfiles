@@ -164,6 +164,10 @@ install_rust() {
 	# avoid recompiling so much
 	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
+	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
+	if exists gh; then
+    	export GITHUB_TOKEN=$(gh auth token)
+	fi
 	if ! exists cargo-binstall; then
 		# https://github.com/cargo-bins/cargo-binstall#installation
 		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
