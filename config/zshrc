@@ -11,7 +11,7 @@ alias -g stauts=status
 alias -g serach=search
 
 pure_shell() {
-   env -i TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
+   env -i HOME="$HOME" TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
 }
 
 autoload -Uz promptinit
