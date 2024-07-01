@@ -1,7 +1,10 @@
 add-highlighter global/ wrap
+set-option global aligntab false
+set-option global tabstop 2
 
 # vim and helix mappings
 map global normal D 'Gld'  # note: also deletes the current selection
+map global normal , <space>  # shrink to single selection
 # doesn't work because kak doesn't allow remapping C-c
 # map global normal <c-c> ':comment-line<ret>'
 # none of these work because kak doesn't receive the keypresses :(
@@ -19,6 +22,11 @@ alias global ec edit-config
 define-command logs "edit *debug*" -docstring "view *debug* logs"
 alias global log logs
 
+# copy to system clipboard using OSC 52 escape codes
+hook global NormalKey y|d|c %{ nop %sh{
+	printf "\033]52;c;$(printf "%s" "$kak_reg_dquote" | base64)\007" > /dev/tty
+}}
+
 # add some common features from helix
 declare-user-mode picker
 map global normal <space> ":enter-user-mode picker<ret>" -docstring "picker mode (helix emulator)"
@@ -33,8 +41,13 @@ map global picker . ': lsp-code-actions<ret>' -docstring "show LSP actions"
 
 # LSP
 eval %sh{kak-lsp --kakoune -s $kak_session}  # Not needed if you load it with plug.kak.
-hook global WinSetOption filetype=(rust|python|go|javascript|typescript|c|cpp) %{
-        lsp-enable-window
+lsp-enable
+hook global WinSetOption filetype=.* %{
+  hook window -group semantic-tokens BufReload .* lsp-semantic-tokens
+  hook window -group semantic-tokens NormalIdle .* lsp-semantic-tokens
+  hook window -group semantic-tokens InsertIdle .* lsp-semantic-tokens
+  hook -once -always window WinSetOption filetype=.* %{
+    remove-hooks window semantic-tokens
+  }
 }
 
-hook global -always RawKey .* %{ echo -debug %val{hook_param} }
