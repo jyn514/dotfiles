@@ -14,6 +14,7 @@ fi
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 export CARGO_HOME="$HOME/.local/lib/cargo"
 add_path "$CARGO_HOME"/bin
+add_path "$(PATH="$PATH" npm config get prefix)/bin"
 
 case "$-" in
 	*i*) ;;
