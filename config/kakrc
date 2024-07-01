@@ -1,10 +1,25 @@
+# debugging:
+# to show what keypresses are mapped to:
+#    hook global -always RawKey .* %{ echo -debug %val{hook_param} }
+# to show currently set options: `:debug options` and then `:logs`
+#	  or for a single option: `:echo %opt{aligntab}`
+# to show possible format strings: `:doc expansions`
+# to show possible options: `:doc options`
+# for writing hooks: `:doc hooks`
+# to show inferred filetypes: https://github.com/mawww/kakoune/blob/master/rc/detection/file.kak
+
 add-highlighter global/ wrap
 set-option global aligntab false
 set-option global tabstop 2
+hook global WinSetOption filetype=sh %{
+    set-option buffer aligntab true
+    set-option buffer formatcmd shfmt
+}
 
 # vim and helix mappings
 map global normal D 'Gld'  # note: also deletes the current selection
 map global normal , <space>  # shrink to single selection
+map global normal = ':format<ret>'
 # doesn't work because kak doesn't allow remapping C-c
 # map global normal <c-c> ':comment-line<ret>'
 # none of these work because kak doesn't receive the keypresses :(
@@ -42,6 +57,7 @@ map global picker . ': lsp-code-actions<ret>' -docstring "show LSP actions"
 # LSP
 eval %sh{kak-lsp --kakoune -s $kak_session}  # Not needed if you load it with plug.kak.
 lsp-enable
+
 hook global WinSetOption filetype=.* %{
   hook window -group semantic-tokens BufReload .* lsp-semantic-tokens
   hook window -group semantic-tokens NormalIdle .* lsp-semantic-tokens
