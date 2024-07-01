@@ -8,7 +8,7 @@ setup_basics () {
 	for f in "$(realpath config)"/*; do
 		base=$(basename "$f")
 		case $base in
-			jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
+    	jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) while IFS="=" read local home; do
 					if [ "$local" = "$base" ]; then
@@ -131,7 +131,13 @@ setup_install_local () {
 		echo 'exec python3 "$@"' > ~/.local/bin/python
 		chmod +x ~/.local/bin/python
 	fi
-	if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
+        if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
+        if ! exists tailscale; then curl -fsSL https://tailscale.com/install.sh | sh; fi
+
+    # TODO: lol this is so funny we're literally just hardcoding the arch
+    # can't just install from apt because the version is too old and doesn't support `-ln auto`
+   download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
+   chmod +x ~/.local/bin/shfmt
 }
 
 install_rust() {
@@ -224,18 +230,29 @@ else
 	HAS_REALPATH=1
 fi
 
-message
-while read -r choice; do
-	case $choice in
+run() {
+	case "$1" in
 		q*|e*|0) exit 0;;
-		dot*|bas*|1) setup_basics; message;;
-		sh*|2) setup_shell; message;;
-		py*|3) setup_python; message;;
-		vi*|4) setup_vim; message;;
-		bac*|5) setup_basics; setup_backup; message;;
-		su*|l*|6) setup_install_local; message;;
-		i*|7) setup_install_global; message;;
+		dot*|bas*|1) setup_basics;;
+		sh*|2) setup_shell;;
+		py*|3) setup_python;;
+		vi*|4) setup_vim;;
+		bac*|5) setup_basics; setup_backup;;
+		su*|l*|6) setup_install_local;;
+		i*|7) setup_install_global;;
 		all|8) setup_all; exit 0;;
-		*) printf "Please enter a number 0-8: ";;
+		*) return 1;;
 	esac
-done
+}
+
+if ! [ $# = 0 ]; then
+	if ! run "$1"; then message; fi
+else
+    message
+    while read -r choice; do
+    	if ! run "$choice"; then
+    		printf "Please enter a number 0-8: "
+		fi
+    	message
+    done
+fi
