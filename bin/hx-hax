@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -x
 
-# find a pane that already has hx running
 editor=kak
+# find a pane that already has kak running
 current_session=$(tmux display-message -p "#{session_id}")
-# TODO: this will break if this is running in an X session outside a tmux session
+# TODO: this will break if this is running in an X session outside a tmux session, need to check current_session probably
+# https://man7.org/linux/man-pages/man1/tmux.1.html#FORMATS
 editor_panes=$(tmux list-panes -a \
     -f "#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}" \
     -F '#{pane_id} #{window_id} #{window_activity}' \
@@ -13,27 +14,10 @@ read pane window << EOF
 $(echo "$editor_panes" | cut -d ' ' -f 1-2)
 EOF
 
-# if [ $editor = kak ] && echo "$1" | rg ':[0-9]+:[0-9]+$' -q; then
-    	# regex='[0-9]\+:[0-9]\+$'
-    	# file=$(echo "$1" | sed "s/\(.*\):$regex/\1/" | xargs realpath)
-    	# line=$(echo "$1" | sed "s/.*:\($regex\)/\1/")
-    	# shift
-# fi
-	# args="$file +$line"
-	# shift
-	# if [ "$pane" ]; then
- #        	args="$args $(echo "$@" | tr ':' ' ' | tr -d +)"
-	# else
- #    		args="$args +""$@"
- #    	fi
-# fi
 if ! [ "$pane" ]; then
 	# start a new pane
-    	# args=$(echo "$1" | sed 's/:\([0-9]\+:[0-9]\+$\)/ +\1/')
-    	# shif
 	pane=$(tmux split-window -P -F "#{pane_id}" env REAL_EDITOR=$editor editor-hax "$@")
 else
-	# args="$(echo "$line" | tr ':' ' ' | tr -d +)"
 	args=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$1")
 	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
 	tmux send-keys -t $pane Escape

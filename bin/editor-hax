@@ -22,15 +22,17 @@ def join_line(filename, line, column):
 
 EDITOR = os.environ.get("REAL_EDITOR") or "kak"
 SPLIT_ONLY = os.environ.get("EDITOR_HAX_SPLIT_ONLY") is not None
-if len(sys.argv) > 1:
-  if SPLIT_ONLY:
-      args = list(split_line(sys.argv[1])) + sys.argv[2:]
-  else:
-      args = join_line(*split_line(sys.argv[1])) + sys.argv[2:]
-else:
-  args = sys.argv[1:]
 
-if SPLIT_ONLY:
-  print(" ".join(args), end="")
-else:
-  subprocess.run([EDITOR] + args)
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+      if SPLIT_ONLY:
+          args = list(x for x in split_line(sys.argv[1]) if x is not None) + sys.argv[2:]
+      else:
+          args = join_line(*split_line(sys.argv[1])) + sys.argv[2:]
+    else:
+      args = sys.argv[1:]
+
+    if SPLIT_ONLY:
+      print(" ".join(args), end="")
+    else:
+      subprocess.run([EDITOR] + args)
