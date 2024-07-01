@@ -44,7 +44,7 @@ cd () {
 }
 
 pure_shell() {
-   env PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
+   env -i TERM="$TERM" PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
 }
 
 # completion

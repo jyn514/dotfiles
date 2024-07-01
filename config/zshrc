@@ -11,7 +11,7 @@ alias -g stauts=status
 alias -g serach=search
 
 pure_shell() {
-   env -u HISTFILE PS1='; ' zsh --no-rcs --no-globalrcs
+   env -i TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
 }
 
 autoload -Uz promptinit
@@ -58,7 +58,7 @@ bindkey "\e[4~" end-of-line
 bindkey "5~" delete-word
 bindkey "\e[3;5~" delete-word # tmux
 # alt+del
-bindkey "3~" backward-delete-word
+bindkey "3~" delete-word
 # ctrl+backspace
 bindkey '^H' backward-delete-word
 
