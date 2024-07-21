@@ -19,9 +19,20 @@ if exists npm; then
 	add_path "$(realpath "$(which node)")/bin"
 fi
 
+if exists kak; then
+	export EDITOR=editor-hax
+	export VISUAL=editor-hax
+	# these don't work because hx-hax doesn't wait before exiting
+	#export EDITOR=hx-hax
+	#export VISUAL=hx-hax
+else
+	export EDITOR=vim
+	export VISUAL=vim
+fi
 
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
+
 case "$-" in
 	*i*) ;;
 	*)	return 0;;
@@ -59,7 +70,22 @@ v () { vim "$@"; }
 r () { R "$@"; }
 
 if exists xdg-open; then
-	open () { for f in "$@"; do xdg-open "$f"; done; }
+	open () {
+		for f in "$@"; do
+			# `gio open` doesn't support line and column numbers :(
+      if echo "$f" | rg -q :; then
+        filename=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$f" | head -1 | xargs realpath)
+        # apparently gnome ignores `xdg-mime`???? https://tech.lgbt/@jyn/112897397900798209
+				for mime in $(file --mime-type -b "$filename") $(xdg-mime query filetype "$filename"); do
+					if [ "$(xdg-mime query default "$mime")" = Helix.desktop ]; then
+						hx-hax "$f"
+						return
+					fi
+				done
+			fi
+			xdg-open "$f";
+		done;
+	}
 fi
 
 yts () { youtube_search "$@"; }

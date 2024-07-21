@@ -52,7 +52,6 @@ zle-keymap-select () {
     fi
 }
 zle-line-init() { __insert_mode; }
-# zle-line-finish() { printf "\e[0m"; }
 zle-line-finish() { __command_mode; }
 # register our new widget
 # https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Special-Widgets

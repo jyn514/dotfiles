@@ -8,19 +8,20 @@ LINE = re.compile("(.*):([0-9]+):([0-9]+)$")
 
 def split_line(filename):
   # TODO: don't split if this file exists on disk
-  # TODO: make filename an abasolute path
   if match := LINE.search(filename):
-    return match.group(1, 2, 3)
-  return filename, None, None
+    filename, line, column = match.group(1, 2, 3)
+  else:
+    line, column = None, None
+  return os.path.abspath(filename), line, column
 
 def join_line(filename, line, column):
     if line is None or column is None:
         return [filename]
     if EDITOR == "kak":  # add more here whenever
         return [filename, f"+{line}:{column}"]
-    return [filename]
+    return [filename + f":{line}:{column}"]
 
-EDITOR = os.environ.get("REAL_EDITOR") or "kak"
+EDITOR = os.environ.get("REAL_EDITOR") or "hx"
 SPLIT_ONLY = os.environ.get("EDITOR_HAX_SPLIT_ONLY") is not None
 
 if __name__ == '__main__':
@@ -33,6 +34,9 @@ if __name__ == '__main__':
       args = sys.argv[1:]
 
     if SPLIT_ONLY:
-      print(" ".join(args), end="")
+      # if EDITOR == "kak":
+      #   print(" ".join(args), end="")
+      # else:
+      print("\n".join(args), end="")
     else:
-      subprocess.run([EDITOR] + args)
+      os.execvp(EDITOR, [EDITOR] + args)
