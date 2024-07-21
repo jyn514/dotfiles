@@ -4,22 +4,22 @@ import os
 import sys
 import re
 
-LINE = re.compile("(.*):([0-9]+):([0-9]+)$")
+# `.*?`: match anything, non-greedily
+# `(?::)`: match a `:` without capturing it
+LINE = re.compile("(.*?)(?::([0-9]+))?(?::([0-9]+))?$")
 
 def split_line(filename):
   # TODO: don't split if this file exists on disk
-  if match := LINE.search(filename):
-    filename, line, column = match.group(1, 2, 3)
-  else:
-    line, column = None, None
+  filename, line, column = LINE.search(filename).groups()
   return os.path.abspath(filename), line, column
 
 def join_line(filename, line, column):
-    if line is None or column is None:
+    if line is None:
         return [filename]
+    column = f":{column}" if column else ""
     if EDITOR == "kak":  # add more here whenever
-        return [filename, f"+{line}:{column}"]
-    return [filename + f":{line}:{column}"]
+        return [filename, f"+{line}{column}"]
+    return [filename + f":{line}{column}"]
 
 EDITOR = os.environ.get("REAL_EDITOR") or "hx"
 SPLIT_ONLY = os.environ.get("EDITOR_HAX_SPLIT_ONLY") is not None
