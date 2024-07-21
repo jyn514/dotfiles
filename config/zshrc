@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
 # docs: https://zsh.sourceforge.io/Doc/Release/index.html#Top
+# to see the keymap, `bindkey` (-M for a specific keymap)
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
 
@@ -31,7 +32,11 @@ setopt autocd
 
 # save command in buffer before executing
 bindkey "^Q" push-line
+zle-vicmd-push() { zle push-line; zle vi-insert; }
+zle -N zle-vicmd-push
+bindkey -a "^Q" zle-vicmd-push
 bindkey "^G" get-line
+bindkey -a "^G" get-line
 
 # use emacs line editing for insert mode, ...
 bindkey -e

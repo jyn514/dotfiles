@@ -34,9 +34,6 @@ if __name__ == '__main__':
       args = sys.argv[1:]
 
     if SPLIT_ONLY:
-      # if EDITOR == "kak":
-      #   print(" ".join(args), end="")
-      # else:
       print("\n".join(args), end="")
     else:
       os.execvp(EDITOR, [EDITOR] + args)
