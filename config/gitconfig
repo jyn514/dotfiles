@@ -8,7 +8,6 @@
 	autoSetupRemote = true
 [core]
 	eol = lf
-	editor = code --wait
 	preloadindex = true
 	autocrlf = input
 	excludesfile = ~/.config/git/ignore
