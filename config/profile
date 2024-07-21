@@ -1,7 +1,7 @@
 # do this even for non-interactive shells so `mosh home` works even if we're not already in a WSL session
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
-	eval `keychain --quiet --eval --agents ssh`
+	eval "$(keychain --quiet --eval --agents ssh)"
 fi
 
 add_path () {
@@ -14,8 +14,14 @@ fi
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 export CARGO_HOME="$HOME/.local/lib/cargo"
 add_path "$CARGO_HOME"/bin
-add_path "$(PATH="$PATH" npm config get prefix)/bin"
+if exists npm; then
+	# note: `npm config get prefix` is atrociously slow
+	add_path "$(realpath "$(which node)")/bin"
+fi
 
+
+# get ctrl+shift+u for unicode input to work in kitty
+export GLFW_IM_MODULE=ibus
 case "$-" in
 	*i*) ;;
 	*)	return 0;;
@@ -32,7 +38,7 @@ is_jj_repo() {
 }
 
 show_conflicts() {
-	jj diff --from @-- --to @- $(jj resolve --list | awk '{print $1}') --git | grepdiff --output-matching=hunk '<<<<<<<' | less
+	jj diff --from @-- --to @- "$(jj resolve --list | awk '{print $1}')" --git | grepdiff --output-matching=hunk '<<<<<<<' | less
 }
 
 HEAD() {
@@ -71,6 +77,7 @@ vrg () { rg --no-heading "$@"; }
 
 b () { bacon "$@"; }
 c () { cargo "$@"; }
+e() { $EDITOR "$@"; }
 g() { git "$@"; }
 
 # show human-readable dates with offsets by default
@@ -233,14 +240,6 @@ tmux_default() {
 	tmux -L unconfigured -f /dev/null start-server \; list-keys \;
 }
 
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-alert () {
-	notify-send --urgency=low \
-	"$([ $? = 0 ] && echo terminal || echo error)" \
-	"$(history | tail -1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"
-}
-
 fork_github() {
 	case $1 in
 		https://*|ssh://*) URL=$1;;
@@ -250,47 +249,13 @@ fork_github() {
 	# set -x
 	# https://stackoverflow.com/a/13840631
 	DIR=$(echo "$URL" | sed -e 's|/$||' -e 's|:*/*\.git$||' -e 's|.*[/:]||g')
-	git clone $URL $DIR
+	git clone "$URL" "$DIR" || return
 
-	builtin cd $DIR
-	git remote add personal git@github.com:jyn514/$DIR.git
-	git remote set-url --push origin git@github.com:jyn514/$DIR.git
-	echo $DIR
+	builtin cd "$DIR" || return
+	git remote add personal git@github.com:jyn514/"$DIR".git
+	git remote set-url --push origin git@github.com:jyn514/"$DIR".git
+	echo "$DIR"
 }
-
-# modified from https://github.com/charlesdaniels/dotfiles/blob/master/overlay/.zsh/zsh-ocd.zsh
-# when run without arguments, print all directories where there's an open file handle
-# for the programs listed in FILTER_REGEX (currently bash and vim)
-# when run with arguments,
-#  if there is a unique match for the argument as a extended regex, change to that directory
-#  else, print all directories which did match
-ocd () {
-	OCD_BLACKLIST_REGEX='(^[/]lib)|(^[/]usr[/]lib)|(^[/]$)|(^[/]var)|(^[/]bin)|(^[/]usr[/]share)|(^[/]usr[/]bin)|(^[/]usr[/]local[/]bin)|(^[/]tmp)|(^[/]dev)|(share[/]fonts)|([/][.]cache[/])|([.]swp$)|(^[/]run)'
-	OCD_FILTER_REGEX='(^(ba|z)?sh)|(^[gn]?vim)'
-	OCD_FILE_LIST=""
-
-	if [ -x "$(command -v lsof 2>/dev/null)" ] ; then
-		OCD_FILE_LIST="$(lsof -u $(whoami) | grep -E $OCD_FILTER_REGEX | awk '{print($9);}' | grep -P '^[/]' | grep -P -v $OCD_BLACKLIST_REGEX | sort | uniq)"
-	fi
-
-	# make sure everything in the file list is a directory
-	OCD_DIRLIST=""
-	for ocd_fpath in $(echo $OCD_FILE_LIST | tr '\n' ' ') ; do
-		if [ -f "$ocd_fpath" ] ; then
-			ocd_fpath="$(dirname "$ocd_fpath")"
-		fi
-		OCD_DIRLIST="$ocd_fpath
-$OCD_DIRLIST"
-	done
-
-	OCD_TARGET="$(echo "$OCD_DIRLIST" | sort | uniq | grep -v -P '^$' | grep -P "$1")"
-	if [ "$(echo "$OCD_TARGET" | wc -l)" -eq 1 ] ; then
-		cd "$OCD_TARGET"
-	else
-		echo "$OCD_TARGET"
-	fi
-}
-
 
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
@@ -299,18 +264,6 @@ DOTFILES="$(dirname "$(dirname "$(realpath ~/.profile)")")"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
-fi
-
-if [ -d ~/.local/bin ]; then
-	add_path "$HOME/.local/bin"
-fi
-
-if exists code; then
-	export EDITOR="code --wait"
-	export VISUAL="code --wait"
-else
-	export EDITOR=vim
-	export VISUAL=vim
 fi
 
 export ENV="$HOME/.profile"
@@ -423,7 +376,7 @@ jj_info() {
 
 	# NOTE: as a side effect, this saves the working copy :3
 	# if there's an error here, we'll see it because we don't redirect stderr.
-	if [ $(jj diff --summary | wc -l) = 0 ]; then
+	if [ "$(jj diff --summary | wc -l)" = 0 ]; then
 		printf %s "$GREEN"
 	else
 		printf %s "$RED"

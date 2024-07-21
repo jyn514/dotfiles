@@ -1,3 +1,8 @@
+#!/usr/bin/env zsh
+# docs: https://zsh.sourceforge.io/Doc/Release/index.html#Top
+# running time on functions: `time (foo)`
+# (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
+
 # Set "$0" to zsh, not .profile
 emulate sh
 # Perform command substitution when evaluating prompt
@@ -36,19 +41,24 @@ bindkey "^[" vi-cmd-mode
 KEYTIMEOUT=10
 # show a line instead of a block in insert mode
 # https://unix.stackexchange.com/a/765611/229104
+__insert_mode() { printf "\e[5 q"; }
+__command_mode() { printf "\e[2 q"; }
 zle-keymap-select () {
     if [[ $KEYMAP == vicmd ]]; then
-        # the command mode for vi
-        echo -ne "\e[2 q"
+        __command_mode
     else
         # the insert mode for vi
-        echo -ne "\e[5 q"
+        __insert_mode
     fi
 }
+zle-line-init() { __insert_mode; }
+# zle-line-finish() { printf "\e[0m"; }
+zle-line-finish() { __command_mode; }
 # register our new widget
 # https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Special-Widgets
 zle -N zle-keymap-select
-echo -ne "\e[5 q"
+zle -N zle-line-init
+zle -N zle-line-finish
 
 # Alt + Right
 bindkey ";3C" forward-word

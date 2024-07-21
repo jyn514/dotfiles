@@ -1,0 +1,4 @@
+#!/bin/sh
+[ $1 = doc-dev ] && shift
+"${CARGO:-cargo}" doc --document-private-items --no-deps "$@"
+
