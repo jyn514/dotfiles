@@ -1,30 +1,53 @@
-#!/usr/bin/env bash
+#!/usr/bin/env perl
 
-editor=hx
-# find a pane that already has kak running
-current_session=$(tmux display-message -p "#{session_id}")
-# TODO: this will break if this is running in an X session outside a tmux session, need to check current_session probably
-# https://man7.org/linux/man-pages/man1/tmux.1.html#FORMATS
-editor_panes=$(tmux list-panes -a \
-    -f "#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}" \
-    -F '#{pane_id} #{window_id} #{window_activity}' \
-    | sort  -k3 | tail -n1)
-read pane window << EOF
-$(echo "$editor_panes" | cut -d ' ' -f 1-2)
-EOF
+use strict;
+use warnings;
 
-if ! [ "$pane" ]; then
-	# start a new pane
-	pane=$(tmux split-window -P -F "#{pane_id}" env REAL_EDITOR=$editor editor-hax "$@")
-else
-	args=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$1" | tr '\n' ':')
-	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
-	tmux send-keys -t $pane Escape
-	tmux send-keys -t $pane ":edit $args" Enter
-	tmux select-window -t $window
-	tmux select-pane -t $pane -Z
-fi
+use Cwd 'abs_path';
+use File::Basename 'basename';
 
-if [ "$DISPLAY" ]; then
-    tmux run-shell -t $pane 'xdotool windowactivate $WINDOWID'
-fi
+my $editor = $ENV{REAL_EDITOR} || 'hx';
+# `.*?`: match anything, non-greedily
+# `(?::)`: match a `:` without capturing it
+my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?$/;
+
+sub split_line {
+  # TODO: don't split if this file exists on disk
+  my @matches = $_[0] =~ $line;
+  $matches[0] = abs_path $matches[0];
+  grep defined, @matches
+}
+
+sub join_line {
+  return $_[0] if @_ < 2;
+  my ($file, $line, $column) = @_;
+  $column = @_ > 2 ? ":$column" : '';
+  return ($file, "+$line$column") if $editor eq 'kak';
+  "$file:$line$column"
+}
+
+sub trim {
+  # https://stackoverflow.com/a/4597964/7669110
+  $_[0] =~ s/^\s+|\s+$//rg
+}
+
+exec ($editor, join_line split_line $ARGV[0]) if 'editor-hax' eq basename $0;
+
+my $current_session= trim `tmux display-message -p "#{session_id}"`;
+my $editor_panes = trim `tmux list-panes -a \\
+    -f '#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}' \\
+    -F '#{pane_id} #{window_id} #{window_activity}' \\
+    | sort  -k3 | tail -n1`;
+my ($pane, $window) = (split ' ', $editor_panes)[0..1];
+my $file = @ARGV ? join_line split_line $ARGV[0] : '';
+unless (defined $pane) {
+	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
+} else {
+  	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
+	`tmux send-keys -t $pane Escape`;
+	`tmux send-keys -t $pane ":edit $file" Enter`;
+	`tmux select-window -t $window`;
+	`tmux select-pane -t $pane -Z`;
+}
+
+`tmux run-shell -t $pane 'xdotool windowactivate $ENV{WINDOWID}'` if (defined $ENV{DISPLAY});
