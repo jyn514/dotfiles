@@ -315,6 +315,7 @@ fi
 
 export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
+export MANOPT=--html=firefox
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
@@ -499,5 +500,5 @@ prompt_command() {
 
 PS1='$(prompt_command)'
 
-status
+#status
 stty -ixon

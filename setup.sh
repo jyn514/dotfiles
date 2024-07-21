@@ -121,6 +121,11 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
+	if exists hx; then for mime in application/x-shellscript text/plain; do
+		xdg-mime default Helix.desktop $mime
+	done
+	fi
+
 	install_rust
 	python3 -m pip install --user git-revise
 	lib/fx-install.sh
@@ -239,7 +244,7 @@ run() {
 		vi*|4) setup_vim;;
 		bac*|5) setup_basics; setup_backup;;
 		su*|l*|6) setup_install_local;;
-		i*|7) setup_install_global;;
+		i*|g*|7) setup_install_global;;
 		all|8) setup_all; exit 0;;
 		*) return 1;;
 	esac

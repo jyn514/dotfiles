@@ -5,6 +5,16 @@ set -ex
 # this script is very opinionated. you may not want to run everything here.
 
 install_features () {
+	# moonlander configurer
+	if [ -n "$SUDO_USER" ]; then
+		usermod -aG plugdev $SUDO_USER
+		ln -sf "$(realpath config/moonlander.rules)" /etc/udev/rules.d/50-zsa.rules
+		t=$(download https://oryx.nyc3.cdn.digitaloceanspaces.com/keymapp/keymapp-latest.tar.gz)
+		tar -xf $t
+		chmod +x keymapp
+		mv keymapp "$(getent passwd $SUDO_USER | cut -d: -f6)"/.local/bin/keymapp
+	fi
+
 	if [ -n "$IS_DEB" ]; then
 		# thanks to https://github.com/zulip/zulip/pull/10911/files
 		if ! apt-cache policy | grep -q "l=Ubuntu,c=universe"; then
@@ -15,7 +25,7 @@ install_features () {
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
-		   ninja-build kakoune asciinema
+		   ninja-build kakoune asciinema python3-pylsp shfmt libusb-1.0-0-dev
 		if is_wsl; then
 			apt install -y keychain
 		fi

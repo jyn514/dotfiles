@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Keymapp
+Type=Application
+GenericName=Keyboard Configuration
+Comment=Moonlander control
+Exec=keymapp

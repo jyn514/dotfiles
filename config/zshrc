@@ -28,8 +28,28 @@ setopt autocd
 bindkey "^Q" push-line
 bindkey "^G" get-line
 
-# emacs line editing
+# use emacs line editing for insert mode, ...
 bindkey -e
+# ... but escape still switches into vi command mode
+bindkey "^[" vi-cmd-mode
+# the default timeout is *just* short enough i sometimes hit esc-b fast enough ZLE counts it as a single command
+KEYTIMEOUT=10
+# show a line instead of a block in insert mode
+# https://unix.stackexchange.com/a/765611/229104
+zle-keymap-select () {
+    if [[ $KEYMAP == vicmd ]]; then
+        # the command mode for vi
+        echo -ne "\e[2 q"
+    else
+        # the insert mode for vi
+        echo -ne "\e[5 q"
+    fi
+}
+# register our new widget
+# https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Special-Widgets
+zle -N zle-keymap-select
+echo -ne "\e[5 q"
+
 # Alt + Right
 bindkey ";3C" forward-word
 # Alt + Left
@@ -65,6 +85,22 @@ bindkey '^H' backward-delete-word
 # space expands !... history
 # TODO: see if we can make this more useful?
 bindkey ' ' magic-space
+
+# autoload -Uz surround
+# zle -N delete-surround surround
+# zle -N add-surround surround
+# zle -N change-surround surround
+# bindkey -a mc change-surround
+# bindkey -a md delete-surround
+# bindkey -a my add-surround
+# bindkey -M visual S add-surround
+autoload -U select-bracketed
+zle -N select-bracketed
+for m in visual viopp; do
+  for c in {a,i}${(s..)^:-'()[]{}<>bB'}; do
+    bindkey -M $m $c select-bracketed
+  done
+done
 
 # Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
 HISTSIZE=1000
@@ -116,3 +152,4 @@ if exists zoxide; then
 fi
 
 eval "$(atuin init zsh --disable-up-arrow)"
+bindkey -M vicmd '^r' atuin-search
