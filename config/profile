@@ -8,11 +8,15 @@ add_path () {
 	PATH="$1:$PATH"
 }
 
+export CARGO_HOME="$HOME/.local/lib/cargo"
+export RUSTUP_HOME="$HOME/.local/lib/rustup"
+export CARGO_TARGET_DIR="$CARGO_HOME/target"
+export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
 if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"
 fi
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
-export CARGO_HOME="$HOME/.local/lib/cargo"
 add_path "$CARGO_HOME"/bin
 if exists npm; then
 	# note: `npm config get prefix` is atrociously slow
@@ -82,7 +86,11 @@ mkdc () { mkcd "$@"; }
 rg () { command rg -L "$@"; }
 vrg () { rg --no-heading "$@"; }
 
-b () { bacon "$@"; }
+# note: the `cd` makes tmux open helix in the right working directory
+b () {
+	builtin cd "$(cargo metadata --format-version 1| jq .workspace_root -r)" && bacon "$@"
+}
+
 c () { cargo "$@"; }
 e() { $EDITOR "$@"; }
 g() { git "$@"; }
@@ -282,9 +290,6 @@ export BAT_TABS=8
 export BAT_STYLE=numbers
 export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
-export RUSTUP_HOME="$HOME/.local/lib/rustup"
-export CARGO_TARGET_DIR="$CARGO_HOME/target"
-export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export CARGO_MOMMYS_MOODS=ominous
 # git treats `diff.external` extremely poorly; there's no way to unset it temporarily because `-c diff.external` tries to run an empty program.
 # instead, set this through an external env variable so we can unset it with `env -u`.
