@@ -10,3 +10,4 @@ set-tmux-env.sh=.config/tmux/set-env.sh
 helix/helix.scm=.config/helix/helix.scm
 helix/languages.toml=.config/helix/languages.toml
 helix/config.toml=.config/helix/config.toml
+attach-session.sh=.config/tmux/attach-session.sh
