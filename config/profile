@@ -12,6 +12,7 @@ export CARGO_HOME="$HOME/.local/lib/cargo"
 export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
 
 if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"

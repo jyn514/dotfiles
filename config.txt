@@ -7,3 +7,6 @@ gitconfig=.gitconfig
 kakrc=.config/kak/kakrc
 tmux.conf=.config/tmux/tmux.conf
 set-tmux-env.sh=.config/tmux/set-env.sh
+helix/helix.scm=.config/helix/helix.scm
+helix/languages.toml=.config/helix/languages.toml
+helix/config.toml=.config/helix/config.toml

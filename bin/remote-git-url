@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+if ! [ $# = 2 ]; then echo "usage: $0 <file> <line>"; exit 1; fi
+
+s=0
+file=$1
+orig_line=$2
+contents=$(head -n "$orig_line" "$file" | tail -n1)
+# TODO: probably we shouldn't hardcode origin?
+out=$(git grep -n --heading -F -e "$contents" $(git rev-list --remotes 'origin/HEAD~^!') -- "$file" | head -n2)
+commit=$(echo "$out" | head -n1 | cut -d: -f1)
+# the line number may have changed in a past commit
+line=$(echo "$out" | tail -n1 | cut -d: -f1)
+
+if ! [ "$commit" ]; then
+	# this line isn't present anywhere upstream, only in a local branch.
+	# use the default branch, but give a hint that this won't work as expected
+	commit=$(git default-branch)
+	line=$orig_line
+	echo "warning: $file:$line does not exist in upstream" >&2
+	s=1
+fi
+
+upstream=$(git remote get-url origin)
+relative=$(echo "$file" | sed "s#^$(git rev-parse --show-toplevel)\(/\)\?##")
+
+case "$upstream" in
+	*github.com*)
+	    # handle ssh, git, https urls
+		repo=$(git remote get-url origin | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1 | cut -d/ -f-2 | rev)
+		url="https://github.com/$repo/blob/$commit/$relative#L$line"
+		;;
+	*) echo unsupported upstream "$upstream" >&2; s=2 ;;
+esac
+
+# helix doesn't respect pipes :( so we have to do this directly here
+# TODO: fix `open` so we can use that consistently instead of the linux version
+xdg-open $url
+exit $s

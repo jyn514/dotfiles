@@ -1,0 +1,11 @@
+[[language]]
+name = "scheme"
+language-servers = ["steel"]
+
+[language-server.steel]
+command = "steel-language-server"
+environment = { "STEEL_LSP_HOME" = "/home/jyn/.config/helix/steel-lsp" }
+args = []
+
+[language-server.rust-analyzer]
+# environment = { "RA_LOG" = "flycheck=debug" }
