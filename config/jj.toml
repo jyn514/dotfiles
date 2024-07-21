@@ -38,25 +38,30 @@ log = 'log_compact'
 'format_short_signature(signature)' = 'label("username", signature.name())'
 'format_timestamp(timestamp)' = 'timestamp.ago()'
 
+# `jj config list --include-defaults template-aliases.builtin_log_compact`
+# the only difference here is turning the newline into a space lol
 log_compact = '''
 if(root,
-  builtin_log_root(change_id, commit_id),
+  format_root_commit(self),
   label(if(current_working_copy, "working_copy"),
     concat(
       separate(" ",
-        builtin_change_id_with_hidden_and_divergent_info,
-        if(conflict, label("conflict", "conflict")),
+        format_short_change_id_with_hidden_and_divergent_info(self),
+        format_short_signature(author),
+        format_timestamp(committer.timestamp()),
         branches,
         tags,
         working_copies,
         git_head,
-        format_short_signature(author),
         format_short_commit_id(commit_id),
-        format_timestamp(committer.timestamp()),
+        if(conflict, label("conflict", "conflict")),
       ) ++ " ",
       separate(" ",
         if(empty, label("empty", "(empty)")),
-        if(description, description.first_line(), description_placeholder),
+        if(description,
+          description.first_line(),
+          label(if(empty, "empty"), description_placeholder),
+        ),
       ) ++ "\n",
     ),
   )
