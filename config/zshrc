@@ -15,6 +15,7 @@ emulate zsh
 alias help=run-help
 alias -g stauts=status
 alias -g serach=search
+alias -g searhc=search
 
 pure_shell() {
    env -i HOME="$HOME" TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
@@ -155,7 +156,7 @@ if [ -e "$COMPLETION" ]; then
 fi
 
 . $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
-antigen bundle zsh-users/zsh-autosuggestions
+antigen bundle zsh-users/zsh-autosuggestions>/dev/null
 antigen apply
 
 if exists jj; then source <(jj util completion zsh); fi
