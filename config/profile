@@ -198,8 +198,8 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls -G --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
-    ls () { command ls -G --color=auto --ignore=__pycache__ "$@"; }
+if ls -G --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
+    ls () { command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
 fi
 
 ip() { command ip --color "$@"; }
