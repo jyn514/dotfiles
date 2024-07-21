@@ -16,7 +16,7 @@ export CARGO_HOME="$HOME/.local/lib/cargo"
 add_path "$CARGO_HOME"/bin
 if exists npm; then
 	# note: `npm config get prefix` is atrociously slow
-	add_path "$(realpath "$(which node)")/bin"
+	add_path "$(realpath "$(command -v npm)")/bin"
 fi
 
 if exists kak; then
@@ -68,25 +68,6 @@ HEAD() {
 v () { vim "$@"; }
 # uppercase is bad and it should feel bad
 r () { R "$@"; }
-
-if exists xdg-open; then
-	open () {
-		for f in "$@"; do
-			# `gio open` doesn't support line and column numbers :(
-      if echo "$f" | rg -q :; then
-        filename=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$f" | head -1 | xargs realpath)
-        # apparently gnome ignores `xdg-mime`???? https://tech.lgbt/@jyn/112897397900798209
-				for mime in $(file --mime-type -b "$filename") $(xdg-mime query filetype "$filename"); do
-					if [ "$(xdg-mime query default "$mime")" = Helix.desktop ]; then
-						hx-hax "$f"
-						return
-					fi
-				done
-			fi
-			xdg-open "$f";
-		done;
-	}
-fi
 
 yts () { youtube_search "$@"; }
 
