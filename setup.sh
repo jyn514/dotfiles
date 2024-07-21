@@ -121,7 +121,7 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	if exists hx; then for mime in text/x-csrc application/x-shellscript text/plain; do
+	if exists hx; then for mime in text/x-python text/x-csrc application/x-shellscript text/plain; do
 		xdg-mime default Helix.desktop $mime
 	done
 	fi
@@ -176,6 +176,7 @@ install_rust() {
 	export CARGO_TARGET_DIR=/tmp/cargo
 	mkdir -p $CARGO_TARGET_DIR
 	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
+	# to manually set a token see https://github.com/settings/tokens
 	if exists gh; then
     	export GITHUB_TOKEN=$(gh auth token)
 	fi

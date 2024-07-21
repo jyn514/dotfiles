@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -eu
+
+usage() { echo "usage: $0 [-n <interval>] [-x <shell>] <...args>" >&2; exit 1; }
+get() {
+  i=1
+  k=$1; shift
+  v=${1/-$k/}; shift
+  if ! [ "$v" ]; then
+    if [ $# -lt 1 ]; then usage; fi
+    v="$1"; shift
+    i=2
+  fi
+  printf "%s;%d" "$v" "$i"
+}
+
+interval=2
+shell="sh -c"
+
+[ $# = 0 ] && usage
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    # -n*) get "$@" | read -r interval ind
+  -n*) IFS=';' read -r interval ind <<< "$(get n "$@")"
+    if ! [ "$ind" ]; then exit 1; fi
+    shift "$ind"
+    ;;
+  -x*) IFS=';' read -r shell ind <<< "$(get x "$@")"
+    if ! [ "$ind" ]; then exit 1; fi
+    shift "$ind"
+    ;;
+  *) break;;
+  esac
+done
+
+echo "$interval $shell $*"
+
+tput smcup || true
+trap 'tput rmcup' EXIT
+while :; do
+  # reduce flicker by not oupdating until the command finishes executing
+  # this will break on Mac; you can comment it out or switch to python: https://git.lix.systems/lix-project/lix/src/commit/f1533160aaa0b2ecd0bb26d6445808593ecb0726/misc/runinpty.py
+  o=$(script -q -c "$shell \"$*\"" 2>&1); clear -x; printf %s "$o"
+  # $shell "$*"
+  sleep "$interval"
+  # clear -x
+done

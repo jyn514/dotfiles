@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# https://unix.stackexchange.com/a/524391/229104
+modify_win_by_pid() {
+    pid=$1
+
+    sleep 0.2
+    win_id=$(wmctrl -l -p | grep ${pid} | awk '{print $1}')
+    wmctrl -i -r ${win_id} -b add,above
+}
+
+zenity --question --text=please --title='take a break' --ok-label='i will' --cancel-label='fuck you' --modal &
+dialog=$!
+modify_win_by_pid $dialog
+wait $dialog
