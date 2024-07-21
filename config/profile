@@ -14,14 +14,20 @@ export CARGO_TARGET_DIR="$CARGO_HOME/target"
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
 
+# note: the order is important, the latest addition takes precedence
+# wtf ubuntu
+if ! exists cowsay && [ -e /usr/games/cowsay ]; then
+	add_path /usr/games
+fi
+add_path "$CARGO_HOME"/bin
+add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"
 fi
-add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
-add_path "$CARGO_HOME"/bin
+# needs to be added after everything else, since one of them might add node to path
 if exists node; then
 	# note: `npm config get prefix` is atrociously slow
-	add_path "$(dirname $(realpath "$(command -v node)"))"
+	add_path "$(dirname "$(realpath "$(command -v node)")")"
 fi
 
 if exists kak; then

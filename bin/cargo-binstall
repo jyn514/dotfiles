@@ -1,0 +1,10 @@
+#!/bin/sh
+exists () {
+	command -v "$1" >/dev/null 2>&1
+	return $?
+}
+if exists gh; then
+	if GITHUB_TOKEN=$(gh auth token); then export GITHUB_TOKEN; fi
+fi
+"${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" "$@"
+
