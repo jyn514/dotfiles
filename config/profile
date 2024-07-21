@@ -30,15 +30,16 @@ if exists node; then
 	add_path "$(dirname "$(realpath "$(command -v node)")")"
 fi
 
-if exists kak; then
+if exists hx; then
 	export EDITOR=editor-hax
 	export VISUAL=editor-hax
-	# these don't work because hx-hax doesn't wait before exiting
-	#export EDITOR=hx-hax
-	#export VISUAL=hx-hax
+	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
+	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
+	export JULIA_EDITOR=hx-hax  
 else
 	export EDITOR=vim
 	export VISUAL=vim
+	export JULIA_EDITOR=open
 fi
 
 # get ctrl+shift+u for unicode input to work in kitty
