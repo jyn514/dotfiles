@@ -18,9 +18,9 @@ if [ -d ~/.local/bin ]; then
 fi
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 add_path "$CARGO_HOME"/bin
-if exists npm; then
+if exists node; then
 	# note: `npm config get prefix` is atrociously slow
-	add_path "$(realpath "$(command -v npm)")/bin"
+	add_path "$(dirname $(realpath "$(command -v node)"))"
 fi
 
 if exists kak; then
@@ -94,6 +94,10 @@ b () {
 c () { cargo "$@"; }
 e() { $EDITOR "$@"; }
 g() { git "$@"; }
+
+# NOTE: this *must not* be an external process.
+# scoping it to a function prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
+cat() { bat "$@"; }
 
 # show human-readable dates with offsets by default
 dmesg () { command dmesg -e "$@"; }
