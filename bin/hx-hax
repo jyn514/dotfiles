@@ -4,12 +4,16 @@ use strict;
 use warnings;
 
 use Cwd 'abs_path';
-use File::Basename 'basename';
+use File::Basename 'basename', 'dirname';
 
 my $editor = $ENV{REAL_EDITOR} || 'hx';
 # `.*?`: match anything, non-greedily
 # `(?::)`: match a `:` without capturing it
 my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?$/;
+
+sub cmdexists {
+  `sh -c "command -v $_[0]"`
+}
 
 sub split_line {
   # TODO: don't split if this file exists on disk
@@ -31,23 +35,53 @@ sub trim {
   $_[0] =~ s/^\s+|\s+$//rg
 }
 
-exec ($editor, join_line split_line $ARGV[0]) if 'editor-hax' eq basename $0;
+sub hxhax {
+  my $file = $_[0];
+  my $current_session= trim `tmux display-message -p "#{session_id}"`;
+  my $editor_panes = trim `tmux list-panes -a \\
+      -f '#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}' \\
+      -F '#{pane_id} #{window_id} #{window_activity}' \\
+      | sort  -k3 | tail -n1`;
+  my ($pane, $window) = (split ' ', $editor_panes)[0..1];
+  unless (defined $pane) {
+  	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
+  } else {
+    	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
+  	`tmux send-keys -t $pane Escape`;
+  	`tmux send-keys -t $pane ":edit $file" Enter`;
+  	`tmux select-window -t $window`;
+  	`tmux select-pane -t $pane -Z`;
+  }
 
-my $current_session= trim `tmux display-message -p "#{session_id}"`;
-my $editor_panes = trim `tmux list-panes -a \\
-    -f '#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}' \\
-    -F '#{pane_id} #{window_id} #{window_activity}' \\
-    | sort  -k3 | tail -n1`;
-my ($pane, $window) = (split ' ', $editor_panes)[0..1];
-my $file = @ARGV ? join_line split_line $ARGV[0] : '';
-unless (defined $pane) {
-	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
-} else {
-  	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
-	`tmux send-keys -t $pane Escape`;
-	`tmux send-keys -t $pane ":edit $file" Enter`;
-	`tmux select-window -t $window`;
-	`tmux select-pane -t $pane -Z`;
+  `tmux run-shell -t $pane 'xdotool windowactivate $ENV{WINDOWID}'` if (defined $ENV{DISPLAY});
 }
 
-`tmux run-shell -t $pane 'xdotool windowactivate $ENV{WINDOWID}'` if (defined $ENV{DISPLAY});
+sub xdgopen {
+  my $target = $_[0];
+  if ($target =~ /:/) {
+    my $file = (split_line $target)[0];
+    my $mime = `xdg-mime query filetype $file`;
+    my $default;
+    # apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
+    if (cmdexists 'gio') {
+      $default = (split '\n', `gio mime $mime`)[0] =~ s/^Default .*: //r;
+    } else {
+      $default = `xdg-mime query default $mime`;
+    }
+    if ($default =~ /Helix\.desktop/) {
+      hxhax $target;
+      return;
+    }
+  }
+  `xdg-open $target`;
+}
+
+my $name = basename $0;
+exec ($editor, join_line split_line $ARGV[0]) if 'editor-hax' eq basename $0;
+if ('hx-hax' eq basename $0) {
+  hxhax(@ARGV ? join_line split_line $ARGV[0] : '');
+  exit;
+}
+
+@ARGV or print 'usage: $0 <file>' && exit 1;
+xdgopen $ARGV[0];

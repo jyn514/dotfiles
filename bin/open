@@ -1,17 +1,1 @@
-#!/bin/sh
-for f in "$@"; do
-	# `gio open` doesn't support line and column numbers :(
-	if echo "$f" | rg -q :; then
-		filename=$(EDITOR_HAX_SPLIT_ONLY=1 editor-hax "$f" | head -1 | xargs realpath)
-		# apparently gnome ignores `xdg-mime`???? https://tech.lgbt/@jyn/112897397900798209
-		for mime in $(file --mime-type -b "$filename") $(xdg-mime query filetype "$filename"); do
-			case "$mime" in
-				text/*) exec hx-hax "$f"
-			esac
-			if [ "$(xdg-mime query default "$mime")" = Helix.desktop ]; then
-				exec hx-hax "$f"
-			fi
-		done
-	fi
-	xdg-open "$f"
-done
+hx-hax
