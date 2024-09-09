@@ -46,6 +46,7 @@ function Install-Dotfiles() {
     }
     Install-ConfigLink "gitconfig" $(Join-Path $HOME ".gitconfig")
     Install-ConfigLink jj.toml $(jj config path --user)
+	Install-ConfigLink keybindings.ahk $(Join-Path $HOME "Documents\AutoHotkey\keybindings.ahk")
 
     $bin_dir = Join-Path $HOME ".local" "bin"
     New-Item -ItemType Directory -Path $bin_dir -Force | Out-Null
@@ -57,7 +58,7 @@ function Install-Dotfiles() {
 
 function Install-Programs() {
     Write-Output "Installing tools from winget"
-    winget install --source winget rustup git.git keepassxc jq python3
+    winget install --source winget rustup git.git keepassxc jq python3 tailscale github.cli
     # TODO: add python bin dir to path
     # [Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User)
 
@@ -79,11 +80,11 @@ function Install-Programs() {
     } else {
                 # update to latest version; old versions often hit a rate limit
                 Write-Output "Updating cargo-binstall"
-                cargo binstall cargo-binstall
+                cargo binstall -y cargo-binstall
     }
 
     Write-Output "Installing Rust tools using cargo-binstall"
-    cargo binstall -y --rate-limit 10/1 $(Get-Content rust.txt)
+    cargo binstall --disable-telemetry --disable-strategies=compile -y --rate-limit 10/1 $(Get-Content rust.txt)
     # Disable microsoft's garbage windows store aliases
     foreach ($py in "python", "python3") {
         Remove-Item -ErrorAction SilentlyContinue $env:LOCALAPPDATA\Microsoft\WindowsApps\$py.exe
