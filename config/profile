@@ -19,6 +19,11 @@ export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
 if ! exists cowsay && [ -e /usr/games/cowsay ]; then
 	add_path /usr/games
 fi
+if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
+	eval "$snap_bin"
+	add_path "$SNAPD_BIN"
+	unset snap_bin
+fi
 add_path "$CARGO_HOME"/bin
 add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 if [ -d ~/.local/bin ]; then
@@ -295,7 +300,9 @@ fi
 
 export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-export MANOPT=--html=firefox
+if [ "$DISPLAY" ]; then
+	export MANOPT=--html=firefox
+fi
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8

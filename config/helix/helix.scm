@@ -7,9 +7,10 @@
   open-helix-scm open-init-scm ep
   run-highlight shell
   open-remote-url git-url url
-  Q)
+  Q logs)
 
 (define Q helix.quit)
+(define logs helix.log-open)
 
 ;;@doc
 ;; Specialized shell implementation, where % is a wildcard for the current file
