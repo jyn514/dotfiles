@@ -14,6 +14,8 @@ WinActivate	"ahk_exe WindowsTerminal.exe"
 #Esc::DllCall("LockWorkStation")
 #-::WinMinimize "A"
 
+SetNumLockState("AlwaysOn")
+
 ; #Tab::Send "!{Tab}
 
 ; https://www.autohotkey.com/board/topic122581-need-some-help-with-a-window-switching-script/?p=691584
