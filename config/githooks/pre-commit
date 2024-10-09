@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -eu
-files=$(git diff --name-only --cached --no-ext-diff)
+files=$(git diff --name-only --cached --no-ext-diff --diff-filter=d)
 if ! [ "$files" ]; then exit 0; fi
 
 tmpdir=$(mktemp -d --tmpdir "$(basename "$(realpath .)")-pre-commit.XXXX")
