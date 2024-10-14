@@ -96,8 +96,7 @@ mkcd () { mkdir -p "$@" && cd "$1"; }
 mkdc () { mkcd "$@"; }
 
 # follow symlinks by default
-rg () { command rg -L "$@"; }
-vrg () { rg --no-heading "$@"; }
+rg () { command rg -L --no-heading "$@"; }
 
 # note: the `cd` makes tmux open helix in the right working directory
 b () {

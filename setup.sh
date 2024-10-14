@@ -121,7 +121,7 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	if exists hx; then for mime in text/x-python text/x-tex text/x-csrc application/x-shellscript text/plain; do
+	if exists hx; then for mime in text/x-python text/x-perl text/x-tex text/x-csrc application/x-shellscript text/plain; do
 		xdg-mime default Helix.desktop $mime
 	done
 	fi
