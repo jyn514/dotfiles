@@ -13,3 +13,4 @@ helix/config.toml=.config/helix/config.toml
 attach-session.sh=.config/tmux/attach-session.sh
 fx.desktop=.local/share/applications/fx-usercreated-1.desktop
 startup.jl=.julia/config/startup.jl
+keyd.conf=/etc/keyd/default.conf
