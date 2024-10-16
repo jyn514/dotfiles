@@ -37,19 +37,16 @@ sub trim {
 
 sub hxhax {
   my $file = $_[0];
-  my $current_session= trim `tmux display-message -p "#{session_id}"`;
-  my $editor_panes = trim `tmux list-panes -a \\
-      -f '#{&&:#{==:#{session_id},$current_session},#{==:#{pane_current_command},$editor}}' \\
-      -F '#{pane_id} #{window_id} #{window_activity}' \\
-      | sort  -k3 | tail -n1`;
-  my ($pane, $window) = (split ' ', $editor_panes)[0..1];
+  my $current_window= trim `tmux display-message -p "#{window_id}"`;
+  my $pane = trim `tmux list-panes -a \\
+      -f '#{&&:#{==:#{window_id},$current_window},#{==:#{pane_current_command},$editor}}' \\
+      -F '#{pane_id}'`;
   unless (defined $pane) {
   	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
   } else {
     	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
   	`tmux send-keys -t $pane Escape`;
   	`tmux send-keys -t $pane ":open $file" Enter`;
-  	`tmux select-window -t $window`;
   	`tmux select-pane -t $pane -Z`;
   }
 
