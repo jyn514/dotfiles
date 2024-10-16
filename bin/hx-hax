@@ -50,7 +50,7 @@ sub hxhax {
   	`tmux select-pane -t $pane -Z`;
   }
 
-  `tmux run-shell -t $pane 'xdotool windowactivate $ENV{WINDOWID}'` if (defined $ENV{DISPLAY});
+  `tmux run-shell -t $pane "xdotool windowactivate \${WINDOWID}"` if (defined $ENV{DISPLAY});
 }
 
 sub xdgopen {
