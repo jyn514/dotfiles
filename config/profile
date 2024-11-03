@@ -55,6 +55,8 @@ case "$-" in
 	*)	return 0;;
 esac
 
+. "$(dirname "$(dirname "$(realpath ~/.profile)")")/lib/lib.sh"
+
 # TODO: work this into gitconfig somehow
 git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
@@ -300,7 +302,11 @@ fi
 export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 if [ "$DISPLAY" ]; then
-	export MANOPT=--html=firefox
+	if is_wsl; then
+		export MANOPT=--html=$(dirname $(realpath "$0"))/../bin/firefox.sh
+	else
+		export MANOPT=--html=firefox
+	fi
 fi
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
