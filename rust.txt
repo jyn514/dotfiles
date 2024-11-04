@@ -5,6 +5,7 @@ cargo-outdated
 cargo-sweep
 cargo-tree
 difftastic
+du-dust
 fd-find
 git-absorb
 git-delta
