@@ -25,7 +25,8 @@ install_features () {
 		   python3-pip graphviz xdot xdg-utils \
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
-		   ninja-build kakoune asciinema python3-pylsp shfmt libusb-1.0-0-dev
+		   ninja-build kakoune asciinema python3-pylsp shfmt libusb-1.0-0-dev \
+		   unzip openvpn
 		if is_wsl; then
 			apt install -y keychain
 		fi

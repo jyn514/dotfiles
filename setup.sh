@@ -53,6 +53,7 @@ setup_basics () {
 	. config/profile
 	setup_vim # otherwise vim will error out the next time it starts up
 	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
+  ~/.config/tmux/plugins/tpm/bin/install_plugins
 unset DEST LOCAL f
 }
 

@@ -2,6 +2,7 @@
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	eval "$(keychain --quiet --eval --agents ssh)"
+	. ~/.keychain/$(hostname)-sh
 fi
 
 add_path () {
@@ -298,6 +299,7 @@ MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
 DOTFILES="$(dirname "$(dirname "$(realpath ~/.profile)")")"
 
+export GPG_TTY=$(tty)
 export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 if [ "$DISPLAY" ]; then
