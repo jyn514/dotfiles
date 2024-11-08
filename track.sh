@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
-set -x
 
 if [ $# = 0 ] || [ $# -gt 2 ]; then
   echo "usage: $0 <existing file> [basename in config/]"
@@ -9,6 +8,7 @@ fi
 
 local=${2:-$(basename "$1")}
 
+set -x
 mv "$1" "config/$local"
 ln -s $(realpath "config/$local") "$1"
 echo "$local=$(echo "$1" | sed "s#^$HOME/##")" >> config.txt

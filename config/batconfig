@@ -1,0 +1,2 @@
+--wrap=never
+--pager='less -RF -+S'
