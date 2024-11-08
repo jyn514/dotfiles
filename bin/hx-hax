@@ -48,7 +48,7 @@ sub hxhax {
   } else {
     	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
   	`tmux send-keys -t $pane Escape`;
-  	`tmux send-keys -t $pane ":edit $file" Enter`;
+  	`tmux send-keys -t $pane ":open $file" Enter`;
   	`tmux select-window -t $window`;
   	`tmux select-pane -t $pane -Z`;
   }
