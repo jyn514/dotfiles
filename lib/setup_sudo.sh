@@ -26,7 +26,7 @@ install_features () {
 		   traceroute valgrind keepassxc rclone \
 		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
 		   ninja-build kakoune asciinema python3-pylsp shfmt libusb-1.0-0-dev \
-		   unzip openvpn
+		   unzip openvpn tcsh
 		if is_wsl; then
 			apt install -y keychain
 		fi
