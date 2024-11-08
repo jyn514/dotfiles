@@ -34,8 +34,14 @@ setopt autocd
 # save command in buffer before executing
 bindkey "^Q" push-line
 zle-vicmd-push() { zle push-line; zle vi-insert; }
+zle-vicmd-copy() {
+    zle vi-yank
+    echo "$CUTBUFFER" | xclip -i -selection clipboard
+}
 zle -N zle-vicmd-push
+zle -N zle-vicmd-copy
 bindkey -a "^Q" zle-vicmd-push
+bindkey -a "y" zle-vicmd-copy
 bindkey "^G" get-line
 bindkey -a "^G" get-line
 
