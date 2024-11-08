@@ -2,6 +2,7 @@ theme = "ayu_evolve"
 
 [editor]
 line-number = "relative"
+auto-pairs = false
 
 [keys.normal]
 "ret" = ["open_below", "normal_mode"]
