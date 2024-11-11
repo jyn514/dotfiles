@@ -97,6 +97,37 @@ install_security () {
 	unattended-upgrades || true
 }
 
+encrypt_home_dir() {
+	if [ -z "$SUDO_USER" ]; then
+		fail "don't know original home directory; giving up"
+	fi
+
+	my_home=$(getent passwd $SUDO_USER | cut -d: -f6)
+	if fscrypt status $my_home >/dev/null; then
+		return
+	fi
+
+	fscrypt setup
+	# can't be a link because we're about to encrypt the home drive
+	cp "$DIR"/lib/02-pam-unlock.sh /etc/profile.d
+	echo ". /etc/profile" >> /etc/zsh/zshenv
+
+	# this is the dangerous part
+	backup=$(dirname $my_home)/$(basename $my_home).bak
+	mv $my_home $backup
+	mkdir $my_home
+	fscrypt encrypt $my_home
+	# we have to copy anyway to encrypt, may as well use cp instead of mv so we can confirm it's correct
+	cp -a -t $backup/* $backup/.* $my_home
+	echo "setup encrypted home drive; delete backup? [y/N]" >/dev/tty
+	if read -r; [ "$REPLY" = y ]; then
+		echo "deleting" >&2
+		rm -rf $backup
+	else
+		echo "retaining backup in $backup" >&2
+	fi
+}
+
 remove_unwanted () {
 	if ! [ -n "$IS_DEB" ]; then
 		return
@@ -120,5 +151,6 @@ fi
 set -x
 install_security
 install_features
+encrypt_home_dir
 remove_unwanted
 set +x
