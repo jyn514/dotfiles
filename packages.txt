@@ -4,6 +4,7 @@ build-essential
 cowsay
 curl
 figlet
+fscrypt
 gh
 git
 git-absorb

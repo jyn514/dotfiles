@@ -107,10 +107,15 @@ encrypt_home_dir() {
 		return
 	fi
 
-	fscrypt setup
+	fscrypt setup --all-users
 	# can't be a link because we're about to encrypt the home drive
-	cp "$DIR"/lib/02-pam-unlock.sh /etc/profile.d
-	echo ". /etc/profile" >> /etc/zsh/zshenv
+	cp "$DIR"/02-pam-unlock.sh /etc/profile.d
+	if [ -e /etc/zshenv ]; then
+		zenv=/etc/zshenv
+	else
+		zenv=/etc/zsh/zshenv
+	fi
+	echo ". /etc/profile" >> $zenv
 
 	# this is the dangerous part
 	backup=$(dirname $my_home)/$(basename $my_home).bak
