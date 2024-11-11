@@ -4,7 +4,9 @@ exists () {
 	return $?
 }
 if exists gh; then
+	# TODO: this is buggy, `gh token` sometimes returns an expired token :(
+	# think some combination of `auth status` and `auth refresh` can fix it
 	if GITHUB_TOKEN=$(gh auth token); then export GITHUB_TOKEN; fi
 fi
+# echo "$GITHUB_TOKEN"
 "${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" "$@"
-
