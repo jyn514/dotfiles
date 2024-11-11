@@ -2,17 +2,53 @@
 
 set -ex
 
+packages=
+
+queue_install() {
+	if [ "$IS_DEB" = 1 ]; then
+		packages="$packages $1"
+	elif [ "$IS_RPM" = 1 ]; then
+		pkg="$1"
+		case "$pkg" in
+			manpages) pkg=man-pages ;;
+			manpages-dev) return;;  # included with man-pages
+			libssl-dev) pkg=openssl-devel ;;
+			libusb-1.0-0-dev) return;; # not sure what this was for anyway
+			python3-pylsp) pkg=python3-lsp-server ;;
+			build-essential) pkg=@development-tools ;;
+			*) ;;
+		esac
+		packages="$packages $pkg"
+	elif [ "$IS_ALPINE" = 1 ]; then
+	  # TODO
+		packages="$packages $1"
+	fi
+}
+
 # this script is very opinionated. you may not want to run everything here.
 
 install_features () {
 	# moonlander configurer
 	if [ -n "$SUDO_USER" ]; then
-		usermod -aG plugdev $SUDO_USER
+		if [ -n "$IS_DEB" ]; then
+			usermod -aG plugdev $SUDO_USER
+		fi
 		ln -sf "$(realpath config/moonlander.rules)" /etc/udev/rules.d/50-zsa.rules
 		t=$(download https://oryx.nyc3.cdn.digitaloceanspaces.com/keymapp/keymapp-latest.tar.gz)
 		tar -xf $t
 		chmod +x keymapp
 		mv keymapp "$(getent passwd $SUDO_USER | cut -d: -f6)"/.local/bin/keymapp
+	fi
+
+	set +x
+	echo "queueing packages to install"
+	for pkg in $(tr '\n' ' ' < packages.txt); do
+		queue_install $pkg
+	done
+	set -x
+
+	if is_wsl; then
+		queue_install keychain
 	fi
 
 	if [ -n "$IS_DEB" ]; then
@@ -21,15 +57,6 @@ install_features () {
 			add-apt-repository universe
 			apt-get update
 		fi
-		apt-get install -y vim git build-essential cowsay figlet shellcheck  nmap \
-		   python3-pip graphviz xdot xdg-utils \
-		   traceroute valgrind keepassxc rclone \
-		   curl jq tree pkg-config libssl-dev manpages manpages-dev bpytop git-absorb \
-		   ninja-build kakoune asciinema python3-pylsp shfmt libusb-1.0-0-dev \
-		   unzip openvpn tcsh
-		if is_wsl; then
-			apt install -y keychain
-		fi
 
 		# https://learn.microsoft.com/en-us/powershell/scripting/install/install-ubuntu
 		if ! exists pwsh; then
@@ -37,29 +64,24 @@ install_features () {
 			wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
 			# Register the Microsoft repository GPG keys
 			dpkg -i packages-microsoft-prod.deb
-			# Update the list of packages after we added packages.microsoft.com
-			apt-get update
 			# Install PowerShell
-			apt-get install -y powershell
+			queue_install powershell
 		fi
 
 		if ! exists code && ! is_wsl; then
 			download https://go.microsoft.com/fwlink/?LinkID=760868 code.deb
-			apt install ./code.deb
+			queue_install ./code.deb
 		fi
 
 		if [ "$(git --version | cut -d ' ' -f3 | cut -d. -f2)" -lt 35 ]; then
 			# this often happens on WSL and borks because of zdiff3; install a newer version of git
-			add-apt-repository ppa:git-core/ppa && apt update && apt install git
+			add-apt-repository ppa:git-core/ppa && queue_install git
 		fi
 
-		if ! exists gh; then
-			curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg > /usr/share/keyrings/githubcli-archive-keyring.gpg
-			chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-			echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
-			apt update
-			apt install gh -y
-		fi
+		apt update
+		apt install -y $packages
+	elif [ -n "$IS_RPM" ]; then
+		dnf install -y $packages
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
 		apk add less py3-pip zsh
@@ -86,6 +108,8 @@ DIR="$(dirname "$(realpath "$0")")"
 . "$DIR"/lib.sh
 if exists dpkg; then
 	IS_DEB=1
+elif exists dnf; then
+	IS_RPM=1
 elif exists apk; then
 	IS_ALPINE=1
 else
