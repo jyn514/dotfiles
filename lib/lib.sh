@@ -4,6 +4,11 @@ exists () {
 	return $?
 }
 
+fail() {
+	echo "$@" >&2
+	exit 1
+}
+
 # takes two parameters:
 # $1 - the URL to download. required.
 # $2 - the file to save to. optional. defaults to $(mktemp). specify this for max compatibility.
