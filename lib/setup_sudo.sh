@@ -104,7 +104,12 @@ encrypt_home_dir() {
 
 	my_home=$(getent passwd $SUDO_USER | cut -d: -f6)
 	if fscrypt status $my_home >/dev/null; then
-		return
+		return  # already encrypted
+	fi
+
+	fstype=$(df $my_home --output=fstype | tail -n1)
+	if ! [ "$fstype" = ext4 ]; then
+		fail "fscrypt not supported on filesystems other than ext4 ($my_home is $fstype)"
 	fi
 
 	fscrypt setup --all-users
