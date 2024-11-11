@@ -8,6 +8,8 @@
 emulate sh
 # Perform command substitution when evaluating prompt
 setopt PROMPT_SUBST
+# remove conflicting aliases
+unalias ls la ll l alert 2>/dev/null
 # Set up the prompt
 . ~/.profile
 emulate zsh
