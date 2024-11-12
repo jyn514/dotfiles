@@ -29,7 +29,7 @@ queue_install() {
 
 install_features () {
 	# moonlander configurer
-	if [ -n "$SUDO_USER" ]; then
+	if [ -n "$SUDO_USER" ] && ! exists keymapp; then
 		if [ -n "$IS_DEB" ]; then
 			usermod -aG plugdev $SUDO_USER
 		fi
@@ -92,14 +92,17 @@ install_security () {
 	if ! [ -n "$IS_DEB" ]; then
 		return
 	fi
-	apt-get update
-	apt-get install -y unattended-upgrades
+
+	if ! dpkg -l unattended-upgrades >/dev/null; then
+		apt-get update
+		apt-get install -y unattended-upgrades
+	fi
 	unattended-upgrades || true
 }
 
 encrypt_home_dir() {
 	if [ -z "$SUDO_USER" ]; then
-		fail "don't know original home directory; giving up"
+		fail "don't know original user; giving up"
 	fi
 
 	my_home=$(getent passwd $SUDO_USER | cut -d: -f6)
