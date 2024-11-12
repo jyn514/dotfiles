@@ -12,6 +12,7 @@ graphviz
 jq
 kakoune
 keepassxc
+libpam-fscrypt
 libssl-dev
 libusb-1.0-0-dev
 manpages
