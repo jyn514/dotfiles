@@ -9,7 +9,6 @@ gh
 git
 git-absorb
 graphviz
-install
 jq
 kakoune
 keepassxc

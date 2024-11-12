@@ -110,7 +110,7 @@ setup_backup () {
 setup_install_global () {
 	echo Installing global packages
 	if exists sudo; then
-		sudo ./lib/setup_sudo.sh
+		sudo --preserve-env=PATH ./lib/setup_sudo.sh
 	elif exists su; then
 		su root -c ./lib/setup_sudo.sh
 	else
@@ -264,8 +264,8 @@ else
     message
     while read -r choice; do
     	if ! run "$choice"; then
-    		printf "Please enter a number 0-8: "
-		fi
+				echo "Please enter a number 0-8: "
+			fi
     	message
     done
 fi
