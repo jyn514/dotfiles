@@ -8,6 +8,13 @@ auto-pairs = false
 "ret" = ["open_below", "normal_mode"]
 # tmux doesn't support kitty's Extended Terminal Protocol, so C-i registers as <tab> :(
 "C-y" = "insert_char_interactive"
+"C-p" = "append_char_interactive"
+
+"g" = { "q" = ["reflow_textobject_inner"] }
+# "g" = { "q" = { "q" = ["reflow_textobject_inner"], "a" = ["reflow_textobject_around"] } }
+# "g" = { "q" = ["select_textobject_inner", ":reflow"] }
+# "m" = { "q" = "paragraph" }
+
 # these are not quite the same as changing the default;
 # see https://github.com/helix-editor/helix/issues/2038#issuecomment-2282347693
 # p = "paste_clipboard_after"

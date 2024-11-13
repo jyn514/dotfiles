@@ -1,7 +1,7 @@
 ; https://github.com/helix-editor/helix/pull/8675/files#diff-e77c51b1f881599d34b0b1ab7d1be5106caffbc6f38382e3d4c0c0a497366d5b
-(require "helix/editor.scm")
-(require (prefix-in helix. "helix/commands.scm"))
-(require (prefix-in helix.static. "helix/static.scm"))
+(require "steel/editor.scm")
+(require (prefix-in helix. "steel/commands.scm"))
+(require (prefix-in helix.static. "steel/static.scm"))
 
 (provide 
   open-helix-scm open-init-scm ep
