@@ -11,6 +11,8 @@ if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 
+set -o vi
+
 ## History ##
 # don't put duplicate lines in the history.
 HISTCONTROL=ignoredups
