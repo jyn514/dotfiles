@@ -9,6 +9,7 @@ setup_basics () {
 		base=$(basename "$f")
 		case $base in
     	jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
+			gitconfig) DEST="$HOME/.gitconfig";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) while IFS="=" read local home; do
 					if [ "$local" = "$base" ]; then
