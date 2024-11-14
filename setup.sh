@@ -144,7 +144,6 @@ setup_install_local () {
 		chmod +x ~/.local/bin/python
 	fi
         if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
-        if ! exists tailscale; then curl -fsSL https://tailscale.com/install.sh | sh; fi
 
     # TODO: lol this is so funny we're literally just hardcoding the arch
     # can't just install from apt because the version is too old and doesn't support `-ln auto`
@@ -187,14 +186,15 @@ install_rust() {
 	if exists gh; then
     	export GITHUB_TOKEN=$(gh auth token)
 	fi
-	if ! exists cargo-binstall; then
+	# we need to check for the full path because we have a wrapper in dotfiles/bin
+	if ! [ -x "${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" ]; then
 		# https://github.com/cargo-bins/cargo-binstall#installation
 		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 	else
 		# update to latest version; old versions often hit a rate limit
 		cargo binstall cargo-binstall
 	fi
-	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile
+	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
 
 	if exists code; then
 		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
