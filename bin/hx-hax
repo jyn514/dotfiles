@@ -56,7 +56,8 @@ sub hxhax {
 sub xdgopen {
   my $target = $_[0];
   if ($target =~ /:/) {
-    my $file = (split_line $target)[0];
+    my @split = split_line $target;
+    my $file = $split[0];
     my $mime = `xdg-mime query filetype $file`;
     my $default;
     # apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
@@ -66,7 +67,7 @@ sub xdgopen {
       $default = `xdg-mime query default $mime`;
     }
     if ($default =~ /Helix\.desktop/) {
-      hxhax $target;
+      hxhax join_line @split;
       return;
     }
   }
