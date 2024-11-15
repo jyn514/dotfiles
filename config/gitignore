@@ -14,3 +14,4 @@ node_modules
 .gdb_history
 .vs/
 .vscode/
+.cache/
