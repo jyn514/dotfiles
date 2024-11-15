@@ -22,6 +22,7 @@
 	hyperlinks-file-link-format = "vscode://file/{path}:{line}"
 	# line-numbers = true
 [alias]
+	message = log --format=%B -n1
 	save = git-save
 	update = submodule update
 	conf = config
