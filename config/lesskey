@@ -10,6 +10,9 @@ gp prev-file
 #line-edit
 ^A home
 ^E end
+^[[Z back-complete
+^[l word-right
+^[h word-left
 
 #env
 LESS = -RFMi -x 8 --mouse --wheel-lines=5 --use-color
