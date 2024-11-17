@@ -15,3 +15,4 @@ keyd.conf=/etc/keyd/default.conf
 batconfig=.config/bat/config
 bacon.toml=.config/bacon/prefs.toml
 lesskey=.config/lesskey
+kitty-campbell.conf=.config/kitty/campbell.conf
