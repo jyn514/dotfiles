@@ -1,5 +1,5 @@
 #!/bin/sh
-start_delim='(^|[[:space:]])'
+start_delim='(/|\<)'
 relative_path='(\.|\.\.)'
 start_path="($relative_path|[[:alnum:]~_-]*)"
 component='[][[:alnum:]_.#$%&+=@-]'

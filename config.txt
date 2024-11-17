@@ -13,3 +13,4 @@ Helix.desktop=.local/share/applications/Helix.desktop
 startup.jl=.julia/config/startup.jl
 keyd.conf=/etc/keyd/default.conf
 batconfig=.config/bat/config
+prefs.toml=.config/bacon/prefs.toml

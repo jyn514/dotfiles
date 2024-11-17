@@ -7,8 +7,9 @@ if [ $# = 0 ] || [ $# -gt 2 ]; then
 fi
 
 local=${2:-$(basename "$1")}
+cd "$(dirname "$0")"
 
 set -x
 mv "$1" "config/$local"
-ln -s $(realpath "config/$local") "$1"
+ln -s "$(realpath "config/$local")" "$1"
 echo "$local=$(echo "$1" | sed "s#^$HOME/##")" >> config.txt

@@ -44,6 +44,8 @@ sub hxhax {
   unless (defined $pane) {
   	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
   } else {
+    # exit copy mode so we don't send these commands directly to tmux
+  	`tmux send-keys -t $pane -X cancel 2>/dev/null`;
     	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
   	`tmux send-keys -t $pane Escape`;
   	`tmux send-keys -t $pane ":open $file" Enter`;

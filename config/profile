@@ -289,8 +289,8 @@ fork_github() {
 	git clone "$URL" "$DIR" || return
 
 	builtin cd "$DIR" || return
-	git remote add personal git@github.com:jyn514/"$DIR".git
-	git remote set-url --push origin git@github.com:jyn514/"$DIR".git
+	git remote rename origin upstream
+	git remote add origin git@github.com:jyn514/"$DIR".git
 	echo "$DIR"
 }
 
@@ -306,7 +306,42 @@ if [ "$DISPLAY" ]; then
 	if is_wsl; then
 		export MANOPT=--html=$(dirname $(realpath ~/.profile))/../bin/firefox.sh
 	else
-		export MANOPT=--html=firefox
+		# you know what unix if you can't come up with working hyperlinks in 50 years then fuck you too
+		# export MANOPT=--html=firefox
+		man() {
+			set -x
+			case "$1" in
+				-*) command man "$@"; return;;
+				*) if rg '^SECTION' /etc/manpath.config | \
+				      awk 'BEGIN { arg="'"$1"'"; code=1 } {for (i=2; i<=NF; i++) if($i == arg) { code=0 }} END { exit code }'
+				   then
+					    section=$1
+							shift
+					 fi
+			esac
+			if [ $# -ne 1 ]; then
+				# oops something went wrong
+				command man "$section" "$@"
+				return
+			fi
+
+			check() {
+				[ 200 = "$(curl -I -m 1 -s -o /dev/null -w "%{http_code}" "$@")" ]
+			}
+
+			url=https://man.openbsd.org/$1${section:+.$section}
+			if check $url; then
+				xdg-open "$url"
+				return
+			elif [ "$section" ]; then
+				url=https://man7.org/linux/man-pages/man$section/signal.$section.html
+				if check $url; then
+					xdg-open "$url"
+					return
+				fi
+			fi
+			command man "$section" "$@"
+		}
 	fi
 fi
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
