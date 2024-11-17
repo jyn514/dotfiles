@@ -10,7 +10,7 @@ auto-pairs = false
 "C-y" = "insert_char_interactive"
 "C-p" = "append_char_interactive"
 
-"g" = { "q" = ["reflow_textobject_inner"] }
+"g" = { "R" = [":reflow"], "q" = ["reflow_textobject_inner"] }
 # "g" = { "q" = { "q" = ["reflow_textobject_inner"], "a" = ["reflow_textobject_around"] } }
 # "g" = { "q" = ["select_textobject_inner", ":reflow"] }
 # "m" = { "q" = "paragraph" }

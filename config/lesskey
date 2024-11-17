@@ -1,0 +1,15 @@
+#command
+J forw-scroll
+K back-scroll
+^F forw-search
+^S toggle-option o
+gn next-file
+gp prev-file
+
+#line-edit
+^A home
+^E end
+
+#env
+LESS = -RFi -x 8 --mouse --wheel-lines=5 --use-color
+ 

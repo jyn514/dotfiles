@@ -2,6 +2,16 @@
 name = "scheme"
 language-servers = ["steel"]
 
+[[language]]
+name = "c"
+scope = "source.c"
+injection-regex = "c"
+file-types = ["c", "h"] # TODO: ["h"]
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+language-servers = [ "clangd" ]
+indent = { tab-width = 8, unit = "  " }
+
 [language-server.steel]
 command = "steel-language-server"
 environment = { "STEEL_LSP_HOME" = "/home/jyn/.config/helix/steel-lsp" }

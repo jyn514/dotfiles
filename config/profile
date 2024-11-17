@@ -14,6 +14,8 @@ export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
+# less documents that it searches here by default, but the docs are wrong
+export LESSKEYIN="$HOME/.config/lesskey"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
@@ -43,6 +45,7 @@ fi
 if exists hx; then
 	export EDITOR=editor-hax
 	export VISUAL=editor-hax
+	export LESSEDIT='%E %g?lm\:%lm'
 	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
 	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
 	export JULIA_EDITOR=hx-hax  
@@ -304,12 +307,11 @@ export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 if [ "$DISPLAY" ]; then
 	if is_wsl; then
-		export MANOPT=--html=$(dirname $(realpath ~/.profile))/../bin/firefox.sh
+		MANOPT=--html=$(dirname "$(realpath ~/.profile)")/../bin/firefox.sh
+		export MANOPT
 	else
 		# you know what unix if you can't come up with working hyperlinks in 50 years then fuck you too
-		# export MANOPT=--html=firefox
 		man() {
-			set -x
 			case "$1" in
 				-*) command man "$@"; return;;
 				*) if rg '^SECTION' /etc/manpath.config | \
@@ -330,12 +332,12 @@ if [ "$DISPLAY" ]; then
 			}
 
 			url=https://man.openbsd.org/$1${section:+.$section}
-			if check $url; then
+			if check "$url"; then
 				xdg-open "$url"
 				return
 			elif [ "$section" ]; then
 				url=https://man7.org/linux/man-pages/man$section/signal.$section.html
-				if check $url; then
+				if check "$url"; then
 					xdg-open "$url"
 					return
 				fi

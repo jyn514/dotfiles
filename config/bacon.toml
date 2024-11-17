@@ -1,0 +1,20 @@
+# More info at https://github.com/Canop/bacon
+
+summary = true
+# wrap = false
+
+[keybindings]
+ctrl-d = "scroll-page(.5)"
+ctrl-u = "scroll-page(-.5)"
+j = "scroll-lines(1)"
+k = "scroll-lines(-1)"
+shift-J = "scroll-page(.5)"
+shift-K = "scroll-page(-.5)"
+g = "scroll-to-top"
+shift-g = "scroll-to-bottom"
+"^" = "job:default"
+"$" = "job:initial"
+
+ctrl-r = "rerun"
+alt-r = "reload-config"
+o = "toggle-raw-output"
