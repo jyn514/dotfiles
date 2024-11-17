@@ -1,4 +1,5 @@
 #command
+gg goto-line
 J forw-scroll
 K back-scroll
 ^F forw-search
@@ -11,5 +12,5 @@ gp prev-file
 ^E end
 
 #env
-LESS = -RFi -x 8 --mouse --wheel-lines=5 --use-color
+LESS = -RFMi -x 8 --mouse --wheel-lines=5 --use-color
  
