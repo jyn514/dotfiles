@@ -11,8 +11,6 @@ if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 
-set -o vi
-
 ## History ##
 # don't put duplicate lines in the history.
 HISTCONTROL=ignoredups
@@ -48,6 +46,11 @@ cd () {
 pure_shell() {
    env -i HOME="$HOME" TERM="$TERM" PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
 }
+
+# bash-specific keybinds
+# note: put things in inputrc instead if possible
+bind '" ":magic-space'
+bind '"\C-@":shell-expand-line'
 
 # completion
 complete_alias() {

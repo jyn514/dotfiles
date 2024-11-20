@@ -57,6 +57,8 @@ fi
 
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
+# read .inputrc
+export ydb_readline=1
 
 case "$-" in
 	*i*) ;;

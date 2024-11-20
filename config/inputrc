@@ -1,6 +1,20 @@
+# instead of enabling vi mode, which kinda sucks, use emacs mode by default but enable vi normal mode
+set keyseq-timeout 1
+set keymap vi-command
+"i": emacs-editing-mode
+
+set keymap emacs
 ## enable Alt-arrows
 "\e[1;3D": backward-word ### Alt left
 "\e[1;3C": forward-word ### Alt right
+"\eh": backward-word
+"\el": forward-word
+"\Cl": forward-word
+
+"\e": "\2\e"
+"\2": vi-editing-mode
+
+"\er": re-read-init-file
 
 # mappings for Ctrl-left-arrow and Ctrl-right-arrow for word moving
 "\e[1;5C": forward-word
@@ -19,3 +33,9 @@ $include /etc/inputrc
 set completion-ignore-case On
 # only require <tab> a single time to show options
 set show-all-if-ambiguous on
+# distinguish insert and command mode
+# https://stackoverflow.com/a/48449104
+set show-mode-in-prompt on
+set emacs-mode-string "\1\e[6 q\2"
+set vi-cmd-mode-string "\1\e[2 q\2"
+set vi-ins-mode-string "\1\e[6 q\2"
