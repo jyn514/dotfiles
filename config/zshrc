@@ -26,6 +26,7 @@ pure_shell() {
 autoload -Uz promptinit
 promptinit
 PROMPT="$PS1"
+POSTEDIT="$PS0"
 
 setopt histignorealldups sharehistory correct
 # append immediately, not on close
@@ -46,6 +47,8 @@ bindkey -a "^Q" zle-vicmd-push
 bindkey -a "y" zle-vicmd-copy
 bindkey "^G" get-line
 bindkey -a "^G" get-line
+bindkey '^@' expand-word
+bindkey -a '@' expand-word
 
 # use emacs line editing for insert mode, ...
 bindkey -e
@@ -87,7 +90,12 @@ bindkey "\e[1;5C" forward-word
 
 # by analogy with ^H
 # this overrides clear-screen, but i don't care about clear-screen
-bindkey "^L" forward-word
+bindkey "^L" delete-word
+bindkey "^[h" backward-word
+bindkey "^[l" forward-word
+# these are backwards because i have them bound to vi keys
+bindkey "${termcap[kN]}" backward-word
+bindkey "${termcap[kP]}" forward-word
 
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'

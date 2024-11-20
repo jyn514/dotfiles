@@ -16,6 +16,7 @@
 [interactive]
 	diffFilter = delta --color-only
 [delta]
+	tabs = 8
 	navigate = true
 	hyperlinks = true
 	# hyperlinks-file-link-format = "file://{path}#{line}"
