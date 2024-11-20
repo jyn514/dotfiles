@@ -44,7 +44,7 @@ install_features () {
 
 	set +x
 	echo "queueing packages to install"
-	for pkg in $(tr '\n' ' ' < packages.txt); do
+	for pkg in $(grep -v '^\s*#' packages.txt | tr '\n' ' '); do
 		queue_install $pkg
 	done
 	set -x
