@@ -27,8 +27,13 @@
 	update = submodule update
 	conf = config
 	module = submodule
-	deepen = git pull --unshallow
-	unshallow = git pull --unshallow
+	deepen = pull --unshallow
+	unshallow = pull --unshallow
+	amend = commit --amend
+	fetch-update = !git fetch upstream && git rebase upstream/HEAD
+	rdiff = range-diff --check upstream/HEAD @{u} HEAD
+	update = !git fetch-update && git rdiff && read -p "'push? [y/N] '" REPLY && [ \"$REPLY\" = y ] && git pf
+	up = update
 	a = add
 	b = branch
 	c = commit
@@ -47,7 +52,7 @@
 	s = status -sb
 	t = tag
 	v = !git --version
-	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(refname:short): %(contents:subject)' refs/heads/
+	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
 	signed = log --show-signature
 	default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@'
 	autosquash = !git revise $(git merge-base HEAD origin/HEAD) --autosquash -i
