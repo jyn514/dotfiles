@@ -94,10 +94,6 @@ HEAD() {
 	export LESSCLOSE="/usr/bin/lesspipe %s %s";
 }
 
-v () { vim "$@"; }
-# uppercase is bad and it should feel bad
-r () { R "$@"; }
-
 yts () { youtube_search "$@"; }
 
 ytd () { yt-dlp "$@"; }
@@ -115,9 +111,13 @@ b () {
 	builtin cd "$(cargo metadata --format-version 1| jq .workspace_root -r)" && bacon "$@"
 }
 
-c () { cargo "$@"; }
+c() { cargo "$@"; }
 e() { $EDITOR "$@"; }
 g() { git "$@"; }
+o() { open "$@"; }
+v () { vim "$@"; }
+# uppercase is bad and it should feel bad
+r () { R "$@"; }
 
 # NOTE: this *must not* be an external process.
 # scoping it to a function prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.

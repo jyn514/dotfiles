@@ -33,6 +33,8 @@ setopt histignorealldups sharehistory correct
 setopt incappendhistory
 # allow `cd ..`
 setopt autocd
+# store all directories into the directory stack automatically
+setopt autopushd
 
 # save command in buffer before executing
 bindkey "^Q" push-line
