@@ -1,0 +1,5 @@
+#!/usr/bin/env pwsh
+$Input | %{
+	((($_ -replace '><', '> <') -replace ' ', "`n") -replace '[<>]', '').split("`n") `
+		| %{$x, $name, $id = $_.split(':'); curl "https://cdn.discordapp.com/emojis/$id.png?size=128&quality=lossless" "-o" "$name.png";}
+}
