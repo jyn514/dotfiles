@@ -4,6 +4,9 @@ theme = "ayu_evolve"
 line-number = "relative"
 auto-pairs = false
 
+[editor.soft-wrap]
+enable = true
+
 [keys.normal]
 "ret" = ["open_below", "normal_mode"]
 # tmux doesn't support kitty's Extended Terminal Protocol, so C-i registers as <tab> :(
