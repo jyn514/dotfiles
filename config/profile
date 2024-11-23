@@ -337,12 +337,14 @@ if [ "$DISPLAY" ]; then
 			if check "$url"; then
 				xdg-open "$url"
 				return
-			elif [ "$section" ]; then
-				url=https://man7.org/linux/man-pages/man$section/signal.$section.html
-				if check "$url"; then
-					xdg-open "$url"
-					return
-				fi
+			fi
+			if ! [ "$section" ]; then
+				section=$(man -k initramfs.conf | head -n1 | awk '{print $2}' | tr -d '()')
+			fi
+			url=https://manpages.ubuntu.com/manpages/$(lsb_release -cs)/man$section/$1.$section.html
+			if check "$url"; then
+				xdg-open "$url"
+				return
 			fi
 			command man "$section" "$@"
 		}
