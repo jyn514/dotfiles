@@ -54,6 +54,7 @@ setup_basics () {
 	. config/profile
 	setup_vim # otherwise vim will error out the next time it starts up
 	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
+	git clone https://github.com/lincheney/fzf-tab-completion ~/.local/lib/fzf-tab-completion/
   ~/.config/tmux/plugins/tpm/bin/install_plugins
 unset DEST LOCAL f
 }
@@ -146,10 +147,12 @@ setup_install_local () {
 	fi
         if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 
-    # TODO: lol this is so funny we're literally just hardcoding the arch
-    # can't just install from apt because the version is too old and doesn't support `-ln auto`
+   # TODO: lol this is so funny we're literally just hardcoding the arch
+   # can't just install from apt because the version is too old and doesn't support `-ln auto`
    download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
    chmod +x ~/.local/bin/shfmt
+   # apt package is ancient and doesn't support zsh
+   tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
 }
 
 install_rust() {

@@ -85,3 +85,6 @@ if exists zoxide; then
 fi
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
+
+source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh
+bind -x '"\t": fzf_bash_completion'

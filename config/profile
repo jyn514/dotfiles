@@ -355,6 +355,8 @@ export BAT_STYLE=changes,header,rule
 export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
 export CARGO_MOMMYS_MOODS=ominous
+export FZF_DEFAULT_OPTS='--tmux --cycle --exit-0 --select-1 --preview-window=wrap'
+
 # git treats `diff.external` extremely poorly; there's no way to unset it temporarily because `-c diff.external` tries to run an empty program.
 # instead, set this through an external env variable so we can unset it with `env -u`.
 # difft is super buggy though :( ignoring it for now

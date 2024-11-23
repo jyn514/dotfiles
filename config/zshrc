@@ -182,7 +182,46 @@ if exists zoxide; then
    source <(zoxide init zsh)
    # zoxide is annoying and makes `z` an alias instead of a function
    cd() { __zoxide_z "$@" && status; }
+	autoload +X _cd
+	functions -c _cd __builtin_cd_complete
+	function _cd() {
+		__builtin_cd_complete
+		# Only show completions when the cursor is at the end of the line.
+		# shellcheck disable=SC2154
+		[[ "${#words[@]}" -eq "${CURRENT}" ]] || return 0
+		_values -s $'\n' 'directories' $(zoxide query --list)
+	}
+	# TODO: this doesn't work for some reason?
+	# functions -c _cd _z
 fi
+
+source ~/.local/lib/fzf-tab-completion/zsh/fzf-zsh-completion.sh
+keys=(
+    ctrl-r:'repeat-fzf-completion'
+    tab:accept:'repeat-fzf-completion'
+    right:accept:'zle reset-prompt'
+    enter:accept:'zle accept-line'
+)
+zstyle ':completion:*' fzf-completion-keybindings "${keys[@]}"
+# use / instead of tab to immediately trigger another completion, like `right`
+zstyle ':completion::*:cd:*' fzf-completion-keybindings "${keys[@]}" /:accept:'repeat-fzf-completion'
+bindkey '^I' fzf_completion
+
+# really want to make this part of normal tab complete but i can't find a way to have zsh complete arbitrary file nesting :(
+fzf-file() {
+  local selected
+  IFS=$'\n' selected=($(fd | fzf --expect=tab --no-sort --query="$BUFFER"))
+  if [[ "$selected" ]]; then
+    LBUFFER="$selected"
+    if [[ ${#selected[@]} -eq 2 ]]; then
+      LBUFFER="${selected[2]}"
+      zle reset-prompt
+    fi
+  fi
+  zle accept-line
+}
+zle -N fzf-file
+bindkey "^[t" fzf-file
 
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search
