@@ -173,6 +173,7 @@ zstyle ':completion:*' verbose true
 
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
 zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
+zstyle ':completion:*:gdb:*' command 'ps -A -o pid,tty,cmd'
 zstyle ':completion:*' rehash true
 
 COMPLETION=/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
@@ -183,6 +184,18 @@ fi
 . $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
 antigen bundle zsh-users/zsh-autosuggestions>/dev/null
 antigen apply
+if ! exists __builtin_gdb_complete; then
+  autoload +X _gdb
+  functions -c _gdb __builtin_gdb_complete
+fi
+# builtin completion is broken, lol, lmao
+_gdb() {
+  if [ "$words[CURRENT-1]" = '-p' ]; then
+    _pids
+  else
+  __builtin_gdb_complete
+ fi
+}
 
 if exists jj; then source <(jj util completion zsh); fi
 if exists zoxide; then
@@ -230,6 +243,8 @@ fzf-file() {
 }
 zle -N fzf-file
 bindkey "^[t" fzf-file
+
+compdef _gnu_generic fzf
 
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search
