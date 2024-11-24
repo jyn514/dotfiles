@@ -158,7 +158,8 @@ fi
 zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
 zstyle ':completion:*' list-colors ''
 zstyle ':completion:*' list-prompt %SAt %p: Hit TAB for more, or the character to insert%s
-zstyle ':completion:*' matcher-list '' 'm:{a-z}={A-Z}' 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=* l:|=*'
+# fuzzy-matching, like fzf but it works even there is a partial prompt that's being completed
+zstyle ':completion:*' matcher-list '' 'm:{a-z}={A-Z}' 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=* l:|=* m:{a-zA-Z}={A-Za-z}'
 zstyle ':completion:*' menu select=long
 zstyle ':completion:*' select-prompt %SScrolling active: current selection at %p%s
 zstyle ':completion:*' use-compctl false
@@ -189,7 +190,8 @@ if exists zoxide; then
 		# Only show completions when the cursor is at the end of the line.
 		# shellcheck disable=SC2154
 		[[ "${#words[@]}" -eq "${CURRENT}" ]] || return 0
-		_values -s $'\n' 'directories' $(zoxide query --list)
+                IFS=$'\n' local comp=($(zoxide query --list))
+		_describe 'directories' comp
 	}
 	# TODO: this doesn't work for some reason?
 	# functions -c _cd _z
