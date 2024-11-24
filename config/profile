@@ -314,6 +314,7 @@ if [ "$DISPLAY" ]; then
 	else
 		# you know what unix if you can't come up with working hyperlinks in 50 years then fuck you too
 		man() {
+			local section
 			case "$1" in
 				-*) command man "$@"; return;;
 				*) if rg '^SECTION' /etc/manpath.config | \
@@ -339,7 +340,7 @@ if [ "$DISPLAY" ]; then
 				return
 			fi
 			if ! [ "$section" ]; then
-				section=$(man -k initramfs.conf | head -n1 | awk '{print $2}' | tr -d '()')
+				section=$(man -k "$1" | head -n1 | awk '{print $2}' | tr -d '()')
 			fi
 			url=https://manpages.ubuntu.com/manpages/$(lsb_release -cs)/man$section/$1.$section.html
 			if check "$url"; then
