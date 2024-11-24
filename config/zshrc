@@ -228,7 +228,28 @@ zstyle ':completion:*' fzf-completion-keybindings "${keys[@]}"
 zstyle ':completion::*:cd:*' fzf-completion-keybindings "${keys[@]}" /:accept:'repeat-fzf-completion'
 bindkey '^I' fzf_completion
 
-# really want to make this part of normal tab complete but i can't find a way to have zsh complete arbitrary file nesting :(
+# basically the same as `cd <TAB>`, but with arbitrary nesting.
+# not super useful now that _cd supports zoxide dirs.
+zle-fzf-zoxide() {
+  setopt localoptions pipefail no_aliases 2> /dev/null
+  local dir="$(complete-fzf-dir | fzf --reverse --scheme=path +m)"
+  if [[ -z "$dir" ]]; then
+    zle redisplay
+    return 0
+  fi
+  zle push-line # Clear buffer. Auto-restored on next prompt.
+  BUFFER="builtin cd -- ${(q)dir:a}"
+  zle accept-line
+  local ret=$?
+  unset dir # ensure this doesn't end up appearing in prompt expansion
+  zle reset-prompt
+  return $ret
+}
+zle -N zle-fzf-zoxide
+bindkey '^[c' zle-fzf-zoxide
+
+# making this part of normal tab complete is too slow and hangs
+# really wish zsh would show partial matches instead of waiting for all of them to finish
 fzf-file() {
   local selected
   IFS=$'\n' selected=($(fd | fzf --expect=tab --no-sort --query="$BUFFER"))
