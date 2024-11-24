@@ -43,10 +43,16 @@ zle-vicmd-copy() {
     zle vi-yank
     echo "$CUTBUFFER" | xclip -i -selection clipboard
 }
+zle-sudo() {
+  zle up-line-or-history
+  LBUFFER="sudo $LBUFFER"
+}
 zle -N zle-vicmd-push
 zle -N zle-vicmd-copy
+zle -N zle-sudo
 bindkey -a "^Q" zle-vicmd-push
 bindkey -a "y" zle-vicmd-copy
+bindkey '^[k' zle-sudo
 bindkey "^G" get-line
 bindkey -a "^G" get-line
 bindkey '^@' expand-word
