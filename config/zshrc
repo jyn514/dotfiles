@@ -181,9 +181,6 @@ if [ -e "$COMPLETION" ]; then
 	. "$COMPLETION"
 fi
 
-. $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
-antigen bundle zsh-users/zsh-autosuggestions>/dev/null
-antigen apply
 if ! exists __builtin_gdb_complete; then
   autoload +X _gdb
   functions -c _gdb __builtin_gdb_complete
@@ -202,8 +199,10 @@ if exists zoxide; then
    source <(zoxide init zsh)
    # zoxide is annoying and makes `z` an alias instead of a function
    cd() { __zoxide_z "$@" && status; }
-	autoload +X _cd
-	functions -c _cd __builtin_cd_complete
+        if ! exists __builtin_cd_complete; then
+          autoload +X _cd
+          functions -c _cd __builtin_cd_complete
+        fi
 	function _cd() {
 		__builtin_cd_complete
 		# Only show completions when the cursor is at the end of the line.
@@ -213,6 +212,7 @@ if exists zoxide; then
 		_describe 'directories' comp
 	}
 	# TODO: this doesn't work for some reason?
+        compdef z=cd
 	# functions -c _cd _z
 fi
 
@@ -245,6 +245,10 @@ zle -N fzf-file
 bindkey "^[t" fzf-file
 
 compdef _gnu_generic fzf
+
+. $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
+antigen bundle zsh-users/zsh-autosuggestions>/dev/null
+antigen apply
 
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search
