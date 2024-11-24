@@ -37,6 +37,7 @@ sub join_line {
 
 sub trim {
   # https://stackoverflow.com/a/4597964/7669110
+  return if (! scalar @_);
   $_[0] =~ s/^\s+|\s+$//rg
 }
 
@@ -57,7 +58,7 @@ sub hxhax {
   	`tmux select-pane -t $pane -Z`;
   }
 
-  `tmux run-shell -t $pane "xdotool windowactivate \${WINDOWID} 2>&1"` if (defined $ENV{DISPLAY});
+  `tmux run-shell -t $pane xdotool windowactivate \${WINDOWID} 2>&1` if (defined $ENV{DISPLAY});
 }
 
 sub xdgopen {
@@ -65,20 +66,20 @@ sub xdgopen {
   if ($target =~ /:/) {
     my @split = split_line $target;
     my $file = $split[0];
-    my $mime = `xdg-mime query filetype $file`;
+    my $mime = `xdg-mime query filetype "$file"`;
     my $default;
     # apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
     if (cmdexists 'gio') {
-      $default = (split '\n', `gio mime $mime`)[0] =~ s/^Default .*: //r;
+      $default = (split '\n', `gio mime "$mime"`)[0] =~ s/^Default .*: //r;
     } else {
-      $default = `xdg-mime query default $mime`;
+      $default = `xdg-mime query default "$mime"`;
     }
     if ($default =~ /Helix\.desktop/) {
       hxhax join_line @split;
       return;
     }
   }
-  `xdg-open $target`;
+  `xdg-open "$target"`;
 }
 
 my $name = basename $0;
