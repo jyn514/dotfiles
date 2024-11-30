@@ -67,7 +67,7 @@ sub xdgopen {
   if ($target =~ /:/) {
     my @split = split_line $target;
     my $file = $split[0];
-    my $mime = `xdg-mime query filetype "$file"`;
+    chomp(my $mime = `xdg-mime query filetype "$file"`);
     my $default;
     # apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
     if (cmdexists 'gio') {
