@@ -6,6 +6,7 @@ kitty.conf=.config/kitty/kitty.conf
 kakrc=.config/kak/kakrc
 tmux.conf=.config/tmux/tmux.conf
 set-tmux-env.sh=.config/tmux/set-env.sh
+renumber-tmux-sessions.sh=.config/tmux/renumber-sessions.sh
 helix=.config/helix
 attach-session.sh=.config/tmux/attach-session.sh
 fx.desktop=.local/share/applications/fx-usercreated-1.desktop
