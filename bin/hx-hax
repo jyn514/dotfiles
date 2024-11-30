@@ -77,8 +77,10 @@ sub xdgopen {
     }
     if ($default =~ /Helix\.desktop/) {
       hxhax join_line @split;
-      return;
+    } else {
+      `xdg-open "$file"`;
     }
+    return;
   }
   `xdg-open "$target"`;
 }
