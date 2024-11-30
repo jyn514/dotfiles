@@ -20,7 +20,7 @@ sub split_line {
   # TODO: don't split if this file exists on disk
   my @matches = $_[0] =~ $line;
   my $url = URI::Simple->new($matches[0]);
-  if ($url->path ne $matches[0]) {
+  if ($url->protocol eq 'file' && $url->path ne $matches[0]) {
     @matches[0] = $url-> path;
   }
   my $abs = abs_path $matches[0];
