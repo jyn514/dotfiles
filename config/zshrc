@@ -1,6 +1,9 @@
 #!/usr/bin/env zsh
 # docs: https://zsh.sourceforge.io/Doc/Release/index.html#Top
 # to see the keymap, `bindkey` (-M for a specific keymap)
+# to see all completions, `echo $_comps`. for a specific completion, `which _ls` *usually* works.
+# to debug a specific completion, `C-x ? Up`
+# to see all functions, `print -l ${(ok)functions}`
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
 
@@ -173,7 +176,7 @@ zstyle ':completion:*' verbose true
 
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
 zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
-zstyle ':completion:*:gdb:*' command 'ps -A -o pid,tty,cmd'
+zstyle ':completion:*:gdb:*' command 'ps --ppid 2 --pid 2 --deselect -o pid,tty,cmd'
 zstyle ':completion:*' rehash true
 
 COMPLETION=/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
