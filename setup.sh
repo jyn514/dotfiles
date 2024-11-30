@@ -133,9 +133,11 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	if exists hx; then for mime in text/x-makefile text/x-python text/x-perl text/x-tex text/x-csrc application/x-shellscript text/plain; do
-		xdg-mime default Helix.desktop $mime
-	done
+	if exists hx; then
+		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default Helix.desktop
+		for mime in text/x-python text/x-perl; do
+			xdg-mime default Helix.desktop $mime
+		done
 	fi
   if exists fx; then
   	xdg-mime default fx-usercreated-1.desktop application/json
