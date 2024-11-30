@@ -23,7 +23,8 @@ sub split_line {
   if ($url->path ne $matches[0]) {
     @matches[0] = $url-> path;
   }
-  $matches[0] = abs_path $matches[0];
+  my $abs = abs_path $matches[0];
+  $matches[0] = $abs if defined $abs;
   grep defined, @matches
 }
 
