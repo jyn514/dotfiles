@@ -149,7 +149,14 @@ HISTSIZE=1000
 SAVEHIST=10000000
 HISTFILE=~/.zsh_history
 
+# package manager
+source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+zinit light zsh-users/zsh-autosuggestions
+zinit light zdharma-continuum/fast-syntax-highlighting
+zinit ice pick"zsh/*.sh" && zinit light lincheney/fzf-tab-completion
+
 # Use modern completion system
+export FPATH=~/.local/share/zsh/site-functions:$FPATH
 autoload -Uz compinit
 compinit
 
@@ -178,11 +185,6 @@ zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
 zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
 zstyle ':completion:*:gdb:*' command 'ps --ppid 2 --pid 2 --deselect -o pid,tty,cmd'
 zstyle ':completion:*' rehash true
-
-COMPLETION=/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-if [ -e "$COMPLETION" ]; then
-	. "$COMPLETION"
-fi
 
 if ! exists __builtin_gdb_complete; then
   autoload +X _gdb
@@ -247,12 +249,10 @@ if exists zoxide; then
                 IFS=$'\n' local comp=($(zoxide query --list))
 		_describe 'directories' comp
 	}
-	# TODO: this doesn't work for some reason?
         compdef z=cd
-	# functions -c _cd _z
 fi
 
-source ~/.local/lib/fzf-tab-completion/zsh/fzf-zsh-completion.sh
+# fzf bs
 keys=(
     ctrl-r:'repeat-fzf-completion'
     tab:accept:'repeat-fzf-completion'
@@ -301,11 +301,6 @@ fzf-file() {
 zle -N fzf-file
 bindkey "^[t" fzf-file
 
-compdef _gnu_generic fzf
-
-. $(dirname $(realpath ~/.profile))/../lib/antigen.zsh
-antigen bundle zsh-users/zsh-autosuggestions>/dev/null
-antigen apply
 
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search

@@ -55,7 +55,16 @@ setup_basics () {
 	setup_vim # otherwise vim will error out the next time it starts up
 	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
 	git clone https://github.com/lincheney/fzf-tab-completion ~/.local/lib/fzf-tab-completion/
-  ~/.config/tmux/plugins/tpm/bin/install_plugins
+	~/.config/tmux/plugins/tpm/bin/install_plugins
+
+	if [ ! -f ~/.local/share/zinit/zinit.git/zinit.zsh ]; then
+	    print -P "%F{33} %F{220}Installing %F{33}ZDHARMA-CONTINUUM%F{220} Initiative Plugin Manager (%F{33}zdharma-continuum/zinit%F{220})…%f"
+	    command mkdir -p "$HOME/.local/share/zinit" && command chmod g-rwX "$HOME/.local/share/zinit"
+	    command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git" && \
+	        print -P "%F{33} %F{34}Installation successful.%f%b" || \
+	        print -P "%F{160} The clone has failed.%f%b"
+	fi
+
 unset DEST LOCAL f
 }
 
