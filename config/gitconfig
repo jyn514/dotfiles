@@ -31,7 +31,7 @@
 	unshallow = pull --unshallow
 	amend = commit --amend
 	fetch-update = !git fetch upstream && git rebase upstream/HEAD
-	rdiff = range-diff --check upstream/HEAD @{u} HEAD
+	rdiff = range-diff upstream/HEAD @{u} HEAD
 	update = !git fetch-update && git rdiff && read -p "'push? [y/N] '" REPLY && [ \"$REPLY\" = y ] && git pf
 	new = !git fetch upstream && git checkout upstream/HEAD && git checkout -b
 	up = update
