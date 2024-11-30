@@ -14,10 +14,15 @@ enable = true
 "A-i" = "insert_char_interactive"
 "A-a" = "append_char_interactive"
 "g" = { "R" = [":reflow"], "q" = ["reflow_textobject_inner"] }
+"H" = "move_prev_sub_word_start"
+"L" = "move_next_sub_word_start"
 
-
-# doesn't seem to be supported :( https://docs.helix-editor.com/keymap.html#picker
+# choosing the first entry doesn't seem to be supported :( https://docs.helix-editor.com/keymap.html#picker
 "]" = { "w" = ["workspace_diagnostics_picker"]}
+
+[keys.select]
+"H" = "extend_prev_sub_word_start"
+"L" = "extend_next_sub_word_start"
 
 [keys.normal.space]
 "." = "code_action"
