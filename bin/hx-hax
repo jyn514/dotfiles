@@ -5,7 +5,7 @@ use warnings;
 
 use Cwd 'abs_path';
 use File::Basename 'basename', 'dirname';
-use URI::Simple;
+use URI ();
 
 my $editor = $ENV{REAL_EDITOR} || 'hx';
 # `.*?`: match anything, non-greedily
@@ -19,8 +19,8 @@ sub cmdexists {
 sub split_line {
   # TODO: don't split if this file exists on disk
   my @matches = $_[0] =~ $line;
-  my $url = URI::Simple->new($matches[0]);
-  if ($url->protocol eq 'file' && $url->path ne $matches[0]) {
+  my $url = URI->new($matches[0]);
+  if ($url->scheme eq 'file' && $url->path ne $matches[0]) {
     @matches[0] = $url-> path;
   }
   my $abs = abs_path $matches[0];

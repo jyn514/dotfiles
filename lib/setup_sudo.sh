@@ -10,6 +10,7 @@ queue_install() {
 	elif [ "$IS_RPM" = 1 ]; then
 		pkg="$1"
 		case "$pkg" in
+			liburi-perl) pkg=perl-URI ;;
 			manpages) pkg=man-pages ;;
 			manpages-dev) return;;  # included with man-pages
 			libssl-dev) pkg=openssl-devel ;;
