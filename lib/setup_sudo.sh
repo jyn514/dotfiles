@@ -14,6 +14,8 @@ queue_install() {
 			manpages-dev) return;;  # included with man-pages
 			libssl-dev) pkg=openssl-devel ;;
 			libusb-1.0-0-dev) return;; # not sure what this was for anyway
+			libpam-fscrypt) return;; # fedora doesn't use ext4, so we don't use fscrypt
+			libterm-readline-gnu-perl) pkg=perl-Term-ReadLine-Gnu ;;
 			python3-pylsp) pkg=python3-lsp-server ;;
 			build-essential) pkg=@development-tools ;;
 			*) ;;
@@ -102,23 +104,29 @@ install_security () {
 	unattended-upgrades || true
 }
 
-encrypt_home_dir() {
+encrypt() {
+	if home=$(fscrypt_supported); then
+		encrypt_home_dir "$home"
+	else
+		setup_initramfs
+	fi
+}
+
+fscrypt_supported() {
 	if [ -z "$SUDO_USER" ]; then
 		fail "don't know original user; giving up"
 	fi
 
 	my_home=$(getent passwd $SUDO_USER | cut -d: -f6)
-	if fscrypt status $my_home >/dev/null; then
-		return  # already encrypted
-	fi
+	fstype=$(df $my_home --output=fstype | tail -n1)
+	echo "$my_home"
+	[ "$fstype" = ext4 ]
+}
 
-	IFS=' ' read fstype dev <<END
-$(df $my_home --output=fstype,source | tail -n1)
-END
+encrypt_home_dir() {
+	my_home=$1
 
-	if ! [ "$fstype" = ext4 ]; then
-		fail "fscrypt not supported on filesystems other than ext4 ($my_home is $fstype)"
-	fi
+	dev=$(df $my_home --output=source | tail -n1)
 
 	if ! dumpe2fs -h $dev 2>/dev/null | grep -q 'Filesystem features:.*encrypt'; then
 		tune2fs -O encrypt $dev
@@ -151,6 +159,15 @@ END
 	fi
 }
 
+setup_initramfs() {
+	if ! exists dracut || ! [ -f /etc/dracut.conf ]; then
+		fail "only know how to manage initramfs managed by dracut"
+	fi
+	echo 'kernel_cmdline=rd.neednet=1' >/etc/dracut.conf.d/network.conf
+	ln -sf "$DIR/46dropbear" /usr/lib/dracut/modules.d
+	dracut --force
+}
+
 remove_unwanted () {
 	if ! [ -n "$IS_DEB" ]; then
 		return
@@ -174,6 +191,6 @@ fi
 set -x
 install_security
 install_features
-encrypt_home_dir
+encrypt
 remove_unwanted
 set +x

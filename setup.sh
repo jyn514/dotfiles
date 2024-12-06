@@ -220,7 +220,6 @@ install_rust() {
 	fi
 }
 
-
 setup_all () {
 	echo Doing everything
 	setup_install_global  # so we know we have vim, git, etc.

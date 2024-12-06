@@ -1,0 +1,28 @@
+[Unit]
+Description=Dropbear SSH Server Daemon
+Documentation=man:dropbear(8)
+Wants=dropbear-keygen.service
+Requires=network-online.target
+After=network-online.target
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+EnvironmentFile=-/etc/sysconfig/dropbear
+# -EF: play nice with systemd
+# -sjk: disable features we don't need
+# -R: generate host keys automatically
+# don't care if anyone sees this port, it's only up briefly during boot and it can't run a full shell anyway
+ExecStart=/usr/sbin/dropbear -EF -sjk -R -p 10281 -c systemd-tty-ask-password-agent
+
+# ExecReload=/bin/kill -HUP $MAINPID
+# KillMode=process
+Restart=on-failure
+RestartSec=42s
+
+RuntimeDirectory=dropbear
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=cryptsetup.target
