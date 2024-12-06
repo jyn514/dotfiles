@@ -13,8 +13,9 @@ fail() {
 # $1 - the URL to download. required.
 # $2 - the file to save to. optional. defaults to $(mktemp). specify this for max compatibility.
 download () {
-	if [ -n "$2" ]; then
+	if [ -n "${2:-}" ]; then
 		OUTPUT="$2"
+		PRINT=1
 	else
 		OUTPUT="$(mktemp)"
 	fi
@@ -24,7 +25,9 @@ download () {
 	else
 		wget -O "$OUTPUT" "$1"
 	fi
-	printf "%s" "$OUTPUT"
+	if [ "${PRINT:-}" ]; then
+		printf "%s" "$OUTPUT"
+	fi
 }
 
 # get the link for the latest github release of "$1"

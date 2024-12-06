@@ -139,8 +139,8 @@ setup_install_local () {
 			xdg-mime default Helix.desktop $mime
 		done
 	fi
-  if exists fx; then
-  	xdg-mime default fx-usercreated-1.desktop application/json
+	if exists fx; then
+		xdg-mime default fx-usercreated-1.desktop application/json
 	fi
 	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
 		xdg-mime default "$browser" $mime
@@ -167,12 +167,22 @@ setup_install_local () {
 	fi
         if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
 
-   # TODO: lol this is so funny we're literally just hardcoding the arch
-   # can't just install from apt because the version is too old and doesn't support `-ln auto`
-   download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
-   chmod +x ~/.local/bin/shfmt
-   # apt package is ancient and doesn't support zsh
-   tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
+	# TODO: lol this is so funny we're literally just hardcoding the arch
+	# can't just install from apt because the version is too old and doesn't support `-ln auto`
+	if ! exists shfmt; then
+		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
+		chmod +x ~/.local/bin/shfmt
+	fi
+	# apt package is ancient and doesn't support zsh
+	if ! exists fzf; then
+		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
+	fi
+
+	if ! [ -e ~/src/helix ]; then
+		git clone --branch working --single-branch https://github.com/jyn514/helix/ ~/src/helix 
+	fi
+	(cd ~/src/helix && cargo install --path helix-term --locked)
+	# TODO: setup steel lsp
 }
 
 install_rust() {
