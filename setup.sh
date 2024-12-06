@@ -58,11 +58,11 @@ setup_basics () {
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
 	if [ ! -f ~/.local/share/zinit/zinit.git/zinit.zsh ]; then
-	    print -P "%F{33} %F{220}Installing %F{33}ZDHARMA-CONTINUUM%F{220} Initiative Plugin Manager (%F{33}zdharma-continuum/zinit%F{220})…%f"
+	    printf "Installing ZDHARMA-CONTINUUM Initiative Plugin Manager (zdharma-continuum/zinit)…"
 	    command mkdir -p "$HOME/.local/share/zinit" && command chmod g-rwX "$HOME/.local/share/zinit"
 	    command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git" && \
-	        print -P "%F{33} %F{34}Installation successful.%f%b" || \
-	        print -P "%F{160} The clone has failed.%f%b"
+	        echo "Installation successful." || \
+	        echo "The clone has failed."
 	fi
 
 unset DEST LOCAL f
