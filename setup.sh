@@ -151,6 +151,15 @@ setup_install_local () {
 	python3 -m pip install --user git-revise
 	lib/fx-install.sh
 
+	if ! [ -e ~/.bash-preexec.sh ]; then
+		curl https://raw.githubusercontent.com/rcaloras/bash-preexec/master/bash-preexec.sh -o ~/.bash-preexec.sh
+	fi
+	if ! exists atuin; then
+		curl --proto '=https' --tlsv1.2 -LsSf https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh | bash -s - --no-modify-path
+		mv ~/.atuin/bin/atuin ~/.local/bin
+		rm -r ~/.atuin
+	fi
+
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	if ! [ -x ~/.local/bin/python ] && exists python3; then
 		echo 'exec python3 "$@"' > ~/.local/bin/python
