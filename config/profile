@@ -341,7 +341,7 @@ if [ "$DISPLAY" ]; then
 				return
 			fi
 			if ! [ "$section" ]; then
-				section=$(man -k "$1" | head -n1 | awk '{print $2}' | tr -d '()')
+				section=$(man -k "$1" | rg "^$1" | head -n1 | awk '{print $2}' | tr -d '()')
 			fi
 			url=https://manpages.ubuntu.com/manpages/$(lsb_release -cs)/man$section/$1.$section.html
 			if check "$url"; then
