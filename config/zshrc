@@ -304,3 +304,6 @@ bindkey "^[t" fzf-file
 
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search
+
+# https://direnv.net/
+eval "$(direnv hook zsh)"

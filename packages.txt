@@ -3,6 +3,7 @@ bpytop
 build-essential
 cowsay
 curl
+direnv
 figlet
 fscrypt
 # https://github.com/dundee/gdu
