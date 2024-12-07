@@ -65,6 +65,9 @@ setup_basics () {
 	        echo "The clone has failed."
 	fi
 
+	if exists dconf; then
+		dconf load / < lib/gnome-keybindings.ini
+	fi
 unset DEST LOCAL f
 }
 
