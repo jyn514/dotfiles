@@ -76,6 +76,10 @@ setup_basics () {
 	done
 	fi
 
+	if [ -e  ~/.config/kglobalshortcutsrc ]; then
+		patch ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch
+		gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.reconfigure
+	fi
 unset DEST LOCAL f
 }
 
