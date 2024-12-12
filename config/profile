@@ -446,11 +446,19 @@ display_pwd () {
 	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
 }
 
+# see `dotfiles/bin/ansi --color-table` for an example of how these render
+
 RED="$(ansi_escape "\033[0;31m")"
 GREEN="$(ansi_escape "\033[0;32m")"
 YELLOW="$(ansi_escape "\033[0;33m")"
 BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
+
+FAINT_RED="$(ansi_escape "\033[2;31m")"
+FAINT_GREEN="$(ansi_escape "\033[2;32m")"
+FAINT_YELLOW="$(ansi_escape "\033[2;33m")"
+FAINT_BLUE="$(ansi_escape "\033[2;34m")"
+FAINT_WHITE="$(ansi_escape "\033[2;37m")"
 
 jj_info() {
 	# jj doesn't really use branches, so we don't print anything other than whether the workspace is modified
@@ -459,9 +467,9 @@ jj_info() {
 	# NOTE: as a side effect, this saves the working copy :3
 	# if there's an error here, we'll see it because we don't redirect stderr.
 	if [ "$(jj diff --summary | wc -l)" = 0 ]; then
-		printf %s "$GREEN"
-	else
-		printf %s "$RED"
+		printf %s "$FAINT_GREEN"
+	elseFAINT_
+		printf %s "$FAINT_RED"
 	fi
 	printf ' jj'
 }
@@ -477,12 +485,12 @@ git_info() {
 
 	# if we have local modifications, show the status in red
 	if git diff-index --quiet HEAD -- 2>/dev/null; then
-		printf %s "$GREEN"
+		printf %s "$FAINT_GREEN"
 	# weird edge case: this could be a repo with no commits at all
 	elif [ "$(find . -maxdepth 1 | wc -l)" -le 2 ]; then
-		printf %s "$GREEN"
+		printf %s "$FAINT_GREEN"
 	else
-		printf %s "$RED"
+		printf %s "$FAINT_RED"
 	fi
 
 	# if HEAD is on a branch, point to that branch
@@ -519,18 +527,18 @@ git_info() {
 prompt_command() {
 	# save the status code before anything else; commands we execute in PS1 will overwrite it
 	last_status=$?
-	printf %s "($YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$RESET@$GREEN"; hostname | tr -d '\n'
-	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
-	printf %s "$RESET) $BLUE"
+	printf %s "($FAINT_YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$FAINT_WHITE@$FAINT_GREEN"; hostname | tr -d '\n'
+	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${FAINT_RED}root"
+	printf %s "$FAINT_WHITE) $FAINT_BLUE"
 	display_pwd | tr -d '\n'
 	git_info | tr -d '\n'
-	# bash appears to strip trailing newlines from PS1, so we need something to come *after* the newline
-	printf "\n%s" "$RESET"
+	echo
 	# vscode already shows the cursor indented a bit, as well as the status from the last command
 	if ! [ "$VSCODE_SHELL_INTEGRATION" = 1 ]; then
 		if [ "$last_status" = 0 ]; then printf %s "$GREEN"; else printf %s "$RED"; fi
-		printf ';%s ' "$RESET"
+		printf '; '
 	fi
+	printf %s "$RESET"
 }
 
 PS1='$(prompt_command)'
