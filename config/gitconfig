@@ -4,7 +4,7 @@
 [credential]
 	helper = store
 [push]
-	default = current
+	default = upstream
 	autoSetupRemote = true
 [core]
 	eol = lf
