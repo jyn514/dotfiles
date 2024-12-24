@@ -7,7 +7,7 @@ merge-editor = "meld"
 
 [revsets]
 # i use a bunch of emails; easier to just track author name
-log = "trunk()..author(\"jyn\") | trunk()"
+log = "@ | trunk()..author(\"jyn\") | trunk()"
 
 [revset-aliases]
 'trunk' = 'trunk()'

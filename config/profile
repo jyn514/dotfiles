@@ -104,7 +104,7 @@ mkcd () { mkdir -p "$@" && cd "$1"; }
 mkdc () { mkcd "$@"; }
 
 # follow symlinks by default
-rg () { command rg -L --no-heading "$@"; }
+rg () { command rg -z -L --no-heading "$@"; }
 
 # note: the `cd` makes tmux open helix in the right working directory
 b () {
@@ -468,7 +468,7 @@ jj_info() {
 	# if there's an error here, we'll see it because we don't redirect stderr.
 	if [ "$(jj diff --summary | wc -l)" = 0 ]; then
 		printf %s "$FAINT_GREEN"
-	elseFAINT_
+	else
 		printf %s "$FAINT_RED"
 	fi
 	printf ' jj'
