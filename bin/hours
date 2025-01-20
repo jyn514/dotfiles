@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+
+def parse_hhmm(t):
+	hour, min = (int(c.strip()) for c in t.split(":"))
+	if hour < 6:
+		hour += 12
+	return hour*60 + min
+
+def time_diff(ts):
+	start, end = (parse_hhmm(t.strip()) for t in ts.split('-'))
+	print(start, end)
+	return end - start
+
+min = sum(time_diff(ts.strip()) for ts in input().split(','))
+hour, min = divmod(min, 60)
+percent = round(min*100/60)
+print(f'{hour}.{percent}')
