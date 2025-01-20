@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
 def parse_hhmm(t):
-	hour, min = (int(c.strip()) for c in t.split(":"))
-	if hour < 6:
-		hour += 12
-	return hour*60 + min
+	return (int(c.strip()) for c in t.split(":"))
 
 def time_diff(ts):
-	start, end = (parse_hhmm(t.strip()) for t in ts.split('-'))
-	print(start, end)
+	(shour, smin), (ehour, emin) = (parse_hhmm(t.strip()) for t in ts.split('-'))
+	if ehour < shour:
+		ehour += 12
+		assert ehour > shour
+	start, end = shour*60 + smin, ehour*60 + emin
+	print(shour, ehour)
 	return end - start
 
 min = sum(time_diff(ts.strip()) for ts in input().split(','))
