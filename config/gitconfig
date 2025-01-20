@@ -46,6 +46,7 @@
 	f = fetch
 	h = help
 	l = log --graph --oneline --format=format:'%C(auto)%h %s%d %C(green)%cr %C(bold blue)<%an>%C(auto)'
+	stat = l --stat upstream..
 	branch-log = !git l $(git merge-base HEAD upstream/HEAD)..
 	graph = l --all
 	pf = push --force-with-lease
@@ -55,6 +56,10 @@
 	v = !git --version
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
 	signed = log --show-signature
+	# https://stackoverflow.com/questions/3161204/how-to-find-the-nearest-parent-of-a-git-branch
+	parent = !git show-branch --topo-order --current "upstream/*" | grep -v "^\\s*!" | grep "refs/remotes/upstream/" | grep "^[^\\[]*\\*" | head -n1 | grep -Eo "refs/remotes/upstream/[^]]*" | xargs git rev-parse --symbolic-full-name
+	# TODO: write a script that uses `log` instead so i can pass `--reverse`
+	msg = show --pretty='%s%n%n%b' --no-patch
 	default-branch = !git symbolic-ref refs/remotes/upstream/HEAD | sed 's@^refs/remotes/upstream/@@'
 	autosquash = !git revise $(git merge-base HEAD upstream/HEAD) --autosquash -i
 	fixup = commit --fixup
@@ -72,7 +77,7 @@
 	recurseSubmodules = no
 	parallel = 0
 [merge]
-	tool = vimdiff
+	tool = meld
 	conflictstyle = zdiff3
 [sendemail]
 	smtpserver = smtp.gmail.com

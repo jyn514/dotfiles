@@ -24,12 +24,15 @@ fi
 
 upstream=$(git remote get-url $remote)
 relative=$(echo "$file" | sed "s#^$(git rev-parse --show-toplevel)\(/\)\?##")
+# handle ssh, git, https urls
+repo=$(echo $upstream | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1 | rev | sed 's#^/*##; s#^.*\.com/##')
 
 case "$upstream" in
 	*github.com*)
-	    # handle ssh, git, https urls
-		repo=$(git remote get-url $remote | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1 | cut -d/ -f-2 | rev)
 		url="https://github.com/$repo/blob/$commit/$relative#L$line"
+		;;
+	*gitlab.com*)
+		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line"
 		;;
 	*) echo unsupported upstream "$upstream" >&2; s=2 ;;
 esac
