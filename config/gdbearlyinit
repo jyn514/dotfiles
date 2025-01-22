@@ -1,0 +1,6 @@
+set startup-quietly on
+set history save on
+set pagination off
+set width unlimited
+add-auto-load-safe-path ~/work
+add-auto-load-safe-path ~/src
