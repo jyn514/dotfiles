@@ -1,3 +1,4 @@
 #source /usr/local/src/peda/peda.py
 set disassembly-flavor att
 set history save on
+set debuginfod enabled on

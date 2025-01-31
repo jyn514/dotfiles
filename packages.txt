@@ -1,6 +1,7 @@
 asciinema
 bpytop
 build-essential
+clangd
 cowsay
 curl
 direnv
