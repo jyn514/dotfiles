@@ -36,6 +36,9 @@ add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
 if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"
 fi
+if [ -d /opt/nvim ]; then
+	 add_path /opt/nvim/bin
+fi
 # needs to be added after everything else, since one of them might add node to path
 if exists node; then
 	# note: `npm config get prefix` is atrociously slow

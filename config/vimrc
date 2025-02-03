@@ -25,10 +25,6 @@ endfunction
 " ctags for rust
 let g:easytags_opts = ['--options=$HOME/.vim/plugged/rust.vim/ctags/rust.ctags']
 
-autocmd BufRead,BufNewFile /home/joshua/src/oil/* call TwoSpacesSoftTabs()
-autocmd BufRead,BufNewFile /home/joshua/Documents/Programming/oil/* call TwoSpacesSoftTabs()
-" run `cargo fmt` on save
-autocmd BufRead /home/joshua/Documents/Programming/rust/rcc/* let g:rustfmt_autosave = 1
 " this comes with security issues, see https://vi.stackexchange.com/a/5059
 "set exrc
 " this sort of helps, but it doesn't apply to files owned by you
