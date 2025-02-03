@@ -203,57 +203,26 @@ _gdb() {
  fi
 }
 
-zstyle ':completion:*:rr:*' command '${words:-rr}'
-_rr() {
-  _rr_subcommands() {
-    rr --list-commands | cut -s -d ' ' -f 3
-  }
-  _rr_traces() {
-    rr ls | grep -v '^cpu_lock$'
-  }
-
-  # local ret=1
-
-  # _arguments -C \
-  #   '1: :_play_cmds' \
-  #   '*::arg:->args' \
-  # && ret=0
-
-  if [ ${#words} -lt 3 ] ; then
-    _arguments ':subcommand:($(_rr_subcommands))' --
-    return
-  fi
-  
-  cmd=${words[2]}
-  case "$cmd" in
-    record) _arguments '*:command: _command_names' --;;
-    replay|rerun|sources|traceinfo|) _arguments '*:trace:($(_rr_traces))' --;;
-    help) _arguments ':subcommand:($(_rr_subcommands))' --;;
-    *) _arguments '*:unknown ' --;;
-  esac
-}
-
 compdef _gnu_generic fzf
-compdef _rr rr
 
 if exists jj; then source <(jj util completion zsh); fi
 if exists zoxide; then
    source <(zoxide init zsh)
    # zoxide is annoying and makes `z` an alias instead of a function
    cd() { __zoxide_z "$@" && status; }
-        if ! exists __builtin_cd_complete; then
-          autoload +X _cd
-          functions -c _cd __builtin_cd_complete
-        fi
-	function _cd() {
-		__builtin_cd_complete
-		# Only show completions when the cursor is at the end of the line.
-		# shellcheck disable=SC2154
-		[[ "${#words[@]}" -eq "${CURRENT}" ]] || return 0
-                IFS=$'\n' local comp=($(zoxide query --list))
-		_describe 'directories' comp
-	}
-        compdef z=cd
+ #        if ! exists __builtin_cd_complete; then
+ #          autoload +X _cd
+ #          functions -c _cd __builtin_cd_complete
+ #        fi
+	# function _cd() {
+	# 	__builtin_cd_complete
+	# 	# Only show completions when the cursor is at the end of the line.
+	# 	# shellcheck disable=SC2154
+	# 	[[ "${#words[@]}" -eq "${CURRENT}" ]] || return 0
+ #                IFS=$'\n' local comp=($(zoxide query --list))
+	# 	_describe 'directories' comp
+	# }
+ #        compdef z=cd
 fi
 
 # fzf bs

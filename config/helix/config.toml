@@ -5,7 +5,7 @@ line-number = "relative"
 text-width = 132
 indent = { unit = "\t", tab-width = 8 }
 auto-pairs = false
-default-yank-register = "*"
+#default-yank-register = "*"
 
 [editor.soft-wrap]
 enable = true
