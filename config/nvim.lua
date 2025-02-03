@@ -94,10 +94,12 @@ end
 require('Comment').setup()
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
 vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
-vim.keymap.set('v', '<C-_>', 'gb', {remap = true})
-vim.keymap.set('v', '<C-c>', 'gb', {remap = true})
+-- TODO: find a way to only comment out the selected region
+-- using blockwise comments doesn't work in all filetypes
+vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
+vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
-require('ayu').colorscheme()
+vim.cmd.colorscheme 'ayu-evolve'
 
 local pickers = require('telescope.builtin')
 vim.keymap.set('n', '<leader>b', pickers.buffers, { desc = "Open buffer picker" })

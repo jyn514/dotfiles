@@ -7,7 +7,8 @@ use Cwd 'abs_path';
 use File::Basename 'basename', 'dirname';
 use URI ();
 
-my $editor = $ENV{REAL_EDITOR} || 'hx';
+my $editor = $ENV{REAL_EDITOR} || 'nvim';
+my $desktop = $editor eq 'hx' ? 'Helix' : $editor;
 # `.*?`: match anything, non-greedily
 # `(?::)`: match a `:` without capturing it
 my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?$/;
@@ -32,7 +33,9 @@ sub join_line {
   return $_[0] if @_ < 2;
   my ($file, $line, $column) = @_;
   $column = @_ > 2 ? ":$column" : '';
-  return ($file, "+$line$column") if $editor eq 'kak';
+  return "$file +$line$column" if $editor eq 'kak';
+  # putting line first makes it work with :edit
+  return "+$line$column $file" if $editor eq 'nvim';
   "$file:$line$column"
 }
 
@@ -79,7 +82,7 @@ sub xdgopen {
     } else {
       $default = `xdg-mime query default "$mime"`;
     }
-    if ($default =~ /Helix\.desktop/) {
+    if ($default =~ /$desktop\.desktop/) {
       hxhax join_line @split;
     } else {
       `xdg-open "$file"`;

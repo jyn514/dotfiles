@@ -45,7 +45,7 @@ if exists node; then
 	add_path "$(dirname "$(realpath "$(command -v node)")")"
 fi
 
-if exists hx; then
+if exists nvim; then
 	export EDITOR=editor-hax
 	export VISUAL=editor-hax
 	export LESSEDIT='%E %g?lm\:%lm'

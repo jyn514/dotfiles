@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# https://askubuntu.com/a/1348668
+DATA_DIRS="$XDG_DATA_DIRS:$HOME/.local/share"
+for p in ${DATA_DIRS//:/ }; do
+	# https://unix.stackexchange.com/questions/198045/how-to-strip-the-last-slash-of-the-directory-path
+	find ${p%/}/applications -name '*.desktop' 
+done

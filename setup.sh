@@ -142,10 +142,12 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	if exists hx; then
-		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default Helix.desktop
+	if exists nvim; then
+		default=Helix
+		# lol, the nvim desktop file has the exact same mimetype
+		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
 		for mime in text/x-python text/x-perl; do
-			xdg-mime default Helix.desktop $mime
+			xdg-mime default $default.desktop $mime
 		done
 	fi
 	if exists fx; then
@@ -187,11 +189,6 @@ setup_install_local () {
 		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
 	fi
 
-	if ! [ -e ~/src/helix ]; then
-		git clone --branch working --single-branch https://github.com/jyn514/helix/ ~/src/helix 
-	fi
-	(cd ~/src/helix && cargo install --path helix-term --locked)
-	# TODO: setup steel lsp
 }
 
 install_rust() {
@@ -239,13 +236,7 @@ install_rust() {
 	fi
 	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
 
-	if exists code; then
-		for ext in vscodevim.vim rust-lang.rust-analyzer eamodio.gitlens ms-vscode-remote.remote-ssh \
-				   tamasfe.even-better-toml ms-vscode.powershell ms-python.python redhat.vscode-yaml
-		do
-			code --install-extension $ext
-		done
-	fi
+	# extensions are managed by vscode itself
 }
 
 setup_all () {
