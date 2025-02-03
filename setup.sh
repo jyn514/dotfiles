@@ -107,6 +107,12 @@ VIMDIR="$HOME/.vim/autoload"
 	fi
 	vim -c PlugInstall -c q -c q
 unset VIMDIR
+	if ! exists nvim; then return; fi
+LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
+	if ! [ -e "$LAZYDIR" ]; then
+		git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git "$LAZYDIR"
+	fi
+unset LAZYDIR
 }
 
 setup_backup () {
