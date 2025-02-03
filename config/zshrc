@@ -153,12 +153,15 @@ HISTFILE=~/.zsh_history
 source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
 zinit light zsh-users/zsh-autosuggestions
 zinit light zdharma-continuum/fast-syntax-highlighting
-zinit ice pick"zsh/*.sh" && zinit light lincheney/fzf-tab-completion
 
 # Use modern completion system
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
 autoload -Uz compinit
 compinit
+
+if exists fzf; then
+  zinit light Aloxaf/fzf-tab
+fi
 
 # shift-tab cycles backwards through choices
 bindkey '^[[Z' reverse-menu-complete
@@ -182,6 +185,7 @@ zstyle ':completion:*' use-compctl false
 zstyle ':completion:*' verbose true
 
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+# TODO: these both break on macOS
 zstyle ':completion:*:kill:*' command 'ps -u $USER -o pid,%cpu,tty,cputime,cmd'
 zstyle ':completion:*:gdb:*' command 'ps --ppid 2 --pid 2 --deselect -o pid,tty,cmd'
 zstyle ':completion:*' rehash true
@@ -253,16 +257,11 @@ if exists zoxide; then
 fi
 
 # fzf bs
-keys=(
-    ctrl-r:'repeat-fzf-completion'
-    tab:accept:'repeat-fzf-completion'
-    right:accept:'zle reset-prompt'
-    enter:accept:'zle accept-line'
-)
-zstyle ':completion:*' fzf-completion-keybindings "${keys[@]}"
+zstyle ':fzf-tab:complete:*' fzf-bindings 'right:accept'
+zstyle ':fzf-tab:*' continuous-trigger 'tab'
+zstyle ':fzf-tab:*' accept-line enter
 # use / instead of tab to immediately trigger another completion, like `right`
-zstyle ':completion::*:cd:*' fzf-completion-keybindings "${keys[@]}" /:accept:'repeat-fzf-completion'
-bindkey '^I' fzf_completion
+#zstyle ':fzf-tab:*cd*' continuous-trigger '/'
 
 # basically the same as `cd <TAB>`, but with arbitrary nesting.
 # not super useful now that _cd supports zoxide dirs.

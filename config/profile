@@ -402,6 +402,9 @@ command_not_found_handle() {
 		fi;;
 		# this is kinda cursed
 		cc) ;;
+		# lol, lmao
+		cargo) ;;
+		c) ;;
 		c*) sub=${1#*c}
 		if cargo --list | awk '{print $1}' | grep "^$sub$" --quiet; then
 			shift
