@@ -1,5 +1,7 @@
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 
+---- Options ----
+
 vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 vim.opt.number = true
@@ -10,12 +12,23 @@ vim.opt.smartcase = true
 
 vim.opt.list = true
 -- tab isn't shown because it's distracting
-vim.opt.listchars = { tab = '  ', trail = '·', nbsp = '␣' }
+vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
 -- shows :s/foo/bar preview live
 vim.opt.inccommand = 'split'
 
+vim.api.nvim_create_autocmd('TextYankPost', {
+  desc = 'Highlight when copying text',
+  callback = vim.highlight.on_yank,
+})
+
+vim.api.nvim_create_autocmd('VimResized', {
+  desc = 'Automatically equalize windows on terminal size change',
+  command = 'wincmd ='
+})
+
+---- Keybinds ----
+
 -- Clear highlights on search when pressing <Esc> in normal mode
---  See `:help hlsearch`
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- what does this do lol
@@ -29,13 +42,7 @@ vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 vim.keymap.set('n', '<A-Left>', '<C-o>', { desc = 'Go back in history' })
 vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
 
-vim.api.nvim_create_autocmd('TextYankPost', {
-  desc = 'Highlight when yanking (copying) text',
-  group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
-  callback = function()
-    vim.highlight.on_yank()
-  end,
-})
+vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
 
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
@@ -45,9 +52,7 @@ vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) 
 -- note: overwrites select mode
 vim.keymap.set('n', 'gh', '^', { desc = "Go to line start" })
 vim.keymap.set('n', 'gl', '$', { desc = "Go to line end" })
--- vim.keymap.set('
 
--- vim.keymap.set('n', '<leader>b', ':buffers<cr>:buffer ', { desc = "Open buffer picker" })
 vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('Rename', function(info)
@@ -55,16 +60,25 @@ vim.api.nvim_create_user_command('Rename', function(info)
 	vim.fn.delete(vim.fn.expand('#'))
 	vim.cmd.bdelete('#')
 end, { nargs=1, desc = "Rename current file" })
--- vim.keymap.
+vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
+	local line = vim.api.nvim_win_get_cursor(0)[1]
+	local file = vim.api.nvim_buf_get_name(0)
+	local out = vim.system({'remote-git-url', file, line}, {text=true}):wait()
+	if out.stderr then
+		error(out.stderr)
+	end
+end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
 
 -- https://vi.stackexchange.com/a/33221
 function abbrev(lhs, rhs)
 	vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
 end
+abbrev('Q', 'quit')
 abbrev('open', 'edit')
 abbrev('o', 'edit')
 abbrev('bc', 'bdelete')
 abbrev('mv', 'Rename')
+abbrev('url', 'OpenRemoteUrl')
 
 -- disable some warnings
 vim.g.loaded_node_provider = 0
@@ -86,6 +100,8 @@ if not vim.g.lazy_did_setup then
 		'kosayoda/nvim-lightbulb',
 		'echasnovski/mini.nvim', "folke/which-key.nvim",
 		'lewis6991/gitsigns.nvim',
+		{ "chrisgrieser/nvim-spider", lazy = true },
+		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
 		-- 'mg979/vim-visual-multi',
 		-- 'jokajak/keyseer.nvim',
 	}, { install = { missing = true }, rocks = { enabled = false } })
@@ -127,6 +143,18 @@ require('gitsigns').setup({ signs = {
         changedelete = { text = '~' },
 }})
 
+function set_spider(keybind, motion, desc)
+	vim.keymap.set(
+		{ "n", "o", "x" },
+		keybind,
+		"<cmd>lua require('spider').motion('"..motion.."')<CR>",
+		{ desc = desc }
+	)
+end
+set_spider('H', 'b', 'Move to previous sub word')
+set_spider('L', 'w', 'Move to next sub word start')
+-- set_spider('<A-l>', 'e', 'Move to next sub word end')
+
 -- vim.g.VM_leader = ','
 
 ---- LSP ----
@@ -154,6 +182,9 @@ vim.api.nvim_create_autocmd('FileType', { callback = function()
 		vim.lsp.start({ name = provider, cmd = {provider}, root_dir = vim.fs.root(0, {'.git'}) })
 	end
 end })
+
+local expand_macro = require('rust-expand-macro').expand_macro
+vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
 
 -- needs nvim 11
 --[[ vim.lsp.enable("clangd")  -- this can replace `create_autocmd(FileType)` above
