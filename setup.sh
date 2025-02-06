@@ -29,15 +29,6 @@ setup_basics () {
 		unset DEST
 	done
 
-	if gpg -K | grep ultimate > /dev/null; then
-		mkdir -p ~/.config/git
-		echo '
-[commit]
-	gpgsign = true' >> ~/.config/git/config
-	else
-		echo not setting up GPG-signed commits, no ultimate key found
-	fi
-
 	discord=$HOME/.config/discord/settings.json
 	if [ -e $discord ]; then
 		devtools=DANGEROUS_ENABLE_DEVTOOLS_ONLY_ENABLE_IF_YOU_KNOW_WHAT_YOURE_DOING 
@@ -68,6 +59,23 @@ setup_basics () {
 	if exists dconf; then
 		dconf load / < lib/gnome-keybindings.ini
 	fi
+
+	if exists nvim; then
+		default=nvim
+		# lol, the nvim desktop file has the exact same mimetype
+		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
+		for mime in text/x-python text/x-python3 text/x-perl; do
+			xdg-mime default $default.desktop $mime
+		done
+	fi
+	if exists fx; then
+		xdg-mime default fx-usercreated-1.desktop application/json
+	fi
+	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
+		xdg-mime default "$browser" $mime
+	done
+	fi
+
 unset DEST LOCAL f
 }
 
@@ -141,22 +149,6 @@ setup_install_global () {
 setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
-
-	if exists nvim; then
-		default=nvim
-		# lol, the nvim desktop file has the exact same mimetype
-		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
-		for mime in text/x-python text/x-perl; do
-			xdg-mime default $default.desktop $mime
-		done
-	fi
-	if exists fx; then
-		xdg-mime default fx-usercreated-1.desktop application/json
-	fi
-	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
-		xdg-mime default "$browser" $mime
-	done
-	fi
 
 	install_rust
 	python3 -m pip install --user git-revise

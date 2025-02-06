@@ -11,6 +11,7 @@ helix=.config/helix
 attach-session.sh=.config/tmux/attach-session.sh
 fx.desktop=.local/share/applications/fx-usercreated-1.desktop
 Helix.desktop=.local/share/applications/Helix.desktop
+nvim.desktop=.local/share/applications/nvim.desktop
 startup.jl=.julia/config/startup.jl
 keyd.conf=/etc/keyd/default.conf
 batconfig=.config/bat/config

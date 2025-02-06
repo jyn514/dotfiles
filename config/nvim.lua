@@ -110,7 +110,8 @@ if not vim.g.lazy_did_setup then
 		'lewis6991/gitsigns.nvim',
 		{ "chrisgrieser/nvim-spider", lazy = true },
 		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
-		-- 'mg979/vim-visual-multi',
+		'neovim/nvim-lspconfig',
+		 -- "jake-stewart/multicursor.nvim",
 		-- 'jokajak/keyseer.nvim',
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
@@ -187,28 +188,28 @@ vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = 
 vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
 -- use K instead of ' k' for hover
 
-local lsp_mapping = {
-	["c"] = "clangd",
-	["cpp"] = "clangd",
-	["rust"] = "rust-analyzer",
+local lspconfig = require('lspconfig')
+lspconfig.rust_analyzer.setup {}
+lspconfig.clangd.setup {}
+lspconfig.bashls.setup {}
+lspconfig.perlnavigator.setup {
+	settings = {
+		perlnavigator = {
+			perlcriticEnabled = false,
+		}
+	}
 }
-
-vim.api.nvim_create_autocmd('FileType', { callback = function() 
-	local provider = lsp_mapping[vim.fn.expand("<amatch>")]
-	if (provider) then
-		vim.lsp.start({ name = provider, cmd = {provider}, root_dir = vim.fs.root(0, {'.git'}) })
-	end
-end })
 
 local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
 
 -- needs nvim 11
---[[ vim.lsp.enable("clangd")  -- this can replace `create_autocmd(FileType)` above
--- vim.api.nvim_create_autocmd('LspNotify', {
+--[[
+vim.api.nvim_create_autocmd('LspNotify', {
   callback = function(args)
     if args.data.method == 'textDocument/didOpen' then
       vim.lsp.foldclose('imports', vim.fn.bufwinid(args.buf))
     end
   end,
-} )]]
+} )
+]]
