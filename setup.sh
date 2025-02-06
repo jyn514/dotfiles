@@ -176,11 +176,24 @@ setup_install_local () {
 		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
 		chmod +x ~/.local/bin/shfmt
 	fi
+	if ! exists lua-language-server; then
+		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
+		mkdir -p ~/.local/lib/lua-lsp
+		tar -C ~/.local/lib/lua-lsp -xf "$tar"
+		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
+	fi
 	# apt package is ancient and doesn't support zsh
 	if ! exists fzf; then
 		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
 	fi
 
+	if ! [ -d ~/.local/lib/PowerShellEditorServices ]; then
+		mkdir -p ~/.local/lib/PowerShellEditorServices
+		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
+		unzip "$pslsp" -d ~/.local/lib/PowerShellEditorServices
+	fi
+
+	#npm install -g perlnavigator-server bash-language-server
 }
 
 install_rust() {

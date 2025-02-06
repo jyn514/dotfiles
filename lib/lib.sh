@@ -15,9 +15,9 @@ fail() {
 download () {
 	if [ -n "${2:-}" ]; then
 		OUTPUT="$2"
-		PRINT=1
 	else
 		OUTPUT="$(mktemp)"
+		PRINT=1
 	fi
 	echo "downloading $1" >&2
 	if exists curl; then

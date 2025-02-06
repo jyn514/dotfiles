@@ -192,6 +192,27 @@ local lspconfig = require('lspconfig')
 lspconfig.rust_analyzer.setup {}
 lspconfig.clangd.setup {}
 lspconfig.bashls.setup {}
+lspconfig.pylsp.setup {}
+
+lspconfig.uiua.setup {}
+vim.filetype.add { extension = { ua = 'uiua' } }
+vim.filetype.add { extension = { m = 'mumps' } }
+vim.api.nvim_create_autocmd("FileType", { callback = function()
+	local ft = vim.fn.expand("<amatch>")
+	if ft == "uiua" then
+		vim.bo.commentstring = '#%s'
+	elseif ft == "mumps" then
+		vim.bo.commentstring = ';%s'
+	end
+end })
+
+if not vim.g.lazy_did_setup then
+	lspconfig.powershell_es.setup {
+	  bundle_path = '~/.local/lib/PowerShellEditorServices',
+	}
+end
+-- this doesn't seem to work?
+-- lspconfig.esbonio.setup {}
 lspconfig.perlnavigator.setup {
 	settings = {
 		perlnavigator = {
@@ -200,8 +221,69 @@ lspconfig.perlnavigator.setup {
 	}
 }
 
+-- https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls
+lspconfig.lua_ls.setup {
+  on_init = function(client)
+    if client.workspace_folders then
+      local path = client.workspace_folders[1].name
+      if vim.loop.fs_stat(path..'/.luarc.json') or vim.loop.fs_stat(path..'/.luarc.jsonc') then
+        return
+      end
+    end
+
+    client.config.settings.Lua = vim.tbl_deep_extend('force', client.config.settings.Lua, {
+      runtime = {
+        -- Tell the language server which version of Lua you're using
+        -- (most likely LuaJIT in the case of Neovim)
+        version = 'LuaJIT'
+      },
+      -- Make the server aware of Neovim runtime files
+      workspace = {
+        checkThirdParty = false,
+        library = {
+          vim.env.VIMRUNTIME,
+          -- Depending on the usage, you might want to add additional paths here.
+          "${3rd}/luv/library",
+          -- "${3rd}/busted/library",
+        }
+        -- or pull in all of 'runtimepath'. NOTE: this is a lot slower and will cause issues when working on your own configuration (see https://github.com/neovim/nvim-lspconfig/issues/3189)
+        -- library = vim.api.nvim_get_runtime_file("", true)
+      }
+    })
+  end,
+  settings = {
+    Lua = {}
+  }
+}
+
 local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
+
+-- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
+vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
+	local bufnr = args.buf
+	local client = vim.lsp.get_client_by_id(args.data.client_id)
+	if not client then return end
+	-- Server capabilities spec:
+	-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
+	if client.server_capabilities.documentHighlightProvider then
+		vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
+		vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
+		vim.api.nvim_create_autocmd({"CursorHold", "CursorHoldI"}, {
+		    callback = vim.lsp.buf.document_highlight,
+		    buffer = bufnr,
+		    group = "lsp_document_highlight",
+		    desc = "Document Highlight",
+		})
+		vim.api.nvim_create_autocmd("CursorMoved", {
+		    callback = vim.lsp.buf.clear_references,
+		    buffer = bufnr,
+		    group = "lsp_document_highlight",
+		    desc = "Clear All the References",
+		})
+	end
+end
+})
 
 -- needs nvim 11
 --[[
