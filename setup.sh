@@ -143,7 +143,7 @@ setup_install_local () {
 	mkdir -p ~/.local/bin
 
 	if exists nvim; then
-		default=Helix
+		default=nvim
 		# lol, the nvim desktop file has the exact same mimetype
 		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
 		for mime in text/x-python text/x-perl; do

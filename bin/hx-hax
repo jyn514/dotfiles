@@ -32,10 +32,9 @@ sub split_line {
 sub join_line {
   return $_[0] if @_ < 2;
   my ($file, $line, $column) = @_;
+  return ("+normal!${line}G${column}|", $file) if $editor eq 'nvim';
   $column = @_ > 2 ? ":$column" : '';
-  return "$file +$line$column" if $editor eq 'kak';
-  # putting line first makes it work with :edit
-  return "+$line$column $file" if $editor eq 'nvim';
+  return ($file, "+$line$column") if $editor eq 'kak';
   "$file:$line$column"
 }
 
@@ -46,19 +45,20 @@ sub trim {
 }
 
 sub hxhax {
-  my $file = $_[0];
+  my @args = @_;
   my $current_window= trim `tmux display-message -p "#{window_id}"`;
   my $pane = trim `tmux list-panes -a \\
       -f '#{&&:#{==:#{window_id},$current_window},#{==:#{pane_current_command},$editor}}' \\
       -F '#{pane_id}'`;
   unless (defined $pane) {
-  	$pane=`tmux split-window -P -F "#{pane_id}" $editor $file`;
+  	$pane=`tmux split-window -P -F "#{pane_id}" $editor @args`;
   } else {
     # exit copy mode so we don't send these commands directly to tmux
   	`tmux send-keys -t $pane -X cancel 2>/dev/null`;
     	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
   	`tmux send-keys -t $pane Escape`;
-  	`tmux send-keys -t $pane ":open $file" Enter`;
+	my $args = join " ", @args;
+  	`tmux send-keys -t $pane ":open $args" Enter`;
   	`tmux select-pane -t $pane -Z`;
   }
 
