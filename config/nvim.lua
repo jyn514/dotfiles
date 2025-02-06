@@ -105,8 +105,7 @@ if first_run then
 	require("lazy").setup({
 		'tpope/vim-obsession',
 		'numToStr/Comment.nvim',
-		'Shatur/neovim-ayu',
-		'nvim-lua/plenary.nvim', 'nvim-telescope/telescope.nvim',
+		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },
 		'kosayoda/nvim-lightbulb',
 		'echasnovski/mini.nvim',
 		"folke/which-key.nvim",
@@ -114,10 +113,11 @@ if first_run then
 		{ "chrisgrieser/nvim-spider", lazy = true },
 		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
 		'neovim/nvim-lspconfig',
-		 -- "jake-stewart/multicursor.nvim",
-		-- 'jokajak/keyseer.nvim',
+		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
+
+vim.g.alabaster_dim_comments = true
 
 require('Comment').setup()
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
@@ -127,8 +127,7 @@ vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
 vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
--- TODO: this makes it very hard to see trailing characters
-vim.cmd.colorscheme 'ayu-evolve'
+vim.cmd.colorscheme 'alabaster-black'
 
 require('telescope').setup {
 	defaults = { mappings = {
