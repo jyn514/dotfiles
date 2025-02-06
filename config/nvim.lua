@@ -11,14 +11,15 @@ vim.opt.ignorecase = true
 vim.opt.smartcase = true
 
 vim.opt.list = true
--- tab isn't shown because it's distracting
 vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
 -- shows :s/foo/bar preview live
 vim.opt.inccommand = 'split'
 
+vim.cmd.set('clipboard=unnamed')
+
 vim.api.nvim_create_autocmd('TextYankPost', {
   desc = 'Highlight when copying text',
-  callback = vim.highlight.on_yank,
+  callback = function() vim.highlight.on_yank() end,
 })
 
 vim.api.nvim_create_autocmd('VimResized', {
@@ -33,11 +34,16 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- what does this do lol
 -- vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+--
+function bind(binding, target, desc)
+	vim.keymap.set({'n', 'v'}, binding, target, { desc = desc })
+end
 
 vim.keymap.set('n', '<A-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
 vim.keymap.set('n', '<A-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
 vim.keymap.set('n', '<A-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
+vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
 
 vim.keymap.set('n', '<A-Left>', '<C-o>', { desc = 'Go back in history' })
 vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
@@ -50,8 +56,8 @@ vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" 
 vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" }) -- overwrites `nv` keybind
 vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) -- overwrites "paste before cursor"
 -- note: overwrites select mode
-vim.keymap.set('n', 'gh', '^', { desc = "Go to line start" })
-vim.keymap.set('n', 'gl', '$', { desc = "Go to line end" })
+vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
+vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
 
 vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
@@ -76,8 +82,10 @@ end
 abbrev('Q', 'quit')
 abbrev('open', 'edit')
 abbrev('o', 'edit')
+abbrev('W', 'w')
 abbrev('bc', 'bdelete')
 abbrev('mv', 'Rename')
+abbrev('ec', 'EditConfig')
 abbrev('url', 'OpenRemoteUrl')
 
 -- disable some warnings
@@ -115,7 +123,16 @@ vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
 vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
+-- TODO: this makes it very hard to see trailing characters
 vim.cmd.colorscheme 'ayu-evolve'
+
+require('telescope').setup {
+	defaults = { mappings = {
+		n = {
+			["<C-c>"] = require('telescope.actions').close
+		}
+	} }
+}
 
 local pickers = require('telescope.builtin')
 vim.keymap.set('n', '<leader>b', pickers.buffers, { desc = "Open buffer picker" })
