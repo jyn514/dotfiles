@@ -1,0 +1,5 @@
+#!/bin/sh
+data=$(xsel -o)
+if [ "$data" ]; then
+	printf %s "$data" | xvkbd -xsendevent -file - -delay 0
+fi
