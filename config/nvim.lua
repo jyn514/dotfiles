@@ -1,3 +1,4 @@
+---@diagnostic disable: lowercase-global
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 
 ---- Options ----
@@ -69,7 +70,7 @@ end, { nargs=1, desc = "Rename current file" })
 vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
 	local line = vim.api.nvim_win_get_cursor(0)[1]
 	local file = vim.api.nvim_buf_get_name(0)
-	local out = vim.system({'remote-git-url', file, line}, {text=true}):wait()
+	local out = vim.system({'remote-git-url', file, tostring(line)}, {text=true}):wait()
 	if out.stderr then
 		error(out.stderr)
 	end
@@ -96,7 +97,8 @@ vim.g.loaded_ruby_provider = 0
 ---- Plugins ----
 
 -- Bootstrap lazy.nvim
-if not vim.g.lazy_did_setup then
+local first_run = not vim.g.lazy_did_setup
+if first_run then
 	local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 	vim.opt.rtp:prepend(lazypath)
 
@@ -106,7 +108,8 @@ if not vim.g.lazy_did_setup then
 		'Shatur/neovim-ayu',
 		'nvim-lua/plenary.nvim', 'nvim-telescope/telescope.nvim',
 		'kosayoda/nvim-lightbulb',
-		'echasnovski/mini.nvim', "folke/which-key.nvim",
+		'echasnovski/mini.nvim',
+		"folke/which-key.nvim",
 		'lewis6991/gitsigns.nvim',
 		{ "chrisgrieser/nvim-spider", lazy = true },
 		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
@@ -150,8 +153,31 @@ require("nvim-lightbulb").setup({
   autocmd = { enabled = true }
 })
 
-require('mini.icons').setup()
-require('which-key').setup({preset = 'helix', delay = 150, icons = {mappings = false}})
+require('mini.icons').setup {}
+MiniStatusline = require'mini.statusline'
+MiniStatusline.setup {
+	content = {
+		active = function()
+		    local git           = MiniStatusline.section_git({ trunc_width = 40 })
+		    local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
+		    local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
+		    local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
+		    local filename      = MiniStatusline.section_filename({ trunc_width = 140 })
+		    local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
+
+		    return MiniStatusline.combine_groups({
+		      { hl = 'Normal', strings = { filename } },
+		      { hl = 'Conceal',  strings = { git, diff, diagnostics, lsp } },
+		      '%<', -- Mark general truncate point
+		      '%=', -- End left alignment
+		      { hl = 'Conceal', strings = { fileinfo } },
+		    })
+		  end
+	}
+}
+if first_run then
+	require('which-key').setup({preset = 'helix', delay = 150, icons = {mappings = false}})
+end
 
 require('gitsigns').setup({ signs = {
 	add = { text = '+' },
@@ -206,7 +232,7 @@ vim.api.nvim_create_autocmd("FileType", { callback = function()
 	end
 end })
 
-if not vim.g.lazy_did_setup then
+if first_run then
 	lspconfig.powershell_es.setup {
 	  bundle_path = '~/.local/lib/PowerShellEditorServices',
 	}
@@ -226,7 +252,8 @@ lspconfig.lua_ls.setup {
   on_init = function(client)
     if client.workspace_folders then
       local path = client.workspace_folders[1].name
-      if vim.loop.fs_stat(path..'/.luarc.json') or vim.loop.fs_stat(path..'/.luarc.jsonc') then
+      if path ~= vim.fn.stdpath('config') and vim.loop.fs_stat(path..'/.luarc.json') or vim.loop.fs_stat(path..'/.luarc.jsonc') then
+	print("not the right config file: "..path)
         return
       end
     end
