@@ -152,7 +152,9 @@ setup_install_local () {
 
 	install_rust
 	python3 -m pip install --user git-revise
-	lib/fx-install.sh
+	if ! exists fx; then
+		lib/fx-install.sh
+	fi
 
 	if ! [ -e ~/.bash-preexec.sh ]; then
 		curl https://raw.githubusercontent.com/rcaloras/bash-preexec/master/bash-preexec.sh -o ~/.bash-preexec.sh
@@ -185,6 +187,15 @@ setup_install_local () {
 	# apt package is ancient and doesn't support zsh
 	if ! exists fzf; then
 		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
+	fi
+
+	# We use a bunch of features that are only in nvim 10.
+	if ! exists nvim; then
+		nvim=$(download https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz)
+		libdir=$HOME/.local/lib
+		mkdir -p "$libdir"
+		tar -C "$libdir" -xf "$nvim"
+		ln -s "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
 	fi
 
 	if ! [ -d ~/.local/lib/PowerShellEditorServices ]; then

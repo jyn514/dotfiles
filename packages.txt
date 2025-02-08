@@ -41,6 +41,5 @@ traceroute
 tree
 unzip
 valgrind
-vim
 xdg-utils
 xdot

@@ -30,8 +30,23 @@ vim.api.nvim_create_autocmd('VimResized', {
 
 ---- Keybinds ----
 
--- Clear highlights on search when pressing <Esc> in normal mode
-vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
+vim.keymap.set('n', '<Esc>', function()
+    -- If we find a floating window, close it.
+    -- https://www.reddit.com/r/neovim/comments/11axh2p/comment/jasdwkr/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
+    local found_float = false
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_config(win).relative ~= '' then
+            vim.api.nvim_win_close(win, true)
+            found_float = true
+        end
+    end
+
+    if found_float then
+        return
+    end
+
+    vim.cmd.nohlsearch()
+end)
 
 -- what does this do lol
 -- vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
@@ -211,6 +226,8 @@ vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show sy
 vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
 vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = "Show workspace diagnostics (errors)" })
 vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
+vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
+
 -- use K instead of ' k' for hover
 
 local lspconfig = require('lspconfig')
