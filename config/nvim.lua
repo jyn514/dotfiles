@@ -1,5 +1,6 @@
 ---@diagnostic disable: lowercase-global
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
+-- use `:verbose set foo` to see where option `foo` is set
 
 ---- Options ----
 
