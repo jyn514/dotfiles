@@ -39,9 +39,9 @@ syn match   mumpsLineStart      contained /^[ \t][. \t]*/
 syn match   mumpsLineStart      contained /^[%A-Za-z][^ \t;]*[. \t]*/ contains=mumpsLabel,mumpsDotLevel 
 syn region  mumpsLine		start=/^/ keepend end=/$/ contains=mumpsCmd,mumpsLineStart,mumpsComment
 
-syn cluster mumpsExpr     	contains=mumpsVar,mumpsIntrinsic,mumpsExtrinsic,mumpsString,mumpsParen,mumpsOperator,mumpsBadString,mumpsBadNum,mumpsVRecord
+syn cluster mumpsExpr     	contains=mumpsVar,mumpsIntrinsic,mumpsExtrinsic,mumpsString,mumpsNumber,mumpsParen,mumpsOperator,mumpsBadString,mumpsBadNum,mumpsVRecord
 
-syn match   mumpsVar		contained /\^=[%A-Za-z][A-Za-z0-9]*/ nextgroup=mumpsSubs
+syn match   mumpsVar		contained /\^\?[%A-Za-z][A-Za-z0-9]*/ nextgroup=mumpsSubs
 syn match   mumpsIntrinsic 	contained /$[%A-Za-z][A-Za-z0-9]*/ contains=mumpsIntrinsicFunc,mumpsZInFunc,mumpsSpecialVar,mumpsZVar nextgroup=mumpsParams
 syn match   mumpsExtrinsic	contained /$$[%A-Za-z][A-Za-z0-9]*\(^[%A-Za-z][A-Za-z0-9]*\)\=/ nextgroup=mumpsParams
 
@@ -57,9 +57,9 @@ syn region  mumpsString 	contained oneline start=/"/ skip=/""/ excludenl end=/"/
 syn match   mumpsBadNum 	contained /\<0\d+\>/
 syn match   mumpsBadNum 	contained /\<\d*\.\d*0\>/
 syn match   mumpsNumber 	contained /\<\d*\.\d{1,9}\>/
-syn match   mumpsNumber 	contained /\<\d+\>/
+syn match   mumpsNumber 	contained /\<\d\+\>/
 
-syn region  mumpsParen     	contained oneline start=/(/ end=/)/ contains=@mumpsExpr
+syn region  mumpsParen     	contained oneline transparent start=/(/ end=/)/ contains=@mumpsExpr
 syn region  mumpsSubs		contained oneline start=/(/ end=/)/ contains=@mumpsExpr,","
 syn region  mumpsActualArgs	contained oneline start=/(/ end=/)/ contains=@mumpsExpr,","
 
@@ -137,8 +137,7 @@ if !exists("did_mumps_syntax_inits")
 
   " The default methods for hilighting.  Can be overridden later
   hi! link mumpsCommand		Statement
-  "hi! link mumpsZCommand        PreProc
-  hi! link mumpsZCommand    Statement
+  hi! link mumpsZCommand	Statement
   hi! link mumpsIntrinsicFunc   Function
   hi! link mumpsZInFunc		Preproc
   hi! link mumpsSpecialVar      Function
@@ -148,19 +147,17 @@ if !exists("did_mumps_syntax_inits")
   hi! link mumpsFormalArgs	PreProc
   hi! link mumpsDotLevel	PreProc
   hi! link mumpsCmdSeg		Special
-  hi! link mumpsPostCondition	Special
+  hi! link mumpsPostCondition	Conditional
   hi! link mumpsCmd		Statement
-  hi! link mumpsArgsSeg		Special
-  hi! link mumpsExpr		PreProc
   hi! link mumpsVar		Identifier
-  hi! link mumpsParen           Special
+  hi! link mumpsLocalName	Identifier
   hi! link mumpsSubs            Special
   hi! link mumpsActualArgs      Special
-  hi! link mumpsIntrinsic       Special
+  hi! link mumpsIntrinsic       Function
   hi! link mumpsExtrinsic	Special
   hi! link mumpsString		String
   hi! link mumpsNumber		Number
-  hi! link mumpsOperator	Special
+  hi! link mumpsOperator	Operator
   hi! link mumpsComment		Comment
   hi! link mumpsError		Error
   hi! link mumpsBadNum		Error
