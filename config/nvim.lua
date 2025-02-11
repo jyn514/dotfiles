@@ -337,11 +337,17 @@ lspconfig.uiua.setup {}
 vim.filetype.add { extension = { ua = 'uiua' } }
 vim.filetype.add { extension = { m = 'mumps' } }
 vim.api.nvim_create_autocmd("FileType", { callback = function()
-	local ft = vim.fn.expand("<amatch>")
+	local ft = vim.bo.filetype
 	if ft == "uiua" then
 		vim.bo.commentstring = '#%s'
 	elseif ft == "mumps" then
 		vim.bo.commentstring = ';%s'
+		vim.cmd('highlight! link Keyword Special')
+	end
+end })
+vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
+	if vim.bo.syntax == 'mumps' then
+		vim.cmd('highlight! link Keyword Special')
 	end
 end })
 

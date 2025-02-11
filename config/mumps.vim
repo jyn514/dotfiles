@@ -4,8 +4,12 @@
 " Language:	MUMPS
 " Maintainer:	Jim Self, jaself@ucdavis.edu
 
+" Quit when a (custom) syntax file was already loaded
+if exists("b:current_syntax")
+  finish
+endif
+
 " related formatting, jas 24Sept03 - experimental
-set lbr
 set breakat=\ ,
 
 " Remove any old syntax stuff hanging around
@@ -23,9 +27,11 @@ syn match   mumpsBadParen	/(.*/
 
 
 " Line Structure
-syn region  mumpsComment        contained start=/;/ end=/$/
-" contains=mumpsTodo
-syn region  mumpsTodo   	contained start=/TODO/ start=/XXX/ start=/FIX/ start=/DEBUG/ start=/DISABLED/ end=/;/ end=/$/
+" TODO: can't figure out how to allow this after a command
+syn region  mumpsComment        start=";" end=/$/ keepend contains=mumpsTodo
+",mumpsCommentTitle
+syn keyword  mumpsTodo   	contained TODO XXX FIX DEBUG DISABLED
+" syn match   mumpsCommentTitle   contained /[a-zA-Z]\+:/ contains=mumpsTodo
 
 syn match   mumpsLabel  	contained /^[%A-Za-z][A-Za-z0-9]*\|^[0-9]\+/ nextgroup=mumpsFormalArgs
 syn region  mumpsFormalArgs	contained oneline start=/(/ end=/)/ contains=mumpsLocalName,","
@@ -60,7 +66,7 @@ syn match   mumpsNumber 	contained /\<\d*\.\d{1,9}\>/
 syn match   mumpsNumber 	contained /\<\d\+\>/
 
 syn region  mumpsParen     	contained oneline transparent start=/(/ end=/)/ contains=@mumpsExpr
-syn region  mumpsSubs		contained oneline start=/(/ end=/)/ contains=@mumpsExpr,","
+syn region  mumpsSubs		contained oneline transparent start=/(/ end=/)/ contains=@mumpsExpr,","
 syn region  mumpsActualArgs	contained oneline start=/(/ end=/)/ contains=@mumpsExpr,","
 
 " Keyword definitions -------------------
@@ -132,41 +138,38 @@ syn keyword mumpsZVar	contained ZCSTATUS ZDIR[ectory] ZEDIT ZEOF ZGBL[dir]
 syn keyword mumpsZVar	contained ZIO ZL[evel] ZPOS[ition] ZPROMP[t] ZRO[utines]
 syn keyword mumpsZVar	contained ZSO[urce] ZS[tatus] ZSYSTEM ZT[rap] ZVER[sion]
 
-if !exists("did_mumps_syntax_inits")
-  let did_mumps_syntax_inits = 1
+" The default methods for hilighting.  Can be overridden later
+" hi link mumpsCommand		Keyword
+hi default link mumpsCommand		Keyword
+hi default link mumpsZCommand		Keyword
+hi default link mumpsIntrinsicFunc   Function
+hi default link mumpsZInFunc		Preproc
+hi default link mumpsSpecialVar      Function
+hi default link mumpsZVar		PreProc
+hi default link mumpsLineStart	Statement
+hi default link mumpsLabel		PreProc
+hi default link mumpsFormalArgs	PreProc
+hi default link mumpsDotLevel	PreProc
+hi default link mumpsCmdSeg		Special
+hi default link mumpsPostCondition	Conditional
+hi default link mumpsCmd		Statement
+hi default link mumpsVar		Identifier
+hi default link mumpsLocalName	Identifier
+hi default link mumpsActualArgs      Special
+hi default link mumpsIntrinsic       Function
+hi default link mumpsExtrinsic	Special
+hi default link mumpsString		String
+hi default link mumpsNumber		Number
+hi default link mumpsOperator	Operator
+hi default link mumpsComment		Comment
+hi default link mumpsError		Error
+hi default link mumpsBadNum		Error
+hi default link mumpsBadString	Error
+hi default link mumpsBadParen	Error
+hi default link mumpsParenError	Error
 
-  " The default methods for hilighting.  Can be overridden later
-  hi! link mumpsCommand		Statement
-  hi! link mumpsZCommand	Statement
-  hi! link mumpsIntrinsicFunc   Function
-  hi! link mumpsZInFunc		Preproc
-  hi! link mumpsSpecialVar      Function
-  hi! link mumpsZVar		PreProc
-  hi! link mumpsLineStart	Statement
-  hi! link mumpsLabel		PreProc
-  hi! link mumpsFormalArgs	PreProc
-  hi! link mumpsDotLevel	PreProc
-  hi! link mumpsCmdSeg		Special
-  hi! link mumpsPostCondition	Conditional
-  hi! link mumpsCmd		Statement
-  hi! link mumpsVar		Identifier
-  hi! link mumpsLocalName	Identifier
-  hi! link mumpsSubs            Special
-  hi! link mumpsActualArgs      Special
-  hi! link mumpsIntrinsic       Function
-  hi! link mumpsExtrinsic	Special
-  hi! link mumpsString		String
-  hi! link mumpsNumber		Number
-  hi! link mumpsOperator	Operator
-  hi! link mumpsComment		Comment
-  hi! link mumpsError		Error
-  hi! link mumpsBadNum		Error
-  hi! link mumpsBadString	Error
-  hi! link mumpsBadParen	Error
-  hi! link mumpsParenError	Error
-
-  hi! link mumpsTodo		Todo
-endif
+hi default link mumpsTodo		Todo
+hi default link mumpsCommentTitle	PreProc
 
 let b:current_syntax = "mumps"
 
