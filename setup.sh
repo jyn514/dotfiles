@@ -165,12 +165,21 @@ setup_install_local () {
 		rm -r ~/.atuin
 	fi
 
+	# imagine an = sign: alias python=python3
+	cmd_alias() {
+		to=$1
+		from=$2
+		if ! [ -x ~/.local/bin/$to ] && exists $from; then
+			ln -sf "$(command -v $from)" ~/.local/bin/$to
+		fi
+	}
+
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
-	if ! [ -x ~/.local/bin/python ] && exists python3; then
-		echo 'exec python3 "$@"' > ~/.local/bin/python
-		chmod +x ~/.local/bin/python
-	fi
-        if ! exists pip && exists pip3; then ln -sf "$(command -v pip3)" ~/.local/bin/pip; fi
+	cmd_alias python python3
+	cmd_alias py python3
+	cmd_alias pip pip3
+	cmd_alias vi nvim
+	cmd_alias vim nvim
 
 	# TODO: lol this is so funny we're literally just hardcoding the arch
 	# can't just install from apt because the version is too old and doesn't support `-ln auto`

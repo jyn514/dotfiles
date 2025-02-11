@@ -99,6 +99,11 @@ vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
 
 vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
 
+vim.keymap.set('', '<S-ScrollWheelDown>', '5zl', { desc = 'Scroll right' })
+vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
+vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page up' })
+vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page down' })
+
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
 vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind

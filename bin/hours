@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from sys import stdin
+
 def parse_hhmm(t):
 	if ":" in t:
 		return (int(c.strip()) for c in t.split(":"))
@@ -12,10 +14,13 @@ def time_diff(ts):
 		ehour += 12
 		assert ehour > shour
 	start, end = shour*60 + smin, ehour*60 + emin
-	print(shour, ehour)
 	return end - start
 
-min = sum(time_diff(ts.strip()) for ts in input().split(','))
-hour, min = divmod(min, 60)
-percent = round(min*100/60)
-print(f'{hour}.{percent}')
+def cell(s):
+    min = sum(time_diff(ts.strip()) for ts in s.split(','))
+    hour, min = divmod(min, 60)
+    percent = round(min*100/60)
+    return f'{hour}.{percent}'
+
+for hours in stdin:
+    print(cell(hours))
