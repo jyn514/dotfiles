@@ -27,11 +27,9 @@ syn match   mumpsBadParen	/(.*/
 
 
 " Line Structure
-" TODO: can't figure out how to allow this after a command
-syn region  mumpsComment        start=";" end=/$/ keepend contains=mumpsTodo
-",mumpsCommentTitle
-syn keyword  mumpsTodo   	contained TODO XXX FIX DEBUG DISABLED
-" syn match   mumpsCommentTitle   contained /[a-zA-Z]\+:/ contains=mumpsTodo
+syn region  mumpsComment        start=";" end=/$/ keepend contains=mumpsTodo,mumpsCommentTitle
+syn keyword  mumpsTodo   	contained TODO XXX FIX FIXME DEBUG DISABLED
+syn match   mumpsCommentTitle   contained ":" contains=mumpsTodo
 
 syn match   mumpsLabel  	contained /^[%A-Za-z][A-Za-z0-9]*\|^[0-9]\+/ nextgroup=mumpsFormalArgs
 syn region  mumpsFormalArgs	contained oneline start=/(/ end=/)/ contains=mumpsLocalName,","
@@ -65,8 +63,8 @@ syn match   mumpsBadNum 	contained /\<\d*\.\d*0\>/
 syn match   mumpsNumber 	contained /\<\d*\.\d{1,9}\>/
 syn match   mumpsNumber 	contained /\<\d\+\>/
 
-syn region  mumpsParen     	contained oneline transparent start=/(/ end=/)/ contains=@mumpsExpr
-syn region  mumpsSubs		contained oneline transparent start=/(/ end=/)/ contains=@mumpsExpr,","
+syn region  mumpsParen     	contained oneline start=/(/ms=s+1 end=/)/me=e-1 contains=@mumpsExpr
+syn region  mumpsSubs		contained oneline start=/(/ms=s+1 end=/)/me=e-1 contains=@mumpsExpr,","
 syn region  mumpsActualArgs	contained oneline start=/(/ end=/)/ contains=@mumpsExpr,","
 
 " Keyword definitions -------------------
@@ -138,8 +136,7 @@ syn keyword mumpsZVar	contained ZCSTATUS ZDIR[ectory] ZEDIT ZEOF ZGBL[dir]
 syn keyword mumpsZVar	contained ZIO ZL[evel] ZPOS[ition] ZPROMP[t] ZRO[utines]
 syn keyword mumpsZVar	contained ZSO[urce] ZS[tatus] ZSYSTEM ZT[rap] ZVER[sion]
 
-" The default methods for hilighting.  Can be overridden later
-" hi link mumpsCommand		Keyword
+" The default methods for highlighting.  Can be overridden later
 hi default link mumpsCommand		Keyword
 hi default link mumpsZCommand		Keyword
 hi default link mumpsIntrinsicFunc   Function
