@@ -1,4 +1,5 @@
 ---@diagnostic disable: lowercase-global
+---
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
 
@@ -10,7 +11,16 @@ vim.opt.number = true
 vim.opt.breakindent = true
 vim.opt.undofile = true
 vim.opt.ignorecase = true
+vim.opt.wildignorecase = true
 vim.opt.smartcase = true
+vim.opt.scrolloff = 3
+vim.opt.sidescrolloff = 10
+vim.opt.visualbell = true
+vim.opt.title = true  -- allows S-d to search for a file
+-- see `:help zo` for keybinds
+vim.opt.foldmethod = 'indent'  -- TODO: change to 'syntax' for supported files'
+vim.opt.foldopen = 'all'
+vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
 
 vim.opt.list = true
 vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
@@ -112,205 +122,220 @@ vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) 
 
 -- vim.keymap.set('n', 'n', 'gn', { desc = "Select next search result", noremap })
 -- vim.keymap.set('v', 'n', function()
-	-- 	vim.cmd.startinsert()
-	-- 	vim.cmd.normal('gn')
-	-- end, { desc = "Go to next buffer", noremap })
+-- 	vim.cmd.startinsert()
+-- 	vim.cmd.normal('gn')
+-- end, { desc = "Go to next buffer", noremap })
 
-	-- note: overwrites select mode
-	vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
-	vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
+-- note: overwrites select mode
+vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
+vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
 
-	-- completion
-	vim.keymap.set('i', '<C-n>', '<C-x><C-o>', { desc = "Trigger omnicompletion" }) -- overwrites "complete keyword"
-	vim.keymap.set('i', '<C-c>', function()
-		return vim.fn.pumvisible() and '<C-e>' or '<C-c>'
-	end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to normal mode immediately"
-
-	vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
-	vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
-	vim.api.nvim_create_user_command('Rename', function(info)
-		vim.cmd.sav(info.args)
-		vim.fn.delete(vim.fn.expand('#'))
-		vim.cmd.bdelete('#')
-	end, { nargs=1, desc = "Rename current file" })
-	vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
-		local line = vim.api.nvim_win_get_cursor(0)[1]
-		local file = vim.api.nvim_buf_get_name(0)
-		local out = vim.system({'remote-git-url', file, tostring(line)}, {text=true}):wait()
-		if out.stderr ~= '' then
-			error(out.stderr)
-		end
-	end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
-
-	-- https://vi.stackexchange.com/a/33221
-	function abbrev(lhs, rhs)
-		vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
+-- https://vi.stackexchange.com/a/43848
+vim.keymap.set('i', '<Tab>', function()
+	local col = vim.fn.getcurpos()[3] - 1  -- convert 1-indexed to 0-indexed
+	local ws = vim.regex('^\\s*$')
+	-- TODO: figure out how to do this with match_line
+	local line = vim.fn.getline('.'):sub(0, col)
+	if ws:match_str(line) then
+		return '<Tab>'
+	else
+		local sw = vim.fn.shiftwidth()
+		local width = sw - ((col-1) % sw)
+		return vim.fn['repeat'](' ', width)
 	end
-	abbrev('Q', 'quit')
-	abbrev('open', 'edit')
-	abbrev('o', 'edit')
-	abbrev('W', 'w')
-	abbrev('bc', 'bdelete')
-	abbrev('mv', 'Rename')
-	abbrev('ec', 'EditConfig')
-	abbrev('url', 'OpenRemoteUrl')
+end, { expr = true, desc = "Don't insert hard tabs in the middle of lines" })
 
-	-- disable some warnings
-	vim.g.loaded_node_provider = 0
-	vim.g.loaded_perl_provider = 0
-	vim.g.loaded_ruby_provider = 0
+-- completion
+vim.keymap.set('i', '<C-n>', '<C-x><C-o>', { desc = "Trigger omnicompletion" }) -- overwrites "complete keyword"
+vim.keymap.set('i', '<C-c>', function()
+	return vim.fn.pumvisible() and '<C-e>' or '<C-c>'
+end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to normal mode immediately"
 
-	---- Plugins ----
-
-	-- Bootstrap lazy.nvim
-	local first_run = not vim.g.lazy_did_setup
-	if first_run then
-		local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-		vim.opt.rtp:prepend(lazypath)
-
-		require("lazy").setup({
-			'tpope/vim-obsession',
-			'numToStr/Comment.nvim',
-			{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },
-			'kosayoda/nvim-lightbulb',
-			'echasnovski/mini.nvim',
-			"folke/which-key.nvim",
-			'lewis6991/gitsigns.nvim',
-			{ "chrisgrieser/nvim-spider", lazy = true },
-			{ 'vxpm/rust-expand-macro.nvim', lazy = true },
-			'neovim/nvim-lspconfig',
-			{ 'jyn514/alabaster.nvim', branch = 'dark' },
-			-- https://github.com/amitds1997/remote-nvim.nvim looks promising
-		}, { install = { missing = true }, rocks = { enabled = false } })
+vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
+vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
+vim.api.nvim_create_user_command('Rename', function(info)
+	vim.cmd.sav(info.args)
+	vim.fn.delete(vim.fn.expand('#'))
+	vim.cmd.bdelete('#')
+end, { nargs=1, desc = "Rename current file" })
+vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
+	local line = vim.api.nvim_win_get_cursor(0)[1]
+	local file = vim.api.nvim_buf_get_name(0)
+	local out = vim.system({'remote-git-url', file, tostring(line)}, {text=true}):wait()
+	if out.stderr ~= '' then
+		error(out.stderr)
 	end
+end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
 
-	vim.g.alabaster_dim_comments = true
+-- https://vi.stackexchange.com/a/33221
+function abbrev(lhs, rhs)
+	vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
+end
+abbrev('Q', 'quit')
+abbrev('open', 'edit')
+abbrev('o', 'edit')
+abbrev('W', 'w')
+abbrev('bc', 'bdelete')
+abbrev('mv', 'Rename')
+abbrev('ec', 'EditConfig')
+abbrev('url', 'OpenRemoteUrl')
 
-	require('Comment').setup()
-	vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
-	vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
-	-- TODO: find a way to only comment out the selected region
-	-- using blockwise comments doesn't work in all filetypes
-	vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
-	vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
+-- disable some warnings
+vim.g.loaded_node_provider = 0
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_ruby_provider = 0
 
-	vim.cmd.colorscheme 'alabaster-black'
+---- Plugins ----
 
-	require('telescope').setup {
-		defaults = { mappings = {
-			n = {
-				["<C-c>"] = require('telescope.actions').close
-			}
-		} }
-	}
+-- Bootstrap lazy.nvim
+local first_run = not vim.g.lazy_did_setup
+if first_run then
+	local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+	vim.opt.rtp:prepend(lazypath)
 
-	local pickers = require('telescope.builtin')
-	vim.keymap.set('n', '<leader>b', pickers.buffers, { desc = "Open buffer picker" })
-	vim.keymap.set('n', '<leader>f', pickers.find_files, { desc = "Open file picker" })
-	vim.keymap.set('n', '<leader>F', pickers.oldfiles, { desc = "Open file picker (all files ever opened)" })
-	vim.keymap.set('n', '<leader>/', function()
-		pickers.live_grep({prompt_title = "Live Search"})
-	end, { desc = "Search in workspace" })
-	vim.keymap.set('n', '<leader>g', function()
-		pickers.git_files({ git_command = {"git", "ls-files", "--modified"}, prompt_title = "Modified Files" })
-	end, { desc = "Modified files" })
+	require("lazy").setup({
+		'tpope/vim-obsession',
+		'numToStr/Comment.nvim',
+		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },
+		'kosayoda/nvim-lightbulb',
+		'echasnovski/mini.nvim',
+		"folke/which-key.nvim",
+		'lewis6991/gitsigns.nvim',
+		{ "chrisgrieser/nvim-spider", lazy = true },
+		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
+		'neovim/nvim-lspconfig',
+		{ 'jyn514/alabaster.nvim', branch = 'dark' },
+		-- https://github.com/amitds1997/remote-nvim.nvim looks promising
+	}, { install = { missing = true }, rocks = { enabled = false } })
+end
 
-	require("nvim-lightbulb").setup({
-		autocmd = { enabled = true }
-	})
+vim.g.alabaster_dim_comments = true
 
-	require('mini.icons').setup {}
-	MiniStatusline = require'mini.statusline'
-	MiniStatusline.setup {
-		content = {
-			active = function()
-				local git           = MiniStatusline.section_git({ trunc_width = 40 })
-				local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
-				local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
-				local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
-				local filename      = MiniStatusline.section_filename({ trunc_width = 140 })
-				local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
+require('Comment').setup()
+vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
+vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
+-- TODO: find a way to only comment out the selected region
+-- using blockwise comments doesn't work in all filetypes
+vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
+vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
-				local pos = vim.fn.getcurpos()
-				local location = pos[2]..':'..pos[3]
+vim.cmd.colorscheme 'alabaster-black'
 
-				return MiniStatusline.combine_groups({
-					{ hl = 'Normal', strings = { filename } },
-					{ hl = 'Conceal',  strings = { git, diff, diagnostics, lsp } },
-					'%<', -- Mark general truncate point
-					'%=', -- End left alignment
-					{ hl = 'Conceal', strings = { fileinfo, location } },
-				})
-			end
+require('telescope').setup {
+	defaults = { mappings = {
+		n = {
+			["<C-c>"] = require('telescope.actions').close
 		}
-	}
-	if first_run then
-		require('which-key').setup({preset = 'helix', delay = 150, icons = {mappings = false}})
-	end
+	} }
+}
 
-	require('gitsigns').setup({
-		current_line_blame = true,
-		signs = {
-			add = { text = '+' },
-			change = { text = '~' },
-			--[[ delete = { text = '_' },
-			topdelete = { text = '‾' }, ]]
-			changedelete = { text = '~' },
-		}
-	})
+local pickers = require('telescope.builtin')
+vim.keymap.set('n', '<leader>b', pickers.buffers, { desc = "Open buffer picker" })
+vim.keymap.set('n', '<leader>f', pickers.find_files, { desc = "Open file picker" })
+vim.keymap.set('n', '<leader>F', pickers.oldfiles, { desc = "Open file picker (all files ever opened)" })
+vim.keymap.set('n', '<leader>/', function()
+	pickers.live_grep({prompt_title = "Live Search"})
+end, { desc = "Search in workspace" })
+vim.keymap.set('n', '<leader>g', function()
+	pickers.git_files({ git_command = {"git", "ls-files", "--modified"}, prompt_title = "Modified Files" })
+end, { desc = "Modified files" })
 
-	function set_spider(keybind, motion, desc)
-		vim.keymap.set(
-		{ "n", "o", "x" },
-		keybind,
-		"<cmd>lua require('spider').motion('"..motion.."')<CR>",
-		{ desc = desc }
-		)
-	end
-	set_spider('H', 'b', 'Move to previous sub word')
-	set_spider('L', 'w', 'Move to next sub word start')
-	-- set_spider('<A-l>', 'e', 'Move to next sub word end')
+require("nvim-lightbulb").setup({
+	autocmd = { enabled = true }
+})
 
-	---- LSP ----
-	vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
-	vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
-	vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
-	vim.keymap.set('n', 'gy', pickers.lsp_type_definitions, { desc = "Goto type definition" })
-	vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
-	vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
-	vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
-	vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
-	vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = "Show workspace diagnostics (errors)" })
-	vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
-	vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
-	vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
+require('mini.icons').setup {}
+MiniStatusline = require'mini.statusline'
+MiniStatusline.setup {
+	content = {
+		active = function()
+			local git           = MiniStatusline.section_git({ trunc_width = 40 })
+			local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
+			local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
+			local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
+			local filename      = MiniStatusline.section_filename({ trunc_width = 140 })
+			local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
 
-	-- use K for hover
+			local pos = vim.fn.getcurpos()
+			local location = pos[2]..':'..pos[3]
 
-	-- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
-	vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
-		local bufnr = args.buf
-		local client = vim.lsp.get_client_by_id(args.data.client_id)
-		if not client then return end
-		-- Server capabilities spec:
-		-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
-		if client.server_capabilities.documentHighlightProvider then
-			vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
-			vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
-			vim.api.nvim_create_autocmd({"CursorHold", "CursorHoldI"}, {
-				callback = vim.lsp.buf.document_highlight,
-				buffer = bufnr,
-				group = "lsp_document_highlight",
-				desc = "Document Highlight",
-			})
-			vim.api.nvim_create_autocmd("CursorMoved", {
-				callback = vim.lsp.buf.clear_references,
-				buffer = bufnr,
-				group = "lsp_document_highlight",
-				desc = "Clear All the References",
+			return MiniStatusline.combine_groups({
+				{ hl = 'Normal', strings = { filename } },
+				{ hl = 'Conceal',  strings = { git, diff, diagnostics, lsp } },
+				'%<', -- Mark general truncate point
+				'%=', -- End left alignment
+				{ hl = 'Conceal', strings = { fileinfo, location } },
 			})
 		end
+	}
+}
+if first_run then
+	require('which-key').setup({preset = 'helix', delay = 150, icons = {mappings = false}})
+end
+
+require('gitsigns').setup({
+	current_line_blame = true,
+	signs = {
+		add = { text = '+' },
+		change = { text = '~' },
+		--[[ delete = { text = '_' },
+		topdelete = { text = '‾' }, ]]
+		changedelete = { text = '~' },
+	}
+})
+
+function set_spider(keybind, motion, desc)
+	vim.keymap.set(
+	{ "n", "o", "x" },
+	keybind,
+	"<cmd>lua require('spider').motion('"..motion.."')<CR>",
+	{ desc = desc }
+	)
+end
+set_spider('H', 'b', 'Move to previous sub word')
+set_spider('L', 'w', 'Move to next sub word start')
+-- set_spider('<A-l>', 'e', 'Move to next sub word end')
+
+---- LSP ----
+vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
+vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
+vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
+vim.keymap.set('n', 'gy', pickers.lsp_type_definitions, { desc = "Goto type definition" })
+vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
+vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
+vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
+vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
+vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = "Show workspace diagnostics (errors)" })
+vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
+vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
+vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
+
+-- use K for hover
+
+-- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
+vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
+	local bufnr = args.buf
+	local client = vim.lsp.get_client_by_id(args.data.client_id)
+	if not client then return end
+	-- Server capabilities spec:
+	-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
+	if client.server_capabilities.documentHighlightProvider then
+		vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
+		vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
+		vim.api.nvim_create_autocmd({"CursorHold", "CursorHoldI"}, {
+			callback = vim.lsp.buf.document_highlight,
+			buffer = bufnr,
+			group = "lsp_document_highlight",
+			desc = "Document Highlight",
+		})
+		vim.api.nvim_create_autocmd("CursorMoved", {
+			callback = vim.lsp.buf.clear_references,
+			buffer = bufnr,
+			group = "lsp_document_highlight",
+			desc = "Clear All the References",
+		})
 	end
+end
 })
 
 -- needs nvim 11
@@ -343,6 +368,7 @@ vim.api.nvim_create_autocmd("FileType", { callback = function()
 	elseif ft == "mumps" then
 		vim.bo.commentstring = ';%s'
 		vim.cmd('highlight! link Keyword Special')
+		vim.cmd.iunmap('<Tab>')
 	end
 end })
 vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
@@ -502,55 +528,56 @@ mc_set("<leader>A", mc.matchAllAddCursors)
 	--     mc.addCursor("w")
 	-- end)
 	-- set("n", "<leader><right>", function()
-		--     mc.skipCursor("w")
-		-- end)
+	--     mc.skipCursor("w")
+	-- end)
 
-		-- Rotate the main cursor.
-		mc_set("<left>", mc.nextCursor)
-		mc_set("<right>", mc.prevCursor)
+	-- Rotate the main cursor.
+	mc_set("<left>", mc.nextCursor)
+	mc_set("<right>", mc.prevCursor)
 
-		-- Delete the main cursor.
-		mc_set("<leader>x", mc.deleteCursor)
+	-- Delete the main cursor.
+	mc_set("<leader>x", mc.deleteCursor)
 
-		-- Add and remove cursors with control + left click.
-		-- set("n", "<c-leftmouse>", mc.handleMouse)
+	-- Add and remove cursors with control + left click.
+	-- set("n", "<c-leftmouse>", mc.handleMouse)
 
-		-- Easy way to add and remove cursors using the main cursor.
-		mc_set("<c-q>", mc.toggleCursor)
+	-- Easy way to add and remove cursors using the main cursor.
+	mc_set("<c-q>", mc.toggleCursor)
 
-		-- Clone every cursor and disable the originals.
-		-- set({"n", "v"}, "<leader><c-q>", mc.duplicateCursors)
+	-- Clone every cursor and disable the originals.
+	-- set({"n", "v"}, "<leader><c-q>", mc.duplicateCursors)
 
-		-- bring back cursors if you accidentally clear them
-		vim.keymap.set("n", "<leader>gv", mc.restoreCursors)
+	-- bring back cursors if you accidentally clear them
+	vim.keymap.set("n", "<leader>gv", mc.restoreCursors)
 
-		-- Align cursor columns.
-		-- set("n", "<leader>a", mc.alignCursors)
+	-- Align cursor columns.
+	-- set("n", "<leader>a", mc.alignCursors)
 
-		-- Split visual selections by regex.
-		-- set("v", "S", mc.splitCursors)
+	-- Split visual selections by regex.
+	-- set("v", "S", mc.splitCursors)
 
-		-- Append/insert for each line of visual selections.
-		vim.keymap.set("v", "I", mc.insertVisual)
-		vim.keymap.set("v", "A", mc.appendVisual)
+	-- Append/insert for each line of visual selections.
+	vim.keymap.set("v", "I", mc.insertVisual)
+	vim.keymap.set("v", "A", mc.appendVisual)
 
-		-- match new cursors within visual selections by regex.
-		vim.keymap.set("v", "M", mc.matchCursors)
+	-- match new cursors within visual selections by regex.
+	vim.keymap.set("v", "M", mc.matchCursors)
 
-		-- Rotate visual selection contents.
-		vim.keymap.set("v", "<leader>t", function() mc.transposeCursors(1) end)
-		vim.keymap.set("v", "<leader>T", function() mc.transposeCursors(-1) end)
+	-- Rotate visual selection contents.
+	vim.keymap.set("v", "<leader>t", function() mc.transposeCursors(1) end)
+	vim.keymap.set("v", "<leader>T", function() mc.transposeCursors(-1) end)
 
-		-- Jumplist support
-		mc_set("<c-i>", mc.jumpForward)
-		mc_set("<c-o>", mc.jumpBackward)
+	-- Jumplist support
+	mc_set("<c-i>", mc.jumpForward)
+	mc_set("<c-o>", mc.jumpBackward)
 
-		-- Customize how cursors look.
-		local hl = vim.api.nvim_set_hl
-		hl(0, "MultiCursorCursor", { link = "Cursor" })
-		hl(0, "MultiCursorVisual", { link = "Visual" })
-		hl(0, "MultiCursorSign", { link = "SignColumn"})
-		hl(0, "MultiCursorDisabledCursor", { link = "Visual" })
-		hl(0, "MultiCursorDisabledVisual", { link = "Visual" })
-		hl(0, "MultiCursorDisabledSign", { link = "SignColumn"})
-		]]
+	-- Customize how cursors look.
+	local hl = vim.api.nvim_set_hl
+	hl(0, "MultiCursorCursor", { link = "Cursor" })
+	hl(0, "MultiCursorVisual", { link = "Visual" })
+	hl(0, "MultiCursorSign", { link = "SignColumn"})
+	hl(0, "MultiCursorDisabledCursor", { link = "Visual" })
+	hl(0, "MultiCursorDisabledVisual", { link = "Visual" })
+	hl(0, "MultiCursorDisabledSign", { link = "SignColumn"})
+end)
+]]
