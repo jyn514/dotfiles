@@ -114,6 +114,12 @@ vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
 vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page up' })
 vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page down' })
 
+vim.keymap.set('n', '<leader>t', function()
+	vim.cmd.wall()
+	vim.cmd.make('test')
+end, { desc = "Run `make test`" })
+-- TODO: add ninja output to `errorformat` (see `:h efm-ignore`)
+
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
 vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind
@@ -219,6 +225,8 @@ vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
 vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
+-- If this doesn't look right, try `:set termguicolors`.
+-- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 vim.cmd.colorscheme 'alabaster-black'
 
 require('telescope').setup {
