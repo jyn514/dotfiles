@@ -27,6 +27,7 @@ manpages
 manpages-dev
 ninja-build
 nmap
+nodejs-bash-language-server
 openvpn
 perl
 pkg-config

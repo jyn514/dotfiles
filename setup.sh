@@ -214,7 +214,7 @@ setup_install_local () {
 	if ! [ -d ~/.local/lib/PowerShellEditorServices ]; then
 		mkdir -p ~/.local/lib/PowerShellEditorServices
 		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
-		unzip "$pslsp" -d ~/.local/lib/PowerShellEditorServices
+		unzip -q "$pslsp" -d ~/.local/lib/PowerShellEditorServices
 	fi
 
 	#npm install -g perlnavigator-server bash-language-server
