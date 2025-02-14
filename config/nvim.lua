@@ -376,7 +376,6 @@ vim.api.nvim_create_autocmd("FileType", { callback = function()
 	elseif ft == "mumps" then
 		vim.bo.commentstring = ';%s'
 		vim.cmd('highlight! link Keyword Special')
-		vim.cmd.iunmap('<Tab>')
 	end
 end })
 vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
