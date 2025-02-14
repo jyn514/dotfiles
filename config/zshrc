@@ -128,6 +128,9 @@ bindkey '^H' backward-delete-word
 # TODO: see if we can make this more useful?
 bindkey ' ' magic-space
 
+# shift-tab cycles backwards through choices
+bindkey '^[[Z' reverse-menu-complete
+
 # autoload -Uz surround
 # zle -N delete-surround surround
 # zle -N add-surround surround
@@ -149,22 +152,21 @@ HISTSIZE=1000
 SAVEHIST=10000000
 HISTFILE=~/.zsh_history
 
-# package manager
-source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
-zinit light zsh-users/zsh-autosuggestions
-zinit light zdharma-continuum/fast-syntax-highlighting
-
 # Use modern completion system
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
 autoload -Uz compinit
 compinit
 
+# package manager
+source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+
 if exists fzf; then
+  # Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
   zinit light Aloxaf/fzf-tab
 fi
 
-# shift-tab cycles backwards through choices
-bindkey '^[[Z' reverse-menu-complete
+zinit light zsh-users/zsh-autosuggestions
+zinit light zdharma-continuum/fast-syntax-highlighting
 
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate
