@@ -45,7 +45,7 @@ function indentgroup(lang, func)
 	vim.api.nvim_create_autocmd('FileType', {
 		group = group,
 		callback = function(event)
-			if event.file == lang then
+			if event.match == lang then
 				func()
 			end
 		end
@@ -160,8 +160,9 @@ end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to norma
 vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('Rename', function(info)
-	vim.cmd.sav(info.args)
-	vim.fn.delete(vim.fn.expand('#'))
+	-- NOTE: :sav doesn't preserve permissions
+	vim.cmd('silent !mv ' .. vim.fn.expand('%') .. ' ' .. info.args)
+	vim.cmd.edit(info.args)
 	vim.cmd.bdelete('#')
 end, { nargs=1, desc = "Rename current file" })
 vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
@@ -200,20 +201,25 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
-		'tpope/vim-obsession',
+		'tpope/vim-obsession',  -- session save/resume. TODO: run this automatically
 		'numToStr/Comment.nvim',
-		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },
+		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },  -- general picker
 		'kosayoda/nvim-lightbulb',
-		'echasnovski/mini.nvim',
-		"folke/which-key.nvim",
-		'lewis6991/gitsigns.nvim',
-		{ "chrisgrieser/nvim-spider", lazy = true },
+		'echasnovski/mini.nvim',    -- toolbar, also icons
+		"folke/which-key.nvim",     -- spawns kak/hx-like popup
+		'lewis6991/gitsigns.nvim',  -- also does inline blame
+		{ "chrisgrieser/nvim-spider", lazy = true },  -- partial word movement
 		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
 		'neovim/nvim-lspconfig',
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
+		-- TODO: set this up
+		-- 'puremourning/vimspector' -- DAP
+		-- https://github.com/smoka7/hop.nvim  -- random access within file
 		-- https://github.com/amitds1997/remote-nvim.nvim looks promising
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
+
+-- vim.cmd.VimspectorInstall('vscode-cpptools')
 
 vim.g.alabaster_dim_comments = true
 

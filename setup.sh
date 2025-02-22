@@ -64,12 +64,22 @@ setup_basics () {
 		default=nvim
 		# lol, the nvim desktop file has the exact same mimetype
 		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
-		for mime in text/x-python text/x-python3 text/x-perl; do
+		for mime in text/x-python text/x-python3 text/x-perl application/javascript; do
 			xdg-mime default $default.desktop $mime
 		done
 	fi
 	if exists fx; then
 		xdg-mime default fx-usercreated-1.desktop application/json
+	fi
+	if exists bat; then
+		mkdir -p "$(bat --config-dir)/syntaxes"
+		(
+			cd "$(bat --config-dir)/syntaxes"
+			# TODO: just inline this into my dotfiles
+			wget https://github.com/ksherlock/MUMPS.tmbundle/raw/refs/heads/master/Syntaxes/mumps.sublime-syntax
+			sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
+		)
+		bat cache --build
 	fi
 	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
 		xdg-mime default "$browser" $mime
