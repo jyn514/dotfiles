@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run a command in an environment where DBUS commands (e.g. `systemd --user`, `gsettings`) are available
+: "${XDG_RUNTIME_DIR:="/run/user/$UID"}"
+: "${DBUS_SESSION_BUS_ADDRESS:="unix:path=${XDG_RUNTIME_DIR}/bus"}"
+export XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
+exec "$@"

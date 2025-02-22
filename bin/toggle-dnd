@@ -1,0 +1,13 @@
+#!/bin/sh
+
+case ${1:-} in
+	true) new=false;;
+	false) new=true;;
+	*)
+	if [ "$(gsettings get org.gnome.desktop.notifications show-banners)" = true ]
+		then new=false
+		else new=true
+	fi
+	;;
+esac
+gsettings set org.gnome.desktop.notifications show-banners $new
