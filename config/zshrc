@@ -7,6 +7,8 @@
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
 
+alias help=run-help
+
 # Set "$0" to zsh, not .profile
 emulate sh
 # Perform command substitution when evaluating prompt
@@ -16,11 +18,6 @@ unalias ls la ll l alert 2>/dev/null
 # Set up the prompt
 . ~/.profile
 emulate zsh
-
-alias help=run-help
-alias -g stauts=status
-alias -g serach=search
-alias -g searhc=search
 
 pure_shell() {
    env -i HOME="$HOME" TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
@@ -152,13 +149,9 @@ HISTSIZE=1000
 SAVEHIST=10000000
 HISTFILE=~/.zsh_history
 
-# Use modern completion system
-export FPATH=~/.local/share/zsh/site-functions:$FPATH
-autoload -Uz compinit
-compinit
-
 # package manager
 source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+unalias zi
 
 if exists fzf; then
   # Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
@@ -168,6 +161,15 @@ fi
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 zinit light zsh-users/zsh-autosuggestions
 zinit light zdharma-continuum/fast-syntax-highlighting
+zinit light olets/zsh-abbr
+
+alias() {
+	abbr add --force --quiet "$@"
+}
+
+alias -g stauts=status
+alias -g serach=search
+alias -g searhc=search
 
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate
@@ -206,54 +208,12 @@ _gdb() {
  fi
 }
 
-compdef _gnu_generic fzf
-
-if exists jj; then source <(jj util completion zsh); fi
-if exists zoxide; then
-   source <(zoxide init zsh)
-   # zoxide is annoying and makes `z` an alias instead of a function
-   cd() { __zoxide_z "$@" && status; }
- #        if ! exists __builtin_cd_complete; then
- #          autoload +X _cd
- #          functions -c _cd __builtin_cd_complete
- #        fi
-	# function _cd() {
-	# 	__builtin_cd_complete
-	# 	# Only show completions when the cursor is at the end of the line.
-	# 	# shellcheck disable=SC2154
-	# 	[[ "${#words[@]}" -eq "${CURRENT}" ]] || return 0
- #                IFS=$'\n' local comp=($(zoxide query --list))
-	# 	_describe 'directories' comp
-	# }
- #        compdef z=cd
-fi
-
 # fzf bs
 zstyle ':fzf-tab:complete:*' fzf-bindings 'right:accept'
 zstyle ':fzf-tab:*' continuous-trigger 'tab'
 zstyle ':fzf-tab:*' accept-line enter
 # use / instead of tab to immediately trigger another completion, like `right`
 #zstyle ':fzf-tab:*cd*' continuous-trigger '/'
-
-# basically the same as `cd <TAB>`, but with arbitrary nesting.
-# not super useful now that _cd supports zoxide dirs.
-zle-fzf-zoxide() {
-  setopt localoptions pipefail no_aliases 2> /dev/null
-  local dir="$(complete-fzf-dir | fzf --reverse --scheme=path +m)"
-  if [[ -z "$dir" ]]; then
-    zle redisplay
-    return 0
-  fi
-  zle push-line # Clear buffer. Auto-restored on next prompt.
-  BUFFER="builtin cd -- ${(q)dir:a}"
-  zle accept-line
-  local ret=$?
-  unset dir # ensure this doesn't end up appearing in prompt expansion
-  zle reset-prompt
-  return $ret
-}
-zle -N zle-fzf-zoxide
-bindkey '^[c' zle-fzf-zoxide
 
 # making this part of normal tab complete is too slow and hangs
 # really wish zsh would show partial matches instead of waiting for all of them to finish
@@ -272,9 +232,33 @@ fzf-file() {
 zle -N fzf-file
 bindkey "^[t" fzf-file
 
-
 eval "$(atuin init zsh --disable-up-arrow)"
 bindkey -M vicmd '^r' atuin-search
 
 # https://direnv.net/
 eval "$(direnv hook zsh)"
+
+# Needs to be initialized after all completions are loaded
+export FPATH=~/.local/share/zsh/site-functions:$FPATH
+autoload -Uz compinit
+compinit
+
+# Uses compdef; needs to come after compinit
+compdef '_arguments --' fzf  # takes no positional arguments
+eval "$(atuin gen-completions --shell zsh)"
+if exists jj; then source <(jj util completion zsh); fi
+
+if exists zoxide; then
+   source <(zoxide init zsh)
+   cd() { z "$@" && status; }
+   # NOTE: only shows a FZF menu if there's a space after the query filter
+   compdef __zoxide_z_complete cd
+fi
+
+zle-zi() {
+	# TODO: this erases the second line of the prompt for some reason, lol, lmao
+	if zi; then zle reset-prompt; else zle redisplay; fi
+}
+zle -N zle-zi
+bindkey '^[c' zle-zi
+bindkey -a '^[c' zle-zi
