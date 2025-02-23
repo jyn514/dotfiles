@@ -9,6 +9,37 @@
 
 alias help=run-help
 
+# package manager
+source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+unalias zi
+
+if exists fzf; then
+  # Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
+  zinit light Aloxaf/fzf-tab
+fi
+
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+zinit light zsh-users/zsh-autosuggestions
+zinit light zdharma-continuum/fast-syntax-highlighting
+zinit light olets/zsh-abbr
+
+# space expands !... history and abbreviations
+# TODO: see if we can make this more useful?
+extra-magic-space() {
+	abbr-expand-and-insert
+	zle expand-history || true
+}
+zle -N extra-magic-space
+bindkey ' ' extra-magic-space
+
+alias() {
+	abbr add --force --quiet "$@"
+}
+
+alias -g stauts=status
+alias -g serach=search
+alias -g searhc=search
+
 # Set "$0" to zsh, not .profile
 emulate sh
 # Perform command substitution when evaluating prompt
@@ -144,37 +175,6 @@ done
 HISTSIZE=1000
 SAVEHIST=10000000
 HISTFILE=~/.zsh_history
-
-# package manager
-source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
-unalias zi
-
-if exists fzf; then
-  # Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
-  zinit light Aloxaf/fzf-tab
-fi
-
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-zinit light zsh-users/zsh-autosuggestions
-zinit light zdharma-continuum/fast-syntax-highlighting
-zinit light olets/zsh-abbr
-
-# space expands !... history and abbreviations
-# TODO: see if we can make this more useful?
-extra-magic-space() {
-	abbr-expand-and-insert
-	zle expand-history || true
-}
-zle -N extra-magic-space
-bindkey ' ' extra-magic-space
-
-alias() {
-	abbr add --force --quiet "$@"
-}
-
-alias -g stauts=status
-alias -g serach=search
-alias -g searhc=search
 
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate

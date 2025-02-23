@@ -97,14 +97,27 @@ HEAD() {
 	export LESSCLOSE="/usr/bin/lesspipe %s %s";
 }
 
-yts () { youtube_search "$@"; }
-
-ytd () { yt-dlp "$@"; }
-
-cls () { clear; }
-
 mkcd () { mkdir -p "$@" && cd "$1"; }
-mkdc () { mkcd "$@"; }
+e() { $EDITOR "$@"; }
+
+alias mkdc=mkcd
+alias yts=youtube_search
+alias ytd=yt-dlp
+alias cls=clear
+alias c=cargo
+alias g=git
+alias o=open
+alias v=nvim
+# uppercase is bad and it should feel bad
+alias r=R
+# NOTE: this *must not* be an external process.
+# scoping it to an alis prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
+alias cat=bat
+# this shadows a mailcap command, but I've never used mailcap in my life
+alias dc=docker-compose
+alias compose=docker-compose
+alias powershell=pwsh
+
 
 # follow symlinks by default
 rg () { command rg -z -L --no-heading "$@"; }
@@ -114,24 +127,8 @@ b () {
 	builtin cd "$(cargo metadata --format-version 1| jq .workspace_root -r)" && bacon "$@"
 }
 
-c() { cargo "$@"; }
-e() { $EDITOR "$@"; }
-g() { git "$@"; }
-o() { open "$@"; }
-v () { vim "$@"; }
-# uppercase is bad and it should feel bad
-r () { R "$@"; }
-
-# NOTE: this *must not* be an external process.
-# scoping it to a function prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
-cat() { bat "$@"; }
-
 # show human-readable dates with offsets by default
 dmesg () { command dmesg -e "$@"; }
-
-dc () { docker-compose "$@"; }
-# this shadows a mailcap command, but I've never used mailcap in my life
-compose () { docker-compose "$@"; }
 
 whatismyip() {
 	# https://unix.stackexchange.com/a/194136
@@ -165,9 +162,9 @@ what_package () {
 	fi
 }
 
-belongs () { what_belongs "$@"; }
-runs () { what_runs "$@"; }
-package () { what_package "$@"; }
+alias belongs=what_belongs
+alias runs=what_runs
+alias package=what_package
 
 exa () { command exa --git "$@"; }
 
@@ -217,8 +214,6 @@ show_time () { watch -n 1 -t date; }
 # zip recursively by default
 zip () { command zip -r "$@"; }
 
-powershell () { pwsh "$@"; }
-
 save_power () { sudo powertop --auto-tune; }
 
 clean_shell () {
@@ -235,23 +230,21 @@ purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
 
-purge () { sudo apt autoremove --purge "$@"; }
+alias purge='sudo apt autoremove --purge'
+alias restart='shutdown -r now'
+alias sl=ls
+alias ll='ls -l'
+alias la='ls -A'
+alias l='ls -F'
+# files on disk
+alias file_count='locate -S'
 
-restart () { shutdown -r now; }
-
-sl () { ls "$@"; }
-ll () { ls -l "$@"; }
-la () { ls -A "$@"; }
-l () { ls -F "$@"; }
 
 webpaste () {
    nc termbin.com 9999
 }
 
 ascii () { command man ascii; }
-
-# files on disk
-file_count () { locate -S; }
 
 excuse () {
 	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
@@ -267,16 +260,16 @@ status () {
 		l
 	fi
 }
-s() { status "$@"; }
+alias s=status
 
 dad () { curl https://icanhazdadjoke.com && echo; }
 
 weather () { curl wttr.in/; }
-wttr () { weather; }
+alias wttr=weather
 
 pytime () { python -m timeit; }
 
-ubuntu () { docker run -it ubuntu; }
+alias ubuntu='docker run -it ubuntu'
 
 pip_upgrade_all () {
 	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
