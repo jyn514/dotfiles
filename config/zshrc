@@ -165,6 +165,7 @@ if exists fzf; then
   zinit light Aloxaf/fzf-tab
 fi
 
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 zinit light zsh-users/zsh-autosuggestions
 zinit light zdharma-continuum/fast-syntax-highlighting
 
