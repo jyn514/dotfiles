@@ -4,24 +4,46 @@
 # to see all completions, `echo $_comps`. for a specific completion, `which _ls` *usually* works.
 # to debug a specific completion, `C-x ? Up`
 # to see all functions, `print -l ${(ok)functions}`
+# to profile startup, run `zsh -c zprof` (this is more accurate than putting zprof at the end of zshrc)
+# to see an even more detailed profile, use `time zsh -ic exit | ts %.S`
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
 
+if [ -n "$ZSH_PROFILE_READ" ]; then
+	return 0
+fi
+ZSH_PROFILE_READ=1
+
+# zmodload zsh/zprof
+
 alias help=run-help
 
-# package manager
-source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
-unalias zi
-
-if exists fzf; then
-  # Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
-  zinit light Aloxaf/fzf-tab
-fi
-
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-zinit light zsh-users/zsh-autosuggestions
-zinit light zdharma-continuum/fast-syntax-highlighting
-zinit light olets/zsh-abbr
+ABBR_AUTOLOAD=0
+
+# package manager
+antibody=$HOME/.local/share/antibody
+source <($antibody/antibody init)
+
+# delay expensive things until after prompt renders
+antibody bundle romkatv/zsh-defer.git
+RPS1="%F{240}loading%f"
+
+plugins=()
+if exists fzf; then
+	# Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
+	plugins+=(Aloxaf/fzf-tab)
+fi
+plugins+=(
+	zsh-users/zsh-autosuggestions
+	zdharma-continuum/fast-syntax-highlighting
+	olets/zsh-abbr
+)
+# Static loading for antigen
+# this actually can just be always on, it takes effectively no time
+echo $plugins[*] | tr ' ' '\n' | $antibody/antibody bundle > $antibody/cache.sh
+zsh-defer source $antibody/cache.sh
+zsh-defer abbr import-aliases --session --quiet
 
 # space expands !... history and abbreviations
 # TODO: see if we can make this more useful?
@@ -31,10 +53,6 @@ extra-magic-space() {
 }
 zle -N extra-magic-space
 bindkey ' ' extra-magic-space
-
-alias() {
-	abbr add --force --quiet "$@"
-}
 
 alias -g stauts=status
 alias -g serach=search
@@ -237,21 +255,20 @@ fzf-file() {
 zle -N fzf-file
 bindkey "^[t" fzf-file
 
-eval "$(atuin init zsh --disable-up-arrow)"
+zsh-defer -c 'eval "$(atuin init zsh --disable-up-arrow)"'
 bindkey -M vicmd '^r' atuin-search
 
 # https://direnv.net/
-eval "$(direnv hook zsh)"
+zsh-defer -c 'eval "$(direnv hook zsh)"'
 
 # Needs to be initialized after all completions are loaded
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
 autoload -Uz compinit
-compinit
+# having weird cache invalidation issues; for now, tell zsh to unconditionally reuse the cache. at some point completion will be buggy and we can investigate further then.
+compinit -C
 
 # Uses compdef; needs to come after compinit
 compdef '_arguments --' fzf  # takes no positional arguments
-eval "$(atuin gen-completions --shell zsh)"
-if exists jj; then source <(jj util completion zsh); fi
 
 if exists zoxide; then
    source <(zoxide init zsh)
@@ -267,3 +284,7 @@ zle-zi() {
 zle -N zle-zi
 bindkey '^[c' zle-zi
 bindkey -a '^[c' zle-zi
+
+zsh-defer -c 'if exists jj; then source <(jj util completion zsh); fi'
+zsh-defer -c 'eval "$(atuin gen-completions --shell zsh)"'
+zsh-defer -c RPS1=

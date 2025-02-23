@@ -1,3 +1,6 @@
+if [ -n "$BASH_PROFILE_READ" ]; then
+	return 0
+fi
 BASH_PROFILE_READ=1
 if [ -z $MY_GITHUB ]; then
    unalias ls la ll l alert 2>/dev/null

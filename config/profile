@@ -32,7 +32,9 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	unset snap_bin
 fi
 add_path "$CARGO_HOME"/bin
-add_path "$(dirname "$(dirname "$(realpath ~/.profile)")")/bin"
+
+DOTFILES=$(dirname "$(realpath ~/.profile)")/..
+add_path "$DOTFILES/bin"
 if [ -d ~/.local/bin ]; then
 	add_path "$HOME/.local/bin"
 fi
@@ -68,7 +70,20 @@ case "$-" in
 	*)	return 0;;
 esac
 
-. "$(dirname "$(dirname "$(realpath ~/.profile)")")/lib/lib.sh"
+# bash shell and haven't sourced bashrc
+if [ "$BASH_VERSION" ]; then
+	. ~/.bashrc
+fi
+# zsh shell and haven't sourced zshrc
+if [ "$ZSH_VERSION" ]; then
+	. ~/.zshrc
+fi
+if [ -n "$PROFILE_READ" ]; then
+	return 0
+fi
+PROFILE_READ=1
+
+. "$DOTFILES/lib/lib.sh"
 
 # TODO: work this into gitconfig somehow
 git_reset_author() {
@@ -169,9 +184,14 @@ alias package=what_package
 exa () { command exa --git "$@"; }
 
 # don't replace crontab without warning
-if crontab -i -l >/dev/null 2>/dev/null; then
-  crontab () { command crontab -i "$@"; }
-fi
+crontab() {
+	if command crontab -i -l >/dev/null 2>/dev/null; then
+		crontab () { command crontab -i "$@"; }
+	else
+		crontab () { command crontab "$@"; }
+	fi
+	crontab "$@"
+}
 
 # show a makefile as a dependency graph
 visualize () {
@@ -220,9 +240,14 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if ls -G --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
-    ls () { command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
-fi
+ls () {
+	if command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
+		ls () { command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
+	else
+		ls() { command ls "$@"; }
+	fi
+	ls "$@"
+}
 
 ip() { command ip --color "$@"; }
 
@@ -300,14 +325,13 @@ fork_github() {
 GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
-DOTFILES="$(dirname "$(dirname "$(realpath ~/.profile)")")"
 
 export GPG_TTY=$(tty)
 export ENV="$HOME/.profile"
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 if [ "$DISPLAY" ]; then
 	if is_wsl; then
-		MANOPT=--html=$(dirname "$(realpath ~/.profile)")/../bin/firefox.sh
+		MANOPT=--html=$DOTFILES/bin/firefox.sh
 		export MANOPT
 	else
 		# you know what unix if you can't come up with working hyperlinks in 50 years then fuck you too
@@ -374,11 +398,6 @@ export MAKEFLAGS='-j4'
 # Honestly if you want to use this I don't really mind
 export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
-# bash shell and haven't sourced bashrc
-if [ "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
-	. ~/.bashrc
-fi
-
 awawa_handler() {
 	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
         } | cowsay -f "$DOTFILES"/lib/angel.cow -n
@@ -427,7 +446,7 @@ command_not_found_handler() { command_not_found_handle "$@"; }
 
 # zsh uses `{%` instead of `\01`: https://zsh.sourceforge.io/Doc/Release/Prompt-Expansion.html#Visual-effects
 if [ -n "$ZSH_VERSION" ]; then
-	ansi_escape () { command printf "%%{$1%%}"; }
+	ansi_escape () { printf "%%{$1%%}"; }
 else
 	ansi_escape () { command printf "\01$1\02"; }
 fi
