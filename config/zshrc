@@ -121,10 +121,6 @@ bindkey "3~" delete-word
 # ctrl+backspace
 bindkey '^H' backward-delete-word
 
-# space expands !... history
-# TODO: see if we can make this more useful?
-bindkey ' ' magic-space
-
 # shift-tab cycles backwards through choices
 bindkey '^[[Z' reverse-menu-complete
 
@@ -162,6 +158,15 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 zinit light zsh-users/zsh-autosuggestions
 zinit light zdharma-continuum/fast-syntax-highlighting
 zinit light olets/zsh-abbr
+
+# space expands !... history and abbreviations
+# TODO: see if we can make this more useful?
+extra-magic-space() {
+	abbr-expand-and-insert
+	zle expand-history || true
+}
+zle -N extra-magic-space
+bindkey ' ' extra-magic-space
 
 alias() {
 	abbr add --force --quiet "$@"
