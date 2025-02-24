@@ -6,7 +6,7 @@
 ---- Options ----
 
 vim.g.mapleader = ' '
-vim.g.maplocalleader = ' '
+vim.g.maplocalleader = 'f'
 vim.opt.number = true
 vim.opt.breakindent = true
 vim.opt.undofile = true
@@ -214,12 +214,88 @@ if first_run then
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		-- TODO: set this up
 		-- 'puremourning/vimspector' -- DAP
+		'mfussenegger/nvim-dap',
+		{ "rcarriga/nvim-dap-ui", dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 		-- https://github.com/amitds1997/remote-nvim.nvim looks promising
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
 
--- vim.cmd.VimspectorInstall('vscode-cpptools')
+local dap = require('dap')
+dap.adapters.cppdbg = {
+  id = 'cppdbg',
+  type = 'executable',
+  command = '/home/jyn/.local/share/nvim/lazy/vimspector/gadgets/linux/vscode-cpptools/debugAdapters/bin/OpenDebugAD7',
+}
+-- TODO: get rr integration working
+-- https://github.com/farre/midas/ looks promising
+-- see also https://github.com/rr-debugger/rr/wiki/Using-rr-in-an-IDE#setting-up-visual-studio-code
+dap.configurations.cpp = {
+	-- See https://code.visualstudio.com/docs/cpp/launch-json-reference
+  {
+    name = "Launch file",
+    type = "cppdbg",
+    request = "launch",
+		program = vim.fn.getcwd() .. '/build/yottadb',
+		args = {"-run", "naked"},
+    cwd = '${workspaceFolder}',
+    stopAtEntry = false,
+    -- program = function()
+      -- return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
+    -- end,
+  },
+}
+dap.configurations.c = dap.configurations.cpp
+dap.configurations.rust = dap.configurations.cpp
+
+local dap_widgets = require('dap.ui.widgets')
+bind('<LocalLeader>b', dap.toggle_breakpoint, 'Toggle line breakpoint')
+bind('<LocalLeader>c', dap.continue, 'Start or continue running')
+bind('<LocalLeader>C', dap.reverse_continue, 'Reverse-continue')
+bind('<LocalLeader>r', dap.restart, 'Restart debuggee')
+bind('<LocalLeader>g', dap.run_to_cursor, 'Run to current line')
+-- K by analogy with normal hover
+bind('<LocalLeader><Up>', dap.up, 'Go up frame')
+bind('<LocalLeader><Down>', dap.down, 'Go down frame')
+bind('<LocalLeader>z', dap.focus_frame, 'Focus current frame')
+bind('<LocalLeader>k', dap.step_into, 'Step into')
+bind('<LocalLeader>j', dap.step_out, 'Step out')
+bind('<LocalLeader>l', dap.step_over, 'Step over')
+bind('<LocalLeader>h', dap.step_back, 'Step backwards')
+-- TODO: set up a thread picker with telescope.
+-- might also be useful to replace stack trace on the left?
+-- see https://github.com/nvim-telescope/telescope-vimspector.nvim/blob/master/lua/telescope/_extensions/vimspector.lua for a simple example
+bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
+-- TODO: dap-ui can show this in a panel
+-- bind('<LocalLeader>B', dap.list_breakpoints, 'Show breakpoints')
+-- bind('<LocalLeader>o', dap.repl.open, 'Open REPL')
+-- bind('<LocalLeader>f', function()
+-- 	dap_widgets.centered_float(dap_widgets.frames)
+-- end, 'Show frames')
+-- bind('<LocalLeader>s', function()
+-- 	dap_widgets.centered_float(dap_widgets.scopes)
+-- end, 'Show scopes')
+
+local dapui = require('dapui')
+dapui.setup()
+dap.listeners.before.attach.dapui_config = dapui.open
+dap.listeners.before.launch.dapui_config = dapui.open
+-- this is so broken lmao, let's not even try
+-- dap.listeners.after.launch.record = function()
+-- 	dap.repl.execute("-exec target record-full")
+-- end
+dap.listeners.before.event_terminated.dapui_config = dapui.close
+dap.listeners.before.event_exited.dapui_config = dapui.close
+
+-- require('Vimspector').setup()
+-- vim.cmd.VimspectorInstall('codelldb')
+-- vim.g.vimspector_enable_mappings = 'HUMAN'
+--
+-- bind('<leader>i', '<Plug>VimspectorBalloonEval', 'Inspect expression')
+-- bind('<leader><Up>', '<Plug>VimspectorUpFrame', 'Go up frame')
+-- bind('<leader><Down>', '<Plug>VimspectorDownFrame', 'Go down frame')
+-- bind('<leader>B', '<Plug>VimspectorBreakpoints', 'Show breakpoints')
+-- bind('<leader>a', '<Plug>VimspectorDisassemble', 'Disassemble')
 
 vim.g.alabaster_dim_comments = true
 
@@ -284,7 +360,15 @@ MiniStatusline.setup {
 	}
 }
 if first_run then
-	require('which-key').setup({preset = 'helix', delay = 150, icons = {mappings = false}})
+	wk = require('which-key')
+	wk.setup({preset = 'helix', delay = 150, icons = {mappings = false},
+		triggers = {
+			{ "<localleader>", mode = {'n', 'v'} }
+		}
+	})
+	wk.add({
+		{ '<LocalLeader>', group = "Debugging" },
+	})
 end
 
 require('gitsigns').setup({
