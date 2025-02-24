@@ -48,12 +48,9 @@ setup_basics () {
 	git clone https://github.com/lincheney/fzf-tab-completion ~/.local/lib/fzf-tab-completion/
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
-	if [ ! -f ~/.local/share/zinit/zinit.git/zinit.zsh ]; then
-	    printf "Installing ZDHARMA-CONTINUUM Initiative Plugin Manager (zdharma-continuum/zinit)…"
-	    command mkdir -p "$HOME/.local/share/zinit" && command chmod g-rwX "$HOME/.local/share/zinit"
-	    command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git" && \
-	        echo "Installation successful." || \
-	        echo "The clone has failed."
+	ANTIBODY=~/.local/share/antibody
+	if [ ! -f $ANTIBODY/antibody ]; then
+		curl -sfL git.io/antibody | sh -s - -b $ANTIBODY
 	fi
 
 	if exists dconf; then

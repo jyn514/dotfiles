@@ -40,9 +40,11 @@ plugins+=(
 	olets/zsh-abbr
 )
 # Static loading for antigen
-# this actually can just be always on, it takes effectively no time
-echo $plugins[*] | tr ' ' '\n' | $antibody/antibody bundle > $antibody/cache.sh
+zsh-defer 'echo $plugins[*] | tr ' ' '\n' | $antibody/antibody bundle > $antibody/cache.sh'
 zsh-defer source $antibody/cache.sh
+# TODO: antibody doesn't actually support loading multiple plugins in this way, lol.
+# maybe antidote will work better
+# zsh-defer -c 'antibody bundle $plugins'
 zsh-defer abbr import-aliases --session --quiet
 
 # space expands !... history and abbreviations
@@ -135,11 +137,13 @@ zle -N zle-line-finish
 
 # Alt + Right
 bindkey ";3C" forward-word
+# kitty passes \e[ but gnome-terminal doesn't :(
+bindkey "\e[1;3C" forward-word
 # Alt + Left
 bindkey ";3D" backward-word
+bindkey "\e[1;3D" backward-word
 # ctrl+left
 bindkey ";5D" backward-word
-# kitty passes \e[ but gnome-terminal doesn't :(
 bindkey "\e[1;5D" backward-word
 # ctrl+right
 bindkey ";5C" forward-word
