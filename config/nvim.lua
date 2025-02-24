@@ -199,6 +199,11 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
+		{ "folke/lazydev.nvim", ft = "lua", opts = {
+				-- See the configuration section for more details
+				-- Load luvit types when the `vim.uv` word is found
+				library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
+		} },
 		'tpope/vim-obsession',  -- session save/resume. TODO: run this automatically
 		'numToStr/Comment.nvim',
 		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },  -- general picker
