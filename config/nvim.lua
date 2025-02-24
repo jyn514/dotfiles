@@ -18,8 +18,6 @@ vim.opt.sidescrolloff = 10
 vim.opt.visualbell = true
 vim.opt.title = true  -- allows S-d to search for a file
 -- see `:help zo` for keybinds
-vim.opt.foldmethod = 'indent'  -- TODO: change to 'syntax' for supported files'
-vim.opt.foldopen = 'all'
 vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
 
 vim.opt.list = true
