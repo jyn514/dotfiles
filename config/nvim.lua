@@ -459,19 +459,33 @@ function rustfmt_is_nightly()
 	return version():endswith '-nightly'
 end
 
-local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = true } } } }
+local fs_exists = vim.uv.fs_stat
+
+local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 lspconfig.rust_analyzer.setup {
 	cmd = { '/home/jyn/.local/lib/cargo/target/release/rust-analyzer' },
 	settings = settings,
+	root_dir = function()
+		default = lspconfig.rust_analyzer.config_def.default_config.root_dir()
+		if vim.fs.basename(default) == "library" and fs_exists(vim.fs.joinpath(default, "../src/bootstrap/defaults/config.compiler.toml")) then
+			return vim.fs.dirname(default)
+		end
+		return default
+	end,
 	-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
 	-- init_options = settings,
 	on_init = function(client)
-		if rustfmt_is_nightly() then
-			if vim.bo.filetype == 'rust' then vim.opt_local.formatexpr = 'v:lua.formatexpr()' end
-			client.on_attach = function()
-				if vim.bo.filetype == 'rust' then vim.opt_local.formatexpr = 'v:lua.formatexpr()' end
-			end
+		local path = client.workspace_folders[1].name
+		-- rust-lang/rust
+		config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
+		if fs_exists(config) then
+			file = io.open(config)
+			json = vim.json.decode(file:read("*a"))
+			client.config.settings["rust-analyzer"] = json.lsp["rust-analyzer"].initialization_options
+			client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
 		end
+
+		return true
 	end
 }
 
