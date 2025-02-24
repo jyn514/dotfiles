@@ -352,18 +352,22 @@ bind('<LocalLeader>b', dap.toggle_breakpoint, 'Toggle line breakpoint')
 bind('<LocalLeader>c', dap.continue, 'Start or continue running')
 bind('<LocalLeader>C', dap.reverse_continue, 'Reverse-continue')
 bind('<LocalLeader>r', dap.restart, 'Restart debuggee')
-bind('<LocalLeader>g', dap.run_to_cursor, 'Run to current line')
+bind('<LocalLeader>g', dap.run_to_cursor, 'Run to current line') --mnemonic: goto
 bind('<LocalLeader><Up>', dap.up, 'Go up frame')
 bind('<LocalLeader><Down>', dap.down, 'Go down frame')
+-- by analogy with ctrl-o,ctrl-i
+-- mnemonic: out, in
+bind('<LocalLeader>o', dap.up, 'Go up frame')
+bind('<LocalLeader>i', dap.down, 'Go down frame')
 bind('<LocalLeader>z', dap.focus_frame, 'Focus current frame')
-bind('<LocalLeader>k', dap.step_into, 'Step into')
-bind('<LocalLeader>j', dap.step_out, 'Step out')
+bind('<LocalLeader>j', dap.step_into, 'Step into')
+bind('<LocalLeader>k', dap.step_out, 'Step out')  -- i think this is what gdb calls 'finish'?
 bind('<LocalLeader>l', dap.step_over, 'Step over')
 bind('<LocalLeader>h', dap.step_back, 'Step backwards')
 -- K by analogy with normal hover
 bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
 -- NOTE: you can set up `display` equivalent by entering insert mode in the 'DAP Watches' panel,
--- but this is NOT the same as as hardware watchpoint.
+-- but this is NOT the same as a hardware watchpoint.
 -- For the latter use `-exec watch ...`
 -- See https://github.com/mfussenegger/nvim-dap/issues/1452.
 -- TODO: set up a keybinding for watchpoints
