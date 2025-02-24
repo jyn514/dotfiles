@@ -362,7 +362,11 @@ bind('<LocalLeader>l', dap.step_over, 'Step over')
 bind('<LocalLeader>h', dap.step_back, 'Step backwards')
 -- K by analogy with normal hover
 bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
--- NOTE: you can set up watches by entering insert mode in the 'DAP Watches' panel
+-- NOTE: you can set up `display` equivalent by entering insert mode in the 'DAP Watches' panel,
+-- but this is NOT the same as as hardware watchpoint.
+-- For the latter use `-exec watch ...`
+-- See https://github.com/mfussenegger/nvim-dap/issues/1452.
+-- TODO: set up a keybinding for watchpoints
 -- TODO: set up a thread picker with telescope.
 -- might also be useful to replace stack trace on the left?
 -- see https://github.com/nvim-telescope/telescope-vimspector.nvim/blob/master/lua/telescope/_extensions/vimspector.lua for a simple example
