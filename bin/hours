@@ -3,6 +3,7 @@
 from sys import stdin
 
 def parse_hhmm(t):
+	t = t.removesuffix("AM").removesuffix("PM")
 	if ":" in t:
 		return (int(c.strip()) for c in t.split(":"))
 	else:
@@ -22,5 +23,8 @@ def cell(s):
     percent = round(min*100/60)
     return f'{hour}.{percent}'
 
-for hours in stdin:
-    print(cell(hours))
+try:
+    for hours in stdin:
+        print(cell(hours))
+except KeyboardInterrupt:
+    pass
