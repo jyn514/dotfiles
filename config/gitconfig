@@ -16,7 +16,7 @@
 [interactive]
 	diffFilter = delta --color-only
 [delta]
-	tabs = 8
+	tabs = 0  # NOTE: this is currently kinda broken, see https://github.com/dandavison/delta/pull/751
 	navigate = true
 	hyperlinks = true
 	# TODO: support line numbers

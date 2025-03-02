@@ -120,6 +120,7 @@ end, { desc = "Run `make test`" })
 
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
+-- TODO: this reopens closed buffers lol
 vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind
 vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" }) -- overwrites `nv` keybind
 vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) -- overwrites "paste before cursor"
@@ -190,6 +191,8 @@ vim.g.loaded_node_provider = 0
 vim.g.loaded_perl_provider = 0
 vim.g.loaded_ruby_provider = 0
 
+local fs_exists = vim.uv.fs_stat
+
 ---- Plugins ----
 
 -- Bootstrap lazy.nvim
@@ -245,8 +248,11 @@ require('telescope').setup {
 }
 
 local pickers = require('telescope.builtin')
-vim.keymap.set('n', '<leader>b', pickers.buffers, { desc = "Open buffer picker" })
+vim.keymap.set('n', '<leader>b', function() pickers.buffers({ sort_mru = true, ignore_current_buffer = true }) end, { desc = "Open buffer picker" })
 vim.keymap.set('n', '<leader>f', pickers.find_files, { desc = "Open file picker" })
+vim.keymap.set('n', '<leader><A-f>', function()
+	pickers.find_files({ no_ignore = true, no_ignore_parent = true, hidden = true })
+end, { desc = "Open file picker (include ignored)" })
 vim.keymap.set('n', '<leader>F', pickers.oldfiles, { desc = "Open file picker (all files ever opened)" })
 vim.keymap.set('n', '<leader>/', function()
 	pickers.live_grep({prompt_title = "Live Search"})
@@ -339,6 +345,7 @@ dap.configurations.cpp = {
 		args = {"-run", "naked"},
     cwd = '${workspaceFolder}',
     stopAtEntry = false,
+		cwd = vim.fn.getcwd(),
     -- program = function()
       -- return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
     -- end,
@@ -348,11 +355,14 @@ dap.configurations.c = dap.configurations.cpp
 dap.configurations.rust = dap.configurations.cpp
 
 local dap_widgets = require('dap.ui.widgets')
+local dapui = require('dapui')
 bind('<LocalLeader>b', dap.toggle_breakpoint, 'Toggle line breakpoint')
 bind('<LocalLeader>c', dap.continue, 'Start or continue running')
 bind('<LocalLeader>C', dap.reverse_continue, 'Reverse-continue')
 bind('<LocalLeader>r', dap.restart, 'Restart debuggee')
 bind('<LocalLeader>g', dap.run_to_cursor, 'Run to current line') --mnemonic: goto
+-- TODO: this doesn't work without an attached session :(
+-- bind('<LocalLeader><LocalLeader>', dap.run_to_cursor, 'Run to current line') --mnemonic: double-tap
 bind('<LocalLeader><Up>', dap.up, 'Go up frame')
 bind('<LocalLeader><Down>', dap.down, 'Go down frame')
 -- by analogy with ctrl-o,ctrl-i
@@ -366,6 +376,7 @@ bind('<LocalLeader>l', dap.step_over, 'Step over')
 bind('<LocalLeader>h', dap.step_back, 'Step backwards')
 -- K by analogy with normal hover
 bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
+bind('<LocalLeader><Esc>', function() dap.terminate() dapui.close() end, 'Kill process and stop debug session')
 -- NOTE: you can set up `display` equivalent by entering insert mode in the 'DAP Watches' panel,
 -- but this is NOT the same as a hardware watchpoint.
 -- For the latter use `-exec watch ...`
@@ -375,7 +386,6 @@ bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
 -- might also be useful to replace stack trace on the left?
 -- see https://github.com/nvim-telescope/telescope-vimspector.nvim/blob/master/lua/telescope/_extensions/vimspector.lua for a simple example
 
-local dapui = require('dapui')
 dapui.setup()
 dap.listeners.before.attach.dapui_config = dapui.open
 dap.listeners.before.launch.dapui_config = dapui.open
@@ -399,6 +409,15 @@ vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = 
 vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
 vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
+
+vim.api.nvim_create_autocmd("User", {
+	pattern = "TelescopePreviewerLoaded",
+	callback = function(args)
+		vim.wo.wrap = true
+		vim.cmd.normal("zs")
+		vim.bo.tabstop = 2
+	end,
+})
 
 -- use K for hover
 
@@ -501,11 +520,8 @@ function rustfmt_is_nightly()
 	return version():endswith '-nightly'
 end
 
-local fs_exists = vim.uv.fs_stat
-
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 lspconfig.rust_analyzer.setup {
-	cmd = { '/home/jyn/.local/lib/cargo/target/release/rust-analyzer' },
 	settings = settings,
 	root_dir = function()
 		default = lspconfig.rust_analyzer.config_def.default_config.root_dir()

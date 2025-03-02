@@ -54,7 +54,8 @@ extra-magic-space() {
 	zle expand-history || true
 }
 zle -N extra-magic-space
-bindkey ' ' extra-magic-space
+bindkey ' ' magic-space
+zsh-defer bindkey ' ' extra-magic-space
 
 alias -g stauts=status
 alias -g serach=search
