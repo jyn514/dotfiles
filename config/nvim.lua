@@ -164,6 +164,16 @@ vim.api.nvim_create_user_command('Rename', function(info)
 	vim.cmd.edit(info.args)
 	vim.cmd.bdelete('#')
 end, { nargs=1, desc = "Rename current file" })
+vim.api.nvim_create_user_command('BufferDelete', function()
+	vim.cmd.bdelete()
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(buf) and buf ~= vim.api.nvim_get_current_buf() then
+			vim.cmd('let @# = '..buf)
+			break
+		end
+	end
+	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer
+end, { desc = "like :bdelete but also updates the alternate file" })
 vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
 	local line = vim.api.nvim_win_get_cursor(0)[1]
 	local file = vim.api.nvim_buf_get_name(0)
@@ -181,7 +191,7 @@ abbrev('Q', 'quit')
 abbrev('open', 'edit')
 abbrev('o', 'edit')
 abbrev('W', 'w')
-abbrev('bc', 'bdelete')
+abbrev('bc', 'BufferDelete')
 abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
 abbrev('url', 'OpenRemoteUrl')
@@ -294,6 +304,7 @@ if first_run then
 	wk = require('which-key')
 	wk.setup({preset = 'helix', delay = 150, icons = {mappings = false},
 		triggers = {
+			{ "<auto>", mode = "nxso" },
 			{ "<localleader>", mode = {'n', 'v'} }
 		}
 	})
