@@ -415,6 +415,7 @@ vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
 vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
 vim.keymap.set('n', 'gy', pickers.lsp_type_definitions, { desc = "Goto type definition" })
+vim.keymap.set('n', 'gi', pickers.lsp_implementations, { desc = "Goto type implementation" })
 vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
 vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
 vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
@@ -458,8 +459,15 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 			desc = "Clear All the References",
 		})
 	end
-end
-})
+	if client.server_capabilities.codeLensProvider then
+		vim.keymap.set('n', '<leader>l', vim.lsp.codelens.run, { desc = "Run codelens" })
+		vim.api.nvim_create_autocmd({ "CursorMoved" }, {
+			callback = vim.lsp.codelens.refresh,
+			buffer = bufnr,
+			desc = "Refresh codelens actions",
+		})
+	end
+end })
 
 -- needs nvim 11
 --[[
