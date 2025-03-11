@@ -542,6 +542,31 @@ function rustfmt_is_nightly()
 	return version():endswith '-nightly'
 end
 
+local function expand_config_variables(option)
+	local var_placeholders = {
+		['${workspaceFolder}'] = function(_)
+			return vim.lsp.buf.list_workspace_folders()[1]
+		end,
+	}
+
+	if type(option) == "table" then
+		local mt = getmetatable(option)
+		local result = {}
+		for k, v in pairs(option) do
+			result[expand_config_variables(k)] = expand_config_variables(v)
+		end
+		return setmetatable(result, mt)
+	end
+	if type(option) ~= "string" then
+		return option
+	end
+	local ret = option
+	for key, fn in pairs(var_placeholders) do
+		ret = ret:gsub(key, fn)
+	end
+	return ret
+end
+
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 lspconfig.rust_analyzer.setup {
 	settings = settings,
@@ -561,7 +586,7 @@ lspconfig.rust_analyzer.setup {
 		if fs_exists(config) then
 			file = io.open(config)
 			json = vim.json.decode(file:read("*a"))
-			client.config.settings["rust-analyzer"] = json.lsp["rust-analyzer"].initialization_options
+			client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
 			client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
 		end
 
