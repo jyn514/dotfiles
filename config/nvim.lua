@@ -233,6 +233,7 @@ if first_run then
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		'mfussenegger/nvim-dap',    -- debugging
 		{ "rcarriga/nvim-dap-ui", dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
+		'nvim-telescope/telescope-ui-select.nvim'
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 		-- https://github.com/amitds1997/remote-nvim.nvim looks promising
 	}, { install = { missing = true }, rocks = { enabled = false } })
@@ -252,13 +253,24 @@ vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 vim.cmd.colorscheme 'alabaster-black'
 
-require('telescope').setup {
+local telescope = require('telescope')
+telescope.setup {
 	defaults = { mappings = {
 		n = {
 			["<C-c>"] = require('telescope.actions').close
 		}
-	} }
+	} },
+	extensions = {
+		["ui-select"] = {
+			vim.tbl_deep_extend("force", require'telescope.themes'.get_ivy(), {
+				layout_config = {
+					height = { .1, min = 5 },
+				}
+			})
+		}
+	}
 }
+telescope.load_extension 'ui-select'
 
 local pickers = require('telescope.builtin')
 vim.keymap.set('n', '<leader>b', function() pickers.buffers({ sort_mru = true, ignore_current_buffer = true }) end, { desc = "Open buffer picker" })
