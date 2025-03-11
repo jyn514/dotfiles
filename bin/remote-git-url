@@ -8,7 +8,10 @@ file=$1
 orig_line=$2
 contents=$(head -n "$orig_line" "$file" | tail -n1)
 if ! remote=$(git remote | grep '^upstream$'); then remote=origin; fi
-out=$(git grep --line-number --heading --fixed-strings -e "$contents" $(git rev-list --remotes "$remote/HEAD~^!") -- "$file" | head -n2)
+git remote set-head --auto "$remote" >/dev/null
+# git grep doesn't allow specifying commits in remotes, apparently.
+# https://git-scm.com/docs/gitrevisions#Documentation/gitrevisions.txt-emltrevgtemegemHEADem-1
+out=$(git grep --line-number --heading --fixed-strings -e "$contents" $(git rev-list --remotes "$remote"'/HEAD~^!') -- "$file" | head -n2)
 commit=$(echo "$out" | head -n1 | cut -d: -f1)
 # the line number may have changed in a past commit
 line=$(echo "$out" | tail -n1 | cut -d: -f1)
@@ -43,6 +46,6 @@ if [ "${DISPLAY:-}" ]; then
 	xdg-open $url
 else
 	s=1
-	echo "$url" >&2
+	echo "$url"
 fi
 exit $s

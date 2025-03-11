@@ -181,6 +181,9 @@ vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
 	if out.stderr ~= '' then
 		error(out.stderr)
 	end
+	if out.stdout ~= '' then
+		vim.notify(out.stdout)
+	end
 end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
 
 -- https://vi.stackexchange.com/a/33221
