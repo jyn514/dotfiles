@@ -45,6 +45,7 @@ zsh-defer source $antibody/cache.sh
 # TODO: antibody doesn't actually support loading multiple plugins in this way, lol.
 # maybe antidote will work better
 # zsh-defer -c 'antibody bundle $plugins'
+zsh-defer bindkey '^[l' autosuggest-execute
 zsh-defer abbr import-aliases --session --quiet
 
 # space expands !... history and abbreviations
@@ -72,7 +73,7 @@ unalias ls la ll l alert 2>/dev/null
 emulate zsh
 
 pure_shell() {
-   env -i HOME="$HOME" TERM="$TERM" PS1='; ' zsh --no-rcs --no-globalrcs
+   env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" zsh --no-rcs --no-globalrcs
 }
 
 autoload -Uz promptinit
@@ -153,8 +154,6 @@ bindkey "\e[1;5C" forward-word
 # by analogy with ^H
 # this overrides clear-screen, but i don't care about clear-screen
 bindkey "^L" delete-word
-bindkey "^[h" backward-word
-bindkey "^[l" forward-word
 # these are backwards because i have them bound to vi keys
 bindkey "${termcap[kN]}" backward-word
 bindkey "${termcap[kP]}" forward-word
