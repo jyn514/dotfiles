@@ -22,3 +22,4 @@ gdbearlyinit=.config/gdb/gdbearlyinit
 nvim.lua=.config/nvim/init.lua
 nvim-ayu-evolve.lua=.config/nvim/colors/ayu-evolve.lua
 mumps.vim=.config/nvim/syntax/mumps.vim
+atuin.toml=.config/atuin/config.toml
