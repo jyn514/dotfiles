@@ -120,6 +120,7 @@ alias yts=youtube_search
 alias ytd=yt-dlp
 alias cls=clear
 alias c=cargo
+alias m=make
 alias g=git
 alias o=open
 alias v=nvim
@@ -526,14 +527,14 @@ git_info() {
 
 	# see if this is a remote branch
 	# note this prioritizes origin/HEAD over origin/main
-	r=$(git show-ref | grep ^"$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
+	r=$(git show-ref | grep "^$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
 	if [ "$r" ]; then
 		echo "$r"
 		return
 	fi
 
 	# see if this is a detached local branch
-	l=$(git show-ref | grep ^"$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
+	l=$(git show-ref | grep "^$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
 	if [ "$l" ]; then
 		echo "(detached at $l)"
 		return
