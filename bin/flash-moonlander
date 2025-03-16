@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+verbose() {
+	if [ "${V:-}" = 1 ]; then
+		"$@"
+	fi
+}
+
+verbose set -x
+
+cd "$(dirname "$0")"
+
+qmk=~/src/qmk_firmware
+if ! command -v qmk >/dev/null 2>&1; then
+	pip install --user qmk
+fi
+if ! [ -d $qmk ]; then
+	qmk setup zsa/qmk_firmware -b firmware24 -H $qmk
+fi
+
+layout=$(curl -s https://jyn.dev/keyboard/ | pup  --color 'meta[http-equiv="refresh"] attr{content}' | sed -E 's#.*moonlander/layouts/([^/]+)/.*#\1#')
+
+revision=$(curl -s https://oryx.zsa.io/graphql --compressed -H 'content-type: application/json' --data-raw '{"operationName":"getLayout","variables":{"hashId":"'"$layout"'","geometry":"moonlander","revisionId":"latest"},"query":"'"$(tr '\n' ' ' < ../lib/oryx.graphql)\"}" | jq -r .data.layout.revision.hashId)
+
+dst=$HOME/.local/share/oryx
+archive=$dst/$revision.zip
+if ! [ -e "$archive" ]; then
+	mkdir -p "$dst"
+	curl https://oryx.zsa.io/source/"$revision" -o "$archive"
+fi
+
+revision_name=$layout-$revision
+layout_dst=$qmk/keyboards/zsa/moonlander/keymaps/$revision_name
+if ! [ -e "$layout_dst" ]; then
+	cd "$(mktemp -d -t oryx-EeeRZ6-XXXXXXX)"
+	unzip "$archive"
+	mv zsa_moonlander_*_source "$layout_dst"
+fi
+
+# CHANGES GO HERE
+sed -i 's/SS_DELAY(100)/SS_DELAY(5)/g' "$layout_dst/keymap.c"
+
+cd "$qmk"
+if ! [ -e "zsa_moonlander_$revision_name.bin" ]; then
+	qmk compile -kb moonlander -km "$revision_name"
+fi
+
+PYTHONWARNINGS=ignore qmk flash -kb moonlander -km "$revision_name" -e SILENT=true

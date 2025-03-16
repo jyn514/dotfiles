@@ -1,0 +1,7 @@
+query getLayout($hashId: String!, $revisionId: String!, $geometry: String) {
+  layout(hashId: $hashId, geometry: $geometry, revisionId: $revisionId) {
+    revision {
+      hashId
+    }
+  }
+}
