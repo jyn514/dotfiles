@@ -240,13 +240,30 @@ if first_run then
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		'mfussenegger/nvim-dap',    -- debugging
 		{ "rcarriga/nvim-dap-ui", dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
-		'nvim-telescope/telescope-ui-select.nvim'
+		'nvim-telescope/telescope-ui-select.nvim',
+		{'hrsh7th/cmp-cmdline', dependencies = 'hrsh7th/nvim-cmp' },
+
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
-		-- https://github.com/amitds1997/remote-nvim.nvim looks promising
+
+		-- not going to bother setting this up until https://github.com/neovim/neovim/issues/24690 is fixed
+		-- https://github.com/amitds1997/remote-nvim.nvim
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
 
 vim.g.alabaster_dim_comments = true
+
+cmp = require 'cmp'
+cmp.setup {
+	snippet = { expand = function(args) vim.snippet.expand(args.body) end },
+}
+cmp.setup.cmdline(':', {
+	mapping = cmp.mapping.preset.cmdline(),
+	sources = cmp.config.sources(
+		{{ name = 'path' }},
+		{{ name = 'cmdline' }}
+	),
+	matching = { disallow_symbol_nonprefix_matching = false }
+})
 
 require('Comment').setup()
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
