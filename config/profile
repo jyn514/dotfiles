@@ -14,6 +14,8 @@ export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
+export GOPATH=~/.local/lib/go
+export GOBIN="$GOPATH/bin"
 # less documents that it searches here by default, but the docs are wrong
 export LESSKEYIN="$HOME/.config/lesskey"
 
@@ -31,6 +33,7 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	add_path "$SNAPD_BIN"
 	unset snap_bin
 fi
+add_path "$GOBIN"
 add_path "$CARGO_HOME"/bin
 
 DOTFILES=$(dirname "$(realpath ~/.profile)")/..
@@ -378,8 +381,6 @@ export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
 export BAT_STYLE=changes,header,rule
-export GOPATH=~/.local/lib/go
-export GOBIN="$GOPATH/bin"
 export CARGO_MOMMYS_MOODS=ominous
 export FZF_DEFAULT_OPTS='--cycle --exit-0 --select-1 --preview-window=wrap'
 
