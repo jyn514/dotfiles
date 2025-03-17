@@ -605,6 +605,7 @@ end
 
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 lspconfig.rust_analyzer.setup {
+	cmd = { "rust-analyzer", "+nightly" },
 	settings = settings,
 	root_dir = function()
 		default = lspconfig.rust_analyzer.config_def.default_config.root_dir()
