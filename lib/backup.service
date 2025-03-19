@@ -1,0 +1,15 @@
+# sudo ln lib/backup.* /etc/systemd/system
+# journalctl --unit backup
+
+[Unit]
+Description="Backup google drive"
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/jyn/src/dotfiles/bin/backup 
+User=restic
+
+[Install]
+WantedBy=multi-user.target

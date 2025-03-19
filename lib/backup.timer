@@ -1,0 +1,11 @@
+[Unit]
+Description="Run backups every hour"
+
+[Timer]
+# give enough time to unlock disk
+OnBootSec=2min
+OnUnitActiveSec=1h
+Unit=backup.service
+
+[Install]
+WantedBy=multi-user.target
