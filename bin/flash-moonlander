@@ -32,8 +32,8 @@ fi
 
 revision_name=$layout-$revision
 layout_dst=$qmk/keyboards/zsa/moonlander/keymaps/$revision_name
-rm -r "$layout_dst"
-cd "$(mktemp -d -t oryx-EeeRZ6-XXXXXXX)"
+rm -rf "$layout_dst"
+cd "$(mktemp -d -t oryx-"$revision_name"-XXXXXXX)"
 unzip "$archive"
 mv zsa_moonlander_*_source "$layout_dst"
 
