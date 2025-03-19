@@ -32,15 +32,24 @@ fi
 
 revision_name=$layout-$revision
 layout_dst=$qmk/keyboards/zsa/moonlander/keymaps/$revision_name
-if ! [ -e "$layout_dst" ]; then
-	cd "$(mktemp -d -t oryx-EeeRZ6-XXXXXXX)"
-	unzip "$archive"
-	mv zsa_moonlander_*_source "$layout_dst"
-fi
+rm -r "$layout_dst"
+cd "$(mktemp -d -t oryx-EeeRZ6-XXXXXXX)"
+unzip "$archive"
+mv zsa_moonlander_*_source "$layout_dst"
 
 # CHANGES GO HERE
 sed -i 's/SS_DELAY(100)/SS_DELAY(5)/g' "$layout_dst/keymap.c"
 
+# ```\n{cursor}\n```
+macro=$(echo 'SEND_STRING(
+	SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5)
+	SS_TAP(X_ENTER) SS_DELAY(5) SS_TAP(X_ENTER) SS_DELAY(5)
+	SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5)
+	SS_TAP(X_UP)
+);' | tr '\n' ' ' | tr -d '\t')
+sed -i "s/SEND_STRING(SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*/$macro/" "$layout_dst/keymap.c"
+
+# compile and flash
 cd "$qmk"
 if ! [ -e "zsa_moonlander_$revision_name.bin" ]; then
 	qmk compile -kb moonlander -km "$revision_name"
