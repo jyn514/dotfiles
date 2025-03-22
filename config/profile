@@ -116,8 +116,9 @@ HEAD() {
 }
 
 mkcd () { mkdir -p "$@" && cd "$1"; }
-e() { $EDITOR "$@"; }
 
+alias e=$EDITOR
+alias E=hx-hax
 alias mkdc=mkcd
 alias yts=youtube_search
 alias ytd=yt-dlp
@@ -127,6 +128,7 @@ alias m=make
 alias g=git
 alias o=open
 alias v=nvim
+alias y=build/yottadb
 # uppercase is bad and it should feel bad
 alias r=R
 # NOTE: this *must not* be an external process.
