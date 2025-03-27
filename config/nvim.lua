@@ -20,6 +20,11 @@ vim.opt.title = true  -- allows S-d to search for a file
 -- see `:help zo` for keybinds
 vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
 
+vim.opt.foldlevelstart = 1
+vim.opt.foldminlines = 2
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.lsp.foldexpr()"
+
 vim.opt.list = true
 vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
 -- shows :s/foo/bar preview live
@@ -542,7 +547,6 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 end })
 
 -- needs nvim 11
---[[
 vim.api.nvim_create_autocmd('LspNotify', {
 	callback = function(args)
 		if args.data.method == 'textDocument/didOpen' then
@@ -550,7 +554,6 @@ vim.api.nvim_create_autocmd('LspNotify', {
 		end
 	end,
 } )
-]]
 
 ---- specific LSPs ----
 require('vim.lsp.log').set_format_func(vim.inspect)
