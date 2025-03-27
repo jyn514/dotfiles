@@ -18,8 +18,6 @@ length=$(( ${3:-$2} - $2 + 1 ))
 contents=$(head -n "$((orig_start + length - 1))" "$file" | tail -n $length)
 if ! remote=$(git remote | grep '^upstream$'); then remote=origin; fi
 git remote set-head --auto "$remote" >/dev/null
-# git grep doesn't allow specifying commits in remotes, apparently.
-# https://git-scm.com/docs/gitrevisions#Documentation/gitrevisions.txt-emltrevgtemegemHEADem-1
 # TODO: for multi-line ranges, require all lines to match, not just the first.
 # This is hard because git doesn't support it (it treats newlines as an OR operator).
 # Probably we need to do something like:
@@ -35,6 +33,8 @@ git remote set-head --auto "$remote" >/dev/null
 # ```
 # but that's annoying to do in bash, so for now just match the first line.
 contents=$(echo "$contents" | head -n1)
+# git grep doesn't allow specifying commits in remotes, apparently.
+# https://git-scm.com/docs/gitrevisions#Documentation/gitrevisions.txt-emltrevgtemegemHEADem-1
 out=$(git grep --line-number --heading --fixed-strings -e "$contents" $(git rev-list --remotes "$remote"'/HEAD~^!') -- "$file" | head -n2)
 commit=$(echo "$out" | head -n1 | cut -d: -f1)
 # the line number may have changed in a past commit
