@@ -210,12 +210,17 @@ setup_install_local () {
 	fi
 
 	# We use a bunch of features that are only in nvim 10.
-	if ! exists nvim; then
-		nvim=$(download https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz)
+	if exists nvim; then
+		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
+	fi
+	wanted_version=v0.11.0
+	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
+		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
 		libdir=$HOME/.local/lib
+		rm -rf "$libdir"/nvim-linux-x86_64
 		mkdir -p "$libdir"
 		tar -C "$libdir" -xf "$nvim"
-		ln -s "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
+		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
 	fi
 
 	if ! [ -d ~/.local/lib/PowerShellEditorServices ]; then
