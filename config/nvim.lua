@@ -193,6 +193,34 @@ vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
 	end
 end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
 
+-- autosave on cursor hold
+local timers = {}
+function autosave_enable()
+	local buf = vim.api.nvim_get_current_buf()
+	if timers[buf] then
+		return
+	end
+
+	local buf_name = vim.fn.expand '%'
+	print("autosaving "..buf_name)
+	timers[buf] = vim.api.nvim_create_autocmd("CursorHold", {
+		desc = "Save "..buf_name.." on change",
+		callback = function()
+			vim.api.nvim_buf_call(buf, function() vim.cmd "silent update" end)
+	end })
+end
+vim.api.nvim_create_user_command('AutoSave', autosave_enable, {desc = "Start saving each second on change"})
+
+function autosave_disable()
+	local buf = vim.api.nvim_get_current_buf()
+	local cmd = timers[buf]
+	if cmd then
+		vim.api.nvim_del_autocmd(cmd)
+		table.remove(timers, buf)
+	end
+end
+vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
+
 -- https://vi.stackexchange.com/a/33221
 function abbrev(lhs, rhs)
 	vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
@@ -205,6 +233,7 @@ abbrev('bc', 'BufferDelete')
 abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
 abbrev('url', 'OpenRemoteUrl')
+abbrev('as', 'AutoSave')
 
 -- disable some warnings
 vim.g.loaded_node_provider = 0
