@@ -258,7 +258,7 @@ if first_run then
 				-- Load luvit types when the `vim.uv` word is found
 				library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
 		} },
-		'tpope/vim-obsession',  -- session save/resume. TODO: run this automatically
+		'tpope/vim-obsession',  -- session save/resume
 		'numToStr/Comment.nvim',
 		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },  -- general picker
 		'kosayoda/nvim-lightbulb',
@@ -363,10 +363,11 @@ MiniStatusline.setup {
 
 			local pos = vim.fn.getcurpos()
 			local location = pos[2]..':'..pos[3]
+			local session = vim.fn.ObsessionStatus('⏵', '⏸')
 
 			return MiniStatusline.combine_groups({
 				{ hl = 'Normal', strings = { filename } },
-				{ hl = 'Conceal',  strings = { git, diff, diagnostics, lsp } },
+				{ hl = 'Conceal',  strings = { git, diff, diagnostics, lsp, session } },
 				'%<', -- Mark general truncate point
 				'%=', -- End left alignment
 				{ hl = 'Conceal', strings = { fileinfo, location } },
@@ -695,3 +696,8 @@ lspconfig.rust_analyzer.setup {
 
 local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
+
+-- begin saving session immediately on startup
+if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('Session.vim') then
+	vim.cmd.Obsess()
+end

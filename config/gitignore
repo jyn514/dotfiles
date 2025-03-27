@@ -1,6 +1,7 @@
 /bacon.toml
 .ipynb_checkpoints/
 __pycache__
+Session.vim
 tmp
 temp
 node_modules
