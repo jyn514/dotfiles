@@ -18,7 +18,7 @@
 
 ## Runtime ##
 
-#sudo -u restic backup --dry-run
+#sudo -u restic $(which backup) --dry-run
 
 set -eu
 . ~jyn/.local/config/restic.env

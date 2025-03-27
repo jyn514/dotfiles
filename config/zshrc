@@ -88,6 +88,7 @@ setopt incappendhistory
 setopt autocd
 # store all directories into the directory stack automatically
 setopt autopushd
+setopt interactive_comments
 
 # save command in buffer before executing
 bindkey "^Q" push-line

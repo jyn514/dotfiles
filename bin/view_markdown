@@ -20,4 +20,4 @@ open_html() {
 	return 1
 }
 
-pulldown-cmark < "$1" > tmp.html && open_html tmp.html && sleep 1 && rm -f tmp.html
+pulldown-cmark -TFSLPHMG < "$1" > tmp.html && open_html tmp.html && sleep 1 && rm -f tmp.html

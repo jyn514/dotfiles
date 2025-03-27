@@ -139,6 +139,8 @@ alias dc=docker-compose
 alias compose=docker-compose
 alias powershell=pwsh
 
+# you might also want to pass `-C` for context
+diff () { command diff --color "$@"; }
 
 # follow symlinks by default
 rg () { command rg -z -L --no-heading "$@"; }

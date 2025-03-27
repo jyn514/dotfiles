@@ -30,6 +30,7 @@ vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
 -- shows :s/foo/bar preview live
 vim.opt.inccommand = 'split'
 
+-- TODO: OSC 52 (`:h clipboard-osc52`)
 vim.cmd.set('clipboard=unnamed')
 
 vim.api.nvim_create_autocmd('TextYankPost', {
@@ -125,7 +126,6 @@ end, { desc = "Run `make test`" })
 
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
--- TODO: this reopens closed buffers lol
 vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind
 vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" }) -- overwrites `nv` keybind
 vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) -- overwrites "paste before cursor"
@@ -363,7 +363,7 @@ MiniStatusline.setup {
 			local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
 			local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
 			local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
-			local filename      = MiniStatusline.section_filename({ trunc_width = 140 })
+			local filename      = '%f%m%r'  -- always use relative filepath, to make it easier to notice when editing a file not in the LSP workspace
 			local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
 
 			local pos = vim.fn.getcurpos()
@@ -504,6 +504,7 @@ vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file"
 
 vim.api.nvim_create_autocmd("User", {
 	pattern = "TelescopePreviewerLoaded",
+	-- make previews show less space and more text
 	callback = function(args)
 		vim.wo.wrap = true
 		vim.cmd.normal("zs")
