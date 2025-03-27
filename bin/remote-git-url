@@ -1,16 +1,33 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -eu
 
-if ! [ $# = 2 ]; then echo "usage: $0 <file> <line>"; exit 1; fi
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: $0 <file> <line-start> [<line-end>]"; exit 1; fi
 
 s=0
-file=$1
-orig_line=$2
-contents=$(head -n "$orig_line" "$file" | tail -n1)
+orig_file=${1#*$(pwd)/}  # https://stackoverflow.com/a/20615306
+file=$(realpath $1)
+orig_start=$2
+length=$(( ${3:-$2} - $2 + 1 ))
+contents=$(head -n "$((orig_start + length - 1))" "$file" | tail -n $length)
 if ! remote=$(git remote | grep '^upstream$'); then remote=origin; fi
 git remote set-head --auto "$remote" >/dev/null
 # git grep doesn't allow specifying commits in remotes, apparently.
 # https://git-scm.com/docs/gitrevisions#Documentation/gitrevisions.txt-emltrevgtemegemHEADem-1
+# TODO: for multi-line ranges, require all lines to match, not just the first.
+# This is hard because git doesn't support it (it treats newlines as an OR operator).
+# Probably we need to do something like:
+# ```
+# matches = 0
+# for each line:
+#   if line is commit:
+#     matches = 0
+#     break
+#   matches += 1
+#   if matches == length:
+#     break
+# ```
+# but that's annoying to do in bash, so for now just match the first line.
+contents=$(echo "$contents" | head -n1)
 out=$(git grep --line-number --heading --fixed-strings -e "$contents" $(git rev-list --remotes "$remote"'/HEAD~^!') -- "$file" | head -n2)
 commit=$(echo "$out" | head -n1 | cut -d: -f1)
 # the line number may have changed in a past commit
@@ -19,9 +36,9 @@ line=$(echo "$out" | tail -n1 | cut -d: -f1)
 if ! [ "$commit" ]; then
 	# this line isn't present anywhere upstream, only in a local branch.
 	# use the default branch, but give a hint that this won't work as expected
-	commit=$(git default-branch)
-	line=$orig_line
-	echo "warning: $file:$line does not exist in upstream" >&2
+	commit=HEAD
+	line=$orig_start
+	echo "warning: $orig_file:$line does not exist in upstream" >&2
 	s=1
 fi
 
@@ -32,9 +49,15 @@ repo=$(echo $upstream | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1
 
 case "$upstream" in
 	*github.com*)
-		url="https://github.com/$repo/blob/$commit/$relative#L$line"
+		if [ $length -ne 1 ]; then
+			end=-L$((line + length - 1))
+		fi
+		url="https://github.com/$repo/blob/$commit/$relative#L$line$end"
 		;;
 	*gitlab.com*)
+		if [ $length -ne 1 ]; then
+			end=-$((line + length - 1))
+		fi
 		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line"
 		;;
 	*) echo unsupported upstream "$upstream" >&2; s=2 ;;

@@ -182,16 +182,18 @@ end
 vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
 	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
 vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
-	local line = vim.api.nvim_win_get_cursor(0)[1]
 	local file = vim.api.nvim_buf_get_name(0)
-	local out = vim.system({'remote-git-url', file, tostring(line)}, {text=true}):wait()
+	local out = vim.system({'remote-git-url', file, tostring(info.line1), tostring(info.line2)}, {text=true}):wait()
 	if out.stderr ~= '' then
 		error(out.stderr)
 	end
 	if out.stdout ~= '' then
 		vim.notify(out.stdout)
 	end
-end, { desc = "Open the current line on a git host at the last commit at which it was modified" })
+end, {
+	range = true,
+	desc = "Open the current line on a git host at the last commit at which it was modified"
+})
 
 -- autosave on cursor hold
 local timers = {}
