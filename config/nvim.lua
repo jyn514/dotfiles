@@ -295,6 +295,10 @@ cmp.setup.cmdline(':', {
 })
 
 require('Comment').setup()
+local ft_comment = require('Comment.ft')
+-- require('Comment.ft').set('dl', {'//%s', '/*%s*/'})
+ft_comment.set('flix', ft_comment.get('c'))
+ft_comment.set('rhombus', ft_comment.get('c'))
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
 vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 -- TODO: find a way to only comment out the selected region
@@ -549,18 +553,45 @@ vim.api.nvim_create_autocmd('LspNotify', {
 require('vim.lsp.log').set_format_func(vim.inspect)
 
 local lspconfig = require('lspconfig')
+local lsplang = require('lspconfig.configs')
+
+if not lsplang.rhombus then
+	lsplang.rhombus = {
+		default_config = {
+			cmd = {"racket",  "-l", "racket-langserver"},
+			filetypes = { "rhombus" },
+			root_dir = vim.fs.dirname,
+			settings = {},
+		},
+	}
+end
 
 lspconfig.clangd.setup {}
 lspconfig.bashls.setup {}
 lspconfig.pylsp.setup {}
-
 lspconfig.uiua.setup {}
-vim.filetype.add { extension = { ua = 'uiua' } }
-vim.filetype.add { extension = { m = 'mumps' } }
+lspconfig.rhombus.setup {}
+lspconfig.flix.setup {
+	on_attach = function(client , bufnr)
+		client.commands["flix.runMain"] = function(command, context)
+			vim.cmd("terminal flix run")
+		end
+	end
+}
+
+vim.filetype.add { extension = {
+	m     = 'mumps',
+	-- dl = 'dl', //%s
+	ua    = 'uiua',
+	rhm   = 'rhombus',
+	flix  = 'flix',
+} }
 vim.api.nvim_create_autocmd("FileType", { callback = function()
 	local ft = vim.bo.filetype
 	if ft == "uiua" then
 		vim.bo.commentstring = '#%s'
+	elseif ft == "rhombus" then
+		vim.bo.commentstring = '//%s'
 	elseif ft == "mumps" then
 		vim.bo.commentstring = ';%s'
 		vim.cmd('highlight! link Keyword Special')
