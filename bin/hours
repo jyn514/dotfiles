@@ -2,8 +2,14 @@
 
 from sys import stdin
 
+# python < 3.9 compat
+def removesuffix(s, suffix):
+    if s.endswith(suffix):
+        return s[:-suffix.len()]
+    return s
+
 def parse_hhmm(t):
-	t = t.removesuffix("AM").removesuffix("PM")
+	t = removesuffix(removesuffix(t, "AM"), "PM")
 	if ":" in t:
 		return (int(c.strip()) for c in t.split(":"))
 	else:
