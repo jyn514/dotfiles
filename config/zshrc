@@ -18,6 +18,16 @@ ZSH_PROFILE_READ=1
 
 alias help=run-help
 
+# Set "$0" to zsh, not .profile
+emulate sh
+# Perform command substitution when evaluating prompt
+setopt PROMPT_SUBST
+# remove conflicting aliases
+unalias ls la ll l alert ip .. 2>/dev/null
+# Set up the prompt
+. ~/.profile
+emulate zsh
+
 ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 ABBR_AUTOLOAD=0
 
@@ -61,16 +71,6 @@ zsh-defer bindkey ' ' extra-magic-space
 alias -g stauts=status
 alias -g serach=search
 alias -g searhc=search
-
-# Set "$0" to zsh, not .profile
-emulate sh
-# Perform command substitution when evaluating prompt
-setopt PROMPT_SUBST
-# remove conflicting aliases
-unalias ls la ll l alert 2>/dev/null
-# Set up the prompt
-. ~/.profile
-emulate zsh
 
 pure_shell() {
    env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" zsh --no-rcs --no-globalrcs

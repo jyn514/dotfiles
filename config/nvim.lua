@@ -71,7 +71,11 @@ indentgroup('lua', function() hard_tabs(2) end)
 indentgroup('sh', function() hard_tabs(2) end)
 indentgroup('rust', function() spaces(4) end)
 indentgroup('toml', function() spaces(4) end)
-indentgroup('c', function() hard_tabs(8) end)
+indentgroup('c', function()
+	hard_tabs(8)
+	vim.wo.colorcolumn = '132'
+	vim.bo.textwidth = 132
+end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 indentgroup('cpp', function() spaces(2) end)
 
@@ -123,6 +127,10 @@ vim.keymap.set('n', '<leader>t', function()
 	vim.cmd.make('test')
 end, { desc = "Run `make test`" })
 -- TODO: add ninja output to `errorformat` (see `:h efm-ignore`)
+
+-- add some emacs keybinds
+vim.keymap.set('i', '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
+vim.keymap.set('i', '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
 
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
@@ -229,6 +237,7 @@ end
 vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
 
 -- https://vi.stackexchange.com/a/33221
+-- TODO: only expand this if it's the single thing in a line
 function abbrev(lhs, rhs)
 	vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
 end
@@ -304,7 +313,7 @@ cmp.setup.cmdline(':', {
 require('Comment').setup()
 local ft_comment = require('Comment.ft')
 -- require('Comment.ft').set('dl', {'//%s', '/*%s*/'})
-ft_comment.set('flix', ft_comment.get('c'))
+-- ft_comment.set('flix', ft_comment.get('c'))
 ft_comment.set('rhombus', ft_comment.get('c'))
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
 vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
@@ -547,14 +556,15 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 	end
 end })
 
--- needs nvim 11
-vim.api.nvim_create_autocmd('LspNotify', {
-	callback = function(args)
-		if args.data.method == 'textDocument/didOpen' then
-			vim.lsp.foldclose('imports', vim.fn.bufwinid(args.buf))
-		end
-	end,
-} )
+if vim.fn.has('nvim-0.11') == 1 then
+	vim.api.nvim_create_autocmd('LspNotify', {
+		callback = function(args)
+			if args.data.method == 'textDocument/didOpen' then
+				vim.lsp.foldclose('imports', vim.fn.bufwinid(args.buf))
+			end
+		end,
+	} )
+end
 
 ---- specific LSPs ----
 require('vim.lsp.log').set_format_func(vim.inspect)
@@ -578,13 +588,13 @@ lspconfig.bashls.setup {}
 lspconfig.pylsp.setup {}
 lspconfig.uiua.setup {}
 lspconfig.rhombus.setup {}
-lspconfig.flix.setup {
-	on_attach = function(client , bufnr)
-		client.commands["flix.runMain"] = function(command, context)
-			vim.cmd("terminal flix run")
-		end
-	end
-}
+-- lspconfig.flix.setup {
+-- 	on_attach = function(client , bufnr)
+-- 		client.commands["flix.runMain"] = function(command, context)
+-- 			vim.cmd("terminal flix run")
+-- 		end
+-- 	end
+--}
 
 vim.filetype.add { extension = {
 	m     = 'mumps',

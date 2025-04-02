@@ -49,13 +49,13 @@
 	stat = l --stat upstream..
 	branch-log = !git l $(git merge-base HEAD upstream/HEAD)..
 	graph = l --all
+	signed = log --show-signature --oneline upstream..
 	pf = push --force-with-lease
 	r = remote
 	s = status -sb
 	t = tag
 	v = !git --version
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
-	signed = log --show-signature
 	# https://stackoverflow.com/questions/3161204/how-to-find-the-nearest-parent-of-a-git-branch
 	parent = !git show-branch --topo-order --current "upstream/*" | grep -v "^\\s*!" | grep "refs/remotes/upstream/" | grep "^[^\\[]*\\*" | head -n1 | grep -Eo "refs/remotes/upstream/[^]]*" | xargs git rev-parse --symbolic-full-name
 	# TODO: write a script that uses `log` instead so i can pass `--reverse`
@@ -116,6 +116,8 @@
 
 [url "git@github.com:"]
     pushInsteadOf = https://github.com/
+[url "git@gitlab.com:"]
+    pushInsteadOf = https://gitlab.com/
 
 # TODO: figure out what this does lol
 [core]

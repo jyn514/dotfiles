@@ -90,6 +90,10 @@ install_features () {
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
 		apk add less py3-pip zsh
+	# SUSE
+	#zypper addrepo https://cli.github.com/packages/rpm/gh-cli.repo
+	#zypper ref
+	#zypper install gh
 	fi
 }
 
