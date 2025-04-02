@@ -7,6 +7,13 @@ s=0
 orig_file=${1#*$(pwd)/}  # https://stackoverflow.com/a/20615306
 file=$(realpath $1)
 orig_start=$2
+
+cd $(dirname $file)
+if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+	echo "unknown git repo for $file" >&2
+	exit 1
+fi
+
 length=$(( ${3:-$2} - $2 + 1 ))
 contents=$(head -n "$((orig_start + length - 1))" "$file" | tail -n $length)
 if ! remote=$(git remote | grep '^upstream$'); then remote=origin; fi
