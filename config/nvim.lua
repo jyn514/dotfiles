@@ -2,6 +2,7 @@
 ---
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
+-- use `vim --startuptime vim.log +qall; cat vim.log` to profile startup
 
 ---- Options ----
 
@@ -497,6 +498,7 @@ dap.listeners.before.event_terminated.dapui_config = dapui.close
 dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
+vim.diagnostic.config({ virtual_text = true })
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
 vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
