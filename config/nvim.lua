@@ -431,7 +431,8 @@ local dap = require('dap')
 dap.adapters.cppdbg = {
   id = 'cppdbg',
   type = 'executable',
-  command = '/home/jyn/.local/share/nvim/lazy/vimspector/gadgets/linux/vscode-cpptools/debugAdapters/bin/OpenDebugAD7',
+	-- https://github.com/mfussenegger/nvim-dap/wiki/C-C---Rust-(gdb-via--vscode-cpptools)#installation
+  command = '/home/jyn/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
 }
 -- TODO: get rr integration working
 -- https://github.com/farre/midas/ looks promising

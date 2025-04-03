@@ -167,6 +167,14 @@ setup_install_local () {
 		lib/fx-install.sh
 	fi
 
+	# TODO: don't hard-code an arch lmao
+	cpp=~/.local/lib/cpptools
+	if ! [ -d $cpp ]; then
+		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
+		unzip "$vsix" -d $cpp
+		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
+	fi
+
 	if ! [ -e ~/.bash-preexec.sh ]; then
 		curl https://raw.githubusercontent.com/rcaloras/bash-preexec/master/bash-preexec.sh -o ~/.bash-preexec.sh
 	fi
