@@ -1,5 +1,10 @@
 #!/bin/sh
-data=$(xsel -o)
+data=$(xsel -o --primary)
 if [ "$data" ]; then
-	printf %s "$data" | xvkbd -xsendevent -file - -delay 0
-fi
+	# hack: pasting from primary works horribly in firefox
+	old=$(xsel -o --clipboard)
+	echo "$data" | xsel -i --clipboard
+	xdotool key --window $(xdotool getactivewindow) XF86Paste
+	sleep .1  # give firefox time to handle the event
+	echo "$old" | xsel -i --clipboard
+fi 2>&1 | tee /dev/stderr | logger -t paste
