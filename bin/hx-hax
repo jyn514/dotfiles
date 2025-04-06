@@ -61,7 +61,8 @@ sub hxhax {
     	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
   	`tmux send-keys -t $pane Escape`;
 	my $args = join ' ', @args;
-  	`tmux send-keys -t $pane ":open $args" Enter`;
+	my $cmd = $editor eq 'nvim' ? 'drop' : 'open';
+  	`tmux send-keys -t $pane ":$cmd $args" Enter`;
   	`tmux select-pane -t $pane -Z`;
   }
 
