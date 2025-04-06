@@ -59,13 +59,13 @@ case "$upstream" in
 		if [ $length -ne 1 ]; then
 			end=-L$((line + length - 1))
 		fi
-		url="https://github.com/$repo/blob/$commit/$relative#L$line$end"
+		url="https://github.com/$repo/blob/$commit/$relative#L$line${end:-}"
 		;;
 	*gitlab.com*)
 		if [ $length -ne 1 ]; then
 			end=-$((line + length - 1))
 		fi
-		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line"
+		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line${end:-}"
 		;;
 	*) echo unsupported upstream "$upstream" >&2; s=2 ;;
 esac
