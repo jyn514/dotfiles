@@ -1,4 +1,5 @@
 ---@diagnostic disable: lowercase-global
+---@diagnostic disable: missing-fields
 ---
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
@@ -21,7 +22,7 @@ vim.opt.title = true  -- allows M-d to search for a file
 -- see `:help zo` for keybinds
 vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
 
-vim.opt.foldlevelstart = 2
+vim.opt.foldlevelstart = 4
 vim.opt.foldminlines = 2
 vim.opt.foldmethod = "expr"
 vim.opt.foldexpr = "v:lua.vim.lsp.foldexpr()"
@@ -68,14 +69,21 @@ function spaces(count)
 	vim.bo.softtabstop = count
 	vim.bo.shiftwidth = count
 end
+function length(count)
+	vim.wo.colorcolumn = tostring(count)
+	vim.bo.textwidth = count
+end
 indentgroup('lua', function() hard_tabs(2) end)
 indentgroup('sh', function() hard_tabs(2) end)
 indentgroup('rust', function() spaces(4) end)
 indentgroup('toml', function() spaces(4) end)
 indentgroup('c', function()
 	hard_tabs(8)
-	vim.wo.colorcolumn = '132'
-	vim.bo.textwidth = 132
+	length(132)
+end)
+indentgroup('csh', function()
+	hard_tabs(8)
+	length(132)
 end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 indentgroup('cpp', function() spaces(2) end)
@@ -122,6 +130,9 @@ vim.keymap.set('', '<S-ScrollWheelDown>', '5zl', { desc = 'Scroll right' })
 vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
 vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page up' })
 vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page down' })
+
+vim.keymap.set('n', '<CR>', ':set paste<CR>o<Esc>:set nopaste<CR>', { desc = "insert newline below without indentation" })
+vim.keymap.set('n', '<S-CR>', ':set paste<CR>O<Esc>:set nopaste<CR>', { desc = "insert newline above without indentation" })
 
 vim.keymap.set('n', '<leader>t', function()
 	vim.cmd.wall()
