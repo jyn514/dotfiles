@@ -1,3 +1,5 @@
+set nocompatible
+
 call plug#begin('~/.vim/plugged')
 Plug 'mzlogin/vim-markdown-toc', { 'for': 'markdown' }
 Plug 'csexton/trailertrash.vim', { 'on': 'TrailerTrim' }
