@@ -52,7 +52,7 @@ sub hxhax {
       -F '#{pane_id}'`;
   unless (defined $pane) {
 	# don't use `` so that args can have embedded pipes
-	my @split = ('tmux', 'split-window', '-P', '-F', '"#{pane_id}"', $editor, @args);
+	my @split = ('tmux', 'split-window', '-h', '-P', '-F', '"#{pane_id}"', $editor, @args);
 	open(my $fd, '-|', @split) || die "can't open pipeline: $!";
 	$pane = <$fd>;
   } else {
