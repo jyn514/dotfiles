@@ -247,14 +247,18 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-ls () {
-	if command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
-		ls () { command ls -G --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
-	else
-		ls() { command ls "$@"; }
-	fi
-	ls "$@"
-}
+if exists fls; then
+	ls() { fls "$@"; }
+else
+	ls () {
+		if command ls --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
+			ls () { command ls --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
+		else
+			ls() { command ls "$@"; }
+		fi
+		ls "$@"
+	}
+fi
 
 ip() { command ip --color "$@"; }
 
