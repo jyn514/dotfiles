@@ -306,6 +306,9 @@ if first_run then
 		{ "rcarriga/nvim-dap-ui", dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
 		'nvim-telescope/telescope-ui-select.nvim',
 		{'hrsh7th/cmp-cmdline', dependencies = 'hrsh7th/nvim-cmp' },
+		{'nvim-treesitter/nvim-treesitter',
+			build = ':TSUpdate',
+			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects' }},
 
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 
@@ -328,6 +331,92 @@ cmp.setup.cmdline(':', {
 	),
 	matching = { disallow_symbol_nonprefix_matching = false }
 })
+
+local function ts(binds)
+	selections = {}
+	swaps = {
+		swap_next = {},
+		swap_previous = {},
+	}
+	moves = {
+		goto_next_start = {},
+		goto_next_end = {},
+		goto_previous_start = {},
+		goto_previous_end = {},
+	}
+	for bind, query in pairs(binds) do
+		outer = "@"..query..".outer"
+		inner = "@"..query..".inner"
+		upper = string.upper(bind)
+		if upper == bind then
+			error("don't know how to bind moves for"..bind)
+		end
+
+		selections["a"..bind] = outer
+		selections["i"..bind] = inner
+		swaps.swap_next["<leader>s"..bind] = inner
+		swaps.swap_previous["<leader>s"..upper] = inner
+		swaps.swap_next["<leader>S"..bind] = outer
+		swaps.swap_previous["<leader>S"..upper] = outer
+		moves.goto_next_start["]"..bind] = outer
+		moves.goto_next_end["]"..upper] = outer
+		moves.goto_previous_start["["..bind] = outer
+		moves.goto_previous_end["["..upper] = outer
+	end
+	return selections, swaps, moves
+end
+
+-- https://github.com/nvim-treesitter/nvim-treesitter-textobjects#built-in-textobjects
+selections, swaps, moves = ts {
+	f = 'function',
+	c = 'call',
+	l = 'loop',
+	r = 'return',
+	a = 'assignment',
+	-- mnemonic: "paraM"
+	m = 'parameter',
+	-- mnemonic: "If"
+	i = 'conditional',
+	-- mnemonic: "left of line" (same as 'h' in normal mode)
+	h = 'statement',
+	-- seems to work the same as function?
+	-- b = 'block',
+	-- doesn't work in lua; seems limited use outside JS
+	-- r = 'regex'
+	-- i don't use languages with classes lol
+	-- anyway this conflicts with @call
+	-- c = "class",
+}
+swaps.swap_previous["<leader>p"] = "@parameter.inner"
+swaps.swap_next["<leader>P"] = "@parameter.inner"
+swaps.swap_previous["<A-k>"] = "@statement.outer"
+swaps.swap_next["<A-j>"] = "@statement.outer"
+selections["in"] = "@number.inner"
+moves.goto_next_start["]n"] = "@number.inner"
+moves.goto_previous_start["[n"] = "@number.inner"
+-- just seems to highlight the whole file? or the nearest function.
+-- You can also use captures from other query groups like `locals.scm`
+-- selections["as"] = { query = "@local.scope", query_group = "locals", desc = "Select language scope" },
+
+
+treesitter = require 'nvim-treesitter.configs'
+treesitter.setup {
+	auto_install = true,
+	highlight = { enable = true },
+	indent = { enable = true },
+	-- incremental_selection = { enable = true },
+	textobjects = {
+		select = { enable = true, lookahead = true, keymaps = selections },
+		move = vim.tbl_extend('error', { enable = true, set_jumps = true }, moves),
+		swap = vim.tbl_extend('error', { enable = true }, swaps),
+		-- 	swap_next = { ["<leader>p"] = "@parameter.inner" },
+		-- 	swap_previous = { ["<leader>P"] = "@parameter.inner" },
+		-- }
+	},
+}
+local ts_repeat_move = require "nvim-treesitter.textobjects.repeatable_move"
+vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
+vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 
 require('Comment').setup()
 local ft_comment = require('Comment.ft')
@@ -525,8 +614,8 @@ vim.keymap.set('n', 'gy', pickers.lsp_type_definitions, { desc = "Goto type defi
 vim.keymap.set('n', 'gi', pickers.lsp_implementations, { desc = "Goto type implementation" })
 vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
 vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
-vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
-vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
+vim.keymap.set('n', '<leader>n', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
+vim.keymap.set('n', '<leader>N', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
 vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = "Show workspace diagnostics (errors)" })
 vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
