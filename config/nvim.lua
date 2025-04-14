@@ -4,6 +4,7 @@
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
 -- use `vim --startuptime vim.log +qall; cat vim.log` to profile startup
+-- use `:lua =SOMETABLE` to pretty print it
 
 ---- Options ----
 
@@ -63,16 +64,22 @@ function hard_tabs(count)
 	vim.bo.softtabstop = count
 	vim.bo.shiftwidth = count
 end
-function spaces(count)
-	vim.bo.expandtab = true
-	vim.bo.tabstop = 8
-	vim.bo.softtabstop = count
-	vim.bo.shiftwidth = count
+function spaces(count, global)
+	if global then
+		opt = vim.opt
+	else
+		opt = vim.bo
+	end
+	opt.expandtab = true
+	opt.tabstop = 8
+	opt.softtabstop = count
+	opt.shiftwidth = count
 end
 function length(count)
 	vim.wo.colorcolumn = tostring(count)
 	vim.bo.textwidth = count
 end
+spaces(2, true)
 indentgroup('lua', function() hard_tabs(2) end)
 indentgroup('sh', function() hard_tabs(2) end)
 indentgroup('rust', function() spaces(4) end)
