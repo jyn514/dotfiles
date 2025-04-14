@@ -696,6 +696,7 @@ end
 lspconfig.clangd.setup {}
 lspconfig.bashls.setup {}
 lspconfig.pylsp.setup {}
+lspconfig.ts_ls.setup {}
 lspconfig.uiua.setup {}
 lspconfig.rhombus.setup {}
 -- lspconfig.flix.setup {
