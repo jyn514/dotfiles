@@ -17,7 +17,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     retval = 0
     for filename in args.filenames:
-        if not filename.endswith(".json"):
+        if not filename.endswith(".toml"):
             continue
         try:
             with open(filename, mode='rb') as fp:
