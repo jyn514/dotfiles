@@ -760,10 +760,11 @@ function string:endswith(suffix)
 	return self:sub(-#suffix) == suffix
 end
 function rustfmt_is_nightly()
-	-- https://stackoverflow.com/a/7615129
+	-- split string on whitespace: https://stackoverflow.com/a/7615129
 	local version = string.gmatch(os.capture("rustfmt --version"), "([^%s]+)")
-	version()
-	return version():endswith '-nightly'
+	vim.print(version())
+	local second = version()
+	return second ~= nil and second:endswith '-nightly'
 end
 
 local function expand_config_variables(option)

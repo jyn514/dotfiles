@@ -50,13 +50,13 @@ plugins+=(
 	olets/zsh-abbr
 )
 # Static loading for antigen
-zsh-defer 'echo $plugins[*] | tr ' ' '\n' | $antibody/antibody bundle > $antibody/cache.sh'
-zsh-defer source $antibody/cache.sh
+zsh-defer -12pc 'echo "$plugins[*]" | tr " " "\n" | $antibody/antibody bundle > $antibody/cache.sh'
+zsh-defer -12p source $antibody/cache.sh
 # TODO: antibody doesn't actually support loading multiple plugins in this way, lol.
 # maybe antidote will work better
-# zsh-defer -c 'antibody bundle $plugins'
-zsh-defer bindkey '^[l' autosuggest-execute
-zsh-defer abbr import-aliases --session --quiet
+# zsh-defer -12p antibody bundle "$plugins"
+zsh-defer -12p bindkey '^[l' autosuggest-execute
+zsh-defer -12p abbr import-aliases --session --quiet
 
 # space expands !... history and abbreviations
 # TODO: see if we can make this more useful?
@@ -66,7 +66,7 @@ extra-magic-space() {
 }
 zle -N extra-magic-space
 bindkey ' ' magic-space
-zsh-defer bindkey ' ' extra-magic-space
+zsh-defer -12p bindkey ' ' extra-magic-space
 
 alias -g stauts=status
 alias -g serach=search
@@ -260,11 +260,11 @@ fzf-file() {
 zle -N fzf-file
 bindkey "^[t" fzf-file
 
-zsh-defer -c 'eval "$(atuin init zsh --disable-up-arrow)"'
-bindkey -M vicmd '^r' atuin-search
+zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
+zsh-defer -12p bindkey -M vicmd '^r' atuin-search
 
 # https://direnv.net/
-zsh-defer -c 'eval "$(direnv hook zsh)"'
+zsh-defer -12p -c "$(direnv hook zsh)"
 
 # Needs to be initialized after all completions are loaded
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
@@ -290,6 +290,7 @@ zle -N zle-zi
 bindkey '^[c' zle-zi
 bindkey -a '^[c' zle-zi
 
-zsh-defer -c 'if exists jj; then source <(jj util completion zsh); fi'
-zsh-defer -c 'eval "$(atuin gen-completions --shell zsh)"'
+zsh-defer -12p -c 'if exists jj; then source <(jj util completion zsh); fi'
+zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
+# add `-p` here if you see errors during delayed loading
 zsh-defer -c RPS1=
