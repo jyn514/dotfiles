@@ -9,6 +9,12 @@ add_path () {
 	PATH="$1:$PATH"
 }
 
+add_path_if_present() {
+	if [ -d "$1" ]; then
+		add_path "$1"
+	fi
+}
+
 export CARGO_HOME="$HOME/.local/lib/cargo"
 export RUSTUP_HOME="$HOME/.local/lib/rustup"
 export CARGO_TARGET_DIR="$CARGO_HOME/target"
@@ -33,9 +39,8 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	add_path "$SNAPD_BIN"
 	unset snap_bin
 fi
-if [ -d /opt/nvim ]; then
-	 add_path /opt/nvim/bin
-fi
+add_path_if_present /opt/nvim/bin
+add_path_if_present ~/.local/lib/node_modules/bin
 add_path "$GOBIN"
 add_path "$CARGO_HOME"/bin
 

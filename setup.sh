@@ -1,6 +1,8 @@
 #!/bin/sh
 set -u
 
+libdir=$HOME/.local/lib
+
 setup_basics () {
 	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
@@ -45,7 +47,7 @@ setup_basics () {
 	. config/profile
 	setup_vim # otherwise vim will error out the next time it starts up
 	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
-	git clone https://github.com/lincheney/fzf-tab-completion ~/.local/lib/fzf-tab-completion/
+	git clone https://github.com/lincheney/fzf-tab-completion $libdir/fzf-tab-completion/
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
 	ANTIBODY=~/.local/share/antibody
@@ -168,7 +170,7 @@ setup_install_local () {
 	fi
 
 	# TODO: don't hard-code an arch lmao
-	cpp=~/.local/lib/cpptools
+	cpp=$libdir/cpptools
 	if ! [ -d $cpp ]; then
 		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
 		unzip "$vsix" -d $cpp
@@ -208,8 +210,8 @@ setup_install_local () {
 	fi
 	if ! exists lua-language-server; then
 		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
-		mkdir -p ~/.local/lib/lua-lsp
-		tar -C ~/.local/lib/lua-lsp -xf "$tar"
+		mkdir -p $libdir/lua-lsp
+		tar -C $libdir/lua-lsp -xf "$tar"
 		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
 	fi
 	# apt package is ancient and doesn't support zsh
@@ -224,20 +226,23 @@ setup_install_local () {
 	wanted_version=v0.11.0
 	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
 		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
-		libdir=$HOME/.local/lib
 		rm -rf "$libdir"/nvim-linux-x86_64
 		mkdir -p "$libdir"
 		tar -C "$libdir" -xf "$nvim"
 		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
 	fi
 
-	if ! [ -d ~/.local/lib/PowerShellEditorServices ]; then
-		mkdir -p ~/.local/lib/PowerShellEditorServices
+	if ! [ -d $libdir/PowerShellEditorServices ]; then
+		mkdir -p $libdir/PowerShellEditorServices
 		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
-		unzip -q "$pslsp" -d ~/.local/lib/PowerShellEditorServices
+		unzip -q "$pslsp" -d $libdir/PowerShellEditorServices
 	fi
 
-	#npm install -g perlnavigator-server bash-language-server
+	if exists npm; then
+		mkdir -p $libdir/node_modules
+		npm config set --location user prefix $libdir/node_modules
+		npm install -g perlnavigator-server bash-language-server
+	fi
 }
 
 install_rust() {
@@ -284,6 +289,9 @@ install_rust() {
 		cargo binstall cargo-binstall
 	fi
 	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
+	if exists bat; then
+		bat cache --build
+	fi
 
 	# extensions are managed by vscode itself
 }
