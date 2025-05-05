@@ -110,7 +110,8 @@ setup_python () {
 	# `pip` on MacOS is an xcode symlink that doesn't work >:(
 	if exists python && python -m pip > /dev/null; then
 		# may take a while
-		python -m pip install --user -r python.txt
+		# lmao why does `--user` think it breaks system packages
+		python -m pip install --user --break-system-packages -r python.txt
 	else
 		echo pip not found >&2
 		return 1
@@ -162,7 +163,6 @@ setup_install_local () {
 	mkdir -p ~/.local/bin
 
 	install_rust
-	python3 -m pip install --user git-revise
 	if ! exists fx; then
 		lib/fx-install.sh
 	fi
@@ -333,7 +333,7 @@ run() {
 		py*|3) setup_python;;
 		vi*|4) setup_vim;;
 		bac*|5) setup_basics; setup_backup;;
-		su*|l*|6) setup_install_local;;
+		su*|l*|6) setup_install_local; setup_python;;
 		i*|g*|7) setup_install_global;;
 		all|8) setup_all; exit 0;;
 		*) return 1;;

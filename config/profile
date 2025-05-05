@@ -33,6 +33,9 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	add_path "$SNAPD_BIN"
 	unset snap_bin
 fi
+if [ -d /opt/nvim ]; then
+	 add_path /opt/nvim/bin
+fi
 add_path "$GOBIN"
 add_path "$CARGO_HOME"/bin
 
@@ -40,9 +43,6 @@ DOTFILES=$(dirname "$(realpath ~/.profile)")/..
 add_path "$DOTFILES/bin"
 # add this even if it's not present, in case we create it later
 add_path "$HOME/.local/bin"
-if [ -d /opt/nvim ]; then
-	 add_path /opt/nvim/bin
-fi
 # needs to be added after everything else, since one of them might add node to path
 if exists node && ! exists npm; then
 	# note: `npm config get prefix` is atrociously slow
@@ -57,8 +57,8 @@ if exists nvim; then
 	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
 	export JULIA_EDITOR=hx-hax  
 else
-	export EDITOR=vim
-	export VISUAL=vim
+	export EDITOR=vi
+	export VISUAL=vi
 	export JULIA_EDITOR=open
 fi
 
