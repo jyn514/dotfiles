@@ -792,6 +792,7 @@ local function expand_config_variables(option)
 	return ret
 end
 
+-- TODO: find a way to calculate this lazily
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 lspconfig.rust_analyzer.setup {
 	cmd = { "rust-analyzer", "+nightly" },
