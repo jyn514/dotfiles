@@ -56,16 +56,15 @@ fi
 
 if exists nvim; then
 	export EDITOR=editor-hax
-	export VISUAL=editor-hax
 	export LESSEDIT='%E %g?lm\:%lm'
 	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
 	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
 	export JULIA_EDITOR=hx-hax  
 else
 	export EDITOR=vi
-	export VISUAL=vi
 	export JULIA_EDITOR=open
 fi
+export VISUAL=$EDITOR
 
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
@@ -258,9 +257,10 @@ clean_shell () {
     env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
 }
 
-if exists fls; then
-	ls() { fls "$@"; }
-else
+# doesn't show broken symlinks; doesn't use hyperlinks
+# if exists fls; then
+# 	ls() { fls "$@"; }
+# else
 	ls () {
 		if command ls --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
 			ls () { command ls --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
@@ -269,7 +269,7 @@ else
 		fi
 		ls "$@"
 	}
-fi
+# fi
 
 ip() { command ip --color "$@"; }
 
@@ -326,6 +326,11 @@ pip_upgrade_all () {
 tmux_default() {
 	tmux -L unconfigured -f /dev/null start-server \; list-keys \;
 }
+
+triples () {
+	build/yottadb -machine test/$1.m && rg -o 'OC_.*' --no-line-number $1.lis
+}
+alias t=triples
 
 fork_github() {
 	case $1 in
@@ -489,8 +494,6 @@ display_pwd () {
 
 RED="$(ansi_escape "\033[0;31m")"
 GREEN="$(ansi_escape "\033[0;32m")"
-YELLOW="$(ansi_escape "\033[0;33m")"
-BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 
 FAINT_RED="$(ansi_escape "\033[2;31m")"
