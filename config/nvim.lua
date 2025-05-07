@@ -5,6 +5,9 @@
 -- use `:verbose set foo` to see where option `foo` is set
 -- use `vim --startuptime vim.log +qall; cat vim.log` to profile startup
 -- use `:lua =SOMETABLE` to pretty print it
+-- use `<C-k>` in insert mode to debug what keys are called (use <C-k>\ to bypass tmux)
+
+local first_run = not vim.g.lazy_did_setup
 
 ---- Options ----
 
@@ -38,7 +41,7 @@ vim.cmd.set('clipboard=unnamed')
 
 vim.api.nvim_create_autocmd('TextYankPost', {
 	desc = 'Highlight when copying text',
-	callback = function() vim.highlight.on_yank() end,
+	callback = function() vim.hl.on_yank() end,
 })
 
 vim.api.nvim_create_autocmd('VimResized', {
@@ -128,8 +131,12 @@ vim.keymap.set('n', '<A-j>', '<C-w><C-j>', { desc = 'Move focus to the lower win
 vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
 
+vim.keymap.set('v', 'gq', 'gw', { desc = 'Only format selection, not sentence' })
+
 vim.keymap.set('n', '<A-Left>', '<C-o>', { desc = 'Go back in history' })
 vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
+vim.keymap.set('', '<X1Mouse>', '<C-o>', { desc = 'Go back in history' })
+vim.keymap.set('', '<X2Mouse>', '<C-i>', { desc = 'Go forward in history' })
 
 vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
 
@@ -138,8 +145,7 @@ vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
 vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page up' })
 vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page down' })
 
-vim.keymap.set('n', '<CR>', ':set paste<CR>o<Esc>:set nopaste<CR>', { desc = "insert newline below without indentation" })
-vim.keymap.set('n', '<S-CR>', ':set paste<CR>O<Esc>:set nopaste<CR>', { desc = "insert newline above without indentation" })
+-- to insert newline without indentation, use `[ `
 
 vim.keymap.set('n', '<leader>t', function()
 	vim.cmd.wall()
@@ -255,10 +261,15 @@ function autosave_disable()
 end
 vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
 
--- https://vi.stackexchange.com/a/33221
--- TODO: only expand this if it's the single thing in a line
+-- https://vi.stackexchange.com/a/33221, plus hackery to only match at the start
 function abbrev(lhs, rhs)
-	vim.cmd.cabbrev('<expr>', lhs..' (getcmdtype() == ":") ? "'..rhs..'" : "'..lhs..'"')
+	vim.keymap.set('ca', lhs, function()
+		if vim.fn.getcmdtype() == ':' and string.find(vim.fn.getcmdline(), "^%s*"..lhs.."%s*$") then
+			return rhs
+		else
+			return lhs
+		end
+	end, { expr = true })
 end
 abbrev('Q', 'quit')
 abbrev('open', 'edit')
@@ -269,6 +280,8 @@ abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
 abbrev('url', 'OpenRemoteUrl')
 abbrev('as', 'AutoSave')
+abbrev('health', 'checkhealth')
+abbrev('lsp', 'LspInfo')
 
 -- disable some warnings
 vim.g.loaded_node_provider = 0
@@ -280,16 +293,15 @@ local fs_exists = vim.uv.fs_stat
 ---- Plugins ----
 
 -- Bootstrap lazy.nvim
-local first_run = not vim.g.lazy_did_setup
 if first_run then
 	local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
 		{ "folke/lazydev.nvim", ft = "lua", opts = {
-				-- See the configuration section for more details
-				-- Load luvit types when the `vim.uv` word is found
-				library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
+			-- See the configuration section for more details
+			-- Load luvit types when the `vim.uv` word is found
+			library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
 		} },
 		'tpope/vim-obsession',  -- session save/resume
 		'numToStr/Comment.nvim',
@@ -349,7 +361,11 @@ local function ts(binds)
 		inner = "@"..query..".inner"
 		upper = string.upper(bind)
 		if upper == bind then
-			error("don't know how to bind moves for"..bind)
+			if bind == ';' then
+				upper = ':'
+			else
+				error("don't know how to bind moves for"..bind)
+			end
 		end
 
 		selections["a"..bind] = outer
@@ -379,6 +395,7 @@ selections, swaps, moves = ts {
 	i = 'conditional',
 	-- mnemonic: "left of line" (same as 'h' in normal mode)
 	h = 'statement',
+	[';'] = 'comment',
 	-- seems to work the same as function?
 	-- b = 'block',
 	-- doesn't work in lua; seems limited use outside JS
@@ -389,8 +406,8 @@ selections, swaps, moves = ts {
 }
 swaps.swap_previous["<leader>p"] = "@parameter.inner"
 swaps.swap_next["<leader>P"] = "@parameter.inner"
-swaps.swap_previous["<A-k>"] = "@statement.outer"
-swaps.swap_next["<A-j>"] = "@statement.outer"
+swaps.swap_previous["<A-Up>"] = "@statement.outer"
+swaps.swap_next["<A-Down>"] = "@statement.outer"
 selections["in"] = "@number.inner"
 moves.goto_next_start["]n"] = "@number.inner"
 moves.goto_previous_start["[n"] = "@number.inner"
@@ -811,6 +828,10 @@ lspconfig.rust_analyzer.setup {
 		-- rust-lang/rust
 		config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
 		if fs_exists(config) then
+			modified_config = vim.fs.joinpath(path, ".zed/settings.json")
+			if fs_exists(modified_config) then
+				config = modified_config
+			end
 			file = io.open(config)
 			json = vim.json.decode(file:read("*a"))
 			client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
@@ -827,4 +848,9 @@ vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand ma
 -- begin saving session immediately on startup
 if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('Session.vim') then
 	vim.cmd.Obsess()
+end
+
+if not first_run then
+	-- vim.cmd.bufdo('silent! edit')
+	vim.cmd.bufdo('LspRestart')
 end
