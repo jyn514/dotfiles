@@ -9,8 +9,8 @@ if ! systemctl is-active $s >/dev/null; then
   sudo systemctl start $s
   trap "sudo systemctl stop $s" EXIT
 fi
-if [ -z "$SSH_AGENT_PID" ]; then
-	eval `ssh-agent`
+if ! ssh-add -l >/dev/null 2>&1; then
+	eval $(ssh-agent)
 	ssh-add
 	ssh-add -l
 fi
