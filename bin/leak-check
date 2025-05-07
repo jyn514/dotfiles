@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ $# = 0 ]; then
+	echo "usage: $0 <program> [args...]" >&2
+	exit 1
+fi
+valgrind --tool=memcheck --leak-check=yes "$@"
