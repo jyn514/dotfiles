@@ -19,7 +19,7 @@ if ! [ -d $qmk ]; then
 	qmk setup zsa/qmk_firmware -b firmware24 -H $qmk
 fi
 
-layout=$(curl -s https://jyn.dev/keyboard/ | pup  --color 'meta[http-equiv="refresh"] attr{content}' | sed -E 's#.*moonlander/layouts/([^/]+)/.*#\1#')
+layout=$(curl -s https://jyn.dev/keyboard/ -w "%{redirect_url}" | sed -E 's#.*moonlander/layouts/([^/]+)/.*#\1#')
 
 revision=$(curl -s https://oryx.zsa.io/graphql --compressed -H 'content-type: application/json' --data-raw '{"operationName":"getLayout","variables":{"hashId":"'"$layout"'","geometry":"moonlander","revisionId":"latest"},"query":"'"$(tr '\n' ' ' < ../lib/oryx.graphql)\"}" | jq -r .data.layout.revision.hashId)
 
@@ -40,14 +40,32 @@ mv zsa_moonlander_*_source "$layout_dst"
 # CHANGES GO HERE
 sed -i 's/SS_DELAY(100)/SS_DELAY(5)/g' "$layout_dst/keymap.c"
 
+macro() {
+	printf %s "SS_TAP(X_$(printf %s ${1} | tr a-z A-Z))"
+	shift
+	for x in "$@"; do
+		printf %s " SS_DELAY(5) SS_TAP(X_$(printf %s ${x} | tr a-z A-Z))"
+	done
+}
+
+unicode() {
+	for x in "$@"; do
+		printf "SS_LCTL(SS_LSFT(SS_TAP(X_U))) SS_DELAY(5) "
+		# https://stackoverflow.com/a/51054623
+		echo "$x" | grep -o . | while read -r c; do macro "$c"; done
+		printf " SS_TAP(X_ENTER) "
+	done
+}
+
 # ```\n{cursor}\n```
-macro=$(echo 'SEND_STRING(
-	SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5)
-	SS_TAP(X_ENTER) SS_DELAY(5) SS_TAP(X_ENTER) SS_DELAY(5)
-	SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5)
-	SS_TAP(X_UP)
-);' | tr '\n' ' ' | tr -d '\t')
-sed -i "s/SEND_STRING(SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*/$macro/" "$layout_dst/keymap.c"
+backticks="SEND_STRING($(macro GRAVE GRAVE GRAVE ENTER ENTER GRAVE GRAVE GRAVE UP));"
+# 👉👈
+point="SEND_STRING($(unicode 1f449 1f448));"
+
+sed -i "
+	s/SEND_STRING(SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*SS_TAP(X_GRAVE).*/$backticks/;
+	s/SEND_STRING(SS_TAP(X_P).*SS_TAP(X_L).*SS_TAP(X_P).*SS_TAP(X_R).*/$point/;
+" "$layout_dst/keymap.c"
 
 # compile and flash
 cd "$qmk"
