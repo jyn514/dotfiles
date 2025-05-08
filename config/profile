@@ -143,6 +143,12 @@ alias dc=docker-compose
 alias compose=docker-compose
 alias powershell=pwsh
 
+triples() {
+  build/yottadb -machine test/$1.m
+  rg OC_ $1.lis
+}
+alias t=triples
+
 # you might also want to pass `-C` for context
 diff () { command diff --color "$@"; }
 
