@@ -128,9 +128,11 @@ done
 if [ "${tmux_attach_current_session}" = "true" ]; then
   tmux set-window-option -t "${tmux_window}" synchronize-panes on
   tmux set-window-option -t "${tmux_window}" pane-border-status top
+	tmux set-option -t "${tmux_window}" remain-on-exit failed
 else
   tmux set-window-option -t "${tmux_session}" synchronize-panes on
   tmux set-window-option -t "${tmux_session}" pane-border-status top
+	tmux set-option -t "${tmux_session}" remain-on-exit failed
 fi
 
 if [ -n "${TMUX}" ]; then

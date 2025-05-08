@@ -78,7 +78,7 @@ syn keyword mumpsCommand 	contained U[se] V[iew] W[rite] X[ecute]
 syn keyword mumpsZCommand 	contained ZA[llocate] ZB[reak] ZCOM[pile] ZC[ontinue] ZD[eallocate]
 syn keyword mumpsZCommand 	contained ZED[it] ZG[oto] ZH[elp] ZL[ink] ZM[essage] ZP[rint]
 syn keyword mumpsZCommand 	contained ZSH[ow] ZST[ep] ZSY[stem] ZTC[ommit] ZTS[tart]
-syn keyword mumpsZCommand 	contained ZWI[thdraw] ZWR[ite]
+syn keyword mumpsZCommand 	contained ZWI[thdraw] ZWR[ite] ZK[ill]
 
 "  -- DTM specific --
 "syn keyword mumpsZCommand 	contained  zC[all] zET[rap] zHT[rap] zIT[rap] zK[ill] zNS[pace]
