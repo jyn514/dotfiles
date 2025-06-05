@@ -28,7 +28,6 @@ unalias ls la ll l alert ip .. 2>/dev/null
 . ~/.profile
 emulate zsh
 
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 ABBR_AUTOLOAD=0
 
 # package manager
@@ -267,6 +266,11 @@ bindkey "^[t" fzf-file
 
 zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
 zsh-defer -12p bindkey -M vicmd '^r' atuin-search
+_zsh_autosuggest_strategy_atuin-quiet() {
+  _zsh_autosuggest_strategy_atuin "$@" 2>/dev/null
+}
+# the default suggestion function errors quite noisily when it can't read the config. override it.
+ZSH_AUTOSUGGEST_STRATEGY=(history completion atuin-quiet)
 
 # https://direnv.net/
 zsh-defer -12p -c "$(direnv hook zsh)"
