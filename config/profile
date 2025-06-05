@@ -141,12 +141,18 @@ alias cat=bat
 alias dc=docker-compose
 alias compose=docker-compose
 alias powershell=pwsh
+alias ...=../..
+alias ....=../../..
+alias .....=../../../..
 
 triples() {
   build/yottadb -machine test/$1.m
   rg OC_ $1.lis
 }
 alias t=triples
+ywatch() {
+  watchexec --no-vcs-ignore -e m "build/yottadb $1 </dev/null"
+}
 
 # you might also want to pass `-C` for context
 diff () { command diff --color "$@"; }

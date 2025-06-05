@@ -91,12 +91,17 @@ indentgroup('c', function()
 	hard_tabs(8)
 	length(132)
 end)
+-- c gets confused for cpp all the time 🥲
+indentgroup('cpp', function()
+	hard_tabs(8)
+	length(132)
+end)
 indentgroup('csh', function()
 	hard_tabs(8)
 	length(132)
 end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
-indentgroup('cpp', function() spaces(2) end)
+-- indentgroup('cpp', function() spaces(2) end)
 
 ---- Keybinds ----
 
@@ -132,6 +137,7 @@ vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
 
 vim.keymap.set('v', 'gq', 'gw', { desc = 'Only format selection, not sentence' })
+vim.keymap.set('n', 'gqq', 'gww', { desc = 'Only format selection, not sentence' })
 
 vim.keymap.set('n', '<A-Left>', '<C-o>', { desc = 'Go back in history' })
 vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
@@ -242,7 +248,7 @@ function autosave_enable()
 	end
 
 	local buf_name = vim.fn.expand '%'
-	print("autosaving "..buf_name)
+	vim.notify("autosaving "..buf_name)
 	timers[buf] = vim.api.nvim_create_autocmd("CursorHold", {
 		desc = "Save "..buf_name.." on change",
 		callback = function()
@@ -256,7 +262,7 @@ function autosave_disable()
 	local cmd = timers[buf]
 	if cmd then
 		vim.api.nvim_del_autocmd(cmd)
-		table.remove(timers, buf)
+		timers[buf] = nil
 	end
 end
 vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
@@ -779,7 +785,6 @@ end
 function rustfmt_is_nightly()
 	-- split string on whitespace: https://stackoverflow.com/a/7615129
 	local version = string.gmatch(os.capture("rustfmt --version"), "([^%s]+)")
-	vim.print(version())
 	local second = version()
 	return second ~= nil and second:endswith '-nightly'
 end
