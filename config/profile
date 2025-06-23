@@ -1,8 +1,10 @@
+# vim: set ft=sh:
+
 # do this even for non-interactive shells so `mosh home` works even if we're not already in a WSL session
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	eval "$(keychain --quiet --eval --agents ssh)"
-	. ~/.keychain/$(hostname)-sh
+	. "~/.keychain/$(hostname)-sh"
 fi
 
 add_path () {
@@ -76,18 +78,12 @@ case "$-" in
 	*)	return 0;;
 esac
 
-# bash shell and haven't sourced bashrc
-if [ "$BASH_VERSION" ]; then
+if [ "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
-# zsh shell and haven't sourced zshrc
-if [ "$ZSH_VERSION" ]; then
+if [ "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
 	. ~/.zshrc
 fi
-if [ -n "$PROFILE_READ" ]; then
-	return 0
-fi
-PROFILE_READ=1
 
 . "$DOTFILES/lib/lib.sh"
 

@@ -9,24 +9,25 @@
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
 
-if [ -n "$ZSH_PROFILE_READ" ]; then
-	return 0
-fi
 ZSH_PROFILE_READ=1
 
 # zmodload zsh/zprof
 
 alias help=run-help
+alias -g stauts=status
+alias -g serach=search
+alias -g searhc=search
 
-# Set "$0" to zsh, not .profile
-emulate sh
-# Perform command substitution when evaluating prompt
-setopt PROMPT_SUBST
-# remove conflicting aliases
-unalias ls la ll l alert ip .. 2>/dev/null
-# Set up the prompt
-. ~/.profile
-emulate zsh
+if [ -z $MY_GITHUB ]; then
+  # Set "$0" to zsh, not .profile
+  emulate sh
+  # remove conflicting aliases
+  unalias ls la ll l alert ip .. 2>/dev/null
+  # Set up the prompt
+  . ~/.profile
+  emulate zsh
+fi
+
 
 ABBR_AUTOLOAD=0
 
@@ -67,10 +68,6 @@ zle -N extra-magic-space
 bindkey ' ' magic-space
 zsh-defer -12p bindkey ' ' extra-magic-space
 
-alias -g stauts=status
-alias -g serach=search
-alias -g searhc=search
-
 pure_shell() {
    env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" zsh --no-rcs --no-globalrcs
 }
@@ -79,6 +76,8 @@ autoload -Uz promptinit
 promptinit
 PROMPT="$PS1"
 POSTEDIT="$PS0"
+# Perform command substitution when evaluating prompt
+setopt prompt_subst
 
 setopt histignorealldups sharehistory correct
 # append immediately, not on close
