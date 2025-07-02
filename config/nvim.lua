@@ -208,6 +208,15 @@ vim.api.nvim_create_user_command('Rename', function(info)
 	vim.cmd.edit(info.args)
 	vim.cmd.bdelete('#')
 end, { nargs=1, desc = "Rename current file" })
+vim.api.nvim_create_user_command('TrimWhitespace', function(info)
+	local view = vim.fn.winsaveview()
+	local cmd = 'keeppatterns '
+	if info.range > 0 then
+		cmd = cmd..info.line1..','..info.line2
+	end
+	vim.cmd(cmd..[[s/\s\+$//e]])
+	vim.fn.winrestview(view)
+end, { range = true, desc = "trim trailing spaces" })
 
 function BufferDelete(args)
 	if args.bang then
@@ -288,6 +297,7 @@ abbrev('url', 'OpenRemoteUrl')
 abbrev('as', 'AutoSave')
 abbrev('health', 'checkhealth')
 abbrev('lsp', 'LspInfo')
+abbrev('tt', 'TrimWhitespace')
 
 -- disable some warnings
 vim.g.loaded_node_provider = 0
