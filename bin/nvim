@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ -e Session.vim ]; then f=Session.vim; elif [ -e .session.vim ]; then f=.session.vim; fi
+PATH=$(echo "$PATH" | tr : '\n' | grep -v "$(dirname "$0")" | tr '\n' :)
+if [ -n "$f" ] && [ $# = 0 ]; then exec nvim -S $f; fi
+exec nvim "$@"

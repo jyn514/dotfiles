@@ -861,8 +861,8 @@ local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
 
 -- begin saving session immediately on startup
-if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('Session.vim') then
-	vim.cmd.Obsess()
+if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('.session.vim') then
+	vim.cmd.Obsess(".session.vim")
 end
 
 if not first_run then
