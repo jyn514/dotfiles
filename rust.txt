@@ -5,6 +5,7 @@ cargo-audit
 cargo-outdated
 cargo-sweep
 cargo-tree
+counts
 difftastic
 du-dust
 fd-find
