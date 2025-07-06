@@ -1,0 +1,2 @@
+moonlander.rules=/etc/udev/rules.d/50-zsa.rules
+sshrc=/etc/ssh/sshrc
