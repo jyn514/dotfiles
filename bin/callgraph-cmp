@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+if ! [ $# = 2 ]; then
+	echo "usage: $0 <dot1> <dot2>"
+	exit 1
+fi
+
+cmp() {
+	rg -o '^[^\[]*' "$@" | sort
+}
+
+cmp "$1" | diff --color=always - <(cmp "$2")
