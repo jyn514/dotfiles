@@ -715,34 +715,49 @@ require('vim.lsp.log').set_format_func(vim.inspect)
 local lspconfig = require('lspconfig')
 local lsplang = require('lspconfig.configs')
 
-if not lsplang.rhombus then
-	lsplang.rhombus = {
-		default_config = {
-			cmd = {"racket",  "-l", "racket-langserver"},
-			filetypes = { "rhombus" },
-			root_dir = vim.fs.dirname,
-			settings = {},
-		},
-	}
-end
+lsplang.rhombus = {
+	default_config = {
+		cmd = {"racket",  "-l", "racket-langserver"},
+		filetypes = { "rhombus" },
+		root_dir = vim.fs.dirname,
+		settings = {},
+	},
+}
 
-lspconfig.clangd.setup {}
-lspconfig.bashls.setup {}
-lspconfig.pylsp.setup {}
-lspconfig.ts_ls.setup {}
-lspconfig.uiua.setup {}
-lspconfig.rhombus.setup {}
--- lspconfig.flix.setup {
--- 	on_attach = function(client , bufnr)
--- 		client.commands["flix.runMain"] = function(command, context)
--- 			vim.cmd("terminal flix run")
--- 		end
--- 	end
---}
+lsplang.flix = {
+	default_config = {
+		cmd = {"flix", "lsp"},
+		filetypes = { "rhombus" },
+		root_dir = vim.fs.dirname,
+		settings = {},
+	},
+	on_attach = function(client, _)
+		client.commands["flix.runMain"] = function(_, _)
+			vim.cmd("terminal flix run")
+		end
+	end
+}
+-- not through vim.lsp because i don't know yet how to configure the dfeault config
+lsplang.rhombus.setup {}
+lsplang.flix.setup {}
+
+vim.lsp.config.powershell_es = {
+	bundle_path = '~/.local/lib/PowerShellEditorServices',
+}
+vim.lsp.config.perlnavigator = {
+	settings = {
+		perlnavigator = {
+			perlcriticEnabled = false,
+		}
+	}
+}
+
+for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls'}) do
+	vim.lsp.enable(lsp)
+end
 
 vim.filetype.add { extension = {
 	m     = 'mumps',
-	-- dl = 'dl', //%s
 	ua    = 'uiua',
 	rhm   = 'rhombus',
 	flix  = 'flix',
@@ -763,23 +778,6 @@ vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
 		vim.cmd('highlight! link Keyword Special')
 	end
 end })
-
-if first_run then
-	lspconfig.powershell_es.setup {
-		bundle_path = '~/.local/lib/PowerShellEditorServices',
-	}
-end
--- this doesn't seem to work?
--- lspconfig.esbonio.setup {}
-lspconfig.perlnavigator.setup {
-	settings = {
-		perlnavigator = {
-			perlcriticEnabled = false,
-		}
-	}
-}
-
-lspconfig.lua_ls.setup {}
 
 -- https://stackoverflow.com/a/326715
 function os.capture(cmd)
