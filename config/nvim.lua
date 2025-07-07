@@ -793,6 +793,8 @@ function string:endswith(suffix)
 	return self:sub(-#suffix) == suffix
 end
 function rustfmt_is_nightly()
+	-- rustfmt --version is inexplicably slow if it's not installed for the current toolchain
+	if os.execute("rustup which rustfmt >/dev/null 2>&1") then return false end
 	-- split string on whitespace: https://stackoverflow.com/a/7615129
 	local version = string.gmatch(os.capture("rustfmt --version"), "([^%s]+)")
 	local second = version()
