@@ -831,17 +831,17 @@ local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable 
 lspconfig.rust_analyzer.setup {
 	cmd = { "rust-analyzer", "+nightly" },
 	settings = settings,
-	root_dir = function()
-		default = lspconfig.rust_analyzer.config_def.default_config.root_dir()
-		if vim.fs.basename(default) == "library" and fs_exists(vim.fs.joinpath(default, "../src/bootstrap/defaults/config.compiler.toml")) then
-			return vim.fs.dirname(default)
+	root_dir = function(buf)
+		local dir = lspconfig.rust_analyzer.config_def.default_config.root_dir(buf)
+		if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
+			dir = vim.fs.dirname(dir)
 		end
-		return default
+		return dir
 	end,
 	-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
 	-- init_options = settings,
 	on_init = function(client)
-		local path = client.workspace_folders[1].name
+		local path = vim.lsp.buf.list_workspace_folders()[1]
 		-- rust-lang/rust
 		config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
 		if fs_exists(config) then
