@@ -727,8 +727,13 @@ lsplang.rhombus = {
 lsplang.flix = {
 	default_config = {
 		cmd = {"flix", "lsp"},
-		filetypes = { "rhombus" },
-		root_dir = vim.fs.dirname,
+		filetypes = { "flix" },
+		root_dir = function(fname)
+			-- Search for flix.toml/flix.jar upwards recursively, with a fallback to the current directory
+			local root_dir = vim.fs.dirname(vim.fs.find({"flix.toml", "flix.jar"}, { path = fname, upward = true })[1])
+				or vim.fs.dirname(fname)
+			return root_dir
+		end,
 		settings = {},
 	},
 	on_attach = function(client, _)
@@ -737,7 +742,7 @@ lsplang.flix = {
 		end
 	end
 }
--- not through vim.lsp because i don't know yet how to configure the dfeault config
+-- not through vim.lsp because i don't know yet how to configure the default config
 lsplang.rhombus.setup {}
 lsplang.flix.setup {}
 
@@ -752,7 +757,7 @@ vim.lsp.config.perlnavigator = {
 	}
 }
 
-for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls'}) do
+for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls'}) do
 	vim.lsp.enable(lsp)
 end
 
