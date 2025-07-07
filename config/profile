@@ -4,7 +4,7 @@
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	eval "$(keychain --quiet --eval --agents ssh)"
-	. "~/.keychain/$(hostname)-sh"
+	. ~/.keychain/"$(hostname | tr -d '\n')"-sh
 fi
 
 add_path () {
