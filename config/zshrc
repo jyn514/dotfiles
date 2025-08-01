@@ -18,7 +18,7 @@ alias -g stauts=status
 alias -g serach=search
 alias -g searhc=search
 
-if [ -z $MY_GITHUB ]; then
+if [ -z $DOTFILES ]; then
   # Set "$0" to zsh, not .profile
   emulate sh
   # remove conflicting aliases
@@ -197,9 +197,8 @@ for m in visual viopp; do
   done
 done
 
-# Keep 1000 lines of history within the shell and save it to ~/.zsh_history:
-HISTSIZE=1000
 SAVEHIST=10000000
+HISTSIZE=$SAVEHIST
 HISTFILE=~/.zsh_history
 
 zstyle ':completion:*' auto-description 'specify: %d'
@@ -264,7 +263,9 @@ zle -N fzf-file
 bindkey "^[t" fzf-file
 
 zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
-zsh-defer -12p bindkey -M vicmd '^r' atuin-search
+zsh-defer bindkey -M vicmd '^r' atuin-search
+zsh-defer bindkey -M vicmd / vi-find-next-char
+zsh-defer bindkey -M vicmd '?' vi-find-prev-char
 _zsh_autosuggest_strategy_atuin-quiet() {
   _zsh_autosuggest_strategy_atuin "$@" 2>/dev/null
 }

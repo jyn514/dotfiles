@@ -1,0 +1,11 @@
+{:key-map :viins
+ :indent false
+ :key-bindings
+  {:viins
+    {"[1;3D" "backward-word"
+     "[1;3C" "forward-word"
+     "^A" "beginning-of-line"
+     "^E" "end-of-line"}
+   :emacs
+    {"[1;3D" "backward-word"
+     "[1;3C" "forward-word"}} }

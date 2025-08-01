@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Spotify Qt
+Type=Application
+GenericName=Music Player
+Comment=requires librespot to be running in the background
+Exec=spotify-qt

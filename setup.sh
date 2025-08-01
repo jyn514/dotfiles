@@ -214,6 +214,11 @@ setup_install_local () {
 		tar -C $libdir/lua-lsp -xf "$tar"
 		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
 	fi
+	if ! exists clojure-lsp; then
+		u=https://raw.githubusercontent.com/clojure-lsp/clojure-lsp/master/install
+		curl -s $u | bash -s -- --dir ~/.local/bin
+	fi
+
 	# apt package is ancient and doesn't support zsh
 	if ! exists fzf; then
 		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf

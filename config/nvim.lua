@@ -175,6 +175,10 @@ vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) 
 vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
 vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
 
+-- for flower
+vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
+vim.keymap.set('i', '\\f', '◊', { desc = "Lozenge" })
+
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
 	local col = vim.fn.getcurpos()[3] - 1  -- convert 1-indexed to 0-indexed
@@ -333,6 +337,9 @@ if first_run then
 		{'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
 			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects' }},
+		'HiPhish/rainbow-delimiters.nvim',
+		{ "julienvincent/nvim-paredit" },
+		{ "kylechui/nvim-surround", version = "^3.0.0" }
 
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 
@@ -342,6 +349,16 @@ if first_run then
 end
 
 vim.g.alabaster_dim_comments = true
+
+require('nvim-surround').setup {}
+
+paredit = require 'nvim-paredit'
+paredit.setup {
+	keys = {
+		["<leader>o"] = { paredit.api.raise_form, "Raise form" },
+		["<leader>O"] = { paredit.api.raise_element, "Raise element" },
+	}
+}
 
 cmp = require 'cmp'
 cmp.setup {
@@ -432,7 +449,6 @@ treesitter = require 'nvim-treesitter.configs'
 treesitter.setup {
 	auto_install = true,
 	highlight = { enable = true },
-	indent = { enable = true },
 	-- incremental_selection = { enable = true },
 	textobjects = {
 		select = { enable = true, lookahead = true, keymaps = selections },
@@ -687,8 +703,11 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 	end
 	if client.server_capabilities.codeLensProvider then
 		vim.keymap.set('n', '<leader>l', vim.lsp.codelens.run, { desc = "Run codelens" })
-		vim.api.nvim_create_autocmd({ "CursorMoved" }, {
-			callback = vim.lsp.codelens.refresh,
+		-- TODO: should be CursorHold, but that causes flickering
+		-- TODO: why doesn't LspAttach work
+		-- https://github.com/neovim/neovim/issues/34965
+		vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
+			callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
 			buffer = bufnr,
 			desc = "Refresh codelens actions",
 		})
@@ -739,8 +758,10 @@ lsplang.flix = {
 	end
 }
 -- not through vim.lsp because i don't know yet how to configure the default config
-lsplang.rhombus.setup {}
-lsplang.flix.setup {}
+if first_run then
+	lsplang.rhombus.setup {}
+	lsplang.flix.setup {}
+end
 
 vim.lsp.config.powershell_es = {
 	bundle_path = '~/.local/lib/PowerShellEditorServices',
@@ -753,7 +774,7 @@ vim.lsp.config.perlnavigator = {
 	}
 }
 
-for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls'}) do
+for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp'}) do
 	vim.lsp.enable(lsp)
 end
 
@@ -775,7 +796,8 @@ vim.api.nvim_create_autocmd("FileType", { callback = function()
 	end
 end })
 vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
-	if vim.bo.syntax == 'mumps' then
+	local ft = vim.bo.filetype
+	if ft == 'mumps' then
 		vim.cmd('highlight! link Keyword Special')
 	end
 end })
