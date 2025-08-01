@@ -1,0 +1,13 @@
+root = true
+[*]
+	indent_style = tab
+	indent_size = 2
+[*.{clj,edn,html,md,yaml,yml}]
+	indent_style = space
+	# indent_size = 2
+[*.{py,rs,toml}]
+	indent_style = space
+	indent_size = 4
+# c gets confused for cpp all the time 🥲
+[*.{c,cpp,csh}]
+	indent_size = 8

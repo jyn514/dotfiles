@@ -23,3 +23,6 @@ nvim.lua=.config/nvim/init.lua
 nvim-ayu-evolve.lua=.config/nvim/colors/ayu-evolve.lua
 mumps.vim=.config/nvim/syntax/mumps.vim
 atuin.toml=.config/atuin/config.toml
+.editorconfig=.editorconfig
+spotify-qt.desktop=.local/share/applications/spotify-qt.desktop
+rebel_readline.edn=.clojure/rebel_readline.edn

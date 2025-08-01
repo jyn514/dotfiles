@@ -61,6 +61,7 @@ function indentgroup(lang, func)
 		end
 	})
 end
+-- only use this with `:lua`; otherwise use ~/.editorconfig
 function hard_tabs(count)
 	vim.bo.expandtab = false
 	vim.bo.tabstop = count
@@ -82,22 +83,17 @@ function length(count)
 	vim.wo.colorcolumn = tostring(count)
 	vim.bo.textwidth = count
 end
-spaces(2, true)
-indentgroup('lua', function() hard_tabs(2) end)
-indentgroup('sh', function() hard_tabs(2) end)
-indentgroup('rust', function() spaces(4) end)
-indentgroup('toml', function() spaces(4) end)
+indent_tab = hard_tabs
+indent_space = spaces
+
 indentgroup('c', function()
-	hard_tabs(8)
 	length(132)
 end)
 -- c gets confused for cpp all the time 🥲
 indentgroup('cpp', function()
-	hard_tabs(8)
 	length(132)
 end)
 indentgroup('csh', function()
-	hard_tabs(8)
 	length(132)
 end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about

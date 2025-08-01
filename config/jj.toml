@@ -1,7 +1,7 @@
 [ui]
 default-command = "log"
 # diff.tool=["difft", "--color=always", "$left", "$right"]
-diff.tool=["delta", "$left", "$right"]
+diff-formatter=["delta", "$left", "$right"]
 diff-editor = ":builtin"
 merge-editor = "meld"
 
@@ -20,6 +20,7 @@ email = "github@jyn.dev"
 [aliases]
 c = ["commit"]
 n = ["new"]
+e = ["edit"]
 l = ["log"]
 d = ["diff"]
 s = ["status"]
