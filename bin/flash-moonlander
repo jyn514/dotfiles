@@ -36,6 +36,7 @@ rm -rf "$layout_dst"
 cd "$(mktemp -d -t oryx-"$revision_name"-XXXXXXX)"
 unzip "$archive"
 mv zsa_moonlander_*_source "$layout_dst"
+rm "$layout_dst/keymap.json"
 
 # CHANGES GO HERE
 sed -i 's/SS_DELAY(100)/SS_DELAY(5)/g' "$layout_dst/keymap.c"
