@@ -7,8 +7,12 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	. ~/.keychain/"$(hostname | tr -d '\n')"-sh
 fi
 
+DOTFILES=$(dirname "$(realpath ~/.profile)")/..
+
 add_path () {
-	PATH="$1:$PATH"
+	if ! "$DOTFILES/bin/show_path" | rg -F "$1" >/dev/null 2>&1; then
+		PATH="$1:$PATH"
+	fi
 }
 
 add_path_if_present() {
@@ -26,6 +30,10 @@ export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
 # less documents that it searches here by default, but the docs are wrong
 export LESSKEYIN="$HOME/.config/lesskey"
+# people keep passing random dumb arguments to less. override them so we use the defaults in lesskey.
+export PAGER=less
+export MANPAGER='nvim +Man! --clean -u ~/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
+export DEBUGINFOD_URLS="https://debuginfod.ubuntu.com"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
@@ -46,7 +54,6 @@ add_path_if_present ~/.local/lib/node_modules/bin
 add_path "$GOBIN"
 add_path "$CARGO_HOME"/bin
 
-DOTFILES=$(dirname "$(realpath ~/.profile)")/..
 # add this even if it's not present, in case we create it later
 add_path "$HOME/.local/bin"
 add_path "$DOTFILES/bin"
@@ -124,6 +131,7 @@ alias ytd=yt-dlp
 alias cls=clear
 alias c=cargo
 alias m=make
+alias n=ninja
 alias g=git
 alias o=open
 alias v=nvim
@@ -140,6 +148,8 @@ alias powershell=pwsh
 alias ...=../..
 alias ....=../../..
 alias .....=../../../..
+# alias gtree='tree --gitignore'  # doesn't respect ~/.gitignore
+alias ftree='fd | tree --fromfile'
 
 triples() {
   build/yottadb -machine test/$1.m
@@ -496,6 +506,8 @@ display_pwd () {
 
 RED="$(ansi_escape "\033[0;31m")"
 GREEN="$(ansi_escape "\033[0;32m")"
+# YELLOW="$(ansi_escape "\033[0;33m")"
+# BLUE="$(ansi_escape "\033[0;34m")"
 RESET="$(ansi_escape "\033[0;0m")"
 
 FAINT_RED="$(ansi_escape "\033[2;31m")"
@@ -571,10 +583,10 @@ git_info() {
 prompt_command() {
 	# save the status code before anything else; commands we execute in PS1 will overwrite it
 	last_status=$?
-	printf %s "($FAINT_YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$FAINT_WHITE@$FAINT_GREEN"; hostname | tr -d '\n'
+	printf %s "$FAINT_WHITE($FAINT_YELLOW$(basename -- "${ZSH_ARGZERO:-$0}")$FAINT_WHITE"
+	printf %s "@$FAINT_GREEN"; hostname | tr -d '\n'
 	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${FAINT_RED}root"
-	printf %s "$FAINT_WHITE) $FAINT_BLUE"
-	display_pwd | tr -d '\n'
+	printf %s "$FAINT_WHITE) $FAINT_BLUE"; display_pwd | tr -d '\n'
 	git_info | tr -d '\n'
 	echo
 	# vscode already shows the cursor indented a bit, as well as the status from the last command
@@ -585,8 +597,13 @@ prompt_command() {
 	printf %s "$RESET"
 }
 
+remember() {
+	printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' 'obsidian://open?vault=notes&file=global%20checklist' 'are you forgetting something?'
+}
+
 PS1='$(prompt_command)'
 # also reset the cursor mode (https://stackoverflow.com/a/59728228)
 PS0=$(printf '\e[2 q')
 
 stty -ixon
+remember
