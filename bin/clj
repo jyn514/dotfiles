@@ -1,0 +1,9 @@
+#!/bin/sh
+# if [ -e dev/user.clj ]; then
+# 	cp="-Scp $(clojure -Spath "$@" -Xrebel):dev"
+# fi
+if clojure -X:deps aliases | grep -q :dev; then
+	args="-A:dev"
+fi
+# https://github.com/bhauman/rebel-readline
+exec clojure $args "$@" -Xrebel

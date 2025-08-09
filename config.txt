@@ -26,3 +26,4 @@ atuin.toml=.config/atuin/config.toml
 .editorconfig=.editorconfig
 spotify-qt.desktop=.local/share/applications/spotify-qt.desktop
 rebel_readline.edn=.clojure/rebel_readline.edn
+deps.edn=.clojure/deps.edn

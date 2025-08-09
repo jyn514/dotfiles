@@ -1,0 +1,10 @@
+{
+ :aliases
+ ;; Add cross-project aliases here
+ {:rebel {:extra-deps {com.bhauman/rebel-readline {:mvn/version "0.1.5"}}
+          :exec-fn rebel-readline.tool/repl
+          :exec-args {}
+          :main-opts ["-m" "rebel-readline.main"]}
+  :dbg {:classpath-overrides {org.clojure/clojure nil}
+        :extra-deps {com.github.flow-storm/clojure {:mvn/version "1.12.1"}
+                     com.github.flow-storm/flow-storm-dbg {:mvn/version "4.4.6"}}}}}

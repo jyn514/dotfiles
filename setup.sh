@@ -218,6 +218,11 @@ setup_install_local () {
 		u=https://raw.githubusercontent.com/clojure-lsp/clojure-lsp/master/install
 		curl -s $u | bash -s -- --dir ~/.local/bin
 	fi
+	if ! exists clojure; then
+		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
+		bash ./linux-install.sh --prefix ~/.local/lib/clojure
+		rm ./linux-install.sh
+	fi
 
 	# apt package is ancient and doesn't support zsh
 	if ! exists fzf; then
