@@ -1,5 +1,6 @@
 #!/bin/sh
-if [ -n "$SSH_TTY" ] && ! fscrypt status ~ | grep 'Unlocked: Yes' >/dev/null; then
+if [ -n "$SSH_TTY" ] && command -v fscrypt >/dev/null \
+	&& ! fscrypt status ~ | grep 'Unlocked: Yes' >/dev/null; then
   # fscrypt is buggy and will loop forever if stdin is closed.
   # give it a tty, and also make sure we always get a login shell eventually.
   timeout --foreground 20s fscrypt unlock ~ <$SSH_TTY

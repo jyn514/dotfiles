@@ -31,8 +31,13 @@ queue_install() {
 		esac
 		# TODO
 	elif [ "$IS_ALPINE" = 1 ]; then
-	  # TODO
-	  :
+		case "$pkg" in
+			#gh) pkg=github-cli;;
+			gh) return;;  # don't want creds on remote servers
+			nvim) pkg=neovim;;
+			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|gdu|git-absorb|libpam-fscrypt|libssl-dev|libterm-readline-gnu-perl|liburi-perl|libusb-1.0-0-dev|lua-language-server|manpages|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
+			*) ;;
+		esac
 	fi
 	packages="$packages $pkg"
 }
@@ -122,7 +127,7 @@ install_features () {
 		dnf install -y $packages
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
-		apk add less py3-pip zsh
+		apk add less py3-pip zsh $packages
 	elif [ -n "$IS_BREW" ]; then
 		brew install $packages
 	# SUSE

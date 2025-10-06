@@ -3,6 +3,10 @@ set -u
 
 libdir=$HOME/.local/lib
 
+install_alpine() {
+	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+}
+
 install_brew() {
 	# note that we don't actually pass sudo here
 	./lib/setup_sudo.sh install_features
@@ -263,7 +267,9 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	if [ "$(uname)" = Linux ]; then
+	if exists apk; then
+		install_alpine
+	elif [ "$(uname)" = Linux ]; then
 		install_linux_lol
 	elif exists brew; then
 		install_brew
