@@ -123,13 +123,15 @@ HEAD() {
 
 mkcd () { mkdir -p "$@" && cd "$1"; }
 
-alias e=$EDITOR
+alias e='$EDITOR'
 alias E=hx-hax
 alias mkdc=mkcd
 alias yts=youtube_search
 alias ytd=yt-dlp
 alias cls=clear
 alias c=cargo
+alias k=kaocha
+alias f=flower
 alias m=make
 alias n=ninja
 alias g=git
@@ -516,24 +518,10 @@ FAINT_YELLOW="$(ansi_escape "\033[2;33m")"
 FAINT_BLUE="$(ansi_escape "\033[2;34m")"
 FAINT_WHITE="$(ansi_escape "\033[2;37m")"
 
-jj_info() {
-	# jj doesn't really use branches, so we don't print anything other than whether the workspace is modified
-	# if there are branches, this is probably a co-located git repo, so `git_info` will just work without having to call this function.
-
-	# NOTE: as a side effect, this saves the working copy :3
-	# if there's an error here, we'll see it because we don't redirect stderr.
-	if [ "$(jj diff --summary | wc -l)" = 0 ]; then
-		printf %s "$FAINT_GREEN"
-	else
-		printf %s "$FAINT_RED"
-	fi
-	printf ' jj'
-}
-
 git_info() {
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		if is_jj_repo; then jj_info; fi
+		if is_jj_repo; then jj-info; fi
 		return
 	else
 		printf ' '
@@ -574,6 +562,12 @@ git_info() {
 	if [ "$l" ]; then
 		echo "(detached at $l)"
 		return
+	fi
+
+	# if this is a jj repo, try and get that info instead
+	if is_jj_repo; then
+		timeout .1 jj-info
+		if ! [ $? = 124 ]; then return; fi
 	fi
 
 	# give up

@@ -2,7 +2,7 @@ root = true
 [*]
 	indent_style = tab
 	indent_size = 2
-[*.{clj,edn,html,md,yaml,yml}]
+[*.{clj,cljc,edn,js,scss,html,md,yaml,yml,xml}]
 	indent_style = space
 	# indent_size = 2
 [*.{py,rs,toml}]

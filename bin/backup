@@ -22,5 +22,5 @@
 
 set -eu
 . ~jyn/.local/config/restic.env
-cd ~jyn/Documents/backups
-~jyn/.local/bin/restic backup --skip-if-unchanged --cache-dir "${TMPDIR:-$(mktemp -d)}" "$@" .
+cd ~jyn/Documents
+~jyn/.local/bin/restic backup --skip-if-unchanged --cache-dir ~restic/cache "$@" .

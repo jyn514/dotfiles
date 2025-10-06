@@ -57,6 +57,7 @@ zsh-defer -12p source $antibody/cache.sh
 # zsh-defer -12p antibody bundle "$plugins"
 zsh-defer -12p bindkey '^[l' autosuggest-execute
 zsh-defer -12p abbr import-aliases --session --quiet
+zsh-defer -12p abbr erase cat  # really annoying when running sudo commands
 
 # space expands !... history and abbreviations
 # TODO: see if we can make this more useful?

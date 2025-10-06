@@ -1,0 +1,35 @@
+#!/bin/sh
+# jj doesn't really use branches, so we don't print anything other than whether the workspace is modified
+# if there are branches, this is probably a co-located git repo, so `git_info` will just work without having to call this function.
+
+if [ -n "$ZSH_VERSION" ]; then
+	ansi_escape () { printf "%%{$1%%}"; }
+else
+	ansi_escape () { command printf "\01$1\02"; }
+fi
+
+FAINT_RED="$(ansi_escape "\033[2;31m")"
+FAINT_GREEN="$(ansi_escape "\033[2;32m")"
+FAINT_WHITE="$(ansi_escape "\033[2;37m")"
+
+# NOTE: as a side effect, this saves the working copy :3
+# if there's an error here, we'll see it because we don't redirect stderr.
+jj_desc() {
+	rev=$1; color=$2
+	desc=$(jj log --no-graph -T description -r "$rev" | head -n1)
+	if [ -n "$desc" ]; then
+		printf %s "$FAINT_WHITE(${color}jj${FAINT_WHITE}: ${RESET}$desc$FAINT_WHITE)"
+		return 0
+	fi
+	return 1
+}
+
+if jj_desc @ "$FAINT_GREEN"; then return; fi
+if [ "$(jj diff --summary | wc -l)" = 0 ]; then
+	color="$FAINT_GREEN"
+else
+	color="$FAINT_RED"
+fi
+if jj_desc @- "$color"; then return; fi
+
+printf %s "${color}jj"

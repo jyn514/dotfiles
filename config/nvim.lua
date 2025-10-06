@@ -135,10 +135,11 @@ vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
 vim.keymap.set('v', 'gq', 'gw', { desc = 'Only format selection, not sentence' })
 vim.keymap.set('n', 'gqq', 'gww', { desc = 'Only format selection, not sentence' })
 
-vim.keymap.set('n', '<A-Left>', '<C-o>', { desc = 'Go back in history' })
-vim.keymap.set('n', '<A-Right>', '<C-i>', { desc = 'Go forward in history' })
-vim.keymap.set('', '<X1Mouse>', '<C-o>', { desc = 'Go back in history' })
-vim.keymap.set('', '<X2Mouse>', '<C-i>', { desc = 'Go forward in history' })
+-- TODO: these don't work in visual mode
+bind('<A-Left>', '<C-o>', 'Go back in history')
+bind('<A-Right>', '<C-i>', 'Go forward in history')
+bind('<X1Mouse>', '<C-o>', 'Go back in history')
+bind('<X2Mouse>', '<C-i>', 'Go forward in history')
 
 vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
 
@@ -178,6 +179,8 @@ vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
 -- for flower
 vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
 vim.keymap.set('i', '\\f', '◊', { desc = "Lozenge" })
+vim.keymap.set('i', '\\j', '«', { desc = "Sunflower open quote" })
+vim.keymap.set('i', '\\k', '»', { desc = "Sunflower close quote" })
 
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
@@ -291,6 +294,7 @@ abbrev('open', 'edit')
 abbrev('o', 'edit')
 abbrev('W', 'w')
 abbrev('bc', 'BufferDelete')
+abbrev('bc!', 'BufferDelete!')
 abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
 abbrev('url', 'OpenRemoteUrl')
