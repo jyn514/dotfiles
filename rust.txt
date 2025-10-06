@@ -15,6 +15,7 @@ jj-cli
 ripgrep
 zoxide
 pulldown-cmark
+mdbook
 atuin
 kak-lsp
 librespot

@@ -70,7 +70,7 @@ bindkey ' ' magic-space
 zsh-defer -12p bindkey ' ' extra-magic-space
 
 pure_shell() {
-   env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" zsh --no-rcs --no-globalrcs
+   env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" zsh --no-rcs --no-globalrcs "$@"
 }
 
 autoload -Uz promptinit
@@ -110,6 +110,11 @@ bindkey "^G" get-line
 bindkey -a "^G" get-line
 bindkey '^@' expand-word
 bindkey -a '@' expand-word
+
+autoload edit-command-line
+zle -N edit-command-line
+bindkey -a K edit-command-line
+bindkey '^X^E' edit-command-line
 
 # autoescape pasted urls
 autoload -U url-quote-magic bracketed-paste-magic

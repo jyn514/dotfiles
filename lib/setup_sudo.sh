@@ -5,10 +5,10 @@ set -e
 packages=
 
 queue_install() {
+	pkg="$1"
 	if [ "$IS_DEB" = 1 ]; then
-		packages="$packages $1"
+		:
 	elif [ "$IS_RPM" = 1 ]; then
-		pkg="$1"
 		case "$pkg" in
 			liburi-perl) pkg=perl-URI ;;
 			manpages) pkg=man-pages ;;
@@ -21,11 +21,20 @@ queue_install() {
 			build-essential) pkg=@development-tools ;;
 			*) ;;
 		esac
-		packages="$packages $pkg"
+	elif [ "$IS_BREW" = 1 ]; then
+		case "$pkg" in
+			build-essential|fscrypt|libpam-fscrypt|lib*-dev|lib*-perl|manpages*|xdg-utils|strace|valgrind) return;; # ¯\_(ツ)_/¯
+			unzip|curl|clangd|python3-pip|traceroute) return;; # packaged by xcode-tools
+			ninja-build) pkg=ninja;;
+			python3-pylsp) pkg=python-lsp-server;;
+			*) ;;
+		esac
+		# TODO
 	elif [ "$IS_ALPINE" = 1 ]; then
 	  # TODO
-		packages="$packages $1"
+	  :
 	fi
+	packages="$packages $pkg"
 }
 
 copy_globals() {
@@ -74,12 +83,12 @@ install_features () {
 	for pkg in $(grep -v '^\s*#' packages.txt | tr '\n' ' '); do
 		queue_install "$pkg"
 	done
-	set -x
 
 	if is_wsl; then
 		queue_install keychain
 	fi
 
+	set -x
 	if [ -n "$IS_DEB" ]; then
 		# thanks to https://github.com/zulip/zulip/pull/10911/files
 		if ! apt-cache policy | grep -q "l=Ubuntu,c=universe"; then
@@ -114,6 +123,8 @@ install_features () {
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
 		apk add less py3-pip zsh
+	elif [ -n "$IS_BREW" ]; then
+		brew install $packages
 	# SUSE
 	#zypper addrepo https://cli.github.com/packages/rpm/gh-cli.repo
 	#zypper ref
@@ -216,15 +227,21 @@ elif exists dnf; then
 	IS_RPM=1
 elif exists apk; then
 	IS_ALPINE=1
+elif exists brew; then
+	IS_BREW=1
 else
 	echo "$0: Unsupported distro"
 	exit 1
 fi
 
-copy_globals
-set -x
-install_security
-install_features
-encrypt
-remove_unwanted
-set +x
+main() {
+	copy_globals
+	set -x
+	install_security
+	install_features
+	encrypt
+	remove_unwanted
+	set +x
+}
+
+"$1"

@@ -343,7 +343,8 @@ if first_run then
 			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects' }},
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
-		{ "kylechui/nvim-surround", version = "^3.0.0" }
+		{ "kylechui/nvim-surround", version = "^3.0.0" },
+		{ "folke/neoconf.nvim" },
 
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 
@@ -358,6 +359,7 @@ require('nvim-surround').setup {}
 
 paredit = require 'nvim-paredit'
 paredit.setup {
+	dragging = { auto_drag_pairs = false },
 	keys = {
 		["<leader>o"] = { paredit.api.raise_form, "Raise form" },
 		["<leader>O"] = { paredit.api.raise_element, "Raise element" },
@@ -485,11 +487,14 @@ vim.cmd.colorscheme 'alabaster-black'
 
 local telescope = require('telescope')
 telescope.setup {
-	defaults = { mappings = {
-		n = {
-			["<C-c>"] = require('telescope.actions').close
+	defaults = {
+		layout_strategy = 'vertical',
+		mappings = {
+			n = {
+				["<C-c>"] = require('telescope.actions').close
+			}
 		}
-	} },
+	},
 	extensions = {
 		["ui-select"] = {
 			vim.tbl_deep_extend("force", require'telescope.themes'.get_ivy(), {
@@ -731,6 +736,9 @@ end
 ---- specific LSPs ----
 require('vim.lsp.log').set_format_func(vim.inspect)
 
+if first_run then
+	require("neoconf").setup {}
+end
 local lspconfig = require('lspconfig')
 local lsplang = require('lspconfig.configs')
 

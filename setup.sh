@@ -3,6 +3,110 @@ set -u
 
 libdir=$HOME/.local/lib
 
+install_brew() {
+	# note that we don't actually pass sudo here
+	./lib/setup_sudo.sh install_features
+	ln -s $(brew --prefix)/opt/antidote/share/antidote ~/.local/share/
+	cmd_alias gdu gdu-go
+}
+
+install_rust() {
+	set +ue
+	. config/profile
+	set -ue
+
+	if ! exists cargo; then
+		# Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
+		# Do it manually here.
+		if [ "${OSTYPE:-}" = msys ]; then
+			t=/tmp/vs_community.exe
+			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o $t
+			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
+			rm $t
+		fi
+		t=/tmp/rustup-init.sh
+		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy -c rust-analyzer && rm $t
+		if [ "${OSTYPE:-}" = msys ]; then
+			PATH="$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
+		else
+			. "${CARGO_HOME:-$HOME/.cargo}/env"
+		fi
+		rustup toolchain add nightly --profile minimal -c clippy -c miri
+		rustup default nightly
+		unset t
+	fi
+	mkdir -p ~/src && cd ~/src
+	cd "$OLDPWD"
+	# avoid recompiling so much
+	export CARGO_TARGET_DIR=/tmp/cargo
+	mkdir -p $CARGO_TARGET_DIR
+	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
+	# to manually set a token see https://github.com/settings/tokens
+	if exists gh; then
+    	export GITHUB_TOKEN=$(gh auth token)
+	fi
+	# we need to check for the full path because we have a wrapper in dotfiles/bin
+	if ! [ -x "${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" ]; then
+		# https://github.com/cargo-bins/cargo-binstall#installation
+		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+	else
+		# update to latest version; old versions often hit a rate limit
+		cargo binstall cargo-binstall
+	fi
+	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
+	if exists bat; then
+		bat cache --build
+	fi
+
+	# extensions are managed by vscode itself
+}
+
+install_linux_lol() {
+	# TODO: don't hard-code an arch lmao
+	cpp=$libdir/cpptools
+	if ! [ -d $cpp ]; then
+		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
+		unzip "$vsix" -d $cpp
+		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
+	fi
+	# TODO: lol this is so funny we're literally just hardcoding the arch
+	# can't just install from apt because the version is too old and doesn't support `-ln auto`
+	if ! exists shfmt; then
+		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
+		chmod +x ~/.local/bin/shfmt
+	fi
+	if ! exists lua-language-server; then
+		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
+		mkdir -p $libdir/lua-lsp
+		tar -C $libdir/lua-lsp -xf "$tar"
+		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
+	fi
+
+	# apt package is ancient and doesn't support zsh
+	if ! exists fzf; then
+		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
+	fi
+
+	# We use a bunch of features that are only in nvim 10.
+	if exists nvim; then
+		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
+	fi
+	wanted_version=v0.11.0
+	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
+		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
+		rm -rf "$libdir"/nvim-linux-x86_64
+		mkdir -p "$libdir"
+		tar -C "$libdir" -xf "$nvim"
+		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
+	fi
+
+	if ! exists clojure; then
+		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
+		bash ./linux-install.sh --prefix ~/.local/lib/clojure
+		rm ./linux-install.sh
+	fi
+}
+
 setup_basics () {
 	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
@@ -49,11 +153,6 @@ setup_basics () {
 	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
 	git clone https://github.com/lincheney/fzf-tab-completion $libdir/fzf-tab-completion/
 	~/.config/tmux/plugins/tpm/bin/install_plugins
-
-	ANTIBODY=~/.local/share/antibody
-	if [ ! -f $ANTIBODY/antibody ]; then
-		curl -sfL git.io/antibody | sh -s - -b $ANTIBODY
-	fi
 
 	if exists dconf; then
 		dconf load / < lib/gnome-keybindings.ini
@@ -152,11 +251,11 @@ setup_backup () {
 setup_install_global () {
 	echo Installing global packages
 	if exists sudo; then
-		sudo --preserve-env=PATH ./lib/setup_sudo.sh
+		sudo --preserve-env=PATH ./lib/setup_sudo.sh main
 	elif exists su; then
-		su root -c ./lib/setup_sudo.sh
+		su root -c ./lib/setup_sudo.sh main
 	else
-		./lib/setup_sudo.sh
+		./lib/setup_sudo.sh main
 	fi
 }
 
@@ -164,17 +263,14 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
+	if [ "$(uname)" = Linux ]; then
+		install_linux_lol
+	elif exists brew; then
+		install_brew
+	fi
 	install_rust
 	if ! exists fx; then
 		lib/fx-install.sh
-	fi
-
-	# TODO: don't hard-code an arch lmao
-	cpp=$libdir/cpptools
-	if ! [ -d $cpp ]; then
-		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
-		unzip "$vsix" -d $cpp
-		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
 	fi
 
 	if ! [ -e ~/.bash-preexec.sh ]; then
@@ -186,15 +282,6 @@ setup_install_local () {
 		rm -r ~/.atuin
 	fi
 
-	# imagine an = sign: alias python=python3
-	cmd_alias() {
-		to=$1
-		from=$2
-		if ! [ -x ~/.local/bin/$to ] && exists $from; then
-			ln -sf "$(command -v $from)" ~/.local/bin/$to
-		fi
-	}
-
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3
 	cmd_alias py python3
@@ -202,44 +289,9 @@ setup_install_local () {
 	cmd_alias vi nvim
 	cmd_alias vim nvim
 
-	# TODO: lol this is so funny we're literally just hardcoding the arch
-	# can't just install from apt because the version is too old and doesn't support `-ln auto`
-	if ! exists shfmt; then
-		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
-		chmod +x ~/.local/bin/shfmt
-	fi
-	if ! exists lua-language-server; then
-		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
-		mkdir -p $libdir/lua-lsp
-		tar -C $libdir/lua-lsp -xf "$tar"
-		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
-	fi
 	if ! exists clojure-lsp; then
 		u=https://raw.githubusercontent.com/clojure-lsp/clojure-lsp/master/install
 		curl -s $u | bash -s -- --dir ~/.local/bin
-	fi
-	if ! exists clojure; then
-		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
-		bash ./linux-install.sh --prefix ~/.local/lib/clojure
-		rm ./linux-install.sh
-	fi
-
-	# apt package is ancient and doesn't support zsh
-	if ! exists fzf; then
-		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
-	fi
-
-	# We use a bunch of features that are only in nvim 10.
-	if exists nvim; then
-		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
-	fi
-	wanted_version=v0.11.0
-	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
-		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
-		rm -rf "$libdir"/nvim-linux-x86_64
-		mkdir -p "$libdir"
-		tar -C "$libdir" -xf "$nvim"
-		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
 	fi
 
 	if ! [ -d $libdir/PowerShellEditorServices ]; then
@@ -253,57 +305,6 @@ setup_install_local () {
 		npm config set --location user prefix $libdir/node_modules
 		npm install -g perlnavigator-server bash-language-server
 	fi
-}
-
-install_rust() {
-	set +ue
-	. config/profile
-	set -ue
-
-	if ! exists cargo; then
-		# Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
-		# Do it manually here.
-		if [ "${OSTYPE:-}" = msys ]; then
-			t=/tmp/vs_community.exe
-			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o $t
-			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
-			rm $t
-		fi
-		t=/tmp/rustup-init.sh
-		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy && rm $t
-		if [ "${OSTYPE:-}" = msys ]; then
-			PATH="$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
-		else
-			. "${CARGO_HOME:-$HOME/.cargo}/env"
-		fi
-		rustup toolchain add nightly --profile minimal -c clippy -c miri
-		rustup default nightly
-		unset t
-	fi
-	mkdir -p ~/src && cd ~/src
-	cd "$OLDPWD"
-	# avoid recompiling so much
-	export CARGO_TARGET_DIR=/tmp/cargo
-	mkdir -p $CARGO_TARGET_DIR
-	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
-	# to manually set a token see https://github.com/settings/tokens
-	if exists gh; then
-    	export GITHUB_TOKEN=$(gh auth token)
-	fi
-	# we need to check for the full path because we have a wrapper in dotfiles/bin
-	if ! [ -x "${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" ]; then
-		# https://github.com/cargo-bins/cargo-binstall#installation
-		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-	else
-		# update to latest version; old versions often hit a rate limit
-		cargo binstall cargo-binstall
-	fi
-	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
-	if exists bat; then
-		bat cache --build
-	fi
-
-	# extensions are managed by vscode itself
 }
 
 setup_all () {

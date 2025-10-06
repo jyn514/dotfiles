@@ -28,10 +28,13 @@ export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
 export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
+
 # less documents that it searches here by default, but the docs are wrong
 export LESSKEYIN="$HOME/.config/lesskey"
 # people keep passing random dumb arguments to less. override them so we use the defaults in lesskey.
 export PAGER=less
+export LESS=
+
 export MANPAGER='nvim +Man! --clean -u ~/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
 export DEBUGINFOD_URLS="https://debuginfod.ubuntu.com"
 
@@ -442,8 +445,18 @@ awawa_handler() {
         } | cowsay -f "$DOTFILES"/lib/angel.cow -n
 }
 
+default_command_not_found() {
+	printf "%s: command not found\n" "$1" >&2
+	return 127
+}
+
 # really this is a bash/zsh thing, but sh just ignores this function if it doesn't support it
 command_not_found_handle() {
+	# short-circuit if we're still starting up
+	if [ -n "$RPS1" ]; then
+		default_command_not_found "$@"
+		return $?
+	fi
 	case "$1" in
 		# awawawa!
 		awa|awawa*) awawa_handler "$@"; return 0;;
@@ -473,12 +486,11 @@ command_not_found_handle() {
 		$CNF -- "$1"
 		return $?
 	# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
-	elif BREW=$(command -v brew 2>/dev/null) && CMD=$($BREW which-formula --explain "$1") && [ "$CMD" ]; then
+	elif BREW=$(command -v brew 2>/dev/null) && CMD=$($BREW which-formula --explain --skip-update "$1") && [ "$CMD" ]; then
 		echo "$CMD"
 		return 127
 	else
-		printf "%s: command not found\n" "$1" >&2
-		return 127
+		default_command_not_found "$@"
 	fi
 }
 command_not_found_handler() { command_not_found_handle "$@"; }

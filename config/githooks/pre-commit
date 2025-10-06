@@ -16,7 +16,7 @@ fi
 # Now run global hooks.
 tmpdir=$(mktemp -d --tmpdir "$(basename "$(realpath .)")-pre-commit.XXXX")
 trap 'rm -r "$tmpdir"' EXIT
-printf %s "$files" | xargs -d '\n' git checkout-index --prefix="$tmpdir/"
+printf %s "$files" | tr '\n' '\0' | xargs -0 git checkout-index --prefix="$tmpdir/"
 cd "$tmpdir"
 
 for c in symlinks case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do

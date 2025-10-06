@@ -41,3 +41,12 @@ is_wsl() {
 	# https://superuser.com/questions/1749781/how-can-i-check-if-the-environment-is-wsl-from-a-shell-script
 	[ -e /proc/sys/fs/binfmt_misc/WSLInterop ]
 }
+
+# imagine an = sign: alias python=python3
+cmd_alias() {
+	to=$1
+	from=$2
+	if ! [ -x ~/.local/bin/$to ] && exists $from; then
+		ln -sf "$(command -v $from)" ~/.local/bin/$to
+	fi
+}

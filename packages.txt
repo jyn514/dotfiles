@@ -7,6 +7,7 @@ curl
 direnv
 figlet
 fscrypt
+fzf
 # https://github.com/dundee/gdu
 # *significantly* faster than `dust`
 gdu
@@ -23,11 +24,12 @@ libssl-dev
 libterm-readline-gnu-perl
 liburi-perl
 libusb-1.0-0-dev
+lua-language-server
 manpages
 manpages-dev
 ninja-build
 nmap
-openvpn
+nvim
 perl
 pkg-config
 python3-pip
@@ -39,6 +41,7 @@ strace
 tcsh
 traceroute
 tree
+tmux
 unzip
 valgrind
 xdg-utils

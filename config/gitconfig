@@ -11,7 +11,6 @@
 	preloadindex = true
 	autocrlf = input
 	excludesfile = ~/.config/git/ignore
-	hooksPath = ~/.config/git/hooks
 	pager = delta
 [interactive]
 	diffFilter = delta --color-only
@@ -110,6 +109,8 @@
 	threeWay = true
 [log]
 	follow = true
+	diffMerges = combined
+	showSignature = false
 [branch]
 	sort = committerdate
 [tag]
