@@ -1,4 +1,5 @@
 asciinema
+antidote
 bpytop
 build-essential
 clangd

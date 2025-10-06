@@ -30,14 +30,18 @@ fi
 
 
 ABBR_AUTOLOAD=0
+RPS1="%F{240}loading%f"
 
 # package manager
-antibody=$HOME/.local/share/antibody
-source <($antibody/antibody init)
+antidote=$HOME/.local/share/antidote
+zstyle ':antidote:bundle' file ~/.config/antidote/zsh-plugins.zsh
+source $antidote/antidote.zsh
+source <(antidote init)
+# source $antidote/antidote.zsh
+# antidote load
 
 # delay expensive things until after prompt renders
-antibody bundle romkatv/zsh-defer.git
-RPS1="%F{240}loading%f"
+antidote bundle romkatv/zsh-defer.git
 
 plugins=()
 if exists fzf; then
@@ -50,8 +54,8 @@ plugins+=(
 	olets/zsh-abbr
 )
 # Static loading for antigen
-zsh-defer -12pc 'echo "$plugins[*]" | tr " " "\n" | $antibody/antibody bundle > $antibody/cache.sh'
-zsh-defer -12p source $antibody/cache.sh
+zsh-defer -12pc 'echo "$plugins[*]" | tr " " "\n" | antidote bundle > $antidote/cache.sh'
+zsh-defer -12p source $antidote/cache.sh
 # TODO: antibody doesn't actually support loading multiple plugins in this way, lol.
 # maybe antidote will work better
 # zsh-defer -12p antibody bundle "$plugins"
