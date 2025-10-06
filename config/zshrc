@@ -33,35 +33,12 @@ ABBR_AUTOLOAD=0
 RPS1="%F{240}loading%f"
 
 # package manager
-antidote=$HOME/.local/share/antidote
-zstyle ':antidote:bundle' file ~/.config/antidote/zsh-plugins.zsh
-source $antidote/antidote.zsh
-source <(antidote init)
-# source $antidote/antidote.zsh
-# antidote load
+source $ZDOTDIR/antidote/antidote.zsh
+antidote load
 
-# delay expensive things until after prompt renders
-antidote bundle romkatv/zsh-defer.git
-
-plugins=()
-if exists fzf; then
-	# Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
-	plugins+=(Aloxaf/fzf-tab)
-fi
-plugins+=(
-	zsh-users/zsh-autosuggestions
-	zdharma-continuum/fast-syntax-highlighting
-	olets/zsh-abbr
-)
-# Static loading for antigen
-zsh-defer -12pc 'echo "$plugins[*]" | tr " " "\n" | antidote bundle > $antidote/cache.sh'
-zsh-defer -12p source $antidote/cache.sh
-# TODO: antibody doesn't actually support loading multiple plugins in this way, lol.
-# maybe antidote will work better
-# zsh-defer -12p antibody bundle "$plugins"
 zsh-defer -12p bindkey '^[l' autosuggest-execute
 zsh-defer -12p abbr import-aliases --session --quiet
-zsh-defer -12p abbr erase cat  # really annoying when running sudo commands
+zsh-defer -2p abbr erase cat  # really annoying when running sudo commands
 
 # space expands !... history and abbreviations
 # TODO: see if we can make this more useful?
@@ -273,9 +250,9 @@ zle -N fzf-file
 bindkey "^[t" fzf-file
 
 zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
-zsh-defer bindkey -M vicmd '^r' atuin-search
-zsh-defer bindkey -M vicmd / vi-find-next-char
-zsh-defer bindkey -M vicmd '?' vi-find-prev-char
+zsh-defer -12p bindkey -M vicmd '^r' atuin-search
+zsh-defer -12p bindkey -M vicmd / vi-find-next-char
+zsh-defer -12p bindkey -M vicmd '?' vi-find-prev-char
 _zsh_autosuggest_strategy_atuin-quiet() {
   _zsh_autosuggest_strategy_atuin "$@" 2>/dev/null
 }

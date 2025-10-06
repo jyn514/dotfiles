@@ -1,0 +1,6 @@
+romkatv/zsh-defer
+# Needs to be loaded before other plugins; see https://github.com/Aloxaf/fzf-tab
+Aloxaf/fzf-tab kind:defer
+zsh-users/zsh-autosuggestions kind:defer
+zdharma-continuum/fast-syntax-highlighting kind:defer
+olets/zsh-abbr kind:defer

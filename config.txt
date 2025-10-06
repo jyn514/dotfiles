@@ -1,5 +1,6 @@
 youtube-dl=.config/youtube-dl/config
 config.fish=.config/fish/config.fish
+zshrc=.config/zsh/.zshrc
 openbox.xml=.config/openbox/lubuntu-rc.xml
 grepme.toml=.config/grepme.toml
 kitty.conf=.config/kitty/kitty.conf
@@ -27,3 +28,4 @@ atuin.toml=.config/atuin/config.toml
 spotify-qt.desktop=.local/share/applications/spotify-qt.desktop
 rebel_readline.edn=.clojure/rebel_readline.edn
 deps.edn=.clojure/deps.edn
+zsh_plugins.txt=.config/zsh/.zsh_plugins.txt

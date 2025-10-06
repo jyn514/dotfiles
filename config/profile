@@ -417,6 +417,7 @@ if [ "$DISPLAY" ]; then
 		}
 	fi
 fi
+export ZDOTDIR=~/.config/zsh
 export JUPYTER_CONFIG_DIR=~/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
