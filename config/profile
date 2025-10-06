@@ -464,7 +464,7 @@ command_not_found_handle() {
 		# check if we forgot to put a space between `g` and the git subcommand, but not for `gh`, which is its own command
 		gh) ;;
 		g*) sub=${1#*g}
-		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" --quiet; then
+		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" -q; then
 			shift
 			git "$sub" "$@"
 			return $?
@@ -475,7 +475,7 @@ command_not_found_handle() {
 		cargo) ;;
 		c) ;;
 		c*) sub=${1#*c}
-		if cargo --list | awk '{print $1}' | grep "^$sub$" --quiet; then
+		if cargo --list | awk '{print $1}' | grep "^$sub$" -q; then
 			shift
 			cargo "$sub" "$@"
 			return $?

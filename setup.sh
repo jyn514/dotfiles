@@ -5,6 +5,7 @@ libdir=$HOME/.local/lib
 
 install_alpine() {
 	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+	install_clojure
 }
 
 install_brew() {
@@ -12,6 +13,47 @@ install_brew() {
 	./lib/setup_sudo.sh install_features
 	ln -s $(brew --prefix)/opt/antidote/share/antidote ~/.local/share/
 	cmd_alias gdu gdu-go
+}
+
+install_linux_lol() {
+	# TODO: don't hard-code an arch lmao
+	cpp=$libdir/cpptools
+	if ! [ -d $cpp ]; then
+		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
+		unzip "$vsix" -d $cpp
+		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
+	fi
+	# TODO: lol this is so funny we're literally just hardcoding the arch
+	# can't just install from apt because the version is too old and doesn't support `-ln auto`
+	if ! exists shfmt; then
+		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
+		chmod +x ~/.local/bin/shfmt
+	fi
+	if ! exists lua-language-server; then
+		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
+		mkdir -p $libdir/lua-lsp
+		tar -C $libdir/lua-lsp -xf "$tar"
+		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
+	fi
+
+	# apt package is ancient and doesn't support zsh
+	if ! exists fzf; then
+		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
+	fi
+
+	# We use a bunch of features that are only in nvim 10.
+	if exists nvim; then
+		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
+	fi
+	wanted_version=v0.11.0
+	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
+		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
+		rm -rf "$libdir"/nvim-linux-x86_64
+		mkdir -p "$libdir"
+		tar -C "$libdir" -xf "$nvim"
+		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
+	fi
+	install_clojure
 }
 
 install_rust() {
@@ -65,45 +107,7 @@ install_rust() {
 	# extensions are managed by vscode itself
 }
 
-install_linux_lol() {
-	# TODO: don't hard-code an arch lmao
-	cpp=$libdir/cpptools
-	if ! [ -d $cpp ]; then
-		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
-		unzip "$vsix" -d $cpp
-		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
-	fi
-	# TODO: lol this is so funny we're literally just hardcoding the arch
-	# can't just install from apt because the version is too old and doesn't support `-ln auto`
-	if ! exists shfmt; then
-		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
-		chmod +x ~/.local/bin/shfmt
-	fi
-	if ! exists lua-language-server; then
-		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
-		mkdir -p $libdir/lua-lsp
-		tar -C $libdir/lua-lsp -xf "$tar"
-		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
-	fi
-
-	# apt package is ancient and doesn't support zsh
-	if ! exists fzf; then
-		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
-	fi
-
-	# We use a bunch of features that are only in nvim 10.
-	if exists nvim; then
-		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
-	fi
-	wanted_version=v0.11.0
-	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
-		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
-		rm -rf "$libdir"/nvim-linux-x86_64
-		mkdir -p "$libdir"
-		tar -C "$libdir" -xf "$nvim"
-		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
-	fi
-
+install_clojure() {
 	if ! exists clojure; then
 		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
 		bash ./linux-install.sh --prefix ~/.local/lib/clojure
