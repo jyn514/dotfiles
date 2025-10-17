@@ -113,6 +113,7 @@ install_clojure() {
 		bash ./linux-install.sh --prefix ~/.local/lib/clojure
 		rm ./linux-install.sh
 	fi
+	ln -s ~/.local/lib/clojure/bin/clojure ~/.local/bin/
 }
 
 setup_basics () {

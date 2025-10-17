@@ -35,7 +35,11 @@ queue_install() {
 			#gh) pkg=github-cli;;
 			gh) return;;  # don't want creds on remote servers
 			nvim) pkg=neovim;;
-			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|gdu|git-absorb|libpam-fscrypt|libssl-dev|libterm-readline-gnu-perl|liburi-perl|libusb-1.0-0-dev|lua-language-server|manpages|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
+			ninja-build) pkg="$pkg ninja-is-really-ninja";;
+			liburi-perl) pkg=perl-uri ;;
+			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu ;;
+			manpages) pkg=man-pages ;;
+			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
 	fi
