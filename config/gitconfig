@@ -4,7 +4,7 @@
 [credential]
 	helper = store
 [push]
-	default = upstream
+	default = current
 	autoSetupRemote = true
 [core]
 	eol = lf
@@ -129,3 +129,5 @@
     deltaCacheSize = 2047m
     packSizeLimit = 2047m
     windowMemory = 2047m
+[absorb]
+	autoStageIfNothingStaged = true
