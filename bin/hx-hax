@@ -11,7 +11,7 @@ my $editor = $ENV{REAL_EDITOR} || 'nvim';
 my $desktop = $editor eq 'hx' ? 'Helix' : $editor;
 # `.*?`: match anything, non-greedily
 # `(?::)`: match a `:` without capturing it
-my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?$/;
+my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$/;
 
 sub cmdexists {
   `sh -c "command -v $_[0]"`
