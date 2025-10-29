@@ -39,6 +39,7 @@
 	b = branch
 	c = commit
 	co = checkout
+	cp = cherry-pick
 	conf = config
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff

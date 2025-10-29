@@ -11,7 +11,7 @@ install_alpine() {
 install_brew() {
 	# note that we don't actually pass sudo here
 	./lib/setup_sudo.sh install_features
-	ln -s $(brew --prefix)/opt/antidote/share/antidote ~/.local/share/
+	ln -s $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 }
 

@@ -27,6 +27,7 @@ queue_install() {
 			unzip|curl|clangd|python3-pip|traceroute) return;; # packaged by xcode-tools
 			ninja-build) pkg=ninja;;
 			python3-pylsp) pkg=python-lsp-server;;
+			openjdk21) pkg=openjdk@21;;
 			*) ;;
 		esac
 		# TODO
