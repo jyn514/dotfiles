@@ -51,7 +51,7 @@
 	branch-log = !git l $(git merge-base HEAD upstream/HEAD)..
 	graph = l --all
 	signed = log --show-signature --oneline upstream..
-	pf = push --force-with-lease
+	pf = push --force-with-lease --force-if-includes
 	r = remote
 	s = status -sb
 	t = tag

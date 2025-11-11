@@ -542,7 +542,7 @@ git_info() {
 	fi
 
 	# if we have local modifications, show the status in red
-	if git diff-index --quiet HEAD -- 2>/dev/null; then
+	if git diff-index --quiet --ignore-submodules HEAD -- 2>/dev/null; then
 		printf %s "$FAINT_GREEN"
 	# weird edge case: this could be a repo with no commits at all
 	elif [ "$(find . -maxdepth 1 | wc -l)" -le 2 ]; then
