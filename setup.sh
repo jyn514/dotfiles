@@ -16,6 +16,8 @@ install_brew() {
 }
 
 install_linux_lol() {
+	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+
 	# TODO: don't hard-code an arch lmao
 	cpp=$libdir/cpptools
 	if ! [ -d $cpp ]; then
