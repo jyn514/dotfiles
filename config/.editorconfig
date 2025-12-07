@@ -11,3 +11,5 @@ root = true
 # c gets confused for cpp all the time 🥲
 [*.{c,cpp,csh}]
 	indent_size = 8
+[*.ninja]
+	indent_style = space
