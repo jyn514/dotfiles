@@ -13,6 +13,7 @@ local first_run = not vim.g.lazy_did_setup
 
 vim.g.mapleader = ' '
 vim.g.maplocalleader = 'f'
+vim.opt.termguicolors = true
 vim.opt.number = true
 vim.opt.breakindent = true
 vim.opt.undofile = true
@@ -861,7 +862,7 @@ end
 
 -- TODO: find a way to calculate this lazily
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
-lspconfig.rust_analyzer.setup {
+vim.lsp.config('rust-analyzer', {
 	cmd = { "rust-analyzer", "+nightly" },
 	settings = settings,
 	root_dir = function(buf)
@@ -890,7 +891,7 @@ lspconfig.rust_analyzer.setup {
 
 		return true
 	end
-}
+})
 
 local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})

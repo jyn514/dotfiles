@@ -276,7 +276,7 @@ setup_install_local () {
 
 	if exists apk; then
 		install_alpine
-	elif [ "$(uname)" = Linux ]; then
+	elif [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
 		install_linux_lol
 	elif exists brew; then
 		install_brew
