@@ -316,11 +316,11 @@ excuse () {
 }
 
 status () {
-	# jj is slow :(
-	#if is_jj_repo; then
-	#	# jj status
+	if is_jj_repo; then
+		timeout .1 jj status --ignore-working-copy && return
+	fi
 	if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
-		git s
+		timeout .1 git s
 	else
 		l
 	fi
@@ -535,7 +535,7 @@ FAINT_WHITE="$(ansi_escape "\033[2;37m")"
 git_info() {
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		if is_jj_repo; then jj-info; fi
+		if is_jj_repo; then timeout .1 jj-info; fi
 		return
 	else
 		printf ' '
