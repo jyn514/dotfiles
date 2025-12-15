@@ -53,7 +53,7 @@
 	signed = log --show-signature --oneline upstream..
 	pf = push --force-with-lease --force-if-includes
 	r = remote
-	s = status -sb
+	s = status -sb --ignore-submodules=dirty
 	t = tag
 	v = !git --version
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
@@ -75,6 +75,7 @@
 	colorMovedWS = ignore-space-change
 [checkout]
 	workers = 0
+	guess = false
 [fetch]
 	recurseSubmodules = no
 	parallel = 0
@@ -95,6 +96,7 @@
 	path = ~/.local/gitconfig
 [rebase]
 	autostash = true
+	autoSquash = true
 [commit]
 	verbose = true
 	cleanup = scissors
@@ -118,14 +120,16 @@
 	sort = taggerdate
 
 [url "git@github.com:"]
-    pushInsteadOf = https://github.com/
+    insteadOf = https://github.com/
 [url "git@gitlab.com:"]
-    pushInsteadOf = https://gitlab.com/
+    insteadOf = https://gitlab.com/
 
 # TODO: figure out what this does lol
 [core]
     packedGitLimit = 512m
     packedGitWindowSize = 512m
+	untrackedCache = true
+	fsmonitor = true
 [pack]
     deltaCacheSize = 2047m
     packSizeLimit = 2047m

@@ -30,6 +30,4 @@ if [ "$(jj diff --summary | wc -l)" = 0 ]; then
 else
 	color="$FAINT_RED"
 fi
-if jj_desc @- "$color"; then return; fi
-
-printf %s "${color}jj"
+jj_desc @- || printf %s "${color}jj"
