@@ -29,3 +29,4 @@ spotify-qt.desktop=.local/share/applications/spotify-qt.desktop
 rebel_readline.edn=.clojure/rebel_readline.edn
 deps.edn=.clojure/deps.edn
 zsh_plugins.txt=.config/zsh/.zsh_plugins.txt
+glide.ts=.config/glide/glide.ts
