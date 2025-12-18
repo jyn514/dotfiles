@@ -20,6 +20,8 @@ glide.autocmds.create("UrlEnter", {
 	hostname: "discord.com",
 }, async () => {
 	glide.buf.keymaps.del(["insert", "normal"], "<C-k>");
+	glide.buf.keymaps.del("normal", "e");
+	glide.buf.keymaps.del("normal", "r");
 	glide.buf.keymaps.set("normal", ":", async() => {
 		glide.keys.send('a:');
 	});
@@ -36,10 +38,10 @@ glide.keymaps.set("normal", "U", "keys <C-S-z>");
 ~
 // help
 // https://github.com/glide-browser/glide/discussions/155
-glide.keymaps.set("normal", "<C-?>", async() => {
-	browser.tabs.create({ url: "resource://glide-docs/index.html#default-keymappings" });
-	; // workaround for vim indent bug
-});
+glide.keymaps.set("normal", "<C-?>",
+	"tab_new resource://glide-docs/index.html#default-keymappings"
+);
+; // workaround for vim indent bug
 
 // gi acts like gI
 glide.keymaps.set('normal', 'gi', 'keys gI');
@@ -57,13 +59,13 @@ function shortest_unique_prefix(needle, haystack) {
 
 glide.o.hint_label_generator = async ({ content }) => {
 	const texts = await content.map((element) => element.textContent);
-	const haystack = texts.map((text) => text.replace(/\s*/g, '').toLowerCase());
+	const haystack = texts.map((text) => {
+		// strip leading numbers, non-ascii text, and annoying-to-type characters
+		return text.replace(/^[0-9]+/, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+	});
 
 	let abbrs = new Map();
 	let labels = haystack.map((text, i) => {
-		// if the hint text is a number, don't even try to give it a prefix.
-		if ("0" <= text[0] && text[0] <= "9") return "";
-
 		const prefix = shortest_unique_prefix(text, haystack);
 		// no text at all, nothing we can do here.
 		if (prefix === "") return "";
@@ -110,7 +112,6 @@ glide.o.hint_label_generator = async ({ content }) => {
 		nums_used++;
 		return last;
 	});
-	console.log(nums_used, labels);
 
 	return labels;
 };
