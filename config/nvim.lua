@@ -807,7 +807,7 @@ vim.lsp.config.perlnavigator = {
 	}
 }
 
-for _, lsp in ipairs({'clangd', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp'}) do
+for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp'}) do
 	vim.lsp.enable(lsp)
 end
 
@@ -883,14 +883,14 @@ end
 -- TODO: find a way to calculate this lazily
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 vim.lsp.config('rust-analyzer', {
-	cmd = { "rust-analyzer", "+nightly" },
+	cmd = { "rust-analyzer" },
 	settings = settings,
-	root_dir = function(buf)
-		local dir = lspconfig.rust_analyzer.config_def.default_config.root_dir(buf)
+	root_dir = function(buf, on_dir)
+		local dir = vim.fs.root(0, { 'x.py', '.git', 'Cargo.toml' })  -- order matters
 		if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
 			dir = vim.fs.dirname(dir)
 		end
-		return dir
+		on_dir(dir)
 	end,
 	-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
 	-- init_options = settings,
@@ -908,8 +908,6 @@ vim.lsp.config('rust-analyzer', {
 			client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
 			client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
 		end
-
-		return true
 	end
 })
 
