@@ -46,6 +46,11 @@ glide.keymaps.set("normal", "<C-?>",
 // gi acts like gI
 glide.keymaps.set('normal', 'gi', 'keys gI');
 
+// edit config
+glide.keymaps.set('normal', 'ge', async() => {
+	await glide.process.spawn("hx-hax", ["~/.config/glide/glide.ts"]);
+});
+
 function shortest_unique_prefix(needle, haystack) {
 	let i = 0;
 	// while all words have the same character at position i, increment i

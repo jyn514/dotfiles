@@ -516,6 +516,18 @@ telescope.setup {
 }
 telescope.load_extension 'ui-select'
 
+local gitsigns = require('gitsigns')
+gitsigns.setup({
+	current_line_blame = true,
+	signs = {
+		add = { text = '+' },
+		change = { text = '~' },
+		delete = { text = '_' },
+		topdelete = { text = '‾' },
+		changedelete = { text = '~' },
+	}
+})
+
 local pickers = require('telescope.builtin')
 vim.keymap.set('n', '<leader>b', function() pickers.buffers({ sort_mru = true, ignore_current_buffer = true }) end, { desc = "Open buffer picker" })
 
@@ -541,6 +553,7 @@ end, { desc = "Search in workspace" })
 vim.keymap.set('n', '<leader>g', function()
 	pickers.git_files({ git_command = {"git", "ls-files", "--modified"}, prompt_title = "Modified Files" })
 end, { desc = "Modified files" })
+bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
 
 require("nvim-lightbulb").setup({
 	autocmd = { enabled = true }
@@ -584,17 +597,6 @@ if first_run then
 		{ '<LocalLeader>', group = "Debugging" },
 	})
 end
-
-require('gitsigns').setup({
-	current_line_blame = true,
-	signs = {
-		add = { text = '+' },
-		change = { text = '~' },
-		--[[ delete = { text = '_' },
-		topdelete = { text = '‾' }, ]]
-		changedelete = { text = '~' },
-	}
-})
 
 function set_spider(keybind, motion, desc)
 	vim.keymap.set(
@@ -681,7 +683,7 @@ dap.listeners.before.event_terminated.dapui_config = dapui.close
 dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
-vim.diagnostic.config({ virtual_text = true })
+vim.diagnostic.config({ underline = true })
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
 vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
