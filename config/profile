@@ -548,7 +548,7 @@ git_info() {
 	elif [ "$(find . -maxdepth 1 | wc -l)" -le 2 ]; then
 		printf %s "$FAINT_GREEN"
 	else
-		printf %s "$FAINT_RED"
+		printf %s "$RED"
 	fi
 
 	# if HEAD is on a branch, point to that branch
@@ -593,7 +593,7 @@ prompt_command() {
 	last_status=$?
 	printf %s "$FAINT_WHITE($(basename -- "${ZSH_ARGZERO:-$0}")"
 	printf "@"; hostname | tr -d '\n'
-	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${FAINT_RED}root"
+	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
 	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
 	git_info | tr -d '\n'
 	echo
