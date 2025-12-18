@@ -26,6 +26,14 @@ glide.autocmds.create("UrlEnter", {
 		glide.keys.send('a:');
 	});
 });
+glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async () => {
+	glide.buf.keymaps.del("normal", "d");
+	glide.buf.keymaps.del("normal", "e");
+	glide.buf.keymaps.del("normal", "r");
+	glide.buf.keymaps.set("normal", ":", async() => {
+		glide.keys.send('a:');
+	});
+});
 
 // pin tab
 glide.keymaps.set("normal", "p", async() => {

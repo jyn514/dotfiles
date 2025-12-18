@@ -888,7 +888,8 @@ vim.lsp.config('rust-analyzer', {
 	cmd = { "rust-analyzer" },
 	settings = settings,
 	root_dir = function(buf, on_dir)
-		local dir = vim.fs.root(0, { 'x.py', '.git', 'Cargo.toml' })  -- order matters
+		local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters
+		if not dir then return end
 		if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
 			dir = vim.fs.dirname(dir)
 		end
