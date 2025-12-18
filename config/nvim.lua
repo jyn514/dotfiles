@@ -486,6 +486,7 @@ vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 vim.cmd.colorscheme 'alabaster-black'
 
+local fd_cmd = {"fd", "--type=f", "--color=never"}
 local telescope = require('telescope')
 telescope.setup {
 	defaults = {
@@ -494,6 +495,13 @@ telescope.setup {
 			n = {
 				["<C-c>"] = require('telescope.actions').close
 			}
+		}
+	},
+	pickers = {
+		-- TODO: file caching so this isn't so slow
+		-- maybe github.com/folke/snacks.nvim/blob/main/docs/picker.md ?
+		find_files = {
+			find_command = fd_cmd
 		}
 	},
 	extensions = {
@@ -510,11 +518,23 @@ telescope.load_extension 'ui-select'
 
 local pickers = require('telescope.builtin')
 vim.keymap.set('n', '<leader>b', function() pickers.buffers({ sort_mru = true, ignore_current_buffer = true }) end, { desc = "Open buffer picker" })
-vim.keymap.set('n', '<leader>f', pickers.find_files, { desc = "Open file picker" })
+
+local fd_cmd_no_llvm = vim.deepcopy(fd_cmd)
+table.insert(fd_cmd_no_llvm, "-Esrc/llvm-project")
+
+vim.keymap.set('n', '<leader>f', function()
+	pickers.find_files({find_command = fd_cmd_no_llvm})
+end, { desc = "Open file picker (ignore llvm)" })
+
+vim.keymap.set('n', '<leader><C-f>', function()
+	pickers.find_files({ cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) } or vim.fn.expand('%:p:h'))
+end, { desc = "Open file picker (current package or workspace)" })
 vim.keymap.set('n', '<leader><A-f>', function()
 	pickers.find_files({ no_ignore = true, no_ignore_parent = true, hidden = true })
 end, { desc = "Open file picker (include ignored)" })
+
 vim.keymap.set('n', '<leader>F', pickers.oldfiles, { desc = "Open file picker (all files ever opened)" })
+
 vim.keymap.set('n', '<leader>/', function()
 	pickers.live_grep({prompt_title = "Live Search"})
 end, { desc = "Search in workspace" })
