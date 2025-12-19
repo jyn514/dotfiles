@@ -20,9 +20,10 @@
 
 glide.buf.keymaps.del("normal", "s");
 
-glide.autocmds.create("UrlEnter", {
-	hostname: "discord.com",
-}, async () => {
+glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
+	glide.buf.keymaps.del("normal", "gi");
+});
+glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
 	glide.buf.keymaps.del(["insert", "normal"], "<C-k>");
 	glide.buf.keymaps.del("normal", "e");
 	glide.buf.keymaps.del("normal", "r");
