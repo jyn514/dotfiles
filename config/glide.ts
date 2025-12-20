@@ -15,6 +15,10 @@
 //   https://github.com/glide-browser/glide/blob/main/src/glide/browser/base/content/plugins/keymaps.mts
 //
 // Try typing `glide.` and see what you can do!
+//
+// NOTE: vim LSP integration requires that you open this file from ~/.config/glide, not from the dotfiles repo.
+
+glide.buf.keymaps.del("normal", "s");
 
 glide.autocmds.create("UrlEnter", {
 	hostname: "discord.com",
@@ -73,8 +77,8 @@ function shortest_unique_prefix(needle, haystack) {
 glide.o.hint_label_generator = async ({ content }) => {
 	const texts = await content.map((element) => element.textContent);
 	const haystack = texts.map((text) => {
-		// strip leading numbers, non-ascii text, and annoying-to-type characters
-		return text.replace(/^[0-9]+/, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+		// strip numbers, non-ascii text, and annoying-to-type characters
+		return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 	});
 
 	let abbrs = new Map();
