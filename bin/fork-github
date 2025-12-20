@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+case $1 in
+	(https://* | ssh://* | git@*) URL=$1  ;;
+	(*) URL=https://github.com/$1  ;;
+esac
+
+# https://stackoverflow.com/a/13840631
+DIR=${2:-$(echo "$URL" | sed -e 's|/$||' -e 's|:*/*\.git$||' -e 's|.*[/:]||g')}
+HOST=$(echo "$URL" | sed -e 's,^https://,,; s/^[^@]*@//' | cut -d: -f1 | cut -d/ -f1)
+
+git clone "$URL" "$DIR" || return
+
+builtin cd "$DIR" || return
+git remote rename origin upstream
+git remote add origin "git@$HOST:jyn514/$DIR".git
+echo "$DIR

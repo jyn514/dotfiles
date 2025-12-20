@@ -286,6 +286,9 @@ zle -N zle-zi
 bindkey '^[c' zle-zi
 bindkey -a '^[c' zle-zi
 
+functions -c fork_github fork-github
+unfunction fork_github
+
 zsh-defer -12p -c 'if exists jj; then source <(jj util completion zsh); fi'
 zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
 # add `-p` here if you see errors during delayed loading
