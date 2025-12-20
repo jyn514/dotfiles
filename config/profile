@@ -28,6 +28,7 @@ export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
 export GOPATH=~/.local/lib/go
 export GOBIN="$GOPATH/bin"
+export NVM_DIR=~/.local/lib/nvm
 
 # less documents that it searches here by default, but the docs are wrong
 export LESSKEYIN="$HOME/.config/lesskey"
@@ -60,11 +61,8 @@ add_path "$CARGO_HOME"/bin
 # add this even if it's not present, in case we create it later
 add_path "$HOME/.local/bin"
 add_path "$DOTFILES/bin"
-# needs to be added after everything else, since one of them might add node to path
-if exists node && ! exists npm; then
-	# note: `npm config get prefix` is atrociously slow
-	add_path "$(dirname "$(realpath "$(command -v node)")")"
-fi
+
+. "$NVM_DIR/nvm.sh"
 
 if exists nvim; then
 	export EDITOR=editor-hax

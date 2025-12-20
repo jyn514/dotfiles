@@ -313,11 +313,12 @@ setup_install_local () {
 		unzip -q "$pslsp" -d $libdir/PowerShellEditorServices
 	fi
 
-	if exists npm; then
-		mkdir -p $libdir/node_modules
-		npm config set --location user prefix $libdir/node_modules
-		npm install -g perlnavigator-server bash-language-server
-	fi
+	export NVM_DIR=~/.local/lib/nvm
+	mkdir -p "$NVM_DIR"
+	curl -so- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash >/dev/null
+	. "$NVM_DIR/nvm.sh"
+	nvm install --no-progress --lts node >/dev/null
+	npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server
 }
 
 setup_all () {
