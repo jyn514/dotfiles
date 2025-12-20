@@ -47,13 +47,44 @@ glide.keymaps.set("normal", "p", async() => {
 
 // undo
 glide.keymaps.set("normal", "U", "keys <C-S-z>");
-~
+glide.keymaps.set("normal", "U", "keys <D-S-z>");
+
+// forward/back arrows
+glide.keymaps.set(["insert", "normal"], "<A-Right>", "forward");
+glide.keymaps.set(["insert", "normal"], "<A-Left>", "back");
+
 // help
 // https://github.com/glide-browser/glide/discussions/155
 glide.keymaps.set("normal", "<C-?>",
 	"tab_new resource://glide-docs/index.html#default-keymappings"
 );
-; // workaround for vim indent bug
+// workaround for vim indent bug
+;
+
+glide.keymaps.set("normal", "<D-/>",
+	"tab_new resource://glide-docs/index.html#default-keymappings"
+);
+// workaround for vim indent bug
+;
+
+// clone repo
+// https://blog.craigie.dev/introducing-glide/
+glide.keymaps.set("normal", "gC", async () => {
+  // extract the owner and repo from a url like 'https://github.com/glide-browser/glide'
+	let url = glide.ctx.url;
+	const path = url.pathname.split("/").slice(1, 3);
+	const repo = path[1];
+	url.pathname = '/' + path.join('/');
+	if (!["github.com", "gitlab.com"].includes(url.hostname) || !repo)
+		throw new Error("current URL is not a github repo");
+
+	// * clone the current github repo to ~/src/$repo
+	// * start kitty with neovim open at the cloned repo
+	const repo_path = glide.path.join(glide.path.home_dir, "src", repo);
+	await glide.process.execute("fork-github", [url.toString(), repo_path]);
+	await glide.process.execute("hx-hax", [repo_path]);
+	// await glide.process.execute("kitty", ["-d", repo_path, "nvim"], { cwd: repo_path });
+}, { description: "open the GitHub repo in the focused tab in Neovim" });
 
 // gi acts like gI
 glide.keymaps.set('normal', 'gi', 'keys gI');
