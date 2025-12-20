@@ -350,12 +350,6 @@ Choose setup to run: "
 
 cd "$(dirname "$0")"
 . lib/lib.sh
-if ! exists realpath; then
-	. lib/realpath.sh
-	HAS_REALPATH=0
-else
-	HAS_REALPATH=1
-fi
 
 run() {
 	case "$1" in

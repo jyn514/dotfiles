@@ -2,7 +2,10 @@
 
 set -e
 
+. lib/lib.sh
+
 packages=
+here=$(realpath "$(dirname "$0")")
 
 queue_install() {
 	pkg="$1"
@@ -139,6 +142,10 @@ install_features () {
 	#zypper addrepo https://cli.github.com/packages/rpm/gh-cli.repo
 	#zypper ref
 	#zypper install gh
+	fi
+
+	if [ "$(uname)" = Darwin ]; then
+		launchctl config user path "/usr/bin:/bin:/usr/sbin:/sbin:$(realpath "$here/../bin"):$(brew --prefix)/bin"
 	fi
 }
 

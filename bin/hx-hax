@@ -97,6 +97,7 @@ sub xdgopen {
 }
 
 my $name = basename $0;
+$ENV{PATH} = `bash -c '. ~/.profile; echo \$PATH'`;
 exec ($editor, join_line split_line $ARGV[0]) if 'editor-hax' eq basename $0;
 if ('hx-hax' eq basename $0) {
   hxhax(@ARGV ? join_line split_line $ARGV[0] : '');
