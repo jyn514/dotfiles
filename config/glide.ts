@@ -18,10 +18,28 @@
 //
 // NOTE: vim LSP integration requires that you open this file from ~/.config/glide, not from the dotfiles repo.
 
+glide.autocmds.create("ConfigLoaded", async () => {
+	// tests and debugging go here
+	console.assert(labels(["a", "b", "c"]) == ["a", "b", "c"]);
+	console.assert(labels(["", "", ""]) == ["0", "1", "2"]);
+	console.assert(labels(["abcdefg", "ac"]) == ["ab", "ac"]);
+	console.assert(labels(["abcdefg", "abcdfff"]) == ["abe", "abf"]);
+
+	// Additional test cases
+	console.assert(labels(["apple", "application"]) == ["app", "appl"]);
+	console.assert(labels(["test", "test", "testing"]) == ["te", "0", "tes"]);
+	console.assert(labels(["", "a", ""]) == ["0", "a", "1"]);
+
+	const a = ["new", "notifications", "0", "1"];
+	console.assert(shortest_unique_prefix("new", a), "ne");
+});
+
 glide.buf.keymaps.del("normal", "s");
 
 // breaks bookmarks and fastmail code highlighting, and I can just use pageUp/Down
 glide.keymaps.del("insert", "<C-d>");
+// break View Source
+glide.keymaps.del(["normal", "insert"], "<C-u>");
 
 glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "gi");
@@ -74,6 +92,22 @@ glide.keymaps.set("normal", "<D-/>",
 // workaround for vim indent bug
 ;
 
+// move tab to new window
+glide.keymaps.set("normal", "W", async() => {
+	const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
+	browser.windows.create({ tabId: currentTab.id });
+});
+// move tab into existing window
+glide.keymaps.set("normal", "<A-w>", async() => {
+	const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
+	const windows = await browser.windows.getAll({ windowTypes: ["normal"] });
+	const next = windows.find(w => w.id != currentTab.windowId);
+
+	await browser.tabs.move(currentTab.id, { windowId: next.id, index: -1 });
+	await browser.tabs.update(currentTab.id, { active: true });
+	await browser.windows.update(next.id, { focused: true });
+});
+
 // clone repo
 // https://blog.craigie.dev/introducing-glide/
 glide.keymaps.set("normal", "gC", async () => {
@@ -98,75 +132,92 @@ glide.keymaps.set('normal', 'gi', 'keys gI');
 
 // edit config
 glide.keymaps.set('normal', 'ge', async() => {
-	await glide.process.spawn("hx-hax", ["~/.config/glide/glide.ts"]);
+	const dir = glide.path.join(glide.path.home_dir, ".config", "glide");
+	const config = glide.path.join(dir, "glide.ts");
+	await glide.process.spawn("hx-hax", [config], { cwd: dir });
 });
+
+// function partition(array, predicate) {
+// 	let [yes, no] = [[], []];
+// 	for ([i, elem] of array.entries()) {
+// 		(predicate(elem, i) ? yes : no).push(elem);
+// 	}
+// 	return [yes, no];
+// }
 
 function shortest_unique_prefix(needle, haystack) {
 	let i = 0;
 	// while all words have the same character at position i, increment i
-	while (needle[i] && haystack.some(w => w !== needle && w[i] === needle[i])) {
-		i++;
+	for (let i in needle) {
+		const prefix = needle.slice(0, i);
+		const is_unique = !haystack.some(w => w !== needle && w.startsWith(prefix));
+		if (is_unique) {
+			return prefix;
+		}
+	}
+	return needle;
+}
+
+function labels(texts) {
+	// strip numbers, non-ascii text, and annoying-to-type characters
+	let haystack = texts.map((text) => {
+		return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+	});
+	// now shorten as much as we can without losing info
+	haystack = haystack.map(text => shortest_unique_prefix(text, haystack));
+
+	let nums_used = 0;
+	const result = new Array(haystack.length);
+	const labelIndices = new Map();
+
+	// record the original order so we don't have to keep them in order while calculating.
+	for (const [index, label] of haystack.entries()) {
+		if (label === "") {
+			result[index] = String(nums_used++);
+		} else {
+			labelIndices.getOrInsert(label, []).push(index);
+		}
 	}
 
-	// prefix is the substring from the beginning to the last successfully checked i
-	return needle.slice(0, i+1);
+	// assign numbers to duplicates and remove them from the haystack.
+	const unique = [];
+	for (const [label, indices] of labelIndices) {
+		// first occurrence gets processed normally, rest get numbers
+		unique.push({ label, index: indices[0] });
+		for (let i = 1; i < indices.length; i++) {
+			result[indices[i]] = String(nums_used++);
+		}
+	}
+
+	// trim prefixes longer than 3 characters by using letters that occur later in the label.
+	const used = new Set();
+	outer: for (const {label, index} of unique) {
+		if (label.length > 3) {
+			const base = label.substring(0, 2);
+			// try each character after the 3rd in turn.
+			for (const c of label.substring(2)) {
+				const candidate = base + c;
+				if (!used.has(candidate)) {
+					result[index] = candidate;
+					used.add(candidate);
+					continue outer;
+				}
+			}
+			// we couldn't shorten it. use a number.
+			result[index] = String(nums_used++);
+		} else {
+			// already short enough, use it as-is.
+			result[index] = label;
+			used.add(label);
+		}
+	}
+
+	// try one last time to shorten prefixes—if we gave up earlier, we might have freed up a spot.
+	return result.map(text => shortest_unique_prefix(text, result));
 }
 
 glide.o.hint_label_generator = async ({ content }) => {
 	const texts = await content.map((element) => element.textContent);
-	const haystack = texts.map((text) => {
-		// strip numbers, non-ascii text, and annoying-to-type characters
-		return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
-	});
-
-	let abbrs = new Map();
-	let labels = haystack.map((text, i) => {
-		const prefix = shortest_unique_prefix(text, haystack);
-		// no text at all, nothing we can do here.
-		if (prefix === "") return "";
-
-		// if there's more than one occurance of `needle`, there's no unique prefix.
-		if (haystack.findIndex(w => w.startsWith(text)) != i) return "";
-
-		// set a cap on how long a label can be.
-		if (prefix.length > 3) {
-			let short = prefix.slice(0, 2);
-			// avoid returning duplicate labels
-			let i = abbrs.getOrInsert(short, 0);
-			abbrs.set(short, i+1);
-			// first one gets the prime spot
-			if (i == 0) {
-				return prefix.slice(0, 3);
-			// avoid mixing letters and numbers if there's too many numbers
-			} else if (i > 9) {
-				return "";
-			} else {
-				return short + i.toString();
-			}
-		}
-
-		return prefix;
-	});
-
-	// If we have a bunch of numbers, see if there's any single-letter free spots
-	const letters = Array(26).fill().map((_, i) => String.fromCharCode('a'.charCodeAt(0) + i));
-	const prefixes = [...abbrs.keys()];
-	let char_start = 0;
-	let nums_used = 0;
-	labels = labels.map(text => {
-		if (text !== "") return text;
-		const abbr = letters.slice(char_start).find(c => {
-			!labels.includes(c) && !prefixes.some(prefix => prefix.startsWith(c))
-		});
-		if (abbr) {
-			char_start = abbr.charCodeAt(0) - 'a'.charCodeAt(0) + 1;
-			return abbr;
-		}
-		// out of characters, use numbers
-		const last = nums_used.toString();
-		nums_used++;
-		return last;
-	});
-
-	return labels;
+	return labels(texts);
 };
+
