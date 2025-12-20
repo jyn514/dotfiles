@@ -20,8 +20,14 @@
 
 glide.buf.keymaps.del("normal", "s");
 
+// breaks bookmarks and fastmail code highlighting, and I can just use pageUp/Down
+glide.keymaps.del("insert", "<C-d>");
+
 glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "gi");
+	glide.buf.keymaps.del("normal", "j");
+	glide.buf.keymaps.del("normal", "k");
+	glide.buf.keymaps.del("normal", "u");
 });
 glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
 	glide.buf.keymaps.del(["insert", "normal"], "<C-k>");
