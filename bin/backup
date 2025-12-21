@@ -22,5 +22,4 @@
 
 set -eu
 . ~jyn/.local/config/restic.env
-cd ~jyn/Documents
-~jyn/.local/bin/restic backup --skip-if-unchanged --cache-dir ~restic/cache "$@" .
+restic backup ~jyn/Documents/backups --skip-if-unchanged --cache-dir ~restic/cache "$@" .
