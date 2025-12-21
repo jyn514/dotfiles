@@ -31,7 +31,7 @@ glide.autocmds.create("ConfigLoaded", async () => {
 	console.assert(labels(["", "a", ""]) == ["0", "a", "1"]);
 
 	const a = ["new", "notifications", "0", "1"];
-	console.assert(shortest_unique_prefix("new", a), "ne");
+	console.assert(shorten_unique_prefixes(a) == ["ne", "no", "0", "1"]);
 });
 
 glide.buf.keymaps.del("normal", "s");
@@ -145,57 +145,58 @@ glide.keymaps.set('normal', 'ge', async() => {
 // 	return [yes, no];
 // }
 
-function shortest_unique_prefix(needle, haystack) {
-	let i = 0;
-	// while all words have the same character at position i, increment i
-	for (let i in needle) {
-		const prefix = needle.slice(0, i);
-		const is_unique = !haystack.some(w => w !== needle && w.startsWith(prefix));
-		if (is_unique) {
-			return prefix;
+function shorten_unique_prefixes(haystack) {
+	// first, construct a set of duplicates
+	const seen = new Set();
+	const duplicates = new Set();
+	for (let t of haystack) {
+		if (seen.has(t)) {
+			duplicates.add(t);
+		} else {
+			seen.add(t);
 		}
 	}
-	return needle;
+
+	// shorten each word
+	return haystack.map((needle, pos) => {
+		if (duplicates.has(needle)) return needle;
+		// while all words have the same character at position i, increment i
+		for (let i = 1; i <= needle.length; i++) {
+			const prefix = needle.slice(0, i);
+			const is_unique = haystack.every((w, j) => pos === j || !w.startsWith(prefix));
+			if (is_unique) {
+				return prefix;
+			}
+		}
+		// no unique prefix
+		return needle;
+	});
+}
+
+function strip(text) {
+	// strip numbers, non-ascii text, and annoying-to-type characters
+	return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 }
 
 function labels(texts) {
-	// strip numbers, non-ascii text, and annoying-to-type characters
-	let haystack = texts.map((text) => {
-		return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
-	});
 	// now shorten as much as we can without losing info
-	haystack = haystack.map(text => shortest_unique_prefix(text, haystack));
+	const haystack = shorten_unique_prefixes(texts);
 
 	let nums_used = 0;
 	const result = new Array(haystack.length);
-	const labelIndices = new Map();
-
-	// record the original order so we don't have to keep them in order while calculating.
-	for (const [index, label] of haystack.entries()) {
-		if (label === "") {
-			result[index] = String(nums_used++);
-		} else {
-			labelIndices.getOrInsert(label, []).push(index);
-		}
-	}
-
-	// assign numbers to duplicates and remove them from the haystack.
-	const unique = [];
-	for (const [label, indices] of labelIndices) {
-		// first occurrence gets processed normally, rest get numbers
-		unique.push({ label, index: indices[0] });
-		for (let i = 1; i < indices.length; i++) {
-			result[indices[i]] = String(nums_used++);
-		}
-	}
 
 	// trim prefixes longer than 3 characters by using letters that occur later in the label.
+	// also, try to replace the last letter of duplicates.
+	// note that that can only help if the original text was > 3 characters.
 	const used = new Set();
-	outer: for (const {label, index} of unique) {
-		if (label.length > 3) {
-			const base = label.substring(0, 2);
+	outer: for (const [index, prefix] of haystack.entries()) {
+		if (prefix === "") {
+			result[index] = String(nums_used++);
+		} else if (prefix.length > 3 || used.has(prefix)) {
+			const base = prefix.substring(0, 2);
 			// try each character after the 3rd in turn.
-			for (const c of label.substring(2)) {
+			// consider the original text, not the shortened prefix.
+			for (const c of texts[index].substring(2)) {
 				const candidate = base + c;
 				if (!used.has(candidate)) {
 					result[index] = candidate;
@@ -207,17 +208,18 @@ function labels(texts) {
 			result[index] = String(nums_used++);
 		} else {
 			// already short enough, use it as-is.
-			result[index] = label;
-			used.add(label);
+			result[index] = prefix;
+			used.add(prefix);
 		}
 	}
 
 	// try one last time to shorten prefixes—if we gave up earlier, we might have freed up a spot.
-	return result.map(text => shortest_unique_prefix(text, result));
+	return shorten_unique_prefixes(result);
 }
 
 glide.o.hint_label_generator = async ({ content }) => {
-	const texts = await content.map((element) => element.textContent);
-	return labels(texts);
+	const texts = await content.map(element => [element.textContent, element.ariaLabel]);
+	const haystack = texts.map(([text, label]) => strip(text) || strip(label || ""));
+	return labels(haystack);
 };
 
