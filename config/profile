@@ -62,8 +62,6 @@ add_path "$CARGO_HOME"/bin
 add_path "$HOME/.local/bin"
 add_path "$DOTFILES/bin"
 
-. "$NVM_DIR/nvm.sh"
-
 if exists nvim; then
 	export EDITOR=editor-hax
 	export LESSEDIT='%E %g?lm\:%lm'
@@ -94,6 +92,9 @@ if [ "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
 fi
 
 . "$DOTFILES/lib/lib.sh"
+if [ -d "$NVM_DIR" ]; then
+	. "$NVM_DIR/nvm.sh"
+fi
 
 # TODO: work this into gitconfig somehow
 git_reset_author() {

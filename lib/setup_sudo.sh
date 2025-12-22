@@ -143,10 +143,6 @@ install_features () {
 	#zypper ref
 	#zypper install gh
 	fi
-
-	if [ "$(uname)" = Darwin ]; then
-		launchctl config user path "/usr/bin:/bin:/usr/sbin:/sbin:$(realpath "$here/../bin"):$(brew --prefix)/bin"
-	fi
 }
 
 install_security () {
@@ -256,6 +252,11 @@ main() {
 	set -x
 	install_security
 	install_features
+
+	if [ "$(uname)" = Darwin ]; then
+		launchctl config user path "/usr/bin:/bin:/usr/sbin:/sbin:$(realpath "$here/../bin"):$(brew --prefix)/bin"
+	fi
+
 	encrypt
 	remove_unwanted
 	set +x

@@ -18,7 +18,6 @@ git-absorb
 graphviz
 jq
 kakoune
-keepassxc
 libpam-fscrypt
 libssl-dev
 # the perl reimplementation of readline is broken with my inputrc, lol, lmao.
