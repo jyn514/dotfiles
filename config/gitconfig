@@ -73,6 +73,7 @@
 	algorithm = histogram
 	colorMoved = dimmed-zebra
 	colorMovedWS = ignore-space-change
+	ignoreSubmodules = dirty
 [checkout]
 	workers = 0
 	guess = false
@@ -136,3 +137,7 @@
     windowMemory = 2047m
 [absorb]
 	autoStageIfNothingStaged = true
+[submodule "src/llvm-project"]
+	ignore = dirty
+[submodule "src/gcc"]
+	ignore = dirty
