@@ -25,36 +25,7 @@ install_linux_lol() {
 		unzip "$vsix" -d $cpp
 		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
 	fi
-	# TODO: lol this is so funny we're literally just hardcoding the arch
-	# can't just install from apt because the version is too old and doesn't support `-ln auto`
-	if ! exists shfmt; then
-		download https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 ~/.local/bin/shfmt
-		chmod +x ~/.local/bin/shfmt
-	fi
-	if ! exists lua-language-server; then
-		tar=$(download https://github.com/LuaLS/lua-language-server/releases/download/3.13.5/lua-language-server-3.13.5-linux-x64.tar.gz)
-		mkdir -p $libdir/lua-lsp
-		tar -C $libdir/lua-lsp -xf "$tar"
-		ln -s ../lib/lua-lsp/bin/lua-language-server ~/.local/bin
-	fi
 
-	# apt package is ancient and doesn't support zsh
-	if ! exists fzf; then
-		tar -xOf "$(download https://github.com/junegunn/fzf/releases/download/v0.56.3/fzf-0.56.3-linux_amd64.tar.gz)" > ~/.local/bin/fzf && chmod +x ~/.local/bin/fzf
-	fi
-
-	# We use a bunch of features that are only in nvim 10.
-	if exists nvim; then
-		nversion=$(nvim --version | head -n1 | cut -d ' ' -f 2)
-	fi
-	wanted_version=v0.11.0
-	if [ "${nversion:-}" != $wanted_version ] || ! exists nvim; then
-		nvim=$(download https://github.com/neovim/neovim/releases/download/$wanted_version/nvim-linux-x86_64.tar.gz)
-		rm -rf "$libdir"/nvim-linux-x86_64
-		mkdir -p "$libdir"
-		tar -C "$libdir" -xf "$nvim"
-		ln -sf "$libdir"/nvim-linux-x86_64/bin/nvim ~/.local/bin/nvim
-	fi
 	install_clojure
 }
 
@@ -72,8 +43,14 @@ install_rust() {
 			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
 			rm $t
 		fi
-		t=/tmp/rustup-init.sh
-		curl https://sh.rustup.rs/ > $t && sh $t -y --profile minimal -c rustfmt -c clippy -c rust-analyzer && rm $t
+		if ! exists rustup-init; then
+			rustup_init=/tmp/rustup-init.sh
+			curl https://sh.rustup.rs/ > $rustup_init
+			chmod +x $rustup_init
+		else
+			rustup_init=rustup-init
+		fi
+		$rustup_init -y --profile minimal -c rustfmt -c clippy -c rust-analyzer
 		if [ "${OSTYPE:-}" = msys ]; then
 			PATH="$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
 		else
@@ -81,7 +58,7 @@ install_rust() {
 		fi
 		rustup toolchain add nightly --profile minimal -c clippy -c miri
 		rustup default nightly
-		unset t
+		unset rustup_init t
 	fi
 	mkdir -p ~/src && cd ~/src
 	cd "$OLDPWD"
@@ -113,9 +90,9 @@ install_clojure() {
 	if ! exists clojure; then
 		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
 		bash ./linux-install.sh --prefix ~/.local/lib/clojure
+		ln -s ~/.local/lib/clojure/bin/clojure ~/.local/bin/
 		rm ./linux-install.sh
 	fi
-	ln -s ~/.local/lib/clojure/bin/clojure ~/.local/bin/
 }
 
 setup_basics () {
@@ -290,18 +267,6 @@ setup_install_local () {
 	elif exists brew; then
 		install_brew
 	fi
-	if ! exists fx; then
-		lib/fx-install.sh
-	fi
-
-	if ! [ -e ~/.bash-preexec.sh ]; then
-		curl https://raw.githubusercontent.com/rcaloras/bash-preexec/master/bash-preexec.sh -o ~/.bash-preexec.sh
-	fi
-	if ! exists atuin; then
-		curl --proto '=https' --tlsv1.2 -LsSf https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh | bash -s - --no-modify-path
-		mv ~/.atuin/bin/atuin ~/.local/bin
-		rm -r ~/.atuin
-	fi
 
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3
@@ -309,11 +274,6 @@ setup_install_local () {
 	cmd_alias pip pip3
 	cmd_alias vi nvim
 	cmd_alias vim nvim
-
-	if ! exists clojure-lsp; then
-		u=https://raw.githubusercontent.com/clojure-lsp/clojure-lsp/master/install
-		curl -s $u | bash -s -- --dir ~/.local/bin
-	fi
 
 	if ! [ -d $libdir/PowerShellEditorServices ]; then
 		mkdir -p $libdir/PowerShellEditorServices

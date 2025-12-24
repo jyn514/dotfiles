@@ -9,6 +9,7 @@ if [ -n "$DOAS_USER" ]; then
 fi
 
 packages=
+brew_packages=
 here=$(realpath "$(dirname "$0")")
 my_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 
@@ -29,6 +30,7 @@ queue_install() {
 			libterm-readline-gnu-perl) pkg=perl-Term-ReadLine-Gnu ;;
 			python3-pylsp) pkg=python3-lsp-server ;;
 			build-essential) pkg=@development-tools ;;
+			bash-preexec|clojure|clojure-lsp|fx|shfmt|lua-language-server|watchman) brew_packages="$brew_packages $pkg"; return;;
 			*) ;;
 		esac
 	elif [ "$IS_BREW" = 1 ]; then
@@ -167,6 +169,14 @@ install_features () {
 	#zypper addrepo https://cli.github.com/packages/rpm/gh-cli.repo
 	#zypper ref
 	#zypper install gh
+	fi
+
+	if [ -n "$brew_packages" ]; then
+		if ! exists brew; then
+			NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
+		fi
+		sudo -u "$SUDO_USER" $(which brew) install $brew_packages
 	fi
 }
 

@@ -79,6 +79,10 @@ export GLFW_IM_MODULE=ibus
 # read .inputrc
 export ydb_readline=1
 
+if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
+fi
+
 case "$-" in
 	*i*) ;;
 	*)	return 0;;

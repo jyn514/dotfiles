@@ -264,6 +264,10 @@ zsh-defer -12p -c "$(direnv hook zsh)"
 
 # Needs to be initialized after all completions are loaded
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
+if [ -n "$HOMEBREW_PREFIX" ]; then
+	fpath[1,0]="$HOMEBREW_PREFIX/share/zsh/site-functions";
+fi
+
 autoload -Uz compinit
 # having weird cache invalidation issues; for now, tell zsh to unconditionally reuse the cache. at some point completion will be buggy and we can investigate further then.
 compinit -C
