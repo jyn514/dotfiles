@@ -51,6 +51,20 @@ queue_install() {
 			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
+	elif [ "$IS_CHIMERA" = 1 ]; then
+		case "$pkg" in
+			antidote|asciinema|bpytop|build-essential|cowsay|direnv|fscrypt|gdu|gh|git-absorb|libpam-fscrypt|libusb-1.0-0-dev|manpages|manpages-dev|nmap|lua-language-server|libterm-readline-gnu-perl|rclone|shellcheck|tcsh|shfmt) return;;
+			clangd) pkg=clang;;
+			liburi-perl) pkg=perl-uri;;
+			pkg-config) pkg=pkgconf;;
+			python3-pip) pkg=python-pip;;
+			python3-pylsp) pkg=python-lsp-server;;
+			ninja-build) pkg=ninja;;
+			nvim) pkg=neovim;;
+			libssl-dev) pkg=openssl3-devel;;
+			xdot) pkg=graphviz;;
+			*) ;;
+		esac
 	fi
 	packages="$packages $pkg"
 }
@@ -143,6 +157,8 @@ install_features () {
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
 		apk add less py3-pip zsh $packages
+	elif [ -n "$IS_CHIMERA" ]; then
+		apk add $packages
 	elif [ -n "$IS_BREW" ]; then
 		brew install $packages
 	# SUSE
@@ -242,7 +258,12 @@ if exists dpkg; then
 elif exists dnf; then
 	IS_RPM=1
 elif exists apk; then
-	IS_ALPINE=1
+	. /etc/os-release
+	if [ "$ID" = chimera ]; then
+		IS_CHIMERA=1
+	else
+		IS_ALPINE=1
+	fi
 elif exists brew; then
 	IS_BREW=1
 else
