@@ -24,6 +24,7 @@ git-delta
 glow
 graphviz
 jq
+kitty
 libpam-fscrypt
 libssl-dev
 # the perl reimplementation of readline is broken with my inputrc, lol, lmao.

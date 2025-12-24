@@ -819,8 +819,6 @@ vim.filetype.add { extension = {
 	flix  = 'flix',
 } }
 vim.api.nvim_create_autocmd("FileType", { callback = function()
-  vim.treesitter.start()
-
 	local ft = vim.bo.filetype
 	if ft == "uiua" then
 		vim.bo.commentstring = '#%s'
