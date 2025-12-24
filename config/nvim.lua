@@ -341,6 +341,7 @@ if first_run then
 		{'hrsh7th/cmp-cmdline', dependencies = 'hrsh7th/nvim-cmp' },
 		{'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
+			branch = "master",
 			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects' }},
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
@@ -450,7 +451,6 @@ moves.goto_previous_start["[n"] = "@number.inner"
 -- just seems to highlight the whole file? or the nearest function.
 -- You can also use captures from other query groups like `locals.scm`
 -- selections["as"] = { query = "@local.scope", query_group = "locals", desc = "Select language scope" },
-
 
 treesitter = require 'nvim-treesitter.configs'
 treesitter.setup {

@@ -18,11 +18,13 @@ queue_install() {
 		:
 	elif [ "$IS_RPM" = 1 ]; then
 		case "$pkg" in
+			libusb-1.0-0-dev) return;; # not sure what this was for anyway
+			antidote|lua-language-server) return;;
+			openjdk21) pkg=java-25-openjdk;;
 			liburi-perl) pkg=perl-URI ;;
 			manpages) pkg=man-pages ;;
 			manpages-dev) return;;  # included with man-pages
 			libssl-dev) pkg=openssl-devel ;;
-			libusb-1.0-0-dev) return;; # not sure what this was for anyway
 			libpam-fscrypt) return;; # fedora doesn't use ext4, so we don't use fscrypt
 			libterm-readline-gnu-perl) pkg=perl-Term-ReadLine-Gnu ;;
 			python3-pylsp) pkg=python3-lsp-server ;;

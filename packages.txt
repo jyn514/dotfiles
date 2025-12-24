@@ -1,10 +1,12 @@
+atuin
 asciinema
 antidote
-bpytop
+btop
 build-essential
 clangd
 cowsay
 curl
+git-delta
 direnv
 figlet
 fscrypt
