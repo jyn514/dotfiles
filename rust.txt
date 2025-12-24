@@ -1,5 +1,4 @@
 bacon
-bat
 broot
 cargo-audit
 cargo-outdated
@@ -7,14 +6,7 @@ cargo-sweep
 cargo-tree
 counts
 difftastic
-du-dust
-fd-find
-git-absorb
-git-delta
 jj-cli
 ripgrep
-zoxide
-pulldown-cmark
 mdbook
-atuin
 librespot

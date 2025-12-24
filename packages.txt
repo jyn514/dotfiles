@@ -8,7 +8,9 @@ clangd
 cowsay
 curl
 git-delta
+difftastic
 direnv
+fd-find
 figlet
 fscrypt
 fzf
@@ -18,6 +20,8 @@ gdu
 gh
 git
 git-absorb
+git-delta
+glow
 graphviz
 jq
 libpam-fscrypt
@@ -38,6 +42,7 @@ pkg-config
 python3-pip
 python3-pylsp
 rclone
+rustup
 shellcheck
 shfmt
 strace
@@ -49,4 +54,5 @@ unzip
 valgrind
 xdg-utils
 xdot
+zoxide
 zsh
