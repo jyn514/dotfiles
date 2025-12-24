@@ -17,7 +17,6 @@ git
 git-absorb
 graphviz
 jq
-kakoune
 libpam-fscrypt
 libssl-dev
 # the perl reimplementation of readline is broken with my inputrc, lol, lmao.
@@ -47,3 +46,4 @@ unzip
 valgrind
 xdg-utils
 xdot
+zsh

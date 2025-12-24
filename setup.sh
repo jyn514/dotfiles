@@ -172,7 +172,7 @@ setup_basics () {
 	if exists nvim; then
 		default=nvim
 		# lol, the nvim desktop file has the exact same mimetype
-		rg MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
+		grep MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
 		for mime in text/x-python text/x-python3 text/x-perl application/javascript application/x-csh; do
 			xdg-mime default $default.desktop $mime
 		done
@@ -233,18 +233,23 @@ setup_python () {
 setup_vim () {
 	echo Installing vim plugins
 VIMDIR="$HOME/.vim/autoload"
-	if ! [ -e "$VIMDIR/plug.vim" ]; then
+	if exists vim && ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
 		download https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim "$VIMDIR/plug.vim"
+		vim -c PlugInstall -c q -c q
 	fi
-	vim -c PlugInstall -c q -c q
 unset VIMDIR
-	if ! exists nvim; then return; fi
+	if exists nvim; then
 LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
-	if ! [ -e "$LAZYDIR" ]; then
-		git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git "$LAZYDIR"
-	fi
+		if ! [ -e "$LAZYDIR" ]; then
+			git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git "$LAZYDIR"
+		fi
 unset LAZYDIR
+	fi
+	if ! exists nvim && ! exists vim; then
+		echo "no vim installed ..."
+		return 1
+	fi
 }
 
 setup_backup () {
@@ -263,6 +268,8 @@ setup_install_global () {
 	echo Installing global packages
 	if exists sudo; then
 		sudo --preserve-env=PATH ./lib/setup_sudo.sh main
+	elif exists doas; then
+		doas ./lib/setup_sudo.sh main
 	elif exists su; then
 		su root -c ./lib/setup_sudo.sh main
 	else
@@ -363,18 +370,19 @@ run() {
 		su*|l*|6) setup_install_local; setup_python;;
 		i*|g*|7) setup_install_global;;
 		all|8) setup_all; exit 0;;
-		*) return 1;;
+		*) return 126;;
 	esac
 }
 
 if ! [ $# = 0 ]; then
-	if ! run "$1"; then message; fi
+	run "$1"
+	if [ $? = 126 ]; then message; fi
 else
-    message
-    while read -r choice; do
-    	if ! run "$choice"; then
-				echo "Please enter a number 0-8: "
-			fi
-    	message
-    done
+	message
+	while read -r choice; do
+		if ! run "$choice"; then
+			echo "Please enter a number 0-8: "
+		fi
+		message
+	done
 fi

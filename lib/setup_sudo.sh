@@ -4,8 +4,13 @@ set -e
 
 . lib/lib.sh
 
+if [ -n "$DOAS_USER" ]; then
+	SUDO_USER=$DOAS_USER
+fi
+
 packages=
 here=$(realpath "$(dirname "$0")")
+my_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 
 queue_install() {
 	pkg="$1"
@@ -86,6 +91,8 @@ install_features () {
 		t=$(download https://oryx.nyc3.cdn.digitaloceanspaces.com/keymapp/keymapp-latest.tar.gz)
 		tar -xf "$t"
 		chmod +x keymapp
+		mkdir -p "$my_home/.local/bin"
+		chown $SUDO_USER:$SUDO_USER "$my_home/.local/bin"
 		mv keymapp "$(getent passwd "$SUDO_USER" | cut -d: -f6)"/.local/bin/keymapp
 	fi
 
@@ -158,8 +165,8 @@ install_security () {
 }
 
 encrypt() {
-	if home=$(fscrypt_supported); then
-		encrypt_home_dir "$home"
+	if fscrypt_supported; then
+		encrypt_home_dir
 	else
 		setup_initramfs
 	fi
@@ -170,15 +177,11 @@ fscrypt_supported() {
 		fail "don't know original user; giving up"
 	fi
 
-	my_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 	fstype=$(df "$my_home" --output=fstype | tail -n1)
-	echo "$my_home"
 	[ "$fstype" = ext4 ]
 }
 
 encrypt_home_dir() {
-	my_home=$1
-
  if fscrypt status "$my_home" | grep "encrypted with fscrypt">/dev/null; then
 	 return;
  fi
@@ -257,9 +260,14 @@ main() {
 		launchctl config user path "/usr/bin:/bin:/usr/sbin:/sbin:$(realpath "$here/../bin"):$(brew --prefix)/bin"
 	fi
 
-	encrypt
 	remove_unwanted
+	encrypt
 	set +x
 }
+
+if [ $# = 0 ]; then
+	echo "usage: $0 main"
+	exit 1
+fi
 
 "$1"
