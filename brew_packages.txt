@@ -1,0 +1,7 @@
+bash-preexec
+clojure
+clojure-lsp
+fx
+lua-language-server
+shfmt
+watchman

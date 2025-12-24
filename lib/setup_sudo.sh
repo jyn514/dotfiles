@@ -30,7 +30,6 @@ queue_install() {
 			libterm-readline-gnu-perl) pkg=perl-Term-ReadLine-Gnu ;;
 			python3-pylsp) pkg=python3-lsp-server ;;
 			build-essential) pkg=@development-tools ;;
-			bash-preexec|clojure|clojure-lsp|fx|shfmt|lua-language-server|watchman) brew_packages="$brew_packages $pkg"; return;;
 			*) ;;
 		esac
 	elif [ "$IS_BREW" = 1 ]; then
@@ -171,13 +170,12 @@ install_features () {
 	#zypper install gh
 	fi
 
-	if [ -n "$brew_packages" ]; then
-		if ! exists brew; then
-			NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
-		fi
-		sudo -u "$SUDO_USER" $(which brew) install $brew_packages
+	brew_packages="$brew_packages $(grep -v '^\s*#' brew_packages.txt | tr '\n' ' ')"
+	if ! exists brew; then
+		NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+		eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 	fi
+	sudo -u "$SUDO_USER" $(which brew) install $brew_packages
 }
 
 install_security () {
@@ -251,9 +249,11 @@ setup_initramfs() {
 	if ! exists dracut || ! [ -f /etc/dracut.conf ]; then
 		fail "only know how to manage initramfs managed by dracut"
 	fi
-	echo 'kernel_cmdline=rd.neednet=1' >/etc/dracut.conf.d/network.conf
-	ln -sf "$DIR/46dropbear" /usr/lib/dracut/modules.d
-	dracut --force
+	if ! [ -e /usr/lib/dracut/modules.d/46dropbear ]; then
+		echo 'kernel_cmdline=rd.neednet=1' >/etc/dracut.conf.d/network.conf
+		ln -sf "$DIR/46dropbear" /usr/lib/dracut/modules.d
+		dracut --force
+	fi
 }
 
 remove_unwanted () {
