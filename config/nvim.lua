@@ -342,7 +342,7 @@ if first_run then
 		{'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
 			branch = "master",
-			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects' }},
+			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main' }},
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
 		{ "kylechui/nvim-surround", version = "^3.0.0" },
@@ -452,21 +452,20 @@ moves.goto_previous_start["[n"] = "@number.inner"
 -- You can also use captures from other query groups like `locals.scm`
 -- selections["as"] = { query = "@local.scope", query_group = "locals", desc = "Select language scope" },
 
-treesitter = require 'nvim-treesitter.configs'
-treesitter.setup {
+require('nvim-treesitter.configs').setup {
 	auto_install = true,
 	highlight = { enable = true },
 	-- incremental_selection = { enable = true },
-	textobjects = {
-		select = { enable = true, lookahead = true, keymaps = selections },
-		move = vim.tbl_extend('error', { enable = true, set_jumps = true }, moves),
-		swap = vim.tbl_extend('error', { enable = true }, swaps),
-		-- 	swap_next = { ["<leader>p"] = "@parameter.inner" },
-		-- 	swap_previous = { ["<leader>P"] = "@parameter.inner" },
-		-- }
-	},
 }
-local ts_repeat_move = require "nvim-treesitter.textobjects.repeatable_move"
+
+require('nvim-treesitter-textobjects').setup {
+	select = { enable = true, lookahead = true, keymaps = selections },
+	move = vim.tbl_extend('error', { enable = true, set_jumps = true }, moves),
+	swap = vim.tbl_extend('error', { enable = true }, swaps),
+	-- 	swap_next = { ["<leader>p"] = "@parameter.inner" },
+	-- 	swap_previous = { ["<leader>P"] = "@parameter.inner" },
+}
+local ts_repeat_move = require "nvim-treesitter-textobjects.repeatable_move"
 vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
 vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 
@@ -820,6 +819,8 @@ vim.filetype.add { extension = {
 	flix  = 'flix',
 } }
 vim.api.nvim_create_autocmd("FileType", { callback = function()
+  vim.treesitter.start()
+
 	local ft = vim.bo.filetype
 	if ft == "uiua" then
 		vim.bo.commentstring = '#%s'
