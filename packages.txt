@@ -1,6 +1,7 @@
 atuin
 asciinema
 antidote
+bat
 btop
 build-essential
 clangd

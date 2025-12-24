@@ -16,10 +16,10 @@ install_brew() {
 }
 
 install_linux_lol() {
-	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+	mkdir -p $libdir
 
-	# TODO: don't hard-code an arch lmao
 	cpp=$libdir/cpptools
+	# TODO: don't hard-code an arch lmao
 	if ! [ -d $cpp ]; then
 		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
 		unzip "$vsix" -d $cpp
@@ -281,6 +281,8 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
+	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+
 	if exists apk; then
 		install_alpine
 	elif [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
@@ -288,7 +290,6 @@ setup_install_local () {
 	elif exists brew; then
 		install_brew
 	fi
-	install_rust
 	if ! exists fx; then
 		lib/fx-install.sh
 	fi
@@ -326,6 +327,9 @@ setup_install_local () {
 	. "$NVM_DIR/nvm.sh"
 	nvm install --no-progress --lts node >/dev/null
 	npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server
+
+	# needs a password for cargo-binstall to log into github
+	install_rust
 }
 
 setup_all () {
