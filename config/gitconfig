@@ -121,9 +121,9 @@
 	sort = taggerdate
 
 [url "git@github.com:"]
-    insteadOf = https://github.com/
+    pushInsteadOf = https://github.com/
 [url "git@gitlab.com:"]
-    insteadOf = https://gitlab.com/
+    pushInsteadOf = https://gitlab.com/
 
 # TODO: figure out what this does lol
 [core]
