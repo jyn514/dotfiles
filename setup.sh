@@ -296,7 +296,7 @@ setup_install_local () {
 	curl -so- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash >/dev/null
 	. "$NVM_DIR/nvm.sh"
 	nvm install --no-progress --lts node >/dev/null
-	npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server
+	npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server
 
 	# needs a password for cargo-binstall to log into github
 	install_rust

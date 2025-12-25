@@ -808,7 +808,15 @@ vim.lsp.config.perlnavigator = {
 	}
 }
 
-for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp'}) do
+vim.lsp.config('oxc', {
+	cmd = {"npx", "oxc_language_server"},
+	root_dir = function(buf, on_dir)
+		local dir = vim.fs.root(0, { 'package.json', 'tsconfig.json' })  -- order matters
+		if dir then on_dir(dir) end
+	end,
+})
+
+for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc'}) do
 	vim.lsp.enable(lsp)
 end
 
