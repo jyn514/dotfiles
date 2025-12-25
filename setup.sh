@@ -230,6 +230,7 @@ unset VIMDIR
 LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
 		if ! [ -e "$LAZYDIR" ]; then
 			git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git "$LAZYDIR"
+			nvim --headless +:q
 		fi
 unset LAZYDIR
 	fi
