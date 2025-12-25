@@ -10,7 +10,7 @@ fi
 DOTFILES=$(dirname "$(realpath ~/.profile)")/..
 
 add_path () {
-	if ! "$DOTFILES/bin/show_path" | rg -F "$1" >/dev/null 2>&1; then
+	if ! echo "$PATH" | grep -F "(^|:)$1(:|$)" >/dev/null 2>&1; then
 		PATH="$1:$PATH"
 	fi
 }
@@ -97,7 +97,11 @@ fi
 
 . "$DOTFILES/lib/lib.sh"
 if [ -d "$NVM_DIR" ]; then
-	. "$NVM_DIR/nvm.sh"
+	nvm() {
+		unset -f nvm
+		. "$NVM_DIR/nvm.sh"
+		nvm "$@"
+	}
 fi
 
 # TODO: work this into gitconfig somehow

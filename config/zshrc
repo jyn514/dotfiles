@@ -4,7 +4,7 @@
 # to see all completions, `echo $_comps`. for a specific completion, `which _ls` *usually* works.
 # to debug a specific completion, `C-x ? Up`
 # to see all functions, `print -l ${(ok)functions}`
-# to profile startup, run `zsh -c zprof` (this is more accurate than putting zprof at the end of zshrc)
+# to profile startup, run `zsh -i -c zprof` (this is more accurate than putting zprof at the end of zshrc)
 # to see an even more detailed profile, use `time zsh -ic exit | ts %.S`
 # running time on functions: `time (foo)`
 # (unfortunately this can't be fixed automatically because `time` takes a whole pipeline as an argument, not a normal list of shell words)
