@@ -1,0 +1,212 @@
+--- lib/default-kde-keybinds	2025-12-23 22:35:10.926465119 -0500
++++ /home/jyn/.config/kglobalshortcutsrc	2025-12-25 11:22:02.809254289 -0500
+@@ -1,9 +1,9 @@
+ [ActivityManager]
+ _k_friendly_name=Activity Manager
+-switch-to-activity-014769d2-8eb6-4b48-a564-7e960262829b=none,none,Switch to activity "Default"
++switch-to-activity-fbf9130c-8fd2-4c97-b3eb-1a08d7f4bf10=none,none,Switch to activity "Default"
+ 
+ [KDE Keyboard Layout Switcher]
+-Switch to Last-Used Keyboard Layout=Meta+Alt+L,Meta+Alt+L,Switch to Last-Used Keyboard Layout
++Switch to Last-Used Keyboard Layout=none,Meta+Alt+L,Switch to Last-Used Keyboard Layout
+ Switch to Next Keyboard Layout=Meta+Alt+K,Meta+Alt+K,Switch to Next Keyboard Layout
+ _k_friendly_name=Keyboard Layout Switcher
+ 
+@@ -11,12 +11,6 @@
+ Toggle Screen Reader On and Off=Meta+Alt+S,Meta+Alt+S,Toggle Screen Reader On and Off
+ _k_friendly_name=Accessibility
+ 
+-[kcm_touchpad]
+-Disable Touchpad=Touchpad Off,Touchpad Off,
+-Enable Touchpad=Touchpad On,Touchpad On,
+-Toggle Touchpad=Touchpad Toggle\tMeta+Ctrl+Zenkaku Hankaku,Touchpad Toggle\tMeta+Ctrl+Zenkaku Hankaku,
+-_k_friendly_name=Touchpad
+-
+ [kmix]
+ _k_friendly_name=Audio Volume
+ decrease_microphone_volume=Microphone Volume Down,Microphone Volume Down,Decrease Microphone Volume
+@@ -30,7 +24,7 @@
+ 
+ [ksmserver]
+ Halt Without Confirmation=none,,Shut Down Without Confirmation
+-Lock Session=Meta+L\tScreensaver,Meta+L\tScreensaver,Lock Session
++Lock Session=Screensaver,Meta+L\tScreensaver,Lock Session
+ Log Out=Ctrl+Alt+Del,Ctrl+Alt+Del,Show Logout Screen
+ Log Out Without Confirmation=none,,Log Out Without Confirmation
+ LogOut=none,,Log Out
+@@ -52,6 +46,41 @@
+ Grid View=Meta+G,Meta+G,Toggle Grid View
+ Increase Opacity=none,,Increase Opacity of Active Window by 5%
+ Kill Window=Meta+Ctrl+Esc,Meta+Ctrl+Esc,Kill Window
++KrohnkiteBTreeLayout=none,none,Krohnkite: BTree Layout
++KrohnkiteColumnsLayout=none,none,Krohnkite: Columns Layout
++KrohnkiteDecrease=none,none,Krohnkite: Decrease
++KrohnkiteFloatAll=Meta+Shift+F,none,Krohnkite: Toggle Float All
++KrohnkiteFloatingLayout=none,none,Krohnkite: Floating Layout
++KrohnkiteFocusDown=Meta+J,none,Krohnkite: Focus Down
++KrohnkiteFocusLeft=Meta+H,none,Krohnkite: Focus Left
++KrohnkiteFocusNext=none,none,Krohnkite: Focus Next
++KrohnkiteFocusPrev=Meta+\\,,none,Krohnkite: Focus Previous
++KrohnkiteFocusRight=Meta+L,none,Krohnkite: Focus Right
++KrohnkiteFocusUp=Meta+K,none,Krohnkite: Focus Up
++KrohnkiteGrowHeight=Meta+Ctrl+J,none,Krohnkite: Grow Height
++KrohnkiteIncrease=Meta+I,none,Krohnkite: Increase
++KrohnkiteMonocleLayout=Meta+M,none,Krohnkite: Monocle Layout
++KrohnkiteNextLayout=Meta+\\\\,none,Krohnkite: Next Layout
++KrohnkitePreviousLayout=Meta+|,none,Krohnkite: Previous Layout
++KrohnkiteQuarterLayout=none,none,Krohnkite: Quarter Layout
++KrohnkiteRotate=Meta+O,none,Krohnkite: Rotate
++KrohnkiteRotatePart=none,none,Krohnkite: Rotate Part
++KrohnkiteSetMaster=Meta+Return,none,Krohnkite: Set master
++KrohnkiteShiftDown=Meta+Shift+J,none,Krohnkite: Move Down/Next
++KrohnkiteShiftLeft=Meta+Shift+H,none,Krohnkite: Move Left
++KrohnkiteShiftRight=Meta+Shift+L,none,Krohnkite: Move Right
++KrohnkiteShiftUp=Meta+Shift+K,none,Krohnkite: Move Up/Prev
++KrohnkiteShrinkHeight=Meta+Ctrl+K,none,Krohnkite: Shrink Height
++KrohnkiteShrinkWidth=Meta+Alt+L,none,Krohnkite: Shrink Width
++KrohnkiteSpiralLayout=none,none,Krohnkite: Spiral Layout
++KrohnkiteSpreadLayout=none,none,Krohnkite: Spread Layout
++KrohnkiteStackedLayout=none,none,Krohnkite: Stacked Layout
++KrohnkiteStairLayout=none,none,Krohnkite: Stair Layout
++KrohnkiteTileLayout=none,none,Krohnkite: Tile Layout
++KrohnkiteToggleFloat=Meta+F,none,Krohnkite: Toggle Float
++KrohnkiteTreeColumnLayout=none,none,Krohnkite: Three Column Layout
++KrohnkitegrowWidth=Meta+Alt+H,none,Krohnkite: Grow Width
++KrohnkitetoggleDock=Meta+Shift+D,none,Krohnkite: Toggle Dock
+ Move Tablet to Next Output=none,none,Move the tablet to the next output
+ MoveMouseToCenter=Meta+F6,Meta+F6,Move Mouse to Center
+ MoveMouseToFocus=Meta+F5,Meta+F5,Move Mouse to Focus
+@@ -91,9 +120,9 @@
+ Switch to Desktop 8=none,,Switch to Desktop 8
+ Switch to Desktop 9=none,,Switch to Desktop 9
+ Switch to Next Desktop=none,,Switch to Next Desktop
+-Switch to Next Screen=none,,Switch to Next Screen
++Switch to Next Screen=Meta+Shift+Up,,Switch to Next Screen
+ Switch to Previous Desktop=none,,Switch to Previous Desktop
+-Switch to Previous Screen=none,,Switch to Previous Screen
++Switch to Previous Screen=Meta+Shift+Down,,Switch to Previous Screen
+ Switch to Screen 0=none,,Switch to Screen 0
+ Switch to Screen 1=none,,Switch to Screen 1
+ Switch to Screen 2=none,,Switch to Screen 2
+@@ -108,53 +137,57 @@
+ Switch to Screen to the Right=none,,Switch to Screen to the Right
+ Toggle Night Color=none,none,Suspend/Resume Night Light
+ Toggle Window Raise/Lower=none,,Toggle Window Raise/Lower
+-Walk Through Windows=Alt+Tab,Alt+Tab,Walk Through Windows
+-Walk Through Windows (Reverse)=Alt+Shift+Tab,Alt+Shift+Tab,Walk Through Windows (Reverse)
+-Walk Through Windows Alternative=none,,Walk Through Windows Alternative
+-Walk Through Windows Alternative (Reverse)=none,,Walk Through Windows Alternative (Reverse)
+-Walk Through Windows of Current Application=Alt+`,Alt+`,Walk Through Windows of Current Application
+-Walk Through Windows of Current Application (Reverse)=Alt+~,Alt+~,Walk Through Windows of Current Application (Reverse)
+-Walk Through Windows of Current Application Alternative=none,,Walk Through Windows of Current Application Alternative
+-Walk Through Windows of Current Application Alternative (Reverse)=none,,Walk Through Windows of Current Application Alternative (Reverse)
++Walk Through Windows=Meta+Tab\tAlt+Tab,Meta+Tab\tAlt+Tab,Walk Through Windows
++Walk Through Windows (Reverse)=Meta+Shift+Tab\tAlt+Shift+Tab,Meta+Shift+Tab\tAlt+Shift+Tab,Walk Through Windows (Reverse)
++Walk Through Windows Alternative=none,none,Walk Through Windows Alternative
++Walk Through Windows Alternative (Reverse)=none,none,Walk Through Windows Alternative (Reverse)
++Walk Through Windows of Current Application=Meta+`\tAlt+`,Meta+`\tAlt+`,Walk Through Windows of Current Application
++Walk Through Windows of Current Application (Reverse)=Meta+~\tAlt+~,Meta+~\tAlt+~,Walk Through Windows of Current Application (Reverse)
++Walk Through Windows of Current Application Alternative=none,none,Walk Through Windows of Current Application Alternative
++Walk Through Windows of Current Application Alternative (Reverse)=none,none,Walk Through Windows of Current Application Alternative (Reverse)
+ Window Above Other Windows=none,,Keep Window Above Others
+ Window Below Other Windows=none,,Keep Window Below Others
+ Window Close=Alt+F4,Alt+F4,Close Window
++Window Custom Quick Tile Bottom=none,,Custom Quick Tile Window to the Bottom
++Window Custom Quick Tile Left=none,,Custom Quick Tile Window to the Left
++Window Custom Quick Tile Right=none,,Custom Quick Tile Window to the Right
++Window Custom Quick Tile Top=none,,Custom Quick Tile Window to the Top
+ Window Fullscreen=none,,Make Window Fullscreen
+ Window Grow Horizontal=none,,Expand Window Horizontally
+ Window Grow Vertical=none,,Expand Window Vertically
+ Window Lower=none,,Lower Window
+-Window Maximize=Meta+PgUp,Meta+PgUp,Maximize Window
++Window Maximize=Meta+Up\tMeta+PgUp,Meta+PgUp,Maximize Window
+ Window Maximize Horizontal=none,,Maximize Window Horizontally
+ Window Maximize Vertical=none,,Maximize Window Vertically
+-Window Minimize=Meta+PgDown,Meta+PgDown,Minimize Window
++Window Minimize=Meta+Down\tMeta+PgDown,Meta+PgDown,Minimize Window
+ Window Move=none,,Move Window
+ Window Move Center=none,,Move Window to the Center
+ Window No Border=none,,Toggle Window Titlebar and Frame
+ Window On All Desktops=none,,Keep Window on All Desktops
+ Window One Desktop Down=Meta+Ctrl+Shift+Down,Meta+Ctrl+Shift+Down,Window One Desktop Down
+ Window One Desktop Up=Meta+Ctrl+Shift+Up,Meta+Ctrl+Shift+Up,Window One Desktop Up
+-Window One Desktop to the Left=Meta+Ctrl+Shift+Left,Meta+Ctrl+Shift+Left,Window One Desktop to the Left
+-Window One Desktop to the Right=Meta+Ctrl+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right
++Window One Desktop to the Left=Meta+Ctrl+Shift+Left\tMeta+Ctrl+H,Meta+Ctrl+Shift+Left,Window One Desktop to the Left
++Window One Desktop to the Right=Meta+Ctrl+L\tMeta+Ctrl+Shift+Right,Meta+Ctrl+Shift+Right,Window One Desktop to the Right
+ Window One Screen Down=none,,Move Window One Screen Down
+ Window One Screen Up=none,,Move Window One Screen Up
+ Window One Screen to the Left=none,,Move Window One Screen to the Left
+ Window One Screen to the Right=none,,Move Window One Screen to the Right
+-Window Operations Menu=Alt+F3,Alt+F3,Window Operations Menu
++Window Operations Menu=Alt+F3,Alt+F3,Window Menu
+ Window Pack Down=none,,Move Window Down
+ Window Pack Left=none,,Move Window Left
+ Window Pack Right=none,,Move Window Right
+ Window Pack Up=none,,Move Window Up
+-Window Quick Tile Bottom=Meta+Down,Meta+Down,Quick Tile Window to the Bottom
++Window Quick Tile Bottom=none,Meta+Down,Quick Tile Window to the Bottom
+ Window Quick Tile Bottom Left=none,,Quick Tile Window to the Bottom Left
+ Window Quick Tile Bottom Right=none,,Quick Tile Window to the Bottom Right
+-Window Quick Tile Left=Meta+Left,Meta+Left,Quick Tile Window to the Left
+-Window Quick Tile Right=Meta+Right,Meta+Right,Quick Tile Window to the Right
+-Window Quick Tile Top=Meta+Up,Meta+Up,Quick Tile Window to the Top
++Window Quick Tile Left=none,Meta+Left,Quick Tile Window to the Left
++Window Quick Tile Right=none,Meta+Right,Quick Tile Window to the Right
++Window Quick Tile Top=none,Meta+Up,Quick Tile Window to the Top
+ Window Quick Tile Top Left=none,,Quick Tile Window to the Top Left
+ Window Quick Tile Top Right=none,,Quick Tile Window to the Top Right
+ Window Raise=none,,Raise Window
+ Window Resize=none,,Resize Window
+-Window Shade=none,,Shade Window
++Window Shade=none,none,Shade Window
+ Window Shrink Horizontal=none,,Shrink Window Horizontally
+ Window Shrink Vertical=none,,Shrink Window Vertically
+ Window to Desktop 1=none,,Window to Desktop 1
+@@ -190,6 +223,7 @@
+ Window to Screen 6=none,,Move Window to Screen 6
+ Window to Screen 7=none,,Move Window to Screen 7
+ _k_friendly_name=KWin
++disableInputCapture=Meta+Shift+Esc,Meta+Shift+Esc,Disable Active Input Capture
+ view_actual_size=Meta+0,Meta+0,Zoom to Actual Size
+ view_zoom_in=Meta++\tMeta+=,Meta++\tMeta+=,Zoom In
+ view_zoom_out=Meta+-,Meta+-,Zoom Out
+@@ -222,10 +256,11 @@
+ powerProfile=Battery\tMeta+B,Battery\tMeta+B,Switch Power Profile
+ 
+ [plasmashell]
++Slideshow Wallpaper Next Image=none,,Next Wallpaper Image
+ _k_friendly_name=plasmashell
+ activate application launcher=Meta\tAlt+F1,Meta\tAlt+F1,Activate Application Launcher
+ activate task manager entry 1=Meta+1,Meta+1,Activate Task Manager Entry 1
+-activate task manager entry 10=none,Meta+0,Activate Task Manager Entry 10
++activate task manager entry 10=none,,Activate Task Manager Entry 10
+ activate task manager entry 2=Meta+2,Meta+2,Activate Task Manager Entry 2
+ activate task manager entry 3=Meta+3,Meta+3,Activate Task Manager Entry 3
+ activate task manager entry 4=Meta+4,Meta+4,Activate Task Manager Entry 4
+@@ -239,18 +274,20 @@
+ cycle-panels=Meta+Alt+P,Meta+Alt+P,Move keyboard focus between panels
+ cycleNextAction=none,,Next History Item
+ cyclePrevAction=none,,Previous History Item
++edit_clipboard=none,,Edit Contents…
+ manage activities=Meta+Q,Meta+Q,Show Activity Switcher
+ next activity=Meta+A,none,Walk through activities
+ previous activity=Meta+Shift+A,none,Walk through activities (Reverse)
+-repeat_action=none,Meta+Ctrl+R,Manually Invoke Action on Current Clipboard
++repeat_action=none,,Manually Invoke Action on Current Clipboard
+ show dashboard=Ctrl+F12,Ctrl+F12,Show Desktop
+ show-barcode=none,,Show Barcode…
+ show-on-mouse-pos=Meta+V,Meta+V,Show Clipboard Items at Mouse Position
+-stop current activity=Meta+S,Meta+S,Stop Current Activity
+ switch to next activity=none,,Switch to Next Activity
+ switch to previous activity=none,,Switch to Previous Activity
+ toggle do not disturb=none,,Toggle do not disturb
+ 
+-# custom
++[services][kitty.desktop]
++_launch=Meta+T
++
+ [services][org.kde.konsole.desktop]
+-_launch=Ctrl+Alt+T\tMeta+T
++_launch=none
