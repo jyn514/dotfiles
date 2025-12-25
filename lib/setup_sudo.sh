@@ -162,6 +162,12 @@ install_features () {
 	elif [ -n "$IS_RPM" ]; then
 		rpm --import https://downloads.1password.com/linux/keys/1password.asc
 		queue_install 1password
+
+		# https://rpmfusion.org/Configuration
+		dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+			"https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"
+		dnf install -y libavcodec-freeworld h264enc x264 x265 openh264 --allow-erasing
+
 		dnf install -y $packages
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
