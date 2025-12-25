@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
+if CNF=$(command -v command-not-found 2>/dev/null); then
+	$CNF -- "$1"
+	exit 123
+# TODO: this is slow and idk if we can do anything about it :(
+elif DNF=$(command -v dnf 2>/dev/null) \
+	&& CMD=$($DNF --no-plugins --cacheonly --disablerepo='*' --enable-repo=updates --enable-repo=fedora \
+		repoquery --quiet --whatprovides "*/bin/$1") \
+	&& [ "$CMD" ]; then
+	echo "'$1' is not currently installed. You can install it with: 'dnf install $CMD'"
+	exit 123
+# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
+elif BREW=$(command -v brew 2>/dev/null) && CMD=$($BREW which-formula --explain --skip-update "$1") && [ "$CMD" ]; then
+	echo "$CMD"
+	exit 123
+else
+	exit 122
+fi

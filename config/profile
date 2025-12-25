@@ -107,7 +107,7 @@ git_reset_author() {
 
 is_jj_repo() {
 	# don't try to save the working copy, in case that hits an error
-	jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
+	exists jj && jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
 }
 
 show_conflicts() {
@@ -441,6 +441,18 @@ awawa_handler() {
 
 default_command_not_found() {
 	printf "%s: command not found\n" "$1" >&2
+
+	help=
+	exists command-not-found && help+=$(printf "\n%s" "command-not-found -- \"$1\"")
+	exists dnf && help+=$(printf "\n%s" "dnf --cacheonly repoquery --quiet --whatprovides \"*/bin/$1\"")
+	exists brew && help+=$(printf "\n%s" "brew which-formula --explain --skip-update \"$1\"")
+
+	echo "consider searching for it with one of:"
+	printf %s "suggest-missing-command \"$1\""
+	if [ -n "$help" ]; then
+		echo "$help"
+	fi
+
 	return 127
 }
 
@@ -475,15 +487,10 @@ command_not_found_handle() {
 		fi;;
 	esac
 
-	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
-	if CNF=$(command -v command-not-found 2>/dev/null); then
-		$CNF -- "$1"
-		return $?
-	# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
-	elif BREW=$(command -v brew 2>/dev/null) && CMD=$($BREW which-formula --explain --skip-update "$1") && [ "$CMD" ]; then
-		echo "$CMD"
-		return 127
-	else
+	if SUGGEST=$(command -v suggest-missing-command 2>/dev/null); then
+		timeout .1s "$SUGGEST" "$@"
+	fi
+	if ! [ $# = 123 ]; then
 		default_command_not_found "$@"
 	fi
 }
