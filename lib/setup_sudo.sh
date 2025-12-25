@@ -269,10 +269,12 @@ setup_initramfs() {
 }
 
 remove_unwanted () {
-	if ! [ -n "$IS_DEB" ]; then
-		return
+	if [ -n "$IS_DEB" ]; then
+		apt autoremove --purge apt-xapian-index
+	elif [ -n "$IS_RPM" ]; then
+		# this is strictly worse than zsh's builtin `which`, lmao
+		rm /etc/profile.d/which2.sh
 	fi
-	apt autoremove --purge apt-xapian-index
 }
 
 DIR="$(dirname "$(realpath "$0")")"

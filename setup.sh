@@ -173,10 +173,20 @@ setup_basics () {
 	fi
 
 	if [ -e  ~/.config/kglobalshortcutsrc ]; then
-		patch ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch
-		gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.reconfigure
+		setup_kde
 	fi
 unset DEST LOCAL f
+}
+
+setup_kde() {
+	krohnkite=$(download https://codeberg.org/anametologin/Krohnkite/releases/download/latest/krohnkite.kwinscript)
+	kpackagetool6 -t KWin/Script -i "$krohnkite"
+
+	git clone https://github.com/maurges/dynamic_workspaces "$libdir"/dynamic_workspaces
+	kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
+
+	patch ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch
+	gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.reconfigure
 }
 
 setup_shell () {
@@ -329,11 +339,12 @@ run() {
 		dot*|bas*|1) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
-		vi*|4) setup_vim;;
+		vi*|4) setup_basics; setup_vim;;
 		bac*|5) setup_basics; setup_backup;;
-		su*|l*|6) setup_install_local; setup_python;;
-		i*|g*|7) setup_install_global;;
-		all|8) setup_all; exit 0;;
+		l*|6) setup_install_local; setup_python;;
+		sudo*|i*|g*|7) setup_install_global;;
+		kde*|8) setup_kde;;
+		all|9) setup_all;;
 		*) return 126;;
 	esac
 }
