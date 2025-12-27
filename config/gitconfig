@@ -62,7 +62,7 @@
 	# TODO: write a script that uses `log` instead so i can pass `--reverse`
 	msg = show --pretty='%s%n%n%b' --no-patch
 	default-branch = !git symbolic-ref refs/remotes/upstream/HEAD | sed 's@^refs/remotes/upstream/@@'
-	autosquash = !git revise $(git merge-base HEAD upstream/HEAD) --autosquash -i
+	autosquash = !git revise $(git merge-base HEAD $(git config --get branch.$(git symbolic-ref --short HEAD).remote)/HEAD) -i
 	fixup = commit --fixup
 	delete-merged = !git branch -a --merged | grep personal | tail -n+2  | cut -d/ -f3- | xargs git push personal --delete --no-verify
 	mr = !sh -c 'git fetch $1 merge-requests/$2/head:mr-$2 && git checkout mr-$2' -
@@ -97,6 +97,8 @@
 	path = ~/.local/gitconfig
 [rebase]
 	autostash = true
+	autoSquash = true
+[revise]
 	autoSquash = true
 [commit]
 	verbose = true

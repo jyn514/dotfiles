@@ -7,7 +7,7 @@ merge-editor = "meld"
 
 [revsets]
 # i use a bunch of emails; easier to just track author name
-log = "@ | trunk()..author(\"jyn\") | trunk()"
+log = "@ | trunk()..author(substring:\"jyn\") | trunk()"
 
 [revset-aliases]
 'trunk' = 'trunk()'
@@ -33,6 +33,8 @@ f = ["fetch"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 amend = ["squash"]
 
+[templates]
+git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
 [template-aliases]
 'format_short_signature(signature)' = 'label("username", signature.name())'
 'format_timestamp(timestamp)' = 'timestamp.ago()'

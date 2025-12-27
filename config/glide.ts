@@ -18,20 +18,24 @@
 //
 // NOTE: vim LSP integration requires that you open this file from ~/.config/glide, not from the dotfiles repo.
 
+function arrayEq(a, b) {
+	return a.length === b.length && a.every((val, i) => b[i] == val);
+}
+
 glide.autocmds.create("ConfigLoaded", async () => {
 	// tests and debugging go here
-	console.assert(labels(["a", "b", "c"]) == ["a", "b", "c"]);
-	console.assert(labels(["", "", ""]) == ["0", "1", "2"]);
-	console.assert(labels(["abcdefg", "ac"]) == ["ab", "ac"]);
-	console.assert(labels(["abcdefg", "abcdfff"]) == ["abe", "abf"]);
+	console.assert(arrayEq(labels(["a", "b", "c"]), ["a", "b", "c"]));
+	console.assert(arrayEq(labels(["", "", ""]), ["0", "1", "2"]));
+	console.assert(arrayEq(labels(["abcdefg", "ac"]), ["ab", "ac"]));
+	console.assert(arrayEq(labels(["abcdefg", "abcdfff"]), ["abe", "abf"]));
 
 	// Additional test cases
-	console.assert(labels(["apple", "application"]) == ["app", "appl"]);
-	console.assert(labels(["test", "test", "testing"]) == ["te", "0", "tes"]);
-	console.assert(labels(["", "a", ""]) == ["0", "a", "1"]);
+	console.assert(arrayEq(labels(["apple", "application"]), ["app", "appl"]));
+	console.assert(arrayEq(labels(["test", "test", "testing"]), ["te", "0", "tes"]));
+	console.assert(arrayEq(labels(["", "a", ""]), ["0", "a", "1"]));
 
 	const a = ["new", "notifications", "0", "1"];
-	console.assert(shorten_unique_prefixes(a) == ["ne", "no", "0", "1"]);
+	console.assert(arrayEq(shorten_unique_prefixes(a), ["ne", "no", "0", "1"]));
 });
 
 glide.buf.keymaps.del("normal", "s");
@@ -63,6 +67,7 @@ glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async () => {
 	glide.buf.keymaps.set("normal", ":", async() => {
 		glide.keys.send('a:');
 	});
+	glide.buf.keymaps.del("normal", "t");
 });
 
 // pin tab
