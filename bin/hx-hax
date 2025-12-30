@@ -3,8 +3,10 @@
 use strict;
 use warnings;
 
+use Config;
 use Cwd 'abs_path';
 use File::Basename 'basename', 'dirname';
+use File::Which;
 use URI ();
 
 my $editor = $ENV{REAL_EDITOR} || 'nvim';
@@ -14,7 +16,7 @@ my $desktop = $editor eq 'hx' ? 'Helix' : $editor;
 my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$/;
 
 sub cmdexists {
-  `sh -c "command -v $_[0]"`
+	defined (which "$_[0]")
 }
 
 sub split_line {
@@ -42,6 +44,20 @@ sub trim {
   # https://stackoverflow.com/a/4597964/7669110
   return if (! scalar @_);
   $_[0] =~ s/^\s+|\s+$//rg
+}
+
+sub remove_dir_from_path {
+    my ($dir_to_remove) = @_;
+    my $path = $ENV{PATH} || '';
+    # ':' or ';'
+    my $separator = $Config{path_sep};
+    my @dirs = split(/$separator/, $path);
+
+    my @filtered_dirs;
+    foreach my $dir (@dirs) {
+        push @filtered_dirs, $dir unless $dir eq $dir_to_remove;
+    }
+    $ENV{PATH} = join($separator, @filtered_dirs);
 }
 
 sub hxhax {
@@ -73,27 +89,45 @@ sub hxhax {
   }
 }
 
+sub os_open {
+	if (cmdexists 'xdg-open') {
+		system('xdg-open', @_);
+	} else {
+		remove_dir_from_path dirname __FILE__;
+		system('open', @_);
+	}
+}
+
 sub xdgopen {
   my $target = $_[0];
-  if ($target =~ /:/) {
+
+  if ($target =~ /:[0-9]+$/) {
     my @split = split_line $target;
     my $file = $split[0];
-    chomp(my $mime = `xdg-mime query filetype "$file"`);
     my $default;
-    # apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
-    if (cmdexists 'gio') {
-      $default = (split '\n', `gio mime "$mime"`)[0] =~ s/^Default .*: //r;
-    } else {
-      $default = `xdg-mime query default "$mime"`;
-    }
-    if ($default =~ /$desktop\.desktop/) {
+
+		if (cmdexists 'duti') {
+			my $ext = split(/\.([^\.]+)$/, $file);
+			$default = (split /\n/, `duti -x $ext`)[0];
+		} else {
+			chomp(my $mime = `xdg-mime query filetype "$file"`);
+			# apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
+			if (cmdexists 'gio') {
+				$default = (split '\n', `gio mime "$mime"`)[0] =~ s/^Default .*: //r;
+			} else {
+				$default = `xdg-mime query default "$mime"`;
+			}
+		}
+    if ($default =~ /$desktop\.desktop/ || $default =~ "io.neovim") {
       hxhax join_line @split;
-    } else {
-      `xdg-open "$file"`;
+		} else {
+			my @args = @ARGV[0 .. $#ARGV - 2];
+			push(@args, $file);
+      os_open "$file";
     }
     return;
   }
-  `xdg-open "$target"`;
+  os_open @ARGV;
 }
 
 my $name = basename $0;
@@ -106,4 +140,4 @@ if ('hx-hax' eq basename $0) {
 }
 
 @ARGV or print 'usage: $0 <file>' && exit 1;
-xdgopen $ARGV[0];
+xdgopen $ARGV[-1];
