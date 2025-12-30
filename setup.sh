@@ -270,6 +270,7 @@ setup_install_local () {
 	mkdir -p ~/.local/bin
 
 	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+	curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
 
 	if exists apk; then
 		install_alpine
