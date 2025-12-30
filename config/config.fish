@@ -28,15 +28,6 @@ end
 . $DOTFILES/lib/env.sh
 . $DOTFILES/lib/paths.sh
 
-if [ -d "$NVM_DIR" ]
-	add_path $NVM_DIR/versions/node/v*/bin
-	function nvm
-		functions --erase nvm
-		. "$NVM_DIR/nvm.sh"
-		nvm $argv
-	end
-end
-
 if not status --is-interactive
 	exit
 end

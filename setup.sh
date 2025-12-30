@@ -271,6 +271,13 @@ setup_install_local () {
 
 	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
 	curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
+	fish -c 'fisher install (command cat install/fish.txt)'
+	# fish's nvm is *much* faster than the original
+	fish -c '\
+		nvm install lts
+		nvm use lts
+		npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server oxlint
+		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'
 
 	if exists apk; then
 		install_alpine
@@ -292,13 +299,6 @@ setup_install_local () {
 		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
 		unzip -q "$pslsp" -d $libdir/PowerShellEditorServices
 	fi
-
-	export NVM_DIR=~/.local/lib/nvm
-	mkdir -p "$NVM_DIR"
-	curl -so- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash >/dev/null
-	. "$NVM_DIR/nvm.sh"
-	nvm install --no-progress --lts node >/dev/null
-	npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server
 
 	# needs a password for cargo-binstall to log into github
 	install_rust
