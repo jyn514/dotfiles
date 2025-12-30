@@ -25,7 +25,17 @@ function add_path_if_present
 	end
 end
 
+. $DOTFILES/lib/env.sh
 . $DOTFILES/lib/paths.sh
+
+if [ -d "$NVM_DIR" ]
+	add_path $NVM_DIR/versions/node/v*/bin
+	function nvm
+		functions --erase nvm
+		. "$NVM_DIR/nvm.sh"
+		nvm $argv
+	end
+end
 
 if not status --is-interactive
 	exit
@@ -53,8 +63,6 @@ bind --preset -M insert alt-k \
 		end
 	end'
 
-# load env
-. $DOTFILES/lib/env.sh
 set GITHUB 'https://github.com/'
 set MY_GITHUB 'https://github.com/jyn514'
 set SRC "/usr/local/src"

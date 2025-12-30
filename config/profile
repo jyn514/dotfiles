@@ -39,6 +39,14 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 fi
 
 . "$DOTFILES/lib/paths.sh"
+if [ -d "$NVM_DIR" ]; then
+	add_path "$NVM_DIR/versions/node/"v*/bin
+	nvm() {
+		unset -f nvm
+		. "$NVM_DIR/nvm.sh"
+		nvm "$@"
+	}
+fi
 
 if exists nvim; then
 	export EDITOR=editor-hax
@@ -70,14 +78,6 @@ fi
 
 . "$DOTFILES/lib/lib.sh"
 . "$DOTFILES/bin/show-status"
-if [ -d "$NVM_DIR" ]; then
-	add_path "$NVM_DIR/versions/node/"v*/bin
-	nvm() {
-		unset -f nvm
-		. "$NVM_DIR/nvm.sh"
-		nvm "$@"
-	}
-fi
 
 # set up env
 
