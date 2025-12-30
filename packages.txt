@@ -13,7 +13,7 @@ direnv
 fd-find
 figlet
 fscrypt
-fzf
+fzy
 # https://github.com/dundee/gdu
 # *significantly* faster than `dust`
 gdu

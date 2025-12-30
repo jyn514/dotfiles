@@ -326,7 +326,9 @@ if first_run then
 		} },
 		'tpope/vim-obsession',  -- session save/resume
 		'numToStr/Comment.nvim',
-		{ 'nvim-telescope/telescope.nvim', dependencies = {'nvim-lua/plenary.nvim'} },  -- general picker
+		-- general picker
+		{ 'nvim-telescope/telescope.nvim',
+			dependencies = {'nvim-lua/plenary.nvim', 'nvim-telescope/telescope-fzy-native.nvim'} },
 		'kosayoda/nvim-lightbulb',
 		'echasnovski/mini.nvim',    -- toolbar, also icons
 		"folke/which-key.nvim",     -- spawns kak/hx-like popup
@@ -514,6 +516,7 @@ telescope.setup {
 	}
 }
 telescope.load_extension 'ui-select'
+telescope.load_extension 'fzy_native'
 
 local gitsigns = require('gitsigns')
 gitsigns.setup({
