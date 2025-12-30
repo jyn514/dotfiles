@@ -9,7 +9,7 @@ status() {
 	if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
 		timeout .1 git s
 	else
-		ls --classify
+		ls -F
 	fi
 }
 
