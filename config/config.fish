@@ -37,6 +37,7 @@ export HAVE_BROKEN_WCWIDTH 0
 
 # https://fishshell.com/docs/current/cmds/set_color.html
 set fish_color_comment white --dim
+set -g fish_greeting
 
 ## keybinds
 
