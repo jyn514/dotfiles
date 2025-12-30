@@ -9,6 +9,11 @@ fail() {
 	exit 1
 }
 
+is_jj_repo() {
+	# don't try to save the working copy, in case that hits an error
+	exists jj && jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
+}
+
 # takes two parameters:
 # $1 - the URL to download. required.
 # $2 - the file to save to. optional. defaults to $(mktemp). specify this for max compatibility.

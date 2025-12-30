@@ -1,0 +1,122 @@
+#!/bin/sh
+
+. "${DOTFILES:-$(dirname "$0")/..}/lib/lib.sh"
+
+## pwd
+
+PROMPT_DIRTRIM=2
+
+display_pwd () {
+	# reimplementation of PROMPT_DIRTRIM in pure shell
+	# is this good
+	# do you like this
+
+	# 1. substitute $HOME with ~
+	# 2. first group: match first character (~ or /)
+	# 3. anything in the middle
+	# 4. second group: last $PROMPT_DIRTRIM directories
+	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
+}
+
+## constants
+
+# zsh uses `{%` instead of `\01`: https://zsh.sourceforge.io/Doc/Release/Prompt-Expansion.html#Visual-effects
+if [ -n "$ZSH_VERSION" ]; then
+	ansi_escape () { printf "%%{$1%%}"; }
+else
+	ansi_escape () { command printf "\01$1\02"; }
+fi
+
+# https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797#colors--graphics-mode
+# see `dotfiles/bin/ansi --color-table` for an example of how these render
+
+RED="$(ansi_escape "\033[0;31m")"
+GREEN="$(ansi_escape "\033[0;32m")"
+#YELLOW="$(ansi_escape "\033[0;33m")"
+#BLUE="$(ansi_escape "\033[0;34m")"
+RESET="$(ansi_escape "\033[0;0m")"
+
+#FAINT_RED="$(ansi_escape "\033[2;31m")"
+FAINT_GREEN="$(ansi_escape "\033[2;32m")"
+#FAINT_YELLOW="$(ansi_escape "\033[2;33m")"
+#FAINT_BLUE="$(ansi_escape "\033[2;34m")"
+FAINT_WHITE="$(ansi_escape "\033[2;37m")"
+
+## git handling
+
+git_info() {
+  # if this isn't a git repo, we can't show anything useful
+	if ! git rev-parse --git-dir >/dev/null 2>&1; then
+		if is_jj_repo; then timeout .1 jj-info; fi
+		return
+	else
+		printf ' '
+	fi
+
+	# if we have local modifications, show the status in red
+	if git diff-index --name-only --quiet --ignore-submodules HEAD -- 2>/dev/null; then
+		printf %s "$FAINT_GREEN"
+	# weird edge case: this could be a repo with no commits at all
+	elif [ "$(find . -maxdepth 1 | wc -l)" -le 2 ]; then
+		printf %s "$FAINT_GREEN"
+	else
+		printf %s "$RED"
+	fi
+
+	# if HEAD is on a branch, point to that branch
+	if git symbolic-ref --short HEAD 2>/dev/null; then
+		return
+	fi
+
+	# next, see if this is a tag
+	t=$(git tag --points-at HEAD)
+	if [ "$t" ]; then
+		echo "$t"
+		return
+	fi
+
+	# see if this is a remote branch
+	# note this prioritizes origin/HEAD over origin/main
+	r=$(git show-ref | grep "^$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
+	if [ "$r" ]; then
+		echo "$r"
+		return
+	fi
+
+	# see if this is a detached local branch
+	l=$(git show-ref | grep "^$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
+	if [ "$l" ]; then
+		echo "(detached at $l)"
+		return
+	fi
+
+	# if this is a jj repo, try and get that info instead
+	if is_jj_repo; then
+		timeout .1 jj-info
+		if ! [ $? = 124 ]; then return; fi
+	fi
+
+	# give up
+	echo "(detached HEAD)"
+}
+
+prompt_command() {
+	# save the status code before anything else; commands we execute in PS1 will overwrite it
+	last_status=$?
+	printf %s "$FAINT_WHITE($(basename -- "$1")"
+	printf "@"; hostname | tr -d '\n'
+	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
+	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
+	git_info | tr -d '\n'
+	echo
+	# vscode already shows the cursor indented a bit, as well as the status from the last command
+	if ! [ "$VSCODE_SHELL_INTEGRATION" = 1 ]; then
+		if [ "$last_status" = 0 ]; then printf %s "$GREEN"; else printf %s "$RED"; fi
+		printf '; '
+	fi
+	printf %s "$RESET"
+}
+
+if [ -n "${1:-}" ]; then
+	prompt_command "$1"
+fi

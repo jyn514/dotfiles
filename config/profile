@@ -10,9 +10,11 @@ fi
 DOTFILES=$(dirname "$(realpath ~/.profile)")/..
 
 add_path () {
-	if ! echo "$PATH" | grep -F "(^|:)$1(:|$)" >/dev/null 2>&1; then
-		PATH="$1:$PATH"
-	fi
+	for p in "$@"; do
+		if ! echo "$PATH" | grep -F "(^|:)$p(:|$)" >/dev/null 2>&1; then
+			PATH="$p:$PATH"
+		fi
+	done
 }
 
 add_path_if_present() {
@@ -20,24 +22,6 @@ add_path_if_present() {
 		add_path "$1"
 	fi
 }
-
-export CARGO_HOME="$HOME/.local/lib/cargo"
-export RUSTUP_HOME="$HOME/.local/lib/rustup"
-export CARGO_TARGET_DIR="$CARGO_HOME/target"
-export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-export STEEL_LSP_HOME="$HOME/.config/helix/steel-lsp"
-export GOPATH=~/.local/lib/go
-export GOBIN="$GOPATH/bin"
-export NVM_DIR=~/.local/lib/nvm
-
-# less documents that it searches here by default, but the docs are wrong
-export LESSKEYIN="$HOME/.config/lesskey"
-# people keep passing random dumb arguments to less. override them so we use the defaults in lesskey.
-export PAGER=less
-export LESS=
-
-export MANPAGER='nvim +Man! --clean -u ~/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
-export DEBUGINFOD_URLS="https://debuginfod.ubuntu.com"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
@@ -53,14 +37,8 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	add_path "$SNAPD_BIN"
 	unset snap_bin
 fi
-add_path_if_present /opt/nvim/bin
-add_path_if_present ~/.local/lib/node_modules/bin
-add_path "$GOBIN"
-add_path "$CARGO_HOME"/bin
 
-# add this even if it's not present, in case we create it later
-add_path "$HOME/.local/bin"
-add_path "$DOTFILES/bin"
+. "$DOTFILES/lib/paths.sh"
 
 if exists nvim; then
 	export EDITOR=editor-hax
@@ -74,11 +52,6 @@ else
 fi
 export VISUAL=$EDITOR
 
-# get ctrl+shift+u for unicode input to work in kitty
-export GLFW_IM_MODULE=ibus
-# read .inputrc
-export ydb_readline=1
-
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 fi
@@ -88,45 +61,50 @@ case "$-" in
 	*)	return 0;;
 esac
 
-if [ "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
+if [ -n "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
-if [ "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
+if [ -n "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
 	. ${ZDOTDIR:-$HOME}/.zshrc
 fi
 
 . "$DOTFILES/lib/lib.sh"
+. "$DOTFILES/bin/show-status"
 if [ -d "$NVM_DIR" ]; then
+	add_path "$NVM_DIR/versions/node/"v*/bin
 	nvm() {
-		unset -f nvm node npm pnpm
+		unset -f nvm
 		. "$NVM_DIR/nvm.sh"
 		nvm "$@"
 	}
-	node() {
-		unset -f nvm node npm pnpm
-		. "$NVM_DIR/nvm.sh"
-		node "$@"
-	}
-	npm() {
-		unset -f nvm node npm pnpm
-		. "$NVM_DIR/nvm.sh"
-		npm "$@"
-	}
-	pnpm() {
-		unset -f nvm node npm pnpm
-		. "$NVM_DIR/nvm.sh"
-		pnpm "$@"
-	}
 fi
+
+# set up env
+
+. "$DOTFILES/lib/env.sh"
+export GPG_TTY=$(tty)
+
+# set up aliases
+
+# https://www.etalabs.net/sh_tricks.html#:~:text=Reading%20input%20line%2Dby%2Dline
+while IFS= read -r alias; do
+	name=${alias%=*}
+	expn=${alias#*=}
+	alias "$name"="$expn"
+done << EOF
+$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt")
+EOF
+
+# fish handles these with a regex
+alias ...=../..
+alias ....=../../..
+alias .....=../../../..
+
+# TODO: most of these should just be in bin
 
 # TODO: work this into gitconfig somehow
 git_reset_author() {
 	git -c user.email="$1" rebase "$2" --reset-author -x 'git commit --amend --no-edit --reset-author'
-}
-
-is_jj_repo() {
-	# don't try to save the working copy, in case that hits an error
-	exists jj && jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
 }
 
 show_conflicts() {
@@ -148,49 +126,6 @@ HEAD() {
 
 mkcd () { mkdir -p "$@" && cd "$1"; }
 
-alias e='$EDITOR'
-alias E=hx-hax
-alias mkdc=mkcd
-alias yts=youtube_search
-alias ytd=yt-dlp
-alias cls=clear
-alias c=cargo
-alias k=kaocha
-alias f=flower
-alias t=tmux
-alias m=make
-alias n=ninja
-alias g=git
-alias o=open
-alias v=nvim
-alias y=build/yottadb
-# uppercase is bad and it should feel bad
-alias r=R
-# NOTE: this *must not* be an external process.
-# scoping it to an alis prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
-alias cat=bat
-# this shadows a mailcap command, but I've never used mailcap in my life
-alias dc=docker-compose
-alias compose=docker-compose
-alias powershell=pwsh
-alias ...=../..
-alias ....=../../..
-alias .....=../../../..
-# alias gtree='tree --gitignore'  # doesn't respect ~/.gitignore
-alias ftree='fd | tree --fromfile'
-alias curl='curl -L'
-
-triples() {
-  build/yottadb -machine test/$1.m
-  rg OC_ $1.lis
-}
-ywatch() {
-  watchexec --no-vcs-ignore -e m "build/yottadb $1 </dev/null"
-}
-
-# you might also want to pass `-C` for context
-diff () { command diff --color "$@"; }
-
 # follow symlinks by default
 rg () { command rg -z -L --no-heading "$@"; }
 
@@ -198,9 +133,6 @@ rg () { command rg -z -L --no-heading "$@"; }
 b () {
 	builtin cd "$(cargo metadata --format-version 1| jq .workspace_root -r)" && bacon "$@"
 }
-
-# show human-readable dates with offsets by default
-dmesg () { command dmesg -e "$@"; }
 
 whatismyip() {
 	# https://unix.stackexchange.com/a/194136
@@ -234,12 +166,6 @@ what_package () {
 	fi
 }
 
-alias belongs=what_belongs
-alias runs=what_runs
-alias package=what_package
-
-exa () { command exa --git "$@"; }
-
 # don't replace crontab without warning
 crontab() {
 	if command crontab -i -l >/dev/null 2>/dev/null; then
@@ -257,9 +183,6 @@ visualize () {
 	command -v xdot > /dev/null || { echo "xdot not found"; return 1; }
 	makefile2graph | dot | xdot /dev/stdin
 }
-
-# don't show copyright every time (super annoying)
-gdb () { command gdb -q "$@"; }
 
 # for use with a makefile in the current directory
 tasks () {
@@ -286,15 +209,8 @@ background () {
 	fi
 }
 
-show_time () { watch -n 1 -t date; }
-
-# zip recursively by default
-zip () { command zip -r "$@"; }
-
-save_power () { sudo powertop --auto-tune; }
-
-clean_shell () {
-    env -i HOME="$HOME" TERM="$TERM" "$(command -v bash)" --noprofile --rcfile /etc/profile
+pure_shell() {
+   env -i HOME="$HOME" TERM="$TERM" PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
 }
 
 # doesn't show broken symlinks; doesn't use hyperlinks
@@ -311,66 +227,19 @@ clean_shell () {
 	}
 # fi
 
-ip() { command ip --color "$@"; }
-
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
 }
-
-alias purge='sudo apt autoremove --purge'
-alias restart='shutdown -r now'
-alias sl=ls
-alias ll='ls -l'
-alias la='ls -A'
-alias l='ls -F'
-# files on disk
-alias file_count='locate -S'
-
-
-webpaste () {
-   nc termbin.com 9999
-}
-
-ascii () { command man ascii; }
 
 excuse () {
 	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
 }
 
-status () {
-	if is_jj_repo; then
-		timeout .1 jj status --ignore-working-copy && return
-	fi
-	if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ]; then
-		timeout .1 git s
-	else
-		l
-	fi
-}
-alias s=status
-
 dad () { curl https://icanhazdadjoke.com && echo; }
-
-weather () { curl wttr.in/; }
-alias wttr=weather
-
-pytime () { python -m timeit; }
-
-alias ubuntu='docker run -it ubuntu'
 
 pip_upgrade_all () {
 	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
 }
-
-# show default tmux config https://superuser.com/a/560941
-tmux_default() {
-	tmux -L unconfigured -f /dev/null start-server \; list-keys \;
-}
-
-triples () {
-	build/yottadb -machine test/$1.m && rg -o 'OC_.*' --no-line-number $1.lis
-}
-alias t=triples
 
 fork_github() {
 	dir=$(command fork-github "$@")
@@ -382,9 +251,6 @@ GITHUB='https://github.com/'
 MY_GITHUB='https://github.com/jyn514'
 SRC="/usr/local/src"
 
-export GPG_TTY=$(tty)
-export ENV="$HOME/.profile"
-export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 if [ "$DISPLAY" ]; then
 	if is_wsl; then
 		MANOPT=--html=$DOTFILES/bin/firefox.sh
@@ -429,29 +295,12 @@ if [ "$DISPLAY" ]; then
 		}
 	fi
 fi
-export ZDOTDIR=~/.config/zsh
-export JUPYTER_CONFIG_DIR=~/.config/jupyter
-export JAVA_HOME=/usr/lib/jvm/default-java
-export BAT_TABS=8
-export BAT_STYLE=changes,header,rule
-export CARGO_MOMMYS_MOODS=ominous
-export FZF_DEFAULT_OPTS='--cycle --exit-0 --select-1 --preview-window=wrap'
-
-# git treats `diff.external` extremely poorly; there's no way to unset it temporarily because `-c diff.external` tries to run an empty program.
-# instead, set this through an external env variable so we can unset it with `env -u`.
-# difft is super buggy though :( ignoring it for now
-# export GIT_EXTERNAL_DIFF=difft
 
 # Delta is bad at doing version detection.
 # https://github.com/dandavison/delta/issues/488
 if ! less --version >/dev/null 2>&1; then
   export GIT_PAGER=less
 fi
-
-export MAKEFLAGS='-j4'
-# for http://overthewire.org
-# Honestly if you want to use this I don't really mind
-export OTWUSERDIR="/d/SERPjdbrX3w3tsyXQQt0"
 
 awawa_handler() {
 	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
@@ -516,119 +365,13 @@ command_not_found_handle() {
 }
 command_not_found_handler() { command_not_found_handle "$@"; }
 
-# zsh uses `{%` instead of `\01`: https://zsh.sourceforge.io/Doc/Release/Prompt-Expansion.html#Visual-effects
-if [ -n "$ZSH_VERSION" ]; then
-	ansi_escape () { printf "%%{$1%%}"; }
-else
-	ansi_escape () { command printf "\01$1\02"; }
-fi
-
-PROMPT_DIRTRIM=2
-
-display_pwd () {
-	# reimplementation of PROMPT_DIRTRIM in pure shell
-	# is this good
-	# do you like this
-
-	# 1. substitute $HOME with ~
-	# 2. first group: match first character (~ or /)
-	# 3. anything in the middle
-	# 4. second group: last $PROMPT_DIRTRIM directories
-	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
-}
-
-# see `dotfiles/bin/ansi --color-table` for an example of how these render
-
-RED="$(ansi_escape "\033[0;31m")"
-GREEN="$(ansi_escape "\033[0;32m")"
-# YELLOW="$(ansi_escape "\033[0;33m")"
-# BLUE="$(ansi_escape "\033[0;34m")"
-RESET="$(ansi_escape "\033[0;0m")"
-
-FAINT_RED="$(ansi_escape "\033[2;31m")"
-FAINT_GREEN="$(ansi_escape "\033[2;32m")"
-FAINT_YELLOW="$(ansi_escape "\033[2;33m")"
-FAINT_BLUE="$(ansi_escape "\033[2;34m")"
-FAINT_WHITE="$(ansi_escape "\033[2;37m")"
-
-git_info() {
-  # if this isn't a git repo, we can't show anything useful
-	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		if is_jj_repo; then timeout .1 jj-info; fi
-		return
-	else
-		printf ' '
-	fi
-
-	# if we have local modifications, show the status in red
-	if git diff-index --name-only --quiet --ignore-submodules HEAD -- 2>/dev/null; then
-		printf %s "$FAINT_GREEN"
-	# weird edge case: this could be a repo with no commits at all
-	elif [ "$(find . -maxdepth 1 | wc -l)" -le 2 ]; then
-		printf %s "$FAINT_GREEN"
-	else
-		printf %s "$RED"
-	fi
-
-	# if HEAD is on a branch, point to that branch
-	if git symbolic-ref --short HEAD 2>/dev/null; then
-		return
-	fi
-
-	# next, see if this is a tag
-	t=$(git tag --points-at HEAD)
-	if [ "$t" ]; then
-		echo "$t"
-		return
-	fi
-
-	# see if this is a remote branch
-	# note this prioritizes origin/HEAD over origin/main
-	r=$(git show-ref | grep "^$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
-	if [ "$r" ]; then
-		echo "$r"
-		return
-	fi
-
-	# see if this is a detached local branch
-	l=$(git show-ref | grep "^$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
-	if [ "$l" ]; then
-		echo "(detached at $l)"
-		return
-	fi
-
-	# if this is a jj repo, try and get that info instead
-	if is_jj_repo; then
-		timeout .1 jj-info
-		if ! [ $? = 124 ]; then return; fi
-	fi
-
-	# give up
-	echo "(detached HEAD)"
-}
-
-prompt_command() {
-	# save the status code before anything else; commands we execute in PS1 will overwrite it
-	last_status=$?
-	printf %s "$FAINT_WHITE($(basename -- "${ZSH_ARGZERO:-$0}")"
-	printf "@"; hostname | tr -d '\n'
-	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
-	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
-	git_info | tr -d '\n'
-	echo
-	# vscode already shows the cursor indented a bit, as well as the status from the last command
-	if ! [ "$VSCODE_SHELL_INTEGRATION" = 1 ]; then
-		if [ "$last_status" = 0 ]; then printf %s "$GREEN"; else printf %s "$RED"; fi
-		printf '; '
-	fi
-	printf %s "$RESET"
-}
-
 remember() {
 	printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' 'obsidian://open?vault=notes&file=global%20checklist' 'are you forgetting something?'
 }
 
-PS1='$(prompt_command)'
+. "$DOTFILES/bin/prompt-command"
+
+PS1='$(prompt_command "${ZSH_ARGZERO:-$0}")'
 # also reset the cursor mode (https://stackoverflow.com/a/59728228)
 PS0=$(printf '\e[2 q')
 

@@ -1,0 +1,60 @@
+t=triples
+e=$EDITOR
+E=hx-hax
+mkdc=mkcd
+yts=youtube_search
+ytd=yt-dlp
+cls=clear
+c=cargo
+k=kaocha
+f=flower
+t=tmux
+m=make
+n=ninja
+g=git
+o=open
+v=nvim
+y=build/yottadb
+# uppercase is bad and it should feel bad
+r=R
+# NOTE: this *must not* be an external process.
+# scoping it to an alias prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
+cat=bat
+dc=docker-compose
+# this shadows a mailcap command, but I've never used mailcap in my life
+compose=docker-compose
+powershell=pwsh
+# tree --gitignore doesn't respect global gitignore lol lmao
+ftree=fd | tree --fromfile
+curl=curl --location
+belongs=what_belongs
+runs=what_runs
+package=what_package
+purge=sudo apt autoremove --purge
+restart=shutdown --reboot now
+sl=ls
+ll=ls -l
+la=ls --almost-all
+l=ls --classify
+s=status
+wttr=weather
+ubuntu=docker run --interactive --tty ubuntu
+# show human-readable dates with offsets by default
+dmesg=dmesg --reltime
+exa=exa --git
+gdb=gdb --quiet
+ip=ip --color
+webpaste=nc termbin.com 9999
+ascii=man ascii
+weather=curl https://wttr.in/
+pytime=python -m timeit
+# show default tmux config https://superuser.com/a/560941
+tmux_default=tmux -L unconfigured -f /dev/null start-server \; list-keys \;
+# you might also want to pass `-C` for context
+diff=diff --color
+show_time=watch -n 1 -t date
+# zip recursively by default
+zip=zip -r
+save_power=sudo powertop --auto-tune
+
+

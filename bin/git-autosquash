@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+
+branch=$(git symbolic-ref --short --quiet HEAD || git for-each-ref refs/heads/ --format '%(refname:short)' --sort=-committerdate | head -n1)
+remote=$(git config --get branch.${branch}.remote)
+mergebase=$(git merge-base HEAD "$remote"/HEAD)
+
+exec git revise "$mergebase" -i "$@"
