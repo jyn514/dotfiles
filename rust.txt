@@ -6,6 +6,7 @@ cargo-sweep
 cargo-tree
 counts
 difftastic
+dua-cli
 jj-cli
 ripgrep
 mdbook

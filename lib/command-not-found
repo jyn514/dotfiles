@@ -1,0 +1,93 @@
+#!/bin/sh
+
+exists () { command -v "$1" >/dev/null 2>&1; }
+
+awawa_handler() {
+	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
+        } | cowsay -f "$DOTFILES"/lib/angel.cow -n
+}
+
+suggest_install() {
+	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
+	if [ -e /usr/lib/command-not-found ]
+	then
+		/usr/lib/command-not-found -- "$1"
+		return 123
+	# TODO: this is slow and idk if we can do anything about it :(
+	elif DNF=$(command -v dnf 2>/dev/null) \
+			&& CMD=$(timeout .1 $DNF --no-plugins --cacheonly \
+				--disablerepo='*' --enable-repo=updates --enable-repo=fedora \
+				repoquery --quiet --whatprovides "*/bin/$1") \
+			&& [ "$CMD" ]
+	then
+		echo "'$1' is not currently installed. You can install it with: 'dnf install $CMD'"
+		return 123
+	# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
+	elif BREW=$(command -v brew 2>/dev/null) \
+			&& CMD=$(timeout .1 $BREW which-formula --explain --skip-update "$1") \
+			&& [ "$CMD" ]
+	then
+		echo "$CMD"
+		return 123
+	else
+		return 122
+	fi
+}
+
+default_command_not_found() {
+	printf "%s: command not found\n" "$1" >&2
+
+	help=
+	exists command-not-found && help+=$(printf "\n%s" "command-not-found -- \"$1\"")
+	exists dnf && help+=$(printf "\n  %s" "dnf --cacheonly repoquery --quiet --whatprovides \"*/bin/$1\"")
+	exists brew && help+=$(printf "\n  %s" "brew which-formula --explain --skip-update \"$1\"")
+
+	echo "  consider searching for it with one of:"
+	printf %s "  suggest-missing-command \"$1\""
+	if [ -n "$help" ]; then
+		echo "$help"
+	fi
+	echo
+
+	return 127
+}
+
+command_not_found_handle() {
+	# short-circuit if we're still starting up
+	if [ -n "$RPS1" ]; then
+		default_command_not_found "$@"
+		return $?
+	fi
+	case "$1" in
+		# awawawa!
+		awa|awawa*) awawa_handler "$@"; return 0;;
+		# check if we forgot to put a space between `g` and the git subcommand, but not for `gh`, which is its own command
+		gh) ;;
+		g*) sub=${1#*g}
+		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" -q; then
+			shift
+			git "$sub" "$@"
+			return $?
+		fi;;
+		# this is kinda cursed
+		cc) ;;
+		# lol, lmao
+		cargo) ;;
+		c) ;;
+		c*) sub=${1#*c}
+		if cargo --list | awk '{print $1}' | grep "^$sub$" -q; then
+			shift
+			cargo "$sub" "$@"
+			return $?
+		fi;;
+	esac
+
+	suggest_install "$@"
+	if ! [ $? = 123 ]; then
+		default_command_not_found "$@"
+	fi
+}
+
+if ! [ $# = 0 ]; then
+	command_not_found_handle "$@"
+fi

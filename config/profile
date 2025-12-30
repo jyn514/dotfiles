@@ -302,67 +302,8 @@ if ! less --version >/dev/null 2>&1; then
   export GIT_PAGER=less
 fi
 
-awawa_handler() {
-	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
-        } | cowsay -f "$DOTFILES"/lib/angel.cow -n
-}
-
-default_command_not_found() {
-	printf "%s: command not found\n" "$1" >&2
-
-	help=
-	exists command-not-found && help+=$(printf "\n%s" "command-not-found -- \"$1\"")
-	exists dnf && help+=$(printf "\n  %s" "dnf --cacheonly repoquery --quiet --whatprovides \"*/bin/$1\"")
-	exists brew && help+=$(printf "\n  %s" "brew which-formula --explain --skip-update \"$1\"")
-
-	echo "  consider searching for it with one of:"
-	printf %s "  suggest-missing-command \"$1\""
-	if [ -n "$help" ]; then
-		echo "$help"
-	fi
-	echo
-
-	return 127
-}
-
 # really this is a bash/zsh thing, but sh just ignores this function if it doesn't support it
-command_not_found_handle() {
-	# short-circuit if we're still starting up
-	if [ -n "$RPS1" ]; then
-		default_command_not_found "$@"
-		return $?
-	fi
-	case "$1" in
-		# awawawa!
-		awa|awawa*) awawa_handler "$@"; return 0;;
-		# check if we forgot to put a space between `g` and the git subcommand, but not for `gh`, which is its own command
-		gh) ;;
-		g*) sub=${1#*g}
-		if git --list-cmds=list-mainporcelain,others,nohelpers,alias,config | grep "^$sub$" -q; then
-			shift
-			git "$sub" "$@"
-			return $?
-		fi;;
-		# this is kinda cursed
-		cc) ;;
-		# lol, lmao
-		cargo) ;;
-		c) ;;
-		c*) sub=${1#*c}
-		if cargo --list | awk '{print $1}' | grep "^$sub$" -q; then
-			shift
-			cargo "$sub" "$@"
-			return $?
-		fi;;
-	esac
-
-	if SUGGEST=$(command -v suggest-missing-command 2>/dev/null); then
-		timeout .1s "$SUGGEST" "$@"
-	fi
-	if ! [ $# = 123 ]; then
-		default_command_not_found "$@"
-	fi
-}
+. "$DOTFILES/lib/command-not-found"
 command_not_found_handler() { command_not_found_handle "$@"; }
 
 remember() {

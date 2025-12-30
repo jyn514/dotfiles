@@ -150,6 +150,14 @@ function fish_mode_prompt
 	end
 end
 
+function fish_command_not_found
+	if [ -e $DOTFILES/lib/command-not-found ]
+		$DOTFILES/lib/command-not-found $argv
+	else
+		__fish_default_command_not_found_handler $argv
+	end
+end
+
 atuin init fish --disable-up-arrow | source
 atuin gen-completions --shell fish | source
 bind -M default / _atuin_search

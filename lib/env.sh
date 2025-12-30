@@ -2,28 +2,28 @@
 # you must use `export` for all variables and cannot use command substitution.
 # If you find yourself wanting that, put it in profile or config.fish.
 
-export CARGO_HOME=~/.local/lib/cargo
-export RUSTUP_HOME=~/.local/lib/rustup
+export CARGO_HOME=$HOME/.local/lib/cargo
+export RUSTUP_HOME=$HOME/.local/lib/rustup
 export CARGO_TARGET_DIR=$CARGO_HOME/target
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-export STEEL_LSP_HOME=~/.config/helix/steel-lsp
-export GOPATH=~/.local/lib/go
+export STEEL_LSP_HOME=$HOME/.config/helix/steel-lsp
+export GOPATH=$HOME/.local/lib/go
 export GOBIN=$GOPATH/bin
-export NVM_DIR=~/.local/lib/nvm
+export NVM_DIR=$HOME/.local/lib/nvm
 # less documents that it searches here by default, but the docs are wrong
-export LESSKEYIN=~/.config/lesskey
+export LESSKEYIN=$HOME/.config/lesskey
 # people keep passing random dumb arguments to less. override them so we use the defaults in lesskey.
 export PAGER=less
 export LESS=
-export MANPAGER='nvim +Man! --clean -u ~/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
+export MANPAGER='nvim +Man! --clean -u $HOME/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
 export DEBUGINFOD_URLS=https://debuginfod.ubuntu.com
 export VISUAL=$EDITOR
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
-export ENV=~/.profile
+export ENV=$HOME/.profile
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-export ZDOTDIR=~/.config/zsh
-export JUPYTER_CONFIG_DIR=~/.config/jupyter
+export ZDOTDIR=$HOME/.config/zsh
+export JUPYTER_CONFIG_DIR=$HOME/.config/jupyter
 export JAVA_HOME=/usr/lib/jvm/default-java
 export BAT_TABS=8
 export BAT_STYLE=changes,header,rule
