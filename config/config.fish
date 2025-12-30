@@ -61,8 +61,10 @@ set SRC "/usr/local/src"
 # load common aliases
 grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read -L alias
 	echo $alias | read --delimiter = name value
+	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
 end
+function cat; bat $argv; end
 
 function last_history_line
 	echo $history[1]
