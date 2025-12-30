@@ -78,7 +78,7 @@ install_rust() {
 		# update to latest version; old versions often hit a rate limit
 		cargo binstall cargo-binstall
 	fi
-	tr -d '\r' <rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
+	tr -d '\r' < install/rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
 	if exists bat; then
 		bat cache --build
 	fi
@@ -110,7 +110,7 @@ setup_basics () {
 						DEST=$HOME/$home
 						break
 					fi
-				done < config.txt
+				done < install/config.txt
 				DEST=${DEST:-$HOME/."$base"}
 		esac
 
@@ -210,7 +210,7 @@ setup_python () {
 	if exists python && python -m pip > /dev/null; then
 		# may take a while
 		# lmao why does `--user` think it breaks system packages
-		python -m pip install --user --break-system-packages -r python.txt
+		python -m pip install --user --break-system-packages -r install/python.txt
 	else
 		echo pip not found >&2
 		return 1
