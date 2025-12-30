@@ -277,22 +277,38 @@ setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
 
-	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
-	curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
-	fish -c 'fisher install (command cat install/fish.txt)'
-	# fish's nvm is *much* faster than the original
-	fish -c '\
-		nvm install lts
-		nvm use lts
-		npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server oxlint
-		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'
-
 	if exists apk; then
 		install_alpine
 	elif [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
 		install_linux_lol
 	elif exists brew; then
 		install_brew
+	fi
+
+	if [ -n "${IS_MACOS:-}" ]; then
+		brew install -q duti
+		if exists nvim; then
+			create_macos_app nvim io.neovim
+		fi
+		if exists fx; then
+			create_macos_app fx wtf.fx
+		fi
+	fi
+
+	if ! [ -e ~/.config/zsh/antidote ]; then
+		git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+	fi
+	if ! [ -e ~/.config/fish/fish_plugins ]; then
+		curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
+		fish -c 'fisher install (command cat install/fish.txt)'
+	fi
+	if ! [ -d ~/.local/share/nvm ]; then
+		# fish's nvm is *much* faster than the original
+		fish -c '\
+			nvm install lts
+		nvm use lts
+		npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server oxlint
+		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'
 	fi
 
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
@@ -326,15 +342,16 @@ setup_all () {
 }
 
 message () {
-	printf "%s" "[0] exit
-[1] dotfiles
-[2] shell
-[3] python
-[4] vim
-[5] backup
-[6] install (local packages)
-[7] install (global packages; uses sudo)
-[8] all
+	printf "%s" "[q|0] exit
+[dot|1] dotfiles
+[sh|2] shell
+[py|3] python
+[vi|4] vim
+[backup|5] backup
+[local|6] install (local packages)
+[sudo|7] install (global packages; uses sudo)
+[kde|8] kde
+[all|9] all
 Choose setup to run: "
 }
 
