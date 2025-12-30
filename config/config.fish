@@ -178,4 +178,6 @@ bind -M default / _atuin_search
 zoxide init fish | source
 function cd; z $argv; end
 
+nvm use --silent lts
+
 stty -ixon
