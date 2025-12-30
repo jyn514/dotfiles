@@ -38,8 +38,10 @@ glide.autocmds.create("ConfigLoaded", async () => {
 	console.assert(arrayEq(shorten_unique_prefixes(a), ["ne", "no", "0", "1"]));
 });
 
-glide.buf.keymaps.del("normal", "s");
+glide.g.mapleader = ","
 
+// breaks search on many docs sites
+glide.buf.keymaps.del("normal", "s");
 // breaks bookmarks and fastmail code highlighting, and I can just use pageUp/Down
 glide.keymaps.del("insert", "<C-d>");
 // break View Source
