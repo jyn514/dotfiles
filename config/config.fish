@@ -79,19 +79,6 @@ function expand_history_line
 	end
 end
 
-# abbr --add --global history --position anywhere --regex '!$-[0-9]+' --function expand_history_line
-# function expand_history_item
-# 	echo $history[1] | read --tokenize --list item
-# 	switch $argv[1]
-# 		case '!$'
-# 			echo $item[-1]
-# 		case '!$-*'
-# 			echo $item[(string split - $argv[1])[2]]
-# 		case "*"
-# 			return 1
-# 	end
-# end
-
 function bind_dollar
 	switch (commandline -ct)
 	case '*!' # !$

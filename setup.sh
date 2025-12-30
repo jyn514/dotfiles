@@ -191,7 +191,7 @@ setup_kde() {
 
 setup_shell () {
 	echo Changing default shell
-	for shell in zsh fish bash; do
+	for shell in fish zsh bash; do
 		if echo "$SHELL" | grep $shell; then
 			echo using current shell "$shell"
 			break
