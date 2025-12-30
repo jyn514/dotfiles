@@ -3,6 +3,10 @@ set -u
 
 libdir=$HOME/.local/lib
 
+if [ "$(uname -s)" = Darwin ]; then
+	IS_MACOS=1
+fi
+
 install_alpine() {
 	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
 	install_clojure
@@ -11,7 +15,7 @@ install_alpine() {
 install_brew() {
 	# note that we don't actually pass sudo here
 	./lib/setup_sudo.sh install_features
-	ln -s $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
+	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 }
 
@@ -78,7 +82,7 @@ install_rust() {
 		# update to latest version; old versions often hit a rate limit
 		cargo binstall cargo-binstall
 	fi
-	tr -d '\r' < install/rust.txt | xargs cargo binstall -y --rate-limit 10/1 --disable-strategies compile --continue-on-failure
+	tr -d '\r' < install/rust.txt | xargs cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure
 	if exists bat; then
 		bat cache --build
 	fi
@@ -138,8 +142,12 @@ setup_basics () {
 	set +ue
 	. config/profile
 	setup_vim # otherwise vim will error out the next time it starts up
-	git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
-	git clone https://github.com/lincheney/fzf-tab-completion $libdir/fzf-tab-completion/
+	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
+		git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
+	fi
+	if ! [ -d "$libdir"/fzf-tab-completion ]; then
+		git clone https://github.com/lincheney/fzf-tab-completion "$libdir"/fzf-tab-completion/
+	fi
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
 	if exists dconf; then
@@ -165,7 +173,7 @@ setup_basics () {
 			wget https://github.com/ksherlock/MUMPS.tmbundle/raw/refs/heads/master/Syntaxes/mumps.sublime-syntax
 			sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
 		)
-		bat cache --build
+		bat cache --build >/dev/null
 	fi
 	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
 		xdg-mime default "$browser" $mime
@@ -210,7 +218,7 @@ setup_python () {
 	if exists python && python -m pip > /dev/null; then
 		# may take a while
 		# lmao why does `--user` think it breaks system packages
-		python -m pip install --user --break-system-packages -r install/python.txt
+		python -m pip install --quiet --user --break-system-packages -r install/python.txt
 	else
 		echo pip not found >&2
 		return 1

@@ -26,7 +26,7 @@ download () {
 	fi
 	echo "downloading $1" >&2
 	if exists curl; then
-		curl -L "$1" > "$OUTPUT"
+		curl --location --silent "$1" > "$OUTPUT"
 	else
 		wget -O "$OUTPUT" "$1"
 	fi

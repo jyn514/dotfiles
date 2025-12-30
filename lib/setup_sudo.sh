@@ -39,6 +39,7 @@ queue_install() {
 			ninja-build) pkg=ninja;;
 			python3-pylsp) pkg=python-lsp-server;;
 			openjdk21) pkg=openjdk@21;;
+			fd-find) pkg=fd;;
 			*) ;;
 		esac
 		# TODO
@@ -175,7 +176,7 @@ install_features () {
 	elif [ -n "$IS_CHIMERA" ]; then
 		apk add $packages
 	elif [ -n "$IS_BREW" ]; then
-		brew install $packages
+		brew install -q $packages
 	# SUSE
 	#zypper addrepo https://cli.github.com/packages/rpm/gh-cli.repo
 	#zypper ref
@@ -187,7 +188,11 @@ install_features () {
 		NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 		eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 	fi
-	sudo -u "$SUDO_USER" $(which brew) install $brew_packages
+	if [ -n "$SUDO_USER" ]; then
+		sudo -u "$SUDO_USER" $(which brew) install -q $brew_packages
+	else
+		brew install -q $brew_packages
+	fi
 }
 
 install_security () {

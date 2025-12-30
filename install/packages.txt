@@ -12,6 +12,7 @@ difftastic
 direnv
 fd-find
 figlet
+fish
 fscrypt
 fzy
 # https://github.com/dundee/gdu
