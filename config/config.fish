@@ -44,6 +44,9 @@ end
 ## options
 
 export HAVE_BROKEN_WCWIDTH 0
+set GITHUB 'https://github.com/'
+set MY_GITHUB 'https://github.com/jyn514'
+set SRC "/usr/local/src"
 
 # https://fishshell.com/docs/current/cmds/set_color.html
 set fish_color_comment white --dim
@@ -55,17 +58,26 @@ set -g fish_greeting
 # Use emacs keybinds in insert mode
 fish_hybrid_key_bindings
 
-bind --preset -M insert alt-k \
+bind -M insert alt-e '$EDITOR ~/.config/fish/config.fish'
+bind -M insert alt-r 'source ~/.config/fish/config.fish'
+bind -M insert alt-shift-e edit_command_buffer
+bind -M insert alt-t 'commandline -i (fd | fzy); commandline -f repaint'
+bind -M insert alt-shift-t \
+	'set --local f (fd | fzy)
+	 set --local worked $status
+	 commandline -f repaint
+	 if [ $worked = 0 ]
+		commandline -i "$EDITOR $f"
+		commandline -f execute
+	 end'
+
+bind -M insert alt-k \
 	'for cmd in sudo doas please run0
 		if command -q $cmd
 			fish_commandline_prepend $cmd
 			break
 		end
 	end'
-
-set GITHUB 'https://github.com/'
-set MY_GITHUB 'https://github.com/jyn514'
-set SRC "/usr/local/src"
 
 # load common aliases
 grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read -L alias
@@ -117,6 +129,8 @@ abbr --add --global history --position anywhere --regex '!-[0-9]+'  --function e
 # https://github.com/fish-shell/fish-shell/issues/11710
 bind --mode insert '$' bind_dollar
 bind --mode insert '?' bind_qmark
+
+## functions and builtin hooks
 
 function pure_shell
 	env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" fish --no-config \
