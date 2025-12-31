@@ -1,0 +1,66 @@
+#!/bin/sh
+
+set -e
+
+exists () {
+	command -v "$1" >/dev/null 2>&1
+}
+
+fatal() {
+	echo "$@" >&2
+	exit 1
+}
+
+copy() {
+	if exists xsel; then
+		if [ "$1" = --primary ]; then
+			xsel --input --primary
+		else
+			xsel --input --clipboard
+		fi
+	elif exists xclip; then
+		if [ "$1" = --primary ]; then
+			xclip -in -selection primary
+		else
+			xclip -in -selection clipboard
+		fi
+	elif exists pbcopy; then
+		if [ "$1" = --primary ]; then
+			pbcopy -pboard find
+		else
+			pbcopy -pboard general
+		fi
+	else
+		fatal "no clipboard manager detected"
+	fi
+}
+
+paste() {
+	if exists xsel; then
+		if [ "$1" = --primary ]; then
+			xsel --output --primary
+		else
+			xsel --output --clipboard
+		fi
+	elif exists xclip; then
+		if [ "$1" = --primary ]; then
+			xclip -out -selection primary
+		else
+			xclip -out -selection clipboard
+		fi
+	elif exists pbpaste; then
+		if [ "$1" = --primary ]; then
+			pbpaste -pboard find
+		else
+			pbpaste -pboard general
+		fi
+	else
+		fatal "no clipboard manager detected"
+	fi
+}
+
+case "$(basename "$0")" in
+	copy) copy "$@";;
+	paste) paste "$@";;
+	*) fatal "unknown operation $0";;
+esac
