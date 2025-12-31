@@ -99,6 +99,84 @@ install_clojure() {
 	fi
 }
 
+# ; defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType=public.plain-text;LSHandlerRoleAll=com.apple.automator.nvim;}'
+register_editor() {
+	cli=$1
+	mime=$2
+	if exists xdg-mime; then
+		xdg-mime default $cli.desktop $mime
+	elif exists duti; then
+		kind=${3:-editor}
+		id=com.apple.automator.$cli;
+
+		duti -s $id $mime $kind
+
+		case $mime in
+			*/plain) ext=txt;;
+			*-python*) ext=py;;
+			*-perl*) ext=perl;;
+			*-javascript*) ext=js;;
+			*-csh*) ext=csh;;
+			*-c++*) ext=cpp;;
+			*-chdr) ext=h;;
+			*-csrc|*-c) ext=c;;
+			*-java) ext=java;;
+			*/json) ext=json;;
+			*/markdown) ext=md;;
+			*) return;;
+		esac
+		set -x
+		duti -s $id .${ext} $kind
+		set +x
+	fi
+}
+
+setup_mimetypes() {
+	if exists nvim; then
+		if [ -n "${IS_MACOS:-}" ]; then
+			if [ -d /Applications/nvim.app ]; then
+				defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType=public.plain-text;LSHandlerRoleAll=com.apple.automator.nvim;}'
+				echo "To see updated mimetype handlers, you must restart you MacBook" >&2
+			else
+				echo "To setup nvim file associations, you need to create a Application using Automator."
+				echo "Go to File -> New -> Application -> Run Shell Script -> Pass input -> as arguments."
+				echo "Then, copy paste this script:"
+				echo
+echo 'for f in "$@"
+do
+	hx-hax "$f"
+done'
+				echo
+				echo "Finally, go to File -> Save -> Save as 'nvim' -> Where 'Applications'."
+				echo 'Do the same for fx with the script: fx "$@"'
+				exit 1
+			fi
+		fi
+
+		# lol, the nvim desktop file has the exact same mimetype
+		for mime in $(grep MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n'); do
+			register_editor nvim "$mime"
+		done
+		for mime in text/markdown text/x-python text/x-python3 text/x-perl application/javascript application/x-csh; do
+			register_editor nvim $mime
+		done
+	fi
+
+	if [ -n "${IS_MACOS:-}" ]; then
+		for ext in rs; do
+			duti -s com.apple.automator.nvim .${ext} editor
+		done
+	elif exists fx; then
+		register_editor fx application/json viewer
+	fi
+
+	if exists xdg-settings && browser=$(xdg-settings get default-web-browser); then
+		for mime in image/svg+xml; do
+			register_editor "$browser" $mime viewer
+		done
+	fi
+}
+
 setup_basics () {
 	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
@@ -154,35 +232,24 @@ setup_basics () {
 		dconf load / < lib/gnome-keybindings.ini
 	fi
 
-	if exists nvim; then
-		default=nvim
-		# lol, the nvim desktop file has the exact same mimetype
-		grep MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n' | xargs -n1 xdg-mime default $default.desktop
-		for mime in text/x-python text/x-python3 text/x-perl application/javascript application/x-csh; do
-			xdg-mime default $default.desktop $mime
-		done
-	fi
-	if exists fx; then
-		xdg-mime default fx-usercreated-1.desktop application/json
-	fi
 	if exists bat; then
 		mkdir -p "$(bat --config-dir)/syntaxes"
 		(
 			cd "$(bat --config-dir)/syntaxes"
 			# TODO: just inline this into my dotfiles
-			wget https://github.com/ksherlock/MUMPS.tmbundle/raw/refs/heads/master/Syntaxes/mumps.sublime-syntax
-			sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
+			if ! [ -e mumps.sublime-syntax ]; then
+				download https://github.com/ksherlock/MUMPS.tmbundle/raw/refs/heads/master/Syntaxes/mumps.sublime-syntax mumps.sublime-syntax
+				sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
+			fi
 		)
 		bat cache --build >/dev/null
-	fi
-	if browser=$(xdg-settings get default-web-browser); then for mime in image/svg+xml; do
-		xdg-mime default "$browser" $mime
-	done
 	fi
 
 	if [ -e  ~/.config/kglobalshortcutsrc ]; then
 		setup_kde
 	fi
+
+	setup_mimetypes
 unset DEST LOCAL f
 }
 

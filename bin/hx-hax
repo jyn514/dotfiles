@@ -84,9 +84,18 @@ sub hxhax {
 
   # WINDOWID is always set to the window tmux was *originally* launched in, and updating it seems...hard.
   # Instead of trying to do that, just don't switch away from this window if it's already running tmux.
-  if (defined $ENV{DISPLAY} && ! `pstree -p \$(xdotool getwindowpid \$(xdotool getactivewindow)) | grep tmux`) {
-    `tmux run-shell -t $pane xdotool windowactivate \${WINDOWID} 2>&1`;
-  }
+  if (defined $ENV{DISPLAY} && cmdexists 'xdotool') {
+		if (`pstree -p \$(xdotool getwindowpid \$(xdotool getactivewindow))` !~ /tmux/) {
+			`tmux run-shell -t $pane xdotool windowactivate \${WINDOWID} 2>&1`;
+		}
+  } elsif ($^O eq 'darwin') {
+		my $script = '
+tell application "Kitty"
+	activate  -- bring background window to foreground
+	reopen    -- open window if not yet open
+end tell';
+		`osascript -e '$script'`;
+	}
 }
 
 sub os_open {
@@ -118,16 +127,17 @@ sub xdgopen {
 				$default = `xdg-mime query default "$mime"`;
 			}
 		}
-    if ($default =~ /$desktop\.desktop/ || $default =~ "io.neovim") {
-      hxhax join_line @split;
+		`echo '$default' > /dev/ttys008`;
+    if ($default =~ /$desktop\.desktop/ || $default =~ "io.neovim" || $default =~ "TextEdit") {
+      hxhax(join_line @split);
 		} else {
 			my @args = @ARGV[0 .. $#ARGV - 2];
 			push(@args, $file);
-      os_open "$file";
+      os_open("$file");
     }
     return;
   }
-  os_open @ARGV;
+  os_open(@ARGV);
 }
 
 my $name = basename $0;
