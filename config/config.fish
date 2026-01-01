@@ -76,7 +76,7 @@ grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read -L alias
 	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
 end
-function cat; bat $argv; end
+function cat; bat -p $argv; end
 
 function last_history_line
 	echo $history[1]
