@@ -254,11 +254,15 @@ unset DEST LOCAL f
 }
 
 setup_kde() {
-	krohnkite=$(download https://codeberg.org/anametologin/Krohnkite/releases/download/latest/krohnkite.kwinscript)
-	kpackagetool6 -t KWin/Script -i "$krohnkite"
+	if ! [ -d ~/.local/share/kwin/scripts/krohnkite ]; then
+		krohnkite=$(download https://codeberg.org/anametologin/Krohnkite/releases/download/latest/krohnkite.kwinscript)
+		kpackagetool6 -t KWin/Script -i "$krohnkite"
+	fi
 
-	git clone https://github.com/maurges/dynamic_workspaces "$libdir"/dynamic_workspaces
-	kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
+	if ! [ -d $libdir/dynamic_workspaces ]; then
+		git clone https://github.com/maurges/dynamic_workspaces "$libdir"/dynamic_workspaces
+		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
+	fi
 
 	patch ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch
 	gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.reconfigure
