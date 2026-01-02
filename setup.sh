@@ -352,6 +352,15 @@ setup_install_local () {
 		install_brew
 	fi
 
+	if [ "$(uname)" = Linux ] && ! exists glide; then
+		set -x
+		glide=$(download "https://github.com/glide-browser/glide/releases/latest/download/glide.linux-$(uname -m).tar.xz")
+		tar -C $libdir -xf "$glide"
+		ln -sf $libdir/glide/glide-bin ~/.local/bin/glide
+		set +x
+		exit 1
+	fi
+
 	if [ -n "${IS_MACOS:-}" ]; then
 		brew install -q duti
 		if exists nvim; then
