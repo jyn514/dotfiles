@@ -101,9 +101,10 @@ git_info() {
 }
 
 prompt_command() {
-	# save the status code before anything else; commands we execute in PS1 will overwrite it
-	last_status=$?
-	printf %s "$FAINT_WHITE($(basename -- "$1")"
+	shell=$1
+	last_status=$2
+
+	printf %s "$FAINT_WHITE($(basename -- "$shell")"
 	printf "@"; hostname | tr -d '\n'
 	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
 	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
@@ -118,5 +119,5 @@ prompt_command() {
 }
 
 if [ -n "${1:-}" ]; then
-	prompt_command "$1"
+	prompt_command "$@"
 fi

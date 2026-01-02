@@ -149,16 +149,14 @@ function pure_shell
 		$argv
  end
 
-function fish_name
-	if status is-login
-		echo -fish
-	else
-		echo fish
-	end
+if status is-login
+	set fish_name -fish
+else
+	set fish_name fish
 end
 
 function fish_prompt
-	prompt-command (fish_name)
+	prompt-command $fish_name $status
 end
 
 function fish_mode_prompt
