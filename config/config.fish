@@ -25,8 +25,28 @@ function add_path_if_present
 	end
 end
 
+function exists
+	command -q $1
+end
+
 . $DOTFILES/lib/env.sh
 . $DOTFILES/lib/paths.sh
+
+if exists nvim
+	export EDITOR=editor-hax
+	export LESSEDIT='%E %g?lm\:%lm'
+	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
+	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
+	export JULIA_EDITOR=hx-hax
+else
+	export EDITOR=vi
+	export JULIA_EDITOR=open
+end
+export VISUAL=$EDITOR
+
+if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
+	/home/linuxbrew/.linuxbrew/bin/brew shellenv fish | source
+end
 
 if not status --is-interactive
 	exit
