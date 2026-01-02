@@ -181,6 +181,42 @@ function fish_mode_prompt
 	end
 end
 
+set duration 0
+set time "00:00"
+function record_duration --on-event fish_postexec
+	set duration $CMD_DURATION
+end
+
+function fish_right_prompt
+	set -l width 0
+
+	if [ "$duration" -gt 9 ]
+		set_color white --dim
+		set -l minp $(printf "%.2g" $(math $duration/1000))
+		set -l maxp $(printf "+%.4ss" $minp)
+		set s $maxp
+		set width (string length --visible $s)
+	end
+
+	printf "\e[1A"
+
+	if [ $width -gt 0 ]
+		printf "\e[1A"
+		string repeat -n $width ' '
+		printf '%s' $s
+		printf "\e[1B"
+	end
+
+	set t (date +%H:%M)
+	if ! [ "$t" = "$time" ]
+		set time $t
+		printf "\e[2;37m%s" $t
+	end
+
+	printf "\e[1B"
+	set duration 0
+end
+
 function fish_command_not_found
 	if [ -e $DOTFILES/lib/command-not-found ]
 		$DOTFILES/lib/command-not-found $argv
