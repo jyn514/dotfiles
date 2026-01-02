@@ -17,7 +17,6 @@ export PAGER=less
 export LESS=
 export MANPAGER='nvim +Man! --clean -u $HOME/.config/nvim/alabaster.nvim/colors/alabaster-black.lua'
 export DEBUGINFOD_URLS=https://debuginfod.ubuntu.com
-export VISUAL=$EDITOR
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
 export ENV=$HOME/.profile
