@@ -43,6 +43,24 @@ queue_install() {
 			*) ;;
 		esac
 		# TODO
+	elif [ -n "$IS_ARCH" ]; then
+		case "$pkg" in
+			antidote|build-essential|manpages-dev|libpam-fscrypt) return;;
+			# NOTE: -dev packages in Debian are just included by default in Arch packages
+			libusb-1.0-0-dev) pkg=libusb;;
+			libssl-dev) pkg=openssl;;
+			liburi-perl) pkg=perl-uri;;
+			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu;;
+			ninja-build) pkg=ninja;;
+			clangd) pkg=clang;;
+			fd-find) pkg=fd;;
+			gh) pkg=github-cli;;
+			manpages) pkg=man-pages;;
+			openjdk21) pkg=jdk21-openjdk;;
+			python3-pip) pkg=python-pip;;
+			python3-pylsp) pkg=python-lsp-server;;
+			*) ;;
+		esac	
 	elif [ "$IS_ALPINE" = 1 ]; then
 		case "$pkg" in
 			#gh) pkg=github-cli;;
@@ -78,6 +96,7 @@ copy_globals() {
 	d=$(date "+%F %T")
 	for f in "$(realpath global)"/*; do
 		base=$(basename "$f")
+		if [ "$base" = 1password.repo ] && ! [ -n "$IS_RPM" ]; then break; fi
 		while IFS="=" read -r local DEST; do
 			if [ "$local" = "$base" ]; then break; fi
 		done < install/global.txt
@@ -173,6 +192,8 @@ install_features () {
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
 		apk add less py3-pip zsh $packages
+	elif [ -n "$IS_ARCH" ]; then
+		pacman --sync --refresh --sysupgrade --needed $packages
 	elif [ -n "$IS_CHIMERA" ]; then
 		apk add $packages
 	elif [ -n "$IS_BREW" ]; then
@@ -295,6 +316,8 @@ elif exists apk; then
 	else
 		IS_ALPINE=1
 	fi
+elif exists pacman; then
+	IS_ARCH=1
 elif exists brew; then
 	IS_BREW=1
 else
