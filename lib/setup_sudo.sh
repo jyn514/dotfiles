@@ -205,11 +205,11 @@ install_features () {
 	fi
 
 	brew_packages="$brew_packages $(grep -v '^\s*#' install/brew_packages.txt | tr '\n' ' ')"
-	if ! exists brew; then
-		NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-		eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
-	fi
 	if [ -n "$SUDO_USER" ]; then
+		if ! exists brew; then
+			sudo -u "$SUDO_USER" bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
+		fi
 		sudo -u "$SUDO_USER" $(which brew) install -q $brew_packages
 	else
 		brew install -q $brew_packages
