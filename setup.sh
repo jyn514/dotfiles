@@ -371,6 +371,12 @@ setup_install_local () {
 		fi
 	fi
 
+	if exists pacman && ! exists 1password; then
+		curl -sS https://downloads.1password.com/linux/keys/1password.asc | gpg --import
+		git clone https://aur.archlinux.org/1password.git $libdir/1password
+		(cd $libdir/1password && makepkg -si)
+	fi
+
 	if ! [ -e ~/.config/zsh/antidote ]; then
 		git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
 	fi
