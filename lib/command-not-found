@@ -13,12 +13,6 @@ suggest_install() {
 	then
 		/usr/lib/command-not-found -- "$1"
 		return 123
-	elif BREW=$(command -v brew_which_formula 2>/dev/null) \
-		&& pkg=$($BREW -- "$1")
-	then
-		echo "The program '$1' is not currently installed, but can be installed with:"
-		echo "brew install $pkg"
-		return 123
 	elif PKGFILE=$(command -v pkgfile 2>/dev/null) \
 		&& pkgs=$(pkgfile --binaries -- "$1")
 	then
@@ -27,7 +21,13 @@ suggest_install() {
 			echo "  pacman -S $p"
 		done
 		return 123
-	elif [ -e /usr/libexec/pk-command-not-found ]
+	elif BREW=$(command -v brew_which_formula 2>/dev/null) \
+		&& pkg=$($BREW -- "$1")
+	then
+		echo "The program '$1' is not currently installed, but can be installed with:"
+		echo "  brew install $pkg"
+		return 123
+	elif [ -x /usr/libexec/pk-command-not-found ]
 	then
 		timeout .1 /usr/libexec/pk-command-not-found -- "$1"
 	else
@@ -38,17 +38,10 @@ suggest_install() {
 default_command_not_found() {
 	printf "%s: command not found\n" "$1" >&2
 
-	help=
-	exists command-not-found && help+=$(printf "\n%s" "command-not-found -- \"$1\"")
-	exists pacman && help+=$(printf "\n  %s" "pacman -F -- \"$1\"")
-	exists dnf && help+=$(printf "\n  %s" "dnf --cacheonly repoquery --quiet --whatprovides \"*/bin/$1\"")
-	exists brew && help+=$(printf "\n  %s" "brew which-formula --explain --skip-update \"$1\"")
-
-	printf "  consider searching for it with one of:"
-	if [ -n "$help" ]; then
-		echo "$help"
+	if [ -e /usr/libexec/pk-command-not-found ]; then
+		echo "  consider searching for it with:"
+		echo "  /usr/libexec/pk-command-not-found -- '$1'"
 	fi
-	echo
 
 	return 127
 }
