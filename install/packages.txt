@@ -39,6 +39,7 @@ ninja-build
 nmap
 nvim
 openjdk21
+pam-u2f
 perl
 pkg-config
 python3-pip

@@ -116,10 +116,10 @@ copy_globals() {
 			if [ "$(head -c2 "$f")" = "#!" ]; then
 				head -n1 "$f"
 				echo "$h"
-				tail -n+2 "$f"
+				tail -n+2 "$f" | sed "s/SETUP_HOSTNAME/$(hostname)/g"
 			else
 				echo "$h"
-				cat "$f"
+				cat "$f" | sed "s/SETUP_HOSTNAME/$(hostname)/g"
 			fi
 		} >"$DEST"
 		chmod a+r "$DEST"
