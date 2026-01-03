@@ -2,7 +2,7 @@
 [user]
 	name = jyn
 [credential]
-	helper = store
+	helper = cache
 [push]
 	default = current
 	autoSetupRemote = true

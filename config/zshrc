@@ -290,8 +290,10 @@ zle -N zle-zi
 bindkey '^[c' zle-zi
 bindkey -a '^[c' zle-zi
 
-functions -c fork_github fork-github
-unfunction fork_github
+if typeset -f fork_github >/dev/null; then
+	functions -c fork_github fork-github
+	unfunction fork_github
+fi
 
 zsh-defer -12p -c 'if exists jj; then source <(jj util completion zsh); fi'
 zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
