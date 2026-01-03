@@ -231,7 +231,9 @@ install_features () {
 	brew_packages="$brew_packages $(grep -v '^\s*#' install/brew_packages.txt | tr '\n' ' ')"
 	if [ -n "$SUDO_USER" ]; then
 		if ! exists brew; then
+			set +x
 			sudo -u "$SUDO_USER" bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+			set -x
 			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 		fi
 		sudo -u "$SUDO_USER" $(which brew) install -q $brew_packages
@@ -350,10 +352,12 @@ else
 fi
 
 main() {
-	copy_globals
 	set -x
 	install_security
 	install_features
+	set +x
+	copy_globals
+	set -x
 
 	if [ "$(uname)" = Darwin ]; then
 		launchctl config user path "/usr/bin:/bin:/usr/sbin:/sbin:$(realpath "$here/../bin"):$(brew --prefix)/bin"

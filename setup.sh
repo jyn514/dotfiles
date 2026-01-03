@@ -103,10 +103,10 @@ install_rust() {
 
 install_clojure() {
 	if ! exists clojure; then
-		curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
-		bash ./linux-install.sh --prefix ~/.local/lib/clojure
+		install=$(download https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh)
+		bash "$install" --prefix ~/.local/lib/clojure
 		ln -s ~/.local/lib/clojure/bin/clojure ~/.local/bin/
-		rm ./linux-install.sh
+		rm "$install"
 	fi
 }
 
@@ -217,6 +217,7 @@ setup_basics () {
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
+	mkdir -p ~/.local/state/zsh
 
 	discord=$HOME/.config/discord/settings.json
 	if [ -e $discord ]; then
