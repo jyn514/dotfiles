@@ -186,7 +186,8 @@ done
 
 SAVEHIST=10000000
 HISTSIZE=$SAVEHIST
-HISTFILE=~/.zsh_history
+# NOTE: *not* exported, since bash also reads this variable
+HISTFILE=${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history
 
 zstyle ':completion:*' auto-description 'specify: %d'
 zstyle ':completion:*' completer _expand _complete _correct _approximate

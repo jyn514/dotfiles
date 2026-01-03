@@ -188,7 +188,6 @@ setup_basics () {
 		base=$(basename "$f")
 		case $base in
     	jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
-			gitconfig) DEST="$HOME/.gitconfig";;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) while IFS="=" read local home; do
 					if [ "$local" = "$base" ]; then
@@ -207,6 +206,9 @@ setup_basics () {
 		ln -s "$(realpath "$f")" "$DEST"
 		unset DEST
 	done
+
+	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
+	touch ~/.config/git/credentials
 
 	discord=$HOME/.config/discord/settings.json
 	if [ -e $discord ]; then
