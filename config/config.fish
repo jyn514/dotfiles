@@ -100,6 +100,15 @@ function cat; bat -p $argv; end
 function fork-github
 	cd (command fork-github $argv)
 end
+function ip
+	unset -f ip
+	if command ip --color -V >/dev/null 2>&1
+		abbr --add --global ip 'ip --color'
+		ip --color $argv
+	else
+		ip $argv
+	end
+end
 function which
 	for cmd in $argv
 		set t (type -t $cmd 2>/dev/null)

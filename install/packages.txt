@@ -32,6 +32,7 @@ libssl-dev
 libterm-readline-gnu-perl
 liburi-perl
 libusb-1.0-0-dev
+perl-file-which
 lua-language-server
 manpages
 manpages-dev

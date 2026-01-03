@@ -8,7 +8,6 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 
 install_alpine() {
-	git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
 	install_clojure
 }
 
@@ -31,6 +30,15 @@ install_linux_lol() {
 		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
 		unzip "$vsix" -d $cpp
 		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
+	fi
+
+	if [ "$(uname)" = Linux ] && ! exists glide; then
+		set -x
+		glide=$(download "https://github.com/glide-browser/glide/releases/latest/download/glide.linux-$(uname -m).tar.xz")
+		tar -C $libdir -xf "$glide"
+		ln -sf $libdir/glide/glide-bin ~/.local/bin/glide
+		set +x
+		exit 1
 	fi
 
 	install_clojure
@@ -361,15 +369,6 @@ setup_install_local () {
 		install_brew
 	fi
 
-	if [ "$(uname)" = Linux ] && ! exists glide; then
-		set -x
-		glide=$(download "https://github.com/glide-browser/glide/releases/latest/download/glide.linux-$(uname -m).tar.xz")
-		tar -C $libdir -xf "$glide"
-		ln -sf $libdir/glide/glide-bin ~/.local/bin/glide
-		set +x
-		exit 1
-	fi
-
 	if [ -n "${IS_MACOS:-}" ]; then
 		brew install -q duti
 		if exists nvim; then
@@ -393,10 +392,11 @@ setup_install_local () {
 		curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
 		fish -c 'fisher install (command cat install/fish.txt)'
 	fi
-	if ! [ -d ~/.local/share/nvm ]; then
+	# node just doesn't run on musl hosts, lol
+	if ! [ -d ~/.local/share/nvm/v* ] && ! exists apk; then
 		# fish's nvm is *much* faster than the original
 		fish -c '\
-			nvm install lts
+		nvm install lts
 		nvm use lts
 		npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server oxlint
 		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'

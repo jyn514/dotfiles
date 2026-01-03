@@ -66,11 +66,14 @@ queue_install() {
 			#gh) pkg=github-cli;;
 			gh) return;;  # don't want creds on remote servers
 			nvim) pkg=neovim;;
+			fd-find) pkg=fd;;
+			git-delta) pkg=delta;;
+			kitty) pkg="$pkg kitty-kitten";;
 			ninja-build) pkg="$pkg ninja-is-really-ninja";;
 			liburi-perl) pkg=perl-uri ;;
 			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu ;;
 			manpages) pkg=man-pages ;;
-			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
+			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|fzy|glow|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
 	elif [ "$IS_CHIMERA" = 1 ]; then

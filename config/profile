@@ -221,11 +221,20 @@ pure_shell() {
 		if command ls --hyperlink=auto --color=auto --ignore=__pycache__ >/dev/null 2>/dev/null; then
 			ls () { command ls --hyperlink=auto --color=auto --ignore=__pycache__ "$@"; }
 		else
-			ls() { command ls "$@"; }
+			unset -f ls
 		fi
 		ls "$@"
 	}
 # fi
+
+ip() {
+	if command ip --color -V >/dev/null 2>&1; then
+		ip() { command ip --color "$@"; }
+	else
+		unset -f ip
+	fi
+	ip "$@"
+}
 
 purge_removed () {
 	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge

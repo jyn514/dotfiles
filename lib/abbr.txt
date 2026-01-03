@@ -44,7 +44,6 @@ ubuntu=docker run --interactive --tty ubuntu
 dmesg=dmesg --reltime
 exa=exa --git
 gdb=gdb --quiet
-ip=ip --color
 webpaste=nc termbin.com 9999
 ascii=man ascii
 weather=curl https://wttr.in/
