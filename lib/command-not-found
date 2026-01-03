@@ -13,22 +13,23 @@ suggest_install() {
 	then
 		/usr/lib/command-not-found -- "$1"
 		return 123
-	# TODO: this is slow and idk if we can do anything about it :(
-	elif DNF=$(command -v dnf 2>/dev/null) \
-			&& CMD=$(timeout .1 $DNF --no-plugins --cacheonly \
-				--disablerepo='*' --enable-repo=updates --enable-repo=fedora \
-				repoquery --quiet --whatprovides "*/bin/$1") \
-			&& [ "$CMD" ]
+	elif BREW=$(command -v brew_which_formula 2>/dev/null) \
+		&& pkg=$($BREW -- "$1")
 	then
-		echo "'$1' is not currently installed. You can install it with: 'dnf install $CMD'"
+		echo "The program '$1' is not currently installed, but can be installed with:"
+		echo "brew install $pkg"
 		return 123
-	# TODO: this is slow, consider https://github.com/oneElectron/brew-command-not-found
-	elif BREW=$(command -v brew 2>/dev/null) \
-			&& CMD=$(timeout .1 $BREW which-formula --explain --skip-update "$1") \
-			&& [ "$CMD" ]
+	elif PKGFILE=$(command -v pkgfile 2>/dev/null) \
+		&& pkgs=$(pkgfile --binaries -- "$1")
 	then
-		echo "$CMD"
+		echo "The program '$1' is not currently installed, but can be installed with:"
+		for p in $pkgs; do
+			echo "  pacman -S $p"
+		done
 		return 123
+	elif [ -e /usr/libexec/pk-command-not-found ]
+	then
+		timeout .1 /usr/libexec/pk-command-not-found -- "$1"
 	else
 		return 122
 	fi

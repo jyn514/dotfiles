@@ -17,6 +17,9 @@ install_brew() {
 	./lib/setup_sudo.sh install_features
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
+	if exists cargo; then
+		cargo install --git https://github.com/jyn514/brew-command-not-found --branch new-year-new-brew --locked
+	fi
 }
 
 install_linux_lol() {
