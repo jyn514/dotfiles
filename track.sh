@@ -1,16 +1,15 @@
 #!/bin/sh
 set -e
 
-dir=config
-if [ "$1" = --global ]; then
-	dir=global
-	shift
-fi
-
 if [ $# = 0 ] || [ $# -gt 2 ]; then
   echo "usage: $0 <existing file> [basename in config/]"
   exit 1
 fi
+
+case $(realpath "$1") in
+	"$HOME"*) dir=config;;
+	*) dir=global;;
+esac
 
 local=${2:-$(basename "$1")}
 cd "$(dirname "$0")"

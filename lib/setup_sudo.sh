@@ -115,7 +115,8 @@ should_copy_global() {
 }
 
 copy_globals() {
-	v="$(realpath "$0") v$(git describe --always --dirty)"
+	# can't use --dirty here or git will chown the index to root :/
+	v="$(realpath "$0") v$(git describe --always)"
 	d=$(date "+%F %T")
 	for f in "$(realpath global)"/*; do
 		base=$(basename "$f")

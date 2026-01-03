@@ -2,6 +2,6 @@ moonlander.rules=/etc/udev/rules.d/50-zsa.rules
 sshrc=/etc/ssh/sshrc
 1password.repo=/etc/yum.repos.d/1password.repo
 kde-fingerprint=/etc/pam.d/kde-fingerprint
-sudo=/etc/pam.d/sudo
 kscreenlockerrc=/etc/xdg/kscreenlockerrc
 autologin.conf=/etc/sddm.conf.d/autologin.conf
+system-auth=/etc/pam.d/system-auth
