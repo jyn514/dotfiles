@@ -5,3 +5,4 @@ kde-fingerprint=/etc/pam.d/kde-fingerprint
 kscreenlockerrc=/etc/xdg/kscreenlockerrc
 autologin.conf=/etc/sddm.conf.d/autologin.conf
 system-auth=/etc/pam.d/system-auth
+keyd.conf=/etc/keyd/default.conf
