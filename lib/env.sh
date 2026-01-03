@@ -3,6 +3,8 @@
 # If you find yourself wanting that, put it in profile or config.fish.
 
 # XDG settings, see https://wiki.archlinux.org/title/XDG_Base_Directory
+# TODO: make this work for vim, see https://tlvince.com/vim-respect-xdg
+# will be non-trivial because nvim also reads VIMINIT: https://neovim.io/doc/user/starting.html
 export XDG_CONFIG_HOME=$HOME/.config
 export INPUTRC=$XDG_CONFIG_HOME/readline/inputrc
 export STEEL_LSP_HOME=$HOME/.config/helix/steel-lsp

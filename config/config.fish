@@ -100,6 +100,17 @@ function cat; bat -p $argv; end
 function fork-github
 	cd (command fork-github $argv)
 end
+function which
+	for cmd in $argv
+		set t (type -t $cmd 2>/dev/null)
+		if [ "$t" = function ] || [ "$t" = builtin ]
+			type $cmd
+		else
+			command -v $cmd
+			or fish_command_not_found $cmd
+		end
+	end
+end
 
 # load custom syntax
 
