@@ -47,6 +47,7 @@ rclone
 rustup
 shellcheck
 shfmt
+signal-desktop
 strace
 tcsh
 traceroute
