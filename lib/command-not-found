@@ -22,10 +22,11 @@ suggest_install() {
 		done
 		return 123
 	elif BREW=$(command -v brew_which_formula 2>/dev/null) \
-		&& pkg=$($BREW -- "$1")
+		&& pkg=$($BREW -- "$1") \
+		&& [ -n "$pkg" ]
 	then
 		echo "The program '$1' is not currently installed, but can be installed with:"
-		echo "  brew install $pkg"
+		echo "  brew install '$pkg'"
 		return 123
 	elif [ -x /usr/libexec/pk-command-not-found ]
 	then

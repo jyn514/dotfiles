@@ -13,6 +13,7 @@ m=make
 n=ninja
 g=git
 o=open
+p=pacman
 v=nvim
 y=build/yottadb
 # uppercase is bad and it should feel bad

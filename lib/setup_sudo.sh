@@ -96,7 +96,7 @@ copy_globals() {
 	d=$(date "+%F %T")
 	for f in "$(realpath global)"/*; do
 		base=$(basename "$f")
-		if [ "$base" = 1password.repo ] && ! [ -n "$IS_RPM" ]; then break; fi
+		if [ "$base" = 1password.repo ] && ! [ -n "$IS_RPM" ]; then continue; fi
 		while IFS="=" read -r local DEST; do
 			if [ "$local" = "$base" ]; then break; fi
 		done < install/global.txt
