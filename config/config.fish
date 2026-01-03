@@ -26,7 +26,7 @@ function add_path_if_present
 end
 
 function exists
-	command -q $1
+	command -q $argv[1]
 end
 
 . $DOTFILES/lib/env.sh
@@ -97,6 +97,11 @@ grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read -L alias
 	abbr --add --global $name $value
 end
 function cat; bat -p $argv; end
+function fork-github
+	cd (command fork-github $argv)
+end
+
+# load custom syntax
 
 function last_history_line
 	echo $history[1]

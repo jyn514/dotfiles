@@ -896,6 +896,7 @@ end
 local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
 vim.lsp.config('rust-analyzer', {
 	cmd = { "rust-analyzer" },
+	filetypes = { "rust" },
 	settings = settings,
 	root_dir = function(buf, on_dir)
 		local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters

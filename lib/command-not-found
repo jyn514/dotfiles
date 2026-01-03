@@ -39,11 +39,11 @@ default_command_not_found() {
 
 	help=
 	exists command-not-found && help+=$(printf "\n%s" "command-not-found -- \"$1\"")
+	exists pacman && help+=$(printf "\n  %s" "pacman -F -- \"$1\"")
 	exists dnf && help+=$(printf "\n  %s" "dnf --cacheonly repoquery --quiet --whatprovides \"*/bin/$1\"")
 	exists brew && help+=$(printf "\n  %s" "brew which-formula --explain --skip-update \"$1\"")
 
-	echo "  consider searching for it with one of:"
-	printf %s "  suggest-missing-command \"$1\""
+	printf "  consider searching for it with one of:"
 	if [ -n "$help" ]; then
 		echo "$help"
 	fi
