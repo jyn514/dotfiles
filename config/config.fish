@@ -101,7 +101,7 @@ function fork-github
 	cd (command fork-github $argv)
 end
 function ip
-	unset -f ip
+	functions --erase ip
 	if command ip --color -V >/dev/null 2>&1
 		abbr --add --global ip 'ip --color'
 		ip --color $argv
