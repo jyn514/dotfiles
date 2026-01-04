@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 
 qmk=~/src/qmk_firmware
 if ! command -v qmk >/dev/null 2>&1; then
-	pip install --user qmk
+	pipx install qmk
 fi
 if ! [ -d $qmk ]; then
 	qmk setup zsa/qmk_firmware -b firmware24 -H $qmk
