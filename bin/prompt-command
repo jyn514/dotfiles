@@ -106,6 +106,7 @@ prompt_command() {
 
 	printf %s "$FAINT_WHITE($(basename -- "$shell")"
 	printf "@"; hostname | tr -d '\n'
+	[ -n "$SSH_TTY" ] && printf '%s[ssh]' "${RED}"
 	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
 	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
 	git_info | tr -d '\n'
