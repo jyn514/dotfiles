@@ -52,6 +52,7 @@ glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "j");
 	glide.buf.keymaps.del("normal", "k");
 	glide.buf.keymaps.del("normal", "u");
+	glide.buf.keymaps.del("normal", "x");
 	glide.buf.keymaps.del("insert", "<C-i>");
 });
 glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
