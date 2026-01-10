@@ -11,26 +11,37 @@ suggest_install() {
 	# this looks weird because it uses absolute paths. we're the command-not-found handler, we don't want to call ourselves indefinitely.
 	if [ -e /usr/lib/command-not-found ]
 	then
-		/usr/lib/command-not-found -- "$1"
+		msg=$(/usr/lib/command-not-found -- "$1")
+		echo "$msg" >&2
+		printf "sudo "
+		echo "$msg" | tail -n +2
 		return 123
 	elif PKGFILE=$(command -v pkgfile 2>/dev/null) \
 		&& pkgs=$(pkgfile --binaries -- "$1")
 	then
-		echo "The program '$1' is not currently installed, but can be installed with:"
-		for p in $pkgs; do
-			echo "  pacman -S $p"
-		done
+		{
+			echo "The program '$1' is not currently installed, but can be installed with:"
+			for p in $pkgs; do
+				echo "  pacman -S $p"
+			done
+		} >&2
+		echo "sudo pacman -S --noconfirm $pkgs" | head -n1
 		return 123
 	elif BREW=$(command -v brew_which_formula 2>/dev/null) \
-		&& pkg=$($BREW -- "$1") \
-		&& [ -n "$pkg" ]
+		&& pkgs=$($BREW -- "$1") \
+		&& [ -n "$pkgs" ]
 	then
-		echo "The program '$1' is not currently installed, but can be installed with:"
-		echo "  brew install '$pkg'"
+		{
+			echo "The program '$1' is not currently installed, but can be installed with:"
+			for p in $pkgs; do
+				echo "  brew install $p"
+			done
+		} >&2
+		printf "env NONINTERACTIVE=1 brew install '%s'" "$(echo "$pkgs" | head -n1)"
 		return 123
 	elif [ -x /usr/libexec/pk-command-not-found ]
 	then
-		timeout .1 /usr/libexec/pk-command-not-found -- "$1"
+		timeout .1 /usr/libexec/pk-command-not-found -- "$1" >&2
 	else
 		return 122
 	fi
@@ -77,9 +88,16 @@ command_not_found_handle() {
 		fi;;
 	esac
 
-	suggest_install "$@"
+	install_cmd=$(suggest_install "$@")
 	if ! [ $? = 123 ]; then
 		default_command_not_found "$@"
+	elif [ -n "$install_cmd" ]; then
+		printf "Install it now with \"$install_cmd\"? [y/N] "
+		read do_install
+		case "$do_install" in
+			y*) $install_cmd;;
+			*) return 123;;
+		esac
 	fi
 }
 
