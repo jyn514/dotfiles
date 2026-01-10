@@ -125,6 +125,8 @@
     pushInsteadOf = https://github.com/
 [url "git@gitlab.com:"]
     pushInsteadOf = https://gitlab.com/
+[url "git@codeberg.org:"]
+    pushInsteadOf = https://codeberg.org
 
 # TODO: figure out what this does lol
 [core]

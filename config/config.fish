@@ -257,6 +257,10 @@ bind -M default / _atuin_search
 zoxide init fish | source
 function cd; z $argv; end
 
+if exists direnv
+	direnv hook fish | source
+end
+
 nvm use --silent lts
 
 stty -ixon
