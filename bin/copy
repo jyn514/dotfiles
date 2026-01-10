@@ -24,6 +24,12 @@ copy() {
 		else
 			xclip -in -selection clipboard
 		fi
+	elif exists wl-copy; then
+		if [ "$1" = --primary ]; then
+			wl-copy --primary
+		else
+			wl-copy
+		fi
 	elif exists pbcopy; then
 		if [ "$1" = --primary ]; then
 			pbcopy -pboard find
@@ -47,6 +53,12 @@ paste() {
 			xclip -out -selection primary
 		else
 			xclip -out -selection clipboard
+		fi
+	elif exists wl-paste; then
+		if [ "$1" = --primary ]; then
+			wl-paste --primary
+		else
+			wl-paste
 		fi
 	elif exists pbpaste; then
 		if [ "$1" = --primary ]; then
