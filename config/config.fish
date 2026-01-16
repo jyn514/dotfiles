@@ -112,12 +112,24 @@ function ip
 	end
 end
 function which
+	if test $argv[1] = -a
+		set all 1
+		set --erase argv[1]
+	end
 	for cmd in $argv
 		set t (type -t $cmd 2>/dev/null)
 		if [ "$t" = function ] || [ "$t" = builtin ]
-			type $cmd
+			if test "$all" = 1
+				type --all $cmd
+			else
+				type $cmd
+			end
 		else
-			command -v $cmd
+			if test "$all" = 1
+				command --all --search $cmd
+			else
+				command --search $cmd
+			end
 			or fish_command_not_found $cmd
 		end
 	end
