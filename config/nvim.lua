@@ -204,14 +204,9 @@ vim.keymap.set('i', '<C-c>', function()
 	return vim.fn.pumvisible() and '<C-e>' or '<C-c>'
 end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to normal mode immediately"
 
-vim.api.nvim_create_user_command('EditConfig', 'edit ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
-vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. vim.fn.stdpath("config") .. '/init.lua', { desc = "edit Lua config" })
-vim.api.nvim_create_user_command('Rename', function(info)
-	-- NOTE: :sav doesn't preserve permissions
-	vim.cmd('silent !mv ' .. vim.fn.expand('%') .. ' ' .. info.args)
-	vim.cmd.edit(info.args)
-	vim.cmd.bdelete('#')
-end, { nargs=1, desc = "Rename current file" })
+local config = vim.fn.stdpath("config") .. '/init.lua'
+vim.api.nvim_create_user_command('EditConfig', 'edit '..config, { desc = "edit Lua config" })
+vim.api.nvim_create_user_command('ReloadConfig', 'source '..config, { desc = "reload Lua config" })
 vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	local view = vim.fn.winsaveview()
 	local cmd = 'keeppatterns '
@@ -221,36 +216,6 @@ vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	vim.cmd(cmd..[[s/\s\+$//e]])
 	vim.fn.winrestview(view)
 end, { range = true, desc = "trim trailing spaces" })
-
-function BufferDelete(args)
-	if args.bang then
-		vim.cmd 'bdelete!'
-	else
-		vim.cmd.bdelete()
-	end
-	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_loaded(buf) and buf ~= vim.api.nvim_get_current_buf() then
-			vim.cmd('let @# = '..buf)
-			break
-		end
-	end
-	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer
-end
-vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
-	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
-vim.api.nvim_create_user_command('OpenRemoteUrl', function(info)
-	local file = vim.api.nvim_buf_get_name(0)
-	local out = vim.system({'remote-git-url', file, tostring(info.line1), tostring(info.line2)}, {text=true}):wait()
-	if out.stderr ~= '' then
-		error(out.stderr)
-	end
-	if out.stdout ~= '' then
-		vim.notify(out.stdout)
-	end
-end, {
-	range = true,
-	desc = "Open the current line on a git host at the last commit at which it was modified"
-})
 
 -- autosave on cursor hold
 local timers = {}
@@ -296,9 +261,9 @@ abbrev('o', 'edit')
 abbrev('W', 'w')
 abbrev('bc', 'BufferDelete')
 abbrev('bc!', 'BufferDelete!')
+abbrev('rm', 'Remove')
 abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
-abbrev('url', 'OpenRemoteUrl')
 abbrev('as', 'AutoSave')
 abbrev('health', 'checkhealth')
 abbrev('lsp', 'LspInfo')
@@ -319,6 +284,7 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
+		{ "folke/neoconf.nvim", cmd = "Neoconf", config = true },
 		{ "folke/lazydev.nvim", ft = "lua", opts = {
 			-- See the configuration section for more details
 			-- Load luvit types when the `vim.uv` word is found
@@ -327,19 +293,22 @@ if first_run then
 		'tpope/vim-obsession',  -- session save/resume
 		'numToStr/Comment.nvim',
 		-- general picker
-		{ 'nvim-telescope/telescope.nvim',
-			dependencies = {'nvim-lua/plenary.nvim', 'nvim-telescope/telescope-fzy-native.nvim'} },
+		{ "ibhagwan/fzf-lua",
+			dependencies = { 'nvim-mini/mini.icons' }},
 		'kosayoda/nvim-lightbulb',
 		'echasnovski/mini.nvim',    -- toolbar, also icons
 		"folke/which-key.nvim",     -- spawns kak/hx-like popup
 		'lewis6991/gitsigns.nvim',  -- also does inline blame
+		'tpope/vim-eunuch',  -- file operations
+		{'tpope/vim-fugitive', -- open url of commit under cursor
+			dependencies = { "tpope/vim-rhubarb" }},
 		{ "chrisgrieser/nvim-spider", lazy = true },  -- partial word movement
 		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
 		'neovim/nvim-lspconfig',
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		'mfussenegger/nvim-dap',    -- debugging
-		{ "rcarriga/nvim-dap-ui", dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
-		'nvim-telescope/telescope-ui-select.nvim',
+		{ "rcarriga/nvim-dap-ui",
+			dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
 		{'hrsh7th/cmp-cmdline', dependencies = 'hrsh7th/nvim-cmp' },
 		{'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
@@ -348,7 +317,6 @@ if first_run then
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
 		{ "kylechui/nvim-surround", version = "^3.0.0" },
-		{ "folke/neoconf.nvim" },
 
 		-- https://github.com/smoka7/hop.nvim  -- random access within file
 
@@ -356,8 +324,6 @@ if first_run then
 		-- https://github.com/amitds1997/remote-nvim.nvim
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
-
-vim.g.alabaster_dim_comments = true
 
 require('nvim-surround').setup {}
 
@@ -487,37 +453,6 @@ vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 vim.cmd.colorscheme 'alabaster-black'
 
-local fd_cmd = {"fd", "--type=f", "--color=never"}
-local telescope = require('telescope')
-telescope.setup {
-	defaults = {
-		layout_strategy = 'vertical',
-		mappings = {
-			n = {
-				["<C-c>"] = require('telescope.actions').close
-			}
-		}
-	},
-	pickers = {
-		-- TODO: file caching so this isn't so slow
-		-- maybe github.com/folke/snacks.nvim/blob/main/docs/picker.md ?
-		find_files = {
-			find_command = fd_cmd
-		}
-	},
-	extensions = {
-		["ui-select"] = {
-			vim.tbl_deep_extend("force", require'telescope.themes'.get_ivy(), {
-				layout_config = {
-					height = { .1, min = 5 },
-				}
-			})
-		}
-	}
-}
-telescope.load_extension 'ui-select'
-telescope.load_extension 'fzy_native'
-
 local gitsigns = require('gitsigns')
 gitsigns.setup({
 	current_line_blame = true,
@@ -530,38 +465,92 @@ gitsigns.setup({
 	}
 })
 
-local pickers = require('telescope.builtin')
-vim.keymap.set('n', '<leader>b', function() pickers.buffers({ sort_mru = true, ignore_current_buffer = true }) end, { desc = "Open buffer picker" })
+vim.keymap.set({'n', 'v'}, '<leader>o', ":'<,'>GBrowse<CR>", {desc = "open commit under cursor"})
 
-local fd_cmd_no_llvm = vim.deepcopy(fd_cmd)
-table.insert(fd_cmd_no_llvm, "-Esrc/llvm-project")
+local pickers = require 'fzf-lua'
+if first_run then
+	pickers.register_ui_select()
+end
+
+function shorten_from_subprocess(entry)
+	local picker_files = require 'fzf-lua.path'
+	return picker_files.shorten(entry, 2)
+end
+
+pickers.setup {
+	defaults = {
+		file_icons = "mini",
+	},
+	files = {
+		-- file_icons = false,
+		rg_opts = [[-g "!src/llvm-project" -g "!src/tools/rustc-perf"]],
+		fd_opts = [[--no-hidden --exclude src/llvm-project --exclude src/tools/rustc-perf]],
+		-- can't set this globally because it breaks previewers in combine: 
+		-- path_shorten = 2,
+	},
+	git = {
+		files = {
+			cmd = "git ls-files --modified --exclude-standard --directory $(git rev-parse --show-toplevel)"
+			-- fn_transform = shorten_from_subprocess
+		}
+	},
+	oldfiles = {
+		include_current_session = true,
+		-- fn_transform = shorten_from_subprocess,
+		-- stat_file = false,  -- startup times
+	}
+}
+
+-- vim.keymap.set('i', '<tab>', function() pickers.complete_path() end)
+
+vim.keymap.set('n', '<leader>b', function()
+	pickers.buffers({
+		winopts = {title="Buffers"},
+	})
+end, { desc = "Open buffer picker" })
 
 vim.keymap.set('n', '<leader>f', function()
-	pickers.find_files({find_command = fd_cmd_no_llvm})
-end, { desc = "Open file picker (ignore llvm)" })
+	pickers.combine({
+		pickers = "git_files;oldfiles;files",
+		winopts = {title="Files"},
+		cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) or vim.fn.expand('%:p:h'),
+	})
+end, { desc = "Open '''smart''' fuzzy file picker" })
 
 vim.keymap.set('n', '<leader><C-f>', function()
-	pickers.find_files({ cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) } or vim.fn.expand('%:p:h'))
-end, { desc = "Open file picker (current package or workspace)" })
+	pickers.files({ path_shorten = 2, winopts = {title="All tracked files"}})
+end, { desc = "Open file picker (all files in workspace)" })
+
 vim.keymap.set('n', '<leader><A-f>', function()
-	pickers.find_files({ no_ignore = true, no_ignore_parent = true, hidden = true })
+	pickers.files({ no_ignore = true, no_ignore_parent = true, hidden = true })
 end, { desc = "Open file picker (include ignored)" })
 
-vim.keymap.set('n', '<leader>F', pickers.oldfiles, { desc = "Open file picker (all files ever opened)" })
+vim.keymap.set('n', '<leader>F', pickers.history, { desc = "Open file picker (all files ever opened)" })
 
 vim.keymap.set('n', '<leader>/', function()
-	pickers.live_grep({prompt_title = "Live Search"})
-end, { desc = "Search in workspace" })
+	pickers.grep()
+end, { desc = "Search in working dir" })
+	-- pickers.live_grep({prompt_title = "Live Search"})
+
+vim.keymap.set('n', '<leader><C-_>', function()
+	pickers.grep({cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) })
+end, { desc = "Search current package or workspace" })
+
 vim.keymap.set('n', '<leader>g', function()
-	pickers.git_files({ git_command = {"git", "ls-files", "--modified"}, prompt_title = "Modified Files" })
+	pickers.git_files({
+		prompt = "Modified Files",
+	})
 end, { desc = "Modified files" })
 bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
-
+--
 require("nvim-lightbulb").setup({
 	autocmd = { enabled = true }
 })
 
-require('mini.icons').setup {}
+-- try Meslo on macOS; look for "use different font for non-ascii glyphs" in iTerm settings
+require('mini.icons').setup {
+	-- style = 'ascii',
+}
 MiniStatusline = require'mini.statusline'
 MiniStatusline.setup {
 	content = {
@@ -689,14 +678,15 @@ vim.diagnostic.config({ underline = true })
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
 vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
-vim.keymap.set('n', 'gy', pickers.lsp_type_definitions, { desc = "Goto type definition" })
+vim.keymap.set('n', 'gy', pickers.lsp_typedefs, { desc = "Goto type definition" })
 vim.keymap.set('n', 'gi', pickers.lsp_implementations, { desc = "Goto type implementation" })
 vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
 vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
 vim.keymap.set('n', '<leader>n', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
 vim.keymap.set('n', '<leader>N', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
-vim.keymap.set('n', '<leader>d', ':Telescope diagnostics<cr>:error: ', { desc = "Show workspace diagnostics (errors)" })
-vim.keymap.set('n', '<leader>D', pickers.diagnostics, { desc = "Show workspace diagnostics (all)" })
+vim.keymap.set('n', '<leader>q', pickers.quickfix, { desc = "Show quickfixes" })
+vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show workspace diagnostics (errors)" })
+vim.keymap.set('n', '<leader>D', pickers.lsp_workspace_diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
 vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
 
@@ -736,7 +726,7 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 		})
 	end
 	if client.server_capabilities.codeLensProvider then
-		vim.keymap.set('n', '<leader>l', vim.lsp.codelens.run, { desc = "Run codelens" })
+		vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens" })
 		-- TODO: should be CursorHold, but that causes flickering
 		-- TODO: why doesn't LspAttach work
 		-- https://github.com/neovim/neovim/issues/34965
@@ -761,9 +751,6 @@ end
 ---- specific LSPs ----
 require('vim.lsp.log').set_format_func(vim.inspect)
 
-if first_run then
-	require("neoconf").setup {}
-end
 local lspconfig = require('lspconfig')
 local lsplang = require('lspconfig.configs')
 
@@ -893,36 +880,47 @@ local function expand_config_variables(option)
 end
 
 -- TODO: find a way to calculate this lazily
-local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
-vim.lsp.config('rust-analyzer', {
-	cmd = { "rust-analyzer" },
-	filetypes = { "rust" },
-	settings = settings,
-	root_dir = function(buf, on_dir)
-		local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters
-		if not dir then return end
-		if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
-			dir = vim.fs.dirname(dir)
-		end
-		on_dir(dir)
-	end,
-	-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
-	-- init_options = settings,
-	on_init = function(client)
-		local path = vim.lsp.buf.list_workspace_folders()[1]
-		-- rust-lang/rust
-		config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
-		if fs_exists(config) then
-			modified_config = vim.fs.joinpath(path, ".zed/settings.json")
-			if fs_exists(modified_config) then
-				config = modified_config
-			end
-			file = io.open(config)
-			json = vim.json.decode(file:read("*a"))
-			client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
-			client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
-		end
+
+function setup_ra()
+	if not vim.bo.filetype == "rust" then
+		return
 	end
+	local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
+	vim.lsp.config('rust-analyzer', {
+		cmd = { "rust-analyzer" },
+		filetypes = { "rust" },
+		settings = settings,
+		root_dir = function(buf, on_dir)
+			local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters
+			if not dir then return end
+			if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
+				dir = vim.fs.dirname(dir)
+			end
+			on_dir(dir)
+		end,
+		-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
+		-- init_options = settings,
+		on_init = function(client)
+			local path = vim.lsp.buf.list_workspace_folders()[1]
+			-- rust-lang/rust
+			config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
+			if fs_exists(config) then
+				modified_config = vim.fs.joinpath(path, ".zed/settings.json")
+				if fs_exists(modified_config) then
+					config = modified_config
+				end
+				file = io.open(config)
+				json = vim.json.decode(file:read("*a"))
+				client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
+				client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
+			end
+		end
+	})
+end
+
+vim.api.nvim_create_autocmd('BufReadPre', {
+	desc = 'Setup rust-analyzer',
+	callback = setup_ra
 })
 
 local expand_macro = require('rust-expand-macro').expand_macro
