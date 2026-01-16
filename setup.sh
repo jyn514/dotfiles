@@ -259,6 +259,11 @@ setup_basics () {
 		bat cache --build >/dev/null
 	fi
 
+	if exists atuin; then
+		mkdir -p ~/.config/fish/completions
+		atuin gen-completions --shell fish > ~/.config/fish/completions/atuin.fish
+	fi
+
 	if [ -e  ~/.config/kglobalshortcutsrc ]; then
 		setup_kde
 	fi

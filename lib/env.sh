@@ -46,9 +46,6 @@ export ENV=$HOME/.profile
 export PAGER=less
 export LESS=
 
-# for ubuntu
-export JAVA_HOME=/usr/lib/jvm/default-java
-
 # for http://overthewire.org
 # Honestly if you want to use this I don't really mind
 export OTWUSERDIR=/d/SERPjdbrX3w3tsyXQQt0

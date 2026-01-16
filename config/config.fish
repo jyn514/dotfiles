@@ -265,7 +265,6 @@ function fish_command_not_found
 end
 
 atuin init fish --disable-up-arrow | source
-atuin gen-completions --shell fish | source
 bind -M default / _atuin_search
 
 zoxide init fish | source
@@ -278,3 +277,7 @@ end
 nvm use --silent lts
 
 stty -ixon
+
+[ -x ~/.local/startup-hook ] && ~/.local/startup-hook
+# `exit` in fish only exits the file, not the shell as a whole.
+[ $status = 120 ] && exec true
