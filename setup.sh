@@ -371,13 +371,8 @@ setup_install_local () {
 	fi
 
 	if [ -n "${IS_MACOS:-}" ]; then
-		brew install -q duti
-		if exists nvim; then
-			create_macos_app nvim io.neovim
-		fi
-		if exists fx; then
-			create_macos_app fx wtf.fx
-		fi
+		:
+		# 	setup_macos
 	fi
 
 	if exists pacman && ! exists 1password; then

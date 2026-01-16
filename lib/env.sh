@@ -12,6 +12,8 @@ export STEEL_LSP_HOME=$HOME/.config/helix/steel-lsp
 export LESSKEYIN=$HOME/.config/lesskey
 export ZDOTDIR=$HOME/.config/zsh
 export JUPYTER_CONFIG_DIR=$HOME/.config/jupyter
+# otherwise it uses /Library/Application Support on macOS :/
+export BACON_PREFS=$HOME/.config/bacon/prefs.toml
 
 export CARGO_HOME=$HOME/.local/lib/cargo
 export RUSTUP_HOME=$HOME/.local/lib/rustup
