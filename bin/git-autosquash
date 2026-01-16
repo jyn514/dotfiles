@@ -2,8 +2,19 @@
 
 set -eu
 
-branch=$(git symbolic-ref --short --quiet HEAD || git for-each-ref refs/heads/ --format '%(refname:short)' --sort=-committerdate | head -n1)
-remote=$(git config --get branch.${branch}.remote)
-mergebase=$(git merge-base HEAD "$remote"/HEAD)
+cmd=revise
+if [ "${1:-}" = --rebase ]; then
+	cmd=rebase
+	shift
+fi
 
-exec git revise "$mergebase" -i "$@"
+if [ -z "${1:-}" ]; then
+	branch=$(git symbolic-ref --short --quiet HEAD || git for-each-ref refs/heads/ --format '%(refname:short)' --sort=-committerdate | head -n1)
+	remote=$(git config --get branch."${branch}".remote)
+	base=$(git merge-base HEAD "$remote"/HEAD)
+else
+	base=$1
+	shift
+fi
+
+exec git $cmd "$base" -i "$@"
