@@ -14,9 +14,7 @@ umask 077
 set DOTFILES (dirname (dirname (realpath ~/.profile)))
 
 function add_path
-	if not contains $argv[1] $PATH
-		set PATH $argv[1] $PATH
-	end
+	fish_add_path --global --move --prepend $argv
 end
 
 function add_path_if_present
@@ -27,6 +25,10 @@ end
 
 function exists
 	command -q $argv[1]
+end
+
+if [ -f ~/.local/profile.fish ]
+	. ~/.local/profile.fish
 end
 
 . $DOTFILES/lib/env.sh
@@ -104,9 +106,9 @@ function ip
 	functions --erase ip
 	if command ip --color -V >/dev/null 2>&1
 		abbr --add --global ip 'ip --color'
-		ip --color $argv
+		command ip --color $argv
 	else
-		ip $argv
+		command ip $argv
 	end
 end
 function which

@@ -90,7 +90,7 @@ sub hxhax {
 		}
   } elsif ($^O eq 'darwin') {
 		my $script = '
-tell application "Kitty"
+tell application "iTerm2"
 	activate  -- bring background window to foreground
 	reopen    -- open window if not yet open
 end tell';
@@ -116,7 +116,7 @@ sub xdgopen {
     my $default;
 
 		if (cmdexists 'duti') {
-			my $ext = split(/\.([^\.]+)$/, $file);
+			my $ext = (split(/\.([^\.]+)$/, $file))[-1];
 			$default = (split /\n/, `duti -x $ext`)[0];
 		} else {
 			chomp(my $mime = `xdg-mime query filetype "$file"`);
@@ -127,8 +127,7 @@ sub xdgopen {
 				$default = `xdg-mime query default "$mime"`;
 			}
 		}
-		`echo '$default' > /dev/ttys008`;
-    if ($default =~ /$desktop\.desktop/ || $default =~ "io.neovim" || $default =~ "TextEdit") {
+    if ($default =~ /$desktop\.desktop/ || $default =~ $desktop || $default =~ "TextEdit") {
       hxhax(join_line @split);
 		} else {
 			my @args = @ARGV[0 .. $#ARGV - 2];
