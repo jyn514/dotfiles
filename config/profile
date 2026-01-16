@@ -129,11 +129,6 @@ mkcd () { mkdir -p "$@" && cd "$1"; }
 # follow symlinks by default
 rg () { command rg -z -L --no-heading "$@"; }
 
-# note: the `cd` makes tmux open helix in the right working directory
-b () {
-	builtin cd "$(cargo metadata --format-version 1| jq .workspace_root -r)" && bacon "$@"
-}
-
 whatismyip() {
 	# https://unix.stackexchange.com/a/194136
 	dig +short myip.opendns.com @resolver4.opendns.com
