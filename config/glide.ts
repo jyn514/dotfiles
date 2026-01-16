@@ -39,6 +39,9 @@ glide.autocmds.create("ConfigLoaded", async () => {
 });
 
 glide.g.mapleader = ","
+glide.buf.keymaps.set("normal", ",.", async() => {
+  await glide.commandline.show();
+});
 
 // breaks search on many docs sites
 glide.buf.keymaps.del("normal", "s");
@@ -63,14 +66,14 @@ glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
 		glide.keys.send('a:');
 	});
 });
-glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async () => {
+glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async ({ url }) => {
+	console.log(url);
 	glide.buf.keymaps.del("normal", "d");
 	glide.buf.keymaps.del("normal", "e");
 	glide.buf.keymaps.del("normal", "r");
-	glide.buf.keymaps.set("normal", ":", async() => {
-		glide.keys.send('a:');
-	});
 	glide.buf.keymaps.del("normal", "t");
+	glide.buf.keymaps.del("normal", "U");
+	glide.buf.keymaps.del("normal", ":");
 });
 
 // pin tab
