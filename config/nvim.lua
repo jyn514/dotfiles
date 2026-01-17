@@ -762,7 +762,8 @@ bind('gqd', function()
 			..')',
 		cwd = 'compiler',
 		no_esc = true,
-		rg_opts = '--case-sensitive --column --no-heading --line-number --color=always --max-columns=4096 -g "!rustc_span/src/symbol.rs"',
+		rg_opts = '--case-sensitive -g "!rustc_span/src/symbol.rs"'
+			..' --column --no-heading --line-number --color=always --max-columns=4096',
 	})
 end, 'Goto rustc_query definition')
 
