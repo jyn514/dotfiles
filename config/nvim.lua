@@ -169,8 +169,8 @@ end, { desc = "Run `make test`" })
 -- TODO: add ninja output to `errorformat` (see `:h efm-ignore`)
 
 -- add some emacs keybinds
-vim.keymap.set('i', '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
-vim.keymap.set('i', '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
+vim.keymap.set({'i', 'c'}, '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
+vim.keymap.set({'i', 'c'}, '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
 
 -- add some helix keybinds
 vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
@@ -251,6 +251,11 @@ function BufferDelete(args)
 end
 vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
 	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
+
+-- Show all highlights
+vim.api.nvim_create_user_command('ShowHighlights', function()
+	vim.cmd('source $VIMRUNTIME/syntax/hitest.vim')
+end, {desc = "Show a list of all highlight groups"})
 
 -- autosave on cursor hold
 local timers = {}
@@ -361,6 +366,25 @@ if first_run then
 		image = { enabled = true },
 	}
 end
+
+require('rainbow-delimiters.setup') {
+	highlight = {
+		'RainbowDelimiterYellow',
+		'RainbowDelimiterOrange',
+		'RainbowDelimiterViolet',
+		'Label',
+		'RainbowDelimiterGreen',
+	},
+}
+
+-- https://gitlab.com/HiPhish/rainbow-delimiters.nvim/-/issues/23
+-- vim.g.rainbow_delimiters.query.rust = 'at-least-one-param'
+_ = [[
+	(parameters
+  "(" @delimiter
+  (parameter)+
+  ")" @delimiter @sentinel) @container
+]]
 
 require('nvim-surround').setup {}
 
