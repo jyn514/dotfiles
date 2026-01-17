@@ -461,12 +461,14 @@ paredit.setup {
 require('blink.cmp').setup {
 	cmdline = {
 		completion = {
-			list = { selection = { preselect = false } },
+			list = { selection = { preselect = true } },
 			menu = { auto_show = true, },
 		},
 		keymap = {
 			['<Left>'] = false,
 			['<Right>'] = false,
+			['<C-f>'] = { 'select_and_accept', 'fallback' },
+			['<C-y>'] = { 'accept_and_enter', 'fallback' },
 		},
 	},
 	completion = {
@@ -480,7 +482,7 @@ require('blink.cmp').setup {
 	keymap = {
 		['<C-f>'] = { 'select_and_accept', 'fallback' },
 		['<Enter>'] = { 'snippet_forward', 'fallback' },
-		['<C-Space>'] = { 'show_signature', 'hide_signature', 'fallback' },
+		['<C-e>'] = { 'cancel', 'fallback' },
 	}
 }
 
