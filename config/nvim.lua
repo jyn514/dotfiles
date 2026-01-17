@@ -1085,7 +1085,7 @@ vim.lsp.config('oxc', {
 	end,
 })
 
-for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc'}) do
+for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc', 'cssls'}) do
 	vim.lsp.enable(lsp)
 end
 
