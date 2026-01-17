@@ -215,6 +215,11 @@ vim.keymap.set('i', '<C-c>', function()
 	return vim.fn.pumvisible() and '<C-e>' or '<C-c>'
 end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to normal mode immediately"
 
+vim.keymap.set('n', 'g>', function()
+	vim.cmd('enew')
+	vim.cmd("put = execute('messages')")
+end, {desc = "View message history in a new searchable buffer"})
+
 ---- Commands ----
 
 local config = vim.fn.stdpath("config") .. '/init.lua'
@@ -597,11 +602,13 @@ vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 require('Comment').setup {
 	mappings = false,
 }
-local ft_comment = require('Comment.ft')
+local ft_comment = require 'Comment.ft'
 ft_comment.set('dl', ft_comment.get('c'))
 ft_comment.set('flix', ft_comment.get('c'))
 ft_comment.set('rhombus', ft_comment.get('c'))
-vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
+
+comment_api = require 'Comment.api'
+vim.keymap.set({'n', 'i'}, '<C-_>', comment_api.toggle.linewise.current, {desc = "Toggle comment"})
 vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 -- TODO: find a way to only comment out the selected region
 -- using blockwise comments doesn't work in all filetypes
@@ -663,7 +670,9 @@ end
 pickers.setup {
 	defaults = {
 		file_icons = "mini",
-		path_shorten = 2,
+		-- breaks horribly on rust :(
+		-- https://github.com/ibhagwan/fzf-lua/issues/2392#issuecomment-3418641875
+		--path_shorten = 2,
 		winopts = { preview = { winopts = {
 			wrap = true,
 			-- https://github.com/ibhagwan/fzf-lua/issues/2518#issuecomment-3764040980
@@ -742,13 +751,18 @@ bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
+-- TODO: match case
 bind('gqd', function()
 	local word = vim.fn.expand("<cword>")
 	pickers.live_grep({
-		search = [[(\.(queries|hooks)\.]]..word..' = |'
-			..'^\\s*'..word..':)',
+		search = '('
+			.. [[(providers|queries|hooks)\.]]..word..' ='
+			..'|^\\s*'..word..'(,|: [a-z_:,]+$)'
+			..'|Providers .*'..word
+			..')',
 		cwd = 'compiler',
 		no_esc = true,
+		rg_opts = '--case-sensitive --column --no-heading --line-number --color=always --max-columns=4096 -g "!rustc_span/src/symbol.rs"',
 	})
 end, 'Goto rustc_query definition')
 
@@ -1159,5 +1173,5 @@ end
 
 if not first_run then
 	-- vim.cmd.bufdo('silent! edit')
-	vim.cmd.bufdo('LspRestart')
+	-- vim.cmd.bufdo('LspRestart')
 end
