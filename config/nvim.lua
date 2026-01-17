@@ -472,6 +472,7 @@ require('blink.cmp').setup {
 	},
 	completion = {
 		keyword = { range = 'full' },
+		list = { selection = { preselect = false } },
 		menu = { auto_show = true, },
 	},
 	fuzzy = { implementation = "lua" },
@@ -480,8 +481,12 @@ require('blink.cmp').setup {
 	keymap = {
 		['<C-f>'] = { 'select_and_accept', 'fallback' },
 		['<Enter>'] = { 'snippet_forward', 'fallback' },
-		['<C-e>'] = { 'cancel', 'fallback' },
-		['<C-y>'] = { 'accept', 'fallback' },
+		['<C-e>'] = { 'cancel', 'hide_signature', 'fallback' },
+		['<C-n>'] = { 'show', 'select_next', 'fallback' },
+	},
+	signature = {
+		enabled = true,
+		window = { show_documentation = false, }
 	}
 }
 
