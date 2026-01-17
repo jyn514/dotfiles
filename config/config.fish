@@ -112,6 +112,10 @@ function ip
 	end
 end
 function which
+	if not isatty 1
+		command which $argv
+		return
+	end
 	if test $argv[1] = -a
 		set all 1
 		set --erase argv[1]
