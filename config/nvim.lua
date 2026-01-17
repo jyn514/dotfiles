@@ -108,6 +108,9 @@ end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 -- indentgroup('cpp', function() spaces(2) end)
 
+vim.opt.colorcolumn = "92"
+vim.opt.textwidth = 92
+
 ---- Keybinds ----
 
 vim.keymap.set('n', '<Esc>', function()
@@ -605,6 +608,35 @@ vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
 vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
 vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
 
+vim.api.nvim_create_user_command('MoveCommentUp', function(info)
+	local view = vim.fn.winsaveview()
+
+	local start, end_line
+	if info.range > 0 then
+		start = info.line1
+		end_line = info.line2
+	else
+		start = vim.fn.line('.')
+		end_line = start
+	end
+	print(start..' '..end_line)
+
+	local comment = vim.bo.commentstring
+	if comment == "" then return end
+	comment = string.gsub(comment, "%%s", "")
+
+	-- TODO: need to escape regex metacharacters
+	-- {-} means "non-greedy *"
+	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]]..comment..[[.*\)/\1\3\r\1\2/e]]
+	for line = start, end_line do
+		vim.cmd('keeppatterns '..line..regex)
+	end
+
+	vim.fn.winrestview(view)
+end, { range = true, desc = "Move comment to line above" })
+
+bind('gqk', "<cmd>'<,'>MoveCommentUp<CR>", 'Move comment to line above')
+
 -- If this doesn't look right, try `:set termguicolors`.
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 vim.cmd.colorscheme 'alabaster-black'
@@ -628,32 +660,29 @@ if first_run then
 	pickers.register_ui_select()
 end
 
-function shorten_from_subprocess(entry)
-	local picker_files = require 'fzf-lua.path'
-	return picker_files.shorten(entry, 2)
-end
-
 pickers.setup {
 	defaults = {
 		file_icons = "mini",
+		path_shorten = 2,
+		winopts = { preview = { winopts = {
+			wrap = true,
+			-- https://github.com/ibhagwan/fzf-lua/issues/2518#issuecomment-3764040980
+			--tabstop = 2,
+		}}},
 	},
 	files = {
 		-- file_icons = false,
 		rg_opts = [[-g "!src/llvm-project" -g "!src/tools/rustc-perf"]],
 		fd_opts = [[--no-hidden --exclude src/llvm-project --exclude src/tools/rustc-perf]],
-		-- can't set this globally because it breaks previewers in combine: 
-		-- path_shorten = 2,
 	},
 	git = {
 		files = {
 			git_icons = false,
 			cmd = "git ls-files --modified --exclude-standard --directory $(git rev-parse --show-toplevel)",
-			-- fn_transform = shorten_from_subprocess
 		}
 	},
 	oldfiles = {
 		include_current_session = true,
-		-- fn_transform = shorten_from_subprocess,
 		-- stat_file = false,  -- startup times
 	}
 }
