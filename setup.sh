@@ -110,7 +110,52 @@ install_clojure() {
 	fi
 }
 
-# ; defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType=public.plain-text;LSHandlerRoleAll=com.apple.automator.nvim;}'
+# create_macos_app() {
+# 	cli=$1
+# 	domain=dev.jyn.$cli
+# 	pb=/usr/libexec/PlistBuddy
+# 	app=${cli}.app
+# 	app_plist=$app/Contents/Info.plist
+# 	workflow_plist="$app/Contents/Resources/document.wflow/Contents.plist"
+#
+# 	mkdir -p ~/Applications
+# 	(
+# 		cd ~/Applications
+# 		mkdir -p $app/Contents/MacOS $app/Contents/Resources $(dirname $workflow_plist)
+# 		# note: hard link
+# 		if [ $cli = nvim ]; then
+# 			p=$(which hx-hax)
+# 			n=hx-hax
+# 		else
+# 			p=$(which $cli)
+# 			n=$cli
+# 		fi
+# 		$pb -c "add CFBundleDisplayName string $cli" $app_plist
+# 		$pb -c "add CFBundleExecutable string Application Stub" $app_plist
+# 		$pb -c "add CFBundleIdentifier string $domain" $app_plist
+# 		$pb -c "add CFBundlePackageType string APPL" $app_plist
+# 		$pb -c "add CFBundleDocumentTypes array" $app_plist
+# 		$pb -c "add CFBundleDocumentTypes:0 dict" $app_plist
+# 		$pb -c "add CFBundleDocumentTypes:0:CFBundleTypeRole string Editor" $app_plist
+# 		$pb -c "add CFBundleDocumentTypes:0:LSItemContentTypes array" $app_plist
+# 		$pb -c "add CFBundleDocumentTypes:0:LSItemContentTypes:0 string public.data" $app_plist
+# 		# $pb -c "add NSPrincipalClass string NSApplication" $plist
+# 		# /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f $app
+# 	
+# 		cp -r "/System/Library/CoreServices/Automator Application Stub.app/Contents/" "$app/"
+# 		# $pb -c "Clear dict" "$workflow_plist" 2>/dev/null || true
+# 		$pb -c "Add :AMApplicationBuild string 2.10" "$workflow_plist"
+# 		$pb -c "Add :AMApplicationVersion string 2.10" "$workflow_plist"
+# 		$pb -c "Add :actions array" "$workflow_plist"
+# 		$pb -c "Add :actions:0 dict" "$workflow_plist"
+# 		$pb -c "Add :actions:0:action string com.apple.coreservices.RunShellScript" "$workflow_plist"
+# 		$pb -c "Add :actions:0:parameters dict" "$workflow_plist"
+# 		$pb -c 'Add :actions:0:parameters:COMMAND_STRING string '$cli'"$@"' "$workflow_plist"
+# 		$pb -c "Add :actions:0:parameters:shell string /bin/bash" "$workflow_plist"
+# 		$pb -c "Add :actions:0:parameters:inputMethod integer 0" "$workflow_plist"
+# 	)
+# }
+
 register_editor() {
 	cli=$1
 	mime=$2
@@ -363,6 +408,16 @@ setup_install_global () {
 	fi
 }
 
+# setup_macos() {
+# 	brew install -q duti
+# 	if exists nvim; then
+# 		create_macos_app nvim io.neovim
+# 	fi
+# 	if exists fx; then
+# 		create_macos_app fx wtf.fx
+# 	fi
+# }
+
 setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
@@ -464,6 +519,7 @@ run() {
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
 		all|9) setup_all;;
+		macos|10) setup_macos;;
 		*) return 126;;
 	esac
 }

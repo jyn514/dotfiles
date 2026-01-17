@@ -163,7 +163,7 @@ install_features () {
 		mv keymapp "$(getent passwd "$SUDO_USER" | cut -d: -f6)"/.local/bin/keymapp
 	fi
 
-	if ! exists tailscale; then curl -fsSL https://tailscale.com/install.sh | sh; fi
+	# if ! exists tailscale; then curl -fsSL https://tailscale.com/install.sh | sh; fi
 
 	set +x
 	echo "queueing packages to install"

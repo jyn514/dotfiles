@@ -139,6 +139,30 @@ glide.keymaps.set("normal", "gC", async () => {
 	// await glide.process.execute("kitty", ["-d", repo_path, "nvim"], { cwd: repo_path });
 }, { description: "open the GitHub repo in the focused tab in Neovim" });
 
+// text editing works like linux
+// glide.keymaps.set("insert", "<C-Left>", "execute_motion b");
+// glide.keymaps.set("insert", "<C-Right>", "motion w");
+// glide.keymaps.set(["normal", "insert"], "<C-<Right>>", async() => {
+// 	console.log("aaAAAAA");
+// });
+// glide.keymaps.set(["normal", "insert"], "<C-PageUp>", async() => {
+// 	console.log("running (pgup)");
+// });
+// glide.keymaps.set(["normal", "insert"], "<C-Left>", "motion b");
+// glide.keymaps.set(["normal", "insert"], "<C-Right>", "motion w");
+glide.keymaps.set(["normal", "insert"], "<C-Right>", async() => {
+	console.log(window.document.title);
+	const selection = window.getSelection();
+	console.log("selection", selection, typeof selection, Object.keys(selection), selection.type);
+	selection.modify("move", "forward", "word");
+	console.log("document selection", window.document.getSelection().type);
+});
+//
+// 	// console.log("hey man wtf");
+// 	// await glide.keys.send("<A-Right>", { skip_mappings: true });
+// });
+console.log("aAAAAA");
+
 // gi acts like gI
 glide.keymaps.set('normal', 'gi', 'keys gI');
 

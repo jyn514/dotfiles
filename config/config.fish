@@ -5,9 +5,9 @@
 # all debug categories: --print-debug-categories
 # keymap: `bind`; see `bind --list-modes`
 
-if [ -x /usr/bin/lesspipe ]
-	eval (set SHELL /bin/sh lesspipe)
-end
+# if [ -x /usr/bin/lesspipe ]
+# 	eval (set SHELL /bin/sh lesspipe)
+# end
 
 umask 077
 

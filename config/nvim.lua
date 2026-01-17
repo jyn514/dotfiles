@@ -751,7 +751,6 @@ bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
--- TODO: match case
 bind('gqd', function()
 	local word = vim.fn.expand("<cword>")
 	pickers.live_grep({
