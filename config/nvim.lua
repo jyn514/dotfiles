@@ -40,6 +40,13 @@ vim.opt.inccommand = 'split'
 -- TODO: OSC 52 (`:h clipboard-osc52`)
 vim.cmd.set('clipboard=unnamed')
 
+-- disable some warnings
+vim.g.loaded_node_provider = 0
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_ruby_provider = 0
+
+---- Autocommands ----
+
 vim.api.nvim_create_autocmd('TextYankPost', {
 	desc = 'Highlight when copying text',
 	callback = function() vim.hl.on_yank() end,
@@ -50,7 +57,8 @@ vim.api.nvim_create_autocmd('VimResized', {
 	command = 'wincmd ='
 })
 
----- Filetype options
+---- Filetype options ----
+
 function indentgroup(lang, func)
 	local group = vim.api.nvim_create_augroup(lang..'indent', {})
 	vim.api.nvim_create_autocmd('FileType', {
@@ -204,6 +212,8 @@ vim.keymap.set('i', '<C-c>', function()
 	return vim.fn.pumvisible() and '<C-e>' or '<C-c>'
 end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to normal mode immediately"
 
+---- Commands ----
+
 local config = vim.fn.stdpath("config") .. '/init.lua'
 vim.api.nvim_create_user_command('EditConfig', 'edit '..config, { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('ReloadConfig', 'source '..config, { desc = "reload Lua config" })
@@ -216,6 +226,23 @@ vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	vim.cmd(cmd..[[s/\s\+$//e]])
 	vim.fn.winrestview(view)
 end, { range = true, desc = "trim trailing spaces" })
+
+function BufferDelete(args)
+	if args.bang then
+		vim.cmd 'bdelete!'
+	else
+		vim.cmd.bdelete()
+	end
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_loaded(buf) and buf ~= vim.api.nvim_get_current_buf() then
+			vim.cmd('let @# = '..buf)
+			break
+		end
+	end
+	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer
+end
+vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
+	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
 
 -- autosave on cursor hold
 local timers = {}
@@ -264,17 +291,11 @@ abbrev('bc!', 'BufferDelete!')
 abbrev('rm', 'Remove')
 abbrev('mv', 'Rename')
 abbrev('ec', 'EditConfig')
+abbrev('Ec', 'EditConfig')
 abbrev('as', 'AutoSave')
 abbrev('health', 'checkhealth')
 abbrev('lsp', 'LspInfo')
 abbrev('tt', 'TrimWhitespace')
-
--- disable some warnings
-vim.g.loaded_node_provider = 0
-vim.g.loaded_perl_provider = 0
-vim.g.loaded_ruby_provider = 0
-
-local fs_exists = vim.uv.fs_stat
 
 ---- Plugins ----
 
@@ -317,22 +338,90 @@ if first_run then
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
 		{ "kylechui/nvim-surround", version = "^3.0.0" },
+		{ "folke/snacks.nvim" },
 
-		-- https://github.com/smoka7/hop.nvim  -- random access within file
+		--https://github.com/smoka7/hop.nvim  -- random access within file
 
-		-- not going to bother setting this up until https://github.com/neovim/neovim/issues/24690 is fixed
-		-- https://github.com/amitds1997/remote-nvim.nvim
+		-- not going to bother setting this up until
+		-- https://github.com/neovim/neovim/issues/24690 is fixed
+		--https://github.com/amitds1997/remote-nvim.nvim
 	}, { install = { missing = true }, rocks = { enabled = false } })
+end
+
+if first_run then
+	require('snacks').setup {
+		image = { enabled = true },
+	}
 end
 
 require('nvim-surround').setup {}
 
 paredit = require 'nvim-paredit'
 paredit.setup {
+	indent = { enabled = true },
 	dragging = { auto_drag_pairs = false },
 	keys = {
+		["<leader>@"] = { paredit.unwrap.unwrap_form_under_cursor, "Splice sexp" },
 		["<leader>o"] = { paredit.api.raise_form, "Raise form" },
 		["<leader>O"] = { paredit.api.raise_element, "Raise element" },
+
+		['se'] = { paredit.api.drag_element_forwards, "Drag element right" },
+		['Se'] = { paredit.api.drag_element_backwards, "Drag element left" },
+		['sp'] = { paredit.api.drag_pair_forwards, "Drag element pairs right" },
+		['Sp'] = { paredit.api.drag_pair_backwards, "Drag element pairs left" },
+		['sf'] = { paredit.api.drag_form_forwards, "Drag form right" },
+		['Sf'] = { paredit.api.drag_form_backwards, "Drag form left" },
+		["s)"] = { paredit.api.slurp_forwards, "Slurp forwards" },
+		["s("] = { paredit.api.barf_backwards, "Barf backwards" },
+		["S)"] = { paredit.api.barf_forwards, "Barf forwards" },
+		["S("] = { paredit.api.slurp_backwards, "Slurp backwards" },
+		['B'] = false,
+		['E'] = false,
+		['W'] = false,
+		['('] = {
+			paredit.api.move_to_prev_element_head,
+			"Jump to previous element head",
+			repeatable = false,
+			mode = { "n", 'x', 'o', 'v' },
+		},
+		[')'] = {
+			paredit.api.move_to_next_element_tail,
+			"Jump to next element tail",
+			repeatable = false,
+			mode = { "n", 'x', 'o', 'v' },
+		},
+		["{"] = {
+			paredit.api.move_to_parent_form_start,
+			"Jump to parent form's head",
+			repeatable = false,
+			mode = { "n", "x", 'o', "v" },
+		},
+		["}"] = {
+			paredit.api.move_to_parent_form_end,
+			"Jump to parent form's tail",
+			repeatable = false,
+			mode = { "n", "x", 'o', "v" },
+		},
+		['gE'] = false,
+		["gb"] = {
+			paredit.api.move_to_prev_element_tail,
+			"Jump to previous element tail",
+			repeatable = false,
+			mode = { "n", "x", "o", "v" },
+		},
+		["gw"] = {
+			paredit.api.move_to_next_element_head,
+			"Jump to next element head",
+			repeatable = false,
+			mode = { "n", "x", "o", "v" },
+		},
+		['T'] = false,
+		['gF'] = {
+			paredit.api.move_to_top_level_form_head,
+			"Jump to top level form's head",
+			repeatable = false,
+			mode = { "n", "x", 'o', "v" },
+		},
 	}
 }
 
@@ -368,6 +457,8 @@ local function ts(binds)
 		if upper == bind then
 			if bind == ';' then
 				upper = ':'
+			elseif bind == '=' then
+				upper = '+'
 			else
 				error("don't know how to bind moves for"..bind)
 			end
@@ -375,10 +466,14 @@ local function ts(binds)
 
 		selections["a"..bind] = outer
 		selections["i"..bind] = inner
-		swaps.swap_next["<leader>s"..bind] = inner
-		swaps.swap_previous["<leader>s"..upper] = inner
-		swaps.swap_next["<leader>S"..bind] = outer
-		swaps.swap_previous["<leader>S"..upper] = outer
+		swaps.swap_next["s"..bind] = inner
+		swaps.swap_previous["s"..upper] = inner
+		swaps.swap_next["S"..bind] = outer
+		swaps.swap_previous["S"..upper] = outer
+		-- swaps.swap_next["<leader>s"..bind] = inner
+		-- swaps.swap_previous["<leader>s"..upper] = inner
+		-- swaps.swap_next["<leader>S"..bind] = outer
+		-- swaps.swap_previous["<leader>S"..upper] = outer
 		moves.goto_next_start["]"..bind] = outer
 		moves.goto_next_end["]"..upper] = outer
 		moves.goto_previous_start["["..bind] = outer
@@ -393,21 +488,16 @@ selections, swaps, moves = ts {
 	c = 'call',
 	l = 'loop',
 	r = 'return',
-	a = 'assignment',
-	-- mnemonic: "paraM"
-	m = 'parameter',
+	['='] = 'assignment',
+	p = 'parameter',
 	-- mnemonic: "If"
 	i = 'conditional',
 	-- mnemonic: "left of line" (same as 'h' in normal mode)
 	h = 'statement',
 	[';'] = 'comment',
-	-- seems to work the same as function?
-	-- b = 'block',
-	-- doesn't work in lua; seems limited use outside JS
-	-- r = 'regex'
-	-- i don't use languages with classes lol
-	-- anyway this conflicts with @call
-	-- c = "class",
+	b = 'block',
+	x = 'regex',
+	k = "class",
 }
 swaps.swap_previous["<leader>p"] = "@parameter.inner"
 swaps.swap_next["<leader>P"] = "@parameter.inner"
@@ -420,6 +510,9 @@ moves.goto_previous_start["[n"] = "@number.inner"
 -- You can also use captures from other query groups like `locals.scm`
 -- selections["as"] = { query = "@local.scope", query_group = "locals", desc = "Select language scope" },
 
+--swaps.swap_next["<leader>p"] = "@parameter.inner"
+--swaps.swap_previous["<leader>P"] = "@parameter.inner"
+
 require('nvim-treesitter.configs').setup {
 	auto_install = true,
 	highlight = { enable = true },
@@ -427,20 +520,71 @@ require('nvim-treesitter.configs').setup {
 }
 
 require('nvim-treesitter-textobjects').setup {
-	select = { enable = true, lookahead = true, keymaps = selections },
-	move = vim.tbl_extend('error', { enable = true, set_jumps = true }, moves),
-	swap = vim.tbl_extend('error', { enable = true }, swaps),
-	-- 	swap_next = { ["<leader>p"] = "@parameter.inner" },
-	-- 	swap_previous = { ["<leader>P"] = "@parameter.inner" },
+	select = { lookahead = true, },
+	move = { set_jumps = true },
+	swap = {}
 }
+
+local select = require 'nvim-treesitter-textobjects.select'
+local swap = require 'nvim-treesitter-textobjects.swap'
+local move = require 'nvim-treesitter-textobjects.move'
+
+local meta = {
+	["Select"] = {
+		bindings = selections,
+		func = select.select_textobject,
+		modes = {'x', 'o'},
+	},
+	["Swap next"] = {
+		bindings = swaps.swap_next,
+		func = swap.swap_next,
+		modes = 'n',
+	},
+	["Swap previous"] = {
+		bindings = swaps.swap_previous,
+		func = swap.swap_previous,
+		modes = 'n',
+	},
+	["Next start"] = {
+		bindings = moves.goto_next_start,
+		func = move.goto_next_start,
+		modes = {'n', 'x', 'o'},
+	},
+	["Next end"] = {
+		bindings = moves.goto_next_end,
+		func = move.goto_next_end,
+		modes = {'n', 'x', 'o'},
+	},
+	["Previous start"] = {
+		bindings = moves.goto_previous_start,
+		func = move.goto_previous_start,
+		modes = {'n', 'x', 'o'},
+	},
+	["Previous end"] = {
+		bindings = moves.goto_previous_end,
+		func = move.goto_previous_end,
+		modes = {'n', 'x', 'o'},
+	},
+}
+
+for desc, spec in pairs(meta) do
+	for binding, capture in pairs(spec.bindings) do
+		vim.keymap.set(spec.modes, binding, function()
+			spec.func(capture, 'textobjects')
+		end, {desc = desc..' '..capture})
+	end
+end
+
 local ts_repeat_move = require "nvim-treesitter-textobjects.repeatable_move"
 vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
 vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 
-require('Comment').setup()
+require('Comment').setup {
+	mappings = false,
+}
 local ft_comment = require('Comment.ft')
--- require('Comment.ft').set('dl', {'//%s', '/*%s*/'})
--- ft_comment.set('flix', ft_comment.get('c'))
+ft_comment.set('dl', ft_comment.get('c'))
+ft_comment.set('flix', ft_comment.get('c'))
 ft_comment.set('rhombus', ft_comment.get('c'))
 vim.keymap.set('n', '<C-_>', 'gcc', {remap = true})
 vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
@@ -511,16 +655,25 @@ vim.keymap.set('n', '<leader>b', function()
 end, { desc = "Open buffer picker" })
 
 vim.keymap.set('n', '<leader>f', function()
+	local cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) or vim.fn.expand('%:p:h')
+	local is_git_dir = vim.system({'git', 'rev-parse', '--is-inside-work-tree'},
+		{text = true, cwd = cwd}):wait().code == 0
+	local files
+	if is_git_dir then
+		files = "git_files;oldfiles;files"
+	else
+		files = "oldfiles;files"
+	end
 	pickers.combine({
-		pickers = "git_files;oldfiles;files",
+		pickers = files,
 		winopts = {title="Files"},
-		cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) or vim.fn.expand('%:p:h'),
+		cwd = cwd,
 	})
 end, { desc = "Open '''smart''' fuzzy file picker" })
 
 vim.keymap.set('n', '<leader><C-f>', function()
 	pickers.files({ path_shorten = 2, winopts = {title="All tracked files"}})
-end, { desc = "Open file picker (all files in workspace)" })
+end, { desc = "Open file picker (all files in current directory)" })
 
 vim.keymap.set('n', '<leader><A-f>', function()
 	pickers.files({ no_ignore = true, no_ignore_parent = true, hidden = true })
@@ -543,7 +696,11 @@ vim.keymap.set('n', '<leader>g', function()
 	})
 end, { desc = "Modified files" })
 bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
---
+bind('<leader>k', pickers.keymaps, 'Show all active keybindings')
+bind('<leader>u', pickers.undotree, 'Show all active keybindings')
+bind('<leader>m', pickers.marks, 'Show marks')
+bind('<leader>z', pickers.zoxide, 'Jump to directory')
+
 require("nvim-lightbulb").setup({
 	autocmd = { enabled = true }
 })
@@ -581,12 +738,17 @@ if first_run then
 	wk = require('which-key')
 	wk.setup({preset = 'helix', delay = 150, icons = {mappings = false},
 		triggers = {
-			{ "<auto>", mode = "nxso" },
-			{ "<localleader>", mode = {'n', 'v'} }
+			{ "<auto>", mode = "nixsotc" },
+			-- { "<auto>", mode = "nxso" },
+			{ "<localleader>", mode = {'n', 'v'} },
+			-- override default 's' binding so we see swaps sooner
+			{ "s", mode = {'n'}},
 		}
 	})
 	wk.add({
 		{ '<LocalLeader>', group = "Debugging" },
+		{ '[', group = "Previous object" },
+		{ ']', group = "Next object" },
 	})
 end
 
@@ -603,6 +765,7 @@ set_spider('L', 'w', 'Move to next sub word start')
 -- set_spider('<A-l>', 'e', 'Move to next sub word end')
 
 ---- Debugging ----
+
 local dap = require('dap')
 dap.adapters.cppdbg = {
   id = 'cppdbg',
@@ -675,7 +838,10 @@ dap.listeners.before.event_terminated.dapui_config = dapui.close
 dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
+
+require('vim.lsp.log').set_format_func(vim.inspect)
 vim.diagnostic.config({ underline = true })
+
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
 vim.keymap.set('n', 'gr', pickers.lsp_references, { desc = "Find references" })
@@ -686,6 +852,7 @@ vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
 vim.keymap.set('n', '<leader>n', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
 vim.keymap.set('n', '<leader>N', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
 vim.keymap.set('n', '<leader>q', pickers.quickfix, { desc = "Show quickfixes" })
+vim.keymap.set('n', '<leader>?', pickers.keymaps, { desc = "Show active keybinds" })
 vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show workspace diagnostics (errors)" })
 vim.keymap.set('n', '<leader>D', pickers.lsp_workspace_diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
@@ -750,7 +917,6 @@ if vim.fn.has('nvim-0.11') == 1 then
 end
 
 ---- specific LSPs ----
-require('vim.lsp.log').set_format_func(vim.inspect)
 
 local lspconfig = require('lspconfig')
 local lsplang = require('lspconfig.configs')
@@ -811,6 +977,8 @@ for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 't
 	vim.lsp.enable(lsp)
 end
 
+---- Filetypes ----
+
 vim.filetype.add { extension = {
 	m     = 'mumps',
 	ua    = 'uiua',
@@ -834,6 +1002,8 @@ vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
 		vim.cmd('highlight! link Keyword Special')
 	end
 end })
+
+---- Rust-specific config ----
 
 -- https://stackoverflow.com/a/326715
 function os.capture(cmd)
@@ -880,7 +1050,7 @@ local function expand_config_variables(option)
 	return ret
 end
 
--- TODO: find a way to calculate this lazily
+local fs_exists = vim.uv.fs_stat
 
 function setup_ra()
 	if not vim.bo.filetype == "rust" then
@@ -926,6 +1096,8 @@ vim.api.nvim_create_autocmd('BufReadPre', {
 
 local expand_macro = require('rust-expand-macro').expand_macro
 vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
+
+---- Session and meta config ----
 
 -- begin saving session immediately on startup
 if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('.session.vim') then
