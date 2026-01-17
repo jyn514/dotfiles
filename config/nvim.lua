@@ -713,6 +713,16 @@ bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
+bind('gqd', function()
+	local word = vim.fn.expand("<cword>")
+	pickers.live_grep({
+		search = [[(\.(queries|hooks)\.]]..word..' = |'
+			..'^\\s*'..word..':)',
+		cwd = 'compiler',
+		no_esc = true,
+	})
+end, 'Goto rustc_query definition')
+
 require("nvim-lightbulb").setup({
 	autocmd = { enabled = true }
 })
