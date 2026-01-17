@@ -624,7 +624,10 @@ vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
 vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 
 require('Comment').setup {
-	mappings = false,
+	mappings = {
+		basic = false,
+		extra = false,
+	}
 }
 local ft_comment = require 'Comment.ft'
 ft_comment.set('dl', ft_comment.get('c'))
@@ -633,24 +636,14 @@ ft_comment.set('rhombus', ft_comment.get('c'))
 
 comment_api = require 'Comment.api'
 vim.keymap.set({'n', 'i'}, '<C-_>', comment_api.toggle.linewise.current, {desc = "Toggle comment"})
-vim.keymap.set('n', '<C-c>', 'gcc', {remap = true})
+vim.keymap.set('n', '<C-c>', comment_api.toggle.linewise.current, {desc = "Toggle comment"})
 -- TODO: find a way to only comment out the selected region
 -- using blockwise comments doesn't work in all filetypes
-vim.keymap.set('v', '<C-_>', 'gc', {remap = true})
-vim.keymap.set('v', '<C-c>', 'gc', {remap = true})
+vim.keymap.set('v', '<C-_>', '<Plug>(comment_toggle_linewise_visual)')
+vim.keymap.set('v', '<C-c>', '<Plug>(comment_toggle_linewise_visual)')
 
 vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	local view = vim.fn.winsaveview()
-
-	local start, end_line
-	if info.range > 0 then
-		start = info.line1
-		end_line = info.line2
-	else
-		start = vim.fn.line('.')
-		end_line = start
-	end
-	print(start..' '..end_line)
 
 	local comment = vim.bo.commentstring
 	if comment == "" then return end
@@ -659,14 +652,16 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	-- TODO: need to escape regex metacharacters
 	-- {-} means "non-greedy *"
 	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]]..comment..[[.*\)/\1\3\r\1\2/e]]
-	for line = start, end_line do
-		vim.cmd('keeppatterns '..line..regex)
+	for line = info.line2, info.line1, -1 do
+		if string.find(vim.fn.getline(line), comment, 1, true) then
+			vim.cmd('keeppatterns '..line..regex)
+		end
 	end
 
 	vim.fn.winrestview(view)
 end, { range = true, desc = "Move comment to line above" })
 
-bind('gqk', "<cmd>'<,'>MoveCommentUp<CR>", 'Move comment to line above')
+bind('gqk', ":MoveCommentUp<CR>", 'Move comment to line above')
 
 -- If this doesn't look right, try `:set termguicolors`.
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
@@ -806,7 +801,8 @@ MiniStatusline.setup {
 			local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
 			local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
 			local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
-			local filename      = '%f%m%r'  -- always use relative filepath, to make it easier to notice when editing a file not in the LSP workspace
+			-- always use relative filepath, to make it easier to notice when editing a file not in the LSP workspace
+			local filename      = '%f%m%r'
 			local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
 
 			local pos = vim.fn.getcurpos()
@@ -930,6 +926,11 @@ dap.listeners.before.event_exited.dapui_config = dapui.close
 
 require('vim.lsp.log').set_format_func(vim.inspect)
 vim.diagnostic.config({ underline = true })
+
+-- Delete some built-in bindings that conflict.
+for _, k in ipairs({'grr', 'grn', 'grt', 'gri', 'gra'}) do
+	vim.cmd('silent! nunmap '..k)
+end
 
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
 vim.keymap.set('n', 'gD', function() vim.lsp.buf.declaration() end, { desc = "Goto declaration" })
