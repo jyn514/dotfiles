@@ -490,7 +490,8 @@ pickers.setup {
 	},
 	git = {
 		files = {
-			cmd = "git ls-files --modified --exclude-standard --directory $(git rev-parse --show-toplevel)"
+			git_icons = false,
+			cmd = "git ls-files --modified --exclude-standard --directory $(git rev-parse --show-toplevel)",
 			-- fn_transform = shorten_from_subprocess
 		}
 	},

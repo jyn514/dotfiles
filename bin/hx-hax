@@ -78,7 +78,8 @@ sub hxhax {
   	`tmux send-keys -t $pane Escape`;
 	my $args = join ' ', @args;
 	my $cmd = $editor eq 'nvim' ? 'drop' : 'open';
-  	`tmux send-keys -t $pane ":$cmd $args" Enter`;
+		# note the space, this tells nvim not to save it in history
+  	`tmux send-keys -t $pane ": $cmd $args" Enter`;
   	`tmux select-pane -t $pane -Z`;
   }
 
