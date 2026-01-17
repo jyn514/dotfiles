@@ -461,7 +461,6 @@ paredit.setup {
 require('blink.cmp').setup {
 	cmdline = {
 		completion = {
-			list = { selection = { preselect = true } },
 			menu = { auto_show = true, },
 		},
 		keymap = {
@@ -473,7 +472,6 @@ require('blink.cmp').setup {
 	},
 	completion = {
 		keyword = { range = 'full' },
-		list = { selection = { preselect = false } },
 		menu = { auto_show = true, },
 	},
 	fuzzy = { implementation = "lua" },
@@ -483,6 +481,7 @@ require('blink.cmp').setup {
 		['<C-f>'] = { 'select_and_accept', 'fallback' },
 		['<Enter>'] = { 'snippet_forward', 'fallback' },
 		['<C-e>'] = { 'cancel', 'fallback' },
+		['<C-y>'] = { 'accept', 'fallback' },
 	}
 }
 
