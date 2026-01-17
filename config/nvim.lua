@@ -342,9 +342,9 @@ if first_run then
 		'neovim/nvim-lspconfig',
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		'mfussenegger/nvim-dap',    -- debugging
-		{ "rcarriga/nvim-dap-ui",
-			dependencies = {"mfussenegger/nvim-dap", "nvim-neotest/nvim-nio"} },
-		{'hrsh7th/cmp-cmdline', dependencies = 'hrsh7th/nvim-cmp' },
+		{ "rcarriga/nvim-dap-ui", dependencies = {"nvim-neotest/nvim-nio"} },
+		{ "saghen/blink.cmp",
+			dependencies = { "rafamadriz/friendly-snippets" }},
 		{'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
 			branch = "master",
@@ -458,18 +458,31 @@ paredit.setup {
 	}
 }
 
-cmp = require 'cmp'
-cmp.setup {
-	snippet = { expand = function(args) vim.snippet.expand(args.body) end },
+require('blink.cmp').setup {
+	cmdline = {
+		completion = {
+			list = { selection = { preselect = false } },
+			menu = { auto_show = true, },
+		},
+		keymap = {
+			['<Left>'] = false,
+			['<Right>'] = false,
+		},
+	},
+	completion = {
+		keyword = { range = 'full' },
+		list = { selection = { preselect = false } },
+		menu = { auto_show = true, },
+	},
+	fuzzy = { implementation = "lua" },
+	-- See https://github.com/rafamadriz/friendly-snippets/tree/main/snippets for a list of
+	-- snippets
+	keymap = {
+		['<C-f>'] = { 'select_and_accept', 'fallback' },
+		['<Enter>'] = { 'snippet_forward', 'fallback' },
+		['<C-Space>'] = { 'show_signature', 'hide_signature', 'fallback' },
+	}
 }
-cmp.setup.cmdline(':', {
-	mapping = cmp.mapping.preset.cmdline(),
-	sources = cmp.config.sources(
-		{{ name = 'path' }},
-		{{ name = 'cmdline' }}
-	),
-	matching = { disallow_symbol_nonprefix_matching = false }
-})
 
 local function ts(binds)
 	selections = {}
