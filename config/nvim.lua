@@ -366,11 +366,11 @@ paredit.setup {
 		["<leader>O"] = { paredit.api.raise_element, "Raise element" },
 
 		['se'] = { paredit.api.drag_element_forwards, "Drag element right" },
-		['Se'] = { paredit.api.drag_element_backwards, "Drag element left" },
+		['sE'] = { paredit.api.drag_element_backwards, "Drag element left" },
 		['sp'] = { paredit.api.drag_pair_forwards, "Drag element pairs right" },
-		['Sp'] = { paredit.api.drag_pair_backwards, "Drag element pairs left" },
+		['sP'] = { paredit.api.drag_pair_backwards, "Drag element pairs left" },
 		['sf'] = { paredit.api.drag_form_forwards, "Drag form right" },
-		['Sf'] = { paredit.api.drag_form_backwards, "Drag form left" },
+		['sF'] = { paredit.api.drag_form_backwards, "Drag form left" },
 		["s)"] = { paredit.api.slurp_forwards, "Slurp forwards" },
 		["s("] = { paredit.api.barf_backwards, "Barf backwards" },
 		["S)"] = { paredit.api.barf_forwards, "Barf forwards" },
@@ -451,8 +451,13 @@ local function ts(binds)
 		goto_previous_end = {},
 	}
 	for bind, query in pairs(binds) do
-		outer = "@"..query..".outer"
-		inner = "@"..query..".inner"
+		if type(query) ~= 'table' then
+			query = { capture = query, group = 'textobjects' }
+		end
+		local inner = vim.deepcopy(query)
+		local outer = vim.deepcopy(query)
+		inner.kind = 'inner'
+		outer.kind = 'outer'
 		upper = string.upper(bind)
 		if upper == bind then
 			if bind == ';' then
@@ -470,10 +475,6 @@ local function ts(binds)
 		swaps.swap_previous["s"..upper] = inner
 		swaps.swap_next["S"..bind] = outer
 		swaps.swap_previous["S"..upper] = outer
-		-- swaps.swap_next["<leader>s"..bind] = inner
-		-- swaps.swap_previous["<leader>s"..upper] = inner
-		-- swaps.swap_next["<leader>S"..bind] = outer
-		-- swaps.swap_previous["<leader>S"..upper] = outer
 		moves.goto_next_start["]"..bind] = outer
 		moves.goto_next_end["]"..upper] = outer
 		moves.goto_previous_start["["..bind] = outer
@@ -490,40 +491,27 @@ selections, swaps, moves = ts {
 	r = 'return',
 	['='] = 'assignment',
 	p = 'parameter',
-	-- mnemonic: "If"
-	i = 'conditional',
-	-- mnemonic: "left of line" (same as 'h' in normal mode)
-	h = 'statement',
+	i = 'conditional', -- mnemonic: "If"
+	h = 'statement', -- mnemonic: "left of line" (same as 'h' in normal mode)
 	[';'] = 'comment',
 	b = 'block',
 	x = 'regex',
 	k = "class",
+	-- https://github.com/nvim-treesitter/nvim-treesitter/blob/main/queries/lua/locals.scm
+	s = { capture = 'local.scope', group = 'locals' },
+	v = { capture = 'local.definition.var', group = 'locals' },
+	z = { capture = 'fold', group = 'folds' },
 }
-swaps.swap_previous["<leader>p"] = "@parameter.inner"
-swaps.swap_next["<leader>P"] = "@parameter.inner"
+swaps.swap_previous["<A-k>"] = "@parameter.inner"
+swaps.swap_next["<A-j>"] = "@parameter.inner"
 swaps.swap_previous["<A-Up>"] = "@statement.outer"
 swaps.swap_next["<A-Down>"] = "@statement.outer"
 selections["in"] = "@number.inner"
 moves.goto_next_start["]n"] = "@number.inner"
 moves.goto_previous_start["[n"] = "@number.inner"
--- just seems to highlight the whole file? or the nearest function.
--- You can also use captures from other query groups like `locals.scm`
--- selections["as"] = { query = "@local.scope", query_group = "locals", desc = "Select language scope" },
 
 --swaps.swap_next["<leader>p"] = "@parameter.inner"
 --swaps.swap_previous["<leader>P"] = "@parameter.inner"
-
-require('nvim-treesitter.configs').setup {
-	auto_install = true,
-	highlight = { enable = true },
-	-- incremental_selection = { enable = true },
-}
-
-require('nvim-treesitter-textobjects').setup {
-	select = { lookahead = true, },
-	move = { set_jumps = true },
-	swap = {}
-}
 
 local select = require 'nvim-treesitter-textobjects.select'
 local swap = require 'nvim-treesitter-textobjects.swap'
@@ -567,11 +555,35 @@ local meta = {
 	},
 }
 
+require('nvim-treesitter.configs').setup {
+	auto_install = true,
+	highlight = { enable = true },
+	-- incremental_selection = { enable = true },
+}
+
+require('nvim-treesitter-textobjects').setup {
+	select = { lookahead = true, },
+	move = { set_jumps = true },
+	swap = {}
+}
+
 for desc, spec in pairs(meta) do
-	for binding, capture in pairs(spec.bindings) do
+	for binding, query in pairs(spec.bindings) do
+		local name, group
+		if type(query) ~= 'table' then
+			name = query
+			group = 'textobjects'
+		else
+			group = query.group
+			if group == 'textobjects' then
+				name = '@'..query.capture..'.'..query.kind
+			else
+				name = '@'..query.capture
+			end
+		end
 		vim.keymap.set(spec.modes, binding, function()
-			spec.func(capture, 'textobjects')
-		end, {desc = desc..' '..capture})
+			spec.func(name, group)
+		end, {desc = desc..' '..name})
 	end
 end
 
@@ -697,7 +709,7 @@ vim.keymap.set('n', '<leader>g', function()
 end, { desc = "Modified files" })
 bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
 bind('<leader>k', pickers.keymaps, 'Show all active keybindings')
-bind('<leader>u', pickers.undotree, 'Show all active keybindings')
+bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
@@ -849,14 +861,17 @@ vim.keymap.set('n', 'gy', pickers.lsp_typedefs, { desc = "Goto type definition" 
 vim.keymap.set('n', 'gi', pickers.lsp_implementations, { desc = "Goto type implementation" })
 vim.keymap.set('n', '<leader>.', vim.lsp.buf.code_action, { desc = "LSP code action" })
 vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
-vim.keymap.set('n', '<leader>n', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
-vim.keymap.set('n', '<leader>N', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
+vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
+vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
 vim.keymap.set('n', '<leader>q', pickers.quickfix, { desc = "Show quickfixes" })
-vim.keymap.set('n', '<leader>?', pickers.keymaps, { desc = "Show active keybinds" })
 vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show workspace diagnostics (errors)" })
 vim.keymap.set('n', '<leader>D', pickers.lsp_workspace_diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
 vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
+
+-- only really supported by the rust LSP
+vim.keymap.set('n', 'gc', pickers.lsp_incoming_calls, { desc = "Show incoming calls" })
+vim.keymap.set('n', 'gC', pickers.lsp_outgoing_calls, { desc = "Show outgoing calls" })
 
 vim.api.nvim_create_autocmd("User", {
 	pattern = "TelescopePreviewerLoaded",
@@ -918,7 +933,6 @@ end
 
 ---- specific LSPs ----
 
-local lspconfig = require('lspconfig')
 local lsplang = require('lspconfig.configs')
 
 lsplang.rhombus = {
