@@ -243,17 +243,15 @@ function fish_right_prompt
 
 	printf "\e[1A"
 
-	if [ $width -gt 0 ]
-		printf "\e[1A"
-		string repeat -n $width ' '
-		printf '%s' $s
-		printf "\e[1B"
-	end
-
 	set t (date +%H:%M)
 	if ! [ "$t" = "$time" ]
 		set time $t
 		printf "\e[2;37m%s" $t
+	else if [ $width -gt 0 ]
+		# printf "\e[1A"
+		string repeat -n $width ' '
+		printf '%s' $s
+		# printf "\e[1B"
 	end
 
 	printf "\e[1B"
