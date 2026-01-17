@@ -3,6 +3,7 @@
 ---
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
+-- use `:verbose map foo` to see where keybind `foo` is set
 -- use `vim --startuptime vim.log +qall; cat vim.log` to profile startup
 -- use `:lua =SOMETABLE` to pretty print it
 -- use `<C-k>` in insert mode to debug what keys are called (use <C-k>\ to bypass tmux)
@@ -144,7 +145,6 @@ vim.keymap.set('n', '<A-j>', '<C-w><C-j>', { desc = 'Move focus to the lower win
 vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
 
-vim.keymap.set('v', 'gq', 'gw', { desc = 'Only format selection, not sentence' })
 vim.keymap.set('n', 'gqq', 'gww', { desc = 'Only format selection, not sentence' })
 
 -- TODO: these don't work in visual mode
@@ -329,7 +329,8 @@ if first_run then
 		-- general picker
 		{ "ibhagwan/fzf-lua",
 			dependencies = { 'nvim-mini/mini.icons' }},
-		'kosayoda/nvim-lightbulb',
+		-- removes deprecation warnings
+		{ 'kosayoda/nvim-lightbulb', commit = 'ffddd221ed561c2cca8b94e0608379033c5aa562' },
 		'echasnovski/mini.nvim',    -- toolbar, also icons
 		"folke/which-key.nvim",     -- spawns kak/hx-like popup
 		'lewis6991/gitsigns.nvim',  -- also does inline blame
@@ -501,16 +502,16 @@ local function ts(binds)
 			end
 		end
 
-		selections["a"..bind] = outer
-		selections["i"..bind] = inner
-		swaps.swap_next["s"..bind] = inner
-		swaps.swap_previous["s"..upper] = inner
-		swaps.swap_next["S"..bind] = outer
-		swaps.swap_previous["S"..upper] = outer
-		moves.goto_next_start["]"..bind] = outer
-		moves.goto_next_end["]"..upper] = outer
-		moves.goto_previous_start["["..bind] = outer
-		moves.goto_previous_end["["..upper] = outer
+		selections['a'..bind] = outer
+		selections['i'..bind] = inner
+		swaps.swap_next['s'..bind] = inner
+		swaps.swap_previous['s'..upper] = inner
+		swaps.swap_next['S'..bind] = outer
+		swaps.swap_previous['S'..upper] = outer
+		moves.goto_next_start[']'..bind] = outer
+		moves.goto_next_end[']'..upper] = outer
+		moves.goto_previous_start['['..bind] = outer
+		moves.goto_previous_end['['..upper] = outer
 	end
 	return selections, swaps, moves
 end
@@ -928,7 +929,7 @@ require('vim.lsp.log').set_format_func(vim.inspect)
 vim.diagnostic.config({ underline = true })
 
 -- Delete some built-in bindings that conflict.
-for _, k in ipairs({'grr', 'grn', 'grt', 'gri', 'gra'}) do
+for _, k in ipairs({'grr', 'grn', 'grt', 'gri', 'gra', 'gcc'}) do
 	vim.cmd('silent! nunmap '..k)
 end
 
