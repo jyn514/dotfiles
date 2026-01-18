@@ -71,19 +71,41 @@ set -g fish_greeting
 # Use emacs keybinds in insert mode
 fish_hybrid_key_bindings
 
+function get_fzf_selection
+	set -l bindings
+	for key in enter tab ctrl-o ctrl-y ctrl-l
+		set -a bindings "$key:replace-query+print($key)+accept-or-print-query"
+	end
+	fzf --bind "$(string join , $bindings)" $argv
+end
+
+function fzf_action
+	get_fzf_selection | read --line key selection
+	set selection (string escape $selection)
+	switch $key
+		case enter
+			commandline -i $selection
+			commandline -f execute
+		case tab
+			commandline -i $selection
+		case ctrl-y
+			printf %s $selection | copy
+		case ctrl-o
+			commandline -r open
+			commandline -i " $selection"
+			commandline -f execute
+		case ctrl-l
+			commandline -r $EDITOR
+			commandline -i " $selection"
+			commandline -f execute
+	end
+end
+
 bind -M insert alt-e '$EDITOR ~/.config/fish/config.fish'
 bind -M insert alt-r 'source ~/.config/fish/config.fish'
 bind -M insert alt-shift-e edit_command_buffer
-bind -M insert alt-t 'commandline -i (fd | fzy); commandline -f repaint'
-bind -M insert alt-shift-t \
-	'set --local f (fd | fzy)
-	 set --local worked $status
-	 commandline -f repaint
-	 if [ $worked = 0 ]
-		commandline -i "$EDITOR $f"
-		commandline -f execute
-	 end'
-
+bind -M insert alt-t 'fd | fzf_action'
+bind -M insert ctrl-o 'fd | fzf_action'
 bind -M insert alt-k \
 	'for cmd in sudo doas please run0
 		if command -q $cmd
