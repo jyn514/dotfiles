@@ -7,6 +7,7 @@
 -- use `vim --startuptime vim.log +qall; cat vim.log` to profile startup
 -- use `:lua =SOMETABLE` to pretty print it
 -- use `<C-k>` in insert mode to debug what keys are called (use <C-k>\ to bypass tmux)
+-- alternatively, <C-v>
 
 local first_run = not vim.g.lazy_did_setup
 
@@ -45,6 +46,10 @@ vim.cmd.set('clipboard=unnamed')
 vim.g.loaded_node_provider = 0
 vim.g.loaded_perl_provider = 0
 vim.g.loaded_ruby_provider = 0
+
+-- use absolute directions for search, not relative
+vim.keymap.set('n', 'n', '/<CR>')
+vim.keymap.set('n', 'N', '?<CR>')
 
 ---- Autocommands ----
 
@@ -468,6 +473,7 @@ require('blink.cmp').setup {
 			['<Right>'] = false,
 			['<C-f>'] = { 'select_and_accept', 'fallback' },
 			['<C-y>'] = { 'accept_and_enter', 'fallback' },
+			['<C-Enter>'] = { 'accept_and_enter', 'fallback' },
 		},
 	},
 	completion = {
