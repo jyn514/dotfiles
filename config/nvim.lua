@@ -1103,7 +1103,7 @@ vim.lsp.config('oxc', {
 	end,
 })
 
-for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc', 'cssls'}) do
+for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc', 'cssls', 'markdown_oxide'}) do
 	vim.lsp.enable(lsp)
 end
 
@@ -1115,6 +1115,7 @@ vim.filetype.add { extension = {
 	rhm   = 'rhombus',
 	flix  = 'flix',
 } }
+
 vim.api.nvim_create_autocmd("FileType", { callback = function()
 	local ft = vim.bo.filetype
 	if ft == "uiua" then
@@ -1126,6 +1127,7 @@ vim.api.nvim_create_autocmd("FileType", { callback = function()
 		vim.cmd('highlight! link Keyword Special')
 	end
 end })
+
 vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
 	local ft = vim.bo.filetype
 	if ft == 'mumps' then

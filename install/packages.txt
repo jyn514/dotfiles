@@ -36,6 +36,7 @@ perl-file-which
 lua-language-server
 manpages
 manpages-dev
+markdown-oxide
 ninja-build
 nmap
 nvim
