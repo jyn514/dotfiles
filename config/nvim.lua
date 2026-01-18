@@ -538,11 +538,91 @@ local function ts(binds)
 		moves.goto_previous_start['['..bind] = outer
 		moves.goto_previous_end['['..upper] = outer
 	end
-	return selections, swaps, moves
+	return { selections = selections, swaps = swaps, moves = moves }
 end
 
+function bind_ts(capture_associations)
+	local select = require 'nvim-treesitter-textobjects.select'
+	local swap = require 'nvim-treesitter-textobjects.swap'
+	local move = require 'nvim-treesitter-textobjects.move'
+
+	local swaps = capture_associations.swaps or {}
+	local moves = capture_associations.moves or {}
+
+	local meta = {
+		["Select"] = {
+			bindings = capture_associations.selections or {},
+			func = select.select_textobject,
+			modes = {'x', 'o'},
+		},
+		["Swap next"] = {
+			bindings = swaps.swap_next,
+			func = swap.swap_next,
+			modes = 'n',
+		},
+		["Swap previous"] = {
+			bindings = swaps.swap_previous,
+			func = swap.swap_previous,
+			modes = 'n',
+		},
+		["Next start"] = {
+			bindings = moves.goto_next_start,
+			func = move.goto_next_start,
+			modes = {'n', 'x', 'o'},
+		},
+		["Next end"] = {
+		bindings = moves.goto_next_end,
+		func = move.goto_next_end,
+		modes = {'n', 'x', 'o'},
+		},
+		["Previous start"] = {
+			bindings = moves.goto_previous_start,
+			func = move.goto_previous_start,
+			modes = {'n', 'x', 'o'},
+		},
+		["Previous end"] = {
+			bindings = moves.goto_previous_end,
+			func = move.goto_previous_end,
+			modes = {'n', 'x', 'o'},
+		},
+	}
+
+	for desc, spec in pairs(meta) do
+		for binding, query in pairs(spec.bindings) do
+			local name, group
+			if type(query) ~= 'table' then
+				name = query
+				group = 'textobjects'
+			else
+				group = query.group
+				if group == 'textobjects' and not query.no_suffix then
+					name = '@'..query.capture..'.'..query.kind
+				else
+					name = '@'..query.capture
+				end
+			end
+			vim.keymap.set(spec.modes, binding, function()
+				spec.func(name, group)
+			end, {desc = desc..' '..name})
+		end
+	end
+
+end
+
+
+require('nvim-treesitter.configs').setup {
+	auto_install = true,
+	highlight = { enable = true },
+	-- incremental_selection = { enable = true },
+}
+
+require('nvim-treesitter-textobjects').setup {
+	select = { lookahead = true, },
+	move = { set_jumps = true },
+}
+
 -- https://github.com/nvim-treesitter/nvim-treesitter-textobjects#built-in-textobjects
-selections, swaps, moves = ts {
+local captures = ts {
 	f = 'function',
 	c = 'call',
 	l = 'loop',
@@ -560,90 +640,18 @@ selections, swaps, moves = ts {
 	v = { capture = 'local.definition.var', group = 'locals' },
 	z = { capture = 'fold', group = 'folds' },
 }
-swaps.swap_previous["<A-k>"] = "@parameter.inner"
-swaps.swap_next["<A-j>"] = "@parameter.inner"
-swaps.swap_previous["<A-Up>"] = "@statement.outer"
-swaps.swap_next["<A-Down>"] = "@statement.outer"
-selections["in"] = "@number.inner"
-moves.goto_next_start["]n"] = "@number.inner"
-moves.goto_previous_start["[n"] = "@number.inner"
+captures.swaps.swap_previous["<A-k>"] = "@parameter.inner"
+captures.swaps.swap_next["<A-j>"] = "@parameter.inner"
+captures.swaps.swap_previous["<A-Up>"] = "@statement.outer"
+captures.swaps.swap_next["<A-Down>"] = "@statement.outer"
+captures.selections["in"] = "@number.inner"
+captures.moves.goto_next_start["]n"] = "@number.inner"
+captures.moves.goto_previous_start["[n"] = "@number.inner"
 
---swaps.swap_next["<leader>p"] = "@parameter.inner"
---swaps.swap_previous["<leader>P"] = "@parameter.inner"
+--captures.swaps.swap_next["<leader>p"] = "@parameter.inner"
+--captures.swaps.swap_previous["<leader>P"] = "@parameter.inner"
 
-local select = require 'nvim-treesitter-textobjects.select'
-local swap = require 'nvim-treesitter-textobjects.swap'
-local move = require 'nvim-treesitter-textobjects.move'
-
-local meta = {
-	["Select"] = {
-		bindings = selections,
-		func = select.select_textobject,
-		modes = {'x', 'o'},
-	},
-	["Swap next"] = {
-		bindings = swaps.swap_next,
-		func = swap.swap_next,
-		modes = 'n',
-	},
-	["Swap previous"] = {
-		bindings = swaps.swap_previous,
-		func = swap.swap_previous,
-		modes = 'n',
-	},
-	["Next start"] = {
-		bindings = moves.goto_next_start,
-		func = move.goto_next_start,
-		modes = {'n', 'x', 'o'},
-	},
-	["Next end"] = {
-		bindings = moves.goto_next_end,
-		func = move.goto_next_end,
-		modes = {'n', 'x', 'o'},
-	},
-	["Previous start"] = {
-		bindings = moves.goto_previous_start,
-		func = move.goto_previous_start,
-		modes = {'n', 'x', 'o'},
-	},
-	["Previous end"] = {
-		bindings = moves.goto_previous_end,
-		func = move.goto_previous_end,
-		modes = {'n', 'x', 'o'},
-	},
-}
-
-require('nvim-treesitter.configs').setup {
-	auto_install = true,
-	highlight = { enable = true },
-	-- incremental_selection = { enable = true },
-}
-
-require('nvim-treesitter-textobjects').setup {
-	select = { lookahead = true, },
-	move = { set_jumps = true },
-	swap = {}
-}
-
-for desc, spec in pairs(meta) do
-	for binding, query in pairs(spec.bindings) do
-		local name, group
-		if type(query) ~= 'table' then
-			name = query
-			group = 'textobjects'
-		else
-			group = query.group
-			if group == 'textobjects' then
-				name = '@'..query.capture..'.'..query.kind
-			else
-				name = '@'..query.capture
-			end
-		end
-		vim.keymap.set(spec.modes, binding, function()
-			spec.func(name, group)
-		end, {desc = desc..' '..name})
-	end
-end
+bind_ts(captures)
 
 local ts_repeat_move = require "nvim-treesitter-textobjects.repeatable_move"
 vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
