@@ -13,11 +13,9 @@ local first_run = not vim.g.lazy_did_setup
 
 ---- Options ----
 
+-- misc
 vim.g.mapleader = ' '
 vim.g.maplocalleader = 'f'
-vim.opt.termguicolors = true
-vim.opt.number = true
-vim.opt.breakindent = true
 vim.opt.undofile = true
 vim.opt.ignorecase = true
 vim.opt.wildignorecase = true
@@ -29,11 +27,16 @@ vim.opt.title = true  -- allows M-d to search for a file
 -- see `:help zo` for keybinds
 vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
 
+-- folds
 vim.opt.foldlevelstart = 4
 vim.opt.foldminlines = 2
 vim.opt.foldmethod = "expr"
 vim.opt.foldexpr = "v:lua.vim.lsp.foldexpr()"
 
+-- ui
+vim.opt.termguicolors = true
+vim.opt.number = true
+vim.opt.breakindent = true
 vim.opt.list = true
 vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
 -- shows :s/foo/bar preview live
@@ -51,6 +54,8 @@ vim.g.loaded_ruby_provider = 0
 vim.keymap.set('n', 'n', '/<CR>')
 vim.keymap.set('n', 'N', '?<CR>')
 
+-- If this doesn't look right, try `:set termguicolors`.
+-- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
 ---- Autocommands ----
 
 vim.api.nvim_create_autocmd('TextYankPost', {
@@ -183,12 +188,6 @@ vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" 
 vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" }) -- overwrites `nv` keybind
 vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) -- overwrites "paste before cursor"
 
--- vim.keymap.set('n', 'n', 'gn', { desc = "Select next search result", noremap })
--- vim.keymap.set('v', 'n', function()
--- 	vim.cmd.startinsert()
--- 	vim.cmd.normal('gn')
--- end, { desc = "Go to next buffer", noremap })
-
 -- note: overwrites select mode
 vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
 vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
@@ -290,6 +289,7 @@ function autosave_disable()
 end
 vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
 
+-- abbreviations
 -- https://vi.stackexchange.com/a/33221, plus hackery to only match at the start
 function abbrev(lhs, rhs)
 	vim.keymap.set('ca', lhs, function()
@@ -386,16 +386,6 @@ if first_run then
 	}, { install = { missing = true }, rocks = { enabled = false } })
 end
 
-require('rainbow-delimiters.setup') {
-	highlight = {
-		'RainbowDelimiterYellow',
-		'RainbowDelimiterOrange',
-		'RainbowDelimiterViolet',
-		'Label',
-		'RainbowDelimiterGreen',
-	},
-}
-
 -- https://gitlab.com/HiPhish/rainbow-delimiters.nvim/-/issues/23
 -- vim.g.rainbow_delimiters.query.rust = 'at-least-one-param'
 _ = [[
@@ -406,6 +396,18 @@ _ = [[
 ]]
 
 require('nvim-surround').setup {}
+
+function set_spider(keybind, motion, desc)
+	vim.keymap.set(
+	{ "n", "o", "x" },
+	keybind,
+	"<cmd>lua require('spider').motion('"..motion.."')<CR>",
+	{ desc = desc }
+	)
+end
+set_spider('H', 'b', 'Move to previous sub word')
+set_spider('L', 'w', 'Move to next sub word start')
+-- set_spider('<A-l>', 'e', 'Move to next sub word end')
 
 paredit = require 'nvim-paredit'
 paredit.setup {
@@ -511,6 +513,8 @@ require('blink.cmp').setup {
 		default = { 'lsp', 'omni', 'snippets', 'path', 'buffer' },
 	},
 }
+
+---- Treesitter ---
 
 local function ts(binds)
 	selections = {}
@@ -673,6 +677,8 @@ local ts_repeat_move = require "nvim-treesitter-textobjects.repeatable_move"
 vim.keymap.set({ "n", "x", "o" }, ";", ts_repeat_move.repeat_last_move_next)
 vim.keymap.set({ "n", "x", "o" }, ",", ts_repeat_move.repeat_last_move_previous)
 
+---- Comments ----
+
 require('Comment').setup {
 	mappings = {
 		basic = false,
@@ -713,23 +719,7 @@ end, { range = true, desc = "Move comment to line above" })
 
 bind('gqk', ":MoveCommentUp<CR>", 'Move comment to line above')
 
--- If this doesn't look right, try `:set termguicolors`.
--- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
-vim.cmd.colorscheme 'alabaster-black'
-
-local gitsigns = require('gitsigns')
-gitsigns.setup({
-	current_line_blame = true,
-	signs = {
-		add = { text = '+' },
-		change = { text = '~' },
-		delete = { text = '_' },
-		topdelete = { text = '‾' },
-		changedelete = { text = '~' },
-	}
-})
-
-vim.keymap.set({'n', 'v'}, '<leader>o', ":'<,'>GBrowse<CR>", {desc = "open commit under cursor"})
+---- Pickers ----
 
 local pickers = require 'fzf-lua'
 if first_run then
@@ -814,7 +804,6 @@ vim.keymap.set('n', '<leader>g', function()
 		prompt = "Modified Files",
 	})
 end, { desc = "Modified files" })
-bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
 bind('<leader>k', pickers.keymaps, 'Show all active keybindings')
 bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
@@ -838,6 +827,10 @@ end, 'Goto rustc_query definition')
 require("nvim-lightbulb").setup({
 	autocmd = { enabled = true }
 })
+
+---- UI ----
+
+vim.cmd.colorscheme 'alabaster-black'
 
 -- try Meslo on macOS; look for "use different font for non-ascii glyphs" in iTerm settings
 require('mini.icons').setup {
@@ -887,17 +880,30 @@ if first_run then
 	})
 end
 
-function set_spider(keybind, motion, desc)
-	vim.keymap.set(
-	{ "n", "o", "x" },
-	keybind,
-	"<cmd>lua require('spider').motion('"..motion.."')<CR>",
-	{ desc = desc }
-	)
-end
-set_spider('H', 'b', 'Move to previous sub word')
-set_spider('L', 'w', 'Move to next sub word start')
--- set_spider('<A-l>', 'e', 'Move to next sub word end')
+require('rainbow-delimiters.setup') {
+	highlight = {
+		'RainbowDelimiterYellow',
+		'RainbowDelimiterOrange',
+		'RainbowDelimiterViolet',
+		'Label',
+		'RainbowDelimiterGreen',
+	},
+}
+
+local gitsigns = require('gitsigns')
+gitsigns.setup({
+	current_line_blame = true,
+	signs = {
+		add = { text = '+' },
+		change = { text = '~' },
+		delete = { text = '_' },
+		topdelete = { text = '‾' },
+		changedelete = { text = '~' },
+	}
+})
+
+bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
+bind('<leader>o', ":'<,'>GBrowse<CR>", "open commit under cursor")
 
 ---- Debugging ----
 
