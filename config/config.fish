@@ -116,6 +116,10 @@ function which
 		command which $argv
 		return
 	end
+	if [ (count $argv) = 0 ]
+		echo "usage: which [<abbr|builtin|function|command>...]" >&2
+		return 1
+	end
 	if test $argv[1] = -a
 		set all 1
 		set --erase argv[1]
@@ -127,6 +131,14 @@ function which
 				type --all $cmd
 			else
 				type $cmd
+			end
+		else if abbr --query $cmd  # this doesn't catch regex-based abbreviations :(
+			set -l tokens
+			if abbr --show | grep -F -- "abbr -a -- $cmd " | read --tokenize --list tokens
+				echo "$cmd is an abbreviation to: $tokens[-1]"
+			else
+				printf %s "$cmd is a abbreviation: "
+				abbr --show | grep --color=never -F -- "-- $cmd"
 			end
 		else
 			if test "$all" = 1
