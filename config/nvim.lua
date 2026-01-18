@@ -524,6 +524,13 @@ require('blink.cmp').setup {
 	},
 }
 
+-- hm, maybe https://github.com/Saecki/crates.nvim/wiki/Documentation-v0.7.1 ?
+-- ok actually wtf lol https://github.com/mrcjkb/rustaceanvim?tab=readme-ov-file#books-usage--features
+-- https://github.com/jmbuhr/otter.nvim looks based as hell omg
+-- https://github.com/hrsh7th/cmp-path seems good
+-- https://github.com/petertriho/cmp-git looks nice, but i thought gitsigns did that already?
+-- hm, could do https://github.com/ray-x/cmp-treesitter instead of 'buffer'. or https://github.com/hrsh7th/cmp-nvim-lsp-document-symbol
+
 ---- Treesitter ---
 
 local function ts(binds)
