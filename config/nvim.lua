@@ -520,7 +520,8 @@ require('blink.cmp').setup {
 		window = { show_documentation = false, }
 	},
 	sources = {
-		default = { 'lsp', 'omni', 'snippets', 'path', 'buffer' },
+		-- this breaks horribly :(
+		--default = { 'lsp', 'omni', 'snippets', 'path', 'buffer' },
 	},
 }
 
