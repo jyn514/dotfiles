@@ -1180,7 +1180,11 @@ vim.api.nvim_create_autocmd("FileType", {
 		vim.keymap.set({'n', 'v'}, '<C-l>', ":Mdn formatting task_list_toggle<CR>", {desc = 'Toggle checkbox', buffer = true })
 		vim.keymap.set({'n', 'v'}, '<C-`>', ":Mdn formatting inline_code_toggle<CR>", {desc = 'Toggle inline code', buffer = true })
 		vim.keymap.set({'n', 'v'}, '<C-S-K>', ":Mdn inline_link toggle<CR>", {desc = 'Toggle link', buffer = true })
+		vim.keymap.set({'n', 'v'}, '<leader>t', ":Mdn toc generate<CR>", {desc = 'Generate table of contents', buffer = true })
 		vim.keymap.set({'n', 'v', 'i'}, '<C-S-V>', "<cmd>Mdn assets insert_image<CR>", {desc = 'Paste image', buffer = true})
+		vim.keymap.set({'n', 'v', 'i'}, '<Tab>', "<cmd>norm! >><CR>", {desc = 'Indent', buffer = true, noremap = true})
+		vim.keymap.set({'n', 'v', 'i'}, '<S-Tab>', "<cmd>norm! <<<CR>", {desc = 'Indent', buffer = true, noremap = true})
+
 		-- <C-f> to create a footnote
 
 		local snippet = '```${1:}\n${2:body}${0}\n```'
