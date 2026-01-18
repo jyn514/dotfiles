@@ -343,7 +343,11 @@ if first_run then
 		{'tpope/vim-fugitive', -- open url of commit under cursor
 			dependencies = { "tpope/vim-rhubarb" }},
 		{ "chrisgrieser/nvim-spider", lazy = true },  -- partial word movement
-		{ 'vxpm/rust-expand-macro.nvim', lazy = true },
+		{ 'vxpm/rust-expand-macro.nvim', lazy = true, ft = "rust", config = function()
+			local expand_macro = require('rust-expand-macro').expand_macro
+			vim.api.nvim_create_user_command('ExpandMacro', expand_macro,
+				{desc = "Expand macro recursively"})
+		end},
 		'neovim/nvim-lspconfig',
 		{ 'jyn514/alabaster.nvim', branch = 'dark' },
 		'mfussenegger/nvim-dap',    -- debugging
@@ -1219,9 +1223,6 @@ vim.api.nvim_create_autocmd('BufReadPre', {
 	desc = 'Setup rust-analyzer',
 	callback = setup_ra
 })
-
-local expand_macro = require('rust-expand-macro').expand_macro
-vim.api.nvim_create_user_command('ExpandMacro', expand_macro, {desc = "Expand macro recursively"})
 
 ---- Session and meta config ----
 
