@@ -369,6 +369,9 @@ if first_run then
 			html = { comment = { conceal = false } },
 			render_modes = {'n', 'v', 'i', 'c', 't', 'x' },
 			code = { border = 'thin' },
+			checkbox = {
+				checked = { scope_highlight = '@markup.strikethrough' },
+			},
 		}},
 		{ "chenxin-yan/footnote.nvim", ft = "markdown", opts = {} },
 		{ 'ymich9963/mdnotes.nvim',
@@ -1179,6 +1182,7 @@ vim.api.nvim_create_autocmd("FileType", {
 
 		bind_ts(ts {
 			h = 'class', -- no clue why TS calls headers "classes" but sure whatever
+			c = 'code_cell',
 			-- why is this inconsistent with locals :((
 			v = { capture = 'variable', group = 'textobjects', no_suffix = true, },
 		})

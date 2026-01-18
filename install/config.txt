@@ -32,3 +32,4 @@ zsh_plugins.txt=.config/zsh/.zsh_plugins.txt
 glide.ts=.config/glide/glide.ts
 inputrc=.config/readline/inputrc
 pylintrc=.config/pylintrc
+markdown-objects.scm=.config/nvim/after/queries/markdown/textobjects.scm
