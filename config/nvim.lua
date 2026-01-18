@@ -361,20 +361,29 @@ if first_run then
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
 		{ "kylechui/nvim-surround", version = "^3.0.0" },
-		{ "folke/snacks.nvim" },
-
+		{ "folke/snacks.nvim", priority = 1000, opts = {
+			image = { enabled = true, }
+		} },
+		{ 'brenoprata10/nvim-highlight-colors', opts = {} },
+		{ "MeanderingProgrammer/render-markdown.nvim", ft = "markdown", opts = {
+			html = { comment = { conceal = false } },
+			render_modes = {'n', 'v', 'i', 'c', 't' }
+		}},
+		{ "chenxin-yan/footnote.nvim", ft = "markdown", opts = {} },
+		{ 'ymich9963/mdnotes.nvim',
+			commit = 'bfdcd7e1e91ec1d9b380507182c2fd7c783f5641',
+			ft = "markdown",
+			opts = {
+				auto_list_renumber = false,
+				assets_path = "assets",
+			},
+		},
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
 		-- https://github.com/neovim/neovim/issues/24690 is fixed
 		--https://github.com/amitds1997/remote-nvim.nvim
 	}, { install = { missing = true }, rocks = { enabled = false } })
-end
-
-if first_run then
-	require('snacks').setup {
-		image = { enabled = true },
-	}
 end
 
 require('rainbow-delimiters.setup') {
@@ -497,7 +506,10 @@ require('blink.cmp').setup {
 	signature = {
 		enabled = true,
 		window = { show_documentation = false, }
-	}
+	},
+	sources = {
+		default = { 'lsp', 'omni', 'snippets', 'path', 'buffer' },
+	},
 }
 
 local function ts(binds)
@@ -1134,6 +1146,32 @@ vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
 		vim.cmd('highlight! link Keyword Special')
 	end
 end })
+
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = "markdown",
+	callback = function()
+		vim.fn.mkdir('assets', 'p') -- for image pasting
+
+		bind_ts(ts {
+			h = 'class', -- no clue why TS calls headers "classes" but sure whatever
+			-- why is this inconsistent with locals :((
+			v = { capture = 'variable', group = 'textobjects', no_suffix = true, },
+		})
+		-- match obsidian bindings
+		bind('<C-b>', ":Mdn formatting strong_toggle<CR>", 'Toggle bold')
+		bind('<C-i>', ":Mdn formatting emphasis_toggle<CR>", 'Toggle italics')
+		bind('<C-l>', ":Mdn formatting task_list_toggle<CR>", 'Toggle checkbox')
+		bind('<C-`>', ":Mdn formatting inline_code_toggle<CR>", 'Toggle inline code')
+		bind('<C-S-K>', ":Mdn inline_link toggle<CR>", 'Toggle link')
+		vim.keymap.set({'n', 'v', 'i'}, '<C-S-V>', ":Mdn assets insert_image<CR>", {desc = 'Paste image'})
+		-- <C-f> to create a footnote
+
+		local snippet = '```${1:}\n${2:body}${0}\n```'
+		vim.keymap.set({'n', 'v', 'i'}, '<C-\'>', function()
+			vim.snippet.expand(snippet)
+		end, {desc = 'Create code block'})
+	end
+})
 
 ---- Rust-specific config ----
 
