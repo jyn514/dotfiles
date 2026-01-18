@@ -56,5 +56,4 @@ show_time=watch -n 1 -t date
 # zip recursively by default
 zip=zip -r
 save_power=sudo powertop --auto-tune
-
-
+:q=exit
