@@ -1166,6 +1166,7 @@ end })
 vim.api.nvim_create_autocmd("FileType", {
 	pattern = "markdown",
 	callback = function()
+		vim.wo.colorcolumn = ""
 		vim.fn.mkdir('assets', 'p') -- for image pasting
 
 		bind_ts(ts {
@@ -1174,18 +1175,18 @@ vim.api.nvim_create_autocmd("FileType", {
 			v = { capture = 'variable', group = 'textobjects', no_suffix = true, },
 		})
 		-- match obsidian bindings
-		bind('<C-b>', ":Mdn formatting strong_toggle<CR>", 'Toggle bold')
-		bind('<C-i>', ":Mdn formatting emphasis_toggle<CR>", 'Toggle italics')
-		bind('<C-l>', ":Mdn formatting task_list_toggle<CR>", 'Toggle checkbox')
-		bind('<C-`>', ":Mdn formatting inline_code_toggle<CR>", 'Toggle inline code')
-		bind('<C-S-K>', ":Mdn inline_link toggle<CR>", 'Toggle link')
-		vim.keymap.set({'n', 'v', 'i'}, '<C-S-V>', ":Mdn assets insert_image<CR>", {desc = 'Paste image'})
+		vim.keymap.set({'n', 'v'}, '<C-b>', ":Mdn formatting strong_toggle<CR>", {desc = 'Toggle bold', buffer = true })
+		vim.keymap.set({'n', 'v'}, '<C-i>', ":Mdn formatting emphasis_toggle<CR>", {desc = 'Toggle italics', buffer = true })
+		vim.keymap.set({'n', 'v'}, '<C-l>', ":Mdn formatting task_list_toggle<CR>", {desc = 'Toggle checkbox', buffer = true })
+		vim.keymap.set({'n', 'v'}, '<C-`>', ":Mdn formatting inline_code_toggle<CR>", {desc = 'Toggle inline code', buffer = true })
+		vim.keymap.set({'n', 'v'}, '<C-S-K>', ":Mdn inline_link toggle<CR>", {desc = 'Toggle link', buffer = true })
+		vim.keymap.set({'n', 'v', 'i'}, '<C-S-V>', "<cmd>Mdn assets insert_image<CR>", {desc = 'Paste image', buffer = true})
 		-- <C-f> to create a footnote
 
 		local snippet = '```${1:}\n${2:body}${0}\n```'
 		vim.keymap.set({'n', 'v', 'i'}, '<C-\'>', function()
 			vim.snippet.expand(snippet)
-		end, {desc = 'Create code block'})
+		end, {desc = 'Create code block', buffer = true})
 	end
 })
 
