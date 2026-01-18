@@ -367,7 +367,8 @@ if first_run then
 		{ 'brenoprata10/nvim-highlight-colors', opts = {} },
 		{ "MeanderingProgrammer/render-markdown.nvim", ft = "markdown", opts = {
 			html = { comment = { conceal = false } },
-			render_modes = {'n', 'v', 'i', 'c', 't' }
+			render_modes = {'n', 'v', 'i', 'c', 't', 'x' },
+			code = { border = 'thin' },
 		}},
 		{ "chenxin-yan/footnote.nvim", ft = "markdown", opts = {} },
 		{ 'ymich9963/mdnotes.nvim',
@@ -378,6 +379,10 @@ if first_run then
 				assets_path = "assets",
 			},
 		},
+		{ "michaelb/sniprun", branch = "master", lazy = true, opts = {
+			selected_interpreters = { "Lua_nvim" },
+			repl_enable = { "Clojure_fifo" },
+		}},
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
@@ -408,6 +413,11 @@ end
 set_spider('H', 'b', 'Move to previous sub word')
 set_spider('L', 'w', 'Move to next sub word start')
 -- set_spider('<A-l>', 'e', 'Move to next sub word end')
+
+bind('<leader><Enter>', function()
+	require('sniprun')
+	vim.cmd('SnipRun')
+end, 'Run code block on current line')
 
 paredit = require 'nvim-paredit'
 paredit.setup {
