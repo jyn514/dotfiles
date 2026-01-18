@@ -1,0 +1,6 @@
+pnpm
+perlnavigator-server
+bash-language-server
+typescript-language-server
+oxlint
+vscode-langservers-extracted

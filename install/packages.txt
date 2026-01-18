@@ -24,6 +24,7 @@ git-absorb
 git-delta
 glow
 graphviz
+ipp-usb
 jq
 kitty
 libpam-fscrypt
@@ -49,9 +50,12 @@ python3-pylsp
 python-pipx
 rclone
 rustup
+sane
+sane-airscan
 shellcheck
 shfmt
 signal-desktop
+skanpage
 strace
 tcsh
 traceroute

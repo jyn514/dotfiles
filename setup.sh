@@ -454,7 +454,7 @@ setup_install_local () {
 		fish -c '\
 		nvm install lts
 		nvm use lts
-		npm install -g --no-fund --silent pnpm perlnavigator-server bash-language-server typescript-language-server oxlint vscode-langservers-extracted
+		xargs npm install -g --no-fund --silent < install/npm.txt
 		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'
 	fi
 
