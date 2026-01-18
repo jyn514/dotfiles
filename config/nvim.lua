@@ -229,6 +229,10 @@ end, {desc = "View message history in a new searchable buffer"})
 local config = vim.fn.stdpath("config") .. '/init.lua'
 vim.api.nvim_create_user_command('EditConfig', 'edit '..config, { desc = "edit Lua config" })
 vim.api.nvim_create_user_command('ReloadConfig', 'source '..config, { desc = "reload Lua config" })
+
+local journal = vim.fn.expand('~/Documents/notes/journal/')..os.date("%Y-%m-%d")..'.md'
+vim.api.nvim_create_user_command('EditDailyJournal', 'edit '..journal, { desc = "Open today's Obsidian daily journal" })
+
 vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	local view = vim.fn.winsaveview()
 	local cmd = 'keeppatterns '
@@ -314,6 +318,7 @@ abbrev('as', 'AutoSave')
 abbrev('health', 'checkhealth')
 abbrev('lsp', 'LspInfo')
 abbrev('tt', 'TrimWhitespace')
+abbrev('j', 'EditDailyJournal')
 
 ---- Plugins ----
 
