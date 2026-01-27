@@ -9,19 +9,23 @@ verbose() {
 
 verbose set -x
 
-cd "$(dirname "$0")"
+DOTFILES=$(dirname "$(dirname "$0")")
 
-qmk=~/src/qmk_firmware
+qmk_home=~/src/qmk_firmware
 if ! command -v qmk >/dev/null 2>&1; then
-	pipx install qmk
+	:
+	qmk="uv run qmk"
+else
+	:
+	qmk=qmk
 fi
-if ! [ -d $qmk ]; then
-	qmk setup zsa/qmk_firmware -b firmware24 -H $qmk
+if ! [ -d $qmk_home ]; then
+	$qmk setup zsa/qmk_firmware -b firmware25 -H $qmk_home
 fi
 
 layout=$(curl -s https://jyn.dev/keyboard/ -w "%{redirect_url}" | sed -E 's#.*moonlander/layouts/([^/]+)/.*#\1#')
 
-revision=$(curl -s https://oryx.zsa.io/graphql --compressed -H 'content-type: application/json' --data-raw '{"operationName":"getLayout","variables":{"hashId":"'"$layout"'","geometry":"moonlander","revisionId":"latest"},"query":"'"$(tr '\n' ' ' < ../lib/oryx.graphql)\"}" | jq -r .data.layout.revision.hashId)
+revision=$(curl -s https://oryx.zsa.io/graphql --compressed -H 'content-type: application/json' --data-raw '{"operationName":"getLayout","variables":{"hashId":"'"$layout"'","geometry":"moonlander","revisionId":"latest"},"query":"'"$(tr '\n' ' ' < "$DOTFILES/lib/oryx.graphql")\"}" | jq -r .data.layout.revision.hashId)
 
 dst=$HOME/.local/share/oryx
 archive=$dst/$revision.zip
@@ -31,12 +35,11 @@ if ! [ -e "$archive" ]; then
 fi
 
 revision_name=$layout-$revision
-layout_dst=$qmk/keyboards/zsa/moonlander/keymaps/$revision_name
+layout_dst=$qmk_home/keyboards/zsa/moonlander/keymaps/$revision_name
 rm -rf "$layout_dst"
 cd "$(mktemp -d -t oryx-"$revision_name"-XXXXXXX)"
 unzip "$archive"
 mv zsa_moonlander_*_source "$layout_dst"
-rm "$layout_dst/keymap.json"
 
 # CHANGES GO HERE
 sed -i 's/SS_DELAY(100)/SS_DELAY(5)/g' "$layout_dst/keymap.c"
@@ -68,10 +71,18 @@ sed -i "
 	s/SEND_STRING(SS_TAP(X_P).*SS_TAP(X_L).*SS_TAP(X_P).*SS_TAP(X_R).*/$point/;
 " "$layout_dst/keymap.c"
 
+cat "$DOTFILES/lib/keymap-additions.c" >> "$layout_dst/keymap.c"
+echo 'KEY_OVERRIDE_ENABLE = yes' >> "$layout_dst/rules.mk"
+
+# TODO: https://docs.qmk.fm/features/os_detection so i can stop remapping things in a silly
+# way in Glide on macOS
+
 # compile and flash
-cd "$qmk"
+kb=zsa/moonlander/reva
+
+cd "$qmk_home"
 if ! [ -e "zsa_moonlander_$revision_name.bin" ]; then
-	qmk compile -kb moonlander -km "$revision_name"
+	$qmk compile -kb $kb -km "$revision_name"
 fi
 
-PYTHONWARNINGS=ignore qmk flash -kb moonlander -km "$revision_name" -e SILENT=true
+PYTHONWARNINGS=ignore $qmk flash -kb $kb -km "$revision_name" -e SILENT=true
