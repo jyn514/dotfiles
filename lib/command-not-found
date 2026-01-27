@@ -3,6 +3,7 @@
 exists () { command -v "$1" >/dev/null 2>&1; }
 
 awawa_handler() {
+	DOTFILES=$(dirname "$(dirname "$(realpath ~/.profile)")")
 	{ if exists figlet; then figlet "$1!!!"; else echo "$1!!!"; fi
         } | cowsay -f "$DOTFILES"/lib/angel.cow -n
 }

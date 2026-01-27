@@ -47,9 +47,17 @@ glide.buf.keymaps.set("normal", ",.", async() => {
 glide.buf.keymaps.del("normal", "s");
 // breaks bookmarks and fastmail code highlighting, and I can just use pageUp/Down
 glide.keymaps.del("insert", "<C-d>");
+// breaks keybinds on many sites
+glide.buf.keymaps.del(["normal", "insert"], "<C-k>");
 // break View Source
 glide.keymaps.del(["normal", "insert"], "<C-u>");
 
+glide.autocmds.create("UrlEnter", {
+  hostname: "configure.zsa.io",
+}, async () => {
+  await glide.excmds.execute("mode_change ignore");
+  return () => glide.excmds.execute("mode_change normal");
+});
 glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "gi");
 	glide.buf.keymaps.del("normal", "j");
@@ -57,6 +65,20 @@ glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "u");
 	glide.buf.keymaps.del("normal", "x");
 	glide.buf.keymaps.del("insert", "<C-i>");
+
+  // obsidian-like keyboard shortcuts
+
+  // quote text
+  glide.buf.keymaps.set(['normal', 'insert'], "<C-'>", 'keys <C-]>');
+  glide.buf.keymaps.set(['normal', 'insert'], '<C-">', 'keys <C-[>');
+  // code formatting
+  glide.buf.keymaps.set(['normal', 'insert'], "<C-`>", 'keys <C-d>');
+  // strikethrough
+  glide.buf.keymaps.set(['normal', 'insert'], "<C-S-s>", 'keys <C-S-7>');
+  // bulleted list
+  glide.buf.keymaps.set(['normal', 'insert'], "<C-.>", 'keys <C-S-8>');
+  // numbered list
+  glide.buf.keymaps.set(['normal', 'insert'], "<C-/>", 'keys <C-S-9>');
 });
 glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
 	glide.buf.keymaps.del(["insert", "normal"], "<C-k>");
