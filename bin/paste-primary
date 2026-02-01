@@ -1,5 +1,4 @@
 #!/bin/sh
-set -x
 data=$(paste --primary)
 if [ "$data" ]; then
 	# hack: pasting from primary works horribly in firefox

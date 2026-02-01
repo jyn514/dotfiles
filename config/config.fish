@@ -50,6 +50,10 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 	/home/linuxbrew/.linuxbrew/bin/brew shellenv fish | source
 end
 
+if [ -z "$SSH_TTY" ]
+	export SSH_AUTH_SOCK=$HOME/.1password/agent.sock
+end
+
 if not status --is-interactive
 	exit
 end

@@ -379,11 +379,10 @@ if first_run then
 		}},
 		{ "chenxin-yan/footnote.nvim", ft = "markdown", opts = {} },
 		{ 'ymich9963/mdnotes.nvim',
-			commit = 'bfdcd7e1e91ec1d9b380507182c2fd7c783f5641',
 			ft = "markdown",
 			opts = {
 				auto_list_renumber = false,
-				assets_path = "assets",
+				assets_path = "media",
 			},
 		},
 		{ "michaelb/sniprun", branch = "master", lazy = true, opts = {
@@ -833,6 +832,7 @@ vim.keymap.set('n', '<leader>g', function()
 	})
 end, { desc = "Modified files" })
 bind('<leader>k', pickers.keymaps, 'Show all active keybindings')
+bind('<leader>j', pickers.jumps, 'Show browsing history')
 bind('<leader>u', pickers.undotree, 'Show edit history')
 bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')

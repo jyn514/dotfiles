@@ -10,7 +10,7 @@ fi
 
 if [ -z "${1:-}" ]; then
 	branch=$(git symbolic-ref --short --quiet HEAD || git for-each-ref refs/heads/ --format '%(refname:short)' --sort=-committerdate | head -n1)
-	remote=$(git config --get branch."${branch}".remote)
+	remote=$(git config --get branch."${branch}".remote || echo origin)
 	base=$(git merge-base HEAD "$remote"/HEAD)
 else
 	base=$1
