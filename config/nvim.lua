@@ -100,7 +100,6 @@ function spaces(count, global)
 	opt.shiftwidth = count
 end
 function length(count)
-	vim.wo.colorcolumn = tostring(count)
 	vim.bo.textwidth = count
 end
 indent_tab = hard_tabs
@@ -119,7 +118,7 @@ end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 -- indentgroup('cpp', function() spaces(2) end)
 
-vim.opt.colorcolumn = "92"
+vim.opt.colorcolumn = "+1"
 vim.opt.textwidth = 92
 
 ---- Keybinds ----
@@ -730,13 +729,16 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	local comment = vim.bo.commentstring
 	if comment == "" then return end
 	comment = string.gsub(comment, "%%s", "")
+	local escaped_comment = string.gsub(comment, "/", "\\/")
 
 	-- TODO: need to escape regex metacharacters
 	-- {-} means "non-greedy *"
-	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]]..comment..[[.*\)/\1\3\r\1\2/e]]
+	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]]..escaped_comment..[[.*\)/\1\3\r\1\2/e]]
 	for line = info.line2, info.line1, -1 do
 		if string.find(vim.fn.getline(line), comment, 1, true) then
-			vim.cmd('keeppatterns '..line..regex)
+			local cmd = 'keeppatterns '..line..regex
+			vim.notify(cmd)
+			vim.cmd(cmd)
 		end
 	end
 
@@ -807,7 +809,7 @@ vim.keymap.set('n', '<leader>f', function()
 end, { desc = "Open '''smart''' fuzzy file picker" })
 
 vim.keymap.set('n', '<leader><C-f>', function()
-	pickers.files({ path_shorten = 2, winopts = {title="All tracked files"}})
+	pickers.files({ winopts = {title="All tracked files"}})
 end, { desc = "Open file picker (all files in current directory)" })
 
 vim.keymap.set('n', '<leader><A-f>', function()
@@ -836,12 +838,12 @@ bind('<leader>m', pickers.marks, 'Show marks')
 bind('<leader>z', pickers.zoxide, 'Jump to directory')
 
 bind('gqd', function()
-	local word = vim.fn.expand("<cword>")
+	local query = vim.fn.expand("<cword>")
 	pickers.live_grep({
 		search = '('
-			.. [[(providers|queries|hooks)\.]]..word..' ='
-			..'|^\\s*'..word..'(,|: [a-z_:,]+$)'
-			..'|Providers .*'..word
+			.. [[(providers|queries|hooks)\.]]..query..' ='
+			..'|^\\s*'..query..[[(,|: ([a-z_:,]+$|\|.*\|))]]
+			..'|Providers .* '..query
 			..')',
 		cwd = 'compiler',
 		no_esc = true,
