@@ -18,7 +18,7 @@ suggest_install() {
 		echo "$msg" | tail -n +2
 		return 123
 	elif PKGFILE=$(command -v pkgfile 2>/dev/null) \
-		&& pkgs=$(pkgfile --binaries -- "$1")
+		&& pkgs=$($PKGFILE --binaries -- "$1")
 	then
 		{
 			echo "The program '$1' is not currently installed, but can be installed with:"
@@ -42,7 +42,7 @@ suggest_install() {
 		return 123
 	elif [ -x /usr/libexec/pk-command-not-found ]
 	then
-		timeout .1 /usr/libexec/pk-command-not-found -- "$1" >&2
+		timeout .1 /usr/libexec/pk-command-not-found "$1" >&2
 	else
 		return 122
 	fi
@@ -53,7 +53,7 @@ default_command_not_found() {
 
 	if [ -e /usr/libexec/pk-command-not-found ]; then
 		echo "  consider searching for it with:"
-		echo "  /usr/libexec/pk-command-not-found -- '$1'"
+		echo "  /usr/libexec/pk-command-not-found '$1'"
 	fi
 
 	return 127
@@ -93,8 +93,8 @@ command_not_found_handle() {
 	if ! [ $? = 123 ]; then
 		default_command_not_found "$@"
 	elif [ -n "$install_cmd" ]; then
-		printf "Install and run it now with \"$install_cmd && $*\"? [y/N] "
-		read do_install
+		printf 'Install and run it now with "%s && %s"? [y/N] ' "$install_cmd" "$*"
+		read -r do_install
 		case "$do_install" in
 			y*) $install_cmd; exec "$@";;
 			*) return 123;;

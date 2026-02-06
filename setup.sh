@@ -188,6 +188,7 @@ register_editor() {
 }
 
 setup_mimetypes() {
+	echo "Registering mimetypes"
 	if exists nvim; then
 		if [ -n "${IS_MACOS:-}" ]; then
 			if [ -d /Applications/nvim.app ]; then
