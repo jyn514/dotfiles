@@ -155,12 +155,11 @@ install_features () {
 		if [ -n "$IS_DEB" ]; then
 			usermod -aG plugdev "$SUDO_USER"
 		fi
-		t=$(download https://oryx.nyc3.cdn.digitaloceanspaces.com/keymapp/keymapp-latest.tar.gz)
-		tar -xf "$t"
-		chmod +x keymapp
 		mkdir -p "$my_home/.local/bin"
 		chown "$SUDO_USER:$SUDO_USER" "$my_home/.local/bin"
-		mv keymapp "$(getent passwd "$SUDO_USER" | cut -d: -f6)"/.local/bin/keymapp
+		t=$(download https://oryx.nyc3.cdn.digitaloceanspaces.com/keymapp/keymapp-latest.tar.gz)
+		tar -xf "$t" -C "$my_home/.local/bin" keymapp
+		chmod +x "$my_home/.local/bin/keymapp"
 	fi
 
 	# if ! exists tailscale; then curl -fsSL https://tailscale.com/install.sh | sh; fi
