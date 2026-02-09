@@ -12,6 +12,7 @@ t=tmux
 m=make
 n=ninja
 g=git
+gir=git
 o=open
 p=pacman
 v=nvim
