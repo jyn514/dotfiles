@@ -111,7 +111,7 @@ sub os_open {
 sub xdgopen {
   my $target = $_[0];
 
-  if ($target =~ /:[0-9]+$/) {
+  if ($target !~ /^[a-zA-Z]+:\/\// && $target =~ /:[0-9]+$/) {
     my @split = split_line $target;
     my $file = $split[0];
     my $default;
