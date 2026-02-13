@@ -44,7 +44,7 @@
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
 	d = diff
-	f = fetch --no-progress
+	f = fetch --no-progress --filter=blob:none
 	h = help
 	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	stat = l --stat upstream..

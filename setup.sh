@@ -193,7 +193,7 @@ setup_mimetypes() {
 		if [ -n "${IS_MACOS:-}" ]; then
 			if [ -d /Applications/nvim.app ]; then
 				defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType=public.plain-text;LSHandlerRoleAll=com.apple.automator.nvim;}'
-				echo "To see updated mimetype handlers, you must restart you MacBook" >&2
+				echo "To see updated mimetype handlers, you must restart your MacBook" >&2
 			else
 				echo "To setup nvim file associations, you need to create a Application using Automator."
 				echo "Go to File -> New -> Application -> Run Shell Script -> Pass input -> as arguments."
