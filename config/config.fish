@@ -115,11 +115,35 @@ bind -M insert alt-k \
 	end'
 
 # load common aliases
-grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read -L alias
+grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read --line alias
 	echo $alias | read --delimiter = name value
 	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
 end
+
+# load git aliases
+git config --get-regexp 'alias\.' | string replace --regex '^alias.' '' | while read --delimiter ' ' name value
+	if set actual $(string match --groups-only --regex '^!(.*)' -- $value)
+		abbr --add --global "g$name" -- "$actual"
+	else
+		abbr --add --global --command git $name -- $value
+	end
+end
+
+# load cargo aliases
+cargo --list | tail -n+2 | while read name value
+	set value $(string trim $value)
+	if set expansion $(string match --groups-only --regex '^alias: (.*)' -- $value)
+		echo "alias: cargo $name=$expansion"
+		abbr --add --global --command cargo $name -- $expansion
+		set cmd expansion
+	else
+		set cmd $name
+	end
+	if contains $name c d; continue; end
+	abbr --add --global "c$name" -- "cargo $expansion"
+end
+
 function cat; bat -p $argv; end
 function fork-github
 	cd (command fork-github $argv)
