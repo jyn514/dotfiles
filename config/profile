@@ -64,6 +64,9 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 fi
 
+# set up env
+. "$DOTFILES/lib/env.sh"
+
 case "$-" in
 	*i*) ;;
 	*)	return 0;;
@@ -79,9 +82,6 @@ fi
 . "$DOTFILES/lib/lib.sh"
 . "$DOTFILES/bin/show-status"
 
-# set up env
-
-. "$DOTFILES/lib/env.sh"
 export GPG_TTY=$(tty)
 
 # set up aliases

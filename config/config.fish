@@ -134,7 +134,6 @@ end
 cargo --list | tail -n+2 | while read name value
 	set value $(string trim $value)
 	if set expansion $(string match --groups-only --regex '^alias: (.*)' -- $value)
-		echo "alias: cargo $name=$expansion"
 		abbr --add --global --command cargo $name -- $expansion
 		set cmd expansion
 	else
