@@ -33,4 +33,4 @@ glide.ts=.config/glide/glide.ts
 inputrc=.config/readline/inputrc
 pylintrc=.config/pylintrc
 markdown-objects.scm=.config/nvim/after/queries/markdown/textobjects.scm
-z.fish=.config/fish/completions/z.fish
+z.fish=.config/fish/completions/__zoxide_z.fish

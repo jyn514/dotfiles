@@ -328,6 +328,8 @@ bind -M default / _atuin_search
 
 zoxide init fish | source
 function cd; z $argv; end
+complete --erase cd
+complete cd --wraps __zoxide_z
 
 if exists direnv
 	direnv hook fish | source
