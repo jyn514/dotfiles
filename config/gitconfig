@@ -21,19 +21,10 @@
 	# TODO: support line numbers
 	hyperlinks-file-link-format = "file://{path}"
 [alias]
-	message = log --format=%B -n1
-	save = git-save
-	update = submodule update
-	conf = config
-	module = submodule
-	deepen = pull --unshallow
-	unshallow = pull --unshallow
-	amend = commit --amend
-	fetch-update = !git fetch upstream && git rebase upstream/HEAD
-	fetch-up = fetch-update
-	rdiff = range-diff upstream/HEAD @{u} HEAD
-	update = !git fetch-update && git rdiff && read -p "'push? [y/N] '" REPLY && [ \"$REPLY\" = y ] && git pf
-	new = !git fetch upstream && git checkout upstream/HEAD && git checkout -b
+# typos
+	rebsae = rebase
+
+# shorthands
 	up = update
 	a = add
 	b = branch
@@ -41,31 +32,49 @@
 	co = checkout
 	cp = cherry-pick
 	conf = config
+	d = diff
+	h = help
+	r = remote
+	t = tag
+	v = !git --version
+	update = submodule update
+	module = submodule
+	deepen = pull --unshallow
+	unshallow = pull --unshallow
+	amend = commit --amend
+	fixup = commit --fixup
+	fetch-up = fetch-update
+	msg = message
+
+# options that can't be overridden in config
+	f = fetch --no-progress --filter=blob:none
+	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
+	p = push --no-progress
+	pf = push --force-with-lease --force-if-includes --no-progress
+	s = status -sb --ignore-submodules=dirty
+
+# custom commands
+	message = log --format=%B -n1
+	fetch-update = !git fetch upstream && git rebase upstream/HEAD
+	rdiff = range-diff upstream/HEAD @{u} HEAD
+	update = !git fetch-update && git rdiff && read -p "'push? [y/N] '" REPLY && [ \"$REPLY\" = y ] && git pf
+	new = !git fetch upstream && git checkout upstream/HEAD && git checkout -b
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
-	d = diff
-	f = fetch --no-progress --filter=blob:none
-	h = help
-	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	stat = l --stat upstream..
 	branch-log = !git l $(git merge-base HEAD upstream/HEAD)..
 	graph = l --all
 	signed = log --show-signature --oneline upstream..
-	p = push --no-progress
-	pf = push --force-with-lease --force-if-includes --no-progress
-	r = remote
-	s = status -sb --ignore-submodules=dirty
-	t = tag
-	v = !git --version
+
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
+
 	# https://stackoverflow.com/questions/3161204/how-to-find-the-nearest-parent-of-a-git-branch
 	parent = !git show-branch --topo-order --current "upstream/*" | grep -v "^\\s*!" | grep "refs/remotes/upstream/" | grep "^[^\\[]*\\*" | head -n1 | grep -Eo "refs/remotes/upstream/[^]]*" | xargs git rev-parse --symbolic-full-name
-	# TODO: write a script that uses `log` instead so i can pass `--reverse`
-	msg = show --pretty='%s%n%n%b' --no-patch
 	default-branch = !git symbolic-ref refs/remotes/upstream/HEAD | sed 's@^refs/remotes/upstream/@@'
-	fixup = commit --fixup
+
 	delete-merged = !git branch -a --merged | grep personal | tail -n+2  | cut -d/ -f3- | xargs git push personal --delete --no-verify
 	mr = !sh -c 'git fetch $1 merge-requests/$2/head:mr-$2 && git checkout mr-$2' -
+
 [status]
 	showUntrackedFiles = all
 [diff]

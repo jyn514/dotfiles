@@ -19,6 +19,7 @@ v=nvim
 y=build/yottadb
 # uppercase is bad and it should feel bad
 r=R
+rg=rg -L --no-heading
 # NOTE: this *must not* be an external process.
 # scoping it to an alias prevents it from extending to subprocesses, which is important because `tmux-resurrect` uses cat.
 cat=bat
