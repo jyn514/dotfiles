@@ -11,7 +11,7 @@ case $(realpath "$1") in
 	*) dir=global;;
 esac
 
-local=${2:-$(basename "$1")}
+local=${2:-$(basename "$1" | sed 's/^\.//')}
 cd "$(dirname "$0")"
 
 set -x
