@@ -931,7 +931,7 @@ gitsigns.setup({
 })
 
 bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
-bind('<leader>o', ":'<,'>GBrowse<CR>", "open commit under cursor")
+bind('<leader>o', function() vim.cmd(".GBrowse") end, "open commit under cursor")
 
 ---- Debugging ----
 
