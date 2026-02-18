@@ -11,68 +11,80 @@ fatal() {
 	exit 1
 }
 
-copy() {
-	if exists xsel; then
-		if [ "$1" = --primary ]; then
-			xsel --input --primary
-		else
-			xsel --input --clipboard
-		fi
-	elif exists xclip; then
-		if [ "$1" = --primary ]; then
-			xclip -in -selection primary
-		else
-			xclip -in -selection clipboard
-		fi
+main() {
+	mode=$1; shift
+
+	# X11
+	if exists xclip; then
+		prog=xclip
+		type=--type
+		# https://wiki.archlinux.org/title/Tmux#On_Xorg
+		in="-in >/dev/null"
+		out=-out
+		primary="-selection primary"
+		clipboard="-selection clipboard"
+	# X11, no --type support
+	elif exists xsel; then
+		prog=xsel
+		in=--input
+		out=--output
+		primary=--primary
+		clipboard=--cliboard
+
+	# Wayland
 	elif exists wl-copy; then
-		if [ "$1" = --primary ]; then
-			wl-copy --primary
+		if [ "$mode" = copy ]; then
+			prog=wl-copy
 		else
-			wl-copy
+			prog=wl-paste
 		fi
+		type=--type
+		in=
+		out=
+		primary=--primary
+		clipboard=
+
+	# MacOS, no --type support currently.
+	# might be possible to add using `osascript`.
 	elif exists pbcopy; then
-		if [ "$1" = --primary ]; then
-			pbcopy -pboard find
+		if [ "$mode" = copy ]; then
+			prog=pbcopy
 		else
-			pbcopy -pboard general
+			prog=pbpaste
 		fi
+		in=
+		out=
+		primary="-pboard find"
+		clipboard="-pboard general"
 	else
+		# TODO: windows
 		fatal "no clipboard manager detected"
 	fi
-}
 
-paste() {
-	if exists xsel; then
-		if [ "$1" = --primary ]; then
-			xsel --output --primary
+	if [ "$1" = --type ]; then
+		if [ -z "$type" ]; then
+			fatal "$prog doesn't support --type"
 		else
-			xsel --output --clipboard
-		fi
-	elif exists xclip; then
-		if [ "$1" = --primary ]; then
-			xclip -out -selection primary
-		else
-			xclip -out -selection clipboard
-		fi
-	elif exists wl-paste; then
-		if [ "$1" = --primary ]; then
-			wl-paste --primary
-		else
-			wl-paste
-		fi
-	elif exists pbpaste; then
-		if [ "$1" = --primary ]; then
-			pbpaste -pboard find
-		else
-			pbpaste -pboard general
+			type="$type $2"
+			shift; shift
 		fi
 	else
-		fatal "no clipboard manager detected"
+		type=
 	fi
+
+	case "${mode}:${2}" in
+		copy:--primary) $prog $in $type $primary;;
+		paste:--primary) $prog $out $type $primary;;
+		copy:*) $prog $in $type $clipboard;;
+		paste:*) $prog $out $type $clipboard;;
+	esac
 }
 
-case "$(basename "$0")" in
-	copy) copy "$@";;
-	paste) paste "$@";;
+mode=$(basename "$0")
+case "$mode" in
+	copy) ;;
+	paste) ;;
 	*) fatal "unknown operation $0";;
 esac
+
+main "$mode" "$@"
