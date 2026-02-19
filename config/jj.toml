@@ -41,17 +41,22 @@ git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
 
 # `jj config list --include-defaults template-aliases.builtin_log_compact`
 # the only difference here is turning the newline into a space lol
-builtin_log_compact = '''
-if(root,
-  format_root_commit(self),
-  label(if(current_working_copy, "working_copy"),
+"builtin_log_compact(commit)" = '''
+if(commit.root(),
+  format_root_commit(commit),
+  label(
+    separate(" ",
+      if(commit.current_working_copy(), "working_copy"),
+      if(commit.immutable(), "immutable", "mutable"),
+      if(commit.conflict(), "conflicted"),
+    ),
     concat(
-      format_short_commit_header(self) ++ " ",
+      format_short_commit_header(commit) ++ " ",
       separate(" ",
-        if(empty, label("empty", "(empty)")),
-        if(description,
-          description.first_line(),
-          label(if(empty, "empty"), description_placeholder),
+        if(commit.empty(), empty_commit_marker),
+        if(commit.description(),
+          commit.description().first_line(),
+          label(if(commit.empty(), "empty"), description_placeholder),
         ),
       ) ++ "\n",
     ),
@@ -62,16 +67,17 @@ if(root,
 # move git_head and bookmarks earlier
 "format_short_commit_header(commit)" = '''
 separate(" ",
-  format_short_change_id_with_hidden_and_divergent_info(commit),
-  if(commit.git_head(), label("git_head", "git_head()")),
+  format_short_change_id_with_change_offset(commit),
+  if(commit.contained_in('first_parent(@)'), label("git_head", "HEAD")),
   commit.bookmarks(),
   commit.tags(),
   format_short_signature(commit.author()),
   format_timestamp(commit_timestamp(commit)),
   commit.working_copies(),
   format_short_commit_id(commit.commit_id()),
-  if(commit.conflict(), label("conflict", "conflict")),
+  format_commit_labels(commit),
   if(config("ui.show-cryptographic-signatures").as_boolean(),
-    format_short_cryptographic_signature(commit.signature())),
+    format_short_cryptographic_signature(commit.signature())
+  ),
 )
 '''

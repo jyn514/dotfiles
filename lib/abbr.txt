@@ -13,6 +13,7 @@ m=make
 n=ninja
 g=git
 gir=git
+whcih=which
 o=open
 p=pacman
 v=nvim

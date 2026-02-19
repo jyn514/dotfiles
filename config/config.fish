@@ -302,20 +302,15 @@ function fish_right_prompt
 		set width (string length --visible $s)
 	end
 
-	printf "\e[1A"
-
 	set t (date +%H:%M)
 	if ! [ "$t" = "$time" ]
 		set time $t
 		printf "\e[2;37m%s" $t
 	else if [ $width -gt 0 ]
-		# printf "\e[1A"
 		string repeat -n $width ' '
 		printf '%s' $s
-		# printf "\e[1B"
 	end
 
-	printf "\e[1B"
 	set duration 0
 end
 
