@@ -21,17 +21,19 @@ print_jj_desc() {
 
 # hack: gather info for a bunch of commits at once, because jj takes ~50 ms to startup on rl-/rust.
 # if there's an error here, we'll see it because we don't redirect stderr.
-info=$(jj log -T 'empty++":"++bookmarks.first()++":"++description++"\n"' -r '@|@-' --no-graph --ignore-working-copy)
+info=$(jj log -T 'empty++":"++bookmarks.first()++":"++description++"\n"' -r '@|@-' --no-graph --ignore-working-copy --config ui.paginate=never)
 
 color=$RED
 if [ "$(echo "$info" | head -n1 | cut -d : -f1)" = true ]; then
 	color=$FAINT_GREEN
 fi
-branch=$(echo "$info" | tail -n+2 | cut -d : -f2)
+
+head=$(echo "$info" | head -n2 | tail -n+2)
+branch=$(echo "$head" | cut -d : -f2)
 if [ -n "$branch" ]; then
 	desc=$branch
 else
-	desc=$(echo "$info" | tail -n+2 | cut -d : -f3-)
+	desc=$(echo "$head" | cut -d : -f3-)
 fi
 
 print_jj_desc "$desc" "$color"

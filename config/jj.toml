@@ -1,3 +1,6 @@
+fsmonitor.backend = "watchman"
+fsmonitor.watchman.register-snapshot-trigger = true
+
 [ui]
 default-command = "log"
 # diff.tool=["difft", "--color=always", "$left", "$right"]

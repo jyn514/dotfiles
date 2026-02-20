@@ -47,7 +47,8 @@
 	msg = message
 
 # options that can't be overridden in config
-	f = fetch --no-progress --filter=blob:none
+	# doesn't use blob:none because that breaks jj :/
+	f = fetch --no-progress
 	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	p = push --no-progress
 	pf = push --force-with-lease --force-if-includes --no-progress
