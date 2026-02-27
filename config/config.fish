@@ -105,6 +105,7 @@ function fzf_action
 	end
 end
 
+abbr --add --global :ec "$EDITOR ~/.config/fish/config.fish"
 bind -M insert alt-e '$EDITOR ~/.config/fish/config.fish'
 bind -M insert alt-r 'source ~/.config/fish/config.fish'
 bind -M insert alt-shift-e edit_command_buffer

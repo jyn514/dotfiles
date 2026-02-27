@@ -59,4 +59,17 @@ show_time=watch -n 1 -t date
 # zip recursively by default
 zip=zip -r
 save_power=sudo powertop --auto-tune
+
+# vim aliases
 :q=exit
+:w=sync
+:x=sync && exit
+:e=$EDITOR $(fzf)
+:enew=tmux split-pane
+:cd=zi
+:ls=tmux list-panes
+:tn=tmux next-window
+:tp=tmux previous-window
+:bn=tmux switch-client -n
+:bp=tmux switch-client -p
+:tabm=tmux swap-window -d -t
