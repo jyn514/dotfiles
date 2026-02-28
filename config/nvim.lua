@@ -8,6 +8,8 @@
 -- use `:lua =SOMETABLE` to pretty print it
 -- use `<C-k>` in insert mode to debug what keys are called (use <C-k>\ to bypass tmux)
 -- alternatively, <C-v>
+-- use `:menu` to get an exhaustive list of mappings
+-- use `:put =getcompletion('', 'command')` to get an exhaustive list of commands
 
 local first_run = not vim.g.lazy_did_setup
 
