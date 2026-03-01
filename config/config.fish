@@ -63,7 +63,7 @@ end
 
 ## options
 
-export HAVE_BROKEN_WCWIDTH 0
+export HAVE_BROKEN_WCWIDTH=0
 set GITHUB 'https://github.com/'
 set MY_GITHUB 'https://github.com/jyn514'
 set SRC "/usr/local/src"
