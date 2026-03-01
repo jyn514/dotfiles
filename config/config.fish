@@ -47,7 +47,10 @@ end
 export VISUAL=$EDITOR
 
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
-	/home/linuxbrew/.linuxbrew/bin/brew shellenv fish | source
+	if ! [ -e ~/.local/config/brew.fish ]
+		/home/linuxbrew/.linuxbrew/bin/brew shellenv fish > ~/.local/config/brew.fish
+	end
+	. ~/.local/config/brew.fish
 end
 
 if [ -z "$SSH_TTY" ]
@@ -135,18 +138,27 @@ git config --get-regexp 'alias\.' | string replace --regex '^alias.' '' | while 
 	end
 end
 
-# load cargo aliases
-cargo --list | tail -n+2 | while read name value
-	set value $(string trim $value)
-	if set expansion $(string match --groups-only --regex '^alias: (.*)' -- $value)
-		abbr --add --global --command cargo $name -- $expansion
-		set cmd expansion
-	else
-		set cmd $name
+function reload_cargo_aliases
+	for line in (cargo --list | tail -n+2)
+		echo $line | read -l name value
+		set value $(string trim $value)
+		if set expansion $(string match --groups-only --regex '^alias: (.*)' -- $value)
+			echo "abbr --add --command cargo $name -- $expansion"
+			set cmd expansion
+		else
+			set cmd $name
+		end
+		if contains $name c d; continue; end
+		echo "abbr --add --global 'c$name' -- 'cargo $expansion'"
 	end
-	if contains $name c d; continue; end
-	abbr --add --global "c$name" -- "cargo $expansion"
 end
+
+# load cargo aliases
+if ! [ -e ~/.local/config/cargo.fish ]
+	reload_cargo_aliases > ~/.local/config/cargo.fish
+end
+
+. ~/.local/config/cargo.fish
 
 function cat; bat -p $argv; end
 function fork-github
