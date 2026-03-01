@@ -18,4 +18,4 @@ gp prev-file
 
 #env
 # https://wiki.archlinux.org/title/Color_output_in_console#Environment_variables
-LESS = -RFMi -x 8 --use-color -Dd+b$Du+g
+LESS = --RAW-CONTROL-CHARS --quit-if-one-screen --LONG-PROMPT --ignore-case --tabs=8 --use-color --color=d+b$Du+g
