@@ -90,9 +90,15 @@
 [fetch]
 	recurseSubmodules = no
 	parallel = 0
+
 [merge]
 	tool = meld
 	conflictstyle = zdiff3
+
+[merge "mergiraf"]
+    name = mergiraf
+    driver = mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L
+
 [sendemail]
 	smtpserver = smtp.gmail.com
 	smtpserverport = 587

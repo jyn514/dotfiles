@@ -1162,6 +1162,7 @@ vim.filetype.add { extension = {
 	ua    = 'uiua',
 	rhm   = 'rhombus',
 	flix  = 'flix',
+	ebnf  = 'ebnf',
 } }
 
 vim.api.nvim_create_autocmd("FileType", { callback = function()

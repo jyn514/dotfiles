@@ -42,7 +42,7 @@ suggest_install() {
 		return 123
 	elif [ -x /usr/libexec/pk-command-not-found ]
 	then
-		timeout .1 /usr/libexec/pk-command-not-found "$1" >&2
+		/usr/libexec/pk-command-not-found "$1" >&2
 	else
 		return 122
 	fi
