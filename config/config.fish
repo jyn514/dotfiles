@@ -261,7 +261,7 @@ bind --mode insert '?' bind_qmark
 ## functions and builtin hooks
 
 function pure_shell
-	env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" fish --no-config \
+	env -i HOME="$HOME" TERM="$TERM" PS1='; ' DISPLAY="$DISPLAY" (which fish) --no-config \
 		--init-command 'function fish_prompt; echo "; "; end' \
 		$argv
  end
