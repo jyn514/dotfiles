@@ -32,9 +32,11 @@
 	co = checkout
 	cp = cherry-pick
 	conf = config
+	wt = worktree
 	d = diff
 	h = help
 	r = remote
+	sh = show
 	t = tag
 	v = !git --version
 	update = submodule update
@@ -51,7 +53,7 @@
 	f = fetch --no-progress
 	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	p = push --no-progress
-	pf = push --force-with-lease --force-if-includes --no-progress
+	pf = push --force-with-lease --no-progress
 	s = status -sb --ignore-submodules=dirty
 
 # custom commands
