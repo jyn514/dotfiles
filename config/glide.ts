@@ -52,12 +52,20 @@ glide.buf.keymaps.del(["normal", "insert"], "<C-k>");
 // break View Source
 glide.keymaps.del(["normal", "insert"], "<C-u>");
 
-glide.autocmds.create("UrlEnter", {
-  hostname: "configure.zsa.io",
-}, async () => {
+async function disable_shortcuts() {
   await glide.excmds.execute("mode_change ignore");
   return () => glide.excmds.execute("mode_change normal");
-});
+}
+
+const disabled_sites = [
+  "configure.zsa.io",
+  "linear.app",
+];
+
+for (const hostname of disabled_sites) {
+  glide.autocmds.create("UrlEnter", { hostname }, disable_shortcuts);
+}
+
 glide.autocmds.create("UrlEnter", {hostname: "app.fastmail.com"}, async () => {
 	glide.buf.keymaps.del("normal", "gi");
 	glide.buf.keymaps.del("normal", "j");

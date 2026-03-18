@@ -196,6 +196,7 @@ vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
 -- for flower
 vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
 vim.keymap.set('i', '\\f', '◊', { desc = "Lozenge" })
+vim.keymap.set('i', '\\p', '⚘', { desc = "Petal" })
 vim.keymap.set('i', '\\j', '«', { desc = "Sunflower open quote" })
 vim.keymap.set('i', '\\k', '»', { desc = "Sunflower close quote" })
 
