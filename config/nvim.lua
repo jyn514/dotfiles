@@ -330,7 +330,7 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
-		{ "folke/neoconf.nvim", cmd = "Neoconf", config = true },
+		{ "folke/neoconf.nvim", config = true },
 		{ "folke/lazydev.nvim", ft = "lua", opts = {
 			-- See the configuration section for more details
 			-- Load luvit types when the `vim.uv` word is found
@@ -1086,16 +1086,6 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 	end
 end })
 
-if vim.fn.has('nvim-0.11') == 1 then
-	vim.api.nvim_create_autocmd('LspNotify', {
-		callback = function(args)
-			if args.data.method == 'textDocument/didOpen' then
-				vim.lsp.foldclose('imports', vim.fn.bufwinid(args.buf))
-			end
-		end,
-	} )
-end
-
 ---- specific LSPs ----
 
 local lsplang = require('lspconfig.configs')
@@ -1152,7 +1142,10 @@ vim.lsp.config('oxc', {
 	end,
 })
 
-for _, lsp in ipairs({'clangd', 'rust-analyzer', 'lua_ls', 'bashls', 'pylsp', 'ts_ls', 'gopls', 'clojure_lsp', 'oxc', 'cssls', 'markdown_oxide'}) do
+for _, lsp in ipairs {
+	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
+	'clojure_lsp', 'oxc', 'cssls', 'markdown_oxide'
+} do
 	vim.lsp.enable(lsp)
 end
 
@@ -1239,31 +1232,6 @@ function rustfmt_is_nightly()
 	return second ~= nil and second:endswith '-nightly'
 end
 
-local function expand_config_variables(option)
-	local var_placeholders = {
-		['${workspaceFolder}'] = function(_)
-			return vim.lsp.buf.list_workspace_folders()[1]
-		end,
-	}
-
-	if type(option) == "table" then
-		local mt = getmetatable(option)
-		local result = {}
-		for k, v in pairs(option) do
-			result[expand_config_variables(k)] = expand_config_variables(v)
-		end
-		return setmetatable(result, mt)
-	end
-	if type(option) ~= "string" then
-		return option
-	end
-	local ret = option
-	for key, fn in pairs(var_placeholders) do
-		ret = ret:gsub(key, fn)
-	end
-	return ret
-end
-
 local fs_exists = vim.uv.fs_stat
 
 function setup_ra()
@@ -1271,10 +1239,12 @@ function setup_ra()
 		return
 	end
 	local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
-	vim.lsp.config('rust-analyzer', {
-		cmd = { "rust-analyzer" },
-		filetypes = { "rust" },
+	vim.lsp.config('rust_analyzer', {
 		settings = settings,
+		on_attach = function(client, bufnr)
+				vim.lsp.foldclose('imports', vim.fn.bufwinid(bufnr))
+        vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+    end,
 		root_dir = function(buf, on_dir)
 			local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters
 			if not dir then return end
@@ -1283,23 +1253,6 @@ function setup_ra()
 			end
 			on_dir(dir)
 		end,
-		-- not sure why this needs to be set here, but https://www.reddit.com/r/neovim/comments/1cyfgqt/getting_range_formatting_to_work_with_mason_or/ claims it does
-		-- init_options = settings,
-		on_init = function(client)
-			local path = vim.lsp.buf.list_workspace_folders()[1]
-			-- rust-lang/rust
-			config = vim.fs.joinpath(path, "src/etc/rust_analyzer_zed.json")
-			if fs_exists(config) then
-				modified_config = vim.fs.joinpath(path, ".zed/settings.json")
-				if fs_exists(modified_config) then
-					config = modified_config
-				end
-				file = io.open(config)
-				json = vim.json.decode(file:read("*a"))
-				client.config.settings["rust-analyzer"] = expand_config_variables(json.lsp["rust-analyzer"].initialization_options)
-				client.notify("workspace/didChangeConfiguration", { settings = client.config.settings })
-			end
-		end
 	})
 end
 
