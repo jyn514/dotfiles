@@ -1,6 +1,6 @@
 root = true
 [*]
-	indent_style = tab
+	indent_style = space
 	indent_size = 2
 [*.{clj,cljc,edn,js,ts,mts,scss,html,md,yaml,yml,xml}]
 	indent_style = space
