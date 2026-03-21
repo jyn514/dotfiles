@@ -39,8 +39,8 @@
 	sh = show
 	t = tag
 	v = !git --version
-	update = submodule update
-	module = submodule
+	w = worktree
+	mod = submodule
 	deepen = pull --unshallow
 	unshallow = pull --unshallow
 	amend = commit --amend

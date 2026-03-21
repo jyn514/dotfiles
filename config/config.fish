@@ -142,6 +142,8 @@ git config --get-regexp 'alias\.' | string replace --regex '^alias.' '' | while 
 	end
 end
 
+abbr --add --global --command git -- -nv --no-verify
+
 function reload_cargo_aliases
 	for line in (cargo --list | tail -n+2)
 		echo $line | read -l name value
