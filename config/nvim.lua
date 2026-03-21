@@ -1142,9 +1142,14 @@ vim.lsp.config('oxc', {
 	end,
 })
 
+vim.lsp.config('tinymist', {
+  cmd = { "tinymist" },
+  filetypes = { "typst" },
+})
+
 for _, lsp in ipairs {
 	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
-	'clojure_lsp', 'oxc', 'cssls', 'markdown_oxide'
+	'clojure_lsp', 'cssls', 'markdown_oxide', 'tinymist',
 } do
 	vim.lsp.enable(lsp)
 end

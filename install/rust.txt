@@ -11,3 +11,4 @@ jj-cli
 ripgrep
 mdbook
 librespot
+tinymist
