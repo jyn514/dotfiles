@@ -27,9 +27,11 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 [alias]
 # typos
 	rebsae = rebase
+	iu = ui
 
 # shorthands
 	up = update
+	ui = !gitui
 	a = add
 	b = branch
 	c = commit

@@ -1,0 +1,13 @@
+(
+    move_left: Some(( code: Char('h'), modifiers: "")),
+    move_right: Some(( code: Char('l'), modifiers: "")),
+    move_up: Some(( code: Char('k'), modifiers: "")),
+    move_down: Some(( code: Char('j'), modifiers: "")),
+
+    page_up: Some(( code: Char('u'), modifiers: "CONTROL")),
+    page_down: Some(( code: Char('d'), modifiers: "CONTROL")),
+
+    open_help: Some(( code: Char('?'), modifiers: "")),
+
+    stash_open: Some(( code: Char('l'), modifiers: "")),
+)
