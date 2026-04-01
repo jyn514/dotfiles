@@ -36,3 +36,4 @@ markdown-objects.scm=.config/nvim/after/queries/markdown/textobjects.scm
 z.fish=.config/fish/completions/__zoxide_z.fish
 XCompose=.XCompose
 key_bindings.ron=.config/gitui/key_bindings.ron
+containers.conf=.config/containers/containers.conf
