@@ -214,7 +214,7 @@ function which
 			else
 				command --search $cmd
 			end
-			or fish_command_not_found $cmd
+			or __fish_default_command_not_found_handler $cmd
 		end
 	end
 end
