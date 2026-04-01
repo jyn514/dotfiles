@@ -42,7 +42,6 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	d = diff
 	h = help
 	r = remote
-	sh = show
 	t = tag
 	v = !git --version
 	w = worktree
@@ -61,6 +60,8 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	pf = push --force-with-lease --no-progress
 	s = status -sb --ignore-submodules=dirty
 	l = log -m --ext-diff
+	sh = show -m --ext-diff
+  shw = sh --pretty=medium
 	lg = l --pretty=medium
 
 # custom commands
