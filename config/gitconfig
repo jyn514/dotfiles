@@ -20,6 +20,10 @@
 	hyperlinks = true
 	# TODO: support line numbers
 	hyperlinks-file-link-format = "file://{path}"
+
+[format]
+pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
+
 [alias]
 # typos
 	rebsae = rebase
@@ -51,10 +55,11 @@
 # options that can't be overridden in config
 	# doesn't use blob:none because that breaks jj :/
 	f = fetch --no-progress
-	l = log --graph --oneline --format=format:'%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)'
 	p = push --no-progress
 	pf = push --force-with-lease --no-progress
 	s = status -sb --ignore-submodules=dirty
+	l = log -m --ext-diff
+	lg = l --pretty=medium
 
 # custom commands
 	message = log --format=%B -n1
@@ -65,9 +70,9 @@
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
 	stat = l --stat upstream..
-	branch-log = !git l $(git merge-base HEAD upstream/HEAD)..
-	graph = l --all
-	signed = log --show-signature --oneline upstream..
+	branch-log = !git lg $(git merge-base HEAD upstream/HEAD)..
+	graph = l --graph --all
+	signed = l --show-signature --oneline upstream..
 
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default): %(contents:subject)' refs/heads/
 
