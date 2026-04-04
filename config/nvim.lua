@@ -1216,64 +1216,23 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 ---- Rust-specific config ----
-
--- https://stackoverflow.com/a/326715
-function os.capture(cmd)
-	local f = assert(io.popen(cmd, 'r'))
-	local s = assert(f:read('*a'))
-	f:close()
-	return s
-end
--- https://stackoverflow.com/a/72921992
-function string:endswith(suffix)
-	return self:sub(-#suffix) == suffix
-end
-function rustfmt_is_nightly()
-	-- rustfmt --version is inexplicably slow if it's not installed for the current toolchain
-	if os.execute("rustup which rustfmt >/dev/null 2>&1") then return false end
-	-- split string on whitespace: https://stackoverflow.com/a/7615129
-	local version = string.gmatch(os.capture("rustfmt --version"), "([^%s]+)")
-	local second = version()
-	return second ~= nil and second:endswith '-nightly'
-end
-
-local fs_exists = vim.uv.fs_stat
-
-function setup_ra()
-	if not vim.bo.filetype == "rust" then
-		return
-	end
-	local settings = { ['rust-analyzer'] = { rustfmt = { rangeFormatting = { enable = rustfmt_is_nightly() } } } }
-	vim.lsp.config('rust_analyzer', {
-		settings = settings,
-		on_attach = function(client, bufnr)
-				vim.lsp.foldclose('imports', vim.fn.bufwinid(bufnr))
-        vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
-    end,
-		root_dir = function(buf, on_dir)
-			local dir = vim.fs.root(0, { 'x.py', 'Cargo.toml' })  -- order matters
-			if not dir then return end
-			if vim.fs.basename(dir) == "library" and fs_exists(vim.fs.joinpath(dir, "../src/bootstrap/defaults/config.compiler.toml")) then
-				dir = vim.fs.dirname(dir)
-			end
-			on_dir(dir)
-		end,
-	})
-end
-
-vim.api.nvim_create_autocmd('BufReadPre', {
-	desc = 'Setup rust-analyzer',
-	callback = setup_ra
+vim.lsp.config('rust_analyzer', {
+	on_attach = function(client, bufnr)
+		if bufnr > 0 then
+			vim.lsp.foldclose('imports', vim.fn.bufwinid(bufnr))
+			vim.lsp.inlay_hint.enable(true, {bufnr = bufnr})
+		end
+	end,
 })
 
 ---- Session and meta config ----
 
 -- begin saving session immediately on startup
-if vim.fn.ObsessionStatus('a') ~= 'a' and not fs_exists('.session.vim') then
+if vim.fn.ObsessionStatus('a') ~= 'a' and not vim.uv.fs_stat('.session.vim') then
 	vim.cmd.Obsess(".session.vim")
 end
 
 if not first_run then
 	-- vim.cmd.bufdo('silent! edit')
-	-- vim.cmd.bufdo('LspRestart')
+	vim.cmd.bufdo('LspRestart')
 end
