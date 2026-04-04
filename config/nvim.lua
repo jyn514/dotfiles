@@ -1011,6 +1011,7 @@ dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
 
+-- TODO: https://github.com/kikito/inspect.lua ?
 require('vim.lsp.log').set_format_func(vim.print)
 vim.diagnostic.config({ underline = true })
 
@@ -1066,7 +1067,7 @@ vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
 			group = "lsp_document_highlight",
 			desc = "Document Highlight",
 		})
-		vim.api.nvim_create_autocmd("CursorMoved", {
+		vim.api.nvim_create_autocmd({"CursorMoved", "CursorMovedI"}, {
 			callback = vim.lsp.buf.clear_references,
 			buffer = bufnr,
 			group = "lsp_document_highlight",
