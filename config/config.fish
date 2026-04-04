@@ -76,6 +76,9 @@ set SRC "/usr/local/src"
 set fish_color_comment white --dim
 set -g fish_greeting
 
+# load x.py completions at runtime
+set -a fish_complete_path src/etc/completions
+
 ## keybinds
 
 # https://fishshell.com/docs/current/interactive.html#vi-mode-commands

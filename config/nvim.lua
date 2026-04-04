@@ -330,7 +330,7 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
-		{ "folke/neoconf.nvim", config = true },
+		{ "folke/neoconf.nvim", config = true, dependencies = { "neovim/nvim-lspconfig" } },
 		{ "folke/lazydev.nvim", ft = "lua", opts = {
 			-- See the configuration section for more details
 			-- Load luvit types when the `vim.uv` word is found
