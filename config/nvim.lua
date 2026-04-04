@@ -26,9 +26,9 @@ vim.opt.smartcase = true
 vim.opt.scrolloff = 3
 vim.opt.sidescrolloff = 10
 vim.opt.visualbell = true
-vim.opt.title = true  -- allows M-d to search for a file
+vim.opt.title = true      -- allows M-d to search for a file
 -- see `:help zo` for keybinds
-vim.opt.shiftround = true      -- TODO: disable this for markdown and mumps files
+vim.opt.shiftround = true -- TODO: disable this for markdown and mumps files
 
 -- folds
 vim.opt.foldlevelstart = 4
@@ -74,7 +74,7 @@ vim.api.nvim_create_autocmd('VimResized', {
 ---- Filetype options ----
 
 function indentgroup(lang, func)
-	local group = vim.api.nvim_create_augroup(lang..'indent', {})
+	local group = vim.api.nvim_create_augroup(lang .. 'indent', {})
 	vim.api.nvim_create_autocmd('FileType', {
 		group = group,
 		callback = function(event)
@@ -84,6 +84,7 @@ function indentgroup(lang, func)
 		end
 	})
 end
+
 -- only use this with `:lua`; otherwise use ~/.editorconfig
 function hard_tabs(count)
 	vim.bo.expandtab = false
@@ -91,6 +92,7 @@ function hard_tabs(count)
 	vim.bo.softtabstop = count
 	vim.bo.shiftwidth = count
 end
+
 function spaces(count, global)
 	if global then
 		opt = vim.opt
@@ -102,9 +104,11 @@ function spaces(count, global)
 	opt.softtabstop = count
 	opt.shiftwidth = count
 end
+
 function length(count)
 	vim.bo.textwidth = count
 end
+
 indent_tab = hard_tabs
 indent_space = spaces
 
@@ -148,7 +152,7 @@ end)
 -- vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 --
 function bind(binding, target, desc)
-	vim.keymap.set({'n', 'v'}, binding, target, { desc = desc })
+	vim.keymap.set({ 'n', 'v' }, binding, target, { desc = desc })
 end
 
 vim.keymap.set('n', '<A-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
@@ -181,18 +185,18 @@ end, { desc = "Run `make test`" })
 -- TODO: add ninja output to `errorformat` (see `:h efm-ignore`)
 
 -- add some emacs keybinds
-vim.keymap.set({'i', 'c'}, '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
-vim.keymap.set({'i', 'c'}, '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
+vim.keymap.set({ 'i', 'c' }, '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
+vim.keymap.set({ 'i', 'c' }, '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
 
 -- add some helix keybinds
-vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" }) -- overwrites "undo line" with no replacement
+vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" })                               -- overwrites "undo line" with no replacement
 vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind
-vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" }) -- overwrites `nv` keybind
-vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" }) -- overwrites "paste before cursor"
+vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" })            -- overwrites `nv` keybind
+vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" })    -- overwrites "paste before cursor"
 
 -- note: overwrites select mode
-vim.keymap.set({'n', 'v'}, 'gh', '^', { desc = "Go to line start" })
-vim.keymap.set({'n', 'v'}, 'gl', '$', { desc = "Go to line end" })
+vim.keymap.set({ 'n', 'v' }, 'gh', '^', { desc = "Go to line start" })
+vim.keymap.set({ 'n', 'v' }, 'gl', '$', { desc = "Go to line end" })
 
 -- for flower
 vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
@@ -203,7 +207,7 @@ vim.keymap.set('i', '\\k', '»', { desc = "Sunflower close quote" })
 
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
-	local col = vim.fn.getcurpos()[3] - 1  -- convert 1-indexed to 0-indexed
+	local col = vim.fn.getcurpos()[3] - 1 -- convert 1-indexed to 0-indexed
 	local ws = vim.regex('^\\s*$')
 	-- TODO: figure out how to do this with match_line
 	local line = vim.fn.getline('.'):sub(0, col)
@@ -211,7 +215,7 @@ vim.keymap.set('i', '<Tab>', function()
 		return '<Tab>'
 	else
 		local sw = vim.fn.shiftwidth()
-		local width = sw - ((col-1) % sw)
+		local width = sw - ((col - 1) % sw)
 		return vim.fn['repeat'](' ', width)
 	end
 end, { expr = true, desc = "Don't insert hard tabs in the middle of lines" })
@@ -225,24 +229,24 @@ end, { expr = true, desc = "Cancel completion" }) -- overwrites "return to norma
 vim.keymap.set('n', 'g>', function()
 	vim.cmd('enew')
 	vim.cmd("put = execute('messages')")
-end, {desc = "View message history in a new searchable buffer"})
+end, { desc = "View message history in a new searchable buffer" })
 
 ---- Commands ----
 
 local config = vim.fn.stdpath("config") .. '/init.lua'
-vim.api.nvim_create_user_command('EditConfig', 'edit '..config, { desc = "edit Lua config" })
-vim.api.nvim_create_user_command('ReloadConfig', 'source '..config, { desc = "reload Lua config" })
+vim.api.nvim_create_user_command('EditConfig', 'edit ' .. config, { desc = "edit Lua config" })
+vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. config, { desc = "reload Lua config" })
 
-local journal = vim.fn.expand('~/Documents/notes/journal/')..os.date("%Y-%m-%d")..'.md'
-vim.api.nvim_create_user_command('EditDailyJournal', 'edit '..journal, { desc = "Open today's Obsidian daily journal" })
+local journal = vim.fn.expand('~/Documents/notes/journal/') .. os.date("%Y-%m-%d") .. '.md'
+vim.api.nvim_create_user_command('EditDailyJournal', 'edit ' .. journal, { desc = "Open today's Obsidian daily journal" })
 
 vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	local view = vim.fn.winsaveview()
 	local cmd = 'keeppatterns '
 	if info.range > 0 then
-		cmd = cmd..info.line1..','..info.line2
+		cmd = cmd .. info.line1 .. ',' .. info.line2
 	end
-	vim.cmd(cmd..[[s/\s\+$//e]])
+	vim.cmd(cmd .. [[s/\s\+$//e]])
 	vim.fn.winrestview(view)
 end, { range = true, desc = "trim trailing spaces" })
 
@@ -254,19 +258,20 @@ function BufferDelete(args)
 	end
 	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 		if vim.api.nvim_buf_is_loaded(buf) and buf ~= vim.api.nvim_get_current_buf() then
-			vim.cmd('let @# = '..buf)
+			vim.cmd('let @# = ' .. buf)
 			break
 		end
 	end
 	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer
 end
+
 vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
 	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
 
 -- Show all highlights
 vim.api.nvim_create_user_command('ShowHighlights', function()
 	vim.cmd('source $VIMRUNTIME/syntax/hitest.vim')
-end, {desc = "Show a list of all highlight groups"})
+end, { desc = "Show a list of all highlight groups" })
 
 -- autosave on cursor hold
 local timers = {}
@@ -277,14 +282,16 @@ function autosave_enable()
 	end
 
 	local buf_name = vim.fn.expand '%'
-	vim.notify("autosaving "..buf_name)
+	vim.notify("autosaving " .. buf_name)
 	timers[buf] = vim.api.nvim_create_autocmd("CursorHold", {
-		desc = "Save "..buf_name.." on change",
+		desc = "Save " .. buf_name .. " on change",
 		callback = function()
 			vim.api.nvim_buf_call(buf, function() vim.cmd "silent update" end)
-	end })
+		end
+	})
 end
-vim.api.nvim_create_user_command('AutoSave', autosave_enable, {desc = "Start saving each second on change"})
+
+vim.api.nvim_create_user_command('AutoSave', autosave_enable, { desc = "Start saving each second on change" })
 
 function autosave_disable()
 	local buf = vim.api.nvim_get_current_buf()
@@ -294,19 +301,21 @@ function autosave_disable()
 		timers[buf] = nil
 	end
 end
-vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, {desc = "Stop autosaving"})
+
+vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, { desc = "Stop autosaving" })
 
 -- abbreviations
 -- https://vi.stackexchange.com/a/33221, plus hackery to only match at the start
 function abbrev(lhs, rhs)
 	vim.keymap.set('ca', lhs, function()
-		if vim.fn.getcmdtype() == ':' and string.find(vim.fn.getcmdline(), "^%s*"..lhs.."%s*$") then
+		if vim.fn.getcmdtype() == ':' and string.find(vim.fn.getcmdline(), "^%s*" .. lhs .. "%s*$") then
 			return rhs
 		else
 			return lhs
 		end
 	end, { expr = true })
 end
+
 abbrev('Q', 'quit')
 abbrev('open', 'edit')
 abbrev('o', 'edit')
@@ -331,68 +340,99 @@ if first_run then
 	vim.opt.rtp:prepend(lazypath)
 
 	require("lazy").setup({
-		{ "folke/neoconf.nvim", config = true, dependencies = { "neovim/nvim-lspconfig" } },
-		{ "folke/lazydev.nvim", ft = "lua", opts = {
-			-- See the configuration section for more details
-			-- Load luvit types when the `vim.uv` word is found
-			library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
-		} },
-		'tpope/vim-obsession',  -- session save/resume
+		{ "folke/neoconf.nvim",      config = true,                                      dependencies = { "neovim/nvim-lspconfig" } },
+		{
+			"folke/lazydev.nvim",
+			ft = "lua",
+			opts = {
+				-- See the configuration section for more details
+				-- Load luvit types when the `vim.uv` word is found
+				library = { { path = "${3rd}/luv/library", words = { "vim%.uv" } } },
+			}
+		},
+		'tpope/vim-obsession', -- session save/resume
 		'numToStr/Comment.nvim',
 		-- general picker
-		{ "ibhagwan/fzf-lua",
-			dependencies = { 'nvim-mini/mini.icons' }},
+		{
+			"ibhagwan/fzf-lua",
+			dependencies = { 'nvim-mini/mini.icons' }
+		},
 		-- removes deprecation warnings
 		{ 'kosayoda/nvim-lightbulb', commit = 'ffddd221ed561c2cca8b94e0608379033c5aa562' },
-		'echasnovski/mini.nvim',    -- toolbar, also icons
-		"folke/which-key.nvim",     -- spawns kak/hx-like popup
-		'lewis6991/gitsigns.nvim',  -- also does inline blame
-		'tpope/vim-eunuch',  -- file operations
-		{'tpope/vim-fugitive', -- open url of commit under cursor
-			dependencies = { "tpope/vim-rhubarb" }},
-		{ "chrisgrieser/nvim-spider", lazy = true },  -- partial word movement
-		{ 'vxpm/rust-expand-macro.nvim', lazy = true, ft = "rust", config = function()
-			local expand_macro = require('rust-expand-macro').expand_macro
-			vim.api.nvim_create_user_command('ExpandMacro', expand_macro,
-				{desc = "Expand macro recursively"})
-		end},
+		'echasnovski/mini.nvim',                   -- toolbar, also icons
+		"folke/which-key.nvim",                    -- spawns kak/hx-like popup
+		'lewis6991/gitsigns.nvim',                 -- also does inline blame
+		'tpope/vim-eunuch',                        -- file operations
+		{
+			'tpope/vim-fugitive',                    -- open url of commit under cursor
+			dependencies = { "tpope/vim-rhubarb" }
+		},
+		{ "chrisgrieser/nvim-spider", lazy = true }, -- partial word movement
+		{
+			'vxpm/rust-expand-macro.nvim',
+			lazy = true,
+			ft = "rust",
+			config = function()
+				local expand_macro = require('rust-expand-macro').expand_macro
+				vim.api.nvim_create_user_command('ExpandMacro', expand_macro,
+					{ desc = "Expand macro recursively" })
+			end
+		},
 		'neovim/nvim-lspconfig',
-		{ 'jyn514/alabaster.nvim', branch = 'dark' },
-		'mfussenegger/nvim-dap',    -- debugging
-		{ "rcarriga/nvim-dap-ui", dependencies = {"nvim-neotest/nvim-nio"} },
-		{ "saghen/blink.cmp",
-			dependencies = { "rafamadriz/friendly-snippets" }},
-		{'nvim-treesitter/nvim-treesitter',
+		{ 'jyn514/alabaster.nvim',    branch = 'dark' },
+		'mfussenegger/nvim-dap', -- debugging
+		{ "rcarriga/nvim-dap-ui",      dependencies = { "nvim-neotest/nvim-nio" } },
+		{
+			"saghen/blink.cmp",
+			dependencies = { "rafamadriz/friendly-snippets" }
+		},
+		{
+			'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
 			branch = "master",
-			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main' }},
+			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main' }
+		},
 		'HiPhish/rainbow-delimiters.nvim',
 		{ "julienvincent/nvim-paredit" },
-		{ "kylechui/nvim-surround", version = "^3.0.0" },
-		{ "folke/snacks.nvim", priority = 1000, opts = {
-			image = { enabled = true, }
-		} },
+		{ "kylechui/nvim-surround",    version = "^3.0.0" },
+		{
+			"folke/snacks.nvim",
+			priority = 1000,
+			opts = {
+				image = { enabled = true, }
+			}
+		},
 		{ 'brenoprata10/nvim-highlight-colors', opts = {} },
-		{ "MeanderingProgrammer/render-markdown.nvim", ft = "markdown", opts = {
-			html = { comment = { conceal = false } },
-			render_modes = {'n', 'v', 'i', 'c', 't', 'x' },
-			code = { border = 'thin' },
-			checkbox = {
-				checked = { scope_highlight = '@markup.strikethrough' },
-			},
-		}},
-		{ "chenxin-yan/footnote.nvim", ft = "markdown", opts = {} },
-		{ 'ymich9963/mdnotes.nvim',
+		{
+			"MeanderingProgrammer/render-markdown.nvim",
+			ft = "markdown",
+			opts = {
+				html = { comment = { conceal = false } },
+				render_modes = { 'n', 'v', 'i', 'c', 't', 'x' },
+				code = { border = 'thin' },
+				checkbox = {
+					checked = { scope_highlight = '@markup.strikethrough' },
+				},
+			}
+		},
+		{ "chenxin-yan/footnote.nvim",          ft = "markdown", opts = {} },
+		{
+			'ymich9963/mdnotes.nvim',
 			ft = "markdown",
 			opts = {
 				auto_list_renumber = false,
 				assets_path = "media",
 			},
 		},
-		{ "michaelb/sniprun", branch = "master", lazy = true, opts = {
-			selected_interpreters = { "Lua_nvim" },
-			repl_enable = { "Clojure_fifo" },
-		}},
+		{
+			"michaelb/sniprun",
+			branch = "master",
+			lazy = true,
+			opts = {
+				selected_interpreters = { "Lua_nvim" },
+				repl_enable = { "Clojure_fifo" },
+			}
+		},
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
@@ -414,12 +454,13 @@ require('nvim-surround').setup {}
 
 function set_spider(keybind, motion, desc)
 	vim.keymap.set(
-	{ "n", "o", "x" },
-	keybind,
-	"<cmd>lua require('spider').motion('"..motion.."')<CR>",
-	{ desc = desc }
+		{ "n", "o", "x" },
+		keybind,
+		"<cmd>lua require('spider').motion('" .. motion .. "')<CR>",
+		{ desc = desc }
 	)
 end
+
 set_spider('H', 'b', 'Move to previous sub word')
 set_spider('L', 'w', 'Move to next sub word start')
 -- set_spider('<A-l>', 'e', 'Move to next sub word end')
@@ -571,20 +612,20 @@ local function ts(binds)
 			elseif bind == '=' then
 				upper = '+'
 			else
-				error("don't know how to bind moves for"..bind)
+				error("don't know how to bind moves for" .. bind)
 			end
 		end
 
-		selections['a'..bind] = outer
-		selections['i'..bind] = inner
-		swaps.swap_next['s'..bind] = inner
-		swaps.swap_previous['s'..upper] = inner
-		swaps.swap_next['S'..bind] = outer
-		swaps.swap_previous['S'..upper] = outer
-		moves.goto_next_start[']'..bind] = outer
-		moves.goto_next_end[']'..upper] = outer
-		moves.goto_previous_start['['..bind] = outer
-		moves.goto_previous_end['['..upper] = outer
+		selections['a' .. bind] = outer
+		selections['i' .. bind] = inner
+		swaps.swap_next['s' .. bind] = inner
+		swaps.swap_previous['s' .. upper] = inner
+		swaps.swap_next['S' .. bind] = outer
+		swaps.swap_previous['S' .. upper] = outer
+		moves.goto_next_start[']' .. bind] = outer
+		moves.goto_next_end[']' .. upper] = outer
+		moves.goto_previous_start['[' .. bind] = outer
+		moves.goto_previous_end['[' .. upper] = outer
 	end
 	return { selections = selections, swaps = swaps, moves = moves }
 end
@@ -601,7 +642,7 @@ function bind_ts(capture_associations)
 		["Select"] = {
 			bindings = capture_associations.selections or {},
 			func = select.select_textobject,
-			modes = {'x', 'o'},
+			modes = { 'x', 'o' },
 		},
 		["Swap next"] = {
 			bindings = swaps.swap_next,
@@ -616,22 +657,22 @@ function bind_ts(capture_associations)
 		["Next start"] = {
 			bindings = moves.goto_next_start,
 			func = move.goto_next_start,
-			modes = {'n', 'x', 'o'},
+			modes = { 'n', 'x', 'o' },
 		},
 		["Next end"] = {
-		bindings = moves.goto_next_end,
-		func = move.goto_next_end,
-		modes = {'n', 'x', 'o'},
+			bindings = moves.goto_next_end,
+			func = move.goto_next_end,
+			modes = { 'n', 'x', 'o' },
 		},
 		["Previous start"] = {
 			bindings = moves.goto_previous_start,
 			func = move.goto_previous_start,
-			modes = {'n', 'x', 'o'},
+			modes = { 'n', 'x', 'o' },
 		},
 		["Previous end"] = {
 			bindings = moves.goto_previous_end,
 			func = move.goto_previous_end,
-			modes = {'n', 'x', 'o'},
+			modes = { 'n', 'x', 'o' },
 		},
 	}
 
@@ -644,19 +685,17 @@ function bind_ts(capture_associations)
 			else
 				group = query.group
 				if group == 'textobjects' and not query.no_suffix then
-					name = '@'..query.capture..'.'..query.kind
+					name = '@' .. query.capture .. '.' .. query.kind
 				else
-					name = '@'..query.capture
+					name = '@' .. query.capture
 				end
 			end
 			vim.keymap.set(spec.modes, binding, function()
 				spec.func(name, group)
-			end, {desc = desc..' '..name})
+			end, { desc = desc .. ' ' .. name })
 		end
 	end
-
 end
-
 
 require('nvim-treesitter.configs').setup {
 	auto_install = true,
@@ -678,7 +717,7 @@ local captures = ts {
 	['='] = 'assignment',
 	p = 'parameter',
 	i = 'conditional', -- mnemonic: "If"
-	h = 'statement', -- mnemonic: "left of line" (same as 'h' in normal mode)
+	h = 'statement',  -- mnemonic: "left of line" (same as 'h' in normal mode)
 	[';'] = 'comment',
 	b = 'block',
 	x = 'regex',
@@ -719,8 +758,8 @@ ft_comment.set('flix', ft_comment.get('c'))
 ft_comment.set('rhombus', ft_comment.get('c'))
 
 comment_api = require 'Comment.api'
-vim.keymap.set({'n', 'i'}, '<C-_>', comment_api.toggle.linewise.current, {desc = "Toggle comment"})
-vim.keymap.set('n', '<C-c>', comment_api.toggle.linewise.current, {desc = "Toggle comment"})
+vim.keymap.set({ 'n', 'i' }, '<C-_>', comment_api.toggle.linewise.current, { desc = "Toggle comment" })
+vim.keymap.set('n', '<C-c>', comment_api.toggle.linewise.current, { desc = "Toggle comment" })
 -- TODO: find a way to only comment out the selected region
 -- using blockwise comments doesn't work in all filetypes
 vim.keymap.set('v', '<C-_>', '<Plug>(comment_toggle_linewise_visual)')
@@ -736,10 +775,10 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 
 	-- TODO: need to escape regex metacharacters
 	-- {-} means "non-greedy *"
-	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]]..escaped_comment..[[.*\)/\1\3\r\1\2/e]]
+	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]] .. escaped_comment .. [[.*\)/\1\3\r\1\2/e]]
 	for line = info.line2, info.line1, -1 do
 		if string.find(vim.fn.getline(line), comment, 1, true) then
-			local cmd = 'keeppatterns '..line..regex
+			local cmd = 'keeppatterns ' .. line .. regex
 			vim.notify(cmd)
 			vim.cmd(cmd)
 		end
@@ -767,7 +806,7 @@ pickers.setup {
 			wrap = true,
 			-- https://github.com/ibhagwan/fzf-lua/issues/2518#issuecomment-3764040980
 			--tabstop = 2,
-		}}},
+		} } },
 	},
 	files = {
 		-- file_icons = false,
@@ -790,14 +829,14 @@ pickers.setup {
 
 vim.keymap.set('n', '<leader>b', function()
 	pickers.buffers({
-		winopts = {title="Buffers"},
+		winopts = { title = "Buffers" },
 	})
 end, { desc = "Open buffer picker" })
 
 vim.keymap.set('n', '<leader>f', function()
 	local cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) or vim.fn.expand('%:p:h')
-	local is_git_dir = vim.system({'git', 'rev-parse', '--is-inside-work-tree'},
-		{text = true, cwd = cwd}):wait().code == 0
+	local is_git_dir = vim.system({ 'git', 'rev-parse', '--is-inside-work-tree' },
+		{ text = true, cwd = cwd }):wait().code == 0
 	local files
 	if is_git_dir then
 		files = "git_files;oldfiles;files"
@@ -806,13 +845,13 @@ vim.keymap.set('n', '<leader>f', function()
 	end
 	pickers.combine({
 		pickers = files,
-		winopts = {title="Files"},
+		winopts = { title = "Files" },
 		cwd = cwd,
 	})
 end, { desc = "Open '''smart''' fuzzy file picker" })
 
 vim.keymap.set('n', '<leader><C-f>', function()
-	pickers.files({ winopts = {title="All tracked files"}})
+	pickers.files({ winopts = { title = "All tracked files" } })
 end, { desc = "Open file picker (all files in current directory)" })
 
 vim.keymap.set('n', '<leader><A-f>', function()
@@ -824,10 +863,10 @@ vim.keymap.set('n', '<leader>F', pickers.history, { desc = "Open file picker (al
 vim.keymap.set('n', '<leader>/', function()
 	pickers.grep()
 end, { desc = "Search in working dir" })
-	-- pickers.live_grep({prompt_title = "Live Search"})
+-- pickers.live_grep({prompt_title = "Live Search"})
 
 vim.keymap.set('n', '<leader><C-_>', function()
-	pickers.grep({cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) })
+	pickers.grep({ cwd = vim.fs.root(0, { "Cargo.toml", ".git" }) })
 end, { desc = "Search current package or workspace" })
 
 vim.keymap.set('n', '<leader>g', function()
@@ -845,14 +884,14 @@ bind('gqd', function()
 	local query = vim.fn.expand("<cword>")
 	pickers.live_grep({
 		search = '('
-			.. [[(providers|queries|hooks)\.]]..query..' ='
-			..'|^\\s*'..query..[[(,|: ([a-z_:,]+$|\|.*\|))]]
-			..'|Providers .* '..query
-			..')',
+				.. [[(providers|queries|hooks)\.]] .. query .. ' ='
+				.. '|^\\s*' .. query .. [[(,|: ([a-z_:,]+$|\|.*\|))]]
+				.. '|Providers .* ' .. query
+				.. ')',
 		cwd = 'compiler',
 		no_esc = true,
 		rg_opts = '--case-sensitive -g "!rustc_span/src/symbol.rs"'
-			..' --column --no-heading --line-number --color=always --max-columns=4096',
+				.. ' --column --no-heading --line-number --color=always --max-columns=4096',
 	})
 end, 'Goto rustc_query definition')
 
@@ -868,25 +907,25 @@ vim.cmd.colorscheme 'alabaster-black'
 require('mini.icons').setup {
 	-- style = 'ascii',
 }
-MiniStatusline = require'mini.statusline'
+MiniStatusline = require 'mini.statusline'
 MiniStatusline.setup {
 	content = {
 		active = function()
-			local git           = MiniStatusline.section_git({ trunc_width = 40 })
-			local diff          = MiniStatusline.section_diff({ trunc_width = 75 })
-			local diagnostics   = MiniStatusline.section_diagnostics({ trunc_width = 75 })
-			local lsp           = MiniStatusline.section_lsp({ trunc_width = 75 })
+			local git         = MiniStatusline.section_git({ trunc_width = 40 })
+			local diff        = MiniStatusline.section_diff({ trunc_width = 75 })
+			local diagnostics = MiniStatusline.section_diagnostics({ trunc_width = 75 })
+			local lsp         = MiniStatusline.section_lsp({ trunc_width = 75 })
 			-- always use relative filepath, to make it easier to notice when editing a file not in the LSP workspace
-			local filename      = '%f%m%r'
-			local fileinfo      = MiniStatusline.section_fileinfo({ trunc_width = 120 })
+			local filename    = '%f%m%r'
+			local fileinfo    = MiniStatusline.section_fileinfo({ trunc_width = 120 })
 
-			local pos = vim.fn.getcurpos()
-			local location = pos[2]..':'..pos[3]
-			local session = vim.fn.ObsessionStatus('⏵', '⏸')
+			local pos         = vim.fn.getcurpos()
+			local location    = pos[2] .. ':' .. pos[3]
+			local session     = vim.fn.ObsessionStatus('⏵', '⏸')
 
 			return MiniStatusline.combine_groups({
-				{ hl = 'Normal', strings = { filename } },
-				{ hl = 'Conceal',  strings = { git, diff, diagnostics, lsp, session } },
+				{ hl = 'Normal',  strings = { filename } },
+				{ hl = 'Conceal', strings = { git, diff, diagnostics, lsp, session } },
 				'%<', -- Mark general truncate point
 				'%=', -- End left alignment
 				{ hl = 'Conceal', strings = { fileinfo, location } },
@@ -896,19 +935,22 @@ MiniStatusline.setup {
 }
 if first_run then
 	wk = require('which-key')
-	wk.setup({preset = 'helix', delay = 150, icons = {mappings = false},
+	wk.setup({
+		preset = 'helix',
+		delay = 150,
+		icons = { mappings = false },
 		triggers = {
-			{ "<auto>", mode = "nixsotc" },
+			{ "<auto>",        mode = "nixsotc" },
 			-- { "<auto>", mode = "nxso" },
-			{ "<localleader>", mode = {'n', 'v'} },
+			{ "<localleader>", mode = { 'n', 'v' } },
 			-- override default 's' binding so we see swaps sooner
-			{ "s", mode = {'n'}},
+			{ "s",             mode = { 'n' } },
 		}
 	})
 	wk.add({
 		{ '<LocalLeader>', group = "Debugging" },
-		{ '[', group = "Previous object" },
-		{ ']', group = "Next object" },
+		{ '[',             group = "Previous object" },
+		{ ']',             group = "Next object" },
 	})
 end
 
@@ -941,28 +983,28 @@ bind('<leader>o', function() vim.cmd(".GBrowse") end, "open commit under cursor"
 
 local dap = require('dap')
 dap.adapters.cppdbg = {
-  id = 'cppdbg',
-  type = 'executable',
+	id = 'cppdbg',
+	type = 'executable',
 	-- https://github.com/mfussenegger/nvim-dap/wiki/C-C---Rust-(gdb-via--vscode-cpptools)#installation
-  command = vim.env.HOME .. '/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
+	command = vim.env.HOME .. '/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
 }
 -- TODO: get rr integration working
 -- https://github.com/farre/midas/ looks promising
 -- see also https://github.com/rr-debugger/rr/wiki/Using-rr-in-an-IDE#setting-up-visual-studio-code
 dap.configurations.cpp = {
 	-- See https://code.visualstudio.com/docs/cpp/launch-json-reference
-  {
-    name = "Launch file",
-    type = "cppdbg",
-    request = "launch",
+	{
+		name = "Launch file",
+		type = "cppdbg",
+		request = "launch",
 		program = vim.fn.getcwd() .. '/build/yottadb',
 		args = {},
-    stopAtEntry = false,
+		stopAtEntry = false,
 		cwd = vim.fn.getcwd(),
-    -- program = function()
-      -- return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
-    -- end,
-  },
+		-- program = function()
+		-- return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
+		-- end,
+	},
 }
 dap.configurations.c = dap.configurations.cpp
 dap.configurations.rust = dap.configurations.cpp
@@ -984,12 +1026,15 @@ bind('<LocalLeader>o', dap.up, 'Go up frame')
 bind('<LocalLeader>i', dap.down, 'Go down frame')
 bind('<LocalLeader>z', dap.focus_frame, 'Focus current frame')
 bind('<LocalLeader>j', dap.step_into, 'Step into')
-bind('<LocalLeader>k', dap.step_out, 'Step out')  -- i think this is what gdb calls 'finish'?
+bind('<LocalLeader>k', dap.step_out, 'Step out') -- i think this is what gdb calls 'finish'?
 bind('<LocalLeader>l', dap.step_over, 'Step over')
 bind('<LocalLeader>h', dap.step_back, 'Step backwards')
 -- K by analogy with normal hover
 bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
-bind('<LocalLeader><Esc>', function() dap.terminate() dapui.close() end, 'Kill process and stop debug session')
+bind('<LocalLeader><Esc>', function()
+	dap.terminate()
+	dapui.close()
+end, 'Kill process and stop debug session')
 -- NOTE: you can set up `display` equivalent by entering insert mode in the 'DAP Watches' panel,
 -- but this is NOT the same as a hardware watchpoint.
 -- For the latter use `-exec watch ...`
@@ -1016,8 +1061,8 @@ require('vim.lsp.log').set_format_func(vim.print)
 vim.diagnostic.config({ underline = true })
 
 -- Delete some built-in bindings that conflict.
-for _, k in ipairs({'grr', 'grn', 'grt', 'gri', 'gra', 'gcc'}) do
-	vim.cmd('silent! nunmap '..k)
+for _, k in ipairs({ 'grr', 'grn', 'grt', 'gri', 'gra', 'gcc' }) do
+	vim.cmd('silent! nunmap ' .. k)
 end
 
 vim.keymap.set('n', 'gd', '<C-]>', { desc = "Goto definition" })
@@ -1033,7 +1078,7 @@ vim.keymap.set('n', '<leader>q', pickers.quickfix, { desc = "Show quickfixes" })
 vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show workspace diagnostics (errors)" })
 vim.keymap.set('n', '<leader>D', pickers.lsp_workspace_diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
-vim.keymap.set({'n','v'}, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
+vim.keymap.set({ 'n', 'v' }, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
 
 -- only really supported by the rust LSP
 vim.keymap.set('n', 'gc', pickers.lsp_incoming_calls, { desc = "Show incoming calls" })
@@ -1052,40 +1097,42 @@ vim.api.nvim_create_autocmd("User", {
 -- use K for hover
 
 -- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
-vim.api.nvim_create_autocmd("LspAttach", { callback = function(args)
-	local bufnr = args.buf
-	local client = vim.lsp.get_client_by_id(args.data.client_id)
-	if not client then return end
-	-- Server capabilities spec:
-	-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
-	if client.server_capabilities.documentHighlightProvider then
-		vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
-		vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
-		vim.api.nvim_create_autocmd({"CursorHold", "CursorHoldI"}, {
-			callback = vim.lsp.buf.document_highlight,
-			buffer = bufnr,
-			group = "lsp_document_highlight",
-			desc = "Document Highlight",
-		})
-		vim.api.nvim_create_autocmd({"CursorMoved", "CursorMovedI"}, {
-			callback = vim.lsp.buf.clear_references,
-			buffer = bufnr,
-			group = "lsp_document_highlight",
-			desc = "Clear All the References",
-		})
+vim.api.nvim_create_autocmd("LspAttach", {
+	callback = function(args)
+		local bufnr = args.buf
+		local client = vim.lsp.get_client_by_id(args.data.client_id)
+		if not client then return end
+		-- Server capabilities spec:
+		-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
+		if client.server_capabilities.documentHighlightProvider then
+			vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
+			vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
+			vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+				callback = vim.lsp.buf.document_highlight,
+				buffer = bufnr,
+				group = "lsp_document_highlight",
+				desc = "Document Highlight",
+			})
+			vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+				callback = vim.lsp.buf.clear_references,
+				buffer = bufnr,
+				group = "lsp_document_highlight",
+				desc = "Clear All the References",
+			})
+		end
+		if client.server_capabilities.codeLensProvider then
+			vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens" })
+			-- TODO: should be CursorHold, but that causes flickering
+			-- TODO: why doesn't LspAttach work
+			-- https://github.com/neovim/neovim/issues/34965
+			vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
+				callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
+				buffer = bufnr,
+				desc = "Refresh codelens actions",
+			})
+		end
 	end
-	if client.server_capabilities.codeLensProvider then
-		vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens" })
-		-- TODO: should be CursorHold, but that causes flickering
-		-- TODO: why doesn't LspAttach work
-		-- https://github.com/neovim/neovim/issues/34965
-		vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
-			callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
-			buffer = bufnr,
-			desc = "Refresh codelens actions",
-		})
-	end
-end })
+})
 
 ---- specific LSPs ----
 
@@ -1093,7 +1140,7 @@ local lsplang = require('lspconfig.configs')
 
 lsplang.rhombus = {
 	default_config = {
-		cmd = {"racket",  "-l", "racket-langserver"},
+		cmd = { "racket", "-l", "racket-langserver" },
 		filetypes = { "rhombus" },
 		root_dir = vim.fs.dirname,
 		settings = {},
@@ -1102,12 +1149,12 @@ lsplang.rhombus = {
 
 lsplang.flix = {
 	default_config = {
-		cmd = {"flix", "lsp"},
+		cmd = { "flix", "lsp" },
 		filetypes = { "flix" },
 		root_dir = function(fname)
 			-- Search for flix.toml/flix.jar upwards recursively, with a fallback to the current directory
-			local root_dir = vim.fs.dirname(vim.fs.find({"flix.toml", "flix.jar"}, { path = fname, upward = true })[1])
-				or vim.fs.dirname(fname)
+			local root_dir = vim.fs.dirname(vim.fs.find({ "flix.toml", "flix.jar" }, { path = fname, upward = true })[1])
+					or vim.fs.dirname(fname)
 			return root_dir
 		end,
 		settings = {},
@@ -1136,16 +1183,16 @@ vim.lsp.config.perlnavigator = {
 }
 
 vim.lsp.config('oxc', {
-	cmd = {"oxc_language_server"},
+	cmd = { "oxc_language_server" },
 	root_dir = function(buf, on_dir)
-		local dir = vim.fs.root(0, { 'package.json', 'tsconfig.json' })  -- order matters
+		local dir = vim.fs.root(0, { 'package.json', 'tsconfig.json' }) -- order matters
 		if dir then on_dir(dir) end
 	end,
 })
 
 vim.lsp.config('tinymist', {
-  cmd = { "tinymist" },
-  filetypes = { "typst" },
+	cmd = { "tinymist" },
+	filetypes = { "typst" },
 })
 
 for _, lsp in ipairs {
@@ -1158,31 +1205,35 @@ end
 ---- Filetypes ----
 
 vim.filetype.add { extension = {
-	m     = 'mumps',
-	ua    = 'uiua',
-	rhm   = 'rhombus',
-	flix  = 'flix',
-	ebnf  = 'ebnf',
+	m    = 'mumps',
+	ua   = 'uiua',
+	rhm  = 'rhombus',
+	flix = 'flix',
+	ebnf = 'ebnf',
 } }
 
-vim.api.nvim_create_autocmd("FileType", { callback = function()
-	local ft = vim.bo.filetype
-	if ft == "uiua" then
-		vim.bo.commentstring = '#%s'
-	elseif ft == "rhombus" then
-		vim.bo.commentstring = '//%s'
-	elseif ft == "mumps" then
-		vim.bo.commentstring = ';%s'
-		vim.cmd('highlight! link Keyword Special')
+vim.api.nvim_create_autocmd("FileType", {
+	callback = function()
+		local ft = vim.bo.filetype
+		if ft == "uiua" then
+			vim.bo.commentstring = '#%s'
+		elseif ft == "rhombus" then
+			vim.bo.commentstring = '//%s'
+		elseif ft == "mumps" then
+			vim.bo.commentstring = ';%s'
+			vim.cmd('highlight! link Keyword Special')
+		end
 	end
-end })
+})
 
-vim.api.nvim_create_autocmd("ColorScheme", { callback = function()
-	local ft = vim.bo.filetype
-	if ft == 'mumps' then
-		vim.cmd('highlight! link Keyword Special')
+vim.api.nvim_create_autocmd("ColorScheme", {
+	callback = function()
+		local ft = vim.bo.filetype
+		if ft == 'mumps' then
+			vim.cmd('highlight! link Keyword Special')
+		end
 	end
-end })
+})
 
 vim.api.nvim_create_autocmd("FileType", {
 	pattern = "markdown",
@@ -1197,22 +1248,27 @@ vim.api.nvim_create_autocmd("FileType", {
 			v = { capture = 'variable', group = 'textobjects', no_suffix = true, },
 		})
 		-- match obsidian bindings
-		vim.keymap.set({'n', 'v'}, '<C-b>', ":Mdn formatting strong_toggle<CR>", {desc = 'Toggle bold', buffer = true })
-		vim.keymap.set({'n', 'v'}, '<C-i>', ":Mdn formatting emphasis_toggle<CR>", {desc = 'Toggle italics', buffer = true })
-		vim.keymap.set({'n', 'v'}, '<C-l>', ":Mdn formatting task_list_toggle<CR>", {desc = 'Toggle checkbox', buffer = true })
-		vim.keymap.set({'n', 'v'}, '<C-`>', ":Mdn formatting inline_code_toggle<CR>", {desc = 'Toggle inline code', buffer = true })
-		vim.keymap.set({'n', 'v'}, '<C-S-K>', ":Mdn inline_link toggle<CR>", {desc = 'Toggle link', buffer = true })
-		vim.keymap.set({'n', 'v'}, '<leader>t', ":Mdn toc generate<CR>", {desc = 'Generate table of contents', buffer = true })
-		vim.keymap.set({'n', 'v', 'i'}, '<C-S-V>', "<cmd>Mdn assets insert_image<CR>", {desc = 'Paste image', buffer = true})
-		vim.keymap.set({'n', 'v', 'i'}, '<Tab>', "<cmd>norm! >><CR>", {desc = 'Indent', buffer = true, noremap = true})
-		vim.keymap.set({'n', 'v', 'i'}, '<S-Tab>', "<cmd>norm! <<<CR>", {desc = 'Indent', buffer = true, noremap = true})
+		vim.keymap.set({ 'n', 'v' }, '<C-b>', ":Mdn formatting strong_toggle<CR>", { desc = 'Toggle bold', buffer = true })
+		vim.keymap.set({ 'n', 'v' }, '<C-i>', ":Mdn formatting emphasis_toggle<CR>",
+			{ desc = 'Toggle italics', buffer = true })
+		vim.keymap.set({ 'n', 'v' }, '<C-l>', ":Mdn formatting task_list_toggle<CR>",
+			{ desc = 'Toggle checkbox', buffer = true })
+		vim.keymap.set({ 'n', 'v' }, '<C-`>', ":Mdn formatting inline_code_toggle<CR>",
+			{ desc = 'Toggle inline code', buffer = true })
+		vim.keymap.set({ 'n', 'v' }, '<C-S-K>', ":Mdn inline_link toggle<CR>", { desc = 'Toggle link', buffer = true })
+		vim.keymap.set({ 'n', 'v' }, '<leader>t', ":Mdn toc generate<CR>",
+			{ desc = 'Generate table of contents', buffer = true })
+		vim.keymap.set({ 'n', 'v', 'i' }, '<C-S-V>', "<cmd>Mdn assets insert_image<CR>",
+			{ desc = 'Paste image', buffer = true })
+		vim.keymap.set({ 'n', 'v', 'i' }, '<Tab>', "<cmd>norm! >><CR>", { desc = 'Indent', buffer = true, noremap = true })
+		vim.keymap.set({ 'n', 'v', 'i' }, '<S-Tab>', "<cmd>norm! <<<CR>", { desc = 'Indent', buffer = true, noremap = true })
 
 		-- <C-f> to create a footnote
 
 		local snippet = '```${1:}\n${2:body}${0}\n```'
-		vim.keymap.set({'n', 'v', 'i'}, '<C-\'>', function()
+		vim.keymap.set({ 'n', 'v', 'i' }, '<C-\'>', function()
 			vim.snippet.expand(snippet)
-		end, {desc = 'Create code block', buffer = true})
+		end, { desc = 'Create code block', buffer = true })
 	end
 })
 
@@ -1221,7 +1277,7 @@ vim.lsp.config('rust_analyzer', {
 	on_attach = function(client, bufnr)
 		if bufnr > 0 then
 			vim.lsp.foldclose('imports', vim.fn.bufwinid(bufnr))
-			vim.lsp.inlay_hint.enable(true, {bufnr = bufnr})
+			vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
 		end
 	end,
 })
