@@ -1,5 +1,6 @@
 ---@diagnostic disable: lowercase-global
 ---@diagnostic disable: missing-fields
+---@diagnostic disable: unused-local
 ---
 -- skeleton comes from https://github.com/nvim-lua/kickstart.nvim/blob/5bdde24dfb353d365d908c5dd700f412ed2ffb17/init.lua
 -- use `:verbose set foo` to see where option `foo` is set
@@ -943,7 +944,7 @@ dap.adapters.cppdbg = {
   id = 'cppdbg',
   type = 'executable',
 	-- https://github.com/mfussenegger/nvim-dap/wiki/C-C---Rust-(gdb-via--vscode-cpptools)#installation
-  command = '/home/jyn/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
+  command = vim.env.HOME .. '/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
 }
 -- TODO: get rr integration working
 -- https://github.com/farre/midas/ looks promising
@@ -955,8 +956,7 @@ dap.configurations.cpp = {
     type = "cppdbg",
     request = "launch",
 		program = vim.fn.getcwd() .. '/build/yottadb',
-		args = {"-run", "naked"},
-    cwd = '${workspaceFolder}',
+		args = {},
     stopAtEntry = false,
 		cwd = vim.fn.getcwd(),
     -- program = function()
@@ -1011,7 +1011,7 @@ dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
 
-require('vim.lsp.log').set_format_func(vim.inspect)
+require('vim.lsp.log').set_format_func(vim.print)
 vim.diagnostic.config({ underline = true })
 
 -- Delete some built-in bindings that conflict.
