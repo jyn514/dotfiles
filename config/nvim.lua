@@ -1056,8 +1056,14 @@ dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
 
--- TODO: https://github.com/kikito/inspect.lua ?
-require('vim.lsp.log').set_format_func(vim.print)
+-- https://snippets.bentasker.co.uk/posts/lua/trim-whitespace-from-end-of-string.html
+function rtrim(s)
+  return s:match'^(.*%S)%s*$'
+end
+require('vim.lsp.log').set_format_func(function(val)
+	if type(val) == "string" then return rtrim(val) end
+	return vim.inspect(val)
+end)
 vim.diagnostic.config({ underline = true })
 
 -- Delete some built-in bindings that conflict.
