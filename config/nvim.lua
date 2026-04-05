@@ -421,7 +421,14 @@ if first_run then
 			ft = "markdown",
 			opts = {
 				auto_list_renumber = false,
-				assets_path = "media",
+			},
+		},
+		{
+			"HakonHarnes/img-clip.nvim",
+			event = "VeryLazy",
+			keys = {
+				{ "<leader>p", "<cmd>PasteImage<cr>", desc = "Paste image from system clipboard" },
+				{ "<C-S-V>", "<cmd>PasteImage<cr>", mode = "i", desc = "Paste image from system clipboard" },
 			},
 		},
 		{
@@ -1264,8 +1271,6 @@ vim.api.nvim_create_autocmd("FileType", {
 		vim.keymap.set({ 'n', 'v' }, '<C-S-K>', ":Mdn inline_link toggle<CR>", { desc = 'Toggle link', buffer = true })
 		vim.keymap.set({ 'n', 'v' }, '<leader>t', ":Mdn toc generate<CR>",
 			{ desc = 'Generate table of contents', buffer = true })
-		vim.keymap.set({ 'n', 'v', 'i' }, '<C-S-V>', "<cmd>Mdn assets insert_image<CR>",
-			{ desc = 'Paste image', buffer = true })
 		vim.keymap.set({ 'n', 'v', 'i' }, '<Tab>', "<cmd>norm! >><CR>", { desc = 'Indent', buffer = true, noremap = true })
 		vim.keymap.set({ 'n', 'v', 'i' }, '<S-Tab>', "<cmd>norm! <<<CR>", { desc = 'Indent', buffer = true, noremap = true })
 
