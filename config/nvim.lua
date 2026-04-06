@@ -1206,6 +1206,11 @@ vim.lsp.config('oxc', {
 vim.lsp.config('tinymist', {
 	cmd = { "tinymist" },
 	filetypes = { "typst" },
+	settings = {
+		formatterMode = "typstfmt",
+		exportPdf = "onSave",
+		lint = { enabled = true },
+	}
 })
 
 for _, lsp in ipairs {
