@@ -53,4 +53,9 @@ export OTWUSERDIR=/d/SERPjdbrX3w3tsyXQQt0
 # git treats `diff.external` extremely poorly; there's no way to unset it temporarily because `-c diff.external` tries to run an empty program.
 # instead, set this through an external env variable so we can unset it with `env -u`.
 # difft is super buggy though :( ignoring it for now
-export GIT_EXTERNAL_DIFF=difft
+# some problems:
+# 1. side-by-side view doesn't respond to SIGWINCH
+# 2. unified view just misses some lines (??)
+# 3. "semantic" diff is quite useless on text files and will show the whole file rather than
+# falling back to line-by-line.
+#export GIT_EXTERNAL_DIFF=difft
