@@ -241,7 +241,7 @@ setup_basics () {
 	for f in "$(realpath config)"/*; do
 		base=$(basename "$f")
 		case $base in
-    	jj.toml) DEST=$(jj config path --user || echo "$HOME/.config/jj/config.toml");;
+			jj.toml) DEST=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml");;
 			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
 			*) while IFS="=" read local home; do
 					if [ "$local" = "$base" ]; then
