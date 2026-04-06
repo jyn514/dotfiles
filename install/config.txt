@@ -37,3 +37,4 @@ z.fish=.config/fish/completions/__zoxide_z.fish
 XCompose=.XCompose
 key_bindings.ron=.config/gitui/key_bindings.ron
 containers.conf=.config/containers/containers.conf
+cargo.toml=.local/lib/cargo/config.toml

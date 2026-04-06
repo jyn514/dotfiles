@@ -1,0 +1,2 @@
+[registry]
+global-credential-providers = ["cargo:libsecret", "cargo:macos-keychain", "cargo:wincred"]
