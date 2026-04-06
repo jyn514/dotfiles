@@ -292,6 +292,10 @@ setup_basics () {
 		dconf load / < lib/gnome-keybindings.ini
 	fi
 
+	if exists batcat; then
+		cmd_alias bat batcat
+	fi
+
 	if exists bat; then
 		mkdir -p "$(bat --config-dir)/syntaxes"
 		(

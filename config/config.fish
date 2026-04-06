@@ -13,8 +13,24 @@ umask 077
 
 set DOTFILES (dirname (dirname (realpath ~/.profile)))
 
-function add_path
-	fish_add_path --global --move --prepend $argv
+# fish 3 doesn't support most `abbr` and `complete` arguments :/
+if string match -q "3.*" $FISH_VERSION
+	echo "ignoring abbr/complete on fish 3"
+	export old_fish=1
+end
+
+if [ -n "$old_fish" ]
+  function abbr
+  end
+  #function complete
+  #end
+  function add_path
+	set PATH "$argv:$PATH"
+  end
+else
+	function add_path
+		fish_add_path --global --move --prepend $argv
+	end
 end
 
 function add_path_if_present
@@ -33,6 +49,12 @@ end
 
 . $DOTFILES/lib/env.sh
 . $DOTFILES/lib/paths.sh
+
+# compat for old `bat` versions
+if string match --quiet --regex "0\.1[0-9]\." (bat --version)
+	echo "ignoring 'rule' for old bat versions"
+	export BAT_STYLE=changes,header
+end
 
 if exists nvim
 	export EDITOR=editor-hax
@@ -54,7 +76,7 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 end
 
 if [ -z "$SSH_TTY" ]
-	if [ "$(uname)" = Darwin ]
+	if [ "(uname)" = Darwin ]
 		export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 	else
 		export SSH_AUTH_SOCK=$HOME/.1password/agent.sock
@@ -90,7 +112,7 @@ function get_fzf_selection
 	for key in enter tab ctrl-o ctrl-y ctrl-l
 		set -a bindings "$key:replace-query+print($key)+accept-or-print-query"
 	end
-	fzf --bind "$(string join , $bindings)" $argv
+	fzf --bind "(string join , $bindings)" $argv
 end
 
 function fzf_action
@@ -137,12 +159,14 @@ grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read --line alias
 end
 
 # load git aliases
+if [ -z "$old_fish" ]
 git config --get-regexp 'alias\.' | string replace --regex '^alias.' '' | while read --delimiter ' ' name value
-	if set actual $(string match --groups-only --regex '^!(.*)' -- $value)
+	if set actual (string match --groups-only --regex '^!(.*)' -- $value)
 		abbr --add --global "g$name" -- "$actual"
 	else
 		abbr --add --global --command git $name -- $value
 	end
+end
 end
 
 abbr --add --global --command git -- -nv --no-verify
@@ -150,8 +174,8 @@ abbr --add --global --command git -- -nv --no-verify
 function reload_cargo_aliases
 	for line in (cargo --list | tail -n+2)
 		echo $line | read -l name value
-		set value $(string trim $value)
-		if set expansion $(string match --groups-only --regex '^alias: (.*)' -- $value)
+		set value (string trim $value)
+		if set expansion (string match --groups-only --regex '^alias: (.*)' -- $value)
 			echo "abbr --add --command cargo $name -- $expansion"
 			set cmd expansion
 		else
@@ -163,7 +187,7 @@ function reload_cargo_aliases
 end
 
 # load cargo aliases
-if ! [ -e ~/.local/config/cargo.fish ]
+if [ -z "$old_fish" ] && ! [ -e ~/.local/config/cargo.fish ]
 	reload_cargo_aliases > ~/.local/config/cargo.fish
 end
 
@@ -316,10 +340,10 @@ end
 function fish_right_prompt
 	set -l width 0
 
-	if [ "$duration" -gt 9 ]
+	if [ -z "$old_fish" ] && [ "$duration" -gt 9 ]
 		set_color white --dim
-		set -l minp $(printf "%.2g" $(math $duration/1000))
-		set -l maxp $(printf "+%.4ss" $minp)
+		set -l minp (printf "%.2g" (math $duration/1000))
+		set -l maxp (printf "+%.4ss" $minp)
 		set s $maxp
 		set width (string length --visible $s)
 	end
@@ -328,7 +352,7 @@ function fish_right_prompt
 	if ! [ "$t" = "$time" ]
 		set time $t
 		printf "\e[2;37m%s" $t
-	else if [ $width -gt 0 ]
+	else if [ "$width" -gt 0 ]
 		string repeat -n $width ' '
 		printf '%s' $s
 	end
@@ -344,19 +368,21 @@ function fish_command_not_found
 	end
 end
 
-atuin init fish --disable-up-arrow | source
-bind -M default / _atuin_search
+if [ -z "$old_fish" ]
+	atuin init fish --disable-up-arrow | source
+	bind -M default / _atuin_search
 
-zoxide init fish | source
-function cd; z $argv; end
-complete --erase cd
-complete cd --wraps __zoxide_z
+	zoxide init fish | source
+	function cd; z $argv; end
+	complete --erase cd
+	complete cd --wraps __zoxide_z
+	nvm use --silent lts
+
+end
 
 if exists direnv
 	direnv hook fish | source
 end
-
-nvm use --silent lts
 
 stty -ixon
 
