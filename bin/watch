@@ -17,7 +17,7 @@ get() {
 }
 
 interval=2
-shell=sh
+shell=${SHELL:-sh}
 
 [ $# = 0 ] && usage
 
