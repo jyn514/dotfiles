@@ -9,8 +9,9 @@ diff-editor = ":builtin"
 merge-editor = "meld"
 
 [revsets]
+bookmark-advance-to = '@-'
 # i use a bunch of emails; easier to just track author name
-log = "@ | trunk()..author(substring:\"jyn\") | trunk()"
+log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
 
 [revset-aliases]
 'trunk' = 'trunk()'
@@ -22,6 +23,7 @@ name = "jyn"
 email = "github@jyn.dev"
 
 [aliases]
+# abbreviations
 h = ["help"]
 c = ["commit"]
 n = ["new"]
@@ -31,12 +33,19 @@ d = ["diff"]
 s = ["status"]
 r = ["rebase"]
 sh = ["show"]
-push = ["git", "push"]
 p = ["push"]
-fetch = ["git", "fetch"]
 f = ["fetch"]
-branch-log = ["log", "--revisions", "trunk()..@"]
+g = ["git"]
+
+# aliases
 amend = ["squash"]
+remote = ["git", "remote"]
+push = ["git", "push"]
+fetch = ["git", "fetch"]
+tug = ["bookmark", "advance"]
+
+# new commands
+branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
 
 [templates]
