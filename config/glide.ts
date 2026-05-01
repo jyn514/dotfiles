@@ -60,6 +60,7 @@ async function disable_shortcuts() {
 const disabled_sites = [
   "configure.zsa.io",
   "linear.app",
+  "kumo.io",
 ];
 
 for (const hostname of disabled_sites) {
