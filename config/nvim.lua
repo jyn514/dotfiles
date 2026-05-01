@@ -334,6 +334,11 @@ abbrev('j', 'EditDailyJournal')
 
 ---- Plugins ----
 
+vim.g['conjure#log#hud#ignore_low_priority'] = true
+vim.g['conjure#log#hud#enabled'] = false
+vim.g['conjure#mapping#doc_word'] = '<localleader>d'
+vim.g['conjure#client#clojure#nrepl#connection#auto_repl#cmd'] = 'clojure -M:nrepl'
+
 -- Bootstrap lazy.nvim
 if first_run then
 	local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
@@ -384,7 +389,8 @@ if first_run then
 		{ "rcarriga/nvim-dap-ui",      dependencies = { "nvim-neotest/nvim-nio" } },
 		{
 			"saghen/blink.cmp",
-			dependencies = { "rafamadriz/friendly-snippets" }
+			dependencies = { "rafamadriz/friendly-snippets" },
+			version = "^1",
 		},
 		{
 			'nvim-treesitter/nvim-treesitter',
@@ -399,7 +405,7 @@ if first_run then
 			"folke/snacks.nvim",
 			priority = 1000,
 			opts = {
-				image = { enabled = true, }
+				image = { enabled = false, }
 			}
 		},
 		{ 'brenoprata10/nvim-highlight-colors', opts = {} },
@@ -440,6 +446,17 @@ if first_run then
 				repl_enable = { "Clojure_fifo" },
 			}
 		},
+		{
+			"chomosuke/typst-preview.nvim",
+			ft = 'typst',
+			version = '~1.4',
+			opts = {
+				-- debug = true,
+				-- dependencies_bin = {tinymist = 'tinymist'},
+			},
+		},
+		'Olical/conjure'
+
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
@@ -1249,6 +1266,15 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 		local ft = vim.bo.filetype
 		if ft == 'mumps' then
 			vim.cmd('highlight! link Keyword Special')
+		end
+	end
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = "typst",
+	callback = function(opts)
+		if string.match(opts.file, "main.typ$") then
+			vim.cmd.TypstPreview("slide")
 		end
 	end
 })
