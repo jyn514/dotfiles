@@ -15,12 +15,14 @@ log = "@ | trunk()..author(substring:\"jyn\") | trunk()"
 [revset-aliases]
 'trunk' = 'trunk()'
 '0' = 'trunk()'
+'working' = 'heads(@- | tags() | bookmarks() | remote_bookmarks()) & author(substring-i:"jyn")'
 
 [user]
 name = "jyn"
 email = "github@jyn.dev"
 
 [aliases]
+h = ["help"]
 c = ["commit"]
 n = ["new"]
 e = ["edit"]
@@ -35,10 +37,12 @@ fetch = ["git", "fetch"]
 f = ["fetch"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 amend = ["squash"]
+recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
 
 [templates]
 git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
 [template-aliases]
+'recent' = 'committer.timestamp().ago() ++ ": " ++ bookmarks ++ " | " ++ description.first_line() ++ "\n"'
 'format_short_signature(signature)' = 'label("username", signature.name())'
 'format_timestamp(timestamp)' = 'timestamp.ago()'
 
