@@ -36,6 +36,7 @@ sh = ["show"]
 p = ["push"]
 f = ["fetch"]
 g = ["git"]
+pub = ["publish"]
 
 # aliases
 amend = ["squash"]
@@ -43,6 +44,7 @@ remote = ["git", "remote"]
 push = ["git", "push"]
 fetch = ["git", "fetch"]
 tug = ["bookmark", "advance"]
+publish = ["util", "exec", "bash", "--", "-c", "jj tug && jj push"]
 
 # new commands
 branch-log = ["log", "--revisions", "trunk()..@"]
@@ -50,6 +52,7 @@ recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--templa
 
 [templates]
 git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
+workspace_list = 'name ++ " " ++ root++"\n"'
 [template-aliases]
 'recent' = 'committer.timestamp().ago() ++ ": " ++ bookmarks ++ " | " ++ description.first_line() ++ "\n"'
 'format_short_signature(signature)' = 'label("username", signature.name())'
