@@ -187,11 +187,12 @@ function reload_cargo_aliases
 end
 
 # load cargo aliases
-if [ -z "$old_fish" ] && ! [ -e ~/.local/config/cargo.fish ]
-	reload_cargo_aliases > ~/.local/config/cargo.fish
+if [ -z "$old_fish" ]
+  if ! [ -e ~/.local/config/cargo.fish ]
+    reload_cargo_aliases > ~/.local/config/cargo.fish
+  end
+  . ~/.local/config/cargo.fish
 end
-
-. ~/.local/config/cargo.fish
 
 function cat; bat -p $argv; end
 function fork-github
