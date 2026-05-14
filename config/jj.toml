@@ -40,13 +40,16 @@ pub = ["publish"]
 
 # aliases
 amend = ["squash"]
+branch = ["bookmark"]
+worktree = ["workspace"]
 remote = ["git", "remote"]
 push = ["git", "push"]
 fetch = ["git", "fetch"]
 tug = ["bookmark", "advance"]
-publish = ["util", "exec", "bash", "--", "-c", "jj tug && jj push"]
 
 # new commands
+publish = ["util", "exec", "bash", "--", "-c", "jj tug && jj push"]
+new-branch = ["bookmark", "create", "-r=@-"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
 
