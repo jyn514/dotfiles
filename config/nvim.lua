@@ -200,10 +200,11 @@ vim.keymap.set({ 'n', 'v' }, 'gl', '$', { desc = "Go to line end" })
 
 -- for flower
 vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
-vim.keymap.set('i', '\\f', '◊', { desc = "Lozenge" })
+vim.keymap.set('i', '\\l', '◊', { desc = "Lozenge" })
 vim.keymap.set('i', '\\p', '⚘', { desc = "Petal" })
 vim.keymap.set('i', '\\j', '«', { desc = "Sunflower open quote" })
 vim.keymap.set('i', '\\k', '»', { desc = "Sunflower close quote" })
+vim.keymap.set('i', '\\f', '⚘', { desc = "Floret" })
 
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
@@ -331,6 +332,7 @@ abbrev('health', 'checkhealth')
 abbrev('lsp', 'LspInfo')
 abbrev('tt', 'TrimWhitespace')
 abbrev('j', 'EditDailyJournal')
+abbrev('jj', 'JJDiffConflicts')
 
 ---- Plugins ----
 
@@ -455,8 +457,8 @@ if first_run then
 				-- dependencies_bin = {tinymist = 'tinymist'},
 			},
 		},
-		'Olical/conjure'
-
+		'Olical/conjure',
+		'rafikdraoui/jj-diffconflicts',
 		--https://github.com/smoka7/hop.nvim  -- random access within file
 
 		-- not going to bother setting this up until
@@ -1302,8 +1304,8 @@ vim.api.nvim_create_autocmd("FileType", {
 		vim.keymap.set({ 'n', 'v' }, '<C-S-K>', ":Mdn inline_link toggle<CR>", { desc = 'Toggle link', buffer = true })
 		vim.keymap.set({ 'n', 'v' }, '<leader>t', ":Mdn toc generate<CR>",
 			{ desc = 'Generate table of contents', buffer = true })
-		vim.keymap.set({ 'n', 'v', 'i' }, '<Tab>', "<cmd>norm! >><CR>", { desc = 'Indent', buffer = true, noremap = true })
-		vim.keymap.set({ 'n', 'v', 'i' }, '<S-Tab>', "<cmd>norm! <<<CR>", { desc = 'Indent', buffer = true, noremap = true })
+		vim.keymap.set({ 'n', 'v' }, '<Tab>', "<cmd>norm! >><CR>", { desc = 'Indent', buffer = true, noremap = true })
+		vim.keymap.set({ 'n', 'v' }, '<S-Tab>', "<cmd>norm! <<<CR>", { desc = 'Indent', buffer = true, noremap = true })
 
 		-- <C-f> to create a footnote
 

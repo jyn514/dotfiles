@@ -3,7 +3,7 @@
 .ipynb_checkpoints/
 __pycache__
 Session.vim
-.session.vim
+.session.vim*
 tmp
 temp
 node_modules/
@@ -26,10 +26,13 @@ target/
 .ninja_lock
 .soupault_cache
 .cpcache/
-.clj-kondo
+.clj-kondo/imports/
 .tup
 .lsp
 /.gdbinit
 .rebel_readline_history
+.nrepl-port
+.DS_Store
+.nvimlog
 
 **/.claude/settings.local.json

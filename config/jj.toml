@@ -8,6 +8,14 @@ diff-formatter=["delta", "$left", "$right"]
 diff-editor = ":builtin"
 merge-editor = "meld"
 
+[merge-tools.diffconflicts]
+program = "nvim"
+merge-args = [
+    "-c", "let g:jj_diffconflicts_marker_length=$marker_length",
+    "-c", "JJDiffConflicts!", "$output", "$base", "$left", "$right",
+]
+
+merge-tool-edits-conflict-markers = true
 [revsets]
 bookmark-advance-to = '@-'
 # i use a bunch of emails; easier to just track author name
@@ -46,9 +54,10 @@ remote = ["git", "remote"]
 push = ["git", "push"]
 fetch = ["git", "fetch"]
 tug = ["bookmark", "advance"]
+init = ["git", "init"]
 
 # new commands
-publish = ["util", "exec", "bash", "--", "-c", "jj tug && jj push"]
+publish = ["util", "exec", "bash", "--", "-c", "git hook run pre-push --ignore-missing && jj tug && jj push"]
 new-branch = ["bookmark", "create", "-r=@-"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
