@@ -104,6 +104,9 @@ prompt_command() {
 	shell=$1
 	last_status=$2
 
+	# look don't worry about it
+	export ZSH_VERSION
+
 	printf %s "$FAINT_WHITE($(basename -- "$shell")"
 	printf "@"; hostname | tr -d '\n'
 	[ -n "$SSH_TTY" ] && printf '%s[ssh]' "${RED}"
