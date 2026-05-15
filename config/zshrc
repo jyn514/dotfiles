@@ -28,6 +28,10 @@ if [ -z $DOTFILES ]; then
   emulate zsh
 fi
 
+case "$-" in
+  *i*) ;;
+  *)	return 0;;
+esac
 
 ABBR_AUTOLOAD=0
 RPS1="%F{240}loading%f"

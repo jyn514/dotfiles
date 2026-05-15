@@ -126,9 +126,6 @@ HEAD() {
 
 mkcd () { mkdir -p "$@" && cd "$1"; }
 
-# follow symlinks by default
-rg () { command rg -z -L --no-heading "$@"; }
-
 whatismyip() {
 	# https://unix.stackexchange.com/a/194136
 	dig +short myip.opendns.com @resolver4.opendns.com
