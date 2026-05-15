@@ -45,6 +45,11 @@ FAINT_WHITE="$(ansi_escape "\033[2;37m")"
 ## git handling
 
 git_info() {
+	# Display probe only: never take optional locks (e.g. git status writing
+	# index.lock), so rendering the prompt can't fight a real git command.
+	# Scoped here, not exported globally: git_info only ever runs in the
+	# `git_info | ...` pipe subshell, so this stays out of the interactive shell.
+	export GIT_OPTIONAL_LOCKS=0
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
 		if [ -e .jj ]; then timeout .1 jj-info; fi
