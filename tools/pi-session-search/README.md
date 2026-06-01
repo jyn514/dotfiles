@@ -34,24 +34,33 @@ That's it. No API keys, no extra services.
 
 ## Installation
 
-### Option A — clone into your pi extensions directory
+### Option A — install from npm (recommended)
+
+```bash
+pi install npm:@adobe/pi-session-search
+```
+
+Then `/reload` in pi (or restart). The tools and command will appear. Update
+later with `pi update npm:@adobe/pi-session-search`.
+
+### Option B — clone into your pi extensions directory
 
 ```bash
 mkdir -p ~/.pi/agent/extensions
 cd ~/.pi/agent/extensions
-git clone https://github.com/<your-fork>/pi-session-search.git
+git clone https://github.com/adobe/pi-session-search.git
 ```
 
-Then `/reload` in pi (or restart). The tools and command will appear.
+Then `/reload` in pi (or restart).
 
-### Option B — symlink from anywhere
+### Option C — symlink from anywhere
 
 ```bash
-git clone https://github.com/<your-fork>/pi-session-search.git ~/code/pi-session-search
+git clone https://github.com/adobe/pi-session-search.git ~/code/pi-session-search
 ln -s ~/code/pi-session-search ~/.pi/agent/extensions/pi-session-search
 ```
 
-### Option C — one-off
+### Option D — one-off
 
 ```bash
 pi -e ~/code/pi-session-search/index.ts

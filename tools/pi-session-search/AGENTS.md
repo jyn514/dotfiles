@@ -25,6 +25,27 @@ npm run typecheck  # tsc --noEmit against tsconfig.check.json
 
 `npm test` must stay green on every PR. Don't merge red.
 
+## Packaging & runtime (read before touching `engines` or the loader)
+
+- pi loads `.ts` extensions through its bundled TypeScript loader
+  (`@mariozechner/jiti`), **not** Node's native `--experimental-strip-types`.
+  So the published package's `engines.node` must mirror the host CLI
+  (`@mariozechner/pi-coding-agent`, currently `>=20.6.0`), **not** the Node
+  version the `npm test` script happens to need. Do not bump `engines.node`
+  to 22.x just because the test script passes `--experimental-strip-types`;
+  that flag is a dev/test-only concern and is irrelevant to how the shipped
+  extension is loaded at runtime.
+- pi has first-class npm support: `pi install npm:@adobe/pi-session-search`
+  is the primary install path. Keep the published tarball loadable as-is
+  (no build step) — ship the `.ts` sources, not compiled JS.
+- The `files` whitelist in `package.json` is what ends up in the npm tarball.
+  If you add a runtime file the extension needs, add it to `files` too, or it
+  won't ship. Verify with `npm pack --dry-run` before publishing.
+- General lesson worth keeping: don't assert a dependency's internal
+  mechanism (loader, engine requirement, transport) without checking its
+  actual code/manifest first. This note exists because that check was once
+  skipped.
+
 ## Code style
 
 - TypeScript, `strict: true`. No `any` without a written justification

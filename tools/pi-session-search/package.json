@@ -1,9 +1,42 @@
 {
-  "name": "pi-session-search",
+  "name": "@adobe/pi-session-search",
   "version": "0.1.0",
   "description": "A pi-coding-agent extension that lets the LLM (and you) search prior pi sessions on disk without resuming them.",
-  "private": true,
   "license": "Apache-2.0",
+  "author": "Adobe Inc.",
+  "type": "module",
+  "homepage": "https://github.com/adobe/pi-session-search#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adobe/pi-session-search.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adobe/pi-session-search/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-extension",
+    "llm",
+    "session-history",
+    "search",
+    "adobe"
+  ],
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.ts",
+    "LICENSE",
+    "COPYRIGHT",
+    "README.md",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md"
+  ],
   "pi": {
     "extensions": ["./index.ts"]
   },
