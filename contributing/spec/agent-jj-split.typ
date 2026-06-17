@@ -22,9 +22,8 @@ It wraps the existing diff-editor protocol with a deterministic tool.
 A diff-editor shim applies that patch to Jujutsu's left tree and replaces Jujutsu's right tree with the result.
 Jujutsu then performs the split exactly as if a human had edited the right side by hand.]
 
-#status[design only.
-No implementation is defined in this repository yet.
-The intended implementation is a small executable plus workflow documentation for agents.]
+#status[implemented as the repository-supported `jj-agent-split-editor` executable.
+Higher-level workflow documentation for agents is still expected to live outside this low-level diff-editor shim.]
 
 = Problem <agent-jj-split-problem>
 
