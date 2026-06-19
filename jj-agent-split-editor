@@ -15,6 +15,7 @@
   (let [result (apply process/shell
                       (merge {:out :string
                               :err :string
+                              :shutdown nil
                               :continue true}
                              (when (map? (first args))
                                (first args)))
@@ -37,6 +38,7 @@
   (let [result (apply process/shell
                       {:out :string
                        :err :string
+                       :shutdown nil
                        :continue true}
                       (diff-command left right))]
     (when-not (#{0 1} (:exit result))
@@ -152,6 +154,7 @@
   (let [check (process/shell {:dir (str tree)
                               :out :string
                               :err :string
+                              :shutdown nil
                               :continue true}
                              "git" "apply" "--check" (str patch))]
     (when-not (zero? (:exit check))
