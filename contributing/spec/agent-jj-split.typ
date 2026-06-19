@@ -282,7 +282,8 @@ There is no blessed predictable path.]
 
 #rationale[A fixed predictable path is the same artifact across successive splits, so a stale patch from an earlier split can be silently reused.
 An explicit per-invocation environment variable makes the patch's identity and lifetime obvious and forces the caller to name a fresh artifact each time.
-Debuggability is preserved because the path is a real file the workflow can show before and after the split (@agent-jj-split-validation); it just is not a constant.]
+Debuggability is preserved because the path is a real file the workflow can show before and after the split (@agent-jj-split-validation);
+it just is not a constant.]
 
 #requirement[The shim does not accept a patch on stdin.
 The selected patch is always a file referenced by `JJ_AGENT_SPLIT_PATCH`.]
@@ -293,7 +294,8 @@ Requiring a file keeps the patch re-readable for the entire workflow.]
 
 #requirement[The repository provides a blessed `bb jj-split-patch` wrapper on top of the diff-editor shim.
 The wrapper validates the patch (clean apply against the left tree and containment in `diff(left, right)`), checks that no workflow artifacts are visible to the working-copy snapshot, invokes `jj split --tool agent-split -m ...`, and verifies both resulting commits.
-The lower-level `jj-agent-split-editor` shim remains the primitive the wrapper drives; callers may still invoke the shim directly for one-shot use.]
+The lower-level `jj-agent-split-editor` shim remains the primitive the wrapper drives;
+callers may still invoke the shim directly for one-shot use.]
 
 #rationale[The validation and verification steps in @agent-jj-split-workflow and @agent-jj-split-validation are mechanical and easy to skip under time pressure.
 Folding them into one command removes the most likely agent mistakes — forgetting containment validation, leaking the patch file into the snapshot, or skipping the post-split diff comparison — while leaving the shim usable on its own.]
