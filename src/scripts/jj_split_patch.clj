@@ -262,11 +262,14 @@
        :selected-index selected-index})))
 
 (defn- script-root []
-  (-> (or *file* "src/scripts/jj_split_patch.clj")
+  (-> (if (and (not-empty *file*)
+               (fs/regular-file? *file*))
+        *file*
+        "src/scripts/jj_split_patch.clj")
+      fs/canonicalize
       fs/parent
       fs/parent
-      fs/parent
-      fs/canonicalize))
+      fs/parent))
 
 (defn- split-tool-config [editor]
   [(str "merge-tools.agent-split.program=\"" editor "\"")
