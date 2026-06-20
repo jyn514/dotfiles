@@ -4,7 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]))
 
-(def script "./jj-agent-split-editor")
+(def script "src/scripts/jj-agent-split-editor")
 
 (defn- write-file! [path content]
   (fs/create-dirs (fs/parent path))

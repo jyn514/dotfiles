@@ -276,7 +276,7 @@
    "merge-tools.agent-split.edit-args=[\"$left\",\"$right\"]"])
 
 (defn- run-split! [patch message revision]
-  (let [editor (str (fs/file (script-root) "jj-agent-split-editor"))
+  (let [editor (str (fs/file (script-root) "src" "scripts" "jj-agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
         result (process/shell {:out :string
                                :err :string
