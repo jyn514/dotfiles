@@ -25,18 +25,6 @@
                          (str "\n" (:err result))))))
     result))
 
-(defn- run-allowing-diff
-  [& args]
-  (let [result (apply process/shell
-                      {:out :string
-                       :err :string
-                       :shutdown nil
-                       :continue true}
-                      args)]
-    (when-not (#{0 1} (:exit result))
-      (fail! "preflight" (str "could not diff temporary trees\n" (:err result))))
-    (:out result)))
-
 (defn- usage! []
   (fail! "usage" "bb jj-split-patch <patch-file> -m <message> [revision]"))
 
@@ -92,6 +80,9 @@
 (defn- normalize-abs [path]
   (.normalize (.toAbsolutePath (fs/path path))))
 
+(defn- git-tool-dir []
+  (System/getProperty "java.io.tmpdir"))
+
 (defn- path-inside? [root path]
   (let [root (normalize-abs root)
         path (normalize-abs path)
@@ -99,12 +90,28 @@
     (and (str/starts-with? (str path) root-prefix)
          (not= root path))))
 
-(defn- check-snapshot-safety! [repo-root patch helper-root]
+(defn- artifact-path? [artifact-root path]
+  (path-inside? artifact-root path))
+
+(defn- check-artifact-root-ignored! [repo-root]
+  (let [probe "target/jj-split/.jj-split-ignore-probe"
+        result (process/shell {:dir repo-root
+                               :out :string
+                               :err :string
+                               :shutdown nil
+                               :continue true}
+                              "git" "check-ignore" "-q" probe)]
+    (when-not (zero? (:exit result))
+      (fail! "snapshot safety"
+             "target/jj-split is not ignored by version control"))))
+
+(defn- check-snapshot-safety! [repo-root artifact-root patch helper-root]
   (doseq [[label path] {"patch file" patch
                         "helper artifact" helper-root}]
-    (when (path-inside? repo-root path)
+    (when (and (path-inside? repo-root path)
+               (not (artifact-path? artifact-root path)))
       (fail! "snapshot safety"
-             (str label " is inside the Jujutsu workspace: " path)))))
+             (str label " is inside the Jujutsu workspace outside target/jj-split: " path)))))
 
 (defn- tree-entry-index [revision]
   (let [template "path ++ \"\\t\" ++ file_type ++ \"\\t\" ++ executable ++ \"\\n\""
@@ -146,26 +153,48 @@
         (fail! "preflight" (str "unsupported tree entry for " path ": " type))))))
 
 (defn- apply-patch! [tree patch]
-  (let [check (process/shell {:dir (str tree)
+  (let [directory (str "--directory=" tree)
+        check (process/shell {:dir (git-tool-dir)
                               :out :string
                               :err :string
                               :shutdown nil
                               :continue true}
-                             "git" "apply" "--check" (str patch))]
+                             "git" "apply" "--unsafe-paths" "--check"
+                             directory
+                             (str patch))]
     (when-not (zero? (:exit check))
-      (fail! "preflight" (str "patch dry-run failed\n" (:err check)))))
-  (run "preflight" {:dir (str tree)} "git" "apply" (str patch)))
+      (fail! "preflight" (str "patch dry-run failed\n" (:err check))))
+    (run "preflight" {:dir (git-tool-dir)}
+         "git" "apply" "--unsafe-paths" directory (str patch))))
 
 (defn- diff-output [left right]
-  (run-allowing-diff "git" "diff" "--no-index" "--binary" "--no-renames"
-                     "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right)))
+  (let [result (process/shell {:dir (git-tool-dir)
+                               :out :string
+                               :err :string
+                               :shutdown nil
+                               :continue true}
+                              "git" "diff" "--no-index" "--binary" "--no-renames"
+                              "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right))]
+    (when-not (#{0 1} (:exit result))
+      (fail! "preflight" (str "could not diff temporary trees\n" (:err result))))
+    (:out result)))
+
+(defn- diff-path-prefixes [path]
+  (let [absolute (normalize-abs path)
+        relative (try
+                   (fs/relativize (fs/cwd) absolute)
+                   (catch Exception _ nil))]
+    (->> [(str/replace (str absolute) #"^/" "")
+          (some-> relative str)]
+         (remove str/blank?)
+         (map #(str % "/")))))
 
 (defn- normalize-diff-paths [diff-text left right]
-  (let [left-prefix (str (str/replace (str (normalize-abs left)) #"^/" "") "/")
-        right-prefix (str (str/replace (str (normalize-abs right)) #"^/" "") "/")]
-    (-> diff-text
-        (str/replace left-prefix "")
-        (str/replace right-prefix ""))))
+  (reduce (fn [text prefix]
+            (str/replace text prefix ""))
+          diff-text
+          (concat (diff-path-prefixes left)
+                  (diff-path-prefixes right))))
 
 (defn- current-file [line]
   (some-> (split-diff-paths line) second))
@@ -324,11 +353,15 @@
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
                      (fail! "preflight" (str "patch file does not exist: " patch)))
-        helper-root (fs/create-temp-dir {:prefix "jj-split-patch"})
-        repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "root")))]
+        repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "root")))
+        artifact-root (fs/file repo-root "target" "jj-split")
+        _ (fs/create-dirs artifact-root)
+        helper-root (fs/create-temp-dir {:dir artifact-root
+                                         :prefix "jj-split-patch"})]
     (try
+      (check-artifact-root-ignored! repo-root)
       (let [preflight (preflight! patch patch-text revision helper-root)]
-        (check-snapshot-safety! repo-root patch helper-root)
+        (check-snapshot-safety! repo-root artifact-root patch helper-root)
         (->> (run-split! patch message revision)
              split-output-revisions
              (verify! preflight))

@@ -41,6 +41,7 @@
   (let [init-result (run repo "jj" "git" "init" "--colocate")]
     (when-not (zero? (:exit init-result))
       (shell! repo "jj" "git" "init")))
+  (write-file! (fs/file repo ".gitignore") "target/\n")
   (write-file! (fs/file repo "note.txt")
                (str "one\n"
                     "two\n"
@@ -52,7 +53,7 @@
                     "eight\n"
                     "nine\n"
                     "ten\n"))
-  (run repo "jj" "file" "track" "note.txt")
+  (run repo "jj" "file" "track" ".gitignore" "note.txt")
   (shell! repo "jj" "commit" "-m" "base")
   (write-file! (fs/file repo "note.txt")
                (str "one\n"
@@ -121,6 +122,16 @@
                                 "+TEN")))
         (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
                            "+TEN"))))))
+
+(deftest jj-split-patch-allows-ignored-target-artifacts
+  (with-repo*
+    (fn [{:keys [repo]}]
+      (let [patch (fs/file repo "target" "jj-split" "selected.patch")]
+        (write-file! patch selected-patch)
+        (let [{:keys [exit out err]} (run repo "bb" script (str patch) "-m" "selected")]
+          (is (zero? exit)
+              (str "stdout:\n" out "\nstderr:\n" err))
+          (is (str/includes? out "note.txt (1 hunk)")))))))
 
 (deftest jj-split-patch-names-failing-step-before-changing-history
   (testing "preflight rejects stale selected content"

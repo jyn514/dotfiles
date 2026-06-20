@@ -160,7 +160,8 @@ Each step is mechanical except the judgment of which hunks belong together.
 
 #requirement[Before splitting, the agent inspects `jj diff` for the revision being split and identifies the behavioral boundary of the desired selected commit.]
 
-#requirement[The agent writes the selected patch to a temporary file outside the repository being split.
+#requirement[The agent writes the selected patch and any workflow helper artifacts under `target/jj-split/`.
+That directory must remain ignored by version control so those artifacts are not visible to Jujutsu's working-copy snapshot.
 The patch is an artifact, not an implicit prompt.
 It can be reviewed, stored, or discarded.]
 
@@ -238,7 +239,7 @@ The agent rewrites the patch from the current `jj diff --git` output and tries a
 
 This is a workflow bug.
 `jj split` snapshots the working copy before it invokes the diff editor, so repository-local patch files or helper scripts can become part of the revision being split.
-The workflow must keep those artifacts outside the repository or otherwise invisible to the snapshot.
+The workflow must keep those artifacts under the ignored `target/jj-split/` directory or otherwise invisible to the snapshot.
 
 == Patch selects part of an inseparable hunk
 
@@ -277,13 +278,13 @@ That remains the agent's judgment.]
 
 These three questions are now decided.
 
-#requirement[The selected patch always lives at an arbitrary temporary path named by `JJ_AGENT_SPLIT_PATCH`.
-There is no blessed predictable path.]
+#requirement[The selected patch always lives under `target/jj-split/` at a fresh invocation-specific path named by `JJ_AGENT_SPLIT_PATCH`.
+There is no blessed predictable filename.]
 
-#rationale[A fixed predictable path is the same artifact across successive splits, so a stale patch from an earlier split can be silently reused.
+#rationale[A fixed predictable filename is the same artifact across successive splits, so a stale patch from an earlier split can be silently reused.
 An explicit per-invocation environment variable makes the patch's identity and lifetime obvious and forces the caller to name a fresh artifact each time.
 Debuggability is preserved because the path is a real file the workflow can show before and after the split (@agent-jj-split-validation);
-it just is not a constant.]
+it is just scoped under the repository's ignored split-artifact directory.]
 
 #requirement[The shim does not accept a patch on stdin.
 The selected patch is always a file referenced by `JJ_AGENT_SPLIT_PATCH`.]
