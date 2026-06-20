@@ -158,34 +158,125 @@ If the platform cannot make the replacement atomic, the tool must exit non-zero 
 The agent workflow is a controlled sequence.
 Each step is mechanical except the judgment of which hunks belong together.
 
-#requirement[Before splitting, the agent inspects `jj diff` for the revision being split and identifies the behavioral boundary of the desired selected commit.]
+#requirement[Before splitting, the agent inspects `jj diff --git -r <revision>` and identifies the behavioral boundary of the desired selected commit.]
 
-#requirement[The agent writes the selected patch and any workflow helper artifacts under `target/jj-split/`.
-That directory must remain ignored by version control so those artifacts are not visible to Jujutsu's working-copy snapshot.
-The patch is an artifact, not an implicit prompt.
-It can be reviewed, stored, or discarded.]
+#requirement[The selected patch is an ordinary Git-style unified diff containing exactly the hunks for the selected commit.
+The agent writes it outside visible source, normally under the repository's ignored `target/jj-split/` workflow area.
+The patch is an artifact, not an implicit prompt: it must be possible to inspect it before the split and compare against it after the split.]
 
-#requirement[The normal agent entry point is `bb jj-split-patch target/jj-split/<name>.patch -m 'message'`.
+#requirement[The normal agent entry point is `bb jj-split-patch target/jj-split/<name>.patch -m 'message' [revision]`.
 Agents should use the wrapper instead of interactive `jj split` for patch-level selection.]
 
 #example[
 ```sh
-bb jj-split-patch target/jj-split/selected.patch -m 'Extract focused change'
+bb jj-split-patch target/jj-split/selected.patch -m 'Extract focused change' @
 ```
 ]
 
-#requirement[The wrapper checks the patch against a copy of the left tree before invoking `jj split`.
+#requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left tree for the touched paths, dry-runs and applies the patch there, and checks that the selected diff is contained in the original `jj diff --git -r <revision>` output.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.]
 
-#requirement[Before invoking `jj split`, the agent ensures no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.]
+#requirement[Before invoking `jj split`, the agent and wrapper must ensure no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.
+`target/jj-split/` must be ignored, and any patch or helper path inside the repository must be contained there.
+Artifacts in visible source are a workflow bug because `jj split` snapshots the working copy before it invokes the diff editor.]
 
-#requirement[The wrapper runs `jj split --tool agent-split -m 'message'` with `JJ_AGENT_SPLIT_PATCH` pointing at the selected patch.]
+#requirement[The wrapper runs `jj split --tool agent-split -m 'message' -r <revision>` with `JJ_AGENT_SPLIT_PATCH` pointing at the selected patch.
+The `-m` argument is mandatory for this workflow because it prevents a selected-commit message editor from opening.]
 
-#requirement[After the split, the wrapper verifies both resulting commits: the selected commit contains only the intended hunks, and the remaining commit still contains the rest.
-The agent should still inspect `jj status` and the relevant `jj diff` output before committing or continuing.]
+#requirement[If the remaining commit needs a description fixup, the agent runs a separate non-interactive command after the split, for example `jj describe -r <remaining> -m 'Keep unrelated cleanup'`.
+The workflow must not use a command path that opens a commit-message editor.]
+
+#requirement[After the split, the wrapper verifies both resulting commits: the selected commit's diff matches the selected patch or an equivalent normalized representation, and the remaining commit still contains the unselected changes.
+The agent should then inspect `jj status` and the relevant `jj diff --git -r <selected>` and `jj diff --git -r <remaining>` output before committing or continuing.]
 
 #requirement[If verification fails, the agent restores the Jujutsu operation or performs another explicit corrective split.
 It must not silently continue with a bad history boundary.]
+
+== Worked two-hunk example <agent-jj-split-worked-example>
+
+This example splits two unrelated hunks in one file without opening a TUI.
+The original working-copy commit contains both a helper rename and an unrelated diagnostic text change in `src/flower/example.clj`.
+The selected commit should contain only the helper rename.
+
+#example[
+```sh
+jj diff --git -r @ src/flower/example.clj
+```
+]
+
+The diff shows two hunks in the same file:
+
+#example[
+```diff
+diff --git a/src/flower/example.clj b/src/flower/example.clj
+--- a/src/flower/example.clj
++++ b/src/flower/example.clj
+@@ -3,2 +3,2 @@
+-(defn render-item [item]
++(defn render-entry [item]
+   [:li (:title item)])
+ 
+@@ -18 +18 @@
+-(throw (ex-info "Bad item" {:item item}))
++(throw (ex-info "Invalid item" {:item item}))
+```
+]
+
+The agent writes only the first hunk to an ignored patch artifact:
+
+#example[
+```sh
+mkdir -p target/jj-split
+cat > target/jj-split/render-entry.patch <<'PATCH'
+diff --git a/src/flower/example.clj b/src/flower/example.clj
+--- a/src/flower/example.clj
++++ b/src/flower/example.clj
+@@ -3,2 +3,2 @@
+-(defn render-item [item]
++(defn render-entry [item]
+   [:li (:title item)])
+PATCH
+```
+]
+
+Before splitting, the agent checks snapshot safety:
+
+#example[
+```sh
+git check-ignore -q target/jj-split/render-entry.patch
+jj status
+```
+]
+
+`jj status` must not show `target/jj-split/render-entry.patch` or any helper artifact.
+If it does, the agent stops and moves the artifact under an ignored workflow path before splitting.
+
+The split uses the repo-supported wrapper:
+
+#example[
+```sh
+bb jj-split-patch target/jj-split/render-entry.patch -m 'Rename render item helper' @
+```
+]
+
+The wrapper preflights the patch, invokes `jj split --tool agent-split -m 'Rename render item helper' -r @` with `JJ_AGENT_SPLIT_PATCH` set to the patch file, and verifies that the selected commit matches the patch while the remaining commit keeps the diagnostic text change.
+If the remaining commit description should change, the fixup is also non-interactive:
+
+#example[
+```sh
+jj describe -r <remaining> -m 'Clarify invalid item diagnostic'
+```
+]
+
+The agent then verifies both sides explicitly:
+
+#example[
+```sh
+jj diff --git -r <selected>
+jj diff --git -r <remaining>
+jj status
+```
+]
 
 = Validation <agent-jj-split-validation>
 
