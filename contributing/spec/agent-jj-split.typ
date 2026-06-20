@@ -165,14 +165,24 @@ That directory must remain ignored by version control so those artifacts are not
 The patch is an artifact, not an implicit prompt.
 It can be reviewed, stored, or discarded.]
 
-#requirement[The agent checks the patch against a copy of the left tree before invoking `jj split`.
+#requirement[The normal agent entry point is `bb jj-split-patch target/jj-split/<name>.patch -m 'message'`.
+Agents should use the wrapper instead of interactive `jj split` for patch-level selection.]
+
+#example[
+```sh
+bb jj-split-patch target/jj-split/selected.patch -m 'Extract focused change'
+```
+]
+
+#requirement[The wrapper checks the patch against a copy of the left tree before invoking `jj split`.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.]
 
 #requirement[Before invoking `jj split`, the agent ensures no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.]
 
-#requirement[The agent runs `jj split --tool agent-split -m 'message'` with `JJ_AGENT_SPLIT_PATCH` pointing at the selected patch.]
+#requirement[The wrapper runs `jj split --tool agent-split -m 'message'` with `JJ_AGENT_SPLIT_PATCH` pointing at the selected patch.]
 
-#requirement[After the split, the agent verifies both resulting commits with `jj diff` or `jj show`: the selected commit contains only the intended hunks, and the remaining commit still contains the rest.]
+#requirement[After the split, the wrapper verifies both resulting commits: the selected commit contains only the intended hunks, and the remaining commit still contains the rest.
+The agent should still inspect `jj status` and the relevant `jj diff` output before committing or continuing.]
 
 #requirement[If verification fails, the agent restores the Jujutsu operation or performs another explicit corrective split.
 It must not silently continue with a bad history boundary.]
