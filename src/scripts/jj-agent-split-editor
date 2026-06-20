@@ -5,6 +5,16 @@
             [clojure.set :as set]
             [clojure.string :as str]))
 
+(defn- script-file []
+  (if (not-empty *file*)
+    *file*
+    "src/scripts/jj-agent-split-editor"))
+
+(load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
+                         "temp.clj")))
+
+(def temp-root (ns-resolve 'scripts.temp 'temp-root))
+
 (defn- fail! [message]
   (binding [*out* *err*]
     (println (str "jj-agent-split-editor: " message)))
@@ -177,7 +187,8 @@
     (when-not (fs/regular-file? patch)
       (fail! (str "JJ_AGENT_SPLIT_PATCH does not name a file: " patch)))
     (let [patch-text (slurp patch)
-          tmp-root (fs/create-temp-dir {:prefix "jj-agent-split-editor"})
+          tmp-root (fs/create-temp-dir {:dir (str (temp-root))
+                                        :prefix "jj-agent-split-editor"})
           selected (fs/file tmp-root "selected")]
       (try
         (validate-patch-paths! left patch-text)

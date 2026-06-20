@@ -2,9 +2,13 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]))
+            [clojure.test :refer [deftest is testing]]
+            [scripts.temp :as scripts.temp]))
 
 (def script (str (fs/canonicalize "src/scripts/jj_split_patch.clj")))
+(load-file script)
+
+(def git-tool-dir (ns-resolve 'scripts.jj-split-patch 'git-tool-dir))
 
 (defn- shell!
   [dir & args]
@@ -108,6 +112,18 @@
   (let [patch (fs/file artifacts "selected.patch")]
     (write-file! patch patch-content)
     (run repo "bb" script (str patch) "-m" "selected")))
+
+(deftest jj-split-patch-git-tool-dir-uses-shared-temp-root
+  (let [tmpdir-root (str (fs/file (scripts.temp/temp-root)
+                                  (str "flower-jj-split-tmpdir-" (random-uuid))))
+        java-root (str (fs/file (scripts.temp/temp-root)
+                                (str "flower-jj-split-java-" (random-uuid))))]
+    (with-redefs [scripts.temp/tmpdir-env (constantly tmpdir-root)
+                  scripts.temp/java-tmpdir (constantly java-root)]
+      (is (= tmpdir-root (git-tool-dir))))
+    (with-redefs [scripts.temp/tmpdir-env (constantly nil)
+                  scripts.temp/java-tmpdir (constantly java-root)]
+      (is (= java-root (git-tool-dir))))))
 
 (deftest jj-split-patch-splits-selected-hunk-and-verifies-remainder
   (with-repo*
