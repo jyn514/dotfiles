@@ -4,6 +4,16 @@
             [clojure.set :as set]
             [clojure.string :as str]))
 
+(defn- script-file []
+  (if (not-empty *file*)
+    *file*
+    "src/scripts/jj_split_patch.clj"))
+
+(load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
+                         "temp.clj")))
+
+(def temp-root (ns-resolve 'scripts.temp 'temp-root))
+
 (defn- fail! [step message]
   (binding [*out* *err*]
     (println (str step ": " message)))
@@ -81,7 +91,7 @@
   (.normalize (.toAbsolutePath (fs/path path))))
 
 (defn- git-tool-dir []
-  (System/getProperty "java.io.tmpdir"))
+  (str (temp-root)))
 
 (defn- path-inside? [root path]
   (let [root (normalize-abs root)
