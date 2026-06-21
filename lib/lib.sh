@@ -56,6 +56,10 @@ cmd_alias() {
 	fi
 }
 
+is_macos() {
+  [ "$(uname -s)" = Darwin ]
+}
+
 if ! exists realpath; then
 	. lib/realpath.sh
 	HAS_REALPATH=0

@@ -18,6 +18,14 @@ display_pwd () {
 	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
 }
 
+# apparently on macOS `timeout` itself is slow???
+# you've got to be kidding me.
+if is_macos; then
+  timeout() {
+    perl -MTime::HiRes=alarm -e 'alarm shift; exec @ARGV' "$@"
+  }
+fi
+
 ## constants
 
 # zsh uses `{%` instead of `\01`: https://zsh.sourceforge.io/Doc/Release/Prompt-Expansion.html#Visual-effects
@@ -52,7 +60,7 @@ git_info() {
 	export GIT_OPTIONAL_LOCKS=0
   # if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		if [ -e .jj ]; then timeout .1 jj-info; fi
+		if [ -e .jj ]; then timeout .2 jj-info 2>/dev/null; fi
 		return
 	else
 		printf ' '
@@ -80,25 +88,30 @@ git_info() {
 		return
 	fi
 
+	# if this is a jj repo, prefer jj's working-copy description over scanning
+	# every git ref in large co-located repositories.
+	if is_jj_repo; then
+		timeout .2 jj-info 2>/dev/null
+		case $? in
+      # 124 is SIGALRM, 142 is what `timeout` returns natively
+			124|142) ;;
+			*) return ;;
+		esac
+	fi
+
 	# see if this is a remote branch
 	# note this prioritizes origin/HEAD over origin/main
-	r=$(git show-ref | grep "^$(git rev-parse @).* refs/remotes" | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#.* refs/remotes/##')
+	r=$(git for-each-ref --points-at HEAD --format='%(refname:short)' refs/remotes | grep -v '/gh-readonly-queue/' | head -n1 | sed 's#^refs/remotes/##')
 	if [ "$r" ]; then
 		echo "$r"
 		return
 	fi
 
 	# see if this is a detached local branch
-	l=$(git show-ref | grep "^$(git rev-parse @).* refs/heads" | head -n1 | sed 's#.* refs/heads/##')
+	l=$(git for-each-ref --points-at HEAD --format='%(refname:short)' refs/heads | head -n1 | sed 's#^refs/heads/##')
 	if [ "$l" ]; then
 		echo "(detached at $l)"
 		return
-	fi
-
-	# if this is a jj repo, try and get that info instead
-	if is_jj_repo; then
-		timeout .1 jj-info
-		if ! [ $? = 124 ]; then return; fi
 	fi
 
 	# give up
