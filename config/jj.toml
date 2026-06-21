@@ -1,4 +1,6 @@
-fsmonitor.backend = "watchman"
+# this is slower than just fs stats on small repos :/
+# only turn it on for giant worktrees
+#fsmonitor.backend = "watchman"
 fsmonitor.watchman.register-snapshot-trigger = true
 
 [ui]
