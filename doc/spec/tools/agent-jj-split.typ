@@ -1,4 +1,4 @@
-#import "style.typ": apply-settings, requirement, rationale, status, invariant, open-question, takeaway, example
+#import "../style.typ": apply-settings, requirement, rationale, status, invariant, open-question, takeaway, example
 #show: apply-settings
 
 #align(center)[
