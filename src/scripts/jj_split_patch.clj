@@ -36,10 +36,16 @@
     result))
 
 (defn- usage! []
-  (fail! "usage" "bb jj-split-patch <patch-file> -m <message> [revision]"))
+  (fail! "Usage" "bb jj-split-patch <patch-file> -m <message> [revision]"))
+
+(defn- print-help! []
+  (println "Usage: bb jj-split-patch <patch-file> -m <message> [revision]"))
 
 (defn- parse-args [args]
   (let [[patch flag message revision & extra] args]
+    (when (some #{"-h" "--help"} args)
+      (print-help!)
+      (System/exit 0))
     (when (or (nil? patch)
               (not= "-m" flag)
               (nil? message)
