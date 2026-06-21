@@ -1,0 +1,11 @@
+#!/usr/bin/env bb
+(require '[cheshire.core :as json]
+         '[clojure.edn :as edn])
+
+(defn convert [path]
+  (-> path slurp edn/read-string json/generate-string println))
+
+(if (empty? *command-line-args*)
+  (convert *in*)
+  (doseq [path *command-line-args*]
+    (convert path)))
