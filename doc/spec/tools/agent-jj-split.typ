@@ -1,5 +1,5 @@
 #import "../style.typ": apply-settings, requirement, rationale, status, invariant, open-question, takeaway, example
-#show: apply-settings
+#show: apply-settings.with(title: [`agent-jj-split`])
 
 #align(center)[
   #v(3cm)
