@@ -8,11 +8,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 EDITOR = os.environ.get("REAL_EDITOR") or "nvim"
-DESKTOP = "Helix" if EDITOR == "hx" else EDITOR
+EDITOR_BASENAME = Path(EDITOR).name
+DESKTOP = "Helix" if EDITOR_BASENAME == "hx" else EDITOR_BASENAME
 LINE_RE = re.compile(r"(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$")
 
 
@@ -21,12 +22,16 @@ def cmdexists(command: str) -> bool:
 
 
 def run_stdout(argv: list[str]) -> str:
+    return run(argv).stdout
+
+
+def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
         check=False,
         capture_output=True,
         text=True,
-    ).stdout
+    )
 
 
 def trim(value: str | None) -> str | None:
@@ -46,6 +51,10 @@ def canonicalize(path: str) -> str:
 
 
 def split_line(value: str) -> list[str]:
+    expanded = expand_tilde(value)
+    if Path(expanded).exists():
+        return [canonicalize(expanded)]
+
     match = LINE_RE.match(value)
     if not match:
         return [value]
@@ -54,7 +63,7 @@ def split_line(value: str) -> list[str]:
     file = parts[0]
     parsed = urlsplit(file)
     if parsed.scheme.lower() == "file" and parsed.path != file:
-        file = quote(parsed.path, safe="/")
+        file = unquote(parsed.path)
 
     file = expand_tilde(file)
     file = canonicalize(file)
@@ -87,9 +96,17 @@ def flatten_editor_args(joined: list[str] | str) -> list[str]:
     return [joined]
 
 
+def editor_exec_args(joined: list[str] | str) -> list[str]:
+    args = flatten_editor_args(joined)
+    if args and Path(args[-1]).name.startswith("-"):
+        return [*args[:-1], "--", args[-1]]
+    return args
+
+
 def refresh_path_from_profile() -> None:
-    path = run_stdout(["bash", "-c", ". ~/.profile; echo $PATH"])
-    os.environ["PATH"] = path.rstrip("\n")
+    result = run(["bash", "-c", ". ~/.profile; echo $PATH"])
+    if result.returncode == 0 and result.stdout:
+        os.environ["PATH"] = result.stdout.rstrip("\n")
 
 
 def remove_dir_from_path(directory: str) -> None:
@@ -97,7 +114,7 @@ def remove_dir_from_path(directory: str) -> None:
     os.environ["PATH"] = os.pathsep.join(path for path in paths if path != directory)
 
 
-def hxhax(args: list[str]) -> None:
+def open_in_tmux_editor(args: list[str]) -> int:
     current_window = trim(run_stdout(["tmux", "display-message", "-p", "#{window_id}"]))
     pane_raw = run_stdout(
         [
@@ -110,7 +127,9 @@ def hxhax(args: list[str]) -> None:
             "#{pane_id}",
         ]
     )
-    pane = None if pane_raw == "" else trim(pane_raw)
+    pane = trim(pane_raw)
+    if pane == "":
+        pane = None
 
     if pane is None:
         subprocess.run(
@@ -120,7 +139,7 @@ def hxhax(args: list[str]) -> None:
             capture_output=True,
         )
     else:
-        target = ["-t"] if pane == "" else ["-t", pane]
+        target = ["-t", pane]
         subprocess.run(["tmux", "send-keys", *target, "-X", "cancel"], check=False)
         subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
         command = "drop" if EDITOR == "nvim" else "open"
@@ -131,10 +150,14 @@ def hxhax(args: list[str]) -> None:
         subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False)
 
     activate_window_if_needed(pane)
+    return 0
 
 
 def activate_window_if_needed(pane: str | None) -> None:
     if "DISPLAY" in os.environ and cmdexists("xdotool"):
+        window_id = os.environ.get("WINDOWID")
+        if not window_id:
+            return
         active = trim(run_stdout(["xdotool", "getactivewindow"])) or ""
         pid = trim(run_stdout(["xdotool", "getwindowpid", active])) or ""
         tree = run_stdout(["pstree", "-p", pid])
@@ -147,25 +170,24 @@ def activate_window_if_needed(pane: str | None) -> None:
                     "" if pane is None else pane,
                     "xdotool",
                     "windowactivate",
-                    os.environ.get("WINDOWID", ""),
+                    window_id,
                 ],
                 check=False,
             )
     elif sys.platform == "darwin":
-        script = """
-tell application "iTerm2"
+        script = """tell application "iTerm2"
 \tactivate  -- bring background window to foreground
 \treopen    -- open window if not yet open
 end tell"""
         subprocess.run(["osascript", "-e", script], check=False)
 
 
-def os_open(args: list[str]) -> None:
+def os_open(args: list[str]) -> int:
     if cmdexists("xdg-open"):
-        subprocess.run(["xdg-open", *args], check=False)
+        return subprocess.run(["xdg-open", *args], check=False).returncode
     else:
         remove_dir_from_path(str(Path(__file__).parent))
-        subprocess.run(["open", *args], check=False)
+        return subprocess.run(["open", *args], check=False).returncode
 
 
 def duti_default(file: str) -> str:
@@ -181,6 +203,8 @@ def xdg_default(file: str) -> str:
     mime = run_stdout(["xdg-mime", "query", "filetype", file]).rstrip("\n")
     if cmdexists("gio"):
         first = run_stdout(["gio", "mime", mime]).split("\n")[0]
+        if not first.startswith("Default "):
+            return ""
         return re.sub(r"^Default .*: ", "", first)
     return run_stdout(["xdg-mime", "query", "default", mime])
 
@@ -193,26 +217,27 @@ def default_app(file: str) -> str:
 
 def default_is_editor(default: str) -> bool:
     return (
-        re.search(f"{DESKTOP}\\.desktop", default) is not None
-        or re.search(DESKTOP, default) is not None
+        f"{DESKTOP}.desktop" in default
+        or DESKTOP in default
         or "TextEdit" in default
     )
 
 
-def xdgopen(argv: list[str]) -> None:
+def xdgopen(argv: list[str]) -> int:
     target = expand_tilde(argv[-1])
 
     if not re.search(r"^[a-zA-Z]+://", target) and re.search(r":[0-9]+$", target):
         split = split_line(target)
+        if len(split) < 2:
+            return os_open([*map(expand_tilde, argv[:-1]), split[0]])
         file = split[0]
         if default_is_editor(default_app(file)):
             joined = join_line(split)
-            hxhax(flatten_editor_args(joined))
+            return open_in_tmux_editor(flatten_editor_args(joined))
         else:
-            os_open([file])
-        return
+            return os_open([*map(expand_tilde, argv[:-1]), file])
 
-    os_open([expand_tilde(arg) for arg in argv])
+    return os_open([expand_tilde(arg) for arg in argv])
 
 
 def main(argv: list[str]) -> int:
@@ -222,21 +247,23 @@ def main(argv: list[str]) -> int:
     if name == "editor-hax":
         if not argv:
             return 1
-        os.execvp(EDITOR, [EDITOR, *flatten_editor_args(join_line(split_line(argv[0])))])
+        if len(argv) > 1:
+            return 2
+        os.execvp(EDITOR, [EDITOR, *editor_exec_args(join_line(split_line(argv[0])))])
 
     if name == "hx-hax":
+        if len(argv) > 1:
+            return 2
         if argv:
             joined = join_line(split_line(argv[0]))
-            hxhax(flatten_editor_args(joined))
+            return open_in_tmux_editor(flatten_editor_args(joined))
         else:
-            hxhax([""])
-        return 0
+            return open_in_tmux_editor([""])
 
     if not argv:
         return 1
 
-    xdgopen(argv)
-    return 0
+    return xdgopen(argv)
 
 
 if __name__ == "__main__":
