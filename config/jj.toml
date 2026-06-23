@@ -27,6 +27,8 @@ log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmar
 'trunk' = 'trunk()'
 '0' = 'trunk()'
 'working' = 'heads(@- | tags() | bookmarks() | remote_bookmarks()) & author(substring-i:"jyn")'
+'with_conflicts(end)' = '(conflicts() | conflicts()+) & ::end'
+'with_conflicts' = 'with_conflicts(@)'
 
 [user]
 name = "jyn"
@@ -63,6 +65,7 @@ publish = ["util", "exec", "bash", "--", "-c", "git hook run pre-push --ignore-m
 new-branch = ["bookmark", "create", "-r=@-"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
+conflicts = ["log", "--no-graph", "-T", "show_conflicts", "-r", "with_conflicts"]
 
 [templates]
 git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
@@ -71,6 +74,14 @@ workspace_list = 'name ++ " " ++ root++"\n"'
 'recent' = 'committer.timestamp().ago() ++ ": " ++ bookmarks ++ " | " ++ description.first_line() ++ "\n"'
 'format_short_signature(signature)' = 'label("username", signature.name())'
 'format_timestamp(timestamp)' = 'timestamp.ago()'
+show_conflicts = '''
+if(self.diff().files().any(|f| f.source().conflict() || f.target().conflict()),
+   change_id.short() ++ " " ++ commit_id.short() ++ " " ++ description.first_line() ++ "\n"
+   ++ self.diff().files().filter(|f| f.source().conflict() || f.target().conflict())
+          .map(|f| "  " ++ f.source().file_type() ++ " -> " ++ f.target().file_type()
+                        ++ " " ++ f.display_diff_path())
+          .join("\n") ++ "\n")
+'''
 
 # `jj config list --include-defaults template-aliases.builtin_log_compact`
 # the only difference here is turning the newline into a space lol
