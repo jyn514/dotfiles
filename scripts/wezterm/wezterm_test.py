@@ -24,7 +24,10 @@ def lua_single_quoted_string(name: str) -> str:
     return value.replace("\\\\", "\\")
 
 
-def rg_matches(pattern: str, haystack: str) -> list[str]:
+def rg_matches(pattern: str, haystack: str, *, replace: str | None = None) -> list[str]:
+    args = ["rg", "--no-filename", "--only-matching", "--regexp", pattern]
+    if replace is not None:
+        args.extend(["--replace", replace])
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=os.environ.get("TMPDIR"), delete=False
     ) as handle:
@@ -32,7 +35,7 @@ def rg_matches(pattern: str, haystack: str) -> list[str]:
         path = handle.name
     try:
         result = subprocess.run(
-            ["rg", "--no-filename", "--only-matching", "--regexp", pattern, path],
+            [*args, path],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -88,6 +91,7 @@ edit ./config/tmux.conf:53
 abs /Users/jyn/src/dotfiles/config/kitty.conf:6:1
 home ~/.config/wezterm/wezterm.lua
 """,
+                replace="$1",
             ),
             [
                 "config/wezterm.lua",
@@ -95,6 +99,20 @@ home ~/.config/wezterm/wezterm.lua
                 "/Users/jyn/src/dotfiles/config/kitty.conf:6:1",
                 "~/.config/wezterm/wezterm.lua",
             ],
+        )
+
+    def test_path_pattern_does_not_match_git_remotes(self) -> None:
+        pattern = lua_single_quoted_string("path_pattern")
+
+        self.assertEqual(
+            rg_matches(
+                pattern,
+                """\
+github  git@github.com:jyn514/paracress (push)
+v2      git@codeberg.org:jyn514/paracress.git (fetch)
+""",
+            ),
+            [],
         )
 
 

@@ -245,12 +245,13 @@ local function process_name(pane)
     name = nil
   end
   if not name or name == "" then
-    return pane:get_title()
+    local title_ok, title = pcall(pane.get_title, pane)
+    return title_ok and title or ""
   end
   return name:match("([^/]+)$") or name
 end
 
-local path_pattern = '(?:(?:~|\\.|\\.\\.)?/)?[A-Za-z0-9_.$#%&+=@"-]+(?:/[A-Za-z0-9_.$#%&+=@"-]+)+(?:[:][0-9]+){0,2}'
+local path_pattern = '(?:^|[[:space:]"])(/?(?:(?:~|\\.|\\.\\.)?/)?[A-Za-z0-9_.$#%&+=@"-]+(?:/[A-Za-z0-9_.$#%&+=@"-]+)+(?:[:][0-9]+){0,2})'
 local url_pattern = '(?:https?://|git@|git://|ssh://|ftp://|file:///)[^\\s)]+'
 
 if has_resurrect then
@@ -488,7 +489,10 @@ wezterm.on("format-tab-title", function(tab)
 end)
 
 wezterm.on("update-right-status", function(window, pane)
-  local title = pane:get_title()
+  local title_ok, title = pcall(pane.get_title, pane)
+  if not title_ok then
+    return
+  end
   if #title > 21 then
     title = string.sub(title, 1, 18) .. "..."
   end
@@ -497,12 +501,17 @@ wezterm.on("update-right-status", function(window, pane)
   if ok and active then
     prefix = "C-k "
   end
+  local cwd_ok, cwd = pcall(pane_cwd, pane)
+  if not cwd_ok then
+    return
+  end
+  local proc = process_name(pane)
   window:set_right_status(wezterm.format({
     { Attribute = { Intensity = "Half" } },
     { Text = " " .. prefix .. save_age_status() .. window:active_workspace() .. " " },
     { Foreground = { Color = "#ffffff" } },
     { Background = { Color = "#881798" } },
-    { Text = " " .. cwd_basename(pane_cwd(pane)) .. " (" .. process_name(pane) .. ") " .. title .. " " .. wezterm.strftime("%H:%M %d-%b-%y") .. " " },
+    { Text = " " .. cwd_basename(cwd) .. " (" .. proc .. ") " .. title .. " " .. wezterm.strftime("%H:%M %d-%b-%y") .. " " },
   }))
 end)
 
