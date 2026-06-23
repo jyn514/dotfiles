@@ -1,160 +1,243 @@
-#!/usr/bin/env perl
+#!/usr/bin/env python3
 
-use strict;
-use warnings;
+from __future__ import annotations
 
-use Config;
-use Cwd 'abs_path';
-use File::Basename 'basename', 'dirname';
-use File::Which;
-use URI ();
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import quote, urlsplit
 
-my $editor = $ENV{REAL_EDITOR} || 'nvim';
-my $desktop = $editor eq 'hx' ? 'Helix' : $editor;
-# `.*?`: match anything, non-greedily
-# `(?::)`: match a `:` without capturing it
-my $line = qr/(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$/;
 
-sub cmdexists {
-	defined (which "$_[0]")
-}
+EDITOR = os.environ.get("REAL_EDITOR") or "nvim"
+DESKTOP = "Helix" if EDITOR == "hx" else EDITOR
+LINE_RE = re.compile(r"(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$")
 
-sub split_line {
-  # TODO: don't split if this file exists on disk
-  my @matches = $_[0] =~ $line;
-  my $url = URI->new($matches[0]);
-  if (defined $url->scheme && $url->scheme eq 'file' && $url->path ne $matches[0]) {
-    @matches[0] = $url-> path;
-  }
-  $matches[0] = expand_tilde($matches[0]);
-  my $abs = abs_path $matches[0];
-  $matches[0] = $abs if defined $abs;
-  grep defined, @matches
-}
 
-sub expand_tilde {
-  my ($path) = @_;
-  $path =~ s{^~(?=/|$)}{$ENV{HOME}};
-  $path
-}
+def cmdexists(command: str) -> bool:
+    return shutil.which(command) is not None
 
-sub join_line {
-  return $_[0] if @_ < 2;
-  my ($file, $line, $column) = @_;
-  return ("+normal!${line}G${column}|", $file) if $editor eq 'nvim';
-  $column = @_ > 2 ? ":$column" : '';
-  return ($file, "+$line$column") if $editor eq 'kak';
-  "$file:$line$column"
-}
 
-sub trim {
-  # https://stackoverflow.com/a/4597964/7669110
-  return if (! scalar @_);
-  $_[0] =~ s/^\s+|\s+$//rg
-}
+def run_stdout(argv: list[str]) -> str:
+    return subprocess.run(
+        argv,
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout
 
-sub remove_dir_from_path {
-    my ($dir_to_remove) = @_;
-    my $path = $ENV{PATH} || '';
-    # ':' or ';'
-    my $separator = $Config{path_sep};
-    my @dirs = split(/$separator/, $path);
 
-    my @filtered_dirs;
-    foreach my $dir (@dirs) {
-        push @filtered_dirs, $dir unless $dir eq $dir_to_remove;
-    }
-    $ENV{PATH} = join($separator, @filtered_dirs);
-}
+def trim(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip()
 
-sub hxhax {
-  my @args = @_;
-  my $current_window= trim `tmux display-message -p "#{window_id}"`;
-  my $pane = trim `tmux list-panes -a \\
-      -f '#{&&:#{==:#{window_id},$current_window},#{==:#{pane_current_command},$editor}}' \\
-      -F '#{pane_id}'`;
-  unless (defined $pane) {
-	# don't use `` so that args can have embedded pipes
-	my @split = ('tmux', 'split-window', '-h', '-P', '-F', '"#{pane_id}"', $editor, @args);
-	open(my $fd, '-|', @split) || die "can't open pipeline: $!";
-	$pane = <$fd>;
-  } else {
-    # exit copy mode so we don't send these commands directly to tmux
-  	`tmux send-keys -t $pane -X cancel 2>/dev/null`;
-    	# Escape for some reason doesn't get sent as the escape key if it shows up next to any other keys???
-  	`tmux send-keys -t $pane Escape`;
-	my $args = join ' ', @args;
-	my $cmd = $editor eq 'nvim' ? 'drop' : 'open';
-		# note the space, this tells nvim not to save it in history
-  	`tmux send-keys -t $pane ": $cmd $args" Enter`;
-  	`tmux select-pane -t $pane -Z`;
-  }
 
-  # WINDOWID is always set to the window tmux was *originally* launched in, and updating it seems...hard.
-  # Instead of trying to do that, just don't switch away from this window if it's already running tmux.
-  if (defined $ENV{DISPLAY} && cmdexists 'xdotool') {
-		if (`pstree -p \$(xdotool getwindowpid \$(xdotool getactivewindow))` !~ /tmux/) {
-			`tmux run-shell -t $pane xdotool windowactivate \${WINDOWID} 2>&1`;
-		}
-  } elsif ($^O eq 'darwin') {
-		my $script = '
+def expand_tilde(path: str) -> str:
+    if path == "~" or path.startswith("~/"):
+        return os.environ.get("HOME", "") + path[1:]
+    return path
+
+
+def canonicalize(path: str) -> str:
+    return str(Path(path).resolve(strict=False))
+
+
+def split_line(value: str) -> list[str]:
+    match = LINE_RE.match(value)
+    if not match:
+        return [value]
+
+    parts = list(match.groups())
+    file = parts[0]
+    parsed = urlsplit(file)
+    if parsed.scheme.lower() == "file" and parsed.path != file:
+        file = quote(parsed.path, safe="/")
+
+    file = expand_tilde(file)
+    file = canonicalize(file)
+    parts[0] = file
+    return [part for part in parts if part is not None]
+
+
+def join_line(parts: list[str]) -> list[str] | str:
+    if len(parts) < 2:
+        return parts[0]
+
+    file = parts[0]
+    line = parts[1]
+    column = parts[2] if len(parts) > 2 else ""
+
+    if EDITOR == "nvim":
+        return [f"+normal!{line}G{column}|", file]
+
+    if EDITOR == "kak":
+        suffix = f":{column}" if len(parts) > 2 else ""
+        return [file, f"+{line}{suffix}"]
+
+    suffix = f":{column}" if len(parts) > 2 else ""
+    return f"{file}:{line}{suffix}"
+
+
+def flatten_editor_args(joined: list[str] | str) -> list[str]:
+    if isinstance(joined, list):
+        return joined
+    return [joined]
+
+
+def refresh_path_from_profile() -> None:
+    path = run_stdout(["bash", "-c", ". ~/.profile; echo $PATH"])
+    os.environ["PATH"] = path.rstrip("\n")
+
+
+def remove_dir_from_path(directory: str) -> None:
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(path for path in paths if path != directory)
+
+
+def hxhax(args: list[str]) -> None:
+    current_window = trim(run_stdout(["tmux", "display-message", "-p", "#{window_id}"]))
+    pane_raw = run_stdout(
+        [
+            "tmux",
+            "list-panes",
+            "-a",
+            "-f",
+            f"#{{&&:#{{==:#{{window_id}},{current_window}}},#{{==:#{{pane_current_command}},{EDITOR}}}}}",
+            "-F",
+            "#{pane_id}",
+        ]
+    )
+    pane = None if pane_raw == "" else trim(pane_raw)
+
+    if pane is None:
+        subprocess.run(
+            ["tmux", "split-window", "-h", "-P", "-F", '"#{pane_id}"', EDITOR, *args],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    else:
+        target = ["-t"] if pane == "" else ["-t", pane]
+        subprocess.run(["tmux", "send-keys", *target, "-X", "cancel"], check=False)
+        subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
+        command = "drop" if EDITOR == "nvim" else "open"
+        subprocess.run(
+            ["tmux", "send-keys", *target, f": {command} {' '.join(args)}", "Enter"],
+            check=False,
+        )
+        subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False)
+
+    activate_window_if_needed(pane)
+
+
+def activate_window_if_needed(pane: str | None) -> None:
+    if "DISPLAY" in os.environ and cmdexists("xdotool"):
+        active = trim(run_stdout(["xdotool", "getactivewindow"])) or ""
+        pid = trim(run_stdout(["xdotool", "getwindowpid", active])) or ""
+        tree = run_stdout(["pstree", "-p", pid])
+        if "tmux" not in tree:
+            subprocess.run(
+                [
+                    "tmux",
+                    "run-shell",
+                    "-t",
+                    "" if pane is None else pane,
+                    "xdotool",
+                    "windowactivate",
+                    os.environ.get("WINDOWID", ""),
+                ],
+                check=False,
+            )
+    elif sys.platform == "darwin":
+        script = """
 tell application "iTerm2"
-	activate  -- bring background window to foreground
-	reopen    -- open window if not yet open
-end tell';
-		`osascript -e '$script'`;
-	}
-}
+\tactivate  -- bring background window to foreground
+\treopen    -- open window if not yet open
+end tell"""
+        subprocess.run(["osascript", "-e", script], check=False)
 
-sub os_open {
-	if (cmdexists 'xdg-open') {
-		system('xdg-open', @_);
-	} else {
-		remove_dir_from_path dirname __FILE__;
-		system('open', @_);
-	}
-}
 
-sub xdgopen {
-  my $target = expand_tilde($_[0]);
+def os_open(args: list[str]) -> None:
+    if cmdexists("xdg-open"):
+        subprocess.run(["xdg-open", *args], check=False)
+    else:
+        remove_dir_from_path(str(Path(__file__).parent))
+        subprocess.run(["open", *args], check=False)
 
-  if ($target !~ /^[a-zA-Z]+:\/\// && $target =~ /:[0-9]+$/) {
-    my @split = split_line $target;
-    my $file = $split[0];
-    my $default;
 
-		if (cmdexists 'duti') {
-			my $ext = (split(/\.([^\.]+)$/, $file))[-1];
-			$default = (split /\n/, `duti -x $ext`)[0];
-		} else {
-			chomp(my $mime = `xdg-mime query filetype "$file"`);
-			# apparently xdg-mime is just wrong sometimes??? https://tech.lgbt/@jyn/112897397900798209
-			if (cmdexists 'gio') {
-				$default = (split '\n', `gio mime "$mime"`)[0] =~ s/^Default .*: //r;
-			} else {
-				$default = `xdg-mime query default "$mime"`;
-			}
-		}
-    if ($default =~ /$desktop\.desktop/ || $default =~ $desktop || $default =~ "TextEdit") {
-      hxhax(join_line @split);
-		} else {
-			my @args = @ARGV[0 .. $#ARGV - 2];
-			push(@args, $file);
-      os_open("$file");
-    }
-    return;
-  }
-  os_open(map { expand_tilde($_) } @ARGV);
-}
+def duti_default(file: str) -> str:
+    basename = os.path.basename(file)
+    if "." in basename:
+        ext = basename.rsplit(".", 1)[1]
+    else:
+        ext = file
+    return run_stdout(["duti", "-x", ext]).split("\n")[0]
 
-my $name = basename $0;
-$ENV{PATH} = `bash -c '. ~/.profile; echo \$PATH'`;
-chomp($ENV{PATH});
-exec ($editor, join_line split_line $ARGV[0]) if 'editor-hax' eq basename $0;
-if ('hx-hax' eq basename $0) {
-  hxhax(@ARGV ? join_line split_line $ARGV[0] : '');
-  exit;
-}
 
-@ARGV or print 'usage: $0 <file>' && exit 1;
-xdgopen $ARGV[-1];
+def xdg_default(file: str) -> str:
+    mime = run_stdout(["xdg-mime", "query", "filetype", file]).rstrip("\n")
+    if cmdexists("gio"):
+        first = run_stdout(["gio", "mime", mime]).split("\n")[0]
+        return re.sub(r"^Default .*: ", "", first)
+    return run_stdout(["xdg-mime", "query", "default", mime])
+
+
+def default_app(file: str) -> str:
+    if cmdexists("duti"):
+        return duti_default(file)
+    return xdg_default(file)
+
+
+def default_is_editor(default: str) -> bool:
+    return (
+        re.search(f"{DESKTOP}\\.desktop", default) is not None
+        or re.search(DESKTOP, default) is not None
+        or "TextEdit" in default
+    )
+
+
+def xdgopen(argv: list[str]) -> None:
+    target = expand_tilde(argv[-1])
+
+    if not re.search(r"^[a-zA-Z]+://", target) and re.search(r":[0-9]+$", target):
+        split = split_line(target)
+        file = split[0]
+        if default_is_editor(default_app(file)):
+            joined = join_line(split)
+            hxhax(flatten_editor_args(joined))
+        else:
+            os_open([file])
+        return
+
+    os_open([expand_tilde(arg) for arg in argv])
+
+
+def main(argv: list[str]) -> int:
+    name = Path(sys.argv[0]).name
+    refresh_path_from_profile()
+
+    if name == "editor-hax":
+        if not argv:
+            return 1
+        os.execvp(EDITOR, [EDITOR, *flatten_editor_args(join_line(split_line(argv[0])))])
+
+    if name == "hx-hax":
+        if argv:
+            joined = join_line(split_line(argv[0]))
+            hxhax(flatten_editor_args(joined))
+        else:
+            hxhax([""])
+        return 0
+
+    if not argv:
+        return 1
+
+    xdgopen(argv)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
