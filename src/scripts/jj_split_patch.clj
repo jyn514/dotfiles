@@ -14,10 +14,16 @@
 
 (def temp-root (ns-resolve 'scripts.temp 'temp-root))
 
+(defn ^:dynamic *exit!* [status]
+  (System/exit status))
+
+(defn- failure-text [step message]
+  (str step ": " message))
+
 (defn- fail! [step message]
   (binding [*out* *err*]
-    (println (str step ": " message)))
-  (System/exit 1))
+    (println (failure-text step message)))
+  (*exit!* 1))
 
 (defn- run
   [step & args]
