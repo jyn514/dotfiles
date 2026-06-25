@@ -8,7 +8,7 @@
 
 (load-file script)
 
-(defn- shell!
+(defn- ^:needs/git shell!
   [dir & args]
   (let [result (apply process/shell
                       {:dir (str dir)
@@ -21,7 +21,7 @@
         (str "stdout:\n" (:out result) "\nstderr:\n" (:err result)))
     result))
 
-(defn- run
+(defn- ^:needs/git run
   [dir & args]
   (apply process/shell
          {:dir (str dir)
