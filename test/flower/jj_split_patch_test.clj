@@ -140,7 +140,7 @@
                   scripts.temp/java-tmpdir (constantly java-root)]
       (is (= java-root (git-tool-dir))))))
 
-(deftest jj-split-patch-splits-selected-hunk-and-verifies-remainder
+(deftest ^:needs/bb jj-split-patch-splits-selected-hunk-and-verifies-remainder
   (with-repo*
     (fn [{:keys [repo] :as ctx}]
       (let [{:keys [exit out err]} (run-wrapper ctx selected-patch)]
