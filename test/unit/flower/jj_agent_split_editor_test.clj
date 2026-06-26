@@ -34,7 +34,8 @@
    (apply process/shell
           {:out :string
            :err :string
-           :continue true}
+           :continue true
+           :shutdown nil}
           (cond-> ["env"]
             unset-patch? (into ["-u" "JJ_AGENT_SPLIT_PATCH"])
             (not unset-patch?) (conj (str "JJ_AGENT_SPLIT_PATCH=" patch))
