@@ -96,7 +96,7 @@
     (write-file! patch patch-content)
     (run repo "bb" script (str patch) "-m" "selected")))
 
-(deftest ^:needs/bb jj-split-patch-splits-selected-hunk-and-verifies-remainder
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-splits-selected-hunk-and-verifies-remainder
   (with-repo*
     (fn [{:keys [repo] :as ctx}]
       (let [{:keys [exit out err]} (run-wrapper ctx selected-patch)]
