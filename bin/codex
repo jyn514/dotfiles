@@ -3,7 +3,9 @@
 # the jj/paste shims (bare `jj` hits the author shim, which detects Codex via
 # CODEX_THREAD_ID). Codex has no system-prompt override — its instruction layer
 # is ~/.codex/AGENTS.md + project AGENTS.md — so this only fixes up PATH.
+DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 . "$DOTFILES/lib/lib.sh"
-shim_resolve "$0" codex
+REAL=$(shim_resolve "$0" codex)
 
+export PATH="$DOTFILES/lib/agent-wrappers:$PATH"
 exec "$REAL" "$@"

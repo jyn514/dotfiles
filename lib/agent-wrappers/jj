@@ -17,7 +17,7 @@ agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
 agent=${agent:-${CODEX_THREAD_ID:+codex}}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
-  codex)  JJ_USER='Breq'; JJ_EMAIL='breq@jyn.dev' ;;
+  codex)  JJ_USER='Codex'; JJ_EMAIL='breq@jyn.dev' ;;
 esac
 
 if [ -n "${JJ_USER:-}" ]; then

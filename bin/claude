@@ -2,9 +2,11 @@
 # Wrapper: launch Claude Code with the generated standalone system prompt, and
 # put this dir on PATH so the agent's shells and tooling resolve the jj/paste
 # shims (bare `jj` then hits the author shim, no need to call it by path).
+DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 . "$DOTFILES/lib/lib.sh"
-shim_resolve "$0" claude
+REAL=$(shim_resolve "$0" claude)
 
-prompt=$("$SHIM_DIR/gen-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
+prompt=$("$DOTFILES/lib/gen-claude-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
 
+export PATH="$DOTFILES/lib/agent-wrappers:$PATH"
 exec "$REAL" --system-prompt "$prompt" "$@"
