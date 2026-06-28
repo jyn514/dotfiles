@@ -8,7 +8,29 @@ PATH=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
 PATH=${PATH%:}   # drop trailing colon — an empty entry means cwd, a footgun
 export PATH
 
-exec jj \
-  --config user.name='Claude Opus 4.8' \
-  --config user.email='lifer@jyn.dev' \
-  "$@"
+# Identity by agent, auto-detected from each runner's own env: Claude Code
+# exports CLAUDECODE, Codex exports CODEX_THREAD_ID. JJ_AGENT overrides both
+# if ever needed. An unknown caller (a human at the wrapper) falls through to
+# the real jj's own config. Set via JJ_USER/JJ_EMAIL so every jj call below
+# inherits one identity for both author and committer.
+agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
+agent=${agent:-${CODEX_THREAD_ID:+codex}}
+case "$agent" in
+  claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
+  codex)  JJ_USER='Breq'; JJ_EMAIL='breq@jyn.dev' ;;
+esac
+
+if [ -n "${JJ_USER:-}" ]; then
+  export JJ_USER JJ_EMAIL
+  # jj stamps author at change *creation*, committer at commit — so a change
+  # born before this shim (or re-snapshotted by a bare jj) keeps a stale
+  # author. Any command that records @ into a new commit inherits that author:
+  # `commit` makes one, `split` makes two. Reset the working-copy author to our
+  # identity first, so recorded commits have author == committer. Best-effort:
+  # never block the command if metaedit has nothing to do.
+  case "$1" in
+    commit|split) jj metaedit --update-author -r @ || true ;;
+  esac
+fi
+
+exec jj "$@"
