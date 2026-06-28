@@ -2,22 +2,9 @@
 # Wrapper: launch Claude Code with the generated standalone system prompt, and
 # put this dir on PATH so the agent's shells and tooling resolve the jj/paste
 # shims (bare `jj` then hits the author shim, no need to call it by path).
-self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+. "$DOTFILES/lib/lib.sh"
+shim_resolve "$0" claude
 
-# Build the prompt up front; abort loudly rather than launch with a bare one.
-prompt=$("$self_dir/gen-system-prompt") || {
-  echo "claude wrapper: gen-system-prompt failed" >&2; exit 1
-}
+prompt=$("$SHIM_DIR/gen-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
 
-# Resolve the real claude with our dir stripped, so the name doesn't recurse.
-clean=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
-clean=${clean%:}
-real=$(PATH="$clean" command -v claude) || {
-  echo "claude wrapper: real claude not found on PATH" >&2; exit 1
-}
-
-# Child env: our dir first so the shims win inside everything claude spawns.
-PATH="$self_dir:$clean"
-export PATH
-
-exec "$real" --system-prompt "$prompt" "$@"
+exec "$REAL" --system-prompt "$prompt" "$@"
