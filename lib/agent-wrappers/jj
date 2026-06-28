@@ -10,8 +10,19 @@ export PATH
 
 codex_version() {
   find "${CODEX_HOME:-$HOME/.codex}/sessions" -name "*${CODEX_THREAD_ID}.jsonl" -print0 -quit \
-    | xargs -0 jq -r 'select(.type == "turn_context") | .payload.model' \
-    | head -n1
+    | xargs -0 jq -r '
+        select(.type == "turn_context")
+        | .payload.model
+        | select(. != null and . != "")
+      ' \
+    | tail -n1
+}
+
+is_jj_write() {
+  case "$1" in
+    commit|split) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Identity by agent, auto-detected from each runner's own env: Claude Code
@@ -23,7 +34,20 @@ agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
 agent=${agent:-${CODEX_THREAD_ID:+codex}}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
-  codex)  JJ_USER="Codex $(codex_version)"; JJ_EMAIL='breq@jyn.dev' ;;
+  codex)
+    model=$(codex_version)
+    if [ -z "$model" ]; then
+      if is_jj_write "$1"; then
+        printf '%s\n' "jj wrapper: could not determine Codex model for write command '$1'" >&2
+        printf '%s\n' "jj wrapper: refusing to stamp a commit as plain Codex" >&2
+        exit 1
+      fi
+      JJ_USER='Codex unknown'
+    else
+      JJ_USER="Codex $model"
+    fi
+    JJ_EMAIL='breq@jyn.dev'
+    ;;
 esac
 
 if [ -n "${JJ_USER:-}" ]; then
