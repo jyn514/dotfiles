@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Transplant a path-limited patch series between repositories."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Location:
+    repo: Path
+    path: str | None
+
+
+def expand_repo(repo: str | None) -> Path:
+    if not repo:
+        return Path.cwd()
+    expanded = Path(os.path.expanduser(repo))
+    if not expanded.is_absolute():
+        expanded = Path.cwd() / expanded
+    return expanded.resolve()
+
+
+def git_top_level(repo: Path) -> Path | None:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip()).resolve()
+
+
+def validate_repo(label: str, location: Location, parser: argparse.ArgumentParser) -> None:
+    top_level = git_top_level(location.repo)
+    if top_level is None:
+        parser.error(f"{label} repository is not a git repository: {location.repo}")
+    if location.repo != top_level:
+        parser.error(
+            f"{label} repository must be the git top level: {location.repo} "
+            f"(did you mean {top_level}:{location.repo.relative_to(top_level)}?)"
+        )
+
+
+def clean_repo_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    path = path.strip()
+    if not path:
+        return None
+    while path.startswith("./"):
+        path = path[2:]
+    return path.rstrip("/") or None
+
+
+def parse_location(value: str | None) -> Location:
+    if value is None:
+        return Location(expand_repo(None), None)
+    if ":" in value:
+        repo, path = value.split(":", 1)
+        return Location(expand_repo(repo), clean_repo_path(path))
+    return Location(expand_repo(value), None)
+
+
+def command_line(argv: list[str]) -> str:
+    return shlex.join(argv)
+
+
+def run_transplant(source: Location, target: Location, revisions: list[str], dry_run: bool) -> int:
+    format_patch = ["git", "-C", str(source.repo), "format-patch", "--stdout"]
+    if source.path:
+        format_patch.append(f"--relative={source.path}")
+    format_patch.extend(revisions)
+    if source.path:
+        format_patch.extend(["--", source.path])
+
+    am = ["git", "-C", str(target.repo), "am", "-3"]
+    if target.path:
+        am.append(f"--directory={target.path}")
+
+    if dry_run:
+        print(f"{command_line(format_patch)} | {command_line(am)}")
+        return 0
+
+    producer = subprocess.Popen(format_patch, stdout=subprocess.PIPE)
+    assert producer.stdout is not None
+    consumer = subprocess.Popen(am, stdin=producer.stdout)
+    producer.stdout.close()
+
+    consumer_status = consumer.wait()
+    producer_status = producer.wait()
+
+    if producer_status != 0:
+        print(f"format-patch failed with exit status {producer_status}", file=sys.stderr)
+    if consumer_status != 0:
+        print(f"git am failed with exit status {consumer_status}", file=sys.stderr)
+
+    return consumer_status or producer_status
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        description="Apply selected commits from one repository/path into another repository/path."
+    )
+    parser.add_argument(
+        "--from",
+        dest="source",
+        metavar="REPO[:PATH]",
+        help="source repository and optional repo-relative path; repo defaults to cwd",
+    )
+    parser.add_argument(
+        "--to",
+        dest="target",
+        metavar="REPO[:PATH]",
+        help="target repository and optional repo-relative path; repo defaults to cwd",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the git pipeline instead of running it",
+    )
+    parser.add_argument(
+        "revisions",
+        nargs="+",
+        help="revision range passed to git format-patch, for example main..HEAD",
+    )
+    args = parser.parse_args(argv)
+
+    if args.source is None and args.target is None:
+        parser.error("at least one of --from or --to is required")
+
+    source = parse_location(args.source)
+    target = parse_location(args.target)
+    validate_repo("--from", source, parser)
+    validate_repo("--to", target, parser)
+    return run_transplant(source, target, args.revisions, args.dry_run)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
