@@ -11,10 +11,21 @@ DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..")
 
 add_path () {
 	for p in "$@"; do
-		if ! echo "$PATH" | grep -F "(^|:)$p(:|$)" >/dev/null 2>&1; then
+		found=0
+		old_ifs=$IFS
+		IFS=:
+		for existing in ${PATH:-}; do
+			if [ "$existing" = "$p" ]; then
+				found=1
+				break
+			fi
+		done
+		IFS=$old_ifs
+		if [ "$found" = 0 ]; then
 			PATH="$p:$PATH"
 		fi
 	done
+	unset existing found old_ifs p
 }
 
 add_path_if_present() {
