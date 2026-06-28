@@ -14,7 +14,7 @@ if [ -e "$local_hook" ]; then
 fi
 
 # Now run global hooks.
-tmpdir=$(mktemp -d --tmpdir "$(basename "$(realpath .)")-pre-commit.XXXX")
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/$(basename "$(realpath .)")-pre-commit.XXXX")
 trap 'rm -r "$tmpdir"' EXIT
 printf %s "$files" | tr '\n' '\0' | xargs -0 git checkout-index --prefix="$tmpdir/"
 cd "$tmpdir"

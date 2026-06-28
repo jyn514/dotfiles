@@ -23,14 +23,14 @@ fi
 
 REPO_URL="$1"
 BACKUP_FILE="$(realpath "$2")"
-TMP_DIR="/tmp/$(uuidgen)"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/git-save.XXXXXX")"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 if [ -e "$BACKUP_FILE" ] ; then
 	echo "ERROR: backup file '$BACKUP_FILE' already exists." > /dev/stderr
 	exit 1
 fi
 
-mkdir "$TMP_DIR"
 cd "$TMP_DIR"
 
 printf "INFO: cloning repository... " > /dev/stderr
@@ -68,5 +68,5 @@ echo "DONE" > /dev/stderr
 printf "INFO: cleaning up... " > /dev/stderr
 cd
 rm -rf "$TMP_DIR"
+trap - EXIT
 echo "DONE" > /dev/stderr
-

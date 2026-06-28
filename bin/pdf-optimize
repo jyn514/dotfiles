@@ -33,9 +33,10 @@ if [ -z "$2" ] ; then
   OUTPUT_FILE=$1-optimized.pdf
 fi
 TIMESTAMP="$(date +"%Y-%m-%d_%H-%M-%S")"
+TMP_ROOT="${TMPDIR:-/tmp}"
 # postscript configuration
 # see here: http://milan.kupcevic.net/ghostscript-ps-pdf/
-GS_LOG_PATH="/tmp/pdf-optimize-$TIMESTAMP.log"
+GS_LOG_PATH="$TMP_ROOT/pdf-optimize-$TIMESTAMP.log"
 GS_OPTS=" -sDEVICE=pdfwrite \
 -dDetectDuplicateImages=true \
 -dPDFSETTINGS=/ebook
@@ -119,13 +120,15 @@ echo "INFO: Log path: $GS_LOG_PATH"
 
 printf "STATUS: Optimizing pdf... "
 # we copy to temp with filenames that don't have spaces or special characters
-TEMPIF=/tmp/pdf-optimize_input_$TIMESTAMP.pdf
-TEMPOF=/tmp/pdf-optimize_output_$TIMESTAMP.pdf
+TEMPDIR=$(mktemp -d "$TMP_ROOT/pdf-optimize.XXXXXX")
+TEMPIF=$TEMPDIR/input.pdf
+TEMPOF=$TEMPDIR/output.pdf
+trap 'rm -rf "$TEMPDIR"' EXIT
 cp "$INPUT_FILE" "$TEMPIF"
 
 
 START=$(date +%s)
-$GS_PATH $GS_OPTS "$TEMPOF" "$TEMPIF" > $GS_LOG_PATH 2>&1
+$GS_PATH $GS_OPTS "$TEMPOF" "$TEMPIF" > "$GS_LOG_PATH" 2>&1
 echo "done"
 END=$(date +%s)
 DIFF=$(( $END - $START ))
@@ -135,14 +138,13 @@ cp "$TEMPOF" "$OUTPUT_FILE"
 echo "INFO: GhostScript log written to: $GS_LOG_PATH"
 
 printf "STATUS: cleaning up... "
-rm "$TEMPOF" "$TEMPIF"
+rm -rf "$TEMPDIR"
+trap - EXIT
 echo "done"
 
 IFSIZE=$(du -h "$INPUT_FILE" | cut -f 1)
 OFSIZE=$(du -h "$OUTPUT_FILE" | cut -f 1)
 echo "Input file size: $IFSIZE"
 echo "Output file size: $OFSIZE"
-
-
 
 

@@ -9,6 +9,18 @@ fail() {
 	exit 1
 }
 
+tmp_root() {
+	printf "%s" "${TMPDIR:-/tmp}"
+}
+
+tmp_file() {
+	mktemp "$(tmp_root)/${1:-dotfiles.XXXXXX}"
+}
+
+tmp_dir() {
+	mktemp -d "$(tmp_root)/${1:-dotfiles.XXXXXX}"
+}
+
 is_jj_repo() {
 	# don't try to save the working copy, in case that hits an error
 	exists jj && jj workspace root --ignore-working-copy >/dev/null 2>/dev/null
@@ -21,7 +33,7 @@ download () {
 	if [ -n "${2:-}" ]; then
 		OUTPUT="$2"
 	else
-		OUTPUT="$(mktemp)"
+		OUTPUT="$(tmp_file download.XXXXXX)"
 		PRINT=1
 	fi
 	echo "downloading $1" >&2
