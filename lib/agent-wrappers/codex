@@ -1,0 +1,17 @@
+#!/bin/sh
+# Wrapper: launch Codex with this dir on PATH so its shells and tooling resolve
+# the jj/paste shims (bare `jj` hits the author shim, which detects Codex via
+# CODEX_THREAD_ID). Codex has no system-prompt override — its instruction layer
+# is ~/.codex/AGENTS.md + project AGENTS.md — so this only fixes up PATH.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+
+clean=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
+clean=${clean%:}
+real=$(PATH="$clean" command -v codex) || {
+  echo "codex wrapper: real codex not found on PATH" >&2; exit 1
+}
+
+PATH="$self_dir:$clean"
+export PATH
+
+exec "$real" "$@"
