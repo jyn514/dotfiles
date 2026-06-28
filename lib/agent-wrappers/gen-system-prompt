@@ -1,0 +1,71 @@
+#!/bin/sh
+# Generate the agent's standalone system prompt on stdout.
+#
+# Layers, in order:
+#   1. static prose  — claude-prompt-with-blackjack-and-hookers.md (hand-edited)
+#   2. environment   — date / cwd / os / shell / model, regenerated each launch
+#   3. saved-memory index — MEMORY.md, verbatim
+#   4. skills        — name + description walked from the skill dirs on disk
+#
+# Agents and deferred tools are NOT generated here: they're baked into the
+# Claude Code binary, not on disk. They live as a static snapshot in layer 1.
+#
+# Pair with: claude --system-prompt-file <this output>  (see fish wrapper below).
+set -eu
+
+REPO=/Users/jyn/src/clojure/paracress
+STATIC="$REPO/claude-prompt-with-blackjack-and-hookers.md"
+MEM_DIR="$HOME/.claude/projects/-Users-jyn-src-clojure-paracress/memory"
+# user skills + project skills. Add plugin roots here if their skills should show.
+SKILL_ROOTS="$HOME/.claude/skills $REPO/.claude/skills"
+
+# --- 1. static prose --------------------------------------------------------
+cat "$STATIC"
+
+# --- 2. environment (dynamic) ----------------------------------------------
+cat <<EOF
+
+# Environment
+- Date: $(date +%Y-%m-%d)
+- cwd: $(pwd) — git repo, driven by jj. Don't \`cd\`.
+- OS: $(uname -sr)
+- Shell: $(basename ${SHELL:-unknown})
+EOF
+
+# --- 3. saved-memory index --------------------------------------------------
+if [ -f "$MEM_DIR/MEMORY.md" ]; then
+  printf '\n# Saved memories\n'
+  printf 'Index of persistent memories. Recall a fact by reading its file in %s\n\n' "$MEM_DIR"
+  cat "$MEM_DIR/MEMORY.md"
+fi
+
+# --- 4. skills (walked from disk) ------------------------------------------
+# Skills in KEEP_FULL keep their whole description (trigger phrases included) so
+# they still auto-fire from natural language, not just /name. Everything else is
+# trimmed to its first sentence — enough to invoke by name and to suggest it.
+# Surround each name with spaces so the substring match is whole-word.
+KEEP_FULL=" git-bug jj-workflow use-a-library simplify double-check fix close-it-out "
+
+printf '\n# Skills\n'
+printf 'Invoke via the Skill tool. The ones with full descriptions may also fire from a matching request; the rest are invoked by /<name>. Only these. Do not guess.\n\n'
+for root in $SKILL_ROOTS; do
+  [ -d "$root" ] || continue
+  for sk in "$root"/*/SKILL.md; do
+    [ -f "$sk" ] || continue   # skips loose files like _petal-html-syntax.md
+    awk -v keep="$KEEP_FULL" '
+      /^---[[:space:]]*$/ { fence++; next }
+      fence >= 2 { exit }
+      fence == 1 && /^name:/        { sub(/^name:[[:space:]]*/, "");        n = $0 }
+      fence == 1 && /^description:/ { sub(/^description:[[:space:]]*/, ""); d = $0 }
+      END {
+        if (n != "") {
+          sub(/^"/, "", n); sub(/"$/, "", n)
+          sub(/^"/, "", d); sub(/"$/, "", d)
+          if (!index(keep, " " n " "))
+            sub(/\. [A-Z].*/, ".", d)   # long tail: first sentence only
+          printf "- %s: %s\n", n, d
+        }
+      }
+    ' "$sk"
+  done
+done | awk -F': ' '!seen[$1]++'   # one root may shadow another; keep first by name

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Shim: stamp jj commits as the agent, not the human running the wrapper.
+# Lives in a dir prepended to PATH. Strips its own dir so the bare `jj`
+# below resolves to the real binary (next on PATH) — no hardcoded path.
+# Covers both the fish prompt and babashka tooling that calls `jj` via PATH.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+PATH=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
+PATH=${PATH%:}   # drop trailing colon — an empty entry means cwd, a footgun
+export PATH
+
+exec jj \
+  --config user.name='Claude Opus 4.8' \
+  --config user.email='lifer@jyn.dev' \
+  "$@"
