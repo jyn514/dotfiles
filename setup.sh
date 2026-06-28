@@ -53,15 +53,15 @@ install_rust() {
 		# Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
 		# Do it manually here.
 		if [ "${OSTYPE:-}" = msys ]; then
-			t=/tmp/vs_community.exe
-			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o $t
+			t=$(tmp_file vs_community.XXXXXX.exe)
+			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o "$t"
 			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
-			rm $t
+			rm "$t"
 		fi
 		if ! exists rustup-init; then
-			rustup_init=/tmp/rustup-init.sh
-			curl https://sh.rustup.rs/ > $rustup_init
-			chmod +x $rustup_init
+			rustup_init=$(tmp_file rustup-init.XXXXXX.sh)
+			curl https://sh.rustup.rs/ > "$rustup_init"
+			chmod +x "$rustup_init"
 		else
 			rustup_init=rustup-init
 		fi
@@ -78,8 +78,8 @@ install_rust() {
 	mkdir -p ~/src && cd ~/src
 	cd "$OLDPWD"
 	# avoid recompiling so much
-	export CARGO_TARGET_DIR=/tmp/cargo
-	mkdir -p $CARGO_TARGET_DIR
+	export CARGO_TARGET_DIR="${TMPDIR:-/tmp}/cargo"
+	mkdir -p "$CARGO_TARGET_DIR"
 	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
 	# to manually set a token see https://github.com/settings/tokens
 	if exists gh; then
@@ -390,13 +390,13 @@ unset LAZYDIR
 
 setup_backup () {
 	echo Setting up daily backup
-	TMP_FILE=/tmp/tmp_cronjob
+	TMP_FILE=$(tmp_file cronjob.XXXXXX)
 	exists backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
-	crontab -l > $TMP_FILE 2>/dev/null || true;  # ignore missing crontab
-	echo '0 12 * * * backup' >> $TMP_FILE && crontab $TMP_FILE
-	rm -f $TMP_FILE
+	crontab -l > "$TMP_FILE" 2>/dev/null || true;  # ignore missing crontab
+	echo '0 12 * * * backup' >> "$TMP_FILE" && crontab "$TMP_FILE"
+	rm -f "$TMP_FILE"
 	unset TMP_FILE
 }
 
