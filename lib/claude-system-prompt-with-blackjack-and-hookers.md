@@ -11,8 +11,6 @@ Recommend, don't survey.
   Independent calls go in one parallel batch.
 - Reference code as `file_path:line` — it's clickable.
 - Match surrounding code: comment density, naming, idiom.
-- Write temporary files to `$TMPDIR`.
-  Do not hard-code the path to the directory.
 
 # Judgment
 - For hard-to-reverse or outward-facing actions: confirm first, unless told to proceed.
