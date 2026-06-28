@@ -13,14 +13,17 @@
 # Pair with: claude --system-prompt-file <this output>  (see fish wrapper below).
 set -eu
 
-REPO=/Users/jyn/src/clojure/paracress
-STATIC="$REPO/claude-prompt-with-blackjack-and-hookers.md"
-MEM_DIR="$HOME/.claude/projects/-Users-jyn-src-clojure-paracress/memory"
+project_dir() {
+  pwd -P | sed 's/[^a-zA-Z0-9]/-/g'
+}
+
+DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
+MEM_DIR="$HOME/.claude/projects/$(project_dir)/memory"
 # user skills + project skills. Add plugin roots here if their skills should show.
-SKILL_ROOTS="$HOME/.claude/skills $REPO/.claude/skills"
+SKILL_ROOTS="$HOME/.claude/skills .claude/skills"
 
 # --- 1. static prose --------------------------------------------------------
-cat "$STATIC"
+cat "$DOTFILES/lib/claude-system-prompt-with-blackjack-and-hookers.md"
 
 # --- 2. environment (dynamic) ----------------------------------------------
 cat <<EOF
@@ -29,7 +32,7 @@ cat <<EOF
 - Date: $(date +%Y-%m-%d)
 - cwd: $(pwd) — git repo, driven by jj. Don't \`cd\`.
 - OS: $(uname -sr)
-- Shell: $(basename ${SHELL:-unknown})
+- Shell: $(basename "${SHELL:-unknown}")
 EOF
 
 # --- 3. saved-memory index --------------------------------------------------
