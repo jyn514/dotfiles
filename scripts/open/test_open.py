@@ -556,7 +556,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module(real_editor="hx")
 
         with (
-            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n"]),
+            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n", "0\n"]),
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
@@ -564,7 +564,6 @@ class OpenScriptTest(unittest.TestCase):
 
         run.assert_has_calls(
             [
-                mock.call(["tmux", "send-keys", "-t", "%4", "-X", "cancel"], check=False),
                 mock.call(["tmux", "send-keys", "-t", "%4", "Escape"], check=False),
                 mock.call(
                     [
@@ -580,12 +579,28 @@ class OpenScriptTest(unittest.TestCase):
                 mock.call(["tmux", "select-pane", "-t", "%4", "-Z"], check=False),
             ]
         )
+        self.assertNotIn(
+            mock.call(["tmux", "send-keys", "-t", "%4", "-X", "cancel"], check=False),
+            run.mock_calls,
+        )
+
+    def test_hx_hax_cancels_tmux_mode_before_reusing_existing_pane(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+
+        with (
+            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n", "1\n"]),
+            mock.patch.object(module, "activate_window_if_needed"),
+            mock.patch.object(module.subprocess, "run") as run,
+        ):
+            self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:3"]), 0)
+
+        run.assert_any_call(["tmux", "send-keys", "-t", "%4", "-X", "cancel"], check=False)
 
     def test_hx_hax_with_no_args_sends_empty_open_command(self) -> None:
         module = self.load_open_module(real_editor="hx")
 
         with (
-            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n"]),
+            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n", "0\n"]),
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):

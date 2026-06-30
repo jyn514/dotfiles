@@ -140,7 +140,8 @@ def open_in_tmux_editor(args: list[str]) -> int:
         )
     else:
         target = ["-t", pane]
-        subprocess.run(["tmux", "send-keys", *target, "-X", "cancel"], check=False)
+        if trim(run_stdout(["tmux", "display-message", *target, "-p", "#{pane_in_mode}"])) == "1":
+            subprocess.run(["tmux", "send-keys", *target, "-X", "cancel"], check=False)
         subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
         command = "drop" if EDITOR == "nvim" else "open"
         subprocess.run(
