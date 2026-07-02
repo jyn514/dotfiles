@@ -287,6 +287,7 @@ end
 
 abbr --add --global !!      --position anywhere --function expand_history_line
 abbr --add --global history --position anywhere --regex '!-[0-9]+'  --function expand_history_line
+abbr --add --global - 'cd -'
 
 # https://github.com/fish-shell/fish-shell/issues/11710
 bind --mode insert '$' bind_dollar

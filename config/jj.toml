@@ -7,6 +7,8 @@ fsmonitor.watchman.register-snapshot-trigger = true
 default-command = "log"
 # diff.tool=["difft", "--color=always", "$left", "$right"]
 diff-formatter=["delta", "$left", "$right"]
+# delta is annoying: https://github.com/dandavison/delta/issues/1136
+diff-expected-exit-codes = [0, 1]
 diff-editor = ":builtin"
 merge-editor = "meld"
 
