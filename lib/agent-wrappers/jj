@@ -25,6 +25,24 @@ is_jj_write() {
   esac
 }
 
+should_force_plain_diff() {
+  [ ! -t 1 ] || return 1
+
+  case "$1" in
+    diff|show) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+has_diff_formatter_config() {
+  for arg in "$@"; do
+    case "$arg" in
+      ui.diff-formatter=*|--config=ui.diff-formatter=*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
 # Identity by agent, auto-detected from each runner's own env: Claude Code
 # exports CLAUDECODE, Codex exports CODEX_THREAD_ID. JJ_AGENT overrides both
 # if ever needed. An unknown caller (a human at the wrapper) falls through to
@@ -61,6 +79,10 @@ if [ -n "${JJ_USER:-}" ]; then
   case "$1" in
     commit|split) jj metaedit --update-author -r @ || true ;;
   esac
+fi
+
+if should_force_plain_diff "$1" && ! has_diff_formatter_config "$@"; then
+  exec jj --config ui.diff-formatter=:git "$@"
 fi
 
 exec jj "$@"
