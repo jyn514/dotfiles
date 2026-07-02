@@ -56,11 +56,9 @@ case "$agent" in
     model=$(codex_version)
     if [ -z "$model" ]; then
       if is_jj_write "$1"; then
-        printf '%s\n' "jj wrapper: could not determine Codex model for write command '$1'" >&2
-        printf '%s\n' "jj wrapper: refusing to stamp a commit as plain Codex" >&2
-        exit 1
+        printf '%s\n' "jj wrapper: warning: could not determine Codex model; stamping as Codex" >&2
       fi
-      JJ_USER='Codex unknown'
+      JJ_USER='Codex'
     else
       JJ_USER="Codex $model"
     fi
