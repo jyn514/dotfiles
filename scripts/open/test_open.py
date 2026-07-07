@@ -481,6 +481,17 @@ class OpenScriptTest(unittest.TestCase):
             [self.real(target)],
         )
 
+    def test_editor_hax_without_args_execs_editor(self) -> None:
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module, "refresh_path_from_profile"),
+            mock.patch.object(module.sys, "argv", ["editor-hax"]),
+            mock.patch.object(module.os, "execvp") as execvp,
+        ):
+            module.main([])
+        execvp.assert_called_once_with(module.EDITOR, [module.EDITOR])
+
     def test_editor_hax_rejects_multiple_args(self) -> None:
         module = self.load_open_module()
 
