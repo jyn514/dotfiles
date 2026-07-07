@@ -247,10 +247,12 @@ def main(argv: list[str]) -> int:
 
     if name == "editor-hax":
         if not argv:
-            return 1
+            os.execvp(EDITOR, [EDITOR])
+            return 0
         if len(argv) > 1:
             return 2
         os.execvp(EDITOR, [EDITOR, *editor_exec_args(join_line(split_line(argv[0])))])
+        return 0
 
     if name == "hx-hax":
         if len(argv) > 1:
