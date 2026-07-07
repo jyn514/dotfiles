@@ -3,7 +3,7 @@
 # Lives in a dir prepended to PATH. Strips its own dir so the bare `jj`
 # below resolves to the real binary (next on PATH) — no hardcoded path.
 # Covers both the fish prompt and babashka tooling that calls `jj` via PATH.
-self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 PATH=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
 PATH=${PATH%:}   # drop trailing colon — an empty entry means cwd, a footgun
 export PATH
@@ -54,16 +54,20 @@ case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
   codex)
     model=$(codex_version)
-    if [ -z "$model" ]; then
-      if is_jj_write "$1"; then
-        printf '%s\n' "jj wrapper: warning: could not determine Codex model; stamping as Codex" >&2
-      fi
-      JJ_USER='Codex'
-    else
-      JJ_USER="Codex $model"
-    fi
     JJ_EMAIL='breq@jyn.dev'
-    ;;
+    JJ_USER="Codex $model"
+
+    case "$model" in
+      "")
+        if is_jj_write "$1"; then
+          printf '%s\n' "jj wrapper: warning: could not determine Codex model" >&2
+        fi
+        JJ_USER='Codex'
+        ;;
+      gpt-5.3-codex-spark)
+        JJ_EMAIL='343-guilty-spark@jyn.dev'
+        ;;
+    esac
 esac
 
 if [ -n "${JJ_USER:-}" ]; then
