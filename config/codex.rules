@@ -1,6 +1,8 @@
+# Project-independent clojure tools.deps commands
 prefix_rule(pattern=["clojure", "-Sdeps"], decision="allow")
 prefix_rule(pattern=["clojure", "-Spath"], decision="allow")
 
+# Read-only jj commands
 prefix_rule(pattern=["jj", "status"], decision="allow")
 prefix_rule(pattern=["jj", "diff"], decision="allow")
 prefix_rule(pattern=["jj", "log"], decision="allow")
@@ -8,13 +10,23 @@ prefix_rule(pattern=["jj", "show"], decision="allow")
 prefix_rule(pattern=["jj", "interdiff"], decision="allow")
 prefix_rule(pattern=["jj", "file", "list"], decision="allow")
 prefix_rule(pattern=["jj", "file", "show"], decision="allow")
+prefix_rule(pattern=["jj", "help"], decision="allow")
+prefix_rule(pattern=["jj", "config", "list"], decision="allow")
+prefix_rule(pattern=["jj", "config", "get"], decision="allow")
+prefix_rule(pattern=["jj", "--version"], decision="allow")
+prefix_rule(pattern=["jj", "bookmark", "list"], decision="allow")
+prefix_rule(pattern=["jj", "bookmark", "advance", "--help"], decision="allow")
 
-prefix_rule(pattern=["git", "bug"], decision="allow")
+# Read-only git commands
 prefix_rule(pattern=["git", "ls-remote"], decision="allow")
 prefix_rule(pattern=["git", "cherry"], decision="allow")
 prefix_rule(pattern=["git", "push", "--dry-run"], decision="allow")
 prefix_rule(pattern=["git", "cat-file"], decision="allow")
+prefix_rule(pattern=["git", "diff", "--check"], decision="allow")
 
+# Read-only utils
+prefix_rule(pattern=["true"], decision="allow")
+prefix_rule(pattern=["cat"], decision="allow")
 prefix_rule(pattern=["rg"], decision="allow")
 prefix_rule(pattern=["grep"], decision="allow")
 prefix_rule(pattern=["jq"], decision="allow")
@@ -27,7 +39,11 @@ prefix_rule(pattern=["diff"], decision="allow")
 prefix_rule(pattern=["ls"], decision="allow")
 prefix_rule(pattern=["find"], decision="allow")
 prefix_rule(pattern=["sort"], decision="allow")
+prefix_rule(pattern=["nl"], decision="allow")
+prefix_rule(pattern=["sleep"], decision="allow")
 
+# Misc non-destructive mutating commands
+prefix_rule(pattern=["git", "bug"], decision="allow")
 prefix_rule(pattern=["podman", "image"], decision="allow")
 prefix_rule(pattern=["zola", "build"], decision="allow")
 prefix_rule(pattern=["kaocha"], decision="allow")
@@ -49,6 +65,7 @@ prefix_rule(pattern=["lpinfo"], decision="allow")
 prefix_rule(pattern=["skopeo", "inspect"], decision="allow")
 prefix_rule(pattern=["skopeo", "list-tags"], decision="allow")
 
+# Watchman read-only commands
 prefix_rule(pattern=["watchman", "watch-list"], decision="allow")
 prefix_rule(pattern=["watchman", "version"], decision="allow")
 prefix_rule(pattern=["watchman", "get-config"], decision="allow")
@@ -58,6 +75,7 @@ prefix_rule(pattern=["watchman", "query"], decision="allow")
 prefix_rule(pattern=["watchman", "debug-get-subscriptions"], decision="allow")
 prefix_rule(pattern=["watchman", "find"], decision="allow")
 
+# Tmux read-only commands
 prefix_rule(pattern=["tmux", "show-option"], decision="allow")
 prefix_rule(pattern=["tmux", "show-hooks"], decision="allow")
 prefix_rule(pattern=["tmux", "list-keys"], decision="allow")
@@ -66,3 +84,5 @@ prefix_rule(pattern=["tmux", "list-commands"], decision="allow")
 prefix_rule(pattern=["tmux", "info"], decision="allow")
 prefix_rule(pattern=["tmux", "display-message"], decision="allow")
 prefix_rule(pattern=["tmux", "list-panes"], decision="allow")
+
+# Unsorted
