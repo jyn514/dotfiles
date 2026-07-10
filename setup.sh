@@ -252,12 +252,19 @@ setup_basics () {
 				DEST=${DEST:-$HOME/."$base"}
 		esac
 
-		if [ -L "$DEST" ]; then rm -f "$DEST"
+		if [ "$base" = codex.rules ] && [ -e "$DEST" ] && [ "$f" -ef "$DEST" ]; then
+			unset DEST
+			continue
+		elif [ -L "$DEST" ]; then rm -f "$DEST"
 		elif [ -e "$DEST" ]; then
 				mv "$DEST" "$LOCAL"
 		fi
 		mkdir -p "$(dirname "$DEST")"
-		ln -s "$(realpath "$f")" "$DEST"
+		if [ "$base" = codex.rules ]; then
+			ln "$(realpath "$f")" "$DEST"
+		else
+			ln -s "$(realpath "$f")" "$DEST"
+		fi
 		unset DEST
 	done
 
