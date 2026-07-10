@@ -435,6 +435,7 @@ if first_run then
 			"HakonHarnes/img-clip.nvim",
 			event = "VeryLazy",
 			keys = {
+				-- TODO: check if we need to run `mkdir -p`
 				{ "<leader>p", "<cmd>PasteImage<cr>", desc = "Paste image from system clipboard" },
 				{ "<C-S-V>", "<cmd>PasteImage<cr>", mode = "i", desc = "Paste image from system clipboard" },
 			},
@@ -587,6 +588,7 @@ require('blink.cmp').setup {
 	-- See https://github.com/rafamadriz/friendly-snippets/tree/main/snippets for a list of
 	-- snippets
 	keymap = {
+		['<C-k>'] = false,
 		['<C-f>'] = { 'select_and_accept', 'fallback' },
 		['<Enter>'] = { 'snippet_forward', 'fallback' },
 		['<C-e>'] = { 'cancel', 'hide_signature', 'fallback' },
@@ -1285,8 +1287,6 @@ vim.api.nvim_create_autocmd("FileType", {
 	pattern = "markdown",
 	callback = function()
 		vim.wo.colorcolumn = ""
-		vim.fn.mkdir('assets', 'p') -- for image pasting
-
 		bind_ts(ts {
 			h = 'class', -- no clue why TS calls headers "classes" but sure whatever
 			c = 'code_cell',
