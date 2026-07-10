@@ -20,12 +20,21 @@ merge-args = [
 ]
 
 merge-tool-edits-conflict-markers = true
+
 [revsets]
-bookmark-advance-to = '@-'
+bookmark-advance-to = "closest_pushable(@)"
 # i use a bunch of emails; easier to just track author name
 log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
 
+[git]
+private-commits = "apfs_workaround()"
+
 [revset-aliases]
+# https://docs.jj-vcs.dev/latest/config/#bookmark-advance-default-targets
+'closest_pushable(to)' = '''
+  heads(::to & mutable() & ~description(exact:"") & (~empty() | merges()) & ~apfs_workaround())
+'''
+"apfs_workaround()" = "kuuotxzlmmoooqkqvtnspsplxzyutuvl"
 'trunk' = 'trunk()'
 '0' = 'trunk()'
 'working' = 'heads(@- | tags() | bookmarks() | remote_bookmarks()) & author(substring-i:"jyn")'
