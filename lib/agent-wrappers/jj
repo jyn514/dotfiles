@@ -83,7 +83,7 @@ if [ -n "${JJ_USER:-}" ]; then
   case "$subcommand" in
     commit|split)
       jj --config "user.name=$JJ_USER" --config "user.email=$JJ_EMAIL" \
-        metaedit --update-author -r @ || true
+        metaedit --update-author -r @ --quiet || true
       ;;
   esac
 
@@ -97,7 +97,7 @@ fi
 if jj "$@"; then
   if [ -n "${JJ_USER:-}" ]; then
     # Intentionally use the real jj config here, not the agent identity.
-    jj metaedit --update-author -r @ || true
+    jj metaedit --update-author -r @ --quiet || true
   fi
 else
   exit "$?"
