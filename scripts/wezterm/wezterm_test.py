@@ -115,6 +115,22 @@ v2      git@codeberg.org:jyn514/paracress.git (fetch)
             [],
         )
 
+    def test_hash_pattern_matches_hashes_without_other_numbers(self) -> None:
+        pattern = lua_single_quoted_string("hash_pattern")
+
+        self.assertEqual(
+            rg_matches(pattern, "commit deadbeef, port 8080, sha " + "a" * 64 + "\n"),
+            ["deadbeef", "a" * 64],
+        )
+
+    def test_ip_pattern_matches_ipv4_addresses(self) -> None:
+        pattern = lua_single_quoted_string("ip_pattern")
+
+        self.assertEqual(
+            rg_matches(pattern, "remote 192.0.2.10, version 1.2.3\n"),
+            ["192.0.2.10"],
+        )
+
 
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

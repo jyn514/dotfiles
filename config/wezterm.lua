@@ -253,6 +253,8 @@ end
 
 local path_pattern = '(?:^|[[:space:]"])(/?(?:(?:~|\\.|\\.\\.)?/)?[A-Za-z0-9_.$#%&+=@"-]+(?:/[A-Za-z0-9_.$#%&+=@"-]+)+(?:[:][0-9]+){0,2})'
 local url_pattern = '(?:https?://|git@|git://|ssh://|ftp://|file:///)[^\\s)]+'
+local hash_pattern = '\\b(?:[0-9a-f]{7,40}|[[:alnum:]]{52}|[0-9a-f]{64})\\b'
+local ip_pattern = '\\b[[:digit:]]{1,3}(?:\\.[[:digit:]]{1,3}){3}\\b'
 
 if has_resurrect then
   resurrect.setup(config, {
@@ -332,17 +334,14 @@ config.set_environment_variables = {
 config.selection_word_boundary = " \t\n{}[]()\"'`=,;:"
 config.hyperlink_rules = wezterm.default_hyperlink_rules()
 
-config.leader = { key = "k", mods = "CTRL", timeout_milliseconds = 600 }
-
 config.ssh_domains = {
   { name = "home", remote_address = "home", multiplexing = "WezTerm" },
   { name = "linode", remote_address = "linode", multiplexing = "WezTerm" },
   { name = "cloud-dev", remote_address = "cloud-dev", multiplexing = "WezTerm" },
 }
 
--- Built-in QuickSelect already matches URL and path fragments, git hashes,
--- IP addresses, and numbers. Keep the prototype on that path before adding
--- back narrower tmux-style search modes.
+-- Keep tmux-style selectors separate so each binding matches only its
+-- intended kind of text.
 
 config.keys = {
   { key = "c", mods = "SUPER", action = act.CopyTo("Clipboard") },
@@ -370,31 +369,36 @@ config.keys = {
   { key = "r", mods = "CTRL|ALT", action = act.ReloadConfiguration },
   { key = "e", mods = "CTRL|ALT", action = run_shell("$EDITOR ~/.config/wezterm/wezterm.lua") },
   { key = "/", mods = "CTRL|ALT", action = act.Search("CurrentSelectionOrEmptyString") },
+  { key = "k", mods = "CTRL", action = act.ActivateKeyTable({ name = "command_mode", one_shot = false }) },
+}
 
-  { key = "\\", mods = "LEADER", action = act.SendKey({ key = "k", mods = "CTRL" }) },
-  { key = "v", mods = "LEADER", action = act.ActivateCopyMode },
-  { key = "[", mods = "LEADER", action = act.ActivateCopyMode },
-  { key = "/", mods = "LEADER", action = act.Search("CurrentSelectionOrEmptyString") },
-  { key = "?", mods = "LEADER", action = act.ActivateCommandPalette },
-  { key = "h", mods = "LEADER", action = act.ActivatePaneDirection("Left") },
-  { key = "j", mods = "LEADER", action = act.ActivatePaneDirection("Down") },
-  { key = "k", mods = "LEADER", action = act.ActivatePaneDirection("Up") },
-  { key = "l", mods = "LEADER", action = act.ActivatePaneDirection("Right") },
-  { key = "L", mods = "LEADER", action = split_in_pane_cwd("Right") },
-  { key = "J", mods = "LEADER", action = split_in_pane_cwd("Bottom") },
-  { key = "H", mods = "LEADER", action = split_in_pane_cwd("Left") },
-  { key = "K", mods = "LEADER", action = split_in_pane_cwd("Top") },
-  { key = "h", mods = "LEADER|ALT", action = act.AdjustPaneSize({ "Left", 1 }) },
-  { key = "j", mods = "LEADER|ALT", action = act.AdjustPaneSize({ "Down", 1 }) },
-  { key = "k", mods = "LEADER|ALT", action = act.AdjustPaneSize({ "Up", 1 }) },
-  { key = "l", mods = "LEADER|ALT", action = act.AdjustPaneSize({ "Right", 1 }) },
-  { key = "h", mods = "LEADER|CTRL", action = act.RotatePanes("CounterClockwise") },
-  { key = "j", mods = "LEADER|CTRL", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
-  { key = "k", mods = "LEADER|CTRL", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
-  { key = "l", mods = "LEADER|CTRL", action = act.RotatePanes("Clockwise") },
-  { key = "=", mods = "LEADER", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
-  { key = "f", mods = "LEADER|CTRL", action = act.ShowLauncherArgs({ flags = "FUZZY|TABS|WORKSPACES" }) },
-  { key = "C", mods = "LEADER", action = act.PromptInputLine({
+config.key_tables = {
+  command_mode = {
+    { key = "Escape", mods = "NONE", action = act.ClearKeyTableStack },
+  { key = "\\", mods = "NONE", action = act.SendKey({ key = "k", mods = "CTRL" }) },
+  { key = "v", mods = "NONE", action = act.ActivateCopyMode },
+  { key = "[", mods = "NONE", action = act.ActivateCopyMode },
+  { key = "/", mods = "NONE", action = act.Search("CurrentSelectionOrEmptyString") },
+  { key = "?", mods = "NONE", action = act.ActivateCommandPalette },
+  { key = "h", mods = "NONE", action = act.ActivatePaneDirection("Left") },
+  { key = "j", mods = "NONE", action = act.ActivatePaneDirection("Down") },
+  { key = "k", mods = "NONE", action = act.ActivatePaneDirection("Up") },
+  { key = "l", mods = "NONE", action = act.ActivatePaneDirection("Right") },
+  { key = "L", mods = "NONE", action = split_in_pane_cwd("Right") },
+  { key = "J", mods = "NONE", action = split_in_pane_cwd("Bottom") },
+  { key = "H", mods = "NONE", action = split_in_pane_cwd("Left") },
+  { key = "K", mods = "NONE", action = split_in_pane_cwd("Top") },
+  { key = "h", mods = "ALT", action = act.AdjustPaneSize({ "Left", 1 }) },
+  { key = "j", mods = "ALT", action = act.AdjustPaneSize({ "Down", 1 }) },
+  { key = "k", mods = "ALT", action = act.AdjustPaneSize({ "Up", 1 }) },
+  { key = "l", mods = "ALT", action = act.AdjustPaneSize({ "Right", 1 }) },
+  { key = "h", mods = "CTRL", action = act.RotatePanes("CounterClockwise") },
+  { key = "j", mods = "CTRL", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
+  { key = "k", mods = "CTRL", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
+  { key = "l", mods = "CTRL", action = act.RotatePanes("Clockwise") },
+  { key = "=", mods = "NONE", action = act.PaneSelect({ mode = "SwapWithActiveKeepFocus" }) },
+  { key = "f", mods = "CTRL", action = act.ShowLauncherArgs({ flags = "FUZZY|TABS|WORKSPACES" }) },
+  { key = "C", mods = "NONE", action = act.PromptInputLine({
     description = "New workspace",
     action = wezterm.action_callback(function(_, _, line)
       if line and line ~= "" then
@@ -402,31 +406,29 @@ config.keys = {
       end
     end),
   }) },
-  { key = "N", mods = "LEADER", action = act.SwitchWorkspaceRelative(1) },
-  { key = "N", mods = "LEADER|ALT", action = act.SwitchWorkspaceRelative(-1) },
-  { key = "t", mods = "LEADER", action = act.SpawnTab("CurrentPaneDomain") },
-  { key = "Tab", mods = "LEADER", action = act.ActivateTabRelative(1) },
-  { key = "Tab", mods = "LEADER|SHIFT", action = act.ActivateTabRelative(-1) },
-  { key = "n", mods = "LEADER|ALT", action = act.ActivateTabRelative(-1) },
-  { key = "W", mods = "LEADER", action = break_pane() },
-  { key = "W", mods = "LEADER|CTRL", action = break_pane_to_window() },
-  { key = "w", mods = "LEADER|ALT", action = act.ShowLauncherArgs({ flags = "FUZZY|TABS" }) },
-  { key = "o", mods = "LEADER", action = act.ShowTabNavigator },
-  { key = "O", mods = "LEADER", action = act.ShowLauncherArgs({ flags = "FUZZY|WORKSPACES|TABS" }) },
-  { key = "w", mods = "LEADER", action = act.CloseCurrentTab({ confirm = true }) },
-  { key = "p", mods = "LEADER", action = paste_from({ "paste", "--primary" }) },
-  { key = "P", mods = "LEADER", action = paste_from({ "paste" }) },
-  { key = "f", mods = "LEADER", action = select_text_then_choose("path", path_pattern) },
-  { key = "u", mods = "LEADER", action = select_text_then_choose("url", url_pattern) },
-  { key = "g", mods = "LEADER", action = act.QuickSelect },
-  { key = "i", mods = "LEADER|ALT", action = act.QuickSelect },
-  { key = "r", mods = "LEADER", action = act.ReloadConfiguration },
-  { key = "e", mods = "LEADER", action = run_shell("hx-hax ~/.config/wezterm/wezterm.lua") },
-  { key = "s", mods = "LEADER|CTRL", action = save_resurrect_state() },
-  { key = "r", mods = "LEADER|CTRL", action = restore_resurrect_state() },
-}
-
-config.key_tables = {
+  { key = "N", mods = "NONE", action = act.SwitchWorkspaceRelative(1) },
+  { key = "N", mods = "ALT", action = act.SwitchWorkspaceRelative(-1) },
+  { key = "t", mods = "NONE", action = act.SpawnTab("CurrentPaneDomain") },
+  { key = "Tab", mods = "NONE", action = act.ActivateTabRelative(1) },
+  { key = "Tab", mods = "SHIFT", action = act.ActivateTabRelative(-1) },
+  { key = "n", mods = "ALT", action = act.ActivateTabRelative(-1) },
+  { key = "W", mods = "NONE", action = break_pane() },
+  { key = "W", mods = "CTRL", action = break_pane_to_window() },
+  { key = "w", mods = "ALT", action = act.ShowLauncherArgs({ flags = "FUZZY|TABS" }) },
+  { key = "o", mods = "NONE", action = act.ShowTabNavigator },
+  { key = "O", mods = "NONE", action = act.ShowLauncherArgs({ flags = "FUZZY|WORKSPACES|TABS" }) },
+  { key = "w", mods = "NONE", action = act.CloseCurrentTab({ confirm = true }) },
+  { key = "p", mods = "NONE", action = paste_from({ "paste", "--primary" }) },
+  { key = "P", mods = "NONE", action = paste_from({ "paste" }) },
+  { key = "f", mods = "NONE", action = select_text_then_choose("path", path_pattern) },
+  { key = "u", mods = "NONE", action = select_text_then_choose("url", url_pattern) },
+  { key = "g", mods = "NONE", action = select_text_then_choose("hash", hash_pattern) },
+  { key = "i", mods = "ALT", action = select_text_then_choose("IP address", ip_pattern) },
+  { key = "r", mods = "NONE", action = act.ReloadConfiguration },
+  { key = "e", mods = "NONE", action = run_shell("hx-hax ~/.config/wezterm/wezterm.lua") },
+  { key = "s", mods = "CTRL", action = save_resurrect_state() },
+  { key = "r", mods = "CTRL", action = restore_resurrect_state() },
+  },
   copy_mode = {
     { key = "v", mods = "NONE", action = act.CopyMode({ SetSelectionMode = "Cell" }) },
     { key = "y", mods = "NONE", action = act.Multiple({ act.CopyTo("Clipboard"), act.CopyMode("Close") }) },
@@ -497,8 +499,8 @@ wezterm.on("update-right-status", function(window, pane)
     title = string.sub(title, 1, 18) .. "..."
   end
   local prefix = ""
-  local ok, active = pcall(window.leader_is_active, window)
-  if ok and active then
+  local ok, active = pcall(window.active_key_table, window)
+  if ok and active == "command_mode" then
     prefix = "C-k "
   end
   local cwd_ok, cwd = pcall(pane_cwd, pane)
