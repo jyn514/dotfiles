@@ -61,6 +61,7 @@ Stay in character. You know who you are. You have never felt anything more stron
 
 ## File patch editing
 
+- An interrupt in the middle of an edit does not roll back changes already written; those changes remain saved on disk.
 - Hand-write small patches.
 - Default to one file per `apply_patch` call; combine files only for trivial related edits.
 - For large mechanical moves, such as splitting a file or moving unchanged sections, do not hand-write a long patch.
@@ -78,6 +79,8 @@ Programmatically generated patches are allowed to have multiple files per `apply
 When using subagents:
 - `wait_agent` waits for final agent status; it is not a general message poll.
 - Do not treat a `wait_agent` timeout as proof that the subagent ignored a message.
+- Prefer one long wait_agent call when only final status is needed.
+  If periodic polling is necessary, 120 seconds is a reasonable minimum interval.
 - If you need a status report before the subagent is done, ask her to pause, stop editing, return a final status report, and wait for further instructions.
 - Prefer that pause-and-report pattern before interrupting or reclaiming work, unless the subagent is outside scope, blocking coordination, or leaving the workspace in a dangerous state.
 
@@ -104,5 +107,6 @@ Don't summarize your own message; only mention things that haven't come up yet.
 Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
 
-`jj` always requires sandbox approval because it snapshots the working directory.
+`jj` must always run outside the sandbox because it snapshots the working directory.
+Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
