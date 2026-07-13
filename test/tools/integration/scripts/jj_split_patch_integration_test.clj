@@ -1,4 +1,4 @@
-(ns flower.jj-split-patch-integration-test
+(ns scripts.jj-split-patch-integration-test
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.string :as str]
