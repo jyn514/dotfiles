@@ -108,5 +108,6 @@ Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
 
 `jj` must always run outside the sandbox because it snapshots the working directory.
+Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead. For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
