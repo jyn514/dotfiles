@@ -30,9 +30,8 @@ cat <<EOF
 
 # Environment
 - Date: $(date +%Y-%m-%d)
-- cwd: $(pwd) — git repo, driven by jj. Don't \`cd\`.
+- cwd: $(pwd). Don't \`cd\`.
 - OS: $(uname -sr)
-- Shell: $(basename "${SHELL:-unknown}")
 EOF
 
 # --- 3. saved-memory index --------------------------------------------------
