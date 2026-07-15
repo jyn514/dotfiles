@@ -164,12 +164,12 @@ Each step is mechanical except the judgment of which hunks belong together.
 The agent writes it outside visible source, normally under the repository's ignored `target/jj-split/` workflow area.
 The patch is an artifact, not an implicit prompt: it must be possible to inspect it before the split and compare against it after the split.]
 
-#requirement[The normal agent entry point is `bb jj-split-patch target/jj-split/<name>.patch -m 'message' [revision]`.
+#requirement[The normal agent entry point is `bb agent-split target/jj-split/<name>.patch -m 'message' [revision]`.
 Agents should use the wrapper instead of interactive `jj split` for patch-level selection.]
 
 #example[
 ```sh
-bb jj-split-patch target/jj-split/selected.patch -m 'Extract focused change' @
+bb agent-split target/jj-split/selected.patch -m 'Extract focused change' @
 ```
 ]
 
@@ -255,7 +255,7 @@ The split uses the repo-supported wrapper:
 
 #example[
 ```sh
-bb jj-split-patch target/jj-split/render-entry.patch -m 'Rename render item helper' @
+bb agent-split target/jj-split/render-entry.patch -m 'Rename render item helper' @
 ```
 ]
 
@@ -394,7 +394,7 @@ The selected patch is always a file referenced by `JJ_AGENT_SPLIT_PATCH`.]
 A stdin patch is consumed once and is not naturally preserved for that comparison or for retries after a failed apply.
 Requiring a file keeps the patch re-readable for the entire workflow.]
 
-#requirement[The repository provides a blessed `bb jj-split-patch` wrapper on top of the diff-editor shim.
+#requirement[The repository provides a blessed `bb agent-split` wrapper on top of the diff-editor shim.
 The wrapper validates the patch (clean apply against the left tree and containment in `diff(left, right)`), checks that no workflow artifacts are visible to the working-copy snapshot, invokes `jj split --tool agent-split -m ...`, and verifies both resulting commits.
 The lower-level `jj-agent-split-editor` shim remains the primitive the wrapper drives;
 callers may still invoke the shim directly for one-shot use.]

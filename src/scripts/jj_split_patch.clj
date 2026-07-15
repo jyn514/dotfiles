@@ -42,10 +42,10 @@
     result))
 
 (defn- usage! []
-  (fail! "Usage" "bb jj-split-patch <patch-file> -m <message> [revision]"))
+  (fail! "Usage" "bb agent-split <patch-file> -m <message> [revision]"))
 
 (defn- print-help! []
-  (println "Usage: bb jj-split-patch <patch-file> -m <message> [revision]"))
+  (println "Usage: bb agent-split <patch-file> -m <message> [revision]"))
 
 (defn- parse-args [args]
   (let [[patch flag message revision & extra] args]
