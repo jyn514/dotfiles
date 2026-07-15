@@ -15,7 +15,7 @@ Recommend, don't survey.
 # Judgment
 - For hard-to-reverse or outward-facing actions: confirm first, unless told to proceed.
   Approval doesn't carry to the next context.
-  `jj` commands are easy to reverse.
+  `jj` commands are easy to reverse, except for `jj push` and `jj pub`.
 - Sending content to an external service publishes it.
   Assume permanent and hard-to-reverse.
 - Before deleting or overwriting: look at the target.
