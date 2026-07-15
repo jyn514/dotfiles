@@ -1,6 +1,7 @@
 # Project-independent clojure tools.deps commands
 prefix_rule(pattern=["clojure", "-Sdeps"], decision="allow")
 prefix_rule(pattern=["clojure", "-Spath"], decision="allow")
+prefix_rule(pattern=["bb", "tasks"], decision="allow")
 
 # Read-only jj commands
 prefix_rule(pattern=["jj", "status"], decision="allow")
@@ -16,6 +17,7 @@ prefix_rule(pattern=["jj", "config", "get"], decision="allow")
 prefix_rule(pattern=["jj", "--version"], decision="allow")
 prefix_rule(pattern=["jj", "bookmark", "list"], decision="allow")
 prefix_rule(pattern=["jj", "bookmark", "advance", "--help"], decision="allow")
+prefix_rule(pattern=["jj", "workspace", "list"], decision="allow")
 
 # Read-only git commands
 prefix_rule(pattern=["git", "ls-remote"], decision="allow")
