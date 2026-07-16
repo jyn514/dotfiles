@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.37 - 2026-07-16
+
+- Migrate the SDK runtime smoke from removed `AuthStorage`/`ModelRegistry` session options to the Pi 0.80.9 `ModelRuntime` contract with an in-memory credential store, and refresh the local development lock while preserving wildcard runtime peers.
 
 ## 0.1.36 - 2026-07-14
 

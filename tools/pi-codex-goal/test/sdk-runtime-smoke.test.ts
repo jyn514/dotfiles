@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
-  ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -28,8 +28,11 @@ function goalIdFromToolResult(result: unknown): string {
 }
 
 test("SDK runtime emits a continuation after willRetry compaction when no retry agent starts", async () => {
-  const authStorage = AuthStorage.inMemory();
-  const modelRegistry = ModelRegistry.inMemory(authStorage);
+  const modelRuntime = await ModelRuntime.create({
+    allowModelNetwork: false,
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+  });
   const loader = new DefaultResourceLoader({
     cwd: process.cwd(),
     agentDir: getAgentDir(),
@@ -54,9 +57,8 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
   const { session } = await createAgentSession({
     cwd: process.cwd(),
     agentDir: getAgentDir(),
-    authStorage,
     model,
-    modelRegistry,
+    modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(process.cwd()),
