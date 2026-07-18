@@ -1,0 +1,35 @@
+#!/bin/sh
+
+DOTFILES="$(dirname -- "$(realpath -- "$0")")/.."
+BASE_IMAGE_BUILDER="$PWD/.agents/sandbox-base-image"
+
+build_image() {
+  (cd "$DOTFILES" && docker build -f lib/agent-sandbox/Dockerfile \
+    --build-arg "CODEX_HOME=$HOME/.codex" \
+    "$@")
+}
+
+if [ -x "$BASE_IMAGE_BUILDER" ]; then
+  printf "Building custom docker image ..."
+  BASE_IMAGE=$($BASE_IMAGE_BUILDER)
+  HASH=$(build_image \
+    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+    --quiet)
+else
+  printf "Building default docker image ..."
+  HASH=$(build_image --tag codex --quiet)
+fi
+echo " done."
+
+docker run --rm -it \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  --secret codex-github-token,type=env,target=GH_TOKEN \
+  --env CODEX_SQLITE_HOME=/codex-sqlite \
+  --volume codex-sqlite:/codex-sqlite \
+  --volume "$HOME/.codex:$HOME/.codex" \
+  --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \
+  --volume "$PWD:/work" \
+  "$HASH" \
+  --dangerously-bypass-approvals-and-sandbox \
+  "$@"
