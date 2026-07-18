@@ -107,7 +107,22 @@ Don't summarize your own message; only mention things that haven't come up yet.
 Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
 
+`$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
+
 `jj` must always run outside the sandbox because it snapshots the working directory.
+
 Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead. For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
-`$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
+
+### Shell command construction
+
+Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
+
+- Write executable and subcommand tokens literally. Do not generate commands that quote every argument: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
+- Quote only arguments that require shell quoting, such as titles containing spaces.
+- If command generation is genuinely necessary, preserve the literal approved prefix and generate only the trailing arguments.
+
+## Corrections
+
+If you suggest changes to a piece of text, always preserve the tone, structure, and level of detail, unless specifically asked to extend it.
+Only correct the specific inaccuracies or missing information.
