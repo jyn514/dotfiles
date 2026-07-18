@@ -72,7 +72,7 @@ tug = ["bookmark", "advance"]
 init = ["git", "init"]
 
 # new commands
-publish = ["util", "exec", "bash", "--", "-c", "git hook run pre-push --ignore-missing && jj tug && jj push"]
+publish = ["util", "exec", "bash", "--", "-c", "echo simulate a push lol lmao | git hook run pre-push --ignore-missing --to-stdin=/dev/stdin && jj tug && jj push"]
 new-branch = ["bookmark", "create", "-r=@-"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
