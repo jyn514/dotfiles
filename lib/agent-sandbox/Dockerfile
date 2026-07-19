@@ -1,20 +1,20 @@
 ARG BASE_IMAGE=node:slim
 FROM ${BASE_IMAGE}
 
-COPY ./lib/agent-sandbox/install-deps.sh .
-RUN ./install-deps.sh && rm ./install-deps.sh
+ARG CODEX_VERSION=0.144.4
+RUN npm install --global "@openai/codex@${CODEX_VERSION}"
 
 COPY ./lib/agent-sandbox/install-user-deps.sh .
 RUN ./install-user-deps.sh && rm ./install-user-deps.sh
+
+COPY ./lib/agent-sandbox/install-deps.sh .
+RUN ./install-deps.sh && rm ./install-deps.sh
 
 COPY ./lib/agent-sandbox/create-user.sh .
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
 RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
     && rm ./create-user.sh
-
-ARG CODEX_VERSION=0.144.4
-RUN npm install --global "@openai/codex@${CODEX_VERSION}"
 
 ENV HOME=/home/codex
 ARG CODEX_HOME
@@ -26,9 +26,6 @@ RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /work \
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /work
 
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-wrappers /lib/agent-wrappers
-ENV PATH=/lib/agent-wrappers:${PATH}
-
 # fallback for `metaedit` when not going through the wrapper
 COPY --chown=${AGENT_UID}:${AGENT_GID} <<EOF ${HOME}/.config/jj/config.toml
 [user]
@@ -38,6 +35,9 @@ EOF
 
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
+
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-wrappers /lib/agent-wrappers
+ENV PATH=/lib/agent-wrappers:${PATH}
 
 ENV COLORTERM=truecolor
 ARG TERM=xterm-256color
