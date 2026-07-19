@@ -36,6 +36,9 @@ name = "jyn"
 email = "github@jyn.dev"
 EOF
 
+# Keep generated editor, language-server, and tool state out of jj snapshots.
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
+
 ENV COLORTERM=truecolor
 ARG TERM=xterm-256color
 ENV TERM=${TERM}
