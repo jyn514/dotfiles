@@ -9,8 +9,6 @@
 # 	eval (set SHELL /bin/sh lesspipe)
 # end
 
-umask 077
-
 set DOTFILES (dirname (dirname (realpath ~/.profile)))
 
 # fish 3 doesn't support most `abbr` and `complete` arguments :/
