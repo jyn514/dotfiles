@@ -16,6 +16,7 @@ SESSION_SUFFIX=$(id -u)-$$
 RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
 RELAY_EGRESS_NETWORK=codex-agent-podman-egress-$SESSION_SUFFIX
 RELAY_CONTAINER=codex-agent-podman-relay-$SESSION_SUFFIX
+AGENT_PODMAN_ENABLED=false
 RELAY_LINK_CREATED=false
 RELAY_EGRESS_CREATED=false
 RELAY_CONTAINER_CREATED=false
@@ -25,15 +26,16 @@ die() {
 	printf 'error: %s\n' "$*" >&2
 	exit 1
 }
-
-[ -f "$AGENT_PODMAN_CONNECTION" ] && [ -f "$AGENT_PODMAN_KEY" ] || \
-	die "Agent Podman access is not configured: $AGENT_PODMAN_ACCESS_DIR"
-
-# setup.sh created this trusted, user-owned file outside the agent workspace.
-# shellcheck source=/dev/null
-. "$AGENT_PODMAN_CONNECTION"
-upstream_prefix="ssh://$AGENT_PODMAN_SSH_USER@host.docker.internal:$AGENT_PODMAN_SSH_PORT/"
-AGENT_PODMAN_SOCKET_PATH=${CONTAINER_HOST#"$upstream_prefix"}
+if [ -e "$AGENT_PODMAN_CONNECTION" ] || [ -e "$AGENT_PODMAN_KEY" ]; then
+	[ -f "$AGENT_PODMAN_CONNECTION" ] && [ -f "$AGENT_PODMAN_KEY" ] || \
+		die "Agent Podman access state is incomplete: $AGENT_PODMAN_ACCESS_DIR"
+	# setup.sh created this trusted, user-owned file outside the agent workspace.
+	# shellcheck source=/dev/null
+	. "$AGENT_PODMAN_CONNECTION"
+	upstream_prefix="ssh://$AGENT_PODMAN_SSH_USER@host.docker.internal:$AGENT_PODMAN_SSH_PORT/"
+	AGENT_PODMAN_SOCKET_PATH=${CONTAINER_HOST#"$upstream_prefix"}
+	AGENT_PODMAN_ENABLED=true
+fi
 
 ensure_network() {
   if docker network exists "$SANDBOX_NETWORK"; then
@@ -143,27 +145,33 @@ echo " done."
 
 ensure_network
 
-trap cleanup_relay EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
-start_agent_podman_relay
+if [ "$AGENT_PODMAN_ENABLED" = true ]; then
+	trap cleanup_relay EXIT
+	trap 'exit 129' HUP
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	start_agent_podman_relay
+fi
+
+set -- "$HASH" --dangerously-bypass-approvals-and-sandbox "$@"
+if [ "$AGENT_PODMAN_ENABLED" = true ]; then
+	set -- \
+		--network "$RELAY_LINK_NETWORK" \
+		--env "CONTAINER_HOST=$AGENT_PODMAN_CONTAINER_HOST" \
+		--env "CONTAINER_SSHKEY=$CONTAINER_SSHKEY" \
+		--mount "type=bind,src=$AGENT_PODMAN_KEY,dst=$CONTAINER_SSHKEY,readonly" \
+		"$@"
+fi
 
 docker run --rm -it \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
   --network "$SANDBOX_NETWORK" \
-  --network "$RELAY_LINK_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
-  --env "CONTAINER_HOST=$AGENT_PODMAN_CONTAINER_HOST" \
-  --env "CONTAINER_SSHKEY=$CONTAINER_SSHKEY" \
-  --mount "type=bind,src=$AGENT_PODMAN_KEY,dst=$CONTAINER_SSHKEY,readonly" \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
   --volume "$HOME/.codex:$HOME/.codex" \
   --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \
   --volume "$PWD:/work" \
-  "$HASH" \
-  --dangerously-bypass-approvals-and-sandbox \
   "$@"
