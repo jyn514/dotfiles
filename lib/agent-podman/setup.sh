@@ -46,6 +46,33 @@ find_role_uid() {
   die "no free macOS role-account UID remains in 450-499"
 }
 
+generate_account_password() {
+  # Alternating disjoint character classes cannot contain adjacent duplicates
+  # or three-character sequences, satisfying the host's managed password policy.
+  openssl rand -hex 20 | awk '
+    BEGIN {
+      hex = "0123456789abcdef"
+      upper = "ABCDEFGHIJKLMNOP"
+      digits = "0123456789012345"
+      lower = "abcdefghijklmnop"
+      symbols = "!@#$%^&*_-+=:;,."
+    }
+    {
+      password = ""
+      for (i = 1; i <= length($0); i++) {
+        index_in_alphabet = index(hex, substr($0, i, 1))
+        slot = (i - 1) % 4
+        if (slot == 0) alphabet = upper
+        else if (slot == 1) alphabet = digits
+        else if (slot == 2) alphabet = lower
+        else alphabet = symbols
+        password = password substr(alphabet, index_in_alphabet, 1)
+      }
+      print password
+    }
+  '
+}
+
 verify_host_account() {
   [ "$(dscl . -read "/Users/$ACCOUNT" IsHidden | awk '{print $2}')" = 1 ] || \
     die "worker account is not hidden"
@@ -58,16 +85,20 @@ verify_host_account() {
   [ "$(id -g "$ACCOUNT")" = "$ACCOUNT_GID" ] || die "worker effective primary group changed"
   [ "$ACCOUNT_UID" -ge 450 ] && [ "$ACCOUNT_UID" -le 499 ] || \
     die "worker account is not in the macOS role-account UID range"
-  dscl . -read "/Users/$ACCOUNT" AuthenticationAuthority | grep -q 'DisabledUser' || \
-    die "worker password authentication is not disabled"
+  # Current macOS records pwpolicy -disableuser through this system group;
+  # role accounts need not have an AuthenticationAuthority attribute.
+  dseditgroup -o checkmember -m "$ACCOUNT" com.apple.access_disabled 2>/dev/null | \
+    grep -q '^yes ' || die "worker password authentication is not disabled"
   for forbidden_group in admin staff wheel _developer; do
     if dseditgroup -o checkmember -m "$ACCOUNT" "$forbidden_group" 2>/dev/null | grep -q 'yes'; then
       die "worker account is a member of $forbidden_group"
     fi
   done
-  [ "$(stat -f %u "$ACCOUNT_HOME")" = "$ACCOUNT_UID" ] || die "worker home owner changed"
-  [ "$(stat -f %g "$ACCOUNT_HOME")" = "$ACCOUNT_GID" ] || die "worker home group changed"
-  [ "$(stat -f %Lp "$ACCOUNT_HOME")" = 700 ] || die "worker home mode changed"
+  for private_dir in "$ACCOUNT_HOME" "$ACCOUNT_HOME/.config" "$ACCOUNT_HOME/.config/containers"; do
+    [ "$(stat -f %u "$private_dir")" = "$ACCOUNT_UID" ] || die "worker directory owner changed: $private_dir"
+    [ "$(stat -f %g "$private_dir")" = "$ACCOUNT_GID" ] || die "worker directory group changed: $private_dir"
+    [ "$(stat -f %Lp "$private_dir")" = 700 ] || die "worker directory mode changed: $private_dir"
+  done
   if find "$ACCOUNT_HOME" -prune -exec /bin/ls -lde {} \; | \
       awk 'NR > 1 { has_acl=1 } END { exit !has_acl }'; then
     die "worker home has an ACL"
@@ -171,10 +202,9 @@ install_network_guard() {
 
   /sbin/pfctl -n -a "$PF_ANCHOR" -f "$PF_RULES"
   /sbin/pfctl -a "$PF_ANCHOR" -f "$PF_RULES"
-  first_child=$(/sbin/pfctl -a com.apple -s Anchors | sort | head -n 1)
-  case "$first_child" in 000.agent-podman|com.apple/000.agent-podman) ;;
-    *) die "PF anchor $PF_ANCHOR is not evaluated first under com.apple/*" ;;
-  esac
+  first_child=$(/sbin/pfctl -a com.apple -s Anchors | awk 'NF { print $1; exit }')
+  [ "$first_child" = "$PF_ANCHOR" ] || \
+    die "PF anchor $PF_ANCHOR is not evaluated first under com.apple/*"
   : > "$PF_ENABLE_LOG"
   chmod 600 "$PF_ENABLE_LOG"
   chown root:wheel "$PF_ENABLE_LOG"
@@ -224,7 +254,7 @@ ACCOUNT_GID=$(dscl . -read "/Groups/$ACCOUNT_GROUP" PrimaryGroupID | awk '{print
 case "$ACCOUNT_GID" in *[!0-9]*|'') die "invalid worker group ID: $ACCOUNT_GID" ;; esac
 ROLE_UID=$(find_role_uid)
 
-ACCOUNT_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
+ACCOUNT_PASSWORD=$(generate_account_password)
 sysadminctl -addUser "$ACCOUNT" \
   -fullName "Disposable Podman Worker" \
   -UID "$ROLE_UID" \
@@ -259,6 +289,7 @@ fi
 chgrp -R "$ACCOUNT_GID" "$ACCOUNT_HOME"
 chmod -N "$ACCOUNT_HOME"
 chmod 700 "$ACCOUNT_HOME"
+install -d -m 700 -o "$ACCOUNT_UID" -g "$ACCOUNT_GID" "$ACCOUNT_HOME/.config"
 install -d -m 700 -o "$ACCOUNT_UID" -g "$ACCOUNT_GID" "$ACCOUNT_HOME/.config/containers"
 
 CONFIG_FILE=$ACCOUNT_HOME/.config/containers/containers.conf
