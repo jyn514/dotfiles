@@ -75,4 +75,6 @@ else
 fi
 
 podman --version
+ln -s "$(command -v podman)" /usr/local/bin/docker
+docker --version
 socat -V
