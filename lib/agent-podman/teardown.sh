@@ -68,13 +68,34 @@ run_worker() {
     "$PODMAN_BIN" "$@"
 }
 
-if dscl . -read "/Users/$ACCOUNT" >/dev/null 2>&1; then
+terminate_worker_processes() {
+  # Podman commands can start a persistent per-user launchd domain. Booting it
+  # out prevents macOS agents from respawning while the disposable UID exits.
+  /bin/launchctl bootout "user/$ACCOUNT_UID" >/dev/null 2>&1 || true
+
+  if /usr/bin/pgrep -U "$ACCOUNT_UID" >/dev/null 2>&1; then
+    /usr/bin/pkill -TERM -U "$ACCOUNT_UID" >/dev/null 2>&1 || true
+    attempts=5
+    while [ "$attempts" -gt 0 ] && /usr/bin/pgrep -U "$ACCOUNT_UID" >/dev/null 2>&1; do
+      /bin/sleep 1
+      attempts=$((attempts - 1))
+    done
+  fi
+
+  if /usr/bin/pgrep -U "$ACCOUNT_UID" >/dev/null 2>&1; then
+    /bin/ps -U "$ACCOUNT_UID" -o pid=,ppid=,state=,etime=,command= >&2
+    die "worker processes remain after termination; retaining the account"
+  fi
+}
+
+LOCAL_USERS=$(dscl . -list /Users UniqueID) || die "could not query local accounts"
+ACCOUNT_UID=$(printf '%s\n' "$LOCAL_USERS" | awk -v account="$ACCOUNT" '$1 == account { print $2 }')
+if [ -n "$ACCOUNT_UID" ]; then
+  case "$ACCOUNT_UID" in *[!0-9]*) die "invalid worker UID: $ACCOUNT_UID" ;; esac
   RECORDED_HOME=$(dscl . -read "/Users/$ACCOUNT" NFSHomeDirectory | awk '{print $2}')
   [ "$RECORDED_HOME" = "$ACCOUNT_HOME" ] || die "account home mismatch: $RECORDED_HOME"
-  ACCOUNT_UID=$(id -u "$ACCOUNT")
 
-  # Setup creates the home before its first Podman call. No home means there
-  # can be no script-created machine to inventory.
+  # Use Podman's own cleanup when its dedicated home and machine metadata remain.
   if [ -e "$ACCOUNT_HOME" ] || [ -L "$ACCOUNT_HOME" ]; then
     [ -d "$ACCOUNT_HOME" ] && [ ! -L "$ACCOUNT_HOME" ] || die "unsafe worker home: $ACCOUNT_HOME"
     PODMAN_BIN=${AGENT_PODMAN_BIN:-}
@@ -85,27 +106,26 @@ if dscl . -read "/Users/$ACCOUNT" >/dev/null 2>&1; then
     [ -x "$PODMAN_BIN" ] || die "Podman executable is not executable: $PODMAN_BIN"
     PODMAN_DIR=$(dirname "$PODMAN_BIN")
 
-    MACHINE_LIST=$(run_worker machine list --format '{{.Name}}') || \
-      die "could not list Podman machines; retaining provenance"
-    if printf '%s\n' "$MACHINE_LIST" | grep -qxF "$MACHINE"; then
-      run_worker machine rm --force "$MACHINE"
-    fi
-
-    MACHINE_LIST=$(run_worker machine list --format '{{.Name}}') || \
-      die "could not verify Podman machine removal"
-    if printf '%s\n' "$MACHINE_LIST" | grep -qxF "$MACHINE"; then
-      die "Podman machine still exists; retaining account and ownership marker"
+    # Podman list/stop consult the AppleHV state socket and can fail when a VM
+    # is running but its control socket is broken.  Let Podman clean up when it
+    # can; the authoritative teardown below removes every process and the whole
+    # provenance-checked account home regardless of Podman's internal state.
+    if ! run_worker machine rm --force "$MACHINE"; then
+      printf 'warning: Podman could not remove machine %s; removing its dedicated UID and home directly\n' \
+        "$MACHINE" >&2
     fi
   fi
 
-  if pgrep -U "$ACCOUNT_UID" >/dev/null 2>&1; then
-    die "worker processes remain after VM removal; retaining the account"
-  fi
+  terminate_worker_processes
 
   release_network_guard
 
-  sysadminctl -deleteUser "$ACCOUNT" -secure
-  if dscl . -read "/Users/$ACCOUNT" >/dev/null 2>&1; then
+  # The home can contain a large sparse VM disk. sysadminctl -secure may spend
+  # an unbounded time overwriting it, and APFS/SSD remapping means that this is
+  # not a dependable secure-erasure boundary in any case.
+  sysadminctl -deleteUser "$ACCOUNT"
+  LOCAL_USERS=$(dscl . -list /Users UniqueID) || die "could not verify local-account removal"
+  if printf '%s\n' "$LOCAL_USERS" | awk -v account="$ACCOUNT" '$1 == account { found=1 } END { exit !found }'; then
     die "worker account still exists; retaining ownership marker"
   fi
   [ ! -e "$ACCOUNT_HOME" ] && [ ! -L "$ACCOUNT_HOME" ] || \
