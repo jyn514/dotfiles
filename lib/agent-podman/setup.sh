@@ -189,8 +189,11 @@ install_network_guard() {
   # reserved block rules must precede the DNS pass so that port-53 traffic to
   # those ranges is blocked; only DNS to public addresses reaches the pass rule.
   {
-    printf 'pass out quick inet proto tcp from any port %s to any user %s\n' "$SSH_PORT" "$ACCOUNT_UID"
-    printf 'pass out quick inet6 proto tcp from any port %s to any user %s\n' "$SSH_PORT" "$ACCOUNT_UID"
+    # Match the initial inbound SYN against the worker-owned listening socket.
+    # Its state permits only replies for accepted SSH connections; an outbound
+    # source-port rule does not reliably create state after Docker translation.
+    printf 'pass in quick inet proto tcp from any to any port %s user %s flags S/SA keep state\n' "$SSH_PORT" "$ACCOUNT_UID"
+    printf 'pass in quick inet6 proto tcp from any to any port %s user %s flags S/SA keep state\n' "$SSH_PORT" "$ACCOUNT_UID"
     printf '%s\n' \
       "block return out quick inet proto { tcp udp } from any to { 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4 } user $ACCOUNT_UID"
     printf '%s\n' \

@@ -9,7 +9,7 @@ Podman's separate VM lifecycle key remains confined to the locked macOS worker h
 The worker's Podman subprocesses and the SSH client run with minimal environments.
 
 The setup also installs a macOS PF anchor for processes owned by `_agentpodman`.
-It allows DNS and replies from the forwarded guest SSH port, then blocks other TCP and UDP traffic to local, private, link-local, multicast, and reserved address ranges.
+It allows stateful inbound connections to the worker-owned guest SSH port and public DNS, then blocks other TCP and UDP traffic to local, private, link-local, multicast, and reserved address ranges.
 Public Internet access remains available for image and package downloads.
 
 This is a meaningful VM boundary, not protection against VM-runtime vulnerabilities.
@@ -66,8 +66,7 @@ docker run ... \
 Pass the four values recorded in `~/.agent-podman-access/connection.env` as environment variables, then run `podman --remote info` inside the sandbox.
 Don't mount `connection.env` or the whole access directory.
 
-If `host.docker.internal` can't reach the forwarded SSH port, use a narrowly scoped authenticated SSH forward.
-Never expose an unauthenticated Podman TCP API.
+The forwarded port exposes only authenticated guest SSH; it does not expose an unauthenticated Podman TCP API.
 
 ## Teardown
 
@@ -75,7 +74,7 @@ Never expose an unauthenticated Podman TCP API.
 sudo /usr/local/libexec/agent-podman/teardown.sh
 ```
 
-Teardown checks the root-owned provenance marker, obtains a successful machine inventory, removes the VM, verifies that no worker processes remain, releases the PF enable reference, and deletes the fixed worker account, group, and home.
+Teardown checks the root-owned provenance marker, asks Podman to remove the VM, verifies that no worker processes remain, releases the PF enable reference, and deletes the fixed worker account, group, and home.
 It retains the provenance marker and reports failure if any required deletion cannot be verified.
 It never deletes caller-owned credentials as root;
 after teardown, run the exact `rm` and `rmdir` commands it prints.
