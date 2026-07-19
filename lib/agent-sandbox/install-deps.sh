@@ -21,6 +21,7 @@ if command -v apt-get >/dev/null; then
         ca-certificates \
         curl \
         gh \
+        jq \
         podman \
         socat
     curl -fsSL \
@@ -34,6 +35,7 @@ elif command -v apk >/dev/null; then
         ca-certificates \
         github-cli \
         jujutsu \
+        jq \
         podman \
         socat
 elif command -v microdnf >/dev/null; then
@@ -57,6 +59,7 @@ elif command -v microdnf >/dev/null; then
         ca-certificates \
         curl \
         gzip \
+        jq \
         podman \
         socat \
         tar
@@ -74,6 +77,7 @@ else
     exit 1
 fi
 
+jq --version
 podman --version
 ln -s "$(command -v podman)" /usr/local/bin/docker
 docker --version

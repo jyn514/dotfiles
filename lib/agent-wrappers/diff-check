@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+jj diff --git "$@" | awk '
+  /^\+\+\+ / { next }
+  /^\+/ && /[[:blank:]]+$/ {
+    print
+    found = 1
+  }
+  END { exit found ? 1 : 0 }
+'
