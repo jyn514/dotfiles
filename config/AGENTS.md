@@ -102,7 +102,7 @@ Just name it; don't fix or file unless asked.
 Don't pad replies.
 Don't summarize your own message; only mention things that haven't come up yet.
 
-## Permissions
+## Commands and permissions
 
 Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
@@ -113,6 +113,9 @@ Prefer `rg`/`head`/`tail` and other read-only commands.
 
 Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead. For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
+
+Never use `git diff --check`; it's sometimes not installed in your sandbox.
+Use `diff-check` instead.
 
 ### Shell command construction
 
