@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.38 - 2026-07-19
+
+- Make Pi the sole compaction owner: remove the extension's hardcoded 50k `turn_end` trigger so Pi's effective compaction settings determine threshold behavior and host/extension races cannot produce `Already compacted` or interrupt an active goal.
+- Preserve goal accounting, persistence, recovery, and guarded continuation through Pi's `session_before_compact` and `session_compact` lifecycle events, including host overflow retries and late pre-compaction results.
+- On Pi hosts that only check thresholds between low-level runs, a large mid-run tool result can still cause one overflow request before Pi compacts and retries; the extension no longer preempts that request because Pi 0.80.10 exposes no atomic ownership or active-settings API.
+- Update the development and documented compatibility baseline to Pi 0.80.10.
+
+### Validation
+
+- Ran `npm run verify` under Pi 0.80.10: `tsc --noEmit`, 6 platform-smoke checks, and 329 regular tests passed.
+- Ran the Crabbox release matrix on macOS, Ubuntu, and native Windows; every packed-package build/install, model-backed goal runtime smoke, and lease-cleanup assertion passed.
+- Ran `npm audit --omit=optional`, `npm publish --dry-run --ignore-scripts`, and an isolated Pi install from the packed tarball; all passed.
+
 ## 0.1.37 - 2026-07-16
 
 - Migrate the SDK runtime smoke from removed `AuthStorage`/`ModelRegistry` session options to the Pi 0.80.9 `ModelRuntime` contract with an in-memory credential store, and refresh the local development lock while preserving wildcard runtime peers.

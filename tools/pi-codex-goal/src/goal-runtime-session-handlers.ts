@@ -59,7 +59,6 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
   return {
     onSessionStart: (async (event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
-      runtimeState.proactiveCompactionPending = false;
       deps.providerLimitAutoResume.clear();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
@@ -81,7 +80,6 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
 
     onSessionTree: (async (_event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
-      runtimeState.proactiveCompactionPending = false;
       deps.providerLimitAutoResume.clear();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
@@ -108,7 +106,6 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
         return;
       }
 
-      runtimeState.proactiveCompactionPending = false;
       stateController.flushGoalPersistence("runtime");
       const wasRecoveringFromHostOverflow = recoveryPhaseBlocksContinuation(
         runtimeState.recoveryState.phase,
@@ -130,7 +127,6 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
 
     onSessionShutdown: (async (_event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
-      runtimeState.proactiveCompactionPending = false;
       deps.providerLimitAutoResume.clear();
       continuation.clearPassthroughContinuationInput();
       continuation.clearContinuationTimer();

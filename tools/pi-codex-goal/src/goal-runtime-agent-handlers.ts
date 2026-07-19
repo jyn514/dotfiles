@@ -30,9 +30,6 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
       goalAccounting.accountProgress(ctx, false, abortedTurnTokens, true);
       stateController.flushGoalPersistence("runtime");
       if (abortedMessages.length > 0) {
-        if (runtimeState.proactiveCompactionPending) {
-          return;
-        }
         stateController.pauseForAbort(ctx);
         return;
       }

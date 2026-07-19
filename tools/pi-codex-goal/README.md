@@ -45,7 +45,7 @@ pi install .
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: this package is tested against the current pi release during each package update. The current source tree targets Pi 0.80.9 on Node 24 for the next package release. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers, so npm peer ranges do not hard-block users from trying newer pi releases; runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
+Compatibility note: this package is tested against the current pi release during each package update. The current source tree targets Pi 0.80.10 on Node 24 for the next package release. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers, so npm peer ranges do not hard-block users from trying newer pi releases; runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
@@ -186,6 +186,7 @@ While a goal is active, the extension:
 - tracks elapsed active time between turns and tool completions
 - adds completed assistant turn input plus output token usage when the active model reports it
 - coalesces runtime goal custom-entry writes so unchanged status and usage are not appended on every tool completion; live footer usage stays current, and meaningful usage is flushed at turn boundaries, shutdown, compaction, budget crossings, and bounded intervals during long tool-heavy runs
+- leaves threshold and overflow compaction decisions to pi, so the user's effective pi compaction settings remain authoritative while goal accounting and continuation follow host compaction events
 - pauses when an active assistant turn is aborted, such as when you press Esc
 - recovers from provider assistant errors without immediate hidden continuation loops: context-window overflow triggers automatic compaction and then resumes the active goal, transient errors use bounded backoff retries, and recognized provider usage-limit pauses schedule a conservative auto-resume retry; use `/goal resume cancel` to stop the scheduled retry
 - prompts on session resume before reactivating a paused goal, and resumes explicitly with `/goal resume` from paused goals

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  InMemoryCredentialStore,
+  type AssistantMessage,
+  type StreamFunction,
+} from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -13,6 +18,37 @@ import {
 
 import goalExtension, { __testHooks } from "../src/index.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+
+function assistantResponse(
+  model: Parameters<StreamFunction>[0],
+  contextTokens: number,
+  text: string,
+): ReturnType<StreamFunction> {
+  const stream = createAssistantMessageEventStream();
+  const message: AssistantMessage = {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: contextTokens - 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: contextTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+  queueMicrotask(() => {
+    stream.push({ type: "start", partial: message });
+    stream.push({ type: "done", reason: "stop", message });
+    stream.end();
+  });
+  return stream;
+}
 
 function goalIdFromToolResult(result: unknown): string {
   assert.ok(result && typeof result === "object");
@@ -26,6 +62,75 @@ function goalIdFromToolResult(result: unknown): string {
   }
   return goalId;
 }
+
+test("SDK runtime uses Pi settings for the sole persisted threshold compaction", async () => {
+  const modelRuntime = await ModelRuntime.create({
+    allowModelNetwork: false,
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+  });
+  const loader = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: getAgentDir(),
+    noContextFiles: true,
+    noExtensions: true,
+    extensionFactories: [goalExtension],
+  });
+  await loader.reload();
+
+  modelRuntime.registerProvider("sdk-smoke", {
+    api: "openai-completions",
+    apiKey: "test",
+    baseUrl: "http://localhost",
+    models: [{
+      id: "compaction",
+      name: "SDK Compaction Smoke",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 272_000,
+      maxTokens: 1_000,
+    }],
+  });
+  const model = modelRuntime.getModel("sdk-smoke", "compaction");
+  assert.ok(model);
+  const sessionManager = SessionManager.inMemory(process.cwd());
+  const { session } = await createAgentSession({
+    cwd: process.cwd(),
+    agentDir: getAgentDir(),
+    model,
+    modelRuntime,
+    noTools: "builtin",
+    resourceLoader: loader,
+    sessionManager,
+    settingsManager: SettingsManager.inMemory({
+      compaction: { enabled: true, reserveTokens: 16_834, keepRecentTokens: 40_000 },
+    }),
+  });
+
+  let nextContextTokens = 247_783;
+  let streamCalls = 0;
+  session.agent.streamFn = (activeModel) => {
+    streamCalls += 1;
+    return assistantResponse(
+      activeModel,
+      nextContextTokens,
+      streamCalls === 1 ? "x".repeat(200_000) : "summary",
+    );
+  };
+
+  try {
+    await session.prompt("below configured threshold");
+    assert.equal(sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, 0);
+
+    nextContextTokens = 255_167;
+    await session.prompt("above configured threshold");
+
+    assert.equal(sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, 1);
+  } finally {
+    session.dispose();
+  }
+});
 
 test("SDK runtime emits a continuation after willRetry compaction when no retry agent starts", async () => {
   const modelRuntime = await ModelRuntime.create({
