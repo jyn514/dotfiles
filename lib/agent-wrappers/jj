@@ -6,8 +6,24 @@ set -eu
 # below resolves to the real binary (next on PATH) — no hardcoded path.
 # Covers both the fish prompt and babashka tooling that calls `jj` via PATH.
 self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-PATH=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$self_dir" | tr '\n' :)
-PATH=${PATH%:}   # drop trailing colon — an empty entry means cwd, a footgun
+# Canonicalize entries so aliases such as /lib and /usr/lib compare equal.
+# Empty and nonexistent entries are omitted; an empty PATH entry means cwd.
+original_path=$PATH
+filtered_path=
+while [ -n "$original_path" ]; do
+  path_entry=${original_path%%:*}
+  case "$original_path" in
+    *:*) original_path=${original_path#*:} ;;
+    *) original_path= ;;
+  esac
+
+  [ -n "$path_entry" ] || continue
+  canonical_entry=$(CDPATH='' cd -- "$path_entry" 2>/dev/null && pwd -P) || continue
+  [ "$canonical_entry" != "$self_dir" ] || continue
+
+  filtered_path=${filtered_path:+$filtered_path:}$canonical_entry
+done
+PATH=$filtered_path
 export PATH
 
 codex_version() {
