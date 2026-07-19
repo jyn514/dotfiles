@@ -1,13 +1,13 @@
 ARG BASE_IMAGE=node:slim
 FROM ${BASE_IMAGE}
 
-COPY ./install-deps.sh .
+COPY ./lib/agent-sandbox/install-deps.sh .
 RUN ./install-deps.sh && rm ./install-deps.sh
 
-COPY ./install-user-deps.sh .
+COPY ./lib/agent-sandbox/install-user-deps.sh .
 RUN ./install-user-deps.sh && rm ./install-user-deps.sh
 
-COPY ./create-user.sh .
+COPY ./lib/agent-sandbox/create-user.sh .
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
 RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
@@ -15,6 +15,9 @@ RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
 
 ARG CODEX_VERSION=0.144.4
 RUN npm install --global "@openai/codex@${CODEX_VERSION}"
+
+COPY --chmod=755 ./lib/agent-wrappers /lib/agent-wrappers
+ENV PATH=/lib/agent-wrappers:${PATH}
 
 ENV HOME=/home/codex
 ARG CODEX_HOME

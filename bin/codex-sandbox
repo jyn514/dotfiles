@@ -9,7 +9,7 @@ build_image() {
     --build-arg "AGENT_GID=$(id -g)" \
     --build-arg "CODEX_HOME=$HOME/.codex" \
     --build-arg "TERM=$TERM" \
-    "$@")
+    "$@" .)
 }
 
 if [ -x "$BASE_IMAGE_BUILDER" ]; then
