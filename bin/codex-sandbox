@@ -1,11 +1,39 @@
 #!/bin/sh
 
+set -eu
+
 DOTFILES="$(dirname -- "$(realpath -- "$0")")/.."
 BASE_IMAGE_BUILDER="$PWD/.agents/sandbox-base-image"
 SANDBOX_NETWORK=codex-public-only
 SANDBOX_SUBNET=10.254.254.0/24
 SANDBOX_GATEWAY=10.254.254.1
 SANDBOX_IP_RANGE=10.254.254.128/25
+AGENT_PODMAN_ACCESS_DIR=${AGENT_PODMAN_ACCESS_DIR:-$HOME/.agent-podman-access}
+AGENT_PODMAN_CONNECTION=$AGENT_PODMAN_ACCESS_DIR/connection.env
+AGENT_PODMAN_KEY=$AGENT_PODMAN_ACCESS_DIR/id_ed25519
+AGENT_PODMAN_RELAY_PORT=2222
+SESSION_SUFFIX=$(id -u)-$$
+RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
+RELAY_EGRESS_NETWORK=codex-agent-podman-egress-$SESSION_SUFFIX
+RELAY_CONTAINER=codex-agent-podman-relay-$SESSION_SUFFIX
+RELAY_LINK_CREATED=false
+RELAY_EGRESS_CREATED=false
+RELAY_CONTAINER_CREATED=false
+TERM=${TERM:-xterm-256color}
+
+die() {
+	printf 'error: %s\n' "$*" >&2
+	exit 1
+}
+
+[ -f "$AGENT_PODMAN_CONNECTION" ] && [ -f "$AGENT_PODMAN_KEY" ] || \
+	die "Agent Podman access is not configured: $AGENT_PODMAN_ACCESS_DIR"
+
+# setup.sh created this trusted, user-owned file outside the agent workspace.
+# shellcheck source=/dev/null
+. "$AGENT_PODMAN_CONNECTION"
+upstream_prefix="ssh://$AGENT_PODMAN_SSH_USER@host.docker.internal:$AGENT_PODMAN_SSH_PORT/"
+AGENT_PODMAN_SOCKET_PATH=${CONTAINER_HOST#"$upstream_prefix"}
 
 ensure_network() {
   if docker network exists "$SANDBOX_NETWORK"; then
@@ -45,6 +73,62 @@ build_image() {
     "$@" .)
 }
 
+cleanup_relay() {
+	status=$?
+	trap - EXIT HUP INT TERM
+	if [ "$RELAY_CONTAINER_CREATED" = true ]; then
+		docker rm --force "$RELAY_CONTAINER" >/dev/null 2>&1 || \
+			printf 'warning: could not remove relay container %s\n' "$RELAY_CONTAINER" >&2
+	fi
+	if [ "$RELAY_LINK_CREATED" = true ]; then
+		docker network rm "$RELAY_LINK_NETWORK" >/dev/null 2>&1 || \
+			printf 'warning: could not remove relay network %s\n' "$RELAY_LINK_NETWORK" >&2
+	fi
+	if [ "$RELAY_EGRESS_CREATED" = true ]; then
+		docker network rm "$RELAY_EGRESS_NETWORK" >/dev/null 2>&1 || \
+			printf 'warning: could not remove relay network %s\n' "$RELAY_EGRESS_NETWORK" >&2
+	fi
+	exit "$status"
+}
+
+start_agent_podman_relay() {
+	docker network create \
+		--internal \
+		--opt isolate=true \
+		"$RELAY_LINK_NETWORK" >/dev/null
+	RELAY_LINK_CREATED=true
+
+	docker network create \
+		--opt isolate=true \
+		"$RELAY_EGRESS_NETWORK" >/dev/null
+	RELAY_EGRESS_CREATED=true
+
+	# The relay has no key or host mounts. It can only carry bytes between its
+	# private link and the single validated SSH port on the macOS host gateway.
+	docker run --detach \
+		--name "$RELAY_CONTAINER" \
+		--cap-drop=ALL \
+		--security-opt=no-new-privileges \
+		--read-only \
+		--network "$RELAY_EGRESS_NETWORK" \
+		--http-proxy=false \
+		--entrypoint /usr/bin/socat \
+		"$HASH" \
+		-d -d \
+		"TCP4-LISTEN:$AGENT_PODMAN_RELAY_PORT,fork,reuseaddr" \
+		"TCP4:host.docker.internal:$AGENT_PODMAN_SSH_PORT" >/dev/null
+	RELAY_CONTAINER_CREATED=true
+
+	docker network connect "$RELAY_LINK_NETWORK" "$RELAY_CONTAINER"
+	RELAY_IP=$(docker inspect \
+		--format "{{(index .NetworkSettings.Networks \"$RELAY_LINK_NETWORK\").IPAddress}}" \
+		"$RELAY_CONTAINER")
+	[ -n "$RELAY_IP" ] || die "Agent Podman relay has no link address"
+
+	AGENT_PODMAN_CONTAINER_HOST="ssh://$AGENT_PODMAN_SSH_USER@$RELAY_IP:$AGENT_PODMAN_RELAY_PORT/$AGENT_PODMAN_SOCKET_PATH"
+	printf 'Agent Podman relay ready at %s:%s.\n' "$RELAY_IP" "$AGENT_PODMAN_RELAY_PORT"
+}
+
 if [ -x "$BASE_IMAGE_BUILDER" ]; then
   printf "Building custom docker image ..."
   BASE_IMAGE=$($BASE_IMAGE_BUILDER)
@@ -57,15 +141,25 @@ else
 fi
 echo " done."
 
-ensure_network || exit
+ensure_network
+
+trap cleanup_relay EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+start_agent_podman_relay
 
 docker run --rm -it \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
   --network "$SANDBOX_NETWORK" \
+  --network "$RELAY_LINK_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
+  --env "CONTAINER_HOST=$AGENT_PODMAN_CONTAINER_HOST" \
+  --env "CONTAINER_SSHKEY=$CONTAINER_SSHKEY" \
+  --mount "type=bind,src=$AGENT_PODMAN_KEY,dst=$CONTAINER_SSHKEY,readonly" \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
   --volume "$HOME/.codex:$HOME/.codex" \
   --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \

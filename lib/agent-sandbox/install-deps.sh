@@ -20,7 +20,9 @@ if command -v apt-get >/dev/null; then
         bubblewrap \
         ca-certificates \
         curl \
-        gh
+        gh \
+        podman \
+        socat
     curl -fsSL \
         "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${jj_arch}-unknown-linux-musl.tar.gz" \
         | tar -xz -C /usr/local/bin
@@ -31,7 +33,9 @@ elif command -v apk >/dev/null; then
         bubblewrap \
         ca-certificates \
         github-cli \
-        jujutsu
+        jujutsu \
+        podman \
+        socat
 elif command -v microdnf >/dev/null; then
     case "$(uname -m)" in
         x86_64)
@@ -53,6 +57,8 @@ elif command -v microdnf >/dev/null; then
         ca-certificates \
         curl \
         gzip \
+        podman \
+        socat \
         tar
     curl -fsSL \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
@@ -67,3 +73,6 @@ else
     echo "Unsupported package manager" >&2
     exit 1
 fi
+
+podman --version
+socat -V
