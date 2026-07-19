@@ -3,6 +3,7 @@
 set -eux
 
 JJ_VERSION="${JJ_VERSION:-0.42.0}"
+GH_VERSION="${GH_VERSION:-2.76.1}"
 
 if command -v apt-get >/dev/null; then
     case "$(uname -m)" in
@@ -31,6 +32,37 @@ elif command -v apk >/dev/null; then
         ca-certificates \
         github-cli \
         jujutsu
+elif command -v microdnf >/dev/null; then
+    case "$(uname -m)" in
+        x86_64)
+            gh_arch=amd64
+            jj_arch=x86_64
+            ;;
+        aarch64|arm64)
+            gh_arch=arm64
+            jj_arch=aarch64
+            ;;
+        *)
+            echo "Unsupported architecture: $(uname -m)" >&2
+            exit 1
+            ;;
+    esac
+
+    microdnf install -y --nobest \
+        bubblewrap \
+        ca-certificates \
+        curl \
+        gzip \
+        tar
+    curl -fsSL \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
+        | tar -xz --strip-components=2 -C /usr/local/bin \
+            "gh_${GH_VERSION}_linux_${gh_arch}/bin/gh"
+    curl -fsSL \
+        "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${jj_arch}-unknown-linux-musl.tar.gz" \
+        | tar -xz -C /usr/local/bin
+    gh --version
+    jj --version
 else
     echo "Unsupported package manager" >&2
     exit 1
