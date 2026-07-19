@@ -67,12 +67,19 @@ ensure_network() {
 }
 
 build_image() {
-  (cd "$DOTFILES" && docker build -f lib/agent-sandbox/Dockerfile \
-    --build-arg "AGENT_UID=$(id -u)" \
-    --build-arg "AGENT_GID=$(id -g)" \
-    --build-arg "CODEX_HOME=$HOME/.codex" \
-    --build-arg "TERM=$TERM" \
-    "$@" .)
+	(
+		iidfile=$(mktemp)
+		trap 'rm -f "$iidfile"' EXIT HUP INT TERM
+		cd "$DOTFILES"
+		docker build -f lib/agent-sandbox/Dockerfile \
+			--build-arg "AGENT_UID=$(id -u)" \
+			--build-arg "AGENT_GID=$(id -g)" \
+			--build-arg "CODEX_HOME=$HOME/.codex" \
+			--build-arg "TERM=$TERM" \
+			--iidfile "$iidfile" \
+			"$@" . 1>&2
+		cat "$iidfile"
+	)
 }
 
 cleanup_relay() {
@@ -135,11 +142,11 @@ if [ -x "$BASE_IMAGE_BUILDER" ]; then
   printf "Building custom docker image ..."
   BASE_IMAGE=$($BASE_IMAGE_BUILDER)
   HASH=$(build_image \
-    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
-    --quiet)
+    --build-arg "BASE_IMAGE=$BASE_IMAGE")
 else
   printf "Building default docker image ..."
-  HASH=$(build_image --tag codex --quiet)
+  HASH=$(build_image \
+    --tag codex)
 fi
 echo " done."
 
