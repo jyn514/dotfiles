@@ -2,6 +2,39 @@
 
 DOTFILES="$(dirname -- "$(realpath -- "$0")")/.."
 BASE_IMAGE_BUILDER="$PWD/.agents/sandbox-base-image"
+SANDBOX_NETWORK=codex-public-only
+SANDBOX_SUBNET=10.254.254.0/24
+SANDBOX_GATEWAY=10.254.254.1
+SANDBOX_IP_RANGE=10.254.254.128/25
+
+ensure_network() {
+  if docker network exists "$SANDBOX_NETWORK"; then
+    return
+  fi
+
+  printf "Creating sandbox network ..."
+	# Prohibit routes to non-public ranges.
+	# The sandbox has no NET_ADMIN capability, so it cannot replace these routes.
+  docker network create --ignore \
+    --subnet "$SANDBOX_SUBNET" \
+    --gateway "$SANDBOX_GATEWAY" \
+    --ip-range "$SANDBOX_IP_RANGE" \
+    --opt isolate=true \
+		--route 0.0.0.0/8,prohibit \
+		--route 10.0.0.0/8,prohibit \
+		--route 100.64.0.0/10,prohibit \
+		--route 127.0.0.0/8,prohibit \
+		--route 169.254.0.0/16,prohibit \
+		--route 172.16.0.0/12,prohibit \
+		--route 192.0.0.0/24,prohibit \
+		--route 192.168.0.0/16,prohibit \
+		--route 198.18.0.0/15,prohibit \
+		--route 224.0.0.0/4,prohibit \
+		--route 240.0.0.0/4,prohibit \
+    "$SANDBOX_NETWORK" >/dev/null \
+    || return 1
+  echo " done."
+}
 
 build_image() {
   (cd "$DOTFILES" && docker build -f lib/agent-sandbox/Dockerfile \
@@ -24,9 +57,13 @@ else
 fi
 echo " done."
 
+ensure_network || exit
+
 docker run --rm -it \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
+  --network "$SANDBOX_NETWORK" \
+  --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
