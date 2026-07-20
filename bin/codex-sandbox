@@ -141,12 +141,10 @@ start_agent_podman_relay() {
 if [ -x "$BASE_IMAGE_BUILDER" ]; then
   printf "Building custom docker image ..."
   BASE_IMAGE=$($BASE_IMAGE_BUILDER)
-  HASH=$(build_image \
-    --build-arg "BASE_IMAGE=$BASE_IMAGE")
+  HASH=$(build_image --build-arg "BASE_IMAGE=$BASE_IMAGE")
 else
   printf "Building default docker image ..."
-  HASH=$(build_image \
-    --tag codex)
+  HASH=$(build_image --tag codex)
 fi
 echo " done."
 
