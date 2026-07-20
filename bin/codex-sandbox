@@ -82,6 +82,55 @@ build_image() {
 	)
 }
 
+image_cache_key() {
+	base_image=$1
+	(
+		cd "$DOTFILES"
+		{
+			printf '%s\n' \
+				"BASE_IMAGE=$base_image" \
+				"AGENT_UID=$(id -u)" \
+				"AGENT_GID=$(id -g)" \
+				"CODEX_HOME=$HOME/.codex" \
+				"TERM=$TERM"
+			# The Dockerfile uses shell-form COPY with one source per instruction.
+			# Heredoc COPY instructions create their content inline, so the
+			# Dockerfile hash already accounts for them.
+			{
+				printf '%s\n' lib/agent-sandbox/Dockerfile
+				awk '
+					$1 == "COPY" {
+						for (i = 2; i < NF; i++)
+							if ($i !~ /^--/ && $i !~ /^<</)
+								print $i
+					}
+				' lib/agent-sandbox/Dockerfile
+			} |
+				while IFS= read -r path; do
+					find "$path" -type f -print
+				done |
+				LC_ALL=C sort |
+				while IFS= read -r path; do
+					printf '%s %s\n' "$path" "$(git hash-object "$path")"
+				done
+		} | git hash-object --stdin
+	)
+}
+
+ensure_image() {
+	base_image=$1
+	cache_key=$(image_cache_key "$base_image")
+	image="codex-sandbox:$cache_key"
+	if docker image inspect "$image" >/dev/null 2>&1; then
+		printf '%s\n' "$image"
+		return
+	fi
+
+	printf 'Building docker image %s ...' "$image" >&2
+	build_image --tag "$image" --build-arg "BASE_IMAGE=$base_image"
+	printf ' done.\n' >&2
+}
+
 cleanup_relay() {
 	status=$?
 	trap - EXIT HUP INT TERM
@@ -139,14 +188,11 @@ start_agent_podman_relay() {
 }
 
 if [ -x "$BASE_IMAGE_BUILDER" ]; then
-  printf "Building custom docker image ..."
-  BASE_IMAGE=$($BASE_IMAGE_BUILDER)
-  HASH=$(build_image --build-arg "BASE_IMAGE=$BASE_IMAGE")
+	BASE_IMAGE=$($BASE_IMAGE_BUILDER)
 else
-  printf "Building default docker image ..."
-  HASH=$(build_image --tag codex)
+	BASE_IMAGE=node:slim
 fi
-echo " done."
+HASH=$(ensure_image "$BASE_IMAGE")
 
 ensure_network
 
