@@ -45,11 +45,21 @@
   (fail! "Usage" "bb agent-split <patch-file> -m <message> [revision]"))
 
 (defn- print-help! []
-  (println "Usage: bb agent-split <patch-file> -m <message> [revision]"))
+  (println "Usage: bb agent-split <patch-file> -m <message> [revision]")
+  (println "Splits the selected Git-style patch from a Jujutsu revision; revision defaults to @.")
+  (println "The patch paths and hunks define the fileset to select and must be contained in the revision's diff.")
+  (println "The patch and helper artifacts must be outside the visible workspace or under ignored target/jj-split/.")
+  (println "Runs jj split with the repository's non-interactive jj-agent-split-editor, then verifies both resulting revisions.")
+  (println "The split changes workspace history; preflight failures return before invoking jj split or the editor.")
+  (println "Use -- to stop recognizing wrapper options; arguments after -- are validated as operands."))
 
 (defn- parse-args [args]
-  (let [[patch flag message revision & extra] args]
-    (when (some #{"-h" "--help"} args)
+  (let [wrapper-args (take-while #(not= "--" %) args)
+        operands (if (= "--" (nth args (count wrapper-args) nil))
+                   (concat wrapper-args (drop (inc (count wrapper-args)) args))
+                   args)
+        [patch flag message revision & extra] operands]
+    (when (some #{"-h" "--help"} wrapper-args)
       (print-help!)
       (System/exit 0))
     (when (or (nil? patch)

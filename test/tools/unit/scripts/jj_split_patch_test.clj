@@ -48,6 +48,14 @@
   (is (= "preflight: stale selected content"
          ((ns-resolve (quote scripts.jj-split-patch) (quote failure-text)) "preflight" "stale selected content"))))
 
+(deftest jj-split-patch-help-recognition-stops-at-double-dash
+  (let [{:keys [exit err]}
+        (captured-failure
+         #((ns-resolve (quote scripts.jj-split-patch) (quote parse-args))
+           ["--" "--help"]))]
+    (is (= 1 exit))
+    (is (str/includes? err "Usage:"))))
+
 (deftest jj-split-patch-rejects-stale-selected-content-before-split
   (let [original ((ns-resolve (quote scripts.jj-split-patch) (quote diff-change-index))
                   (str "diff --git a/note.txt b/note.txt\n"
