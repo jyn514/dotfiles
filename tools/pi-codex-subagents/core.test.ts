@@ -312,6 +312,29 @@ describe("child process lifecycle", () => {
     }
   });
 
+  test("accepts Darwin process ownership when ps cannot expose the token", async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...platformDescriptor, value: "darwin" });
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "lifecycle-darwin";
+    fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+    const manager = new AgentManager();
+    try {
+      await manager.spawnAgent(spawnParams(parentSessionId, "worker", "hold darwin"));
+      const running = manager.getAgentInfo("worker", parentSessionId);
+      expect(running.childProcess?.pid).toBeNumber();
+      expect(pidAlive(running.childProcess!.pid)).toBe(true);
+    } finally {
+      try {
+        await manager.shutdown();
+      } finally {
+        Object.defineProperty(process, "platform", platformDescriptor);
+        fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+        delete process.env.PI_SUBAGENT_PI_BIN;
+      }
+    }
+  });
+
   test("interrupt terminates the child and clears runtime artifacts", async () => {
     process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
     const parentSessionId = "lifecycle-interrupt";

@@ -603,12 +603,14 @@ function inspectProcess(pid: number, token?: string): ProcessSnapshot | undefine
       const output = result.status === 0 ? result.stdout : "";
       return output ? { identity: `windows:${hashIdentity(output)}` } : undefined;
     }
-    const result = spawnSync("ps", ["eww", "-p", String(pid), "-o", "lstart=", "-o", "command="], { encoding: "utf8", timeout: 3000 });
+    // Darwin does not reliably expose another process's environment through ps, even to its parent.
+    const canVerifyToken = process.platform !== "darwin";
+    const result = spawnSync("ps", [canVerifyToken ? "eww" : "ww", "-p", String(pid), "-o", "lstart=", "-o", "command="], { encoding: "utf8", timeout: 3000 });
     const output = result.status === 0 ? result.stdout.trim() : "";
     if (!output) return undefined;
     return {
       identity: `unix:${hashIdentity(output)}`,
-      ...(token ? { tokenMatches: output.includes(`PI_SUBAGENT_OWNER_TOKEN=${token}`) } : {}),
+      ...(token && canVerifyToken ? { tokenMatches: output.includes(`PI_SUBAGENT_OWNER_TOKEN=${token}`) } : {}),
     };
   } catch {
     return undefined;
