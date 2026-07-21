@@ -5,13 +5,16 @@ set -eux
 JJ_VERSION="${JJ_VERSION:-0.42.0}"
 GH_VERSION="${GH_VERSION:-2.76.1}"
 PODMAN_VERSION="${PODMAN_VERSION:-6.0.1}"
+TYPST_VERSION="${TYPST_VERSION:-0.15.1}"
 
 case "$(uname -m)" in
     x86_64)
         podman_arch=amd64
+        typst_arch=x86_64
         ;;
     aarch64|arm64)
         podman_arch=arm64
+        typst_arch=aarch64
         ;;
     *)
         echo "Unsupported architecture: $(uname -m)" >&2
@@ -45,7 +48,8 @@ if command -v apt-get >/dev/null; then
         python3 \
         ripgrep \
         socat \
-        sudo
+        sudo \
+        xz-utils
     curl -fsSL \
         "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${jj_arch}-unknown-linux-musl.tar.gz" \
         | tar -xz -C /usr/local/bin
@@ -67,7 +71,8 @@ elif command -v apk >/dev/null; then
         python3 \
         ripgrep \
         socat \
-        sudo
+        sudo \
+        xz
 elif command -v microdnf >/dev/null; then
     case "$(uname -m)" in
         x86_64)
@@ -100,7 +105,8 @@ elif command -v microdnf >/dev/null; then
         ripgrep \
         socat \
         sudo \
-        tar
+        tar \
+        xz
     curl -fsSL \
         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
         | tar -xz --strip-components=2 -C /usr/local/bin \
@@ -114,6 +120,12 @@ else
     echo "Unsupported package manager" >&2
     exit 1
 fi
+
+typst_target="${typst_arch}-unknown-linux-musl"
+curl -fsSL \
+    "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${typst_target}.tar.xz" \
+    | tar -xJ --strip-components=1 -C /usr/local/bin \
+        "typst-${typst_target}/typst"
 
 podman_archive="podman-remote-static-linux_${podman_arch}.tar.gz"
 podman_download_dir=$(mktemp -d)
@@ -139,6 +151,7 @@ trap - EXIT HUP INT TERM
 
 jq --version
 podman --version
+typst --version
 ln -s /usr/local/bin/podman /usr/local/bin/docker
 docker --version
 socat -V
