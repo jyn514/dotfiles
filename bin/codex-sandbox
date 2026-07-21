@@ -167,13 +167,14 @@ cleanup_resource() {
 	label=$1
 	shift
 	started=$(date +%s)
-	printf 'Cleaning up %s ... ' "$label" >&2
 	if "$@" >/dev/null 2>&1; then
-		finished=$(date +%s)
-		printf 'done (%ss).\n' "$((finished - started))" >&2
+    elapsed=$(($(date +%s) - started))
+    if ! [ 0 = $elapsed ]; then
+      printf 'Cleaning up %s: done (%ss).\n' "$label" "$elapsed" >&2
+    fi
 	else
 		finished=$(date +%s)
-		printf 'warning: failed after %ss.\n' "$((finished - started))" >&2
+		printf 'warning: Cleaning up %s failed after %ss.\n' "$label" "$((finished - started))" >&2
 	fi
 }
 
