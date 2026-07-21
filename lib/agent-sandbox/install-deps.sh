@@ -44,11 +44,13 @@ if command -v apt-get >/dev/null; then
         iproute2 \
         jq \
         lsof \
+        openssh-client \
         procps \
         python3 \
         ripgrep \
         socat \
         sudo \
+        tar \
         xz-utils
     curl -fsSL \
         "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${jj_arch}-unknown-linux-musl.tar.gz" \
@@ -67,6 +69,7 @@ elif command -v apk >/dev/null; then
         jujutsu \
         jq \
         lsof \
+        openssh-client-default \
         procps \
         python3 \
         ripgrep \
@@ -100,6 +103,7 @@ elif command -v microdnf >/dev/null; then
         iproute \
         jq \
         lsof \
+        openssh-clients \
         procps-ng \
         python3 \
         ripgrep \

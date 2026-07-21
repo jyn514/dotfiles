@@ -153,6 +153,6 @@ rm -f "$MARKER"
 rmdir "$MARKER_DIR" 2>/dev/null || true
 printf 'Verified removal of machine %s, account %s, its group, and PF rules.\n' "$MACHINE" "$ACCOUNT"
 printf 'Remove caller-owned credentials yourself after inspection:\n'
-printf '  rm -f %s/id_ed25519 %s/id_ed25519.pub %s/known_hosts %s/connection.env\n' \
-  "$OUTPUT_DIR" "$OUTPUT_DIR" "$OUTPUT_DIR" "$OUTPUT_DIR"
+printf '  rm -f %s/id_ed25519 %s/id_ed25519.pub %s/known_hosts %s/known_hosts.sandbox %s/connection.env\n' \
+  "$OUTPUT_DIR" "$OUTPUT_DIR" "$OUTPUT_DIR" "$OUTPUT_DIR" "$OUTPUT_DIR"
 printf '  rmdir %s\n' "$OUTPUT_DIR"

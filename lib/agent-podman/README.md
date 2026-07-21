@@ -3,7 +3,7 @@
 `setup.sh` creates a rootless Podman Machine under the fixed hidden, locked, non-login macOS role account `_agentpodman`.
 It dynamically assigns an unused role-account UID in macOS's 450–499 range, gives the account a dedicated primary group, and verifies that it is not a member of `staff`, `admin`, `wheel`, or `_developer`.
 It disables Podman's default `$HOME:$HOME` mount and rejects `/Users`, `/Volumes`, 9p, and virtiofs mounts found in the guest.
-It creates the non-sudo Linux user `agentbuilder`, starts her rootless Podman socket, and creates a VM-specific SSH key in `~/.agent-podman-access`, outside the project directory normally shared with the sandbox.
+It creates the non-sudo Linux user `agentbuilder`, starts her rootless Podman socket, and creates VM-specific SSH client and host-key files in `~/.agent-podman-access`, outside the project directory normally shared with the sandbox.
 That key permits arbitrary non-PTY SSH commands as `agentbuilder`, which has the same arbitrary-code authority as her Podman API.
 Podman's separate VM lifecycle key remains confined to the locked macOS worker home.
 The worker's Podman subprocesses and the SSH client run with minimal environments.
@@ -11,6 +11,11 @@ The worker's Podman subprocesses and the SSH client run with minimal environment
 The setup also installs a macOS PF anchor for processes owned by `_agentpodman`.
 It allows stateful inbound connections to the worker-owned guest SSH port and public DNS, then blocks other TCP and UDP traffic to local, private, link-local, multicast, and reserved address ranges.
 Public Internet access remains available for image and package downloads.
+
+The machine also contains a pinned `woodpecker-cli` and a supervisor used by
+the sandbox's `woodpecker-cli exec` adapter. The adapter stages the requested
+repository inside the machine, applies a shared SELinux label only to that
+per-run workspace, streams Woodpecker output, and safely reaps abandoned runs.
 
 This is a meaningful VM boundary, not protection against VM-runtime vulnerabilities.
 The threat model treats the host administrator, setup environment, and installed scripts as trusted, while treating the agent container, submitted build inputs, and eventually the entire guest as hostile.
@@ -29,7 +34,7 @@ for example:
 
 ```sh
 sudo install -d -m 755 -o root -g wheel /usr/local/libexec/agent-podman
-sudo install -m 755 -o root -g wheel setup.sh teardown.sh /usr/local/libexec/agent-podman/
+sudo install -m 755 -o root -g wheel setup.sh teardown.sh woodpecker-supervisor.sh /usr/local/libexec/agent-podman/
 ```
 
 Run the installed setup script:
@@ -49,21 +54,24 @@ Optional resource controls are positive integers:
 
 ```sh
 sudo \
-  AGENT_PODMAN_CPUS=4 \
-  AGENT_PODMAN_MEMORY=4096 \
+  AGENT_PODMAN_CPUS=6 \
+  AGENT_PODMAN_MEMORY=12288 \
   AGENT_PODMAN_DISK_SIZE=30 \
   /usr/local/libexec/agent-podman/setup.sh
 ```
 
-Mount only the generated key into the Docker sandbox:
+Mount only the generated client key and sandbox known-hosts file into the Docker sandbox:
 
 ```sh
 docker run ... \
+  --env AGENT_PODMAN_KNOWN_HOSTS=/run/secrets/agent-podman-known-hosts \
   --mount type=bind,src="$HOME/.agent-podman-access/id_ed25519",dst=/run/secrets/agent-podman-key,readonly \
+  --mount type=bind,src="$HOME/.agent-podman-access/known_hosts.sandbox",dst=/run/secrets/agent-podman-known-hosts,readonly \
   sandbox-image
 ```
 
 Pass the four values recorded in `~/.agent-podman-access/connection.env` as environment variables, then run `podman --remote info` inside the sandbox.
+The adapter uses the stable `agent-podman` host-key alias because its relay IP changes per sandbox session.
 Don't mount `connection.env` or the whole access directory.
 
 The forwarded port exposes only authenticated guest SSH; it does not expose an unauthenticated Podman TCP API.
