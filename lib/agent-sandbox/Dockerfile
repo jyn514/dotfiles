@@ -1,4 +1,6 @@
 ARG BASE_IMAGE=node:slim
+FROM codex-jj-proxy:local AS jj_proxy
+
 FROM ${BASE_IMAGE}
 
 ARG CODEX_VERSION=0.144.4
@@ -31,17 +33,11 @@ RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src/work \
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /src/work
 
-# fallback for `metaedit` when not going through the wrapper
-COPY --chown=${AGENT_UID}:${AGENT_GID} <<EOF ${HOME}/.config/jj/config.toml
-[user]
-name = "jyn"
-email = "github@jyn.dev"
-EOF
-
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-wrappers /lib/agent-wrappers
+COPY --from=jj_proxy /trusted/bin/jj-proxy /usr/local/bin/jj-proxy
 ENV PATH=/lib/agent-wrappers:${PATH}
 
 ENV COLORTERM=truecolor

@@ -1,0 +1,14 @@
+[user]
+name = "jyn"
+email = "github@jyn.dev"
+
+[ui]
+paginate = "never"
+editor = ["/trusted/bin/jj-proxy", "reject-editor"]
+diff-editor = ":builtin"
+merge-editor = ":builtin"
+
+[signing]
+behavior = "drop"
+
+[aliases]

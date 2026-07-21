@@ -1,0 +1,222 @@
+mod policy;
+
+use color_eyre::eyre::{bail, eyre, Result, WrapErr};
+use serde::{Deserialize, Serialize};
+use nix::fcntl::{openat, OFlag};
+use nix::sys::resource::{setrlimit, Resource};
+use nix::sys::signal::{kill, Signal};
+use nix::sys::socket::{recv, MsgFlags};
+use nix::sys::stat::Mode;
+use nix::unistd::{close, dup, fchdir, setsid, Pid};
+use std::collections::HashSet;
+use std::env;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::CommandExt;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const SOCKET: &str = "/run/jj-proxy/socket";
+const CONFIG_HOME: &str = "/run/jj-proxy/config";
+const MAX_REQUEST: usize = 1 << 20;
+const MAX_OUTPUT: usize = 8 << 20;
+const TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Request { version: u8, cwd: String, argv: Vec<String> }
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Response { version: u8, exit: i32, stdout: String, stderr: String }
+
+fn read_frame(stream: &mut UnixStream, limit: usize) -> io::Result<Vec<u8>> {
+    let mut header = [0; 4];
+    stream.read_exact(&mut header)?;
+    let length = u32::from_be_bytes(header) as usize;
+    if length > limit {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "message is too large"));
+    }
+    let mut body = vec![0; length];
+    stream.read_exact(&mut body)?;
+    Ok(body)
+}
+
+fn write_frame(stream: &mut UnixStream, body: &[u8]) -> io::Result<()> {
+    let length = u32::try_from(body.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "message is too large"))?;
+    stream.write_all(&length.to_be_bytes())?;
+    stream.write_all(body)
+}
+
+fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
+    if path.contains('\0') || path.starts_with('/') {
+        bail!("cwd must be relative to the repository");
+    }
+    let mut current = dup(root).wrap_err("could not duplicate repository descriptor")?;
+    for component in path.split('/').filter(|part| !part.is_empty() && *part != ".") {
+        if component == ".." { bail!("cwd escapes the repository"); }
+        let next = openat(
+            Some(current), component,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ).wrap_err_with(|| format!("invalid cwd component {component:?}"))?;
+        close(current).wrap_err("could not close cwd descriptor")?;
+        current = next;
+    }
+    // SAFETY: `current` came from `dup` or `openat`, so it is a valid, open
+    // descriptor. Each superseded descriptor was closed above, and no other
+    // owning Rust value was constructed from `current`; ownership can
+    // therefore be transferred exactly once to `OwnedFd` here.
+    Ok(unsafe { OwnedFd::from_raw_fd(current) })
+}
+
+fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    file.take((MAX_OUTPUT + 1) as u64).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn kill_group(pid: u32) { let _ = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL); }
+
+fn disconnected(stream: &UnixStream) -> bool {
+    let mut byte = [0u8];
+    matches!(recv(stream.as_raw_fd(), &mut byte, MsgFlags::MSG_PEEK | MsgFlags::MSG_DONTWAIT), Ok(0))
+}
+
+fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
+    move || {
+        let io_error = |error: nix::errno::Errno| io::Error::from_raw_os_error(error as i32);
+        setsid().map_err(io_error)?;
+        fchdir(fd).map_err(io_error)?;
+        let limits = [
+            (Resource::RLIMIT_CPU, 120), (Resource::RLIMIT_FSIZE, 64 << 20),
+            (Resource::RLIMIT_NOFILE, 64), (Resource::RLIMIT_AS, 2 << 30),
+        ];
+        for (resource, value) in limits {
+            setrlimit(resource, value, value).map_err(io_error)?;
+        }
+        Ok(())
+    }
+}
+
+fn execute(request: &Request, stream: &UnixStream, root: RawFd, repo: &str, remotes: &HashSet<String>) -> Response {
+    let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
+    if request.version != 1 { return failure("unsupported protocol version".into()); }
+    if request.argv.as_slice() == [":ready"] {
+        return Response { version: 1, exit: 0, stdout: String::new(), stderr: String::new() };
+    }
+    if let Err(error) = policy::validate(&request.argv, remotes) { return failure(error.to_string()); }
+    let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+
+    let mut command = Command::new("/trusted/bin/jj");
+    command.args([
+        "--no-pager", "--color=never",
+        "--config", "ui.editor=[\"/trusted/bin/jj-proxy\",\"reject-editor\"]",
+        "--config", "ui.diff-editor=:builtin",
+        "--config", "ui.merge-editor=:builtin",
+        "--config", "signing.behavior=drop",
+        "--repository", repo,
+    ]);
+    if matches!(request.argv.first().map(String::as_str), Some("diff" | "show")) {
+        command.args(["--config", "ui.diff-formatter=:git"]);
+    }
+    command.args(&request.argv);
+    if request.argv.as_slice().starts_with(&["git".into(), "fetch".into()])
+        && !request.argv.iter().any(|arg| arg == "--remote" || arg.starts_with("--remote="))
+    {
+        for remote in remotes { command.args(["--remote", remote]); }
+    }
+    command.env_clear().envs([
+        ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
+        ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
+        ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
+        ("VISUAL", "false"), ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
+        ("JJ_USER", "Codex"), ("JJ_EMAIL", "breq@jyn.dev"),
+        ("RUST_BACKTRACE", "1"),
+    ]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    // SAFETY: the callback captures only the copied descriptor number and
+    // performs the async-signal-safe `setsid`, `fchdir`, and `setrlimit`
+    // syscalls. No proxy reader threads exist while `spawn` forks, and `cwd`
+    // remains alive until after `spawn` returns, so the descriptor is valid in
+    // the child. The callback does not allocate, lock, or access shared state.
+    unsafe { command.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
+    let mut child = match command.spawn() { Ok(child) => child, Err(error) => return failure(format!("could not start jj: {error}")) };
+    let pid = child.id();
+    let child_stdout = child.stdout.take().unwrap();
+    let child_stderr = child.stderr.take().unwrap();
+    let out_thread = thread::spawn(move || collect(child_stdout));
+    let err_thread = thread::spawn(move || collect(child_stderr));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code().unwrap_or(128),
+            Ok(None) if started.elapsed() < TIMEOUT && !disconnected(stream) => thread::sleep(Duration::from_millis(20)),
+            Ok(None) => { kill_group(pid); let _ = child.wait(); break 124; }
+            Err(error) => { kill_group(pid); let _ = child.wait(); return failure(format!("could not wait for jj: {error}")); }
+        }
+    };
+    // A successful leader must not be allowed to leave inherited-pipe holders
+    // or other descendants behind in the proxy container.
+    kill_group(pid);
+    let stdout = out_thread.join().ok().and_then(Result::ok).unwrap_or_default();
+    let stderr = err_thread.join().ok().and_then(Result::ok).unwrap_or_default();
+    if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
+        return failure("output limit exceeded".into());
+    }
+    Response { version: 1, exit: status, stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr: String::from_utf8_lossy(&stderr).into_owned() }
+}
+
+fn serve() -> Result<()> {
+    let repo = env::var("JJ_PROXY_REPO").wrap_err("JJ_PROXY_REPO is required")?;
+    let root = File::open(&repo).wrap_err("cannot open repository")?;
+    let remotes = env::var("JJ_PROXY_REMOTES").unwrap_or_else(|_| "origin".into()).split(',').filter(|s| !s.is_empty()).map(str::to_owned).collect();
+    fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
+    fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
+    let _ = fs::remove_file(SOCKET);
+    let listener = UnixListener::bind(SOCKET).wrap_err("cannot bind proxy socket")?;
+    fs::set_permissions(SOCKET, fs::Permissions::from_mode(0o666)).wrap_err("cannot set proxy socket permissions")?;
+    for connection in listener.incoming() {
+        let mut stream = match connection { Ok(stream) => stream, Err(error) => { eprintln!("jj proxy: accept: {error}"); continue; } };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+        let response = match read_frame(&mut stream, MAX_REQUEST).and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
+            Ok(request) => execute(&request, &stream, root.as_raw_fd(), &repo, &remotes),
+            Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
+        };
+        if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
+    }
+    Ok(())
+}
+
+fn client(args: Vec<String>) -> Result<i32> {
+    let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".into());
+    let cwd = env::current_dir().wrap_err("cannot read current directory")?;
+    let repo_path = fs::canonicalize(&repo).wrap_err("repository unavailable")?;
+    let cwd = fs::canonicalize(cwd).wrap_err("cannot resolve current directory")?;
+    let relative = cwd.strip_prefix(&repo_path).map_err(|_| eyre!("current directory is outside the protected repository"))?;
+    let request = Request { version: 1, cwd: relative.to_string_lossy().into_owned(), argv: args };
+    let body = serde_json::to_vec(&request).wrap_err("cannot encode request")?;
+    let mut stream = UnixStream::connect(SOCKET).wrap_err("proxy unavailable")?;
+    stream.set_read_timeout(Some(TIMEOUT + Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
+    stream.set_write_timeout(Some(Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
+    write_frame(&mut stream, &body).wrap_err("cannot send proxy request")?;
+    let response: Response = serde_json::from_slice(&read_frame(&mut stream, MAX_OUTPUT * 3).wrap_err("cannot read proxy response")?).wrap_err("cannot decode proxy response")?;
+    if response.version != 1 { bail!("unsupported response version"); }
+    print!("{}", response.stdout); eprint!("{}", response.stderr);
+    Ok(response.exit)
+}
+
+fn main() {
+    color_eyre::install().expect("could not install error reporter");
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("reject-editor") {
+        eprintln!("jj proxy: interactive editors are disabled; pass a message with -m");
+        std::process::exit(1);
+    }
+    let result = if args.first().map(String::as_str) == Some("serve") { serve().map(|_| 0) } else { client(std::mem::take(&mut args)) };
+    match result { Ok(code) => std::process::exit(code), Err(error) => { eprintln!("jj proxy: {error:?}"); std::process::exit(125); } }
+}

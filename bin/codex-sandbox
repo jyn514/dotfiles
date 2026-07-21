@@ -16,10 +16,14 @@ SESSION_SUFFIX=$(id -u)-$$
 RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
 RELAY_EGRESS_NETWORK=codex-agent-podman-egress-$SESSION_SUFFIX
 RELAY_CONTAINER=codex-agent-podman-relay-$SESSION_SUFFIX
+JJ_PROXY_CONTAINER=codex-jj-proxy-$SESSION_SUFFIX
+JJ_PROXY_VOLUME=codex-jj-proxy-$SESSION_SUFFIX
 AGENT_PODMAN_ENABLED=false
 RELAY_LINK_CREATED=false
 RELAY_EGRESS_CREATED=false
 RELAY_CONTAINER_CREATED=false
+JJ_PROXY_CONTAINER_CREATED=false
+JJ_PROXY_VOLUME_CREATED=false
 TERM=${TERM:-xterm-256color}
 
 die() {
@@ -82,6 +86,27 @@ build_image() {
 	)
 }
 
+ensure_proxy_image() {
+	cache_key=$(
+		cd "$DOTFILES"
+		find lib/jj-proxy -type f -print | LC_ALL=C sort |
+			while IFS= read -r path; do
+				printf '%s %s\n' "$path" "$(git hash-object "$path")"
+			done | git hash-object --stdin
+	)
+	image="jj-proxy:$cache_key"
+	if ! docker image inspect "$image" >/dev/null 2>&1; then
+		printf 'Building jj proxy image %s ...' "$image" >&2
+		(
+			cd "$DOTFILES"
+			docker build -f lib/jj-proxy/Dockerfile --tag "$image" . 1>&2
+		)
+		printf ' done.\n' >&2
+	fi
+	docker image tag "$image" codex-jj-proxy:local
+	printf '%s\n' "$image"
+}
+
 image_cache_key() {
 	base_image=$1
 	(
@@ -89,6 +114,7 @@ image_cache_key() {
 		{
 			printf '%s\n' \
 				"BASE_IMAGE=$base_image" \
+				"JJ_PROXY_IMAGE=$JJ_PROXY_IMAGE" \
 				"AGENT_UID=$(id -u)" \
 				"AGENT_GID=$(id -g)" \
 				"CODEX_HOME=$HOME/.codex" \
@@ -100,6 +126,9 @@ image_cache_key() {
 				printf '%s\n' lib/agent-sandbox/Dockerfile
 				awk '
 					$1 == "COPY" {
+						for (i = 2; i < NF; i++)
+							if ($i ~ /^--from=/)
+								next
 						for (i = 2; i < NF; i++)
 							if ($i !~ /^--/ && $i !~ /^<</)
 								print $i
@@ -134,6 +163,14 @@ ensure_image() {
 cleanup_relay() {
 	status=$?
 	trap - EXIT HUP INT TERM
+	if [ "$JJ_PROXY_CONTAINER_CREATED" = true ]; then
+		docker rm --force "$JJ_PROXY_CONTAINER" >/dev/null 2>&1 || \
+			printf 'warning: could not remove proxy container %s\n' "$JJ_PROXY_CONTAINER" >&2
+	fi
+	if [ "$JJ_PROXY_VOLUME_CREATED" = true ]; then
+		docker volume rm "$JJ_PROXY_VOLUME" >/dev/null 2>&1 || \
+			printf 'warning: could not remove proxy volume %s\n' "$JJ_PROXY_VOLUME" >&2
+	fi
 	if [ "$RELAY_CONTAINER_CREATED" = true ]; then
 		docker rm --force "$RELAY_CONTAINER" >/dev/null 2>&1 || \
 			printf 'warning: could not remove relay container %s\n' "$RELAY_CONTAINER" >&2
@@ -147,6 +184,69 @@ cleanup_relay() {
 			printf 'warning: could not remove relay network %s\n' "$RELAY_EGRESS_NETWORK" >&2
 	fi
 	exit "$status"
+}
+
+validate_repository() {
+	REPOSITORY=$(pwd -P)
+	[ -d "$REPOSITORY/.jj" ] && [ ! -L "$REPOSITORY/.jj" ] || \
+		die "The current directory is not a safely mounted Jujutsu repository root"
+	[ -d "$REPOSITORY/.git" ] || [ -f "$REPOSITORY/.git" ] || \
+		die "Missing Git metadata at $REPOSITORY/.git"
+	[ ! -L "$REPOSITORY/.git" ] || die "Symlinked Git metadata is not supported"
+	if find "$REPOSITORY/.jj" "$REPOSITORY/.git" -xdev -type f -links +1 -print -quit | grep . >/dev/null; then
+		die "Repository metadata contains hard-linked files"
+	fi
+}
+
+start_jj_proxy() {
+	docker volume create "$JJ_PROXY_VOLUME" >/dev/null
+	JJ_PROXY_VOLUME_CREATED=true
+	docker run --rm \
+		--user 0:0 \
+		--entrypoint /bin/chmod \
+		--mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy" \
+		"$HASH" 1777 /run/jj-proxy
+	docker run --detach \
+		--name "$JJ_PROXY_CONTAINER" \
+		--cap-drop=ALL \
+		--security-opt=no-new-privileges \
+		--read-only \
+		--user "$(id -u):$(id -g)" \
+		--tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+		--network "$SANDBOX_NETWORK" \
+		--pids-limit 96 \
+		--memory 2304m \
+		--cpus 2 \
+		--env JJ_PROXY_REPO=/src/work \
+		--env JJ_PROXY_REMOTES=origin \
+		--mount "type=bind,src=$REPOSITORY,dst=/src/work,bind-nonrecursive=true" \
+		--mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy" \
+		"$JJ_PROXY_IMAGE" >/dev/null
+	JJ_PROXY_CONTAINER_CREATED=true
+
+	attempt=0
+	readiness_error=$(mktemp)
+	while [ "$attempt" -lt 100 ]; do
+		if docker exec --workdir /src/work --env JJ_PROXY_REPO=/src/work "$JJ_PROXY_CONTAINER" \
+			/trusted/bin/jj-proxy :ready >/dev/null 2>"$readiness_error"; then
+			# Let jj create its session-local secure per-repository config before
+			# Codex's first command. Its one-time warning is launcher noise, and a
+			# repository error here must not make socket readiness fail.
+			docker exec --workdir /src/work --env JJ_PROXY_REPO=/src/work "$JJ_PROXY_CONTAINER" \
+				/trusted/bin/jj-proxy status >/dev/null 2>&1 || true
+			rm -f "$readiness_error"
+			return
+		fi
+		attempt=$((attempt + 1))
+		sleep 0.05
+	done
+	docker logs "$JJ_PROXY_CONTAINER" >&2 || true
+	if [ -s "$readiness_error" ]; then
+		printf 'Jujutsu proxy readiness check failed:\n' >&2
+		cat "$readiness_error" >&2
+	fi
+	rm -f "$readiness_error"
+	die "Jujutsu proxy did not become ready"
 }
 
 start_agent_podman_relay() {
@@ -192,15 +292,19 @@ if [ -x "$BASE_IMAGE_BUILDER" ]; then
 else
 	BASE_IMAGE=node:slim
 fi
+validate_repository
+JJ_PROXY_IMAGE=$(ensure_proxy_image)
 HASH=$(ensure_image "$BASE_IMAGE")
 
 ensure_network
 
+trap cleanup_relay EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+start_jj_proxy
+
 if [ "$AGENT_PODMAN_ENABLED" = true ]; then
-	trap cleanup_relay EXIT
-	trap 'exit 129' HUP
-	trap 'exit 130' INT
-	trap 'exit 143' TERM
 	start_agent_podman_relay
 fi
 
@@ -228,10 +332,14 @@ docker run --rm -it \
   --network "$SANDBOX_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
+  --env JJ_PROXY_REPO=/src/work \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
   --volume "$HOME/.codex:$HOME/.codex" \
   --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \
   --mount "type=bind,src=$HOME/src,dst=/src,readonly" \
-  --volume "$PWD:/src/work" \
+  --mount "type=bind,src=$REPOSITORY,dst=/src/work,bind-nonrecursive=true" \
+  --mount "type=bind,src=$REPOSITORY/.git,dst=/src/work/.git,readonly" \
+  --mount "type=bind,src=$REPOSITORY/.jj,dst=/src/work/.jj,readonly" \
+  --mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy,readonly" \
   "$@"
