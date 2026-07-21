@@ -232,5 +232,6 @@ docker run --rm -it \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
   --volume "$HOME/.codex:$HOME/.codex" \
   --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \
-  --volume "$PWD:/work" \
+  --mount "type=bind,src=$HOME/src,dst=/src,readonly" \
+  --volume "$PWD:/src/work" \
   "$@"
