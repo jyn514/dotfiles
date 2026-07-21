@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "commands": {
+    "jj": {
+      "image-command": [".agents/sandbox/jj-proxy-image"],
+      "argv": ["jj-proxy", "serve"],
+      "workdir": ".",
+      "network": true,
+      "mounts": [
+        {
+          "source": ".git",
+          "target": ".git",
+          "proxy": "read-write"
+        },
+        {
+          "source": ".jj",
+          "target": ".jj",
+          "proxy": "read-write"
+        }
+      ]
+    }
+  }
+}

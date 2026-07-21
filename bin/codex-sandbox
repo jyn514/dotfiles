@@ -3,7 +3,7 @@
 set -eu
 
 DOTFILES="$(dirname -- "$(realpath -- "$0")")/.."
-BASE_IMAGE_BUILDER="$PWD/.agents/sandbox-base-image"
+SANDBOX_PROXY_HELPER="$DOTFILES/lib/sandbox-proxies.py"
 SANDBOX_NETWORK=codex-public-only
 SANDBOX_SUBNET=10.254.254.0/24
 SANDBOX_GATEWAY=10.254.254.1
@@ -19,15 +19,19 @@ RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
 RELAY_EGRESS_NETWORK=codex-agent-podman-egress-$SESSION_SUFFIX
 RELAY_CONTAINER=codex-agent-podman-relay-$SESSION_SUFFIX
 CODEX_CONTAINER=codex-sandbox-$SESSION_SUFFIX
-JJ_PROXY_CONTAINER=codex-jj-proxy-$SESSION_SUFFIX
-JJ_PROXY_VOLUME=codex-jj-proxy-$SESSION_SUFFIX
 AGENT_PODMAN_ENABLED=false
 RELAY_LINK_CREATED=false
 RELAY_EGRESS_CREATED=false
 RELAY_CONTAINER_CREATED=false
 CODEX_CONTAINER_CREATED=false
-JJ_PROXY_CONTAINER_CREATED=false
-JJ_PROXY_VOLUME_CREATED=false
+SANDBOX_PROXY_PREFIX=codex-command-proxy-$SESSION_SUFFIX
+SANDBOX_PROXY_STATE=
+SANDBOX_PROXY_ARGS=
+SANDBOX_MANIFEST=
+SANDBOX_MONITOR_PID=
+SANDBOX_LOCK_READY=
+SANDBOX_LOCK_RELEASE=
+SANDBOX_LOCK_PID=
 SKILLS_TMP=
 TERM=${TERM:-xterm-256color}
 
@@ -92,27 +96,6 @@ build_image() {
 	)
 }
 
-ensure_proxy_image() {
-	cache_key=$(
-		cd "$DOTFILES"
-		find lib/jj-proxy -type f -print | LC_ALL=C sort |
-			while IFS= read -r path; do
-				printf '%s %s\n' "$path" "$(git hash-object "$path")"
-			done | git hash-object --stdin
-	)
-	image="jj-proxy:$cache_key"
-	if ! docker image inspect "$image" >/dev/null 2>&1; then
-		printf 'Building jj proxy image %s ...' "$image" >&2
-		(
-			cd "$DOTFILES"
-			docker build -f lib/jj-proxy/Dockerfile --tag "$image" . 1>&2
-		)
-		printf ' done.\n' >&2
-	fi
-	docker image tag "$image" codex-jj-proxy:local
-	printf '%s\n' "$image"
-}
-
 image_cache_key() {
 	base_image=$1
 	(
@@ -120,7 +103,6 @@ image_cache_key() {
 		{
 			printf '%s\n' \
 				"BASE_IMAGE=$base_image" \
-				"JJ_PROXY_IMAGE=$JJ_PROXY_IMAGE" \
 				"AGENT_UID=$(id -u)" \
 				"AGENT_GID=$(id -g)" \
 				"CODEX_HOME=$HOME/.codex" \
@@ -188,15 +170,8 @@ cleanup_relay() {
 		cleanup_resource "Codex container $CODEX_CONTAINER" \
 			docker rm --force "$CODEX_CONTAINER"
 	fi
-	if [ "$JJ_PROXY_CONTAINER_CREATED" = true ]; then
-		cleanup_resource "stopping proxy container $JJ_PROXY_CONTAINER" \
-			docker kill "$JJ_PROXY_CONTAINER"
-		cleanup_resource "removing proxy container $JJ_PROXY_CONTAINER" \
-			docker rm --force "$JJ_PROXY_CONTAINER"
-	fi
-	if [ "$JJ_PROXY_VOLUME_CREATED" = true ]; then
-		cleanup_resource "proxy volume $JJ_PROXY_VOLUME" \
-			docker volume rm "$JJ_PROXY_VOLUME"
+	if [ -n "$SANDBOX_PROXY_STATE" ]; then
+		python3 "$SANDBOX_PROXY_HELPER" stop --state "$SANDBOX_PROXY_STATE" || true
 	fi
 	if [ "$RELAY_CONTAINER_CREATED" = true ]; then
 		cleanup_resource "relay container $RELAY_CONTAINER" \
@@ -213,6 +188,19 @@ cleanup_relay() {
 	if [ -n "$SKILLS_TMP" ]; then
 		cleanup_resource "staged skills $SKILLS_TMP" rm -rf "$SKILLS_TMP"
 	fi
+	if [ -n "$SANDBOX_LOCK_RELEASE" ]; then
+		: > "$SANDBOX_LOCK_RELEASE"
+	fi
+	if [ -n "$SANDBOX_LOCK_PID" ]; then
+		wait "$SANDBOX_LOCK_PID" || true
+	fi
+	if [ -n "$SANDBOX_MONITOR_PID" ]; then
+		wait "$SANDBOX_MONITOR_PID" || true
+	fi
+	for temporary in "$SANDBOX_PROXY_STATE" "$SANDBOX_PROXY_ARGS" \
+		"$SANDBOX_MANIFEST" "$SANDBOX_LOCK_READY" "$SANDBOX_LOCK_RELEASE"; do
+		[ -z "$temporary" ] || rm -f "$temporary"
+	done
 	exit "$status"
 }
 
@@ -221,63 +209,35 @@ validate_repository() {
 	REPOSITORY=$(cd "$repository" && pwd -P)
 	[ -d "$REPOSITORY/.jj" ] && [ ! -L "$REPOSITORY/.jj" ] || \
 		die "The Jujutsu workspace root cannot be safely mounted"
-	[ -d "$REPOSITORY/.git" ] || [ -f "$REPOSITORY/.git" ] || \
-		die "Missing Git metadata at $REPOSITORY/.git"
+	[ -d "$REPOSITORY/.git" ] || die "Git metadata indirection is not supported"
 	[ ! -L "$REPOSITORY/.git" ] || die "Symlinked Git metadata is not supported"
 	if find "$REPOSITORY/.jj" "$REPOSITORY/.git" -xdev -type f -links +1 -print -quit | grep . >/dev/null; then
 		die "Repository metadata contains hard-linked files"
 	fi
+	SANDBOX_MANIFEST=$(mktemp)
+	python3 "$SANDBOX_PROXY_HELPER" snapshot \
+		--repo "$REPOSITORY" --output "$SANDBOX_MANIFEST"
 }
 
-start_jj_proxy() {
-	docker volume create "$JJ_PROXY_VOLUME" >/dev/null
-	JJ_PROXY_VOLUME_CREATED=true
-	docker run --rm \
-		--user 0:0 \
-		--entrypoint /bin/chmod \
-		--mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy" \
-		"$HASH" 1777 /run/jj-proxy
-	docker run --detach \
-		--name "$JJ_PROXY_CONTAINER" \
-		--cap-drop=ALL \
-		--security-opt=no-new-privileges \
-		--read-only \
-		--user "$(id -u):$(id -g)" \
-		--tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
-		--network "$SANDBOX_NETWORK" \
-		--pids-limit 96 \
-		--memory 2304m \
-		--cpus 2 \
-		--env JJ_PROXY_REPO=/src/work \
-		--env JJ_PROXY_REMOTES=origin \
-		--mount "type=bind,src=$REPOSITORY,dst=/src/work,bind-nonrecursive=true" \
-		--mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy" \
-		"$JJ_PROXY_IMAGE" >/dev/null
-	JJ_PROXY_CONTAINER_CREATED=true
-
+acquire_sandbox_lock() {
+	SANDBOX_LOCK_READY=$(mktemp)
+	SANDBOX_LOCK_RELEASE=$(mktemp)
+	rm -f "$SANDBOX_LOCK_READY" "$SANDBOX_LOCK_RELEASE"
+	python3 "$SANDBOX_PROXY_HELPER" hold-lock \
+		--repo "$REPOSITORY" --ready "$SANDBOX_LOCK_READY" \
+		--release "$SANDBOX_LOCK_RELEASE" --parent-pid "$$" &
+	SANDBOX_LOCK_PID=$!
 	attempt=0
-	readiness_error=$(mktemp)
 	while [ "$attempt" -lt 100 ]; do
-		if docker exec --workdir /src/work --env JJ_PROXY_REPO=/src/work "$JJ_PROXY_CONTAINER" \
-			/trusted/bin/jj-proxy :ready >/dev/null 2>"$readiness_error"; then
-			# Let jj create its session-local secure per-repository config before
-			# Codex's first command. Its one-time warning is launcher noise, and a
-			# repository error here must not make socket readiness fail.
-			docker exec --workdir /src/work --env JJ_PROXY_REPO=/src/work "$JJ_PROXY_CONTAINER" \
-				/trusted/bin/jj-proxy status >/dev/null 2>&1 || true
-			rm -f "$readiness_error"
-			return
+		[ -e "$SANDBOX_LOCK_READY" ] && return
+		if ! kill -0 "$SANDBOX_LOCK_PID" 2>/dev/null; then
+			wait "$SANDBOX_LOCK_PID" || true
+			die "Could not acquire the sandbox repository lock"
 		fi
 		attempt=$((attempt + 1))
 		sleep 0.05
 	done
-	docker logs "$JJ_PROXY_CONTAINER" >&2 || true
-	if [ -s "$readiness_error" ]; then
-		printf 'Jujutsu proxy readiness check failed:\n' >&2
-		cat "$readiness_error" >&2
-	fi
-	rm -f "$readiness_error"
-	die "Jujutsu proxy did not become ready"
+	die "Timed out acquiring the sandbox repository lock"
 }
 
 start_agent_podman_relay() {
@@ -318,22 +278,30 @@ start_agent_podman_relay() {
 	printf 'Agent Podman relay ready at %s:%s.\n' "$RELAY_IP" "$AGENT_PODMAN_RELAY_PORT"
 }
 
-if [ -x "$BASE_IMAGE_BUILDER" ]; then
-	BASE_IMAGE=$($BASE_IMAGE_BUILDER)
-else
-	BASE_IMAGE=node:slim
-fi
-validate_repository
-JJ_PROXY_IMAGE=$(ensure_proxy_image)
-HASH=$(ensure_image "$BASE_IMAGE")
-
-ensure_network
-
 trap cleanup_relay EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-start_jj_proxy
+
+validate_repository
+BASE_IMAGE_BUILDER="$REPOSITORY/.agents/sandbox/base-image"
+if [ -x "$BASE_IMAGE_BUILDER" ]; then
+	BASE_IMAGE=$(cd "$REPOSITORY" && ./.agents/sandbox/base-image)
+else
+	BASE_IMAGE=node:slim
+fi
+HASH=$(ensure_image "$BASE_IMAGE")
+
+ensure_network
+
+acquire_sandbox_lock
+
+SANDBOX_PROXY_STATE=$(mktemp)
+python3 "$SANDBOX_PROXY_HELPER" start \
+	--repo "$REPOSITORY" --prefix "$SANDBOX_PROXY_PREFIX" \
+	--state "$SANDBOX_PROXY_STATE" --helper-image "$HASH" \
+	--network "$SANDBOX_NETWORK" --manifest "$SANDBOX_MANIFEST"
+python3 "$SANDBOX_PROXY_HELPER" publish --repo "$REPOSITORY" --state "$SANDBOX_PROXY_STATE"
 
 if [ "$AGENT_PODMAN_ENABLED" = true ]; then
 	start_agent_podman_relay
@@ -365,12 +333,22 @@ fi
 SKILLS_TMP=$(mktemp -d)
 rsync -aL ~/.agents/skills/ "$SKILLS_TMP/"
 
+SANDBOX_PROXY_ARGS=$(mktemp)
+python3 "$SANDBOX_PROXY_HELPER" agent-args \
+	--repo "$REPOSITORY" --prefix "$SANDBOX_PROXY_PREFIX" \
+	--output "$SANDBOX_PROXY_ARGS" --manifest "$SANDBOX_MANIFEST"
+while IFS= read -r proxy_arg; do
+	set -- "$proxy_arg" "$@"
+done < "$SANDBOX_PROXY_ARGS"
+
 CODEX_CONTAINER_CREATED=true
+python3 "$SANDBOX_PROXY_HELPER" monitor \
+	--state "$SANDBOX_PROXY_STATE" --agent "$CODEX_CONTAINER" &
+SANDBOX_MONITOR_PID=$!
 docker run --name "$CODEX_CONTAINER" -it \
   --network "$SANDBOX_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
-  --env JJ_PROXY_REPO=/src/work \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
   --mount "type=bind,src=$SKILLS_TMP,dst=/home/codex/.agents/skills" \
@@ -380,5 +358,4 @@ docker run --name "$CODEX_CONTAINER" -it \
   --mount "type=bind,src=$REPOSITORY,dst=/src/work,bind-nonrecursive=true" \
   --mount "type=bind,src=$REPOSITORY/.git,dst=/src/work/.git,readonly" \
   --mount "type=bind,src=$REPOSITORY/.jj,dst=/src/work/.jj,readonly" \
-  --mount "type=volume,src=$JJ_PROXY_VOLUME,dst=/run/jj-proxy,readonly" \
   "$@"

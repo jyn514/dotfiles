@@ -1,0 +1,549 @@
+#!/usr/bin/env python3
+"""Generic sandbox proxy manifest, lifecycle, and host coordination helpers."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Any
+
+
+class ConfigError(Exception):
+    pass
+
+
+NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
+IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+MODES = {"read-only", "read-write", "hidden"}
+CONTAINER_REPO = Path("/src/work")
+COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
+MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
+
+
+def _plain_relative(value: Any, label: str, *, allow_dot: bool = False) -> str:
+    if not isinstance(value, str) or not value or "\0" in value or "\n" in value or "\r" in value:
+        raise ConfigError(f"{label} must be a non-empty single-line string")
+    path = Path(value)
+    if "," in value or ":" in value:
+        raise ConfigError(f"{label} contains a container-mount delimiter")
+    if path.is_absolute() or any(part in ("", "..") for part in path.parts):
+        raise ConfigError(f"{label} must stay beneath the repository root")
+    normalized = path.as_posix()
+    if normalized == "." and not allow_dot:
+        raise ConfigError(f"{label} cannot name the repository root")
+    return normalized
+
+
+def _regular_unlinked(path: Path, label: str) -> None:
+    try:
+        stat = path.lstat()
+    except FileNotFoundError as error:
+        raise ConfigError(f"missing {label}: {path}") from error
+    if path.is_symlink() or not path.is_file():
+        raise ConfigError(f"{label} must be a regular file: {path}")
+    if stat.st_nlink != 1:
+        raise ConfigError(f"{label} must not be hard linked: {path}")
+
+
+def validate_repository(repo: Path) -> Path:
+    repo = repo.resolve(strict=True)
+    if any(character in str(repo) for character in (",", "\n", "\r")):
+        raise ConfigError("repository path contains a container-mount delimiter")
+    sandbox = repo / ".agents" / "sandbox"
+    current = repo
+    for component in (".agents", "sandbox"):
+        current /= component
+        if current.is_symlink() or not current.is_dir():
+            raise ConfigError(f"protected sandbox directory is missing or symlinked: {current}")
+    manifest_path = sandbox / "proxy-commands.json"
+    _regular_unlinked(manifest_path, "proxy manifest")
+    for root, directories, files in os.walk(sandbox, followlinks=False):
+        for entry in [*directories, *files]:
+            candidate = Path(root) / entry
+            stat = candidate.lstat()
+            if candidate.is_symlink():
+                raise ConfigError(f"protected sandbox configuration contains a symlink: {candidate}")
+            if candidate.is_file() and stat.st_nlink != 1:
+                raise ConfigError(f"protected sandbox configuration contains a hard link: {candidate}")
+    repository_identity(repo)
+    return repo
+
+
+def load_manifest(repo: Path) -> dict[str, Any]:
+    repo = validate_repository(repo)
+    path = repo / ".agents" / "sandbox" / "proxy-commands.json"
+    return load_manifest_file(path)
+
+
+def load_manifest_file(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ConfigError(f"invalid proxy manifest: {error}") from error
+    if not isinstance(data, dict) or set(data) != {"version", "commands"}:
+        raise ConfigError("proxy manifest must contain exactly version and commands")
+    if data["version"] != 1 or not isinstance(data["commands"], dict):
+        raise ConfigError("proxy manifest must use version 1 and an object of commands")
+    commands: dict[str, Any] = {}
+    targets: set[str] = set()
+    for name, raw in data["commands"].items():
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+            raise ConfigError(f"invalid proxy command name: {name!r}")
+        if not isinstance(raw, dict) or set(raw) != COMMAND_FIELDS:
+            raise ConfigError(f"command {name} has missing or unknown fields")
+        image_command = _string_array(raw["image-command"], f"command {name} image-command")
+        argv = _string_array(raw["argv"], f"command {name} argv")
+        if not image_command or not argv or argv[0].startswith("/"):
+            raise ConfigError(f"command {name} requires non-empty commands with a PATH-resolved argv")
+        workdir = _plain_relative(raw["workdir"], f"command {name} workdir", allow_dot=True)
+        if not isinstance(raw["network"], bool) or not isinstance(raw["mounts"], list):
+            raise ConfigError(f"command {name} has invalid network or mounts")
+        mounts = []
+        local_targets: set[str] = set()
+        for index, mount in enumerate(raw["mounts"]):
+            label = f"command {name} mount {index}"
+            if not isinstance(mount, dict) or not set(mount) <= MOUNT_FIELDS or not {"source", "target"} <= set(mount):
+                raise ConfigError(f"{label} has missing or unknown fields")
+            source = _plain_relative(mount["source"], f"{label} source", allow_dot=True)
+            target = _plain_relative(mount["target"], f"{label} target", allow_dot=True)
+            proxy_mode = mount.get("proxy")
+            agent_mode = mount.get("agent")
+            if (proxy_mode is not None and proxy_mode not in MODES) or (agent_mode is not None and agent_mode not in MODES):
+                raise ConfigError(f"{label} has an invalid access mode")
+            if target in local_targets or target in targets:
+                raise ConfigError(f"duplicate proxy mount target: {target}")
+            if target == ".agents/sandbox" or target.startswith(".agents/sandbox/"):
+                raise ConfigError(f"{label} may not hide protected sandbox configuration")
+            if target == "." and (source != "." or proxy_mode != "read-write" or agent_mode is not None):
+                raise ConfigError(f"{label} may grant only a proxy-only read-write repository view")
+            protected_metadata = any(target == path or target.startswith(path + "/") for path in (".git", ".jj"))
+            if protected_metadata and agent_mode not in {None, "read-only"}:
+                raise ConfigError(f"{label} may not weaken protected repository metadata")
+            local_targets.add(target)
+            targets.add(target)
+            mounts.append({"source": source, "target": target, "proxy": proxy_mode, "agent": agent_mode})
+        commands[name] = {**raw, "image-command": image_command, "argv": argv, "workdir": workdir, "mounts": mounts}
+    return {"version": 1, "commands": commands}
+
+
+def write_atomic(path: Path, content: str) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def serializable_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    result = {"version": 1, "commands": {}}
+    for name, command in manifest["commands"].items():
+        mounts = []
+        for mount in command["mounts"]:
+            item = {"source": mount["source"], "target": mount["target"]}
+            for mode in ("proxy", "agent"):
+                if mount[mode] is not None:
+                    item[mode] = mount[mode]
+            mounts.append(item)
+        result["commands"][name] = {**command, "mounts": mounts}
+    return result
+
+
+def checked_repository_path(repo: Path, relative: str, label: str) -> Path:
+    current = repo
+    for component in Path(relative).parts:
+        current /= component
+        try:
+            current.lstat()
+        except FileNotFoundError as error:
+            raise ConfigError(f"missing {label}: {relative}") from error
+        if current.is_symlink():
+            raise ConfigError(f"{label} contains a symlinked component: {relative}")
+    return current
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ConfigError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
+def _string_array(value: Any, label: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item or "\0" in item for item in value):
+        raise ConfigError(f"{label} must be an array of non-empty strings")
+    return value
+
+
+def repository_identity(repo: Path) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        check=True, text=True, stdout=subprocess.PIPE,
+    )
+    common = Path(result.stdout.strip()).resolve(strict=True)
+    expected = (repo / ".git").resolve(strict=True)
+    if common != expected:
+        raise ConfigError("Git common-directory indirection is not supported")
+    return hashlib.sha256(os.fsencode(common)).hexdigest()
+
+
+def runtime_directory(repo: Path) -> Path:
+    base = Path(os.environ.get("XDG_RUNTIME_DIR", Path.home() / ".cache")) / "codex-sandbox-proxies"
+    path = base / repository_identity(repo)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path, 0o700)
+    return path
+
+
+def lock_main(args: argparse.Namespace) -> int:
+    runtime = runtime_directory(Path(args.repo))
+    lock_path = runtime / "session.lock"
+    with lock_path.open("a+b") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ConfigError("another sandbox session owns this repository") from error
+        (runtime / "session.json").unlink(missing_ok=True)
+        Path(args.ready).write_text(str(runtime), encoding="utf-8")
+        while not Path(args.release).exists() and os.getppid() == args.parent_pid:
+            time.sleep(0.1)
+    return 0
+
+
+def publish_main(args: argparse.Namespace) -> int:
+    runtime = runtime_directory(Path(args.repo))
+    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    payload = {"repository": repository_identity(Path(args.repo)), "commands": {}}
+    for proxy in state.get("proxies", []):
+        payload["commands"][proxy["name"]] = {"container": proxy["container"], "image": proxy["image"]}
+    write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
+    images = {}
+    for name, command in manifest["commands"].items():
+        result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
+        output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
+        if result.returncode or not IMAGE_RE.fullmatch(output) or result.stdout.count("\n") > 1:
+            raise ConfigError(f"image-command for {name} did not print exactly one immutable image hash")
+        images[name] = output
+    return images
+
+
+def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", *arguments], check=True, text=True,
+        stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+    )
+
+
+def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) -> list[str]:
+    repository_mode = ",readonly"
+    if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
+        repository_mode = ""
+    arguments = [
+        "--mount", f"type=bind,src={repo},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={repo / '.agents/sandbox'},dst={CONTAINER_REPO / '.agents/sandbox'},readonly",
+    ]
+    for mount in command["mounts"]:
+        source = checked_repository_path(repo, mount["source"], f"command {name} mount source")
+        checked_repository_path(repo, mount["target"], f"command {name} mount target")
+        target = CONTAINER_REPO / mount["target"]
+        mode = mount["proxy"]
+        if mount["target"] == "." or mode is None:
+            continue
+        if mode == "hidden":
+            arguments += ["--tmpfs", f"{target}:ro,noexec,nosuid,nodev,size=4k"]
+        else:
+            suffix = ",readonly" if mode == "read-only" else ""
+            arguments += ["--mount", f"type=bind,src={source},dst={target}{suffix}"]
+    return arguments
+
+
+def start_main(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    manifest = load_manifest_file(Path(args.manifest))
+    images = resolve_images(repo, manifest)
+    state: dict[str, Any] = {"proxies": []}
+    identity = repository_identity(repo)
+    write_atomic(Path(args.state), json.dumps(state))
+    try:
+        for name, command in manifest["commands"].items():
+            volume = f"{args.prefix}-{name}"
+            container = f"{args.prefix}-{name}"
+            proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
+            state["proxies"].append(proxy)
+            write_atomic(Path(args.state), json.dumps(state))
+            _docker("volume", "create", volume)
+            _docker(
+                "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
+                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+                args.helper_image, "-c",
+                "chmod 1777 /run/sandbox-proxy && : > /run/sandbox-proxy/.initialized",
+            )
+            docker_args = [
+                "run", "--detach", "--name", container, "--cap-drop=ALL",
+                "--label", "dev.codex.sandbox-proxy=true",
+                "--label", f"dev.codex.repository={identity}",
+                "--label", f"dev.codex.command={name}",
+                "--security-opt=no-new-privileges", "--read-only",
+                "--user", f"{os.getuid()}:{os.getgid()}",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
+                "--network", args.network if command["network"] else "none",
+                "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
+                "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
+                "--entrypoint", command["argv"][0],
+                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+            ]
+            checked_repository_path(repo, command["workdir"], f"command {name} workdir")
+            docker_args += proxy_repository_mount_args(repo, name, command)
+            docker_args += [images[name], *command["argv"][1:]]
+            _docker(*docker_args)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                check = subprocess.run(
+                    ["docker", "run", "--rm", "--entrypoint", "/usr/bin/test",
+                     "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy,readonly",
+                     args.helper_image, "-S", "/run/sandbox-proxy/socket"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                if check.returncode == 0:
+                    break
+                status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
+                if status != "true":
+                    raise ConfigError(f"proxy {name} exited before becoming ready")
+                time.sleep(0.1)
+            else:
+                raise ConfigError(f"proxy {name} did not become ready")
+        return 0
+    except Exception:
+        stop_state(state)
+        raise
+
+
+def stop_state(state: dict[str, Any]) -> None:
+    for proxy in reversed(state.get("proxies", [])):
+        subprocess.run(["docker", "rm", "--force", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "volume", "rm", proxy["volume"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def stop_main(args: argparse.Namespace) -> int:
+    path = Path(args.state)
+    if path.exists():
+        stop_state(json.loads(path.read_text(encoding="utf-8")))
+    return 0
+
+
+def route_main(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    local = args.local[1:] if args.local[:1] == ["--"] else args.local
+    if not local:
+        raise ConfigError("a local entrypoint is required")
+    runtime = runtime_directory(repo)
+    lock_path = runtime / "session.lock"
+    lock = lock_path.open("a+b")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        try:
+            manifest = load_manifest(repo)
+            if args.command not in manifest["commands"]:
+                raise ConfigError(f"unknown proxy command: {args.command}")
+            (runtime / "session.json").unlink(missing_ok=True)
+            return subprocess.run(local).returncode
+        finally:
+            lock.close()
+
+    deadline = time.monotonic() + args.wait
+    metadata_path = runtime / "session.json"
+    metadata = None
+    while time.monotonic() < deadline:
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            break
+        except (FileNotFoundError, json.JSONDecodeError):
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                time.sleep(0.05)
+            else:
+                try:
+                    manifest = load_manifest(repo)
+                    if args.command not in manifest["commands"]:
+                        raise ConfigError(f"unknown proxy command: {args.command}")
+                    metadata_path.unlink(missing_ok=True)
+                    return subprocess.run(local).returncode
+                finally:
+                    lock.close()
+    lock.close()
+    if metadata is None:
+        raise ConfigError("sandbox session is starting but proxy metadata is unavailable")
+    identity = repository_identity(repo)
+    if metadata.get("repository") != identity:
+        raise ConfigError("sandbox session metadata names another repository")
+    proxy = metadata.get("commands", {}).get(args.command)
+    if not isinstance(proxy, dict) or set(proxy) != {"container", "image"}:
+        raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
+    inspection = _docker(
+        "inspect", "--format",
+        "{{.Config.Image}} {{index .Config.Labels \"dev.codex.sandbox-proxy\"}} "
+        "{{index .Config.Labels \"dev.codex.repository\"}} {{index .Config.Labels \"dev.codex.command\"}}",
+        proxy["container"], capture=True,
+    ).stdout.strip().split()
+    if inspection != [proxy["image"], "true", identity, args.command]:
+        raise ConfigError("active proxy container failed identity validation")
+    return subprocess.run(
+        ["docker", "exec", "--interactive", proxy["container"], "/trusted/bin/sandbox-proxy-forward"]
+    ).returncode
+
+
+def agent_args_main(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    manifest = load_manifest_file(Path(args.manifest))
+    output = Path(args.output)
+    lines = ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
+    lines += ["--mount", f"type=bind,src={repo / '.agents/sandbox'},dst={CONTAINER_REPO / '.agents/sandbox'},readonly"]
+    for name, command in manifest["commands"].items():
+        lines += ["--mount", f"type=volume,src={args.prefix}-{name},dst=/run/sandbox-proxies/{name},readonly"]
+        for mount in command["mounts"]:
+            mode = mount["agent"]
+            if mode is None:
+                continue
+            if any(mount["target"] == path or mount["target"].startswith(path + "/") for path in (".git", ".jj")):
+                continue
+            target = CONTAINER_REPO / mount["target"]
+            if mode == "hidden":
+                lines += ["--tmpfs", f"{target}:ro,noexec,nosuid,nodev,size=4k"]
+            else:
+                suffix = ",readonly" if mode == "read-only" else ""
+                lines += ["--mount", f"type=bind,src={repo / mount['source']},dst={target}{suffix}"]
+    if any("\n" in line for line in lines):
+        raise ConfigError("generated container argument contains a newline")
+    # The POSIX launcher prepends each argument to its existing argument list.
+    output.write_text("".join(line + "\n" for line in reversed(lines)), encoding="utf-8")
+    return 0
+
+
+def inspect_main(args: argparse.Namespace) -> int:
+    json.dump(load_manifest(Path(args.repo)), sys.stdout, sort_keys=True)
+    sys.stdout.write("\n")
+    return 0
+
+
+def snapshot_main(args: argparse.Namespace) -> int:
+    manifest = serializable_manifest(load_manifest(Path(args.repo)))
+    write_atomic(Path(args.output), json.dumps(manifest, sort_keys=True))
+    return 0
+
+
+def monitor_main(args: argparse.Namespace) -> int:
+    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", args.agent],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        if result.returncode == 0 and result.stdout.strip() == "true":
+            break
+        time.sleep(0.05)
+    else:
+        raise ConfigError("agent container did not start while proxy monitor was waiting")
+    while True:
+        agent = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", args.agent],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        if agent.returncode or agent.stdout.strip() != "true":
+            return 0
+        for proxy in state.get("proxies", []):
+            status = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", proxy["container"]],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            )
+            if status.returncode or status.stdout.strip() != "true":
+                print(f"sandbox proxies: proxy {proxy['name']} stopped; terminating sandbox", file=sys.stderr)
+                subprocess.run(["docker", "rm", "--force", args.agent], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return 1
+        time.sleep(0.2)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="action", required=True)
+    inspect = sub.add_parser("inspect")
+    inspect.add_argument("--repo", required=True)
+    inspect.set_defaults(function=inspect_main)
+    snapshot = sub.add_parser("snapshot")
+    snapshot.add_argument("--repo", required=True)
+    snapshot.add_argument("--output", required=True)
+    snapshot.set_defaults(function=snapshot_main)
+    lock = sub.add_parser("hold-lock")
+    lock.add_argument("--repo", required=True)
+    lock.add_argument("--ready", required=True)
+    lock.add_argument("--release", required=True)
+    lock.add_argument("--parent-pid", required=True, type=int)
+    lock.set_defaults(function=lock_main)
+    publish = sub.add_parser("publish")
+    publish.add_argument("--repo", required=True)
+    publish.add_argument("--state", required=True)
+    publish.set_defaults(function=publish_main)
+    agent = sub.add_parser("agent-args")
+    agent.add_argument("--repo", required=True)
+    agent.add_argument("--prefix", required=True)
+    agent.add_argument("--output", required=True)
+    agent.add_argument("--manifest", required=True)
+    agent.set_defaults(function=agent_args_main)
+    start = sub.add_parser("start")
+    start.add_argument("--repo", required=True)
+    start.add_argument("--prefix", required=True)
+    start.add_argument("--state", required=True)
+    start.add_argument("--helper-image", required=True)
+    start.add_argument("--network", required=True)
+    start.add_argument("--manifest", required=True)
+    start.set_defaults(function=start_main)
+    stop = sub.add_parser("stop")
+    stop.add_argument("--state", required=True)
+    stop.set_defaults(function=stop_main)
+    route = sub.add_parser("route")
+    route.add_argument("--repo", required=True)
+    route.add_argument("--command", required=True)
+    route.add_argument("--wait", type=float, default=10.0)
+    route.add_argument("local", nargs=argparse.REMAINDER)
+    route.set_defaults(function=route_main)
+    monitor = sub.add_parser("monitor")
+    monitor.add_argument("--state", required=True)
+    monitor.add_argument("--agent", required=True)
+    monitor.set_defaults(function=monitor_main)
+    return parser.parse_args()
+
+
+def main() -> int:
+    try:
+        args = parse_args()
+        return args.function(args)
+    except (ConfigError, OSError, subprocess.SubprocessError) as error:
+        print(f"sandbox proxies: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

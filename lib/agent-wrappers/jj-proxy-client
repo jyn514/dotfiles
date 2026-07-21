@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Forward Jujutsu arguments to the configured generic sandbox proxy."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import socket
+import struct
+import sys
+
+
+MAX_REQUEST = 1 << 20
+MAX_RESPONSE = 24 << 20
+
+
+def receive_exact(connection: socket.socket, length: int) -> bytes:
+    chunks = bytearray()
+    while len(chunks) < length:
+        chunk = connection.recv(length - len(chunks))
+        if not chunk:
+            raise RuntimeError("proxy response ended early")
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def main() -> int:
+    proxy_dir = os.environ.get("SANDBOX_PROXY_DIR")
+    if not proxy_dir:
+        raise RuntimeError("sandbox proxy directory is not configured")
+    repository = Path(os.environ.get("JJ_PROXY_REPO", "/src/work")).resolve(strict=True)
+    current = Path.cwd().resolve(strict=True)
+    try:
+        relative = current.relative_to(repository)
+    except ValueError as error:
+        raise RuntimeError("current directory is outside the protected repository") from error
+    body = json.dumps(
+        {"version": 1, "cwd": str(relative), "argv": sys.argv[1:]},
+        ensure_ascii=False, separators=(",", ":"),
+    ).encode()
+    if len(body) > MAX_REQUEST:
+        raise RuntimeError("proxy request is too large")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(125)
+        connection.connect(str(Path(proxy_dir) / "jj" / "socket"))
+        connection.sendall(struct.pack(">I", len(body)) + body)
+        connection.shutdown(socket.SHUT_WR)
+        length = struct.unpack(">I", receive_exact(connection, 4))[0]
+        if length > MAX_RESPONSE:
+            raise RuntimeError("proxy response is too large")
+        response = json.loads(receive_exact(connection, length))
+        if connection.recv(1):
+            raise RuntimeError("proxy response has trailing bytes")
+    if set(response) != {"version", "exit", "stdout", "stderr"} or response["version"] != 1:
+        raise RuntimeError("unsupported or malformed proxy response")
+    sys.stdout.write(response["stdout"])
+    sys.stderr.write(response["stderr"])
+    return int(response["exit"])
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        print(f"jj proxy: {error}", file=sys.stderr)
+        raise SystemExit(125)
