@@ -1,6 +1,4 @@
 ARG BASE_IMAGE=node:slim
-FROM codex-jj-proxy:local AS jj_proxy
-
 FROM ${BASE_IMAGE}
 
 ARG CODEX_VERSION=0.144.4
@@ -37,7 +35,6 @@ WORKDIR /src/work
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-wrappers /lib/agent-wrappers
-COPY --from=jj_proxy /trusted/bin/jj-proxy /usr/local/bin/jj-proxy
 ENV PATH=/lib/agent-wrappers:${PATH}
 
 ENV COLORTERM=truecolor

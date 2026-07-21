@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ -x /usr/local/bin/jj-proxy ]; then
-  exec /usr/local/bin/jj-proxy "$@"
+if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
+  exec /lib/agent-wrappers/jj-proxy-client "$@"
 fi
 
 # Shim: stamp jj commits as the agent, not the human running the wrapper.

@@ -1,6 +1,10 @@
 mod policy;
 
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
+use landlock::{
+    AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr,
+    RulesetCreatedAttr, RulesetStatus,
+};
 use serde::{Deserialize, Serialize};
 use nix::fcntl::{openat, OFlag};
 use nix::sys::resource::{setrlimit, Resource};
@@ -12,6 +16,7 @@ use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
+use std::net::Shutdown;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -20,8 +25,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const SOCKET: &str = "/run/jj-proxy/socket";
-const CONFIG_HOME: &str = "/run/jj-proxy/config";
+const SOCKET: &str = "/run/sandbox-proxy/socket";
+const CONFIG_HOME: &str = "/tmp/jj-config";
 const MAX_REQUEST: usize = 1 << 20;
 const MAX_OUTPUT: usize = 8 << 20;
 const TIMEOUT: Duration = Duration::from_secs(120);
@@ -50,6 +55,31 @@ fn write_frame(stream: &mut UnixStream, body: &[u8]) -> io::Result<()> {
     let length = u32::try_from(body.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "message is too large"))?;
     stream.write_all(&length.to_be_bytes())?;
     stream.write_all(body)
+}
+
+fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
+    let mut trailing = [0u8; 1];
+    match stream.read(&mut trailing)? {
+        0 => Ok(()),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "trailing bytes after request")),
+    }
+}
+
+fn install_execution_policy() -> Result<()> {
+    let trusted = PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
+    let status = Ruleset::default()
+        .handle_access(AccessFs::Execute)
+        .wrap_err("cannot configure Landlock execution access")?
+        .create()
+        .wrap_err("cannot create Landlock ruleset")?
+        .add_rule(PathBeneath::new(trusted, AccessFs::Execute))
+        .wrap_err("cannot add trusted Landlock execution rule")?
+        .restrict_self()
+        .wrap_err("cannot enforce Landlock execution policy")?;
+    if status.ruleset != RulesetStatus::FullyEnforced || !status.no_new_privs {
+        bail!("Landlock execution policy was not fully enforced: {status:?}");
+    }
+    Ok(())
 }
 
 fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
@@ -174,9 +204,10 @@ fn execute(request: &Request, stream: &UnixStream, root: RawFd, repo: &str, remo
 }
 
 fn serve() -> Result<()> {
-    let repo = env::var("JJ_PROXY_REPO").wrap_err("JJ_PROXY_REPO is required")?;
+    let repo = "/src/work".to_owned();
     let root = File::open(&repo).wrap_err("cannot open repository")?;
-    let remotes = env::var("JJ_PROXY_REMOTES").unwrap_or_else(|_| "origin".into()).split(',').filter(|s| !s.is_empty()).map(str::to_owned).collect();
+    let remotes = HashSet::from(["origin".to_owned()]);
+    install_execution_policy()?;
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
     let _ = fs::remove_file(SOCKET);
@@ -185,7 +216,9 @@ fn serve() -> Result<()> {
     for connection in listener.incoming() {
         let mut stream = match connection { Ok(stream) => stream, Err(error) => { eprintln!("jj proxy: accept: {error}"); continue; } };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-        let response = match read_frame(&mut stream, MAX_REQUEST).and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
+        let response = match read_frame(&mut stream, MAX_REQUEST)
+            .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
+            .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
             Ok(request) => execute(&request, &stream, root.as_raw_fd(), &repo, &remotes),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
@@ -202,23 +235,68 @@ fn client(args: Vec<String>) -> Result<i32> {
     let relative = cwd.strip_prefix(&repo_path).map_err(|_| eyre!("current directory is outside the protected repository"))?;
     let request = Request { version: 1, cwd: relative.to_string_lossy().into_owned(), argv: args };
     let body = serde_json::to_vec(&request).wrap_err("cannot encode request")?;
-    let mut stream = UnixStream::connect(SOCKET).wrap_err("proxy unavailable")?;
+    let proxy_dir = env::var("SANDBOX_PROXY_DIR").wrap_err("sandbox proxy directory is not configured")?;
+    let mut stream = UnixStream::connect(format!("{proxy_dir}/jj/socket")).wrap_err("proxy unavailable")?;
     stream.set_read_timeout(Some(TIMEOUT + Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
     stream.set_write_timeout(Some(Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
     write_frame(&mut stream, &body).wrap_err("cannot send proxy request")?;
+    stream.shutdown(Shutdown::Write).wrap_err("cannot finish proxy request")?;
     let response: Response = serde_json::from_slice(&read_frame(&mut stream, MAX_OUTPUT * 3).wrap_err("cannot read proxy response")?).wrap_err("cannot decode proxy response")?;
     if response.version != 1 { bail!("unsupported response version"); }
     print!("{}", response.stdout); eprint!("{}", response.stderr);
     Ok(response.exit)
 }
 
+fn forward() -> Result<i32> {
+    let mut stream = UnixStream::connect(SOCKET).wrap_err("proxy unavailable")?;
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    io::copy(&mut input, &mut stream).wrap_err("cannot forward proxy request")?;
+    stream.shutdown(Shutdown::Write).wrap_err("cannot finish proxy request")?;
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+    io::copy(&mut stream, &mut output).wrap_err("cannot forward proxy response")?;
+    Ok(0)
+}
+
 fn main() {
     color_eyre::install().expect("could not install error reporter");
+    let executable = env::args().next().unwrap_or_default();
     let mut args: Vec<String> = env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("reject-editor") {
         eprintln!("jj proxy: interactive editors are disabled; pass a message with -m");
         std::process::exit(1);
     }
-    let result = if args.first().map(String::as_str) == Some("serve") { serve().map(|_| 0) } else { client(std::mem::take(&mut args)) };
+    let result = if executable.ends_with("sandbox-proxy-forward") {
+        forward()
+    } else if args.first().map(String::as_str) == Some("serve") {
+        serve().map(|_| 0)
+    } else {
+        client(std::mem::take(&mut args))
+    };
     match result { Ok(code) => std::process::exit(code), Err(error) => { eprintln!("jj proxy: {error:?}"); std::process::exit(125); } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_frame_followed_by_eof() {
+        let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+        write_frame(&mut sender, b"request").unwrap();
+        sender.shutdown(Shutdown::Write).unwrap();
+        assert_eq!(b"request", read_frame(&mut receiver, 32).unwrap().as_slice());
+        require_eof(&mut receiver).unwrap();
+    }
+
+    #[test]
+    fn rejects_trailing_request_bytes() {
+        let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+        write_frame(&mut sender, b"request").unwrap();
+        sender.write_all(b"trailing").unwrap();
+        sender.shutdown(Shutdown::Write).unwrap();
+        read_frame(&mut receiver, 32).unwrap();
+        assert_eq!(io::ErrorKind::InvalidData, require_eof(&mut receiver).unwrap_err().kind());
+    }
 }

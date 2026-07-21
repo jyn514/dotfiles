@@ -23,12 +23,16 @@ RUN apk add --no-cache ca-certificates curl tar \
     && case "$TARGETARCH" in amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; *) exit 1 ;; esac \
     && curl -fsSL "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${arch}-unknown-linux-musl.tar.gz" \
        | tar -xz -C /usr/local/bin
+RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
 FROM scratch
+ENV PATH=/trusted/bin
 ENV RUST_BACKTRACE=1
 COPY --from=build /build/target/release/jj-proxy /trusted/bin/jj-proxy
+COPY --from=build /build/target/release/jj-proxy /trusted/bin/sandbox-proxy-forward
 COPY --from=jj /usr/local/bin/jj /trusted/bin/jj
 COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=jj /image-root/ /
 COPY config/gitignore /trusted/gitignore
 COPY lib/jj-proxy/jj.toml /trusted/jj.toml
 USER 65532:65532
