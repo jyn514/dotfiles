@@ -25,11 +25,11 @@ ENV HOME=/home/codex
 ARG CODEX_HOME
 ENV CODEX_HOME=${CODEX_HOME}
 ENV CODEX_SQLITE_HOME=/codex-sqlite
-RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /work \
+RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src/work \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
-        ${HOME} ${CODEX_HOME} ${CODEX_SQLITE_HOME} /work
+        ${HOME} ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src
 USER ${AGENT_UID}:${AGENT_GID}
-WORKDIR /work
+WORKDIR /src/work
 
 # fallback for `metaedit` when not going through the wrapper
 COPY --chown=${AGENT_UID}:${AGENT_GID} <<EOF ${HOME}/.config/jj/config.toml
