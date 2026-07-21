@@ -217,9 +217,10 @@ cleanup_relay() {
 }
 
 validate_repository() {
-	REPOSITORY=$(pwd -P)
+	repository=$(jj workspace root) || die "The current directory is not in a Jujutsu workspace"
+	REPOSITORY=$(cd "$repository" && pwd -P)
 	[ -d "$REPOSITORY/.jj" ] && [ ! -L "$REPOSITORY/.jj" ] || \
-		die "The current directory is not a safely mounted Jujutsu repository root"
+		die "The Jujutsu workspace root cannot be safely mounted"
 	[ -d "$REPOSITORY/.git" ] || [ -f "$REPOSITORY/.git" ] || \
 		die "Missing Git metadata at $REPOSITORY/.git"
 	[ ! -L "$REPOSITORY/.git" ] || die "Symlinked Git metadata is not supported"
