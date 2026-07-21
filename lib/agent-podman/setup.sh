@@ -24,14 +24,20 @@ PF_ENABLE_LOG=$MARKER_DIR/pf-enable.log
 PF_ANCHOR=com.apple/000.agent-podman
 SCRIPT_PATH=$(/bin/realpath "$0")
 SCRIPT_DIR=$(CDPATH='' cd -P -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)
-CPUS=${AGENT_PODMAN_CPUS:-4}
-MEMORY=${AGENT_PODMAN_MEMORY:-4096}
+SUPERVISOR_SOURCE=$SCRIPT_DIR/woodpecker-supervisor.sh
+CPUS=${AGENT_PODMAN_CPUS:-6}
+MEMORY=${AGENT_PODMAN_MEMORY:-12288}
 DISK_SIZE=${AGENT_PODMAN_DISK_SIZE:-30}
+WOODPECKER_VERSION=3.15.0
+RELABEL_IMAGE=docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
+
+[ -f "$SUPERVISOR_SOURCE" ] && [ ! -L "$SUPERVISOR_SOURCE" ] && [ -s "$SUPERVISOR_SOURCE" ] || \
+  die "missing safe Woodpecker supervisor: $SUPERVISOR_SOURCE"
 
 find_role_uid() {
   used_uids=$(dscl . -list /Users UniqueID | awk 'NF >= 2 { print $NF }')
@@ -358,6 +364,8 @@ run_worker machine ssh "$MACHINE" \
   "grep -Eq '^$GUEST_ACCOUNT:[0-9]+:[1-9][0-9]*$' /etc/subuid && grep -Eq '^$GUEST_ACCOUNT:[0-9]+:[1-9][0-9]*$' /etc/subgid" || \
   die "guest account lacks subordinate UID or GID ranges"
 
+install_network_guard
+
 run_guest /usr/bin/systemctl --user enable --now podman.socket
 GUEST_UID=$(run_guest /usr/bin/id -u)
 case "$GUEST_UID" in *[!0-9]*|'') die "invalid guest UID: $GUEST_UID" ;; esac
@@ -371,7 +379,70 @@ ROOTLESS=$(run_guest /usr/bin/podman info --format '{{.Host.Security.Rootless}}'
 [ "$ROOTLESS" = true ] || die "agent guest Podman service is not rootless"
 run_guest /usr/bin/test -S "/run/user/$GUEST_UID/podman/podman.sock"
 
-install_network_guard
+case $(run_guest /usr/bin/uname -m) in
+  x86_64)
+    WOODPECKER_ARCH=amd64
+    WOODPECKER_SHA256=35adf958d616588162d1329fc805f4c2f6e3ef610653175978a0180859ea0c12
+    ;;
+  aarch64)
+    WOODPECKER_ARCH=arm64
+    WOODPECKER_SHA256=52d807e274fa4de3d48411371216f3074f241a5fb5a1aaddd84553bef969d5ee
+    ;;
+  *) die "unsupported Podman-machine architecture" ;;
+esac
+WOODPECKER_ARCHIVE=woodpecker-cli_linux_$WOODPECKER_ARCH.tar.gz
+WOODPECKER_URL=https://github.com/woodpecker-ci/woodpecker/releases/download/v$WOODPECKER_VERSION
+run_guest /usr/bin/install -d -m 700 \
+  "/home/$GUEST_ACCOUNT/.local/bin" \
+  "/home/$GUEST_ACCOUNT/.local/libexec/agent-podman" \
+  "/home/$GUEST_ACCOUNT/.config/systemd/user"
+run_guest /usr/bin/curl -fsSLo "/tmp/$WOODPECKER_ARCHIVE" "$WOODPECKER_URL/$WOODPECKER_ARCHIVE"
+WOODPECKER_ACTUAL_SHA256=$(run_guest /usr/bin/sha256sum "/tmp/$WOODPECKER_ARCHIVE" | \
+  /usr/bin/awk 'NF >= 1 { print $1; exit }')
+[ "$WOODPECKER_ACTUAL_SHA256" = "$WOODPECKER_SHA256" ] || \
+  die "Woodpecker archive checksum mismatch"
+run_guest /usr/bin/tar -xzf "/tmp/$WOODPECKER_ARCHIVE" -C "/home/$GUEST_ACCOUNT/.local/bin" woodpecker-cli
+run_guest /usr/bin/rm -f "/tmp/$WOODPECKER_ARCHIVE"
+SUPERVISOR_TARGET=/home/$GUEST_ACCOUNT/.local/libexec/agent-podman/woodpecker-supervisor
+run_guest /usr/bin/tee "$SUPERVISOR_TARGET" < "$SUPERVISOR_SOURCE" >/dev/null
+run_guest /usr/bin/chmod 700 "$SUPERVISOR_TARGET"
+SUPERVISOR_SOURCE_SHA256=$(/usr/bin/shasum -a 256 "$SUPERVISOR_SOURCE" | \
+  /usr/bin/awk 'NF >= 1 { print $1; exit }')
+SUPERVISOR_TARGET_SHA256=$(run_guest /usr/bin/sha256sum "$SUPERVISOR_TARGET" | \
+  /usr/bin/awk 'NF >= 1 { print $1; exit }')
+[ "$SUPERVISOR_TARGET_SHA256" = "$SUPERVISOR_SOURCE_SHA256" ] || \
+  die "installed Woodpecker supervisor checksum mismatch"
+run_guest /usr/bin/podman pull "$RELABEL_IMAGE"
+
+printf '%s\n' \
+  '[Unit]' \
+  'Description=Reap abandoned agent Podman Woodpecker workspaces' \
+  '[Service]' \
+  'Type=oneshot' \
+  "ExecStart=/home/$GUEST_ACCOUNT/.local/libexec/agent-podman/woodpecker-supervisor reap 00000000000000000000000000000000" | \
+  run_guest /usr/bin/tee "/home/$GUEST_ACCOUNT/.config/systemd/user/agent-podman-reaper.service" >/dev/null
+printf '%s\n' \
+  '[Unit]' \
+  'Description=Periodically reap abandoned agent Podman workspaces' \
+  '[Timer]' \
+  'OnBootSec=15min' \
+  'OnUnitActiveSec=1h' \
+  '[Install]' \
+  'WantedBy=timers.target' | \
+  run_guest /usr/bin/tee "/home/$GUEST_ACCOUNT/.config/systemd/user/agent-podman-reaper.timer" >/dev/null
+run_guest /usr/bin/systemctl --user daemon-reload
+run_guest /usr/bin/systemctl --user enable --now agent-podman-reaper.timer
+
+SANDBOX_KNOWN_HOSTS=$OUTPUT_DIR/known_hosts.sandbox
+HOST_KEY_LINES=$(/usr/bin/sudo -u "$CALLER_USER" \
+  /usr/bin/env -i HOME="$CALLER_HOME" USER="$CALLER_USER" LOGNAME="$CALLER_USER" PATH="$SAFE_PATH" \
+  /usr/bin/ssh-keygen -F "[127.0.0.1]:$SSH_PORT" -f "$OUTPUT_DIR/known_hosts" | \
+  /usr/bin/awk '$2 ~ /^ssh-/ { print "agent-podman " $2 " " $3 }')
+[ -n "$HOST_KEY_LINES" ] || die "could not derive the sandbox SSH host key"
+printf '%s\n' "$HOST_KEY_LINES" | \
+  /usr/bin/sudo -u "$CALLER_USER" \
+    /usr/bin/env -i HOME="$CALLER_HOME" USER="$CALLER_USER" LOGNAME="$CALLER_USER" PATH="$SAFE_PATH" \
+    /bin/sh -c 'umask 077; set -C; /bin/cat > "$1"' sh "$SANDBOX_KNOWN_HOSTS"
 
 printf '%s\n' \
   "AGENT_PODMAN_SSH_USER=$GUEST_ACCOUNT" \

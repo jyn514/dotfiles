@@ -11,6 +11,8 @@ SANDBOX_IP_RANGE=10.254.254.128/25
 AGENT_PODMAN_ACCESS_DIR=${AGENT_PODMAN_ACCESS_DIR:-$HOME/.agent-podman-access}
 AGENT_PODMAN_CONNECTION=$AGENT_PODMAN_ACCESS_DIR/connection.env
 AGENT_PODMAN_KEY=$AGENT_PODMAN_ACCESS_DIR/id_ed25519
+AGENT_PODMAN_KNOWN_HOSTS=$AGENT_PODMAN_ACCESS_DIR/known_hosts.sandbox
+AGENT_PODMAN_CONTAINER_KNOWN_HOSTS=/run/secrets/agent-podman-known-hosts
 AGENT_PODMAN_RELAY_PORT=2222
 SESSION_SUFFIX=$(id -u)-$$
 RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
@@ -33,8 +35,9 @@ die() {
 	printf 'error: %s\n' "$*" >&2
 	exit 1
 }
-if [ -e "$AGENT_PODMAN_CONNECTION" ] || [ -e "$AGENT_PODMAN_KEY" ]; then
-	[ -f "$AGENT_PODMAN_CONNECTION" ] && [ -f "$AGENT_PODMAN_KEY" ] || \
+if [ -e "$AGENT_PODMAN_CONNECTION" ] || [ -e "$AGENT_PODMAN_KEY" ] || [ -e "$AGENT_PODMAN_KNOWN_HOSTS" ]; then
+	[ -f "$AGENT_PODMAN_CONNECTION" ] && [ -f "$AGENT_PODMAN_KEY" ] && \
+		[ -f "$AGENT_PODMAN_KNOWN_HOSTS" ] || \
 		die "Agent Podman access state is incomplete: $AGENT_PODMAN_ACCESS_DIR"
 	# setup.sh created this trusted, user-owned file outside the agent workspace.
 	# shellcheck source=/dev/null
@@ -341,7 +344,9 @@ if [ "$AGENT_PODMAN_ENABLED" = true ]; then
 		--network "$RELAY_LINK_NETWORK" \
 		--env "CONTAINER_HOST=$AGENT_PODMAN_CONTAINER_HOST" \
 		--env "CONTAINER_SSHKEY=$CONTAINER_SSHKEY" \
+		--env "AGENT_PODMAN_KNOWN_HOSTS=$AGENT_PODMAN_CONTAINER_KNOWN_HOSTS" \
 		--mount "type=bind,src=$AGENT_PODMAN_KEY,dst=$CONTAINER_SSHKEY,readonly" \
+		--mount "type=bind,src=$AGENT_PODMAN_KNOWN_HOSTS,dst=$AGENT_PODMAN_CONTAINER_KNOWN_HOSTS,readonly" \
 		"$@"
 fi
 
