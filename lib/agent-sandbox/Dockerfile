@@ -14,6 +14,11 @@ COPY ./lib/agent-sandbox/create-user.sh .
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
 RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
+    && agent_name=$(awk -F: -v uid="${AGENT_UID}" '$3 == uid { print $1; exit }' /etc/passwd) \
+    && test -n "${agent_name}" \
+    && printf '%s ALL=(ALL:ALL) NOPASSWD: ALL\n' "${agent_name}" \
+        > /etc/sudoers.d/codex \
+    && chmod 0440 /etc/sudoers.d/codex \
     && rm ./create-user.sh
 
 ENV HOME=/home/codex
