@@ -214,9 +214,17 @@ if [ "$AGENT_PODMAN_ENABLED" = true ]; then
 		"$@"
 fi
 
+if [ "$(uname -s)" = Linux ]; then
+	printf '%s\n' \
+		'warning: native Linux sandboxing disables sudo elevation with cap-drop=ALL and no-new-privileges.' \
+		'warning: a Podman Machine micro-VM would allow container sudo without weakening host isolation.' >&2
+	set -- \
+		--cap-drop=ALL \
+		--security-opt=no-new-privileges \
+		"$@"
+fi
+
 docker run --rm -it \
-  --cap-drop=ALL \
-  --security-opt=no-new-privileges \
   --network "$SANDBOX_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
