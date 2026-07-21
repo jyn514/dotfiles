@@ -136,6 +136,8 @@ fn execute(request: &Request, stream: &UnixStream, root: RawFd, repo: &str, remo
         ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
         ("VISUAL", "false"), ("GIT_CONFIG_NOSYSTEM", "1"),
         ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
+        ("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "core.excludesFile"),
+        ("GIT_CONFIG_VALUE_0", "/trusted/gitignore"),
         ("JJ_USER", "Codex"), ("JJ_EMAIL", "breq@jyn.dev"),
         ("RUST_BACKTRACE", "1"),
     ]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());

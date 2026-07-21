@@ -29,6 +29,7 @@ ENV RUST_BACKTRACE=1
 COPY --from=build /build/target/release/jj-proxy /trusted/bin/jj-proxy
 COPY --from=jj /usr/local/bin/jj /trusted/bin/jj
 COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY config/gitignore /trusted/gitignore
 COPY lib/jj-proxy/jj.toml /trusted/jj.toml
 USER 65532:65532
 ENTRYPOINT ["/trusted/bin/jj-proxy", "serve"]
