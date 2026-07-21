@@ -16,14 +16,17 @@ SESSION_SUFFIX=$(id -u)-$$
 RELAY_LINK_NETWORK=codex-agent-podman-link-$SESSION_SUFFIX
 RELAY_EGRESS_NETWORK=codex-agent-podman-egress-$SESSION_SUFFIX
 RELAY_CONTAINER=codex-agent-podman-relay-$SESSION_SUFFIX
+CODEX_CONTAINER=codex-sandbox-$SESSION_SUFFIX
 JJ_PROXY_CONTAINER=codex-jj-proxy-$SESSION_SUFFIX
 JJ_PROXY_VOLUME=codex-jj-proxy-$SESSION_SUFFIX
 AGENT_PODMAN_ENABLED=false
 RELAY_LINK_CREATED=false
 RELAY_EGRESS_CREATED=false
 RELAY_CONTAINER_CREATED=false
+CODEX_CONTAINER_CREATED=false
 JJ_PROXY_CONTAINER_CREATED=false
 JJ_PROXY_VOLUME_CREATED=false
+SKILLS_TMP=
 TERM=${TERM:-xterm-256color}
 
 die() {
@@ -160,28 +163,51 @@ ensure_image() {
 	printf ' done.\n' >&2
 }
 
+cleanup_resource() {
+	label=$1
+	shift
+	started=$(date +%s)
+	printf 'Cleaning up %s ... ' "$label" >&2
+	if "$@" >/dev/null 2>&1; then
+		finished=$(date +%s)
+		printf 'done (%ss).\n' "$((finished - started))" >&2
+	else
+		finished=$(date +%s)
+		printf 'warning: failed after %ss.\n' "$((finished - started))" >&2
+	fi
+}
+
 cleanup_relay() {
 	status=$?
 	trap - EXIT HUP INT TERM
+	if [ "$CODEX_CONTAINER_CREATED" = true ]; then
+		cleanup_resource "Codex container $CODEX_CONTAINER" \
+			docker rm --force "$CODEX_CONTAINER"
+	fi
 	if [ "$JJ_PROXY_CONTAINER_CREATED" = true ]; then
-		docker rm --force "$JJ_PROXY_CONTAINER" >/dev/null 2>&1 || \
-			printf 'warning: could not remove proxy container %s\n' "$JJ_PROXY_CONTAINER" >&2
+		cleanup_resource "stopping proxy container $JJ_PROXY_CONTAINER" \
+			docker kill "$JJ_PROXY_CONTAINER"
+		cleanup_resource "removing proxy container $JJ_PROXY_CONTAINER" \
+			docker rm --force "$JJ_PROXY_CONTAINER"
 	fi
 	if [ "$JJ_PROXY_VOLUME_CREATED" = true ]; then
-		docker volume rm "$JJ_PROXY_VOLUME" >/dev/null 2>&1 || \
-			printf 'warning: could not remove proxy volume %s\n' "$JJ_PROXY_VOLUME" >&2
+		cleanup_resource "proxy volume $JJ_PROXY_VOLUME" \
+			docker volume rm "$JJ_PROXY_VOLUME"
 	fi
 	if [ "$RELAY_CONTAINER_CREATED" = true ]; then
-		docker rm --force "$RELAY_CONTAINER" >/dev/null 2>&1 || \
-			printf 'warning: could not remove relay container %s\n' "$RELAY_CONTAINER" >&2
+		cleanup_resource "relay container $RELAY_CONTAINER" \
+			docker rm --force "$RELAY_CONTAINER"
 	fi
 	if [ "$RELAY_LINK_CREATED" = true ]; then
-		docker network rm "$RELAY_LINK_NETWORK" >/dev/null 2>&1 || \
-			printf 'warning: could not remove relay network %s\n' "$RELAY_LINK_NETWORK" >&2
+		cleanup_resource "relay network $RELAY_LINK_NETWORK" \
+			docker network rm "$RELAY_LINK_NETWORK"
 	fi
 	if [ "$RELAY_EGRESS_CREATED" = true ]; then
-		docker network rm "$RELAY_EGRESS_NETWORK" >/dev/null 2>&1 || \
-			printf 'warning: could not remove relay network %s\n' "$RELAY_EGRESS_NETWORK" >&2
+		cleanup_resource "relay network $RELAY_EGRESS_NETWORK" \
+			docker network rm "$RELAY_EGRESS_NETWORK"
+	fi
+	if [ -n "$SKILLS_TMP" ]; then
+		cleanup_resource "staged skills $SKILLS_TMP" rm -rf "$SKILLS_TMP"
 	fi
 	exit "$status"
 }
@@ -328,13 +354,19 @@ if [ "$(uname -s)" = Linux ]; then
 		"$@"
 fi
 
-docker run --rm -it \
+# some skills might be symlinks. copy them explicitly so they don't leave a dangling path.
+SKILLS_TMP=$(mktemp -d)
+rsync -aL ~/.agents/skills/ "$SKILLS_TMP/"
+
+CODEX_CONTAINER_CREATED=true
+docker run --name "$CODEX_CONTAINER" -it \
   --network "$SANDBOX_NETWORK" \
   --http-proxy=false \
   --secret codex-github-token,type=env,target=GH_TOKEN \
   --env JJ_PROXY_REPO=/src/work \
   --env CODEX_SQLITE_HOME=/codex-sqlite \
   --volume "codex-sqlite-$(id -u):/codex-sqlite" \
+  --mount "type=bind,src=$SKILLS_TMP,dst=/home/codex/.agents/skills" \
   --volume "$HOME/.codex:$HOME/.codex" \
   --volume "$HOME/.codex/rules:$HOME/.codex/rules:ro" \
   --mount "type=bind,src=$HOME/src,dst=/src,readonly" \
