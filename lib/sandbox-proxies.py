@@ -241,8 +241,33 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
 
 def jj_proxy_layout(repo: Path) -> tuple[Path, Path]:
     git_dir, common_dir = git_metadata_paths(repo)
-    root = Path(os.path.commonpath((repo, git_dir, common_dir))).resolve(strict=True)
+    jj_repo = jj_repository_path(repo)
+    if not jj_repo.is_dir():
+        raise ConfigError(f"Jujutsu repository metadata is invalid: {jj_repo}")
+    root = Path(os.path.commonpath((repo, git_dir, common_dir, jj_repo))).resolve(strict=True)
     return root, repo.relative_to(root)
+
+
+def jj_repository_path(repo: Path) -> Path:
+    entry = repo / ".jj" / "repo"
+    if entry.is_file() and not entry.is_symlink():
+        if entry.lstat().st_nlink != 1:
+            raise ConfigError("Jujutsu repository pointer must not be hard linked")
+        try:
+            value = entry.read_text(encoding="utf-8").strip()
+        except UnicodeError as error:
+            raise ConfigError("Jujutsu repository pointer is not UTF-8") from error
+        if not value or "\0" in value or "\n" in value or "\r" in value:
+            raise ConfigError("Jujutsu repository pointer is invalid")
+        target = Path(value)
+        if not target.is_absolute():
+            target = entry.parent / target
+        jj_repo = target.resolve(strict=True)
+    else:
+        jj_repo = entry.resolve(strict=True)
+    if not jj_repo.is_dir() or jj_repo.is_symlink():
+        raise ConfigError(f"Jujutsu repository metadata is invalid: {jj_repo}")
+    return jj_repo
 
 
 def runtime_directory(repo: Path) -> Path:
@@ -372,10 +397,12 @@ def start_main(args: argparse.Namespace) -> int:
             if name == "jj":
                 proxy_root, relative_repo = jj_proxy_layout(repo)
                 git_dir, common_dir = git_metadata_paths(repo)
+                jj_repo = jj_repository_path(repo)
                 docker_args += [
                     "--env", f"JJ_PROXY_REPO={CONTAINER_REPO / relative_repo}",
                     "--env", f"JJ_PROXY_GIT_DIR={CONTAINER_REPO / git_dir.relative_to(proxy_root)}",
                     "--env", f"JJ_PROXY_COMMON_DIR={CONTAINER_REPO / common_dir.relative_to(proxy_root)}",
+                    "--env", f"JJ_PROXY_JJ_REPO={CONTAINER_REPO / jj_repo.relative_to(proxy_root)}",
                 ]
             checked_repository_path(repo, command["workdir"], f"command {name} workdir")
             docker_args += proxy_repository_mount_args(repo, name, command)
