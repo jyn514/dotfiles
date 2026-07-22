@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import shutil
@@ -13,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from types import SimpleNamespace
 
 
 DOTFILES = Path(__file__).resolve().parent.parent
@@ -37,6 +37,44 @@ class SignalExit(Exception):
     def __init__(self, signum: int) -> None:
         self.signum = signum
         super().__init__(f"received signal {signum}")
+
+
+@dataclass
+class State:
+    codex_arguments: list[str]
+    home: Path
+    term: str
+    uid: int
+    gid: int
+    suffix: str
+    relay_link_network: str
+    relay_egress_network: str
+    relay_container: str
+    codex_container: str
+    proxy_prefix: str
+    agent_podman_access: Path
+    agent_podman_connection: Path
+    agent_podman_key: Path
+    agent_podman_known_hosts: Path
+    container_known_hosts: str = "/run/secrets/agent-podman-known-hosts"
+    relay_port: int = 2222
+    agent_podman: dict[str, str] | None = None
+    repository: Path | None = None
+    image: str = ""
+    manifest: Path | None = None
+    proxy_state: Path | None = None
+    proxy_args: Path | None = None
+    lock_ready: Path | None = None
+    lock_release: Path | None = None
+    skills_tmp: Path | None = None
+    lock_process: subprocess.Popen[bytes] | None = None
+    monitor_process: subprocess.Popen[bytes] | None = None
+    agent_process: subprocess.Popen[bytes] | None = None
+    codex_container_created: bool = False
+    relay_link_created: bool = False
+    relay_egress_created: bool = False
+    relay_container_created: bool = False
+    cleaned: bool = False
 
 
 def run(
@@ -89,12 +127,12 @@ def parse_connection(path: Path) -> dict[str, str]:
     return values
 
 
-def new_state(codex_arguments: list[str]) -> SimpleNamespace:
+def new_state(codex_arguments: list[str]) -> State:
     home = Path(os.environ["HOME"])
     uid = os.getuid()
     suffix = f"{uid}-{os.getpid()}"
     access = Path(os.environ.get("AGENT_PODMAN_ACCESS_DIR", home / ".agent-podman-access"))
-    state = SimpleNamespace(
+    state = State(
         codex_arguments=codex_arguments,
         home=home,
         term=os.environ.get("TERM", "xterm-256color"),
@@ -110,31 +148,12 @@ def new_state(codex_arguments: list[str]) -> SimpleNamespace:
         agent_podman_connection=access / "connection.env",
         agent_podman_key=access / "id_ed25519",
         agent_podman_known_hosts=access / "known_hosts.sandbox",
-        container_known_hosts="/run/secrets/agent-podman-known-hosts",
-        relay_port=2222,
-        agent_podman=None,
-        repository=None,
-        image="",
-        manifest=None,
-        proxy_state=None,
-        proxy_args=None,
-        lock_ready=None,
-        lock_release=None,
-        skills_tmp=None,
-        lock_process=None,
-        monitor_process=None,
-        agent_process=None,
-        codex_container_created=False,
-        relay_link_created=False,
-        relay_egress_created=False,
-        relay_container_created=False,
-        cleaned=False,
     )
     load_agent_podman(state)
     return state
 
 
-def load_agent_podman(state: SimpleNamespace) -> None:
+def load_agent_podman(state: State) -> None:
     paths = (
         state.agent_podman_connection, state.agent_podman_key,
         state.agent_podman_known_hosts,
@@ -155,7 +174,7 @@ def load_agent_podman(state: SimpleNamespace) -> None:
     state.agent_podman = values
 
 
-def validate_repository(state: SimpleNamespace) -> None:
+def validate_repository(state: State) -> None:
     try:
         result = run(["jj", "workspace", "root"], capture=True)
     except subprocess.CalledProcessError as error:
@@ -209,7 +228,7 @@ def image_sources() -> list[Path]:
     return sorted(set(files), key=lambda path: os.fsencode(path.as_posix()))
 
 
-def image_cache_key(state: SimpleNamespace, base_image: str) -> str:
+def image_cache_key(state: State, base_image: str) -> str:
     lines = [
         f"BASE_IMAGE={base_image}", f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
         f"CODEX_HOME={state.home / '.codex'}", f"TERM={state.term}",
@@ -223,7 +242,7 @@ def image_cache_key(state: SimpleNamespace, base_image: str) -> str:
     ).stdout.strip()
 
 
-def ensure_image(state: SimpleNamespace, base_image: str) -> str:
+def ensure_image(state: State, base_image: str) -> str:
     image = f"codex-sandbox:{image_cache_key(state, base_image)}"
     if run(["docker", "image", "inspect", image], check=False, quiet=True).returncode == 0:
         return image
@@ -264,7 +283,7 @@ def ensure_network() -> None:
     print(" done.")
 
 
-def acquire_lock(state: SimpleNamespace) -> None:
+def acquire_lock(state: State) -> None:
     state.lock_ready = temporary_file()
     state.lock_release = temporary_file()
     state.lock_ready.unlink()
@@ -283,7 +302,7 @@ def acquire_lock(state: SimpleNamespace) -> None:
     raise LauncherError("Timed out acquiring the sandbox repository lock")
 
 
-def start_proxies(state: SimpleNamespace) -> None:
+def start_proxies(state: State) -> None:
     state.proxy_state = temporary_file()
     helper(
         "start", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
@@ -293,7 +312,7 @@ def start_proxies(state: SimpleNamespace) -> None:
     helper("publish", "--repo", str(state.repository), "--state", str(state.proxy_state))
 
 
-def start_relay(state: SimpleNamespace) -> list[str]:
+def start_relay(state: State) -> list[str]:
     values = state.agent_podman
     run(["docker", "network", "create", "--internal", "--opt", "isolate=true", state.relay_link_network], discard_stdout=True)
     state.relay_link_created = True
@@ -331,12 +350,12 @@ def start_relay(state: SimpleNamespace) -> list[str]:
     ]
 
 
-def stage_skills(state: SimpleNamespace) -> None:
+def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
     run(["rsync", "-aL", str(state.home / ".agents/skills") + "/", str(state.skills_tmp) + "/"])
 
 
-def read_proxy_arguments(state: SimpleNamespace) -> list[str]:
+def read_proxy_arguments(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     helper(
         "agent-args", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
@@ -348,7 +367,7 @@ def read_proxy_arguments(state: SimpleNamespace) -> list[str]:
     return arguments
 
 
-def run_agent(state: SimpleNamespace, arguments: list[str]) -> int:
+def run_agent(state: State, arguments: list[str]) -> int:
     state.codex_container_created = True
     state.monitor_process = subprocess.Popen([
         "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
@@ -383,7 +402,7 @@ def run_agent(state: SimpleNamespace, arguments: list[str]) -> int:
         raise
 
 
-def execute(state: SimpleNamespace) -> int:
+def execute(state: State) -> int:
     validate_repository(state)
     builder = state.repository / ".agents/sandbox/base-image"
     if builder.is_file() and os.access(builder, os.X_OK):
@@ -423,7 +442,7 @@ def cleanup_resource(label: str, arguments: list[str]) -> None:
         print(f"Cleaning up {label}: done ({elapsed}s).", file=sys.stderr)
 
 
-def cleanup(state: SimpleNamespace) -> None:
+def cleanup(state: State) -> None:
     if state.cleaned:
         return
     state.cleaned = True
@@ -474,7 +493,7 @@ def cleanup(state: SimpleNamespace) -> None:
 
 
 def main(arguments: list[str]) -> int:
-    state: SimpleNamespace | None = None
+    state: State | None = None
     previous_handlers: dict[int, object] = {}
 
     def handle_signal(signum: int, _frame: object) -> None:
