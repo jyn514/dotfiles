@@ -25,6 +25,7 @@ class ManifestTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.repo = Path(self.temporary.name)
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
+        (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.sandbox = self.repo / ".agents" / "sandbox"
         self.sandbox.mkdir(parents=True)
 
@@ -86,7 +87,7 @@ class ManifestTest(unittest.TestCase):
             "commit", "--quiet", "-m", "initial",
         ], check=True)
         subprocess.run(["git", "-C", str(main), "worktree", "add", "--quiet", str(worktree)], check=True)
-        (worktree / ".jj").mkdir()
+        (worktree / ".jj" / "repo").mkdir(parents=True)
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
         arguments = sandbox_proxies.proxy_repository_mount_args(worktree, "jj", command)
         common_root, relative = sandbox_proxies.jj_proxy_layout(worktree)
@@ -95,6 +96,20 @@ class ManifestTest(unittest.TestCase):
             arguments,
         )
         self.assertNotEqual(Path("."), relative)
+
+    def test_external_jj_repository_pointer_expands_common_proxy_mount(self) -> None:
+        external = Path(self.temporary.name + "-jj-repo")
+        external.mkdir()
+        self.addCleanup(shutil.rmtree, external, True)
+        shutil.rmtree(self.repo / ".jj" / "repo")
+        relative = os.path.relpath(external, self.repo / ".jj")
+        (self.repo / ".jj" / "repo").write_text(relative + "\n", encoding="utf-8")
+        command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
+        arguments = sandbox_proxies.proxy_repository_mount_args(self.repo, "jj", command)
+        self.assertIn(
+            f"type=bind,src={self.repo.parent},dst=/src/work,bind-nonrecursive=true",
+            arguments,
+        )
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{

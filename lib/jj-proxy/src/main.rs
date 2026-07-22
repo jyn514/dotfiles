@@ -70,9 +70,11 @@ fn install_execution_policy(repo: &str) -> Result<()> {
     let repository = PathFd::new(repo).wrap_err("cannot open repository directory")?;
     let git_path = env::var("JJ_PROXY_GIT_DIR").wrap_err("Git directory is not configured")?;
     let common_path = env::var("JJ_PROXY_COMMON_DIR").wrap_err("Git common directory is not configured")?;
+    let jj_repo_path = env::var("JJ_PROXY_JJ_REPO").wrap_err("Jujutsu repository directory is not configured")?;
     let git = PathFd::new(&git_path).wrap_err("cannot open Git metadata directory")?;
     let common = PathFd::new(&common_path).wrap_err("cannot open Git common directory")?;
     let jj = PathFd::new(format!("{repo}/.jj")).wrap_err("cannot open Jujutsu metadata directory")?;
+    let jj_repo = PathFd::new(&jj_repo_path).wrap_err("cannot open Jujutsu repository directory")?;
     let config = PathFd::new(CONFIG_HOME).wrap_err("cannot open secure config directory")?;
     let socket = PathFd::new("/run/sandbox-proxy").wrap_err("cannot open proxy socket directory")?;
     let system_config = PathFd::new("/etc").wrap_err("cannot open system configuration directory")?;
@@ -100,6 +102,8 @@ fn install_execution_policy(repo: &str) -> Result<()> {
         .wrap_err("cannot add Git common-directory rule")?
         .add_rule(PathBeneath::new(jj, read_access | write_access))
         .wrap_err("cannot add Jujutsu metadata write rule")?
+        .add_rule(PathBeneath::new(jj_repo, read_access | write_access))
+        .wrap_err("cannot add Jujutsu repository write rule")?
         .add_rule(PathBeneath::new(config, read_access | write_access))
         .wrap_err("cannot add configuration write rule")?
         .add_rule(PathBeneath::new(socket, read_access | write_access))
@@ -188,7 +192,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
         fchdir(fd).map_err(io_error)?;
         let limits = [
             (Resource::RLIMIT_CPU, 120), (Resource::RLIMIT_FSIZE, 64 << 20),
-            (Resource::RLIMIT_NOFILE, 64), (Resource::RLIMIT_AS, 2 << 30),
+            (Resource::RLIMIT_NOFILE, 64),
         ];
         for (resource, value) in limits {
             setrlimit(resource, value, value).map_err(io_error)?;

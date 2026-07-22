@@ -201,7 +201,23 @@ def validate_repository(state: State) -> None:
         git_roots = [Path(line).resolve(strict=True) for line in lines]
     except (subprocess.CalledProcessError, FileNotFoundError) as error:
         raise LauncherError("Git metadata indirection cannot be resolved safely") from error
-    for root in (jj, *git_roots):
+    try:
+        jj_repo_entry = jj / "repo"
+        if jj_repo_entry.is_file() and not jj_repo_entry.is_symlink():
+            if jj_repo_entry.lstat().st_nlink != 1:
+                raise LauncherError("Jujutsu repository pointer must not be hard linked")
+            value = jj_repo_entry.read_text(encoding="utf-8").strip()
+            if not value or "\0" in value or "\n" in value or "\r" in value:
+                raise LauncherError("Jujutsu repository pointer is invalid")
+            target = Path(value)
+            if not target.is_absolute():
+                target = jj_repo_entry.parent / target
+            jj_repo = target.resolve(strict=True)
+        else:
+            jj_repo = jj_repo_entry.resolve(strict=True)
+    except (FileNotFoundError, UnicodeError) as error:
+        raise LauncherError("Jujutsu repository metadata cannot be resolved safely") from error
+    for root in (jj, jj_repo, *git_roots):
         if not root.is_dir() or root.is_symlink():
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
         device = root.stat().st_dev

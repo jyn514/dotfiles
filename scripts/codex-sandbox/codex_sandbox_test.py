@@ -33,7 +33,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo with spaces"
         (self.repo / ".git").mkdir(parents=True)
-        (self.repo / ".jj").mkdir()
+        (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.home = self.root / "home with spaces"
         (self.home / ".agents" / "skills").mkdir(parents=True)
         (self.home / ".codex" / "rules").mkdir(parents=True)
