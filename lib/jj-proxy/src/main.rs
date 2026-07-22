@@ -97,6 +97,26 @@ fn install_execution_policy() -> Result<()> {
     Ok(())
 }
 
+fn prepare_repo_config(repo: &str) -> Result<()> {
+    let output = Command::new("/trusted/bin/jj")
+        .args(["--repository", repo, "--ignore-working-copy", "config", "path", "--repo"])
+        .env_clear()
+        .envs([
+            ("JJ_CONFIG", "/trusted/jj.toml"),
+            ("HOME", "/nonexistent"),
+            ("XDG_CONFIG_HOME", CONFIG_HOME),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .wrap_err("cannot initialize per-repository Jujutsu config")?;
+    if !output.status.success() {
+        bail!("cannot initialize per-repository Jujutsu config: jj exited with {}", output.status);
+    }
+    Ok(())
+}
+
 fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
     if path.contains('\0') || path.starts_with('/') {
         bail!("cwd must be relative to the repository");
@@ -220,6 +240,7 @@ fn serve() -> Result<()> {
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
     install_execution_policy()?;
+    prepare_repo_config(&repo)?;
     let _ = fs::remove_file(SOCKET);
     let listener = UnixListener::bind(SOCKET).wrap_err("cannot bind proxy socket")?;
     fs::set_permissions(SOCKET, fs::Permissions::from_mode(0o666)).wrap_err("cannot set proxy socket permissions")?;
