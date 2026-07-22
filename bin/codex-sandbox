@@ -216,7 +216,8 @@ validate_repository() {
 	fi
 	SANDBOX_MANIFEST=$(mktemp)
 	python3 "$SANDBOX_PROXY_HELPER" snapshot \
-		--repo "$REPOSITORY" --output "$SANDBOX_MANIFEST"
+		--repo "$REPOSITORY" --output "$SANDBOX_MANIFEST" \
+		--jj-image-command "$DOTFILES/.agents/sandbox/jj-proxy-image"
 }
 
 acquire_sandbox_lock() {

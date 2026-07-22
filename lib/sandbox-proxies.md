@@ -1,9 +1,11 @@
 # Sandbox command proxies
 
-`codex-sandbox` reads `.agents/sandbox/proxy-commands.json` before starting any
-container. The version 1 manifest format is documented in
-`designs/sandbox-proxies.typ`. Repositories that do not need an additional
-proxy still provide an empty manifest:
+`codex-sandbox` always adds its trusted `jj` proxy using the image builder from
+the dotfiles checkout that contains the launcher. A sandboxed repository may
+also provide `.agents/sandbox/proxy-commands.json` for additional proxies. The
+version 1 manifest format is documented in `designs/sandbox-proxies.typ`.
+Repositories that need no additional proxy may omit the file or provide an
+empty manifest:
 
 ```json
 {"version": 1, "commands": {}}
@@ -16,6 +18,10 @@ print one immutable `sha256:` image ID. A proxy image must:
 - bind `/run/sandbox-proxy/socket` only after initialization succeeds; and
 - include the fixed byte-forwarding client at
   `/trusted/bin/sandbox-proxy-forward` for host-side routing.
+
+Repository-local commands cannot replace the trusted `jj` command. The
+launcher resolves its own real path before passing the absolute trusted image
+builder path into the immutable session manifest.
 
 The launcher mounts the repository read-only in each proxy, applies only the
 manifest's declared overrides, and mounts each socket volume read-only in the

@@ -84,6 +84,31 @@ def load_manifest(repo: Path) -> dict[str, Any]:
     return load_manifest_file(path)
 
 
+def optional_sandbox_directory(repo: Path) -> Path | None:
+    current = repo
+    for component in (".agents", "sandbox"):
+        current /= component
+        if not current.exists() and not current.is_symlink():
+            return None
+        if current.is_symlink() or not current.is_dir():
+            raise ConfigError(f"protected sandbox directory is symlinked or invalid: {current}")
+    return current
+
+
+def load_optional_manifest(repo: Path) -> dict[str, Any]:
+    repo = repo.resolve(strict=True)
+    repository_identity(repo)
+    sandbox = optional_sandbox_directory(repo)
+    if sandbox is None:
+        return {"version": 1, "commands": {}}
+    path = sandbox / "proxy-commands.json"
+    if path.is_symlink():
+        raise ConfigError(f"proxy manifest must not be symlinked: {path}")
+    if not path.exists():
+        return {"version": 1, "commands": {}}
+    return load_manifest(repo)
+
+
 def load_manifest_file(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
@@ -259,8 +284,12 @@ def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) 
         repository_mode = ""
     arguments = [
         "--mount", f"type=bind,src={repo},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
-        "--mount", f"type=bind,src={repo / '.agents/sandbox'},dst={CONTAINER_REPO / '.agents/sandbox'},readonly",
     ]
+    sandbox = optional_sandbox_directory(repo)
+    if sandbox is not None:
+        arguments += [
+            "--mount", f"type=bind,src={sandbox},dst={CONTAINER_REPO / '.agents/sandbox'},readonly",
+        ]
     for mount in command["mounts"]:
         source = checked_repository_path(repo, mount["source"], f"command {name} mount source")
         checked_repository_path(repo, mount["target"], f"command {name} mount target")
@@ -420,7 +449,9 @@ def agent_args_main(args: argparse.Namespace) -> int:
     manifest = load_manifest_file(Path(args.manifest))
     output = Path(args.output)
     lines = ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
-    lines += ["--mount", f"type=bind,src={repo / '.agents/sandbox'},dst={CONTAINER_REPO / '.agents/sandbox'},readonly"]
+    sandbox = optional_sandbox_directory(repo)
+    if sandbox is not None:
+        lines += ["--mount", f"type=bind,src={sandbox},dst={CONTAINER_REPO / '.agents/sandbox'},readonly"]
     for name, command in manifest["commands"].items():
         lines += ["--mount", f"type=volume,src={args.prefix}-{name},dst=/run/sandbox-proxies/{name},readonly"]
         for mount in command["mounts"]:
@@ -449,7 +480,23 @@ def inspect_main(args: argparse.Namespace) -> int:
 
 
 def snapshot_main(args: argparse.Namespace) -> int:
-    manifest = serializable_manifest(load_manifest(Path(args.repo)))
+    manifest = serializable_manifest(load_optional_manifest(Path(args.repo)))
+    if args.jj_image_command:
+        builder = Path(args.jj_image_command)
+        if not builder.is_absolute():
+            raise ConfigError("trusted jj image command must be absolute")
+        _regular_unlinked(builder, "trusted jj image command")
+        if not os.access(builder, os.X_OK):
+            raise ConfigError(f"trusted jj image command is not executable: {builder}")
+        if "jj" in manifest["commands"]:
+            raise ConfigError("repository manifest may not override trusted command: jj")
+        manifest["commands"]["jj"] = {
+            "image-command": [str(builder)],
+            "argv": ["jj-proxy", "serve"],
+            "workdir": ".",
+            "network": True,
+            "mounts": [{"source": ".", "target": ".", "proxy": "read-write"}],
+        }
     write_atomic(Path(args.output), json.dumps(manifest, sort_keys=True))
     return 0
 
@@ -495,6 +542,7 @@ def parse_args() -> argparse.Namespace:
     snapshot = sub.add_parser("snapshot")
     snapshot.add_argument("--repo", required=True)
     snapshot.add_argument("--output", required=True)
+    snapshot.add_argument("--jj-image-command")
     snapshot.set_defaults(function=snapshot_main)
     lock = sub.add_parser("hold-lock")
     lock.add_argument("--repo", required=True)
