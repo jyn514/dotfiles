@@ -25,15 +25,17 @@ snapshotted once per session, so later checkout edits cannot change the running
 policy. If a proxy exits, the launcher terminates and cleans up the agent
 session rather than leaving a partially available sandbox running.
 
-The Jujutsu manifest grants the proxy read-write access only to `.git` and
-`.jj`. Its repository mount remains read-only, so proxy commands can update
-Jujutsu and colocated Git metadata but cannot modify ordinary working-copy
-files. The agent receives no direct metadata mount.
+Jujutsu atomically links temporary objects between `.jj` and `.git`, so putting
+those directories on separate bind mounts fails with `EXDEV`. Its proxy uses
+one writable repository bind to preserve filesystem identity, while its
+fail-closed Landlock policy grants write operations only beneath `.git`, `.jj`,
+its private configuration directory, and its socket directory. Ordinary
+working-copy files remain immutable to the proxy. The agent receives no direct
+metadata mount.
 
-The Jujutsu proxy additionally installs a fail-closed Landlock policy before
-binding its socket. The policy permits execution only beneath `/trusted/bin`,
-providing the working-tree `noexec` property on both Docker and Podman without
-unsafe syscall bindings or a hard-coded kernel ABI.
+The same policy permits execution only beneath `/trusted/bin`, providing the
+working-tree `noexec` property on both Docker and Podman without unsafe syscall
+bindings or a hard-coded kernel ABI.
 
 ## Host routing
 

@@ -8,13 +8,8 @@
       "network": true,
       "mounts": [
         {
-          "source": ".git",
-          "target": ".git",
-          "proxy": "read-write"
-        },
-        {
-          "source": ".jj",
-          "target": ".jj",
+          "source": ".",
+          "target": ".",
           "proxy": "read-write"
         }
       ]

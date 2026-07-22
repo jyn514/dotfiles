@@ -58,22 +58,21 @@ class ManifestTest(unittest.TestCase):
         mount = sandbox_proxies.load_manifest(self.repo)["commands"]["example"]["mounts"][0]
         self.assertEqual("read-write", mount["proxy"])
 
-    def test_generates_read_only_repository_with_writable_metadata_overlays(self) -> None:
-        (self.repo / ".jj").mkdir()
+    def test_generates_writable_repository_when_root_override_is_declared(self) -> None:
         self.write({"jj": self.command(mounts=[
-            {"source": ".git", "target": ".git", "proxy": "read-write"},
-            {"source": ".jj", "target": ".jj", "proxy": "read-write"},
+            {"source": ".", "target": ".", "proxy": "read-write"},
         ])})
         command = sandbox_proxies.load_manifest(self.repo)["commands"]["jj"]
         arguments = sandbox_proxies.proxy_repository_mount_args(self.repo, "jj", command)
         mounts = arguments[1::2]
         self.assertIn(
+            f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true",
+            mounts,
+        )
+        self.assertNotIn(
             f"type=bind,src={self.repo.resolve()},dst=/src/work,readonly,bind-nonrecursive=true",
             mounts,
         )
-        self.assertIn(f"type=bind,src={self.repo.resolve() / '.git'},dst=/src/work/.git", mounts)
-        self.assertIn(f"type=bind,src={self.repo.resolve() / '.jj'},dst=/src/work/.jj", mounts)
-        self.assertNotIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", mounts)
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{

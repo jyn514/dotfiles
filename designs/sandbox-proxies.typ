@@ -306,8 +306,9 @@ Authoritative issue state remains in Git refs.
 `jj-proxy` is a manifest command using the same trusted sibling-container lifecycle, session socket volume, read-only metadata overlays in the agent, scrubbed environment, fixed binaries, and bounded execution.
 
 `jj-proxy` accepts a broad but validated Jujutsu argument grammar because interactive repository work needs operands and options.
-Its repository view is read-only with read-write overlays only for `.git` and `.jj`.
-Metadata-only operations remain available, while commands that would update ordinary working-copy files fail at the filesystem boundary.
+Jujutsu atomically links temporary objects between `.jj` and `.git`, so separate writable bind mounts introduce an unusable cross-device boundary.
+Its repository bind is writable to preserve filesystem identity, while a fail-closed Landlock policy permits writes only beneath `.git`, `.jj`, the proxy's private configuration directory, and its socket directory.
+Metadata operations remain available, while commands that would update ordinary working-copy files fail at the Landlock boundary.
 The `bug` protocol is narrower than Jujutsu's grammar: it forwards one bridge subcommand, rewrites body input, rejects `push` and `raw`, and leaves issue-operation validation to the trusted bridge.
 
 The generic manifest does not replace `jj-proxy`'s command-specific validation.

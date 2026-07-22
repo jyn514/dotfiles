@@ -2,14 +2,13 @@ mod policy;
 
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use landlock::{
-    AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr,
+    make_bitflags, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr,
     RulesetCreatedAttr, RulesetStatus,
 };
 use serde::{Deserialize, Serialize};
 use nix::fcntl::{openat, OFlag};
 use nix::sys::resource::{setrlimit, Resource};
 use nix::sys::signal::{kill, Signal};
-use nix::sys::socket::{recv, MsgFlags};
 use nix::sys::stat::Mode;
 use nix::unistd::{close, dup, fchdir, setsid, Pid};
 use std::collections::HashSet;
@@ -67,13 +66,29 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
 
 fn install_execution_policy() -> Result<()> {
     let trusted = PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
+    let git = PathFd::new("/src/work/.git").wrap_err("cannot open Git metadata directory")?;
+    let jj = PathFd::new("/src/work/.jj").wrap_err("cannot open Jujutsu metadata directory")?;
+    let config = PathFd::new(CONFIG_HOME).wrap_err("cannot open secure config directory")?;
+    let socket = PathFd::new("/run/sandbox-proxy").wrap_err("cannot open proxy socket directory")?;
+    let write_access = make_bitflags!(AccessFs::{
+        WriteFile | RemoveDir | RemoveFile | MakeDir | MakeReg | MakeSock |
+        MakeFifo | MakeSym | Refer | Truncate
+    });
     let status = Ruleset::default()
-        .handle_access(AccessFs::Execute)
-        .wrap_err("cannot configure Landlock execution access")?
+        .handle_access(write_access | AccessFs::Execute)
+        .wrap_err("cannot configure Landlock filesystem access")?
         .create()
         .wrap_err("cannot create Landlock ruleset")?
         .add_rule(PathBeneath::new(trusted, AccessFs::Execute))
         .wrap_err("cannot add trusted Landlock execution rule")?
+        .add_rule(PathBeneath::new(git, write_access))
+        .wrap_err("cannot add Git metadata write rule")?
+        .add_rule(PathBeneath::new(jj, write_access))
+        .wrap_err("cannot add Jujutsu metadata write rule")?
+        .add_rule(PathBeneath::new(config, write_access))
+        .wrap_err("cannot add configuration write rule")?
+        .add_rule(PathBeneath::new(socket, write_access))
+        .wrap_err("cannot add proxy socket write rule")?
         .restrict_self()
         .wrap_err("cannot enforce Landlock execution policy")?;
     if status.ruleset != RulesetStatus::FullyEnforced || !status.no_new_privs {
@@ -112,11 +127,6 @@ fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
 
 fn kill_group(pid: u32) { let _ = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL); }
 
-fn disconnected(stream: &UnixStream) -> bool {
-    let mut byte = [0u8];
-    matches!(recv(stream.as_raw_fd(), &mut byte, MsgFlags::MSG_PEEK | MsgFlags::MSG_DONTWAIT), Ok(0))
-}
-
 fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
     move || {
         let io_error = |error: nix::errno::Errno| io::Error::from_raw_os_error(error as i32);
@@ -133,7 +143,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
     }
 }
 
-fn execute(request: &Request, stream: &UnixStream, root: RawFd, repo: &str, remotes: &HashSet<String>) -> Response {
+fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>) -> Response {
     let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
     if request.version != 1 { return failure("unsupported protocol version".into()); }
     if request.argv.as_slice() == [":ready"] {
@@ -187,7 +197,7 @@ fn execute(request: &Request, stream: &UnixStream, root: RawFd, repo: &str, remo
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.code().unwrap_or(128),
-            Ok(None) if started.elapsed() < TIMEOUT && !disconnected(stream) => thread::sleep(Duration::from_millis(20)),
+            Ok(None) if started.elapsed() < TIMEOUT => thread::sleep(Duration::from_millis(20)),
             Ok(None) => { kill_group(pid); let _ = child.wait(); break 124; }
             Err(error) => { kill_group(pid); let _ = child.wait(); return failure(format!("could not wait for jj: {error}")); }
         }
@@ -207,9 +217,9 @@ fn serve() -> Result<()> {
     let repo = "/src/work".to_owned();
     let root = File::open(&repo).wrap_err("cannot open repository")?;
     let remotes = HashSet::from(["origin".to_owned()]);
-    install_execution_policy()?;
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
+    install_execution_policy()?;
     let _ = fs::remove_file(SOCKET);
     let listener = UnixListener::bind(SOCKET).wrap_err("cannot bind proxy socket")?;
     fs::set_permissions(SOCKET, fs::Permissions::from_mode(0o666)).wrap_err("cannot set proxy socket permissions")?;
@@ -219,7 +229,7 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(&request, &stream, root.as_raw_fd(), &repo, &remotes),
+            Ok(request) => execute(&request, root.as_raw_fd(), &repo, &remotes),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
