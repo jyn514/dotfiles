@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -69,6 +70,22 @@ class CodexSandboxTest(unittest.TestCase):
                 exit 44
             fi
             if [ "$1 $2" = "image inspect" ]; then
+                [ "${FAKE_IMAGE_EXISTS:-1}" = 1 ]
+                exit
+            fi
+            if [ "$1" = build ]; then
+                previous=
+                for argument do
+                    if [ "$previous" = --iidfile ]; then
+                        printf '%s\n' 'sha256:built-image-id' > "$argument"
+                        break
+                    fi
+                    previous=$argument
+                done
+                exit 0
+            fi
+            if [ "$1" = inspect ]; then
+                printf '%s\n' "${FAKE_RELAY_IP:-}"
                 exit 0
             fi
             if [ "$1" = run ]; then
@@ -143,13 +160,13 @@ class CodexSandboxTest(unittest.TestCase):
 
     def run_launcher(self, *arguments: str, **updates: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(LAUNCHER), *arguments], cwd=self.repo,
+            [sys.executable, str(LAUNCHER), *arguments], cwd=self.repo,
             env=self.launcher_environment(**updates),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
         )
 
     def final_run(self) -> list[str]:
-        runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"]]
+        runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"] and "-it" in call]
         self.assertEqual(1, len(runs))
         return runs[0]
 
@@ -189,6 +206,13 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("192.168.0.0/16,prohibit", creates[0])
         self.assertEqual("codex-public-only", creates[0][-1])
 
+    def test_fresh_build_runs_agent_by_immutable_image_id(self) -> None:
+        result = self.run_launcher(FAKE_IMAGE_EXISTS="0")
+        self.assertEqual(0, result.returncode, result.stderr)
+        builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
+        self.assertEqual(1, len(builds))
+        self.assertIn("sha256:built-image-id", self.final_run())
+
     def test_network_failure_stops_before_lock_and_proxy_start(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0", FAKE_NETWORK_CREATE_FAIL="1")
         self.assertEqual(1, result.returncode)
@@ -207,7 +231,7 @@ class CodexSandboxTest(unittest.TestCase):
     def test_term_signal_cleans_running_agent_and_proxies(self) -> None:
         ready = self.root / "agent-ready"
         process = subprocess.Popen(
-            [str(LAUNCHER)], cwd=self.repo,
+            [sys.executable, str(LAUNCHER)], cwd=self.repo,
             env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_AGENT_READY=str(ready)),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
         )
@@ -234,6 +258,34 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertNotIn("--cap-drop=ALL", run)
         self.assertNotIn("--security-opt=no-new-privileges", run)
         self.assertNotIn("native Linux sandboxing", result.stderr)
+
+    def test_agent_podman_relay_is_isolated_and_injected(self) -> None:
+        access = self.root / "agent-podman"
+        access.mkdir()
+        (access / "connection.env").write_text(
+            "AGENT_PODMAN_SSH_USER=worker\n"
+            "AGENT_PODMAN_SSH_PORT=2223\n"
+            "CONTAINER_HOST=ssh://worker@host.docker.internal:2223/run/user/501/podman.sock\n"
+            "CONTAINER_SSHKEY=/run/secrets/agent-podman-key\n",
+            encoding="utf-8",
+        )
+        (access / "id_ed25519").write_text("key", encoding="utf-8")
+        (access / "known_hosts.sandbox").write_text("host", encoding="utf-8")
+        result = self.run_launcher(
+            AGENT_PODMAN_ACCESS_DIR=str(access), FAKE_RELAY_IP="10.0.0.8",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = read_calls(self.docker_log)
+        relay_runs = [call for call in calls if call[:2] == ["run", "--detach"]]
+        self.assertEqual(1, len(relay_runs))
+        self.assertIn("--cap-drop=ALL", relay_runs[0])
+        self.assertIn("--read-only", relay_runs[0])
+        run = self.final_run()
+        self.assertIn("CONTAINER_HOST=ssh://worker@10.0.0.8:2222/run/user/501/podman.sock", run)
+        self.assertIn(
+            f"type=bind,src={access / 'id_ed25519'},dst=/run/secrets/agent-podman-key,readonly",
+            run,
+        )
 
     def test_rejects_incomplete_agent_podman_configuration(self) -> None:
         access = self.root / "agent-podman"
