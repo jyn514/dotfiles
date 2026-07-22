@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import signal
+import subprocess
+import tempfile
+import textwrap
+import time
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+LAUNCHER = ROOT / "bin" / "codex-sandbox"
+
+
+def write_executable(path: Path, content: str) -> None:
+    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
+    path.chmod(0o700)
+
+
+def read_calls(path: Path) -> list[list[str]]:
+    if not path.exists():
+        return []
+    return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class CodexSandboxTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.repo = self.root / "repo with spaces"
+        (self.repo / ".git").mkdir(parents=True)
+        (self.repo / ".jj").mkdir()
+        self.home = self.root / "home with spaces"
+        (self.home / ".agents" / "skills").mkdir(parents=True)
+        (self.home / ".codex" / "rules").mkdir(parents=True)
+        (self.home / "src").mkdir()
+        self.fake_bin = self.root / "fake-bin"
+        self.fake_bin.mkdir()
+        self.docker_log = self.root / "docker.log"
+        self.python_log = self.root / "python.log"
+
+        write_executable(self.fake_bin / "jj", """
+            #!/bin/sh
+            [ "$1" = workspace ] && [ "$2" = root ] || exit 2
+            printf '%s\n' "$FAKE_REPOSITORY"
+        """)
+        write_executable(self.fake_bin / "uname", """
+            #!/bin/sh
+            printf '%s\n' "${FAKE_UNAME:-Linux}"
+        """)
+        write_executable(self.fake_bin / "rsync", """
+            #!/bin/sh
+            exit "${FAKE_RSYNC_EXIT:-0}"
+        """)
+        write_executable(self.fake_bin / "docker", """
+            #!/bin/sh
+            {
+                printf 'CALL'
+                for argument do printf '\t%s' "$argument"; done
+                printf '\n'
+            } >> "$FAKE_DOCKER_LOG"
+            if [ "$1 $2" = "network exists" ]; then
+                [ "${FAKE_NETWORK_EXISTS:-1}" = 1 ]
+                exit
+            fi
+            if [ "$1 $2" = "network create" ] && [ "${FAKE_NETWORK_CREATE_FAIL:-0}" = 1 ]; then
+                exit 44
+            fi
+            if [ "$1 $2" = "image inspect" ]; then
+                exit 0
+            fi
+            if [ "$1" = run ]; then
+                if [ "${FAKE_AGENT_BLOCK:-0}" = 1 ]; then
+                    : > "$FAKE_AGENT_READY"
+                    trap 'exit 143' HUP INT TERM
+                    while :; do sleep 1; done
+                fi
+                exit "${FAKE_AGENT_EXIT:-0}"
+            fi
+            exit 0
+        """)
+        write_executable(self.fake_bin / "python3", """
+            #!/bin/sh
+            {
+                printf 'CALL'
+                for argument do printf '\t%s' "$argument"; done
+                printf '\n'
+            } >> "$FAKE_PYTHON_LOG"
+            action=$2
+            shift 2
+            value_for() {
+                wanted=$1
+                shift
+                while [ "$#" -gt 0 ]; do
+                    if [ "$1" = "$wanted" ]; then printf '%s\n' "$2"; return; fi
+                    shift
+                done
+                return 1
+            }
+            case "$action" in
+                snapshot)
+                    output=$(value_for --output "$@")
+                    printf '%s\n' '{"version":1,"commands":{"jj":{}}}' > "$output"
+                    ;;
+                hold-lock)
+                    ready=$(value_for --ready "$@")
+                    release=$(value_for --release "$@")
+                    : > "$ready"
+                    while [ ! -e "$release" ]; do sleep 0.01; done
+                    ;;
+                start)
+                    state=$(value_for --state "$@")
+                    printf '%s\n' '{"proxies":[]}' > "$state"
+                    ;;
+                agent-args)
+                    output=$(value_for --output "$@")
+                    printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
+                    ;;
+                publish|monitor|stop) ;;
+                *) exit 91 ;;
+            esac
+        """)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def launcher_environment(self, **updates: str) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.update({
+            "PATH": f"{self.fake_bin}:{environment['PATH']}",
+            "HOME": str(self.home),
+            "FAKE_REPOSITORY": str(self.repo),
+            "FAKE_DOCKER_LOG": str(self.docker_log),
+            "FAKE_PYTHON_LOG": str(self.python_log),
+            "AGENT_PODMAN_ACCESS_DIR": str(self.root / "no-agent-podman"),
+            "FAKE_NETWORK_EXISTS": "1",
+            "FAKE_UNAME": "Linux",
+        })
+        environment.update(updates)
+        return environment
+
+    def run_launcher(self, *arguments: str, **updates: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(LAUNCHER), *arguments], cwd=self.repo,
+            env=self.launcher_environment(**updates),
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+        )
+
+    def final_run(self) -> list[str]:
+        runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"]]
+        self.assertEqual(1, len(runs))
+        return runs[0]
+
+    def test_constructs_secured_agent_and_trusted_proxy_arguments(self) -> None:
+        result = self.run_launcher("resume", "session-id")
+        self.assertEqual(0, result.returncode, result.stderr)
+        run = self.final_run()
+        self.assertIn("--cap-drop=ALL", run)
+        self.assertIn("--security-opt=no-new-privileges", run)
+        self.assertIn(f"type=bind,src={self.repo},dst=/src/work,bind-nonrecursive=true", run)
+        self.assertIn(f"type=bind,src={self.repo / '.git'},dst=/src/work/.git,readonly", run)
+        self.assertIn(f"type=bind,src={self.repo / '.jj'},dst=/src/work/.jj,readonly", run)
+        self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
+        self.assertLess(run.index("resume"), run.index("session-id"))
+
+        snapshots = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "snapshot"]
+        self.assertEqual(1, len(snapshots))
+        builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
+        self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
+
+    def test_preserves_agent_exit_status_and_cleans_up(self) -> None:
+        result = self.run_launcher(FAKE_AGENT_EXIT="23")
+        self.assertEqual(23, result.returncode, result.stderr)
+        removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
+        self.assertEqual(1, len(removals))
+        self.assertRegex(removals[0][2], r"^codex-sandbox-[0-9]+-[0-9]+$")
+        actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
+        self.assertIn("stop", actions)
+
+    def test_creates_network_with_public_only_routes(self) -> None:
+        result = self.run_launcher(FAKE_NETWORK_EXISTS="0")
+        self.assertEqual(0, result.returncode, result.stderr)
+        creates = [call for call in read_calls(self.docker_log) if call[:2] == ["network", "create"]]
+        self.assertEqual(1, len(creates))
+        self.assertIn("--route", creates[0])
+        self.assertIn("10.0.0.0/8,prohibit", creates[0])
+        self.assertIn("192.168.0.0/16,prohibit", creates[0])
+        self.assertEqual("codex-public-only", creates[0][-1])
+
+    def test_network_failure_stops_before_lock_and_proxy_start(self) -> None:
+        result = self.run_launcher(FAKE_NETWORK_EXISTS="0", FAKE_NETWORK_CREATE_FAIL="1")
+        self.assertEqual(1, result.returncode)
+        actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
+        self.assertEqual(["snapshot"], actions)
+        self.assertFalse(any(call[:1] == ["run"] for call in read_calls(self.docker_log)))
+
+    def test_staging_failure_cleans_started_proxies(self) -> None:
+        result = self.run_launcher(FAKE_RSYNC_EXIT="9")
+        self.assertEqual(9, result.returncode)
+        actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
+        self.assertIn("start", actions)
+        self.assertIn("stop", actions)
+        self.assertFalse(any(call[:2] == ["rm", "--force"] for call in read_calls(self.docker_log)))
+
+    def test_term_signal_cleans_running_agent_and_proxies(self) -> None:
+        ready = self.root / "agent-ready"
+        process = subprocess.Popen(
+            [str(LAUNCHER)], cwd=self.repo,
+            env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_AGENT_READY=str(ready)),
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+        )
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            time.sleep(0.01)
+        if not ready.exists():
+            os.killpg(process.pid, signal.SIGTERM)
+            self.fail(f"agent did not start: {process.communicate(timeout=5)!r}")
+        os.killpg(process.pid, signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=5)
+        self.assertEqual(143, process.returncode, (stdout, stderr))
+        removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
+        self.assertEqual(1, len(removals))
+        actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
+        self.assertIn("stop", actions)
+
+    def test_non_linux_omits_native_linux_restrictions(self) -> None:
+        result = self.run_launcher(FAKE_UNAME="Darwin")
+        self.assertEqual(0, result.returncode, result.stderr)
+        run = self.final_run()
+        self.assertNotIn("--cap-drop=ALL", run)
+        self.assertNotIn("--security-opt=no-new-privileges", run)
+        self.assertNotIn("native Linux sandboxing", result.stderr)
+
+    def test_rejects_incomplete_agent_podman_configuration(self) -> None:
+        access = self.root / "agent-podman"
+        access.mkdir()
+        (access / "connection.env").write_text("CONTAINER_HOST=x\n", encoding="utf-8")
+        result = self.run_launcher(AGENT_PODMAN_ACCESS_DIR=str(access))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("Agent Podman access state is incomplete", result.stderr)
+        self.assertEqual([], read_calls(self.docker_log))
+
+
+if __name__ == "__main__":
+    unittest.main()
