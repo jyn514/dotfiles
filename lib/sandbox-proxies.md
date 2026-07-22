@@ -33,11 +33,14 @@ session rather than leaving a partially available sandbox running.
 
 Jujutsu atomically links temporary objects between `.jj` and `.git`, so putting
 those directories on separate bind mounts fails with `EXDEV`. Its proxy uses
-one writable repository bind to preserve filesystem identity, while its
-fail-closed Landlock policy grants write operations only beneath `.git`, `.jj`,
-its private configuration directory, and its socket directory. Ordinary
-working-copy files remain immutable to the proxy. The agent receives no direct
-metadata mount.
+one writable bind to preserve filesystem identity. For a linked Git worktree,
+that bind starts at the nearest common ancestor of the worktree, its `gitdir`,
+and its common Git directory. A fail-closed Landlock policy permits reads only
+from the selected worktree, its resolved metadata, and trusted runtime files;
+it permits writes only beneath the resolved Git metadata, `.jj`, its private
+configuration directory, and its socket directory. Ordinary working-copy files
+remain immutable to the proxy, and sibling repositories under a common mount
+are unreadable. The agent receives no direct writable metadata mount.
 
 The same policy permits execution only beneath `/trusted/bin`, providing the
 working-tree `noexec` property on both Docker and Podman without unsafe syscall

@@ -184,11 +184,26 @@ def validate_repository(state: State) -> None:
     git = repository / ".git"
     if not jj.is_dir() or jj.is_symlink():
         raise LauncherError("The Jujutsu workspace root cannot be safely mounted")
-    if not git.is_dir():
-        raise LauncherError("Git metadata indirection is not supported")
+    if not (git.is_dir() or git.is_file()):
+        raise LauncherError("Git metadata is missing or invalid")
     if git.is_symlink():
         raise LauncherError("Symlinked Git metadata is not supported")
-    for root in (jj, git):
+    if git.is_file() and git.lstat().st_nlink != 1:
+        raise LauncherError("Git metadata entry must not be hard linked")
+    try:
+        result = run([
+            "git", "-C", str(repository), "rev-parse", "--path-format=absolute",
+            "--git-dir", "--git-common-dir",
+        ], capture=True)
+        lines = result.stdout.splitlines()
+        if len(lines) != 2:
+            raise LauncherError("Git returned an invalid metadata layout")
+        git_roots = [Path(line).resolve(strict=True) for line in lines]
+    except (subprocess.CalledProcessError, FileNotFoundError) as error:
+        raise LauncherError("Git metadata indirection cannot be resolved safely") from error
+    for root in (jj, *git_roots):
+        if not root.is_dir() or root.is_symlink():
+            raise LauncherError(f"Repository metadata directory is invalid: {root}")
         device = root.stat().st_dev
         for directory, directories, files in os.walk(root, followlinks=False):
             directories[:] = [
@@ -373,6 +388,19 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
         "--agent", state.codex_container,
     ])
+    git_layout = run([
+        "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
+        "--git-dir", "--git-common-dir",
+    ], capture=True).stdout.splitlines()
+    protected = [state.repository / ".git", state.repository / ".jj"]
+    for line in git_layout:
+        path = Path(line).resolve(strict=True)
+        try:
+            path.relative_to(state.repository)
+        except ValueError:
+            continue
+        if path not in protected:
+            protected.append(path)
     command = [
         "docker", "run", "--name", state.codex_container, "-it",
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
@@ -384,8 +412,14 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--volume", f"{state.home / '.codex/rules'}:{state.home / '.codex/rules'}:ro",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
-        "--mount", f"type=bind,src={state.repository / '.git'},dst=/src/work/.git,readonly",
-        "--mount", f"type=bind,src={state.repository / '.jj'},dst=/src/work/.jj,readonly",
+        *[
+            item
+            for path in protected
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={Path('/src/work') / path.relative_to(state.repository)},readonly",
+            )
+        ],
         *arguments,
     ]
     state.agent_process = subprocess.Popen(command)

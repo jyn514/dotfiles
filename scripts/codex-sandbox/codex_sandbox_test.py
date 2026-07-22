@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -46,6 +47,16 @@ class CodexSandboxTest(unittest.TestCase):
             #!/bin/sh
             [ "$1" = workspace ] && [ "$2" = root ] || exit 2
             printf '%s\n' "$FAKE_REPOSITORY"
+        """)
+        write_executable(self.fake_bin / "git", """
+            #!/bin/sh
+            case " $* " in
+                *" rev-parse "*)
+                    printf '%s\n%s\n' "${FAKE_GIT_DIR:-$FAKE_REPOSITORY/.git}" \
+                        "${FAKE_GIT_COMMON_DIR:-$FAKE_REPOSITORY/.git}"
+                    ;;
+                *) exec /usr/bin/git "$@" ;;
+            esac
         """)
         write_executable(self.fake_bin / "uname", """
             #!/bin/sh
@@ -186,6 +197,21 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(snapshots))
         builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
         self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
+
+    def test_accepts_linked_git_worktree_metadata(self) -> None:
+        shutil.rmtree(self.repo / ".git")
+        (self.repo / ".git").write_text("gitdir: ../main/.git/worktrees/repo\n", encoding="utf-8")
+        git_dir = self.root / "main" / ".git" / "worktrees" / "repo"
+        common_dir = self.root / "main" / ".git"
+        git_dir.mkdir(parents=True)
+        result = self.run_launcher(
+            FAKE_GIT_DIR=str(git_dir), FAKE_GIT_COMMON_DIR=str(common_dir),
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(
+            f"type=bind,src={self.repo / '.git'},dst=/src/work/.git,readonly",
+            self.final_run(),
+        )
 
     def test_preserves_agent_exit_status_and_cleans_up(self) -> None:
         result = self.run_launcher(FAKE_AGENT_EXIT="23")
