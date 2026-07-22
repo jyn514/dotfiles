@@ -213,6 +213,13 @@ class CodexSandboxTest(unittest.TestCase):
             self.final_run(),
         )
 
+    def test_does_not_scan_trusted_host_metadata_for_hard_links(self) -> None:
+        metadata = self.repo / ".jj" / "trusted-metadata"
+        metadata.write_text("trusted", encoding="utf-8")
+        os.link(metadata, self.repo / ".jj" / "trusted-metadata-link")
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_preserves_agent_exit_status_and_cleans_up(self) -> None:
         result = self.run_launcher(FAKE_AGENT_EXIT="23")
         self.assertEqual(23, result.returncode, result.stderr)

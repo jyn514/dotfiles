@@ -220,16 +220,6 @@ def validate_repository(state: State) -> None:
     for root in (jj, jj_repo, *git_roots):
         if not root.is_dir() or root.is_symlink():
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
-        device = root.stat().st_dev
-        for directory, directories, files in os.walk(root, followlinks=False):
-            directories[:] = [
-                name for name in directories
-                if (Path(directory) / name).lstat().st_dev == device
-            ]
-            for name in files:
-                metadata = (Path(directory) / name).lstat()
-                if metadata.st_dev == device and stat.S_ISREG(metadata.st_mode) and metadata.st_nlink > 1:
-                    raise LauncherError("Repository metadata contains hard-linked files")
     state.repository = repository
     state.manifest = temporary_file()
     helper(

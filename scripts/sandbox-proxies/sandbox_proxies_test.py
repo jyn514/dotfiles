@@ -290,6 +290,19 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(1, sandbox_proxies.monitor_main(args))
         self.assertEqual(["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0])
 
+    def test_proxy_stop_kills_before_removing_container(self) -> None:
+        state = {"proxies": [{
+            "name": "example", "container": "proxy", "volume": "volume",
+            "image": "sha256:" + "0" * 64,
+        }]}
+        with mock.patch.object(sandbox_proxies.subprocess, "run") as run:
+            sandbox_proxies.stop_state(state)
+        self.assertEqual([
+            ["docker", "kill", "proxy"],
+            ["docker", "rm", "proxy"],
+            ["docker", "volume", "rm", "volume"],
+        ], [call.args[0] for call in run.call_args_list])
+
     def test_proxy_logs_are_bounded_and_include_stderr(self) -> None:
         completed = subprocess.CompletedProcess([], 1, stdout="proxy failure\n")
         with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:

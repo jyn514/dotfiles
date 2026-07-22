@@ -434,7 +434,8 @@ def start_main(args: argparse.Namespace) -> int:
 
 def stop_state(state: dict[str, Any]) -> None:
     for proxy in reversed(state.get("proxies", [])):
-        subprocess.run(["docker", "rm", "--force", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "kill", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "volume", "rm", proxy["volume"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
