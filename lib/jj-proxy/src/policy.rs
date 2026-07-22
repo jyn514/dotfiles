@@ -4,7 +4,7 @@ use std::collections::HashSet;
 const COMMANDS: &[&str] = &[
     "status", "diff", "log", "show", "interdiff", "commit", "describe",
     "new", "split", "squash", "rebase", "restore", "abandon", "duplicate",
-    "edit", "next", "prev", "undo",
+    "edit", "next", "prev", "undo", "workspace",
 ];
 
 const FORBIDDEN_OPTIONS: &[&str] = &[
@@ -89,6 +89,7 @@ mod tests {
         assert!(check(&["log", "--future-jj-option", "value"]));
         assert!(check(&["commit", "-m", "literal; $(touch nope)", "src/main.rs"]));
         assert!(check(&["git", "fetch", "--remote", "origin", "--branch", "main"]));
+        assert!(check(&["workspace", "list"]));
     }
     #[test]
     fn rejects_escape_surfaces() {
@@ -96,6 +97,7 @@ mod tests {
             &["util", "exec", "sh"][..], &["debug", "operation"][..], &["git", "push"][..],
             &["git", "init"][..], &["config", "set", "x", "y"][..], &["diff", "--tool", "/tmp/x"][..],
             &["status", "--repository", "/tmp/x"][..], &["log", "--config", "aliases.x=util exec"][..],
+            &["workspace", "list", "--repository", "/tmp/x"][..],
             &["git", "fetch", "--remote", "evil"][..], &["push"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
