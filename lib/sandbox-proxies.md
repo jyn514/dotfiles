@@ -25,11 +25,14 @@ builder path into the immutable session manifest.
 
 The launcher mounts the repository read-only in each proxy, applies only the
 manifest's declared overrides, and mounts each socket volume read-only in the
-agent. It rejects malformed manifests, unsafe paths, mutable image references,
-and missing mount sources before the agent starts. The validated manifest is
-snapshotted once per session, so later checkout edits cannot change the running
-policy. If a proxy exits, the launcher terminates and cleans up the agent
-session rather than leaving a partially available sandbox running.
+agent. Concurrent sandboxes for one checkout attach to the same proxy set and
+reuse its validated manifest snapshot. A short exclusive coordination lock
+serializes discovery and creation; each launcher then holds a shared session
+lock until it exits. The final holder removes the shared proxies. It rejects
+malformed manifests, unsafe paths, mutable image references, and missing mount
+sources before the first agent starts. If a proxy exits, each attached launcher
+terminates its agent session rather than leaving a partially available sandbox
+running.
 
 Jujutsu atomically links temporary objects between `.jj` and `.git`, so putting
 those directories on separate bind mounts fails with `EXDEV`. Its proxy uses

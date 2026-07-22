@@ -219,10 +219,12 @@ The launcher, not a proxy container, owns cross-boundary coordination between sa
 Container advisory locks cannot provide that coordination on systems such as macOS, where containers run under a separate Linux virtual-machine kernel and bind-mounted files cross the host/guest boundary.
 
 The launcher derives a repository identity from the canonical Git common directory and uses a per-user host runtime directory for that identity.
-The directory contains a stable `session.lock` and atomically published session metadata.
+The directory contains stable `coordination.lock` and `session.lock` files plus atomically published session metadata.
 The runtime directory is outside the repository and is not mounted into the agent container.
 
-Before starting any proxy, the launcher acquires an exclusive host-kernel advisory lock on `session.lock` and holds its open file descriptor for the complete sandbox session.
+Before discovering or starting proxies, the launcher acquires an exclusive host-kernel advisory lock on `coordination.lock`, then takes a shared lock on `session.lock` for the complete sandbox session.
+If session metadata exists, the launcher attaches its agent to the recorded socket volumes and uses the already validated manifest snapshot.
+Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
 After every proxy becomes ready, the launcher atomically publishes session metadata containing the repository identity and each manifest command's immutable proxy container ID and resolved image hash.
 The metadata contains no command-specific protocol version or request fields.
@@ -241,12 +243,14 @@ The router validates the container's launcher-owned session labels, resolved ima
 Only the trusted host router receives outer-daemon access; neither the agent nor a proxy container receives it.
 Failure of Podman execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
 
-The host kernel releases the session lock when the launcher exits or is killed because the lock belongs to its open file descriptor, not recorded PID data.
-After a crash or reboot, successful lock acquisition proves that any remaining metadata is stale and safe to remove before local execution.
-If only a proxy container dies, the launcher still owns the session lock; it marks the command unavailable, cleans up the session, and releases the lock only after proxy-mediated execution can no longer resume.
+The host kernel releases a launcher's shared session lock when it exits or is killed because the lock belongs to its open file descriptor, not recorded PID data.
+On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
+Success proves it was the final holder, so it removes the shared proxies and metadata; failure leaves them available to the remaining sessions.
+After a crash or reboot, successful exclusive session-lock acquisition proves that any remaining metadata is stale and safe to clean before local execution or replacement.
+If a proxy container dies, every attached launcher marks the command unavailable and terminates its own agent.
 
-Only one launcher may own a Git common directory at a time.
-Additional sandbox launches for that repository fail rather than creating independent metadata writers.
+Any number of launchers may share one checkout's proxy set.
+Linked worktrees retain distinct repository identities and proxy sets.
 
 == Trusted execution
 

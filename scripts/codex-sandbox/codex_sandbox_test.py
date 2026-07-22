@@ -155,11 +155,13 @@ class CodexSandboxTest(unittest.TestCase):
                     ;;
                 hold-lock)
                     ready=$(value_for --ready "$@")
+                    coordinated=$(value_for --coordinated "$@")
                     release=$(value_for --release "$@")
                     : > "$ready"
+                    while [ ! -e "$coordinated" ]; do sleep 0.01; done
                     while [ ! -e "$release" ]; do sleep 0.01; done
                     ;;
-                start)
+                attach)
                     state=$(value_for --state "$@")
                     printf '%s\n' '{"proxies":[]}' > "$state"
                     ;;
@@ -167,7 +169,7 @@ class CodexSandboxTest(unittest.TestCase):
                     output=$(value_for --output "$@")
                     printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
                     ;;
-                publish|monitor|stop) ;;
+                monitor) ;;
                 *) exit 91 ;;
             esac
         """)
@@ -248,7 +250,8 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(removals))
         self.assertRegex(removals[0][2], r"^codex-sandbox-[0-9]+-[0-9]+$")
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
-        self.assertIn("stop", actions)
+        self.assertIn("attach", actions)
+        self.assertIn("hold-lock", actions)
 
     def test_creates_network_with_public_only_routes(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0")
@@ -274,12 +277,12 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(["snapshot"], actions)
         self.assertFalse(any(call[:1] == ["run"] for call in read_calls(self.docker_log)))
 
-    def test_staging_failure_cleans_started_proxies(self) -> None:
+    def test_staging_failure_releases_shared_proxies(self) -> None:
         result = self.run_launcher(FAKE_RSYNC_EXIT="9")
         self.assertEqual(9, result.returncode)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
-        self.assertIn("start", actions)
-        self.assertIn("stop", actions)
+        self.assertIn("attach", actions)
+        self.assertIn("hold-lock", actions)
         self.assertFalse(any(call[:2] == ["rm", "--force"] for call in read_calls(self.docker_log)))
 
     def test_term_signal_cleans_running_agent_and_proxies(self) -> None:
@@ -303,7 +306,8 @@ class CodexSandboxTest(unittest.TestCase):
         removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
         self.assertEqual(1, len(removals))
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
-        self.assertIn("stop", actions)
+        self.assertIn("attach", actions)
+        self.assertIn("hold-lock", actions)
 
     def test_non_linux_omits_native_linux_restrictions(self) -> None:
         result = self.run_launcher(FAKE_UNAME="Darwin")

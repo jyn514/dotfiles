@@ -280,26 +280,94 @@ def runtime_directory(repo: Path) -> Path:
 
 def lock_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
-    lock_path = runtime / "session.lock"
-    with lock_path.open("a+b") as lock:
+    coordination_path = runtime / "coordination.lock"
+    session_path = runtime / "session.lock"
+    with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
+        while True:
+            try:
+                fcntl.flock(coordination, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if os.getppid() != args.parent_pid:
+                    return 0
+                time.sleep(0.1)
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise ConfigError("another sandbox session owns this repository") from error
-        (runtime / "session.json").unlink(missing_ok=True)
-        Path(args.ready).write_text(str(runtime), encoding="utf-8")
+            fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            shared = True
+            fcntl.flock(session, fcntl.LOCK_SH)
+        else:
+            shared = False
+            metadata_path = runtime / "session.json"
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                metadata = None
+            metadata_path.unlink(missing_ok=True)
+            if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
+                stop_state(metadata["state"])
+            fcntl.flock(session, fcntl.LOCK_SH)
+        Path(args.ready).write_text("shared\n" if shared else "new\n", encoding="utf-8")
+        while not Path(args.coordinated).exists() and os.getppid() == args.parent_pid:
+            time.sleep(0.1)
+        fcntl.flock(coordination, fcntl.LOCK_UN)
         while not Path(args.release).exists() and os.getppid() == args.parent_pid:
             time.sleep(0.1)
+        fcntl.flock(session, fcntl.LOCK_UN)
+
+        fcntl.flock(coordination, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+        metadata_path = runtime / "session.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            metadata = None
+        metadata_path.unlink(missing_ok=True)
+        if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
+            stop_state(metadata["state"])
     return 0
 
 
 def publish_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
-    payload = {"repository": repository_identity(Path(args.repo)), "commands": {}}
+    manifest = load_manifest_file(Path(args.manifest))
+    payload = {
+        "repository": repository_identity(Path(args.repo)),
+        "commands": {},
+        "state": state,
+        "manifest": serializable_manifest(manifest),
+    }
     for proxy in state.get("proxies", []):
         payload["commands"][proxy["name"]] = {"container": proxy["container"], "image": proxy["image"]}
     write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def attach_main(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    runtime = runtime_directory(repo)
+    shared = Path(args.session).read_text(encoding="utf-8").strip() == "shared"
+    metadata_path = runtime / "session.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        metadata = None
+    if isinstance(metadata, dict) and metadata.get("repository") == repository_identity(repo):
+        state = metadata.get("state")
+        manifest = metadata.get("manifest")
+        if isinstance(state, dict) and isinstance(state.get("proxies"), list) and isinstance(manifest, dict):
+            write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
+            write_atomic(Path(args.manifest), json.dumps(manifest, sort_keys=True))
+            return 0
+    if shared:
+        raise ConfigError("shared proxy session metadata is missing or invalid")
+    metadata_path.unlink(missing_ok=True)
+    start_main(args)
+    publish_main(args)
     return 0
 
 
@@ -514,13 +582,20 @@ def route_main(args: argparse.Namespace) -> int:
 def agent_args_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
+    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    volumes = {
+        proxy["name"]: proxy["volume"]
+        for proxy in state.get("proxies", [])
+    }
     output = Path(args.output)
     lines = ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
         lines += ["--mount", f"type=bind,src={sandbox},dst={CONTAINER_REPO / '.agents/sandbox'},readonly"]
     for name, command in manifest["commands"].items():
-        lines += ["--mount", f"type=volume,src={args.prefix}-{name},dst=/run/sandbox-proxies/{name},readonly"]
+        if name not in volumes:
+            raise ConfigError(f"shared proxy state is missing command: {name}")
+        lines += ["--mount", f"type=volume,src={volumes[name]},dst=/run/sandbox-proxies/{name},readonly"]
         for mount in command["mounts"]:
             mode = mount["agent"]
             if mode is None:
@@ -630,16 +705,27 @@ def parse_args() -> argparse.Namespace:
     lock = sub.add_parser("hold-lock")
     lock.add_argument("--repo", required=True)
     lock.add_argument("--ready", required=True)
+    lock.add_argument("--coordinated", required=True)
     lock.add_argument("--release", required=True)
     lock.add_argument("--parent-pid", required=True, type=int)
     lock.set_defaults(function=lock_main)
+    attach = sub.add_parser("attach")
+    attach.add_argument("--repo", required=True)
+    attach.add_argument("--session", required=True)
+    attach.add_argument("--prefix", required=True)
+    attach.add_argument("--state", required=True)
+    attach.add_argument("--helper-image", required=True)
+    attach.add_argument("--network", required=True)
+    attach.add_argument("--manifest", required=True)
+    attach.set_defaults(function=attach_main)
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)
     publish.add_argument("--state", required=True)
+    publish.add_argument("--manifest", required=True)
     publish.set_defaults(function=publish_main)
     agent = sub.add_parser("agent-args")
     agent.add_argument("--repo", required=True)
-    agent.add_argument("--prefix", required=True)
+    agent.add_argument("--state", required=True)
     agent.add_argument("--output", required=True)
     agent.add_argument("--manifest", required=True)
     agent.set_defaults(function=agent_args_main)
