@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -514,23 +515,39 @@ def monitor_main(args: argparse.Namespace) -> int:
         time.sleep(0.05)
     else:
         raise ConfigError("agent container did not start while proxy monitor was waiting")
-    while True:
-        agent = subprocess.run(
-            ["docker", "inspect", "--format", "{{.State.Running}}", args.agent],
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        )
-        if agent.returncode or agent.stdout.strip() != "true":
-            return 0
-        for proxy in state.get("proxies", []):
-            status = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.Running}}", proxy["container"]],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    containers = [("agent", args.agent)] + [
+        (proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])
+    ]
+    waits: list[tuple[str, subprocess.Popen[str]]] = []
+    selector = selectors.DefaultSelector()
+    try:
+        for name, container in containers:
+            process = subprocess.Popen(
+                ["docker", "wait", container], text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             )
-            if status.returncode or status.stdout.strip() != "true":
-                print(f"sandbox proxies: proxy {proxy['name']} stopped; terminating sandbox", file=sys.stderr)
-                subprocess.run(["docker", "rm", "--force", args.agent], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return 1
-        time.sleep(0.2)
+            assert process.stdout is not None
+            waits.append((name, process))
+            selector.register(process.stdout, selectors.EVENT_READ, name)
+        ready = selector.select()
+        names = {key.data for key, _ in ready}
+        if "agent" in names:
+            return 0
+        name = next(iter(names))
+        print(f"sandbox proxies: proxy {name} stopped; terminating sandbox", file=sys.stderr)
+        subprocess.run(
+            ["docker", "rm", "--force", args.agent],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return 1
+    finally:
+        selector.close()
+        for _, process in waits:
+            process.terminate()
+        for _, process in waits:
+            process.wait()
+            if process.stdout is not None:
+                process.stdout.close()
 
 
 def parse_args() -> argparse.Namespace:
