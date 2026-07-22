@@ -104,6 +104,8 @@ Networking is disabled unless the manifest declares it and the command requires 
 == Manifest
 
 `.agents/sandbox/proxy-commands.json` declares named proxies and their fixed execution policy.
+The launcher also injects trusted built-in commands from its own installation checkout; repository-local declarations may add names but cannot replace a trusted command.
+The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
 The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:

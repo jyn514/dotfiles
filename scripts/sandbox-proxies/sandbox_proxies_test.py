@@ -176,10 +176,58 @@ class ManifestTest(unittest.TestCase):
     def test_snapshot_is_independent_of_later_manifest_edits(self) -> None:
         self.write({"example": self.command()})
         snapshot = self.repo / "snapshot"
-        args = type("Args", (), {"repo": str(self.repo), "output": str(snapshot)})
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(snapshot), "jj_image_command": None,
+        })
         sandbox_proxies.snapshot_main(args)
         self.write()
         self.assertIn("example", sandbox_proxies.load_manifest_file(snapshot)["commands"])
+
+    def test_snapshot_adds_trusted_jj_without_local_manifest(self) -> None:
+        builder = self.repo / "trusted-jj-image"
+        builder.write_text("#!/bin/sh\n", encoding="utf-8")
+        builder.chmod(0o700)
+        snapshot = self.repo / "snapshot"
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(snapshot),
+            "jj_image_command": str(builder.resolve()),
+        })
+        sandbox_proxies.snapshot_main(args)
+        command = sandbox_proxies.load_manifest_file(snapshot)["commands"]["jj"]
+        self.assertEqual([str(builder.resolve())], command["image-command"])
+        self.assertEqual("read-write", command["mounts"][0]["proxy"])
+
+    def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
+        self.sandbox.rmdir()
+        self.sandbox.symlink_to(self.repo / "outside")
+        (self.repo / "outside").mkdir()
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(self.repo / "snapshot"),
+            "jj_image_command": None,
+        })
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "symlinked or invalid"):
+            sandbox_proxies.snapshot_main(args)
+
+    def test_snapshot_rejects_dangling_manifest_symlink(self) -> None:
+        (self.sandbox / "proxy-commands.json").symlink_to(self.repo / "missing")
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(self.repo / "snapshot"),
+            "jj_image_command": None,
+        })
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "must not be symlinked"):
+            sandbox_proxies.snapshot_main(args)
+
+    def test_snapshot_rejects_local_override_of_trusted_jj(self) -> None:
+        self.write({"jj": self.command()})
+        builder = self.repo / "trusted-jj-image"
+        builder.write_text("#!/bin/sh\n", encoding="utf-8")
+        builder.chmod(0o700)
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(self.repo / "snapshot"),
+            "jj_image_command": str(builder.resolve()),
+        })
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "may not override"):
+            sandbox_proxies.snapshot_main(args)
 
     def test_lock_holder_exits_when_launcher_owner_is_absent(self) -> None:
         self.write()

@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
+cd "$DOTFILES"
+
 cache_key=$(
 	{
 		find lib/jj-proxy -type f -print

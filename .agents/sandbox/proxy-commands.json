@@ -1,18 +1,4 @@
 {
   "version": 1,
-  "commands": {
-    "jj": {
-      "image-command": [".agents/sandbox/jj-proxy-image"],
-      "argv": ["jj-proxy", "serve"],
-      "workdir": ".",
-      "network": true,
-      "mounts": [
-        {
-          "source": ".",
-          "target": ".",
-          "proxy": "read-write"
-        }
-      ]
-    }
-  }
+  "commands": {}
 }
