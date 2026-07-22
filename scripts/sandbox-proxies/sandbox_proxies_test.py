@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,27 @@ class ManifestTest(unittest.TestCase):
             f"type=bind,src={self.repo.resolve()},dst=/src/work,readonly,bind-nonrecursive=true",
             mounts,
         )
+
+    def test_linked_worktree_uses_one_common_proxy_mount(self) -> None:
+        main = self.repo
+        worktree = Path(self.temporary.name + "-worktree")
+        self.addCleanup(shutil.rmtree, worktree, True)
+        (main / "tracked").write_text("tracked", encoding="utf-8")
+        subprocess.run(["git", "-C", str(main), "add", "tracked"], check=True)
+        subprocess.run([
+            "git", "-C", str(main), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+            "commit", "--quiet", "-m", "initial",
+        ], check=True)
+        subprocess.run(["git", "-C", str(main), "worktree", "add", "--quiet", str(worktree)], check=True)
+        (worktree / ".jj").mkdir()
+        command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
+        arguments = sandbox_proxies.proxy_repository_mount_args(worktree, "jj", command)
+        common_root, relative = sandbox_proxies.jj_proxy_layout(worktree)
+        self.assertIn(
+            f"type=bind,src={common_root},dst=/src/work,bind-nonrecursive=true",
+            arguments,
+        )
+        self.assertNotEqual(Path("."), relative)
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{
@@ -252,6 +274,16 @@ class ManifestTest(unittest.TestCase):
             args = type("Args", (), {"state": str(state), "agent": "agent"})
             self.assertEqual(1, sandbox_proxies.monitor_main(args))
         self.assertEqual(["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0])
+
+    def test_proxy_logs_are_bounded_and_include_stderr(self) -> None:
+        completed = subprocess.CompletedProcess([], 1, stdout="proxy failure\n")
+        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:
+            self.assertEqual("proxy failure", sandbox_proxies.proxy_logs("proxy-jj"))
+        self.assertEqual(
+            ["docker", "logs", "--tail", "200", "proxy-jj"],
+            run.call_args.args[0],
+        )
+        self.assertEqual(sandbox_proxies.subprocess.STDOUT, run.call_args.kwargs["stderr"])
 
 
 if __name__ == "__main__":

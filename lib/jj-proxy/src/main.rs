@@ -2,8 +2,8 @@ mod policy;
 
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use landlock::{
-    make_bitflags, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr,
-    RulesetCreatedAttr, RulesetStatus,
+    make_bitflags, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset,
+    RulesetAttr, RulesetCreatedAttr, RulesetStatus,
 };
 use serde::{Deserialize, Serialize};
 use nix::fcntl::{openat, OFlag};
@@ -64,35 +64,59 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
     }
 }
 
-fn install_execution_policy() -> Result<()> {
-    let trusted = PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
-    let git = PathFd::new("/src/work/.git").wrap_err("cannot open Git metadata directory")?;
-    let jj = PathFd::new("/src/work/.jj").wrap_err("cannot open Jujutsu metadata directory")?;
+fn install_execution_policy(repo: &str) -> Result<()> {
+    let trusted = PathFd::new("/trusted").wrap_err("cannot open trusted directory")?;
+    let trusted_bin = PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
+    let repository = PathFd::new(repo).wrap_err("cannot open repository directory")?;
+    let git_path = env::var("JJ_PROXY_GIT_DIR").wrap_err("Git directory is not configured")?;
+    let common_path = env::var("JJ_PROXY_COMMON_DIR").wrap_err("Git common directory is not configured")?;
+    let git = PathFd::new(&git_path).wrap_err("cannot open Git metadata directory")?;
+    let common = PathFd::new(&common_path).wrap_err("cannot open Git common directory")?;
+    let jj = PathFd::new(format!("{repo}/.jj")).wrap_err("cannot open Jujutsu metadata directory")?;
     let config = PathFd::new(CONFIG_HOME).wrap_err("cannot open secure config directory")?;
     let socket = PathFd::new("/run/sandbox-proxy").wrap_err("cannot open proxy socket directory")?;
+    let system_config = PathFd::new("/etc").wrap_err("cannot open system configuration directory")?;
+    let null = PathFd::new("/dev/null").wrap_err("cannot open null device")?;
+    let read_access = make_bitflags!(AccessFs::{ ReadFile | ReadDir });
     let write_access = make_bitflags!(AccessFs::{
         WriteFile | RemoveDir | RemoveFile | MakeDir | MakeReg | MakeSock |
         MakeFifo | MakeSym | Refer | Truncate
     });
     let status = Ruleset::default()
-        .handle_access(write_access | AccessFs::Execute)
+        .set_compatibility(CompatLevel::HardRequirement)
+        .handle_access(read_access | write_access | AccessFs::Execute)
         .wrap_err("cannot configure Landlock filesystem access")?
         .create()
         .wrap_err("cannot create Landlock ruleset")?
-        .add_rule(PathBeneath::new(trusted, AccessFs::Execute))
+        .add_rule(PathBeneath::new(trusted, read_access))
+        .wrap_err("cannot add trusted read rule")?
+        .add_rule(PathBeneath::new(trusted_bin, AccessFs::Execute))
         .wrap_err("cannot add trusted Landlock execution rule")?
-        .add_rule(PathBeneath::new(git, write_access))
+        .add_rule(PathBeneath::new(repository, read_access))
+        .wrap_err("cannot add repository read rule")?
+        .add_rule(PathBeneath::new(git, read_access | write_access))
         .wrap_err("cannot add Git metadata write rule")?
-        .add_rule(PathBeneath::new(jj, write_access))
+        .add_rule(PathBeneath::new(common, read_access | write_access))
+        .wrap_err("cannot add Git common-directory rule")?
+        .add_rule(PathBeneath::new(jj, read_access | write_access))
         .wrap_err("cannot add Jujutsu metadata write rule")?
-        .add_rule(PathBeneath::new(config, write_access))
+        .add_rule(PathBeneath::new(config, read_access | write_access))
         .wrap_err("cannot add configuration write rule")?
-        .add_rule(PathBeneath::new(socket, write_access))
+        .add_rule(PathBeneath::new(socket, read_access | write_access))
         .wrap_err("cannot add proxy socket write rule")?
+        .add_rule(PathBeneath::new(system_config, read_access))
+        .wrap_err("cannot add system configuration read rule")?
+        .add_rule(PathBeneath::new(
+            null,
+            make_bitflags!(AccessFs::{ ReadFile | WriteFile }),
+        ))
+        .wrap_err("cannot add null-device rule")?
         .restrict_self()
         .wrap_err("cannot enforce Landlock execution policy")?;
-    if status.ruleset != RulesetStatus::FullyEnforced || !status.no_new_privs {
-        bail!("Landlock execution policy was not fully enforced: {status:?}");
+    if !matches!(status.ruleset, RulesetStatus::FullyEnforced | RulesetStatus::PartiallyEnforced)
+        || !status.no_new_privs
+    {
+        bail!("Landlock execution policy was not enforced: {status:?}");
     }
     Ok(())
 }
@@ -105,14 +129,24 @@ fn prepare_repo_config(repo: &str) -> Result<()> {
             ("JJ_CONFIG", "/trusted/jj.toml"),
             ("HOME", "/nonexistent"),
             ("XDG_CONFIG_HOME", CONFIG_HOME),
-        ])
+    ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .wrap_err("cannot initialize per-repository Jujutsu config")?;
     if !output.status.success() {
-        bail!("cannot initialize per-repository Jujutsu config: jj exited with {}", output.status);
+        let stderr = String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(8192)]);
+        let stderr = stderr.trim();
+        let detail = if stderr.is_empty() {
+            String::new()
+        } else {
+            format!(": {stderr}")
+        };
+        bail!(
+            "cannot initialize per-repository Jujutsu config: jj exited with {}{detail}",
+            output.status,
+        );
     }
     Ok(())
 }
@@ -234,12 +268,12 @@ fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>
 }
 
 fn serve() -> Result<()> {
-    let repo = "/src/work".to_owned();
+    let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".to_owned());
     let root = File::open(&repo).wrap_err("cannot open repository")?;
     let remotes = HashSet::from(["origin".to_owned()]);
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
-    install_execution_policy()?;
+    install_execution_policy(&repo)?;
     prepare_repo_config(&repo)?;
     let _ = fs::remove_file(SOCKET);
     let listener = UnixListener::bind(SOCKET).wrap_err("cannot bind proxy socket")?;

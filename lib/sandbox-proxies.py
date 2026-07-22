@@ -217,15 +217,32 @@ def _string_array(value: Any, label: str) -> list[str]:
 
 
 def repository_identity(repo: Path) -> str:
+    common = git_metadata_paths(repo)[1]
+    identity = os.fsencode(repo.resolve(strict=True)) + b"\0" + os.fsencode(common)
+    return hashlib.sha256(identity).hexdigest()
+
+
+def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     result = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
         check=True, text=True, stdout=subprocess.PIPE,
     )
-    common = Path(result.stdout.strip()).resolve(strict=True)
-    expected = (repo / ".git").resolve(strict=True)
-    if common != expected:
-        raise ConfigError("Git common-directory indirection is not supported")
-    return hashlib.sha256(os.fsencode(common)).hexdigest()
+    lines = result.stdout.splitlines()
+    if len(lines) != 2:
+        raise ConfigError("Git returned an invalid metadata layout")
+    paths = tuple(Path(line).resolve(strict=True) for line in lines)
+    for path in paths:
+        if any(character in str(path) for character in (",", "\n", "\r")):
+            raise ConfigError("Git metadata path contains a container-mount delimiter")
+        if not path.is_dir() or path.is_symlink():
+            raise ConfigError(f"Git metadata directory is invalid: {path}")
+    return paths
+
+
+def jj_proxy_layout(repo: Path) -> tuple[Path, Path]:
+    git_dir, common_dir = git_metadata_paths(repo)
+    root = Path(os.path.commonpath((repo, git_dir, common_dir))).resolve(strict=True)
+    return root, repo.relative_to(root)
 
 
 def runtime_directory(repo: Path) -> Path:
@@ -279,12 +296,23 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
     )
 
 
+def proxy_logs(container: str) -> str:
+    result = subprocess.run(
+        ["docker", "logs", "--tail", "200", container], check=False, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    return result.stdout.strip()
+
+
 def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) -> list[str]:
+    mount_source = repo
+    if name == "jj":
+        mount_source, _ = jj_proxy_layout(repo)
     repository_mode = ",readonly"
     if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
         repository_mode = ""
     arguments = [
-        "--mount", f"type=bind,src={repo},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={mount_source},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
     ]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
@@ -334,13 +362,21 @@ def start_main(args: argparse.Namespace) -> int:
                 "--label", f"dev.codex.command={name}",
                 "--security-opt=no-new-privileges", "--read-only",
                 "--user", f"{os.getuid()}:{os.getgid()}",
-                "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
+                "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
                 "--network", args.network if command["network"] else "none",
                 "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
                 "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
                 "--entrypoint", command["argv"][0],
                 "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
             ]
+            if name == "jj":
+                proxy_root, relative_repo = jj_proxy_layout(repo)
+                git_dir, common_dir = git_metadata_paths(repo)
+                docker_args += [
+                    "--env", f"JJ_PROXY_REPO={CONTAINER_REPO / relative_repo}",
+                    "--env", f"JJ_PROXY_GIT_DIR={CONTAINER_REPO / git_dir.relative_to(proxy_root)}",
+                    "--env", f"JJ_PROXY_COMMON_DIR={CONTAINER_REPO / common_dir.relative_to(proxy_root)}",
+                ]
             checked_repository_path(repo, command["workdir"], f"command {name} workdir")
             docker_args += proxy_repository_mount_args(repo, name, command)
             docker_args += [images[name], *command["argv"][1:]]
@@ -357,7 +393,9 @@ def start_main(args: argparse.Namespace) -> int:
                     break
                 status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
                 if status != "true":
-                    raise ConfigError(f"proxy {name} exited before becoming ready")
+                    logs = proxy_logs(container)
+                    detail = f":\n{logs}" if logs else ""
+                    raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
                 time.sleep(0.1)
             else:
                 raise ConfigError(f"proxy {name} did not become ready")
