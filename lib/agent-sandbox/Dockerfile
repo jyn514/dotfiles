@@ -21,6 +21,8 @@ RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
     && chmod 0440 /etc/sudoers.d/codex \
     && rm ./create-user.sh
 
+COPY ./lib/agent-sandbox/agent-wrappers-path.sh /etc/profile.d/agent-wrappers-path.sh
+
 ENV HOME=/home/codex
 ARG CODEX_HOME
 ENV CODEX_HOME=${CODEX_HOME}

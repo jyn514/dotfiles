@@ -14,6 +14,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = ROOT / "bin" / "codex-sandbox"
+AGENT_SANDBOX_DOCKERFILE = ROOT / "lib" / "agent-sandbox" / "Dockerfile"
+AGENT_WRAPPERS_PROFILE = ROOT / "lib" / "agent-sandbox" / "agent-wrappers-path.sh"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -25,6 +27,25 @@ def read_calls(path: Path) -> list[list[str]]:
     if not path.exists():
         return []
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class AgentSandboxImageTest(unittest.TestCase):
+    def test_login_profile_restores_agent_wrappers_path(self) -> None:
+        result = subprocess.run(
+            ["sh", "-c", f'. "{AGENT_WRAPPERS_PROFILE}"; printf "%s\\n" "$PATH"'],
+            env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        )
+        self.assertEqual(
+            "/lib/agent-wrappers:/usr/local/bin:/usr/bin:/bin\n",
+            result.stdout,
+        )
+        self.assertIn(
+            "COPY ./lib/agent-sandbox/agent-wrappers-path.sh /etc/profile.d/agent-wrappers-path.sh",
+            AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8"),
+        )
 
 
 class CodexSandboxTest(unittest.TestCase):
