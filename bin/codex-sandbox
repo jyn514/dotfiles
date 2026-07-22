@@ -65,6 +65,7 @@ class State:
     proxy_state: Path | None = None
     proxy_args: Path | None = None
     lock_ready: Path | None = None
+    lock_coordinated: Path | None = None
     lock_release: Path | None = None
     skills_tmp: Path | None = None
     lock_process: subprocess.Popen[bytes] | None = None
@@ -305,32 +306,36 @@ def ensure_network() -> None:
 
 
 def acquire_lock(state: State) -> None:
+    state.proxy_state = temporary_file()
     state.lock_ready = temporary_file()
+    state.lock_coordinated = temporary_file()
     state.lock_release = temporary_file()
     state.lock_ready.unlink()
+    state.lock_coordinated.unlink()
     state.lock_release.unlink()
     state.lock_process = subprocess.Popen([
         "python3", str(PROXY_HELPER), "hold-lock", "--repo", str(state.repository),
-        "--ready", str(state.lock_ready), "--release", str(state.lock_release),
-        "--parent-pid", str(os.getpid()),
+        "--ready", str(state.lock_ready), "--coordinated", str(state.lock_coordinated),
+        "--release", str(state.lock_release), "--parent-pid", str(os.getpid()),
     ])
-    for _ in range(100):
+    while True:
         if state.lock_ready.exists():
             return
         if state.lock_process.poll() is not None:
-            raise LauncherError("Could not acquire the sandbox repository lock")
+            raise LauncherError("Could not join the sandbox proxy session")
         time.sleep(0.05)
-    raise LauncherError("Timed out acquiring the sandbox repository lock")
 
 
-def start_proxies(state: State) -> None:
-    state.proxy_state = temporary_file()
-    helper(
-        "start", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
-        "--state", str(state.proxy_state), "--helper-image", state.image,
-        "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
-    )
-    helper("publish", "--repo", str(state.repository), "--state", str(state.proxy_state))
+def attach_proxies(state: State) -> None:
+    try:
+        helper(
+            "attach", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
+            "--session", str(state.lock_ready),
+            "--state", str(state.proxy_state), "--helper-image", state.image,
+            "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
+        )
+    finally:
+        state.lock_coordinated.touch()
 
 
 def start_relay(state: State) -> list[str]:
@@ -379,7 +384,7 @@ def stage_skills(state: State) -> None:
 def read_proxy_arguments(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     helper(
-        "agent-args", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
+        "agent-args", "--repo", str(state.repository), "--state", str(state.proxy_state),
         "--output", str(state.proxy_args), "--manifest", str(state.manifest),
     )
     arguments: list[str] = []
@@ -452,7 +457,7 @@ def execute(state: State) -> int:
     state.image = ensure_image(state, base_image)
     ensure_network()
     acquire_lock(state)
-    start_proxies(state)
+    attach_proxies(state)
     arguments = [state.image, "--dangerously-bypass-approvals-and-sandbox", *state.codex_arguments]
     if state.agent_podman is not None:
         arguments = [*start_relay(state), *arguments]
@@ -491,11 +496,6 @@ def cleanup(state: State) -> None:
             f"Codex container {state.codex_container}",
             ["docker", "rm", "--force", state.codex_container],
         )
-    if state.proxy_state is not None:
-        try:
-            helper("stop", "--state", str(state.proxy_state), check=False)
-        except OSError as error:
-            print(f"warning: Cleaning up sandbox proxies failed: {error}", file=sys.stderr)
     if state.relay_container_created:
         cleanup_resource(
             f"relay container {state.relay_container}",
@@ -518,6 +518,8 @@ def cleanup(state: State) -> None:
         except OSError:
             elapsed = int(time.monotonic() - started)
             print(f"warning: Cleaning up staged skills {state.skills_tmp} failed after {elapsed}s.", file=sys.stderr)
+    if state.lock_coordinated is not None:
+        state.lock_coordinated.touch()
     if state.lock_release is not None:
         state.lock_release.touch()
     if state.lock_process is not None:
@@ -526,7 +528,7 @@ def cleanup(state: State) -> None:
         state.monitor_process.wait()
     for path in (
         state.proxy_state, state.proxy_args, state.manifest,
-        state.lock_ready, state.lock_release,
+        state.lock_ready, state.lock_coordinated, state.lock_release,
     ):
         if path is not None:
             path.unlink(missing_ok=True)
