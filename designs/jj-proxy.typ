@@ -243,7 +243,7 @@ Maintain an allowlist of top-level commands rather than a denylist. Initially
 include common working-copy and history operations: `status`, `diff`, `log`,
 `show`, `interdiff`, `commit`, `describe`, `new`, `split`, `squash`, `rebase`,
 `restore`, `abandon`, `duplicate`, `edit`, `next`, `prev`, `undo`, constrained
-bookmark commands, and constrained Git fetch commands. The proxy does not expose
+bookmark commands, workspace commands, and constrained Git fetch commands. The proxy does not expose
 Git push; publishing to protected remotes remains a host-side operation outside
 the agent container.
 
