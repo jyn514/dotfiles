@@ -24,6 +24,7 @@ class ConfigError(Exception):
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+BARE_IMAGE_RE = re.compile(r"^[0-9a-f]{64}$")
 MODES = {"read-only", "read-write", "hidden"}
 CONTAINER_REPO = Path("/src/work")
 COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
@@ -376,6 +377,8 @@ def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
     for name, command in manifest["commands"].items():
         result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
+        if BARE_IMAGE_RE.fullmatch(output):
+            output = "sha256:" + output
         if result.returncode or not IMAGE_RE.fullmatch(output) or result.stdout.count("\n") > 1:
             raise ConfigError(f"image-command for {name} did not print exactly one immutable image hash")
         images[name] = output
@@ -510,7 +513,9 @@ def stop_state(state: dict[str, Any]) -> None:
 def stop_main(args: argparse.Namespace) -> int:
     path = Path(args.state)
     if path.exists():
-        stop_state(json.loads(path.read_text(encoding="utf-8")))
+        contents = path.read_text(encoding="utf-8")
+        if contents.strip():
+            stop_state(json.loads(contents))
     return 0
 
 

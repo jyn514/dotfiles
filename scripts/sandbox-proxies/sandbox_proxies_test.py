@@ -415,6 +415,22 @@ class ManifestTest(unittest.TestCase):
             ["docker", "volume", "rm", "volume"],
         ], [call.args[0] for call in run.call_args_list])
 
+    def test_image_resolution_normalizes_bare_sha256_hash(self) -> None:
+        digest = "0" * 64
+        manifest = {"commands": {"example": self.command()}}
+        completed = subprocess.CompletedProcess([], 0, stdout=digest + "\n")
+        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed):
+            images = sandbox_proxies.resolve_images(self.repo, manifest)
+        self.assertEqual("sha256:" + digest, images["example"])
+
+    def test_proxy_stop_ignores_empty_state_file(self) -> None:
+        state = self.repo / "state"
+        state.touch()
+        args = type("Args", (), {"state": str(state)})
+        with mock.patch.object(sandbox_proxies, "stop_state") as stop:
+            self.assertEqual(0, sandbox_proxies.stop_main(args))
+        stop.assert_not_called()
+
     def test_proxy_logs_are_bounded_and_include_stderr(self) -> None:
         completed = subprocess.CompletedProcess([], 1, stdout="proxy failure\n")
         with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:
