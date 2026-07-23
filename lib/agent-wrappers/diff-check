@@ -2,7 +2,11 @@
 set -eu
 
 jj diff --git "$@" | awk '
-  /^\+\+\+ / { next }
+  /^\+\+\+ / {
+    patch_file = $0 ~ /\.(diff|patch)"?$/
+    next
+  }
+  patch_file && $0 == "+ " { next }
   /^\+/ && /[[:blank:]]+$/ {
     print
     found = 1
