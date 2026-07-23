@@ -24,22 +24,32 @@ input.on("line", (line) => {
   }
   if (command.type === "prompt") {
     record({ type: "prompt", message: command.message });
+    if (String(command.message).startsWith("reject")) {
+      send({ type: "response", id: command.id, success: false, error: "fake prompt rejection" });
+      return;
+    }
     send({ type: "response", id: command.id, success: true, data: {} });
     send({ type: "agent_start" });
     if (String(command.message).startsWith("hold")) return;
+    if (String(command.message).startsWith("crash")) {
+      setTimeout(() => process.exit(23), 20);
+      return;
+    }
+    const message = String(command.message);
     setTimeout(() => {
-      const failing = String(command.message).startsWith("fail");
+      const failing = message.startsWith("fail");
+      const response = message.startsWith("large") ? "x".repeat(60 * 1024) : `response:${message}`;
       send({
         type: "message_end",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: `response:${command.message}` }],
+          content: [{ type: "text", text: response }],
           stopReason: failing ? "error" : "stop",
           ...(failing ? { errorMessage: "fake failure" } : {}),
         },
       });
       send({ type: "agent_settled" });
-    }, 50);
+    }, message.startsWith("slow") ? 200 : 50);
     return;
   }
   if (command.type === "steer" || command.type === "abort") {

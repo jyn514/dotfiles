@@ -2,12 +2,15 @@ import { describe, expect, mock, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 const TEST_AGENT_DIR = "/tmp/pi-codex-subagents-tests";
 const FAKE_RPC_CHILD = path.join(import.meta.dir, "test", "fake-rpc-child.js");
 process.env.PI_SUBAGENT_TEMP_DIR = path.join(TEST_AGENT_DIR, "temp");
 
+const codingAgent = await import("@earendil-works/pi-coding-agent");
 mock.module("@earendil-works/pi-coding-agent", () => ({
+  ...codingAgent,
   CONFIG_DIR_NAME: ".pi",
   getAgentDir: () => TEST_AGENT_DIR,
 }));
@@ -395,6 +398,211 @@ describe("child process lifecycle", () => {
     } finally {
       await Promise.all([owner.shutdown(), ...reconcilers.map((manager) => manager.shutdown())]);
       fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+});
+
+describe("completion delivery", () => {
+  test("publishes unclaimed settled and abnormal-exit completions", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "completion-callbacks";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const completions: any[] = [];
+    const manager = new AgentManager({ onUnclaimedCompletion: (event: any) => completions.push(event) });
+    try {
+      await manager.spawnAgent(spawnParams(parentSessionId, "settled", "first"));
+      await waitUntil(() => completions.some((event) => event.agentName === "/settled"));
+      expect(completions.filter((event) => event.agentName === "/settled")).toHaveLength(1);
+      expect(completions.find((event) => event.agentName === "/settled")).toMatchObject({
+        status: "completed",
+        finalResponse: "response:first",
+      });
+
+      await manager.spawnAgent(spawnParams(parentSessionId, "crashed", "crash now"));
+      await waitUntil(() => completions.some((event) => event.agentName === "/crashed"));
+      expect(completions.filter((event) => event.agentName === "/crashed")).toHaveLength(1);
+      expect(completions.find((event) => event.agentName === "/crashed")).toMatchObject({ status: "failed" });
+      expect(completions.find((event) => event.agentName === "/crashed").error).toContain("code=23");
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test("suppresses automatic delivery while wait tools claim completions", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "completion-waits";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const completions: any[] = [];
+    const manager = new AgentManager({ onUnclaimedCompletion: (event: any) => completions.push(event) });
+    try {
+      await manager.spawnAgent(spawnParams(parentSessionId, "one", "first"));
+      const waited = await manager.waitAgent(parentSessionId, ["one"]);
+      expect(waited.event).toMatchObject({ agentName: "/one", status: "completed" });
+      expect(completions).toEqual([]);
+
+      await manager.spawnAgent(spawnParams(parentSessionId, "two", "second"));
+      const all = await manager.waitAllAgents(parentSessionId, ["two"]);
+      expect(all.responses).toEqual([expect.objectContaining({ agent_name: "/two", status: "completed" })]);
+      expect(completions).toEqual([]);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test("releases suppressed completions when wait_all_agents is cancelled", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "completion-wait-cancel";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const completions: any[] = [];
+    const manager = new AgentManager({ onUnclaimedCompletion: (event: any) => completions.push(event) });
+    const controller = new AbortController();
+    try {
+      await manager.spawnAgent(spawnParams(parentSessionId, "slow", "hold slow"));
+      await manager.spawnAgent(spawnParams(parentSessionId, "fast", "fast"));
+      const wait = manager.waitAllAgents(parentSessionId, ["slow", "fast"], controller.signal);
+      await waitUntil(() => manager.getAgentInfo("fast", parentSessionId).status === "completed");
+      expect(completions).toEqual([]);
+      controller.abort(new Error("cancelled"));
+      await expect(wait).rejects.toThrow("aborted");
+      await waitUntil(() => completions.some((event) => event.agentName === "/fast"));
+      expect(completions.filter((event) => event.agentName === "/fast")).toHaveLength(1);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test("reports active and inactive lifecycle transitions", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "status-transitions";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const activity: boolean[] = [];
+    const manager = new AgentManager({
+      onActivityChange: (event: any) => {
+        if (event.parentSessionId === parentSessionId) activity.push(event.active);
+      },
+    });
+    try {
+      await manager.spawnAgent(spawnParams(parentSessionId, "worker", "first"));
+      await waitUntil(() => manager.getAgentInfo("worker", parentSessionId).status === "completed");
+      expect(activity).toContain(true);
+      expect(activity.at(-1)).toBe(false);
+
+      const settled = manager.getAgentInfo("worker", parentSessionId);
+      const rejectedAt = activity.length;
+      await expect(manager.sendMessage(parentSessionId, "worker", "reject restart")).rejects.toThrow("fake prompt rejection");
+      expect(manager.getAgentInfo("worker", parentSessionId)).toMatchObject({
+        status: "completed",
+        finalResponse: settled.finalResponse,
+        completedAt: settled.completedAt,
+      });
+      expect(manager.getAgentInfo("worker", parentSessionId).childProcess).toBeUndefined();
+      expect(activity.slice(rejectedAt)).toContain(true);
+      expect(activity.at(-1)).toBe(false);
+
+      const restartAt = activity.length;
+      await manager.sendMessage(parentSessionId, "worker", "hold restart");
+      expect(activity.slice(restartAt)).toContain(true);
+      await manager.interruptAgent(parentSessionId, "worker");
+      expect(activity.at(-1)).toBe(false);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+});
+
+describe("extension completion delivery and TUI", () => {
+  test("registers commands, renders one-line activity, and delivers bounded completions", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
+    const tools = new Map<string, any>();
+    const commands = new Map<string, any>();
+    const renderers = new Map<string, any>();
+    const sentMessages: Array<{ message: any; options: any }> = [];
+    let widget: any;
+    const pi: any = {
+      on(name: string, handler: (event: any, ctx: any) => any) {
+        const entries = handlers.get(name) ?? [];
+        entries.push(handler);
+        handlers.set(name, entries);
+      },
+      registerTool(tool: any) { tools.set(tool.name, tool); },
+      registerCommand(name: string, command: any) { commands.set(name, command); },
+      registerMessageRenderer(name: string, renderer: any) { renderers.set(name, renderer); },
+      sendMessage(message: any, options: any) { sentMessages.push({ message, options }); },
+      getThinkingLevel() { return "high"; },
+      getActiveTools() { return ["read", "bash"]; },
+    };
+    const parentSessionId = "index-integration-parent";
+    const ctx: any = {
+      cwd: TEST_AGENT_DIR,
+      mode: "tui",
+      model: { provider: "test", id: "fake" },
+      sessionManager: {
+        getSessionId: () => parentSessionId,
+        getSessionFile: () => path.join(TEST_AGENT_DIR, "parent.jsonl"),
+      },
+      ui: {
+        setWidget(_key: string, value: any) { widget = value; },
+      },
+    };
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const { default: subagentExtension } = await import("./index.js");
+    subagentExtension(pi);
+    const emit = async (name: string, event: any = {}) => {
+      for (const handler of handlers.get(name) ?? []) await handler(event, ctx);
+    };
+
+    try {
+      await emit("session_start", { reason: "startup" });
+      expect(commands.has("agents")).toBe(true);
+      expect(commands.has("subagent")).toBe(true);
+      expect(commands.has("subagents")).toBe(true);
+      expect(renderers.has("pi-codex-subagent-completion")).toBe(true);
+
+      await tools.get("spawn_agent").execute("spawn-1", {
+        task_name: "x".repeat(200),
+        message: "slow finish",
+      }, undefined, undefined, ctx);
+
+      expect(widget).toBeFunction();
+      const theme = { fg: (_color: string, text: string) => text };
+      const lines = widget({}, theme).render(40);
+      expect(lines).toHaveLength(1);
+      expect(visibleWidth(lines[0])).toBeLessThanOrEqual(40);
+      expect(lines[0]).toContain("/subagents");
+
+      await waitUntil(() => sentMessages.length === 1);
+      expect(widget).toBeUndefined();
+      expect(sentMessages[0].options).toEqual({ deliverAs: "steer", triggerTurn: true });
+      expect(sentMessages[0].message.content).toContain("response:slow finish");
+
+      await tools.get("spawn_agent").execute("spawn-2", {
+        task_name: "large-output",
+        message: "large response",
+      }, undefined, undefined, ctx);
+      await waitUntil(() => sentMessages.length === 2);
+      const large = sentMessages[1].message;
+      expect(Buffer.byteLength(large.content, "utf8")).toBeLessThanOrEqual(50 * 1024);
+      expect(large.content).toContain("Output truncated");
+      expect(large.details.fullOutputPath).toBeString();
+      expect(fs.existsSync(large.details.fullOutputPath)).toBe(true);
+    } finally {
+      await emit("session_shutdown", { reason: "quit" });
+      fs.rmSync(scope, { recursive: true, force: true });
       delete process.env.PI_SUBAGENT_PI_BIN;
     }
   });

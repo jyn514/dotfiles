@@ -147,7 +147,7 @@ interface LiveAgent {
   candidateError?: string;
 }
 
-interface MailboxEvent {
+export interface AgentCompletionEvent {
   id: string;
   parentSessionId: string;
   agentName: string;
@@ -157,10 +157,21 @@ interface MailboxEvent {
   createdAt: number;
 }
 
+export interface AgentActivityEvent {
+  parentSessionId: string;
+  agentName: string;
+  active: boolean;
+}
+
+export interface AgentManagerOptions {
+  onActivityChange?: (event: AgentActivityEvent) => void;
+  onUnclaimedCompletion?: (event: AgentCompletionEvent) => void;
+}
+
 interface Waiter {
   parentSessionId: string;
   targets?: Set<string>;
-  resolve: (event: MailboxEvent) => void;
+  resolve: (event: AgentCompletionEvent) => void;
 }
 
 function abortError(signal?: AbortSignal): Error {
@@ -829,11 +840,11 @@ function canonicalAgentName(target: string): string {
   return target.startsWith("/") ? target : `/${target}`;
 }
 
-function targetMatches(event: MailboxEvent, targets?: Set<string>): boolean {
+function targetMatches(event: AgentCompletionEvent, targets?: Set<string>): boolean {
   return !targets || targets.has(event.agentName);
 }
 
-export function consumeFirstMatchingMailboxEvent(events: MailboxEvent[], parentSessionId: string, targets?: Set<string>): MailboxEvent | undefined {
+export function consumeFirstMatchingMailboxEvent(events: AgentCompletionEvent[], parentSessionId: string, targets?: Set<string>): AgentCompletionEvent | undefined {
   const index = events.findIndex((event) => event.parentSessionId === parentSessionId && targetMatches(event, targets));
   if (index === -1) return undefined;
   return events.splice(index, 1)[0];
@@ -841,17 +852,40 @@ export function consumeFirstMatchingMailboxEvent(events: MailboxEvent[], parentS
 
 export class AgentManager {
   private readonly live = new Map<string, LiveAgent>();
-  private readonly mailbox: MailboxEvent[] = [];
+  private readonly mailbox: AgentCompletionEvent[] = [];
   private waiters: Waiter[] = [];
+  private readonly waitAllClaims = new Set<{
+    parentSessionId: string;
+    targets: Set<string>;
+    suppressedEventIds: Set<string>;
+  }>();
   private readonly defaultWaitAllTargets = new Map<string, Set<string>>();
   private readonly shutdownController = new AbortController();
   private readonly ownerProcessIdentity = inspectProcess(process.pid)?.identity;
   private readonly reconciliation: Promise<void>;
 
-  constructor() {
+  constructor(private readonly options: AgentManagerOptions = {}) {
     ensureBaseDirs();
     pruneExpiredRuns();
     this.reconciliation = this.reconcilePersistedChildren();
+  }
+
+  async ready(): Promise<void> {
+    await this.reconciliation;
+  }
+
+  private notifyStatusChange(info: AgentInfo): void {
+    try {
+      this.options.onActivityChange?.({
+        parentSessionId: info.parentSessionId,
+        agentName: info.canonicalName,
+        active: info.status === "starting" || info.status === "running",
+      });
+    } catch {}
+  }
+
+  private notifyUnclaimedCompletion(event: AgentCompletionEvent): void {
+    try { this.options.onUnclaimedCompletion?.(event); } catch {}
   }
 
   private clearChildOwnership(info: AgentInfo, expectedToken: string): void {
@@ -917,6 +951,7 @@ export class AgentManager {
             info.status = "interrupted";
             info.lastActivity = Date.now();
             saveInfo(info);
+            this.notifyStatusChange(info);
           }
           this.clearChildOwnership(info, ownership.token);
           continue;
@@ -930,6 +965,7 @@ export class AgentManager {
           info.status = "interrupted";
           info.lastActivity = Date.now();
           saveInfo(info);
+          this.notifyStatusChange(info);
         }
         await this.terminateOwnedChild(info);
       } catch {}
@@ -1001,6 +1037,7 @@ export class AgentManager {
         lastTaskMessage: params.message,
       };
       saveInfo(info);
+      this.notifyStatusChange(info);
       const targets = this.defaultWaitAllTargets.get(params.parentSessionId) ?? new Set<string>();
       targets.add(info.canonicalName);
       this.defaultWaitAllTargets.set(params.parentSessionId, targets);
@@ -1017,6 +1054,9 @@ export class AgentManager {
 
   private async startLiveAgent(info: AgentInfo, initialMessage?: string, displayMessage?: string): Promise<LiveAgent> {
     readSystemPrompt();
+    if (info.status !== "starting" && info.status !== "running") {
+      this.notifyStatusChange({ ...info, status: "starting", lastActivity: Date.now() });
+    }
     const logger = new SessionLogger(info.logFile);
     const broadcaster = new EventBroadcaster(info.id);
     broadcaster.start();
@@ -1177,7 +1217,12 @@ export class AgentManager {
   }
 
   private async prompt(live: LiveAgent, message: string, displayMessage?: string): Promise<void> {
-    const previousStatus = live.info.status;
+    const previousFinalState = {
+      status: live.info.status,
+      finalResponse: live.info.finalResponse,
+      error: live.info.error,
+      completedAt: live.info.completedAt,
+    };
     this.removeMailboxEvents(live.info.parentSessionId, live.info.canonicalName);
     const targets = this.defaultWaitAllTargets.get(live.info.parentSessionId) ?? new Set<string>();
     targets.add(live.info.canonicalName);
@@ -1193,11 +1238,19 @@ export class AgentManager {
     delete live.info.error;
     delete live.info.completedAt;
     saveInfo(live.info);
+    this.notifyStatusChange(live.info);
     try {
       await this.sendCommand(live, { type: "prompt", message });
     } catch (error) {
-      live.info.status = previousStatus;
+      live.info.status = previousFinalState.status;
+      if (previousFinalState.finalResponse !== undefined) live.info.finalResponse = previousFinalState.finalResponse;
+      else delete live.info.finalResponse;
+      if (previousFinalState.error !== undefined) live.info.error = previousFinalState.error;
+      else delete live.info.error;
+      if (previousFinalState.completedAt !== undefined) live.info.completedAt = previousFinalState.completedAt;
+      else delete live.info.completedAt;
       saveInfo(live.info);
+      this.notifyStatusChange(live.info);
       throw error;
     }
   }
@@ -1232,6 +1285,7 @@ export class AgentManager {
       live.candidateResponse = "";
       live.candidateError = undefined;
       saveInfo(live.info);
+      this.notifyStatusChange(live.info);
       return;
     }
     if (event.type === "message_update" || event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
@@ -1280,6 +1334,7 @@ export class AgentManager {
     live.info.completedAt = Date.now();
     live.info.lastActivity = Date.now();
     saveInfo(live.info);
+    this.notifyStatusChange(live.info);
     this.pushMailbox({
       id: randomUUID(),
       parentSessionId: live.info.parentSessionId,
@@ -1299,6 +1354,7 @@ export class AgentManager {
     live.info.completedAt = Date.now();
     live.info.lastActivity = Date.now();
     saveInfo(live.info);
+    this.notifyStatusChange(live.info);
     this.pushMailbox({
       id: randomUUID(),
       parentSessionId: live.info.parentSessionId,
@@ -1316,7 +1372,7 @@ export class AgentManager {
     }
   }
 
-  private pushMailbox(event: MailboxEvent): void {
+  private pushMailbox(event: AgentCompletionEvent, notify = true): void {
     this.removeMailboxEvents(event.parentSessionId, event.agentName);
     const waiterIndex = this.waiters.findIndex((waiter) => waiter.parentSessionId === event.parentSessionId && targetMatches(event, waiter.targets));
     if (waiterIndex !== -1) {
@@ -1325,6 +1381,13 @@ export class AgentManager {
       return;
     }
     this.mailbox.push(event);
+    const matchingClaims = [...this.waitAllClaims].filter((claim) =>
+      claim.parentSessionId === event.parentSessionId && claim.targets.has(event.agentName)
+    );
+    if (notify) {
+      for (const claim of matchingClaims) claim.suppressedEventIds.add(event.id);
+      if (!matchingClaims.length) this.notifyUnclaimedCompletion(event);
+    }
   }
 
   listAgents(pathPrefix: string | undefined, parentSessionId: string, includeAll = false): AgentListEntry[] {
@@ -1364,7 +1427,7 @@ export class AgentManager {
     this.defaultWaitAllTargets.get(parentSessionId)?.delete(canonicalAgentName(agentName));
   }
 
-  async waitAgent(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; event?: MailboxEvent }> {
+  async waitAgent(parentSessionId: string, targets?: string[], signal?: AbortSignal): Promise<{ message: string; event?: AgentCompletionEvent }> {
     const waitSignal = signal ? AbortSignal.any([signal, this.shutdownController.signal]) : this.shutdownController.signal;
     throwIfAborted(waitSignal);
     const normalizedTargets = targets?.length ? new Set(targets.map(canonicalAgentName)) : undefined;
@@ -1443,10 +1506,24 @@ export class AgentManager {
         responses,
       };
     };
-    while (true) {
-      throwIfAborted(waitSignal);
-      if (!pendingNames().length) return finalize();
-      await delay(250, undefined, { signal: waitSignal });
+    const claim = { parentSessionId, targets: targetSet, suppressedEventIds: new Set<string>() };
+    this.waitAllClaims.add(claim);
+    try {
+      while (true) {
+        throwIfAborted(waitSignal);
+        if (!pendingNames().length) return finalize();
+        await delay(250, undefined, { signal: waitSignal });
+      }
+    } finally {
+      this.waitAllClaims.delete(claim);
+      for (const eventId of claim.suppressedEventIds) {
+        const event = this.mailbox.find((candidate) => candidate.id === eventId);
+        if (!event) continue;
+        const claimedElsewhere = [...this.waitAllClaims].some((candidate) =>
+          candidate.parentSessionId === event.parentSessionId && candidate.targets.has(event.agentName)
+        );
+        if (!claimedElsewhere) this.notifyUnclaimedCompletion(event);
+      }
     }
   }
 
@@ -1476,8 +1553,13 @@ export class AgentManager {
       saveInfo(info);
       return { delivery: "steer" };
     }
-    await this.prompt(live, message, message);
-    return { delivery: "prompt" };
+    try {
+      await this.prompt(live, message, message);
+      return { delivery: "prompt" };
+    } catch (error) {
+      await this.terminateProcess(live);
+      throw error;
+    }
   }
 
   async interruptAgent(parentSessionId: string, target: string): Promise<{ previous_status: AgentRuntimeStatus }> {
@@ -1489,6 +1571,7 @@ export class AgentManager {
     info.status = "interrupted";
     info.lastActivity = Date.now();
     saveInfo(info);
+    this.notifyStatusChange(info);
     if (live) {
       live.info.status = "interrupted";
       live.info.lastActivity = info.lastActivity;
@@ -1498,7 +1581,7 @@ export class AgentManager {
       await this.terminateOwnedChild(info);
     }
     this.finishWaitTarget(parentSessionId, info.canonicalName);
-    this.pushMailbox({ id: randomUUID(), parentSessionId, agentName: info.canonicalName, status: "interrupted", createdAt: Date.now() });
+    this.pushMailbox({ id: randomUUID(), parentSessionId, agentName: info.canonicalName, status: "interrupted", createdAt: Date.now() }, false);
     return { previous_status: previous };
   }
 
@@ -1553,6 +1636,7 @@ export class AgentManager {
         live.info.lastActivity = Date.now();
         live.finalizedRun = true;
         saveInfo(live.info);
+        this.notifyStatusChange(live.info);
       }
       terminations.push(this.terminateProcess(live));
     }

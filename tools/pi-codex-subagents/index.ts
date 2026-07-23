@@ -6,10 +6,11 @@ import {
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
   AgentManager,
   getAgentDefinitionsDescription,
+  type AgentCompletionEvent,
   type AgentInfo,
   type ThinkingLevel,
   writeFullToolOutput,
@@ -20,12 +21,24 @@ function textResult(text: string, details?: any) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
-function boundedTextResult(text: string, details?: any) {
-  const truncation = truncateHead(text, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
-  if (!truncation.truncated) return textResult(text, details);
+interface BoundedText {
+  text: string;
+  fullOutputPath?: string;
+  truncated?: true;
+}
+
+function boundedText(text: string, maxBytes = DEFAULT_MAX_BYTES, maxLines = DEFAULT_MAX_LINES): BoundedText {
+  const truncation = truncateHead(text, { maxBytes, maxLines });
+  if (!truncation.truncated) return { text };
   const fullOutputPath = writeFullToolOutput(text);
   const notice = `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output saved to: ${fullOutputPath}]`;
-  return textResult(truncation.content + notice, { ...details, fullOutputPath, truncated: true });
+  return { text: truncation.content + notice, fullOutputPath, truncated: true };
+}
+
+function boundedTextResult(text: string, details?: any) {
+  const bounded = boundedText(text);
+  if (!bounded.truncated) return textResult(bounded.text, details);
+  return textResult(bounded.text, { ...details, fullOutputPath: bounded.fullOutputPath, truncated: true });
 }
 
 function cleanTarget(target: string): string {
@@ -60,9 +73,83 @@ function runtimeLabel(info: AgentInfo): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  const widgetKey = "pi-codex-subagents";
+  const completionMessageType = "pi-codex-subagent-completion";
   let cachedSkills: Array<{ name: string; description: string; filePath: string }> = [];
   let cachedSkillsSignature = "";
-  const manager = new AgentManager();
+  let activeContext: any;
+  const activeAgents = new Set<string>();
+
+  const isCurrentSession = (parentId: string) => {
+    try { return activeContext && parentSessionId(activeContext) === parentId; }
+    catch { return false; }
+  };
+
+  const refreshAgentWidget = () => {
+    if (!activeContext || activeContext.mode !== "tui") return;
+    const running = [...activeAgents];
+    if (!running.length) {
+      activeContext.ui.setWidget(widgetKey, undefined);
+      return;
+    }
+    const label = running.length === 1
+      ? `${running[0]} running`
+      : `${running.length} subagents running`;
+    activeContext.ui.setWidget(widgetKey, (_tui: any, theme: Theme) => ({
+      render(width: number) {
+        const marker = "◌ ";
+        const suffix = " · /subagents";
+        if (width <= visibleWidth(marker) + visibleWidth(suffix)) {
+          return [truncateToWidth(theme.fg("dim", "/subagents"), width, "")];
+        }
+        const available = width - visibleWidth(marker) - visibleWidth(suffix);
+        const clippedLabel = truncateToWidth(label, available, "…");
+        return [
+          theme.fg("accent", marker) + theme.fg("text", clippedLabel) + theme.fg("dim", suffix),
+        ];
+      },
+      invalidate() {},
+    }));
+  };
+
+  const deliverCompletion = (event: AgentCompletionEvent) => {
+    if (!isCurrentSession(event.parentSessionId)) return;
+    const payload = JSON.stringify({
+      agent_name: event.agentName,
+      status: event.status,
+      ...(event.finalResponse !== undefined ? { final_response: event.finalResponse } : {}),
+      ...(event.error ? { error: event.error } : {}),
+    }, null, 2);
+    const bounded = boundedText(payload, DEFAULT_MAX_BYTES - 1024, DEFAULT_MAX_LINES - 4);
+    pi.sendMessage({
+      customType: completionMessageType,
+      content: `<subagent_notification>\n${bounded.text}\n</subagent_notification>`,
+      display: true,
+      details: {
+        agent_name: event.agentName,
+        status: event.status,
+        ...(bounded.fullOutputPath ? { fullOutputPath: bounded.fullOutputPath } : {}),
+      },
+    }, { deliverAs: "steer", triggerTurn: true });
+  };
+
+  const manager = new AgentManager({
+    onActivityChange: (event) => {
+      if (!isCurrentSession(event.parentSessionId)) return;
+      if (event.active) activeAgents.add(event.agentName);
+      else activeAgents.delete(event.agentName);
+      refreshAgentWidget();
+    },
+    onUnclaimedCompletion: deliverCompletion,
+  });
+
+  pi.registerMessageRenderer(completionMessageType, (message: any, { expanded }: any, theme: Theme) => {
+    const status = message.details?.status;
+    const color = status === "completed" ? "success" : status === "failed" ? "error" : "warning";
+    let text = theme.fg(color, `${status === "completed" ? "✓" : "✗"} ${message.details?.agent_name || "subagent"} ${status || "finished"}`);
+    if (expanded && typeof message.content === "string") text += `\n${theme.fg("dim", message.content)}`;
+    return new Text(text, 0, 0);
+  });
 
   const spawnAgentTool = {
     name: "spawn_agent",
@@ -70,7 +157,7 @@ export default function (pi: ExtensionAPI) {
     get description() {
       return `Spawn a fresh-context Pi subagent for a concrete task. Automatic extension, skill, and prompt-template discovery is disabled. Agent templates may explicitly configure a provider/model pair, thinking level, tools, skills, and extensions. Omitted template settings inherit from the parent where applicable.
 
-Returns after the child accepts its initial task. Use \`wait_agent\` or \`wait_all_agents\` when you need the final response before continuing.
+Returns after the child accepts its initial task. Continue with independent work instead of waiting; the child's final response will be delivered automatically when ready. Use \`wait_agent\` or \`wait_all_agents\` only when your next action depends on the subagent response and you have no useful work to do meanwhile.
 
 \`agent_type\` is optional. Omit it for a generic subagent. Use a template only when the task matches it.
 
@@ -122,6 +209,17 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
     },
   };
 
+  pi.on("session_start", async (_event: any, ctx: any) => {
+    activeContext = ctx;
+    activeAgents.clear();
+    await manager.ready();
+    if (activeContext !== ctx) return;
+    for (const entry of manager.listAgents(undefined, parentSessionId(ctx))) {
+      if (entry.agent_status === "starting" || entry.agent_status === "running") activeAgents.add(entry.agent_name);
+    }
+    refreshAgentWidget();
+  });
+
   pi.on("before_agent_start", async (event: any) => {
     const skills = event?.systemPromptOptions?.skills;
     const nextSkills = Array.isArray(skills)
@@ -138,6 +236,9 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   });
 
   pi.on("session_shutdown", async () => {
+    if (activeContext?.mode === "tui") activeContext.ui.setWidget(widgetKey, undefined);
+    activeContext = undefined;
+    activeAgents.clear();
     await manager.shutdown();
   });
 
@@ -146,7 +247,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   pi.registerTool({
     name: "wait_agent",
     label: "Wait Agent",
-    description: "Wait for one session-owned agent completion, or for the next completion if targets is omitted. Returns one final response. Use wait_all_agents when every target must finish.",
+    description: "Wait for one session-owned agent completion, or for the next completion if targets is omitted. Use only when your next action depends on that response; otherwise continue working and let completion arrive automatically. Returns one final response. Use wait_all_agents when every target must finish.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait on. Omit to wait for the next completion in this parent session." })),
     }),
@@ -172,7 +273,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   pi.registerTool({
     name: "wait_all_agents",
     label: "Wait All Agents",
-    description: "Wait until all targeted session-owned agents reach a final status. Returns their final text responses.",
+    description: "Wait until all targeted session-owned agents reach a final status. Use only when your next action depends on every response; otherwise continue working and let completions arrive automatically. Returns their final text responses.",
     parameters: Type.Object({
       targets: Type.Optional(Type.Array(Type.String(), { description: "Agent task names to wait for. Omit to wait for agents spawned by this extension instance." })),
     }),
@@ -372,11 +473,18 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
     },
   });
 
+  const browseAgents = async (ctx: any) => {
+    const selected = await pickAgent(ctx);
+    if (selected) await openAgentOverlay(ctx, selected.task, selected.parentSessionId, selected.includeAll);
+  };
+
   pi.registerCommand("agents", {
     description: "Browse subagents",
-    handler: async (_args, ctx) => {
-      const selected = await pickAgent(ctx);
-      if (selected) await openAgentOverlay(ctx, selected.task, selected.parentSessionId, selected.includeAll);
-    },
+    handler: async (_args, ctx) => browseAgents(ctx),
+  });
+
+  pi.registerCommand("subagents", {
+    description: "Browse subagents",
+    handler: async (_args, ctx) => browseAgents(ctx),
   });
 }

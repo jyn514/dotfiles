@@ -1,6 +1,6 @@
 # pi-codex-subagents
 
-Codex-shaped, session-scoped subagents for [Pi](https://github.com/earendil-works/pi). Spawn isolated child Pi processes, wait for their final responses, steer active work, and inspect sessions in a live overlay.
+Codex-shaped, session-scoped subagents for [Pi](https://github.com/earendil-works/pi). Spawn isolated child Pi processes, receive their final responses automatically, steer active work, and inspect sessions in a live overlay.
 
 Requires Pi 0.80.4 or newer and Node.js 22.19 or newer.
 
@@ -21,8 +21,8 @@ pi install /absolute/path/to/pi-extensions/packages/pi-codex-subagents
 | Tool | Purpose |
 |---|---|
 | `spawn_agent` | Spawn a fresh-context child Pi process |
-| `wait_agent` | Wait for one completion and return its final text |
-| `wait_all_agents` | Wait for every selected agent |
+| `wait_agent` | Block for one completion and return its final text |
+| `wait_all_agents` | Block until every selected agent finishes |
 | `list_agents` | List current-session agents, or explicitly include historical sessions |
 | `read_agent_response` | Read an agent's latest final raw text response |
 | `send_message` | Steer a running agent or start another turn when settled |
@@ -88,9 +88,15 @@ Configuration is read when agents spawn, while cleanup runs when the extension l
 
 Template skills and extensions override configured defaults. Skills explicitly requested by the parent are added to configured template/default skills. Tool selection belongs to the template or is inherited from the parent.
 
-## Commands
+## Completion delivery
 
-`/agents` browses agents in the current session. Press Tab to switch to the read-only all-sessions view. `/subagent <task-name>` opens one current-session agent directly.
+A child completion or failure is delivered automatically to its parent session after the child reaches final status. If the parent is active, the result joins the current run; if the parent is idle, it starts a continuation turn. Continue independent work instead of waiting. Use `wait_agent` or `wait_all_agents` only when the next action depends on those responses and no useful work remains meanwhile; an active wait receives the result directly without a duplicate automatic message.
+
+## Commands and TUI
+
+While agents are starting or running, a compact one-line indicator appears above the editor. It shows the task name for one active agent or a count for multiple agents and points to `/subagents`. The indicator disappears when no agents are active.
+
+`/subagents` and `/agents` browse agents in the current session. Press Tab to switch to the read-only all-sessions view. `/subagent <task-name>` opens one current-session agent directly.
 
 The overlay uses the child working directory for tool rendering and synchronizes in-progress output when opened midway through a run. Use Left/Right to switch between agents in the current browser scope.
 
@@ -98,7 +104,7 @@ Child RPC processes are terminated after completion, failure, or interruption so
 
 ## Output limits
 
-Wait and response tools follow Pi's standard 50 KB / 2,000-line output limit. Oversized output is truncated and the complete text is written beside the runtime data; the returned notice includes a path that can be read with Pi's `read` tool.
+Automatic completions, wait tools, and response tools follow Pi's standard 50 KB / 2,000-line output limit. Oversized output is truncated and the complete text is written beside the runtime data; the returned notice includes a path that can be read with Pi's `read` tool.
 
 ## Environment
 
