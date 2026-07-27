@@ -2,7 +2,7 @@ use color_eyre::eyre::{bail, eyre, Result};
 use std::collections::HashSet;
 
 const COMMANDS: &[&str] = &[
-    "status", "diff", "log", "show", "interdiff", "commit", "describe",
+    "status", "diff", "log", "show", "interdiff", "file", "commit", "describe",
     "new", "split", "squash", "rebase", "restore", "abandon", "duplicate",
     "edit", "next", "prev", "undo", "workspace",
 ];
@@ -90,6 +90,7 @@ mod tests {
         assert!(check(&["commit", "-m", "literal; $(touch nope)", "src/main.rs"]));
         assert!(check(&["git", "fetch", "--remote", "origin", "--branch", "main"]));
         assert!(check(&["workspace", "list"]));
+        assert!(check(&["file", "show", "src/main.rs"]));
     }
     #[test]
     fn rejects_escape_surfaces() {
@@ -98,6 +99,7 @@ mod tests {
             &["git", "init"][..], &["config", "set", "x", "y"][..], &["diff", "--tool", "/tmp/x"][..],
             &["status", "--repository", "/tmp/x"][..], &["log", "--config", "aliases.x=util exec"][..],
             &["workspace", "list", "--repository", "/tmp/x"][..],
+            &["file", "show", "--repository", "/tmp/x", "src/main.rs"][..],
             &["git", "fetch", "--remote", "evil"][..], &["push"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
     }

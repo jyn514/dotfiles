@@ -1,6 +1,6 @@
-mod policy;
-
 use color_eyre::eyre::{bail, eyre, Result, WrapErr};
+use jj_proxy::policy;
+#[cfg(target_os = "linux")]
 use landlock::{
     make_bitflags, AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset,
     RulesetAttr, RulesetCreatedAttr, RulesetStatus,
@@ -64,6 +64,7 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn install_execution_policy(repo: &str) -> Result<()> {
     let trusted = PathFd::new("/trusted").wrap_err("cannot open trusted directory")?;
     let trusted_bin = PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
@@ -123,6 +124,11 @@ fn install_execution_policy(repo: &str) -> Result<()> {
         bail!("Landlock execution policy was not enforced: {status:?}");
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn install_execution_policy(_repo: &str) -> Result<()> {
+    bail!("the jj proxy requires Linux Landlock support")
 }
 
 fn prepare_repo_config(repo: &str) -> Result<()> {
