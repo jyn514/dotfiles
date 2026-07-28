@@ -77,7 +77,7 @@ class ManifestTest(unittest.TestCase):
             mounts,
         )
 
-    def test_linked_worktree_uses_one_common_proxy_mount(self) -> None:
+    def test_linked_worktree_keeps_repository_at_agent_path(self) -> None:
         main = self.repo
         worktree = Path(self.temporary.name + "-worktree")
         self.addCleanup(shutil.rmtree, worktree, True)
@@ -91,14 +91,15 @@ class ManifestTest(unittest.TestCase):
         (worktree / ".jj" / "repo").mkdir(parents=True)
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
         arguments = sandbox_proxies.proxy_repository_mount_args(worktree, "jj", command)
-        common_root, relative = sandbox_proxies.jj_proxy_layout(worktree)
         self.assertIn(
-            f"type=bind,src={common_root},dst=/src/work,bind-nonrecursive=true",
+            f"type=bind,src={worktree.resolve()},dst=/src/work,bind-nonrecursive=true",
             arguments,
         )
-        self.assertNotEqual(Path("."), relative)
+        common_dir = sandbox_proxies.git_metadata_paths(worktree)[1]
+        target = sandbox_proxies.jj_container_path(worktree, common_dir)
+        self.assertIn(f"type=bind,src={common_dir},dst={target}", arguments)
 
-    def test_external_jj_repository_pointer_expands_common_proxy_mount(self) -> None:
+    def test_external_jj_repository_pointer_mounts_only_metadata(self) -> None:
         external = Path(self.temporary.name + "-jj-repo")
         external.mkdir()
         self.addCleanup(shutil.rmtree, external, True)
@@ -108,9 +109,12 @@ class ManifestTest(unittest.TestCase):
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
         arguments = sandbox_proxies.proxy_repository_mount_args(self.repo, "jj", command)
         self.assertIn(
-            f"type=bind,src={self.repo.parent},dst=/src/work,bind-nonrecursive=true",
+            f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true",
             arguments,
         )
+        target = sandbox_proxies.jj_container_path(self.repo, external)
+        self.assertIn(f"type=bind,src={external.resolve()},dst={target}", arguments)
+        self.assertNotIn(f"src={self.repo.parent},dst=/src/work", " ".join(arguments))
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{
