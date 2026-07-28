@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Pause active goals when a hidden continuation run only calls `get_goal` / namespaced `*__get_goal` and makes no actionable progress, so blocked status-inspection loops stop and surface `/goal resume` attention instead of spinning forever (#47).
+
 ## 0.1.38 - 2026-07-19
 
 - Make Pi the sole compaction owner: remove the extension's hardcoded 50k `turn_end` trigger so Pi's effective compaction settings determine threshold behavior and host/extension races cannot produce `Already compacted` or interrupt an active goal.

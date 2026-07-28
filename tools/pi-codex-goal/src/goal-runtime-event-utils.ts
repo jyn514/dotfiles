@@ -63,6 +63,25 @@ export function getContextWindow(ctx: ExtensionContext): number {
   return ctx.model?.contextWindow ?? 0;
 }
 
+/** Hidden continuations that only call get_goal / *.__get_goal are blocked, not progressed. */
+export const STATUS_INSPECTION_ONLY_CONTINUATION_REASON =
+  "continuation only re-inspected goal status with no actionable progress";
+
+export function isGoalStatusInspectionToolName(name: string): boolean {
+  return name === "get_goal" || name.endsWith("__get_goal");
+}
+
+export function isStatusInspectionOnlyToolRun(toolNames: readonly string[]): boolean {
+  return toolNames.length > 0 && toolNames.every(isGoalStatusInspectionToolName);
+}
+
+export function shouldPauseStatusInspectionOnlyContinuation(
+  fromContinuation: boolean,
+  toolNames: readonly string[],
+): boolean {
+  return fromContinuation && isStatusInspectionOnlyToolRun(toolNames);
+}
+
 export function recordAssistantContextOverflow(
   message: AssistantErrorMessage,
   ctx: ExtensionContext,

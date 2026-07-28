@@ -837,3 +837,158 @@ test("assistant error turns do not immediately queue continuation", async () => 
   assert.equal(goal?.usage.tokensUsed, 42);
   assert.equal(harness.sentMessages.length, 0);
 });
+
+test("continuation run that only calls get_goal pauses without queuing another continuation", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const content = String(queued.message.content);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: content,
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("agent_start", { type: "agent_start" });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("toolUse", { input: 10, output: 2 }),
+    toolResults: [],
+  });
+  await harness.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-call",
+    toolName: "get_goal",
+    args: {},
+    result: {},
+    isError: false,
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 12, output: 4 }),
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 12, output: 4 })],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal needs attention/);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /re-inspected goal status/);
+});
+
+test("continuation run that only calls namespaced pi__get_goal pauses without queuing another continuation", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const content = String(queued.message.content);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: content,
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("agent_start", { type: "agent_start" });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("toolUse", { input: 8, output: 1 }),
+    toolResults: [],
+  });
+  await harness.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-call",
+    toolName: "pi__get_goal",
+    args: {},
+    result: {},
+    isError: false,
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 9, output: 2 }),
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 9, output: 2 })],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("continuation run with actionable tools still queues continuation", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const content = String(queued.message.content);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: content,
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("agent_start", { type: "agent_start" });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("toolUse", { input: 10, output: 2 }),
+    toolResults: [],
+  });
+  await harness.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-call-1",
+    toolName: "get_goal",
+    args: {},
+    result: {},
+    isError: false,
+  });
+  await harness.emit("tool_execution_end", {
+    type: "tool_execution_end",
+    toolCallId: "tool-call-2",
+    toolName: "bash",
+    args: {},
+    result: {},
+    isError: false,
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 20, output: 5 }),
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 20, output: 5 })],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "continuation",
+    goalId: goal?.goalId,
+  });
+});

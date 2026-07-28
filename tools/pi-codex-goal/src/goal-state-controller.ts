@@ -45,6 +45,7 @@ export interface GoalStateController {
   isCurrentActiveGoalId: (goalId: string) => boolean;
   maybeFlushRuntimePersistence: GoalPersistence["maybeFlushRuntimePersistence"];
   pauseForAbort: (ctx: ExtensionContext) => void;
+  pauseForRecovery: (ctx: ExtensionContext, recoveryReason: string) => void;
   persistHostOverflowUserReset: (needsReset: boolean) => void;
   reloadFromSession: (ctx: ExtensionContext) => void;
   resumePausedGoal: (ctx: StatusContext) => void;
@@ -154,6 +155,15 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     applyGoalTransition({ kind: "abort_pause" }, ctx);
   };
 
+  const pauseForRecovery = (ctx: ExtensionContext, recoveryReason: string): void => {
+    const goal = getGoal();
+    if (!goal || goal.status !== "active") {
+      return;
+    }
+
+    applyGoalTransition({ kind: "recovery_pause", recoveryReason }, ctx);
+  };
+
   const resumePausedGoal = (ctx: StatusContext): void => {
     const goal = getGoal();
     if (!goal || goal.status !== "paused") {
@@ -185,6 +195,7 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     isCurrentActiveGoalId,
     maybeFlushRuntimePersistence: deps.persistence.maybeFlushRuntimePersistence,
     pauseForAbort,
+    pauseForRecovery,
     persistHostOverflowUserReset,
     reloadFromSession,
     resumePausedGoal,

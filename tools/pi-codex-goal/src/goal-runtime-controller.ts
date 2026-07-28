@@ -120,10 +120,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     getRecoveryState: () => runtimeState.recoveryState,
     clearContinuationState: continuation.clearContinuationState,
     pauseGoalForRecovery(ctx, recoveryReason) {
-      stateController.applyGoalTransition(
-        { kind: "recovery_pause", recoveryReason },
-        ctx,
-      );
+      stateController.pauseForRecovery(ctx, recoveryReason);
     },
     refreshUi: status.refreshUi,
     maybeContinue: continuation.maybeContinue,

@@ -84,15 +84,18 @@ export function createInputContextEventHandlers(
       if (continuationGoalId !== null) {
         continuation.clearContinuationStateFor(continuationGoalId);
         if (!stateController.isCurrentActiveGoalId(continuationGoalId)) {
+          runtimeState.agentRunFromContinuation = false;
           status.refreshUi(ctx);
           return undefined;
         }
+        runtimeState.agentRunFromContinuation = true;
         applyStaleQueuedWorkEffects(
           runtimeState.staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects,
           ctx,
           deps,
         );
       } else {
+        runtimeState.agentRunFromContinuation = false;
         applyStaleQueuedWorkEffects(
           runtimeState.staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects,
           ctx,

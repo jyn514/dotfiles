@@ -105,7 +105,10 @@ export interface StaleQueuedWorkEffectContext {
 }
 
 export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEffectContext {
-  runtimeState: Pick<GoalRuntimeState, "currentTurnIndex" | "staleQueuedWorkGuard">;
+  runtimeState: Pick<
+    GoalRuntimeState,
+    "agentRunFromContinuation" | "currentTurnIndex" | "staleQueuedWorkGuard"
+  >;
   stateController: Pick<
     GoalStateController,
     "getGoal" | "isCurrentActiveGoalId" | "persistHostOverflowUserReset"
@@ -116,13 +119,20 @@ export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEf
 }
 
 export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectContext {
-  runtimeState: Pick<GoalRuntimeState, "currentTurnIndex" | "staleQueuedWorkGuard">;
+  runtimeState: Pick<
+    GoalRuntimeState,
+    | "agentRunFromContinuation"
+    | "agentRunToolNames"
+    | "currentTurnIndex"
+    | "staleQueuedWorkGuard"
+  >;
   stateController: Pick<
     GoalStateController,
     | "beginOverflowRecovery"
     | "flushGoalPersistence"
     | "maybeFlushRuntimePersistence"
     | "pauseForAbort"
+    | "pauseForRecovery"
   >;
   continuation: Pick<GoalRuntimeContinuationPort, "bindPassthroughContinuationInputToTurn">;
   goalAccounting: GoalAccountingPort;
@@ -130,8 +140,17 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
 }
 
 export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectContext {
-  runtimeState: Pick<GoalRuntimeState, "agentRunSequence" | "staleQueuedWorkGuard">;
-  stateController: Pick<GoalStateController, "beginOverflowRecovery" | "flushGoalPersistence" | "pauseForAbort">;
+  runtimeState: Pick<
+    GoalRuntimeState,
+    | "agentRunFromContinuation"
+    | "agentRunSequence"
+    | "agentRunToolNames"
+    | "staleQueuedWorkGuard"
+  >;
+  stateController: Pick<
+    GoalStateController,
+    "beginOverflowRecovery" | "flushGoalPersistence" | "pauseForAbort" | "pauseForRecovery"
+  >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
     "clearPassthroughContinuationInput" | "maybeContinue"
