@@ -240,13 +240,34 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     return paths
 
 
-def jj_proxy_layout(repo: Path) -> tuple[Path, Path]:
+def jj_container_path(repo: Path, host_path: Path) -> Path:
+    repo = repo.resolve(strict=True)
+    host_path = host_path.resolve(strict=True)
+    relative = Path(os.path.relpath(host_path, repo))
+    target = Path(os.path.normpath(CONTAINER_REPO / relative))
+    try:
+        target.relative_to(CONTAINER_REPO.parent)
+    except ValueError as error:
+        raise ConfigError(f"Jujutsu metadata path escapes the container workspace: {host_path}") from error
+    return target
+
+
+def jj_proxy_metadata_mounts(repo: Path) -> list[tuple[Path, Path]]:
+    repo = repo.resolve(strict=True)
     git_dir, common_dir = git_metadata_paths(repo)
     jj_repo = jj_repository_path(repo)
-    if not jj_repo.is_dir():
-        raise ConfigError(f"Jujutsu repository metadata is invalid: {jj_repo}")
-    root = Path(os.path.commonpath((repo, git_dir, common_dir, jj_repo))).resolve(strict=True)
-    return root, repo.relative_to(root)
+    candidates = sorted({git_dir, common_dir, jj_repo}, key=lambda path: len(path.parts))
+    mounts: list[tuple[Path, Path]] = []
+    for source in candidates:
+        try:
+            source.relative_to(repo)
+            continue
+        except ValueError:
+            pass
+        if any(source.is_relative_to(parent) for parent, _ in mounts):
+            continue
+        mounts.append((source, jj_container_path(repo, source)))
+    return mounts
 
 
 def jj_repository_path(repo: Path) -> Path:
@@ -401,15 +422,18 @@ def proxy_logs(container: str) -> str:
 
 
 def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) -> list[str]:
-    mount_source = repo
-    if name == "jj":
-        mount_source, _ = jj_proxy_layout(repo)
+    repo = repo.resolve(strict=True)
     repository_mode = ",readonly"
     if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
         repository_mode = ""
     arguments = [
-        "--mount", f"type=bind,src={mount_source},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={repo},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
     ]
+    if name == "jj":
+        for source, target in jj_proxy_metadata_mounts(repo):
+            arguments += [
+                "--mount", f"type=bind,src={source},dst={target}{repository_mode}",
+            ]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
         arguments += [
@@ -466,14 +490,13 @@ def start_main(args: argparse.Namespace) -> int:
                 "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
             ]
             if name == "jj":
-                proxy_root, relative_repo = jj_proxy_layout(repo)
                 git_dir, common_dir = git_metadata_paths(repo)
                 jj_repo = jj_repository_path(repo)
                 docker_args += [
-                    "--env", f"JJ_PROXY_REPO={CONTAINER_REPO / relative_repo}",
-                    "--env", f"JJ_PROXY_GIT_DIR={CONTAINER_REPO / git_dir.relative_to(proxy_root)}",
-                    "--env", f"JJ_PROXY_COMMON_DIR={CONTAINER_REPO / common_dir.relative_to(proxy_root)}",
-                    "--env", f"JJ_PROXY_JJ_REPO={CONTAINER_REPO / jj_repo.relative_to(proxy_root)}",
+                    "--env", f"JJ_PROXY_REPO={CONTAINER_REPO}",
+                    "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir)}",
+                    "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir)}",
+                    "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo)}",
                 ]
             checked_repository_path(repo, command["workdir"], f"command {name} workdir")
             docker_args += proxy_repository_mount_args(repo, name, command)
