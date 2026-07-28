@@ -132,7 +132,6 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
     | "flushGoalPersistence"
     | "maybeFlushRuntimePersistence"
     | "pauseForAbort"
-    | "pauseForRecovery"
   >;
   continuation: Pick<GoalRuntimeContinuationPort, "bindPassthroughContinuationInputToTurn">;
   goalAccounting: GoalAccountingPort;

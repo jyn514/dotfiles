@@ -6,7 +6,6 @@ import {
   getContextWindow,
   runStaleQueuedWorkPlan,
   shouldPauseStatusInspectionOnlyContinuation,
-  STATUS_INSPECTION_ONLY_CONTINUATION_REASON,
 } from "./goal-runtime-event-utils.js";
 import type {
   GoalRuntimeTurnHandlerContext,
@@ -60,17 +59,12 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
         stateController.beginOverflowRecovery(ctx);
         return;
       }
-      const pauseStatusInspection = shouldPauseStatusInspectionOnlyContinuation(
+      const suppressContinuation = shouldPauseStatusInspectionOnlyContinuation(
         runtimeState.agentRunFromContinuation,
         runtimeState.agentRunToolNames,
       );
-      if (pauseStatusInspection && !isToolUseAssistantMessage(event.message)) {
-        recoveryRuntime.finishSuccessfulAssistantTurn(event.message, ctx, { continueGoal: false });
-        stateController.pauseForRecovery(ctx, STATUS_INSPECTION_ONLY_CONTINUATION_REASON);
-        return;
-      }
       recoveryRuntime.finishSuccessfulAssistantTurn(event.message, ctx, {
-        continueGoal: !isToolUseAssistantMessage(event.message),
+        continueGoal: !isToolUseAssistantMessage(event.message) && !suppressContinuation,
       });
     }) satisfies ExtensionHandler<TurnEndEvent>,
   };

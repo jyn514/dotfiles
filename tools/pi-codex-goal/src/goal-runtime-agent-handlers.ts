@@ -17,6 +17,7 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
   return {
     onAgentStart: (async () => {
       runtimeState.agentRunSequence += 1;
+      runtimeState.agentRunFromContinuation = false;
       runtimeState.agentRunToolNames = [];
     }) satisfies ExtensionHandler<AgentStartEvent>,
 
@@ -51,7 +52,6 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
       if (lastAssistant && recordAssistantContextOverflow(lastAssistant, ctx, deps)) {
         return;
       }
-      resetErrorRecovery();
       if (
         shouldPauseStatusInspectionOnlyContinuation(
           runtimeState.agentRunFromContinuation,
@@ -61,6 +61,7 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
         stateController.pauseForRecovery(ctx, STATUS_INSPECTION_ONLY_CONTINUATION_REASON);
         return;
       }
+      resetErrorRecovery();
       continuation.maybeContinue(ctx);
     }) satisfies ExtensionHandler<AgentEndEvent>,
   };
