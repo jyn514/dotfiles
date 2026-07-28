@@ -845,20 +845,27 @@ async function finishQueuedCustomRun(
   toolNames: readonly string[],
 ): Promise<void> {
   await harness.emit("agent_start", { type: "agent_start" });
+
+  const runMessages: object[] = [];
+  let turnIndex = 0;
+
+  // Pi emits turn_start before the initial custom message_start for triggerTurn custom prompts.
+  await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
   await harness.emit("message_start", {
     type: "message_start",
     message: queuedCustomMessage(queued),
   });
 
-  let turnIndex = 0;
   if (toolNames.length > 0) {
-    await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex,
-      message: assistantMessage("toolUse", { input: 8, output: 2 }),
-      toolResults: [],
-    });
+    const toolUseMessage = {
+      ...assistantMessage("toolUse", { input: 8, output: 2 }),
+      content: toolNames.map((name, index) => ({
+        type: "toolCall" as const,
+        id: `tool-call-${index}`,
+        name,
+        arguments: {},
+      })),
+    };
     for (const [index, toolName] of toolNames.entries()) {
       await harness.emit("tool_execution_end", {
         type: "tool_execution_end",
@@ -869,11 +876,19 @@ async function finishQueuedCustomRun(
         isError: false,
       });
     }
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex,
+      message: toolUseMessage,
+      toolResults: [],
+    });
+    runMessages.push(toolUseMessage);
     turnIndex += 1;
+    await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
   }
 
   const stopMessage = assistantMessage("stop", { input: 10, output: 3 });
-  await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
+  runMessages.push(stopMessage);
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex,
@@ -882,7 +897,7 @@ async function finishQueuedCustomRun(
   });
   await harness.emit("agent_end", {
     type: "agent_end",
-    messages: [stopMessage],
+    messages: runMessages,
   });
 }
 
