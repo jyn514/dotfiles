@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.1.39 - 2026-07-28
 
 - Pause active goals when a hidden continuation run only calls `get_goal` / namespaced `*__get_goal` and makes no actionable progress, so blocked status-inspection loops stop and surface `/goal resume` attention instead of spinning forever (#47).
+- Document that goal token budgets intentionally count only active-goal assistant-turn `input`+`output`, and do not track Pi 0.81+ host session totals that also include tool, compaction, and branch-summary usage.
+
+### Validation
+
+- Ran `npm run verify` under Pi 0.80.10: `tsc --noEmit`, 6 platform-smoke checks, and 333 regular tests passed.
+- Ran the Crabbox release matrix on macOS, Ubuntu, and native Windows; every packed-package build/install, model-backed goal runtime smoke, and lease-cleanup assertion passed.
+- Ran `npm audit --omit=optional` (2 transitive advisories in optional Pi-hosted deps, no direct package deps), `npm publish --dry-run --ignore-scripts`, and an isolated Pi install from the packed tarball; dry-run and install checks passed.
 
 ## 0.1.38 - 2026-07-19
 
