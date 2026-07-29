@@ -210,9 +210,9 @@ class CodexSandboxTest(unittest.TestCase):
         run = self.final_run()
         self.assertIn("--cap-drop=ALL", run)
         self.assertIn("--security-opt=no-new-privileges", run)
-        self.assertIn(f"type=bind,src={self.repo},dst=/src/work,bind-nonrecursive=true", run)
-        self.assertIn(f"type=bind,src={self.repo / '.git'},dst=/src/work/.git,readonly", run)
-        self.assertIn(f"type=bind,src={self.repo / '.jj'},dst=/src/work/.jj,readonly", run)
+        self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertLess(run.index("resume"), run.index("session-id"))
 
@@ -231,9 +231,37 @@ class CodexSandboxTest(unittest.TestCase):
             FAKE_GIT_DIR=str(git_dir), FAKE_GIT_COMMON_DIR=str(common_dir),
         )
         self.assertEqual(0, result.returncode, result.stderr)
+        run = self.final_run()
+        repository = self.repo.resolve()
         self.assertIn(
-            f"type=bind,src={self.repo / '.git'},dst=/src/work/.git,readonly",
-            self.final_run(),
+            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly",
+            run,
+        )
+        self.assertIn(
+            f"type=bind,src={repository},dst={repository},readonly,bind-nonrecursive=true",
+            run,
+        )
+        self.assertIn(
+            f"type=bind,src={common_dir.resolve()},dst={common_dir.resolve()},readonly",
+            run,
+        )
+        relative_target = Path(os.path.normpath(
+            Path("/src/work") / os.path.relpath(common_dir.resolve(), self.repo.resolve())
+        ))
+        self.assertIn(
+            f"type=bind,src={common_dir.resolve()},dst={relative_target},readonly",
+            run,
+        )
+        relative_repository = Path(os.path.normpath(
+            relative_target / os.path.relpath(repository, common_dir.resolve())
+        ))
+        self.assertIn(
+            f"type=bind,src={repository},dst={relative_repository},readonly,bind-nonrecursive=true",
+            run,
+        )
+        self.assertNotIn(
+            f"type=bind,src={git_dir.resolve()},dst={git_dir.resolve()},readonly",
+            run,
         )
 
     def test_does_not_scan_trusted_host_metadata_for_hard_links(self) -> None:

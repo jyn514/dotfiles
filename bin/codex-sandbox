@@ -404,14 +404,48 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--git-dir", "--git-common-dir",
     ], capture=True).stdout.splitlines()
     protected = [state.repository / ".git", state.repository / ".jj"]
+    external_git_roots: list[tuple[Path, Path]] = []
     for line in git_layout:
         path = Path(line).resolve(strict=True)
+        if any(character in str(path) for character in (",", "\n", "\r")):
+            raise LauncherError("Git metadata path contains a container-mount delimiter")
         try:
             path.relative_to(state.repository)
         except ValueError:
+            relative = Path(os.path.relpath(path, state.repository))
+            target = Path(os.path.normpath(Path("/src/work") / relative))
+            try:
+                target.relative_to("/src")
+            except ValueError as error:
+                raise LauncherError("Git metadata path escapes the container workspace") from error
+            if not any(path.is_relative_to(root) for root, _ in external_git_roots):
+                external_git_roots = [
+                    (root, root_target)
+                    for root, root_target in external_git_roots
+                    if not root.is_relative_to(path)
+                ]
+                external_git_roots.append((path, target))
             continue
         if path not in protected:
             protected.append(path)
+    repository_aliases: list[Path] = []
+    for source, relative_target in external_git_roots:
+        for metadata_target in (source, relative_target):
+            alias = Path(os.path.normpath(
+                metadata_target / os.path.relpath(state.repository, source)
+            ))
+            if metadata_target == source:
+                if alias != state.repository:
+                    raise LauncherError("Git metadata produced an invalid host worktree alias")
+            else:
+                try:
+                    alias.relative_to("/src")
+                except ValueError as error:
+                    raise LauncherError("Git metadata produced an unsafe worktree alias") from error
+                if alias == Path("/src"):
+                    raise LauncherError("Git metadata worktree alias is too broad")
+            if alias != Path("/src/work") and alias not in repository_aliases:
+                repository_aliases.append(alias)
     command = [
         "docker", "run", "--name", state.codex_container, "-it",
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
@@ -425,10 +459,27 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
         *[
             item
+            for target in repository_aliases
+            for item in (
+                "--mount",
+                f"type=bind,src={state.repository},dst={target},readonly,bind-nonrecursive=true",
+            )
+        ],
+        *[
+            item
             for path in protected
             for item in (
                 "--mount",
                 f"type=bind,src={path},dst={Path('/src/work') / path.relative_to(state.repository)},readonly",
+            )
+        ],
+        *[
+            item
+            for path, relative_target in external_git_roots
+            for target in (path, relative_target)
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={target},readonly",
             )
         ],
         *arguments,
