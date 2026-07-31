@@ -83,10 +83,6 @@ class CodexSandboxTest(unittest.TestCase):
             #!/bin/sh
             printf '%s\n' "${FAKE_UNAME:-Linux}"
         """)
-        write_executable(self.fake_bin / "rsync", """
-            #!/bin/sh
-            exit "${FAKE_RSYNC_EXIT:-0}"
-        """)
         write_executable(self.fake_bin / "docker", """
             #!/bin/sh
             {
@@ -305,13 +301,12 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(["snapshot"], actions)
         self.assertFalse(any(call[:1] == ["run"] for call in read_calls(self.docker_log)))
 
-    def test_staging_failure_releases_shared_proxies(self) -> None:
-        result = self.run_launcher(FAKE_RSYNC_EXIT="9")
-        self.assertEqual(9, result.returncode)
-        actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
-        self.assertIn("attach", actions)
-        self.assertIn("hold-lock", actions)
-        self.assertFalse(any(call[:2] == ["rm", "--force"] for call in read_calls(self.docker_log)))
+    def test_staging_ignores_dangling_skill_links(self) -> None:
+        skills = self.home / ".agents" / "skills"
+        (skills / "missing").symlink_to(self.root / "missing-skill", target_is_directory=True)
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.final_run()
 
     def test_term_signal_cleans_running_agent_and_proxies(self) -> None:
         ready = self.root / "agent-ready"
