@@ -1249,6 +1249,7 @@ vim.filetype.add { extension = {
 	rhm  = 'rhombus',
 	flix = 'flix',
 	ebnf = 'ebnf',
+	pet  = 'petal'
 } }
 
 vim.api.nvim_create_autocmd("FileType", {
@@ -1261,6 +1262,8 @@ vim.api.nvim_create_autocmd("FileType", {
 		elseif ft == "mumps" then
 			vim.bo.commentstring = ';%s'
 			vim.cmd('highlight! link Keyword Special')
+		elseif ft == "petal" then
+			vim.bo.commentstring = "//%s"
 		end
 	end
 })
@@ -1304,8 +1307,6 @@ vim.api.nvim_create_autocmd("FileType", {
 		vim.keymap.set({ 'n', 'v' }, '<C-S-K>', ":Mdn inline_link toggle<CR>", { desc = 'Toggle link', buffer = true })
 		vim.keymap.set({ 'n', 'v' }, '<leader>t', ":Mdn toc generate<CR>",
 			{ desc = 'Generate table of contents', buffer = true })
-		vim.keymap.set({ 'n', 'v' }, '<Tab>', "<cmd>norm! >><CR>", { desc = 'Indent', buffer = true, noremap = true })
-		vim.keymap.set({ 'n', 'v' }, '<S-Tab>', "<cmd>norm! <<<CR>", { desc = 'Indent', buffer = true, noremap = true })
 
 		-- <C-f> to create a footnote
 
