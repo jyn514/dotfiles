@@ -106,27 +106,28 @@ function spaces(count, global)
 end
 
 function length(count)
-	vim.bo.textwidth = count
+	vim.bo.colorcolumn = count
 end
 
 indent_tab = hard_tabs
 indent_space = spaces
 
 indentgroup('c', function()
-	length(132)
+	vim.bo.colorcolumn = 132
 end)
 -- c gets confused for cpp all the time 🥲
 indentgroup('cpp', function()
-	length(132)
+	vim.bo.colorcolumn = 132
 end)
 indentgroup('csh', function()
-	length(132)
+	vim.bo.colorcolumn = 132
 end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 -- indentgroup('cpp', function() spaces(2) end)
 
 vim.opt.colorcolumn = "+1"
-vim.opt.textwidth = 92
+-- always keep this at 0, otherwise vim will force-wrap lines as you type 
+vim.opt.textwidth = 0
 
 ---- Keybinds ----
 
