@@ -378,7 +378,10 @@ def start_relay(state: State) -> list[str]:
 
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
-    run(["rsync", "-aL", str(state.home / ".agents/skills") + "/", str(state.skills_tmp) + "/"])
+    shutil.copytree(
+        state.home / ".agents/skills", state.skills_tmp,
+        symlinks=False, ignore_dangling_symlinks=True, dirs_exist_ok=True,
+    )
 
 
 def read_proxy_arguments(state: State) -> list[str]:
