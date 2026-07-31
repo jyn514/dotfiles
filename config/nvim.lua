@@ -1230,7 +1230,6 @@ vim.lsp.config('tinymist', {
 	filetypes = { "typst" },
 	settings = {
 		formatterMode = "typstfmt",
-		exportPdf = "onSave",
 		lint = { enabled = true },
 	}
 })
