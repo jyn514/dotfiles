@@ -9,3 +9,4 @@ add_path "$CARGO_HOME"/bin
 # add this even if it's not present, in case we create it later
 add_path "$HOME/.local/bin"
 add_path "$DOTFILES/bin"
+add_path "$HOME/.local/share/mise/shims"

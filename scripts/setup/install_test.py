@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -283,7 +284,8 @@ class LocalInstallationTests(unittest.TestCase):
             'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
-            'case "$name:${FAIL_PYTHON_INSTALL:-}" in python:1|python3:1) exit 1;; esac\n'
+            'case "$name:$*:${FAIL_MISE_INSTALL:-}" in mise:install\\ --yes:1) exit 1;; esac\n'
+            'case "$name:$*:${FAIL_PYTHON_INSTALL:-}" in mise:*python*:1|python:*:1|python3:*:1) exit 1;; esac\n'
         )
         recorder.chmod(0o755)
         for command in (
@@ -291,6 +293,7 @@ class LocalInstallationTests(unittest.TestCase):
             "cargo",
             "clojure",
             "glide",
+            "mise",
             "nvim",
             "pip3",
             "python3",
@@ -386,9 +389,16 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         rust_packages = InstallationTests.manifest("rust.txt")
-        self.assertIn(["cargo", "binstall", "cargo-binstall"], commands)
+        self.assertIn(["mise", "install", "--yes"], commands)
+        self.assertIn(
+            ["mise", "exec", "--", "cargo", "binstall", "cargo-binstall"],
+            commands,
+        )
         self.assertIn(
             [
+                "mise",
+                "exec",
+                "--",
                 "cargo",
                 "binstall",
                 "--quiet",
@@ -409,19 +419,30 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertTrue(
             any("command cat install/fish.txt" in script for script in fish_scripts)
         )
-        if InstallationTests.platform()["ID"] != "alpine":
-            self.assertTrue(
-                any("xargs npm install -g" in script for script in fish_scripts)
-            )
         self.assertIn(
             [
+                "mise",
+                "exec",
+                "--",
+                "npm",
+                "install",
+                "-g",
+                "--no-fund",
+                "--silent",
+                *InstallationTests.manifest("npm.txt"),
+            ],
+            commands,
+        )
+        self.assertIn(
+            [
+                "mise",
+                "exec",
+                "--",
                 "python",
                 "-m",
                 "pip",
                 "install",
                 "--quiet",
-                "--user",
-                "--break-system-packages",
                 "-r",
                 "install/python.txt",
             ],
@@ -446,95 +467,57 @@ class LocalInstallationTests(unittest.TestCase):
         for alias in ("python", "py", "pip", "vi", "vim"):
             self.assertTrue((self.home / ".local/bin" / alias).is_symlink(), alias)
 
+    def test_bootstraps_mise_when_it_is_not_installed(self) -> None:
+        (self.bin / "mise").unlink()
+        curl = self.bin / "curl"
+        curl.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' "
+            "'mkdir -p \"$HOME/.local/bin\"; "
+            "ln -sf \"$MISE_TEST_BINARY\" \"$HOME/.local/bin/mise\"'\n"
+        )
+        curl.chmod(0o755)
+
+        result = self.run_install_with(MISE_TEST_BINARY=str(self.bin / "recorder"))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        mise = self.home / ".local/bin/mise"
+        self.assertTrue(mise.is_symlink(), mise)
+        self.assertIn(["mise", "install", "--yes"], self.commands())
+
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_mise_install_failure_stops_install_local(self) -> None:
+        result = self.run_install_with(FAIL_MISE_INSTALL="1")
 
-class RustBootstrapTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.directory = Path(self.tempdir.name)
-        self.home = self.directory / "home"
-        self.home.mkdir()
-        self.bin = self.directory / "bin"
-        self.bin.mkdir()
-        self.log = self.directory / "commands.log"
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([["mise", "install", "--yes"]], self.commands())
 
-        recorder = self.bin / "recorder"
-        recorder.write_text(
-            "#!/bin/sh\n"
-            'name=${0##*/}\n'
-            'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
-            'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
-            'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+
+class MiseConfigTests(unittest.TestCase):
+    def test_runtime_contract_is_declared_in_global_config(self) -> None:
+        with (ROOT / "config/mise.toml").open("rb") as config_file:
+            config = tomllib.load(config_file)
+
+        tools = config["tools"]
+        self.assertEqual("lts", tools["node"])
+        self.assertEqual("latest", tools["python"])
+        self.assertEqual("nightly", tools["rust"]["version"])
+        self.assertEqual("minimal", tools["rust"]["profile"])
+        self.assertEqual(
+            {"rustfmt", "clippy", "rust-analyzer", "miri"},
+            set(tools["rust"]["components"]),
         )
-        recorder.chmod(0o755)
-        for command in ("1password", "clojure", "glide", "pip3", "python3"):
-            (self.bin / command).symlink_to(recorder)
+        self.assertNotIn("idiomatic_version_file_enable_tools", config.get("settings", {}))
 
-        rustup_init = self.bin / "rustup-init"
-        rustup_init.write_text(
-            "#!/bin/sh\n"
-            'printf "rustup-init" >> "$INSTALL_COMMAND_LOG"\n'
-            'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
-            'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
-            'mkdir -p "$CARGO_HOME/bin"\n'
-            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/cargo"\n'
-            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/cargo-binstall"\n'
-            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/rustup"\n'
-            'printf "PATH=\\\"$CARGO_HOME/bin:$PATH\\\"; export PATH\\n" > "$CARGO_HOME/env"\n'
-        )
-        rustup_init.chmod(0o755)
-        for directory in (
-            ".config/fish",
-            ".config/zsh/antidote",
-            ".local/lib/PowerShellEditorServices",
-            ".local/lib/cpptools",
-            ".local/share/nvm/v-test",
-        ):
-            (self.home / directory).mkdir(parents=True)
-        (self.home / ".config/fish/fish_plugins").touch()
-        (self.home / ".profile").symlink_to(ROOT / "config/profile")
+    def test_fish_activates_mise_and_no_longer_uses_nvm(self) -> None:
+        fish_config = (ROOT / "config/config.fish").read_text()
 
-    def tearDown(self) -> None:
-        self.tempdir.cleanup()
-
-    def test_fresh_rust_install_selects_components_and_nightly_default(self) -> None:
-        env = os.environ.copy()
-        env.update(
-            CARGO_HOME=str(self.home / ".local/lib/cargo"),
-            DOAS_USER="",
-            HOME=str(self.home),
-            INSTALL_COMMAND_LOG=str(self.log),
-            PATH=f"{self.bin}:{env['PATH']}",
-            RUSTUP_HOME=str(self.home / ".local/lib/rustup"),
-            RUSTUP_RECORDER=str(self.bin / "recorder"),
-            SSH_AUTH_SOCK="",
-            SUDO_USER="",
-        )
-
-        result = subprocess.run(
-            ["./setup.sh", "install-local"],
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        commands = self.log.read_text().splitlines()
-        self.assertIn(
-            "rustup-init <-y> <--profile> <minimal> <-c> <rustfmt> <-c> <clippy> <-c> <rust-analyzer>",
-            commands,
-        )
-        self.assertIn(
-            "rustup <toolchain> <add> <nightly> <--profile> <minimal> <-c> <clippy> <-c> <miri>",
-            commands,
-        )
-        self.assertIn("rustup <default> <nightly>", commands)
+        self.assertIn("mise activate fish | source", fish_config)
+        self.assertNotIn("nvm use", fish_config)
 
 
 if __name__ == "__main__":

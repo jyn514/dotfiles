@@ -85,6 +85,10 @@ if not status --is-interactive
 	exit
 end
 
+if exists mise
+	mise activate fish | source
+end
+
 ## options
 
 export HAVE_BROKEN_WCWIDTH=0
@@ -376,8 +380,6 @@ if [ -z "$old_fish" ]
 	function cd; z $argv; end
 	complete --erase cd
 	complete cd --wraps __zoxide_z
-	nvm use --silent lts
-
 end
 
 if exists direnv

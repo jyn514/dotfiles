@@ -1,0 +1,4 @@
+[tools]
+node = "lts"
+python = "latest"
+rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "clippy", "rust-analyzer", "miri"] }

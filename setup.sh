@@ -44,37 +44,19 @@ install_linux_lol() {
 	install_clojure
 }
 
-install_rust() {
-	set +ue
-	. config/profile
-	set -ue
+mise_exec() {
+	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- "$@"
+}
 
-	if ! exists cargo; then
-		# Rustup unfortunately doesn't have a way for us to ask it to install the MSVC build tools for us.
-		# Do it manually here.
-		if [ "${OSTYPE:-}" = msys ]; then
-			t=$(tmp_file vs_community.XXXXXX.exe)
-			curl -L "https://aka.ms/vs/17/release/vs_community.exe" -o "$t"
-			$t --wait --focusedUi --addProductLang En-us --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64" --add "Microsoft.VisualStudio.Component.Windows11SDK.22000"
-			rm "$t"
-		fi
-		if ! exists rustup-init; then
-			rustup_init=$(tmp_file rustup-init.XXXXXX.sh)
-			curl https://sh.rustup.rs/ > "$rustup_init"
-			chmod +x "$rustup_init"
-		else
-			rustup_init=rustup-init
-		fi
-		$rustup_init -y --profile minimal -c rustfmt -c clippy -c rust-analyzer
-		if [ "${OSTYPE:-}" = msys ]; then
-			PATH="$PATH:${CARGO_HOME:-$HOME/.cargo}/bin"
-		else
-			. "${CARGO_HOME:-$HOME/.cargo}/env"
-		fi
-		rustup toolchain add nightly --profile minimal -c clippy -c miri
-		rustup default nightly
-		unset rustup_init t
+install_mise() {
+	if ! exists mise; then
+		curl https://mise.run | sh
+		PATH="$HOME/.local/bin:$PATH"
 	fi
+	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes
+}
+
+install_rust() {
 	mkdir -p ~/src && cd ~/src
 	cd "$OLDPWD"
 	# avoid recompiling so much
@@ -86,14 +68,14 @@ install_rust() {
     	export GITHUB_TOKEN=$(gh auth token)
 	fi
 	# we need to check for the full path because we have a wrapper in dotfiles/bin
-	if ! [ -x "${CARGO_HOME:-~/.cargo}/bin/cargo-binstall" ]; then
+	if ! [ -x "$CARGO_HOME/bin/cargo-binstall" ]; then
 		# https://github.com/cargo-bins/cargo-binstall#installation
-		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+		mise_exec cargo install cargo-binstall || return
 	else
 		# update to latest version; old versions often hit a rate limit
-		cargo binstall cargo-binstall
+		mise_exec cargo binstall cargo-binstall || return
 	fi
-	tr -d '\r' < install/rust.txt | xargs cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure
+	tr -d '\r' < install/rust.txt | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
 	if exists bat; then
 		bat cache --build
 	fi
@@ -365,15 +347,7 @@ unset shell
 
 setup_python () {
 	echo Installing python packages in python.txt
-	# `pip` on MacOS is an xcode symlink that doesn't work >:(
-	if exists python && python -m pip > /dev/null; then
-		# may take a while
-		# lmao why does `--user` think it breaks system packages
-		python -m pip install --quiet --user --break-system-packages -r install/python.txt
-	else
-		echo pip not found >&2
-		return 1
-	fi
+	mise_exec python -m pip install --quiet -r install/python.txt
 }
 
 setup_vim () {
@@ -451,13 +425,14 @@ setup_install_global_packages () {
 setup_install_local () {
 	echo Installing user packages
 	mkdir -p ~/.local/bin
+	install_mise || return
 
 	if exists apk; then
-		install_alpine
+		install_alpine || return
 	elif [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
-		install_linux_lol
+		install_linux_lol || return
 	elif exists brew; then
-		install_brew
+		install_brew || return
 	fi
 
 	if [ -n "${IS_MACOS:-}" ]; then
@@ -478,15 +453,7 @@ setup_install_local () {
 		curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
 		fish -c 'fisher install (command cat install/fish.txt)'
 	fi
-	# node just doesn't run on musl hosts, lol
-	if ! [ -d ~/.local/share/nvm/v* ] && ! exists apk; then
-		# fish's nvm is *much* faster than the original
-		fish -c '\
-		nvm install lts
-		nvm use lts
-		xargs npm install -g --no-fund --silent < install/npm.txt
-		echo "add_path ~/.local/share/nvm/$(nvm current)/bin" >> ~/.local/profile'
-	fi
+	tr -d '\r' < install/npm.txt | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- npm install -g --no-fund --silent || return
 
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3
@@ -502,20 +469,20 @@ setup_install_local () {
 	fi
 
 	# needs a password for cargo-binstall to log into github
-	install_rust
+	install_rust || return
 }
 
 setup_all () {
 	echo Doing everything
-	setup_install_global  # so we know we have vim, git, etc.
-	setup_install_local
-	setup_basics
-	setup_shell
-	setup_python
-	setup_vim
+	setup_install_global || return  # so we know we have vim, git, etc.
+	setup_install_local || return
+	setup_basics || return
+	setup_shell || return
+	setup_python || return
+	setup_vim || return
 	# this is a mess rn
 	# setup_backup
-	exit 0
+	return 0
 }
 
 message () {
@@ -536,19 +503,20 @@ Choose setup to run: "
 
 cd "$(dirname "$0")"
 . lib/lib.sh
+. lib/env.sh
 
 run() {
 	case "$1" in
 		q*|e*|0) exit 0;;
 		dot*|1) setup_dotfiles;;
 		install-global) setup_install_global_packages;;
-		install-local) setup_install_local; setup_python;;
+		install-local) setup_install_local && setup_python;;
 		bas*) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
 		vi*|4) setup_basics; setup_vim;;
 		bac*|5) setup_basics; setup_backup;;
-		l*|6) setup_install_local; setup_python;;
+		l*|6) setup_install_local && setup_python;;
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
 		all|9) setup_all;;
