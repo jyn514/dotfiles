@@ -30,7 +30,9 @@ export GLFW_IM_MODULE=ibus
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
 export CARGO_MOMMYS_MOODS=ominous
 export FZF_DEFAULT_OPTS='--cycle --exit-0 --select-1 --preview-window=wrap'
-export MAKEFLAGS='-j'
+# Some build wrappers forward MAKEFLAGS' bare `-j` to Ninja, where `-j`
+# requires an explicit job count.
+export MAKEFLAGS='-j4'
 export BAT_TABS=8
 export BAT_STYLE=changes,header,rule
 

@@ -140,6 +140,7 @@ class InstallationTests(unittest.TestCase):
                 "gh": None,
                 "git-delta": "delta",
                 "glow": None,
+                "ipp-usb": None,
                 "kitty": "kitty kitty-kitten",
                 "libpam-fscrypt": None,
                 "libssl-dev": None,
@@ -155,6 +156,7 @@ class InstallationTests(unittest.TestCase):
                 "python3-pip": None,
                 "python3-pylsp": None,
                 "signal-desktop": None,
+                "skanpage": None,
                 "xdot": None,
             }
             self.assertIn(
@@ -429,21 +431,36 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertTrue(
             any("command cat install/fish.txt" in script for script in fish_scripts)
         )
-        self.assertIn(
-            [
-                "mise",
-                "exec",
-                "--",
-                "python",
-                "-m",
-                "pip",
-                "install",
-                "--quiet",
-                "-r",
-                "install/python.txt",
-            ],
-            commands,
-        )
+        if InstallationTests.platform()["ID"] == "alpine":
+            self.assertIn(
+                [
+                    "python3",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--quiet",
+                    "--break-system-packages",
+                    "-r",
+                    "install/python.txt",
+                ],
+                commands,
+            )
+        else:
+            self.assertIn(
+                [
+                    "mise",
+                    "exec",
+                    "--",
+                    "python",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--quiet",
+                    "-r",
+                    "install/python.txt",
+                ],
+                commands,
+            )
         for alias, target in (("python", "python3"), ("py", "python3"), ("pip", "pip3")):
             destination = self.home / ".local/bin" / alias
             self.assertTrue(destination.is_symlink(), destination)
@@ -481,6 +498,44 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertTrue(mise.is_symlink(), mise)
         self.assertIn(["mise", "install", "--yes"], self.commands())
 
+    def test_download_uses_wget_when_curl_is_not_installed(self) -> None:
+        (self.bin / "curl").unlink()
+        wget = self.bin / "wget"
+        wget.write_text(
+            "#!/bin/sh\n"
+            'printf "downloaded\\n" > "$2"\n'
+        )
+        wget.chmod(0o755)
+        output = self.directory / "download"
+        env = os.environ.copy()
+        env.update(HOME=str(self.home), PATH=str(self.bin))
+
+        result = subprocess.run(
+            [
+                "/bin/sh",
+                "-c",
+                f'. ./lib/lib.sh; download https://mise.run "{output}"',
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("downloaded\n", output.read_text())
+
+    def test_failed_mise_download_stops_before_running_mise(self) -> None:
+        (self.bin / "mise").unlink()
+        curl = self.bin / "curl"
+        curl.write_text("#!/bin/sh\nexit 1\n")
+
+        result = self.run_install()
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
     def test_installs_cargo_binstall_before_declarative_cargo_tools(self) -> None:
         result = self.run_install()
 
@@ -501,6 +556,19 @@ class LocalInstallationTests(unittest.TestCase):
             setup,
         )
         self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes rust", setup)
+
+    def test_alpine_setup_omits_node_and_npm_tools(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn("if exists apk; then", setup)
+        self.assertIn("/^node = /d; /^python = /d; /^\"npm:/d", setup)
+        self.assertIn('/^\"aqua:Wilfred\\/difftastic\"/d', setup)
+        self.assertIn('depends = [\"uv\"]', setup)
+
+    def test_setup_installs_cargo_tools_only_through_explicit_binstall(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn("sed '/^\"cargo:/d' config/mise.toml", setup)
 
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")

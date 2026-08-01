@@ -38,9 +38,12 @@ download () {
 	fi
 	echo "downloading $1" >&2
 	if exists curl; then
-		curl --location --silent "$1" > "$OUTPUT"
+		curl --location --silent "$1" > "$OUTPUT" || return
+	elif exists wget; then
+		wget -O "$OUTPUT" "$1" || return
 	else
-		wget -O "$OUTPUT" "$1"
+		echo "download requires curl or wget" >&2
+		return 1
 	fi
 	if [ "${PRINT:-}" ]; then
 		printf "%s" "$OUTPUT"
