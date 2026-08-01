@@ -51,7 +51,7 @@
       "$HOME/.config/lesskey": "config/lesskey",
       "$HOME/.config/nvim/after/queries/markdown/textobjects.scm": "config/markdown-objects.scm",
       "$HOME/.config/mise/config.toml": "config/mise.toml",
-      "$HOME/.config/mise/config.lock": "config/mise.lock",
+      "$HOME/.config/mise/mise.lock": "config/mise.lock",
       "$HOME/.config/nvim/syntax/mumps.vim": "config/mumps.vim",
       "$HOME/.config/nvim/colors/ayu-evolve.lua": "config/nvim-ayu-evolve.lua",
       "$HOME/.local/share/applications/nvim.desktop": "config/nvim.desktop",

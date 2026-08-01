@@ -31,6 +31,10 @@ class InstallationTests(unittest.TestCase):
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
             'if [ "$name" = rpm ] && [ "${1:-}" = -E ]; then printf "42\\n"; fi\n'
+            'if [ "$name" = mise ] && [ "${1:-}" = install ]; then\n'
+            '  lock_dir=${MISE_GLOBAL_CONFIG_FILE%/*}\n'
+            '  [ -f "$lock_dir/mise.lock" ] || exit 88\n'
+            'fi\n'
         )
         recorder.chmod(0o755)
         platform = self.platform()
@@ -283,6 +287,10 @@ class LocalInstallationTests(unittest.TestCase):
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
             'case "$name:$*:${FAIL_MISE_INSTALL:-}" in mise:install*:1) exit 1;; esac\n'
+            'if [ "$name" = mise ] && [ "${1:-}" = install ]; then\n'
+            '  lock_dir=${MISE_GLOBAL_CONFIG_FILE%/*}\n'
+            '  [ -f "$lock_dir/mise.lock" ] || exit 88\n'
+            'fi\n'
             'case "$name:$*:${FAIL_PYTHON_INSTALL:-}" in mise:*python*:1|python:*:1|python3:*:1) exit 1;; esac\n'
             'case "$name:$*:${FAIL_CARGO_TOOLS_INSTALL:-}" in mise:*cargo\\ binstall\\ --quiet*:1) exit 1;; esac\n'
         )
@@ -543,7 +551,7 @@ class LocalInstallationTests(unittest.TestCase):
     def test_mise_install_uses_runtime_config_and_lockfile(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
-        self.assertIn('cp config/mise.lock "$MISE_SETUP_DIR/config.lock"', setup)
+        self.assertIn('cp config/mise.lock "$MISE_SETUP_DIR/mise.lock"', setup)
         self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install", setup)
         self.assertNotIn("gh auth token", setup)
         self.assertNotIn("export GITHUB_TOKEN", setup)
@@ -684,7 +692,7 @@ class MiseConfigTests(unittest.TestCase):
         links = next(section["link"] for section in install if "link" in section)
 
         self.assertEqual("config/mise.toml", links["$HOME/.config/mise/config.toml"])
-        self.assertEqual("config/mise.lock", links["$HOME/.config/mise/config.lock"])
+        self.assertEqual("config/mise.lock", links["$HOME/.config/mise/mise.lock"])
 
     @staticmethod
     def backend_packages(tools: dict[str, object], backend: str) -> set[str]:
