@@ -1,0 +1,75 @@
+#!/bin/sh
+set -eu
+
+jobs=${TEST_JOBS:-8}
+run_containers=0
+
+usage() {
+	echo "usage: $0 [--containers] [--jobs count]" >&2
+}
+
+while [ $# -gt 0 ]; do
+	case $1 in
+		--containers) run_containers=1;;
+		--jobs)
+			shift
+			[ $# -gt 0 ] || { usage; exit 2; }
+			jobs=$1
+			;;
+		-h|--help) usage; exit 0;;
+		*) usage; exit 2;;
+	esac
+	shift
+done
+
+case $jobs in
+	''|*[!0-9]*|0) echo "test job count must be a positive integer" >&2; exit 2;;
+esac
+
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+results=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-tests.XXXXXX")
+trap 'rm -rf "$results"' EXIT HUP INT TERM
+export results
+
+cd "$root"
+
+find scripts -type f \( -name '*_test.py' -o -name 'test_*.py' \) -print0 |
+	xargs -0 -n1 -P "$jobs" sh -c '
+		test_file=$1
+		log_name=$(printf "%s" "$test_file" | tr / _)
+		if python3 "$test_file" > "$results/$log_name" 2>&1; then
+			printf "PASS %s\n" "$test_file"
+		else
+			printf "FAIL %s\n" "$test_file"
+			cat "$results/$log_name"
+			exit 1
+		fi
+	' sh
+
+shell_files=$(rg -l '^#!/bin/sh$' setup.sh track.sh lib bin scripts || true)
+if [ -n "$shell_files" ]; then
+	printf '%s\n' "$shell_files" |
+		xargs -n1 -P "$jobs" sh -n
+fi
+
+python3 -m json.tool install.conf.json >/dev/null
+python3 -m json.tool lib/mimetypes.json >/dev/null
+python3 -c 'import tomllib; tomllib.load(open("config/mise.toml", "rb")); tomllib.load(open("config/mise.lock", "rb"))'
+
+if [ "$run_containers" = 1 ]; then
+	container_results=$results/containers
+	mkdir "$container_results"
+	export container_results
+	printf '%s\n' alpine:latest archlinux:latest fedora:latest ubuntu:26.04 |
+		xargs -n1 -P 4 sh -c '
+			image=$1
+			name=${image%%:*}
+			if scripts/setup/container_test.sh "$image" > "$container_results/$name" 2>&1; then
+				printf "PASS container %s\n" "$image"
+			else
+				printf "FAIL container %s\n" "$image"
+				cat "$container_results/$name"
+				exit 1
+			fi
+		' sh
+fi
