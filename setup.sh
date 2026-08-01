@@ -7,11 +7,7 @@ if [ "$(uname -s)" = Darwin ]; then
 	IS_MACOS=1
 fi
 
-install_alpine() {
-	install_clojure
-}
-
-install_brew() {
+install_macos_local() {
 	# note that we don't actually pass sudo here
 	./lib/setup_sudo.sh install_features
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
@@ -32,7 +28,6 @@ install_linux_lol() {
 		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
 	fi
 
-	install_clojure
 }
 
 mise_exec() {
@@ -79,15 +74,6 @@ install_mise() {
 	esac
 	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
 	unset cargo_tools
-}
-
-install_clojure() {
-	if ! exists clojure; then
-		install=$(download https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh)
-		bash "$install" --prefix ~/.local/lib/clojure
-		ln -s ~/.local/lib/clojure/bin/clojure ~/.local/bin/
-		rm "$install"
-	fi
 }
 
 # create_macos_app() {
@@ -430,12 +416,10 @@ setup_install_local () {
 	mkdir -p ~/.local/bin
 	install_mise || return
 
-	if exists apk; then
-		install_alpine || return
-	elif [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
+	if ! exists apk && [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
 		install_linux_lol || return
-	elif exists brew; then
-		install_brew || return
+	elif [ -n "${IS_MACOS:-}" ]; then
+		install_macos_local || return
 	fi
 
 	if [ -n "${IS_MACOS:-}" ]; then

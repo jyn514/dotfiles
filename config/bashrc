@@ -90,7 +90,6 @@ fi
 source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh
 bind -x '"\t": fzf_bash_completion'
 
-[[ -f ~/.bash-preexec.sh ]] && source ~/.bash-preexec.sh
 eval "$(atuin init bash --disable-up-arrow)"
 if exists direnv; then
 	eval "$(direnv hook bash)"
