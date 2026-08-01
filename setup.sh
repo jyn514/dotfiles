@@ -210,17 +210,13 @@ done'
 setup_dotfiles () {
 	echo Installing configuration to ~
 	if ! exists python3; then
-		if exists apk && [ "$(id -u)" = 0 ]; then
-			apk add python3 || return
-		else
-			echo "dotfile setup requires python3; run the global package setup first" >&2
-			return 1
-		fi
+		echo "dotfile setup requires python3; run setup option 7 or 9 first" >&2
+		return 1
 	fi
 	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
 	export JJ_CONFIG_PATH
 	python3 lib/backup_dotfile_collisions.py install.conf.json || return
-	lib/dotbot/bin/dotbot -d "$(pwd)" -c install.conf.json || return
+	lib/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
@@ -228,7 +224,7 @@ setup_dotfiles () {
 }
 
 setup_basics () {
-	setup_dotfiles
+	setup_dotfiles || return
 
 	discord=$HOME/.config/discord/settings.json
 	if [ -e $discord ]; then
@@ -304,7 +300,7 @@ setup_kde() {
 setup_shell () {
 	echo Changing default shell
 	for shell in fish zsh bash; do
-		if echo "$SHELL" | grep $shell; then
+		if echo "${SHELL:-}" | grep $shell; then
 			echo using current shell "$shell"
 			break
 		elif exists $shell; then
@@ -502,8 +498,8 @@ run() {
 		bas*) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
-		vi*|4) setup_basics; setup_vim;;
-		bac*|5) setup_basics; setup_backup;;
+		vi*|4) setup_basics && setup_vim;;
+		bac*|5) setup_basics && setup_backup;;
 		l*|6) setup_install_local && setup_python;;
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
