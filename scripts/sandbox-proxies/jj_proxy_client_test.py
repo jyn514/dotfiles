@@ -52,6 +52,8 @@ class JjProxyClientTest(unittest.TestCase):
                 **os.environ,
                 "SANDBOX_PROXY_DIR": str(root / "proxies"),
                 "JJ_PROXY_REPO": str(repository),
+                "JJ_USER": "Codex gpt-test",
+                "JJ_EMAIL": "codex@example.test",
             }
             result = subprocess.run(
                 [str(CLIENT), "status", "--quiet"], cwd=current, env=environment,
@@ -62,7 +64,13 @@ class JjProxyClientTest(unittest.TestCase):
             self.assertEqual(7, result.returncode)
             self.assertEqual("output\n", result.stdout)
             self.assertEqual("warning\n", result.stderr)
-            self.assertEqual({"version": 1, "cwd": "nested", "argv": ["status", "--quiet"]}, request)
+            self.assertEqual({
+                "version": 1,
+                "cwd": "nested",
+                "argv": ["status", "--quiet"],
+                "user": "Codex gpt-test",
+                "email": "codex@example.test",
+            }, request)
 
 
 if __name__ == "__main__":

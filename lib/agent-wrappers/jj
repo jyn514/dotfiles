@@ -1,7 +1,52 @@
 #!/bin/sh
 set -eu
 
+codex_version() {
+  session_root=${CODEX_HOME:-$HOME/.codex}
+  session=$(find "$session_root/sessions" "$session_root/archived_sessions" \
+    -type f -name "*${CODEX_THREAD_ID:-}.jsonl" -print -quit 2>/dev/null) || return
+  [ -n "$session" ] || return
+  jq -r '
+      select(.type == "turn_context")
+      | .payload.model
+      | select(. != null and . != "")
+    ' "$session" | tail -n1
+}
+
+is_jj_write() {
+  case "$1" in
+    commit|split) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Identity by agent, auto-detected from each runner's own env. Resolve it before
+# forwarding sandbox calls so the trusted proxy can stamp the same identity.
+agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
+agent=${agent:-${CODEX_THREAD_ID:+codex}}
+subcommand=${1:-}
+case "$agent" in
+  claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
+  codex)
+    model=$(codex_version)
+    JJ_EMAIL='breq@jyn.dev'
+    JJ_USER="Codex $model"
+
+    case "$model" in
+      "")
+        if is_jj_write "$subcommand"; then
+          printf '%s\n' "jj wrapper: warning: could not determine Codex model" >&2
+        fi
+        JJ_USER='Codex'
+        ;;
+      gpt-5.3-codex-spark)
+        JJ_EMAIL='343-guilty-spark@jyn.dev'
+        ;;
+    esac
+esac
+
 if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
+  export JJ_USER JJ_EMAIL
   exec /lib/agent-wrappers/jj-proxy-client "$@"
 fi
 
@@ -30,23 +75,6 @@ done
 PATH=$filtered_path
 export PATH
 
-codex_version() {
-  find "${CODEX_HOME:-$HOME/.codex}/sessions" -name "*${CODEX_THREAD_ID:-}.jsonl" -print0 -quit \
-    | xargs -0 jq -r '
-        select(.type == "turn_context")
-        | .payload.model
-        | select(. != null and . != "")
-      ' \
-    | tail -n1
-}
-
-is_jj_write() {
-  case "$1" in
-    commit|split) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 should_force_plain_diff() {
   [ ! -t 1 ] || return 1
 
@@ -64,34 +92,6 @@ has_diff_formatter_config() {
   done
   return 1
 }
-
-# Identity by agent, auto-detected from each runner's own env: Claude Code
-# exports CLAUDECODE, Codex exports CODEX_THREAD_ID. JJ_AGENT overrides both
-# if ever needed. An unknown caller (a human at the wrapper) falls through to
-# the real jj's own config. Set via JJ_USER/JJ_EMAIL so every jj call below
-# inherits one identity for both author and committer.
-agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
-agent=${agent:-${CODEX_THREAD_ID:+codex}}
-subcommand=${1:-}
-case "$agent" in
-  claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
-  codex)
-    model=$(codex_version)
-    JJ_EMAIL='breq@jyn.dev'
-    JJ_USER="Codex $model"
-
-    case "$model" in
-      "")
-        if is_jj_write "$subcommand"; then
-          printf '%s\n' "jj wrapper: warning: could not determine Codex model" >&2
-        fi
-        JJ_USER='Codex'
-        ;;
-      gpt-5.3-codex-spark)
-        JJ_EMAIL='343-guilty-spark@jyn.dev'
-        ;;
-    esac
-esac
 
 if [ -n "${JJ_USER:-}" ]; then
   # jj stamps author at change *creation*, committer at commit — so a change
