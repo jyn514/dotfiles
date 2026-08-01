@@ -559,7 +559,9 @@ run() {
 
 if ! [ $# = 0 ]; then
 	run "$1"
-	if [ $? = 126 ]; then message; fi
+	status=$?
+	if [ "$status" = 126 ]; then message; fi
+	exit "$status"
 else
 	message
 	while read -r choice; do

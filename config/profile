@@ -39,6 +39,9 @@ add_path_if_present() {
 	fi
 }
 
+# Set tool homes before lib/paths.sh uses them to construct PATH.
+. "$DOTFILES/lib/env.sh"
+
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
 fi
@@ -83,9 +86,6 @@ export VISUAL=$EDITOR
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 fi
-
-# set up env
-. "$DOTFILES/lib/env.sh"
 
 case "$-" in
 	*i*) ;;

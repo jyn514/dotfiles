@@ -283,7 +283,7 @@ class LocalInstallationTests(unittest.TestCase):
             'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
-            'if [ "$name" = python3 ] && [ "${FAIL_PYTHON_INSTALL:-}" = 1 ]; then exit 1; fi\n'
+            'case "$name:${FAIL_PYTHON_INSTALL:-}" in python:1|python3:1) exit 1;; esac\n'
         )
         recorder.chmod(0o755)
         for command in (
@@ -446,7 +446,6 @@ class LocalInstallationTests(unittest.TestCase):
         for alias in ("python", "py", "pip", "vi", "vim"):
             self.assertTrue((self.home / ".local/bin" / alias).is_symlink(), alias)
 
-    @unittest.expectedFailure
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
 
