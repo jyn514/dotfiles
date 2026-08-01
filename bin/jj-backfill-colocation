@@ -1,0 +1,148 @@
+#!/usr/bin/env fish
+
+if test (count $argv) -ne 3
+    echo "usage: jj-backfill-colocation MAIN_WORKSPACE NAME WORKSPACE_PATH" >&2
+    exit 2
+end
+
+set -l name $argv[2]
+
+if not test -d "$argv[1]"; or not test -d "$argv[3]"
+    echo "main workspace and workspace path must both be directories" >&2
+    exit 1
+end
+
+set -l main (realpath $argv[1]); or exit 1
+set -l path (realpath $argv[3]); or exit 1
+set -l backup (string join '' $path .pre-colocate)
+set -l failed (string join '' $path .failed-colocate)
+set -l workspace_index "$main/.jj/repo/workspace_store/index"
+set -l workspace_index_backup (string join '' $path .workspace-store-index.pre-colocate)
+set -l saved_workspace_index .jj-workspace-store-index.pre-colocate
+
+if test -e "$backup"; or test -e "$failed"; or test -e "$path/.jj.pre-colocate"; or test -e "$workspace_index_backup"
+    echo "backup or recovery path already exists for $path" >&2
+    exit 1
+end
+
+if not test -f "$workspace_index"
+    echo "workspace store index not found: $workspace_index" >&2
+    exit 1
+end
+
+# Fail before changing anything if this jj lacks colocated-workspace support.
+jj workspace add --help | string match -q '*--colocate*'
+or begin
+    echo "the jj found on PATH does not support workspace add --colocate" >&2
+    exit 1
+end
+
+if not test -d "$main/.git"
+    echo "main workspace is not colocated with Git: $main" >&2
+    exit 1
+end
+
+set -l workspace_rows (jj -R "$main" workspace list \
+    -T 'name ++ "\t" ++ root ++ "\n"'); or exit
+set -l workspace_matches false
+for row in $workspace_rows
+    set -l fields (string split -m 1 \t -- $row)
+    if test "$fields[1]" = "$name"; and test "$fields[2]" = "$path"
+        set workspace_matches true
+        break
+    end
+end
+
+if test "$workspace_matches" != true
+    echo "workspace $name is not registered at $path" >&2
+    exit 1
+end
+
+# Snapshot the workspace and remember its current working-copy commit.
+jj -R "$path" status; or exit
+set -l commit (jj -R "$path" log --no-graph -r @ -T 'commit_id')
+test -n "$commit"; or exit 1
+set -l sparse_patterns (jj -R "$path" sparse list); or exit
+set -l original_operation (jj -R "$main" op log --no-graph -n 1 -T 'id')
+test -n "$original_operation"; or exit 1
+
+cp "$workspace_index" "$workspace_index_backup"; or exit
+mv "$path" "$backup"; or begin
+    rm "$workspace_index_backup"
+    exit 1
+end
+
+function rollback --no-scope-shadowing
+    # Remove the replacement workspace and its Git worktree registration.
+    if test -e "$path"
+        jj -R "$main" workspace forget "$name" >/dev/null
+        mv "$path" "$failed"
+        or echo "failed to preserve partial replacement at $failed" >&2
+    end
+
+    jj -R "$main" op restore "$original_operation" >/dev/null
+    or echo "failed to restore jj operation $original_operation" >&2
+    set -l workspace_index_source "$workspace_index_backup"
+    if not test -f "$workspace_index_source"
+        set workspace_index_source "$backup/$saved_workspace_index"
+    end
+    if cp "$workspace_index_source" "$workspace_index"
+        rm "$workspace_index_source"
+    else
+        echo "failed to restore workspace root registry $workspace_index" >&2
+    end
+
+    if not test -e "$path"
+        mv "$backup" "$path"
+        or echo "original workspace remains at $backup" >&2
+    end
+end
+
+jj -R "$main" workspace forget "$name"; or begin
+    rollback
+    exit 1
+end
+
+jj -R "$main" workspace add --colocate --name "$name" -r "$commit" "$path"
+or begin
+    echo "recreation failed; restoring original workspace" >&2
+    rollback
+    exit 1
+end
+
+# workspace add creates a child; resume editing the original working-copy commit.
+jj -R "$path" edit "$commit"; or begin
+    echo "failed to restore $commit as the working-copy commit" >&2
+    rollback
+    exit 1
+end
+
+set -l sparse_args --clear
+for pattern in $sparse_patterns
+    set -a sparse_args --add "$pattern"
+end
+jj -R "$path" sparse set $sparse_args; or begin
+    rollback
+    exit 1
+end
+
+# Restore ignored and untracked files without replacing workspace metadata.
+rsync -a --exclude=/.jj --exclude=/.git "$backup/" "$path/"; or begin
+    rollback
+    exit 1
+end
+jj -R "$path" status; or begin
+    rollback
+    exit 1
+end
+
+# Keep recovery metadata, but prevent the backup from acting as this workspace.
+mv "$workspace_index_backup" "$backup/$saved_workspace_index"; or begin
+    rollback
+    exit 1
+end
+mv "$backup/.jj" "$backup/.jj.pre-colocate"; or begin
+    rollback
+    exit 1
+end
+echo "backup retained at $backup"
