@@ -2,6 +2,7 @@
 set -eu
 
 image=${1:?usage: $0 <container-image>}
+setup_command_prefix=${SETUP_COMMAND_PREFIX:-./setup.sh}
 
 if [ -n "${CONTAINER_ENGINE:-}" ]; then
 	engine=$CONTAINER_ENGINE
@@ -19,7 +20,7 @@ case $image in
 	*) echo "$0: unsupported image: $image" >&2; exit 2;;
 esac
 
-container=$("$engine" create --workdir /work "$image" sh -ec "
+container=$("$engine" create --env SETUP_COMMAND_PREFIX="$setup_command_prefix" --workdir /work "$image" sh -ec "
 		$install
 		python3 scripts/setup/setup_test.py
 		python3 scripts/setup/install_test.py

@@ -22,3 +22,10 @@ jobs:
         env:
           CONTAINER_ENGINE: docker
         run: scripts/setup/container_test.sh "${{ matrix.image }}"
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test setup
+        run: python3 -m unittest discover -s scripts/setup -p '*_test.py'
