@@ -22,7 +22,7 @@ Add focused tests beside the feature under `scripts/<feature>/`. Name Python tes
 
 ## Commit & Pull Request Guidelines
 
-Use Jujutsu (`jj`) by default for inspection and change management: `jj status`, `jj diff`, and `jj log`. Recent history uses short imperative summaries, for example `Fix PATH entry detection` or `Make agent jj diffs plain non-interactively`. Keep commits narrow and name the affected tool when useful. Pull requests should state the user-visible change, list commands run, note platform assumptions, and include screenshots only for visual terminal or desktop behavior.
+Use Jujutsu (`jj`) by default for inspection and change management: `jj status`, `jj diff`, and `jj log`. Use a short imperative subject, for example `Fix PATH entry detection`. Add a commit body when the motivation, failure mode, design constraint, or verification would not be obvious to a future reader. Keep commits narrow and name the affected tool when useful. Pull requests should state the user-visible change, list commands run, note platform assumptions, and include screenshots only for visual terminal or desktop behavior.
 
 ## Security & Configuration Tips
 

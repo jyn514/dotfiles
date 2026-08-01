@@ -42,6 +42,25 @@ Do not run commands with `2>/dev/null` at the same time as a command that runs o
 Never use `git diff --check`; it's sometimes not installed in your sandbox.
 Use `diff-check` instead.
 
+## Commit messages
+
+Write commit messages for the next person debugging or reviewing the change, not merely to label the diff.
+
+Use an imperative subject that names the affected behavior. Keep the subject concise, but add a body whenever the reason, failure mode, constraints, or verification are not obvious from the diff.
+
+The body should explain:
+
+- what user-visible or operational problem existed
+- why the previous behavior was wrong
+- the important design choice or constraint behind the fix
+- how the change was verified, especially for regressions or security boundaries
+
+Do not narrate file-by-file edits or repeat the subject. Record information that would otherwise require reconstructing the original investigation.
+
+For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe.
+
+Before running `jj describe`, inspect the complete diff and write the body from the finished change. Use `jj describe -m` with a multiline message. A one-line message is appropriate only when both the motivation and implementation are genuinely obvious.
+
 ### Shell command construction
 
 Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
