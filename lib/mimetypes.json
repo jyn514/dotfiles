@@ -24,6 +24,17 @@
       "txt",
       "yaml",
       "yml"
-    ]
+    ],
+    "json_handler": {
+      "bundle_id": "dev.jyn.fx",
+      "extensions": [
+        "json"
+      ],
+      "name": "fx",
+      "role": "Viewer",
+      "utis": [
+        "public.json"
+      ]
+    }
   }
 }

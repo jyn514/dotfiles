@@ -177,6 +177,24 @@ class LinuxMimetypeTests(unittest.TestCase):
 
 
 class MacOSMimetypeTests(unittest.TestCase):
+    def test_only_running_handler_inside_target_app_is_terminated(self) -> None:
+        app = Path("/Users/test/Applications/nvim.app")
+        processes = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                "  10 /Users/test/Applications/nvim.app/Contents/MacOS/file-handler -psn\n"
+                "  11 /Applications/Other.app/Contents/MacOS/file-handler\n"
+            ),
+        )
+        with (
+            mock.patch.object(subprocess, "run", return_value=processes),
+            mock.patch.object(os, "kill") as kill,
+        ):
+            setup_mimetypes.terminate_running_handler(app)
+
+        kill.assert_called_once_with(10, setup_mimetypes.signal.SIGTERM)
+
     def test_source_discovery_excludes_stale_managed_utis(self) -> None:
         completed = subprocess.CompletedProcess(
             [],
@@ -209,6 +227,16 @@ class MacOSMimetypeTests(unittest.TestCase):
             )
 
         self.assertEqual({"md": "net.daringfireball.markdown"}, resolved)
+
+    def test_planned_uti_registration_makes_extension_write_redundant(self) -> None:
+        missing = setup_mimetypes.missing_extension_associations(
+            ["json", "rs"],
+            {"json": "public.json"},
+            set(),
+            ["public.json"],
+        )
+
+        self.assertEqual(["rs"], missing)
 
     def test_policy_does_not_claim_broad_text_web_or_calendar_types(self) -> None:
         policy = setup_mimetypes.load_policy(ROOT / "lib/mimetypes.json")["macos"]
@@ -317,11 +345,14 @@ class MacOSMimetypeTests(unittest.TestCase):
             app = Path(temporary_directory) / "nvim.app"
             setup_mimetypes.write_macos_app(
                 app,
-                {
-                    "editor_utis": ["public.plain-text", "public.source-code"],
-                    "editor_extension_exceptions": ["rs"],
-                },
-                ROOT / "lib/nvim-launcher.swift",
+                name="Neovim",
+                bundle_id="dev.jyn.nvim",
+                command=[str(ROOT / "bin/hx-hax")],
+                role="Editor",
+                utis=["public.plain-text", "public.source-code"],
+                launcher_source=ROOT / "lib/file-handler.swift",
+                imported_extensions=["rs"],
+                imported_parent="public.plain-text",
             )
 
             with (app / "Contents/Info.plist").open("rb") as plist_file:
@@ -334,23 +365,49 @@ class MacOSMimetypeTests(unittest.TestCase):
             [
                 "public.plain-text",
                 "public.source-code",
-                "dev.jyn.plain-text.rs",
+                "dev.jyn.nvim.document.rs",
             ],
             document_type["LSItemContentTypes"],
         )
         self.assertEqual("Editor", document_type["CFBundleTypeRole"])
         imported = plist["UTImportedTypeDeclarations"][0]
-        self.assertEqual("dev.jyn.plain-text.rs", imported["UTTypeIdentifier"])
+        self.assertEqual("dev.jyn.nvim.document.rs", imported["UTTypeIdentifier"])
         self.assertEqual(["public.plain-text"], imported["UTTypeConformsTo"])
         self.assertEqual(
             ["rs"], imported["UTTypeTagSpecification"]["public.filename-extension"]
         )
+        self.assertEqual([str(ROOT / "bin/hx-hax")], plist["JynCommand"])
         self.assertIn("openFiles filenames", launcher)
-        self.assertIn('["hx-hax", filename]', launcher)
+        self.assertIn("command + [filename]", launcher)
+        self.assertIn("sender.terminate(nil)", launcher)
         self.assertIn('--filter-source-utis', launcher)
         self.assertNotIn("type.conforms(to: .text)", launcher)
         self.assertIn("type.conforms(to: .sourceCode)", launcher)
-        self.assertEqual((ROOT / "lib/nvim-launcher.swift").read_text(), launcher)
+        self.assertEqual((ROOT / "lib/file-handler.swift").read_text(), launcher)
+
+    def test_generated_fx_app_handles_json_through_terminal_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            app = Path(temporary_directory) / "fx.app"
+            setup_mimetypes.write_macos_app(
+                app,
+                name="fx",
+                bundle_id="dev.jyn.fx",
+                command=["REAL_EDITOR=fx", str(ROOT / "bin/hx-hax")],
+                role="Viewer",
+                utis=["public.json"],
+                launcher_source=ROOT / "lib/file-handler.swift",
+            )
+
+            with (app / "Contents/Info.plist").open("rb") as plist_file:
+                plist = plistlib.load(plist_file)
+
+        self.assertEqual("dev.jyn.fx", plist["CFBundleIdentifier"])
+        self.assertEqual(
+            ["REAL_EDITOR=fx", str(ROOT / "bin/hx-hax")], plist["JynCommand"]
+        )
+        document_type = plist["CFBundleDocumentTypes"][0]
+        self.assertEqual("Viewer", document_type["CFBundleTypeRole"])
+        self.assertEqual(["public.json"], document_type["LSItemContentTypes"])
 
 
 if __name__ == "__main__":

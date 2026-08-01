@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import plistlib
+import signal
 import shutil
 import subprocess
 import sys
@@ -14,7 +15,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 POLICY_PATH = ROOT / "lib/mimetypes.json"
 BUNDLE_ID = "dev.jyn.nvim"
-MANAGED_UTI_PREFIXES = ("dev.jyn.plain-text.", "dev.jyn.source-code.")
+MANAGED_UTI_PREFIXES = (
+    "dev.jyn.nvim.document.",
+    "dev.jyn.plain-text.",
+    "dev.jyn.source-code.",
+)
 LAUNCH_SERVICES_DOMAIN = (
     "com.apple.LaunchServices/com.apple.launchservices.secure"
 )
@@ -140,42 +145,55 @@ def clean_macos_preferences(
         plistlib.dump(preferences, output, sort_keys=False)
 
 
-def write_macos_app(app: Path, policy: dict, launcher_source: Path) -> None:
+def write_macos_app(
+    app: Path,
+    *,
+    name: str,
+    bundle_id: str,
+    command: list[str],
+    role: str,
+    utis: list[str],
+    launcher_source: Path,
+    imported_extensions: list[str] | None = None,
+    imported_parent: str = "public.data",
+) -> None:
     contents = app / "Contents"
     macos = contents / "MacOS"
     macos.mkdir(parents=True, exist_ok=True)
+    imported_extensions = imported_extensions or []
     extension_utis = [
-        f"dev.jyn.plain-text.{extension.replace('_', '-')}"
-        for extension in policy["editor_extension_exceptions"]
+        f"{bundle_id}.document.{extension.replace('_', '-')}"
+        for extension in imported_extensions
     ]
     plist = {
-        "CFBundleDisplayName": "Neovim",
+        "CFBundleDisplayName": name,
         "CFBundleDocumentTypes": [
             {
-                "CFBundleTypeName": "Text document",
-                "CFBundleTypeRole": "Editor",
+                "CFBundleTypeName": f"{name} document",
+                "CFBundleTypeRole": role,
                 "LSHandlerRank": "Alternate",
-                "LSItemContentTypes": [*policy["editor_utis"], *extension_utis],
+                "LSItemContentTypes": [*utis, *extension_utis],
             }
         ],
-        "CFBundleExecutable": "nvim-launcher",
-        "CFBundleIdentifier": "dev.jyn.nvim",
+        "CFBundleExecutable": "file-handler",
+        "CFBundleIdentifier": bundle_id,
         "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleName": "Neovim",
+        "CFBundleName": name,
         "CFBundlePackageType": "APPL",
         "CFBundleShortVersionString": "1.0",
+        "JynCommand": command,
         "LSUIElement": True,
         "UTImportedTypeDeclarations": [
             {
-                "UTTypeConformsTo": ["public.plain-text"],
-                "UTTypeDescription": f"{extension} text",
+                "UTTypeConformsTo": [imported_parent],
+                "UTTypeDescription": f"{extension} {name} document",
                 "UTTypeIdentifier": identifier,
                 "UTTypeTagSpecification": {
                     "public.filename-extension": [extension]
                 },
             }
             for extension, identifier in zip(
-                policy["editor_extension_exceptions"], extension_utis
+                imported_extensions, extension_utis
             )
         ],
     }
@@ -253,14 +271,16 @@ def export_launch_services(path: Path) -> bool:
     return result.returncode == 0
 
 
-def neovim_handler_roles(preferences: dict) -> list[tuple[str, str]]:
+def bundle_handler_roles(
+    preferences: dict, bundle_id: str
+) -> list[tuple[str, str]]:
     associations = []
     for handler in preferences.get("LSHandlers", []):
         if not isinstance(handler, dict):
             continue
         content_type = handler.get("LSHandlerContentType", "<unknown type>")
         for key, value in handler.items():
-            if key.startswith("LSHandlerRole") and value == BUNDLE_ID:
+            if key.startswith("LSHandlerRole") and value == bundle_id:
                 associations.append((content_type, key.removeprefix("LSHandlerRole")))
     return sorted(associations)
 
@@ -270,11 +290,31 @@ def compile_launcher(output: Path) -> None:
         [
             "xcrun",
             "swiftc",
-            str(ROOT / "lib/nvim-launcher.swift"),
+            str(ROOT / "lib/file-handler.swift"),
             "-o",
             str(output),
         ]
     )
+
+
+def terminate_running_handler(app: Path) -> None:
+    executable = str(app / "Contents/MacOS/file-handler")
+    processes = subprocess.run(
+        ["ps", "-axo", "pid=,command="],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    for line in processes.stdout.splitlines():
+        try:
+            pid_text, command = line.strip().split(maxsplit=1)
+        except ValueError:
+            continue
+        if command == executable or command.startswith(executable + " "):
+            try:
+                os.kill(int(pid_text), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
 
 def filter_source_utis(classifier: Path, utis: list[str]) -> list[str]:
@@ -308,6 +348,20 @@ def resolve_extension_utis(
     return resolved
 
 
+def missing_extension_associations(
+    extensions: list[str],
+    resolved_utis: dict[str, str],
+    existing_utis: set[str],
+    planned_utis: list[str],
+) -> list[str]:
+    return [
+        extension
+        for extension in extensions
+        if resolved_utis.get(extension) not in existing_utis
+        and resolved_utis.get(extension) not in planned_utis
+    ]
+
+
 def macos_setup(policy: dict, dry_run: bool) -> None:
     required_commands = ("xcrun",) if dry_run else ("duti", "xcrun")
     missing = [
@@ -320,7 +374,7 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
         temporary_directory = Path(temporary)
         preferences_path = temporary_directory / "handlers.plist"
         clean_path = temporary_directory / "handlers-clean.plist"
-        classifier = temporary_directory / "nvim-launcher"
+        classifier = temporary_directory / "file-handler"
         preferences_available = export_launch_services(preferences_path)
         if preferences_available:
             with preferences_path.open("rb") as input_file:
@@ -339,19 +393,48 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
         source_utis = filter_source_utis(classifier, registered_utis)
         explicit_utis = policy["macos"]["editor_utis"]
         extensions = policy["macos"]["editor_extension_exceptions"]
-        extension_utis = resolve_extension_utis(classifier, extensions)
-        existing_roles = neovim_handler_roles(preferences)
+        json_handler = policy["macos"]["json_handler"]
+        json_extensions = json_handler["extensions"]
+        extension_utis = resolve_extension_utis(
+            classifier, [*extensions, *json_extensions]
+        )
+        existing_roles = bundle_handler_roles(preferences, BUNDLE_ID)
         existing_utis = {content_type for content_type, _ in existing_roles}
         desired_utis = set([*explicit_utis, *source_utis, *extension_utis.values()])
         stale_roles = [
             role for role in existing_roles if role[0] not in desired_utis
         ]
         missing_utis = sorted(set([*explicit_utis, *source_utis]) - existing_utis)
-        missing_extensions = [
-            extension
-            for extension in extensions
-            if extension_utis.get(extension) not in existing_utis
+        missing_extensions = missing_extension_associations(
+            extensions, extension_utis, existing_utis, missing_utis
+        )
+        json_bundle_id = json_handler["bundle_id"]
+        json_existing_roles = bundle_handler_roles(preferences, json_bundle_id)
+        json_existing_utis = {
+            content_type for content_type, _ in json_existing_roles
+        }
+        json_desired_utis = set(
+            [
+                *json_handler["utis"],
+                *(
+                    extension_utis[extension]
+                    for extension in json_extensions
+                    if extension in extension_utis
+                ),
+            ]
+        )
+        json_stale_roles = [
+            role for role in json_existing_roles if role[0] not in json_desired_utis
         ]
+        json_missing_utis = sorted(
+            set(json_handler["utis"]) - json_existing_utis
+        )
+        json_missing_extensions = missing_extension_associations(
+            json_extensions,
+            extension_utis,
+            json_existing_utis,
+            json_missing_utis,
+        )
 
         if dry_run:
             print("Remove existing Neovim handler roles:")
@@ -372,16 +455,62 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
                     print(f"  .{extension}")
             else:
                 print("  (none)")
+            print("Remove existing fx handler roles:")
+            if json_stale_roles:
+                for content_type, role in json_stale_roles:
+                    print(f"  {content_type} ({role or 'All'})")
+            else:
+                print("  (none)")
+            print("Register fx UTIs:")
+            if json_missing_utis:
+                for uti in json_missing_utis:
+                    print(f"  {uti}")
+            else:
+                print("  (none)")
+            print("Register fx extensions:")
+            if json_missing_extensions:
+                for extension in json_missing_extensions:
+                    print(f"  .{extension}")
+            else:
+                print("  (none)")
             return
 
-        app = Path.home() / "Applications/nvim.app"
-        write_macos_app(app, policy["macos"], ROOT / "lib/nvim-launcher.swift")
-        compile_launcher(app / "Contents/MacOS/nvim-launcher")
+        applications = Path.home() / "Applications"
+        app = applications / "nvim.app"
+        terminate_running_handler(app)
+        write_macos_app(
+            app,
+            name="Neovim",
+            bundle_id=BUNDLE_ID,
+            command=[str(ROOT / "bin/hx-hax")],
+            role="Editor",
+            utis=explicit_utis,
+            launcher_source=ROOT / "lib/file-handler.swift",
+            imported_extensions=extensions,
+            imported_parent="public.plain-text",
+        )
+        compile_launcher(app / "Contents/MacOS/file-handler")
         run([str(LSREGISTER), "-f", str(app)])
+        fx_app = applications / "fx.app"
+        terminate_running_handler(fx_app)
+        write_macos_app(
+            fx_app,
+            name=json_handler["name"],
+            bundle_id=json_bundle_id,
+            command=["REAL_EDITOR=fx", str(ROOT / "bin/hx-hax")],
+            role=json_handler["role"],
+            utis=json_handler["utis"],
+            launcher_source=ROOT / "lib/file-handler.swift",
+        )
+        compile_launcher(fx_app / "Contents/MacOS/file-handler")
+        run([str(LSREGISTER), "-f", str(fx_app)])
         if preferences_available:
-            clean_macos_preferences(
-                preferences_path, clean_path, BUNDLE_ID, desired_utis
+            remove_macos_bundle_handlers(preferences, BUNDLE_ID, desired_utis)
+            remove_macos_bundle_handlers(
+                preferences, json_bundle_id, json_desired_utis
             )
+            with clean_path.open("wb") as output:
+                plistlib.dump(preferences, output, sort_keys=False)
             run(
                 ["defaults", "import", LAUNCH_SERVICES_DOMAIN, str(clean_path)],
                 stdout=subprocess.DEVNULL,
@@ -390,6 +519,11 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
             run(["duti", "-s", BUNDLE_ID, uti, "editor"])
         for extension in missing_extensions:
             run(["duti", "-s", BUNDLE_ID, f".{extension}", "editor"])
+        json_role = json_handler["role"].lower()
+        for uti in json_missing_utis:
+            run(["duti", "-s", json_bundle_id, uti, json_role])
+        for extension in json_missing_extensions:
+            run(["duti", "-s", json_bundle_id, f".{extension}", json_role])
 
 
 def main() -> None:
