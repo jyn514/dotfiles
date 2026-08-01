@@ -18,7 +18,6 @@ fzy
 # https://github.com/dundee/gdu
 # *significantly* faster than `dust`
 gdu
-gh
 git
 git-absorb
 git-delta

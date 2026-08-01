@@ -63,7 +63,6 @@ queue_install() {
 			ninja-build) pkg=ninja;;
 			clangd) pkg=clang;;
 			fd-find) pkg=fd;;
-			gh) pkg=github-cli;;
 			manpages) pkg=man-pages;;
 			openjdk21) pkg=jdk21-openjdk;;
 			python3-pip) pkg=python-pip;;
@@ -72,7 +71,6 @@ queue_install() {
 		esac	
 	elif [ "$IS_ALPINE" = 1 ]; then
 		case "$pkg" in
-			gh) pkg=github-cli;;
 			nvim) pkg=neovim;;
 			fd-find) pkg=fd;;
 			git-delta) pkg=delta;;
@@ -225,7 +223,7 @@ install_features () {
 		dnf install -y $packages
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
-		apk add less libgcc py3-pip shadow zsh $packages
+		apk add bash less libgcc py3-pip shadow zsh $packages
 	elif [ -n "$IS_ARCH" ]; then
 		pacman --sync --refresh --sysupgrade --needed $packages
 	elif [ -n "$IS_CHIMERA" ]; then
