@@ -21,14 +21,23 @@ case $image in
 esac
 
 if [ "${image%%:*}" = alpine ]; then
-	bootstrap_check='printf "1\n0\n" | ./setup.sh'
+	bootstrap_check='for option in 1 4 5; do
+			if ./setup.sh "$option" > /tmp/dotfiles-bootstrap.out 2>&1; then
+				echo "setup option $option unexpectedly succeeded without python3" >&2
+				exit 1
+			fi
+			grep -q "dotfile setup requires python3; run setup option 7 or 9 first" /tmp/dotfiles-bootstrap.out
+		done'
+	post_install_check='printf "1\n0\n" | ./setup.sh'
 else
 	bootstrap_check=:
+	post_install_check=:
 fi
 
 container=$("$engine" create --env SETUP_COMMAND_PREFIX="$setup_command_prefix" --workdir /work "$image" sh -ec "
 		$bootstrap_check
 		$install
+		$post_install_check
 		python3 scripts/setup/setup_test.py
 		python3 scripts/setup/menu_test.py
 		python3 scripts/track/track_test.py

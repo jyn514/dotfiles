@@ -11,6 +11,97 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class InteractiveMenuTests(unittest.TestCase):
+    def test_every_numbered_option_dispatches_to_the_expected_setup(self) -> None:
+        overrides = """
+record() { printf '%s\\n' "$1" >> "$SETUP_OPTION_LOG"; }
+setup_dotfiles() { record dotfiles; }
+setup_shell() { record shell; }
+setup_python() { record python; }
+setup_basics() { record basics; }
+setup_vim() { record vim; }
+setup_backup() { record backup; }
+setup_install_local() { record local; }
+setup_install_global() { record global; }
+setup_kde() { record kde; }
+"""
+        source = (ROOT / "setup.sh").read_text()
+        marker = 'if ! [ $# = 0 ]; then\n'
+        instrumented = source.replace(marker, overrides + marker, 1)
+        expected = {
+            "0": [],
+            "1": ["dotfiles"],
+            "2": ["shell"],
+            "3": ["python"],
+            "4": ["basics", "vim"],
+            "5": ["basics", "backup"],
+            "6": ["local", "python"],
+            "7": ["global"],
+            "8": ["kde"],
+            "9": ["global", "local", "basics", "shell", "python", "vim"],
+        }
+
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary_directory:
+            directory = Path(temporary_directory)
+            script = directory / "setup.sh"
+            script.write_text(instrumented)
+            (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
+            (directory / "config").symlink_to(ROOT / "config", target_is_directory=True)
+            for option, calls in expected.items():
+                log = directory / f"option-{option}.log"
+                env = os.environ.copy()
+                env.update(HOME=str(directory), SETUP_OPTION_LOG=str(log))
+                result = subprocess.run(
+                    ["sh", str(script), option],
+                    cwd=ROOT,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertEqual(0, result.returncode, (option, result.stderr))
+                actual = log.read_text().splitlines() if log.exists() else []
+                self.assertEqual(calls, actual, option)
+
+    def test_shell_setup_handles_an_unset_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            binary_directory = directory / "bin"
+            binary_directory.mkdir()
+            chsh_log = directory / "chsh.log"
+            chsh = binary_directory / "chsh"
+            chsh.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" > "$CHSH_LOG"\n'
+            )
+            chsh.chmod(0o755)
+            env = os.environ.copy()
+            env.pop("SHELL", None)
+            env.update(
+                CHSH_LOG=str(chsh_log),
+                HOME=str(directory),
+                PATH=f"{binary_directory}:{env['PATH']}",
+            )
+
+            result = subprocess.run(
+                ["./setup.sh", "2"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("parameter not set", result.stderr)
+
+    def test_basics_failure_stops_vim_and_backup_options(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn("setup_dotfiles || return", setup)
+        self.assertIn("vi*|4) setup_basics && setup_vim", setup)
+        self.assertIn("bac*|5) setup_basics && setup_backup", setup)
+
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

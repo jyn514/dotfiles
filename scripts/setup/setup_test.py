@@ -82,6 +82,8 @@ class DotfileSetupTests(unittest.TestCase):
         result = self.run_setup()
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("Creating symlink", result.stdout)
+        self.assertNotIn("Creating hardlink", result.stdout)
         self.assert_all_dotfiles_installed()
         self.assertTrue((self.home / ".config/git/credentials").is_file())
         self.assertTrue((self.home / ".local/state/zsh").is_dir())
