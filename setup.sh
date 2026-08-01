@@ -240,7 +240,6 @@ setup_basics () {
 	fi
 	set +ue
 	. config/profile
-	setup_vim # otherwise vim will error out the next time it starts up
 	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
 		git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
 	fi
@@ -321,8 +320,16 @@ setup_python () {
 	fi
 }
 
+prepare_vim_setup () {
+	if ! exists nvim && ! exists vim; then
+		echo "no vim installed ..."
+		return 1
+	fi
+}
+
 setup_vim () {
 	echo Installing vim plugins
+	prepare_vim_setup || return
 VIMDIR="$HOME/.vim/autoload"
 	if exists vim && ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
@@ -338,22 +345,30 @@ LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/l
 		fi
 unset LAZYDIR
 	fi
-	if ! exists nvim && ! exists vim; then
-		echo "no vim installed ..."
+}
+
+prepare_backup_setup () {
+	BACKUP_COMMAND=$(realpath bin/backup)
+	if ! [ -x "$BACKUP_COMMAND" ]; then
+		echo "backup command not found: $BACKUP_COMMAND" >&2
+		return 1
+	fi
+	if ! exists crontab; then
+		echo "backup setup requires crontab" >&2
 		return 1
 	fi
 }
 
 setup_backup () {
 	echo Setting up daily backup
+	prepare_backup_setup || return
 	TMP_FILE=$(tmp_file cronjob.XXXXXX)
-	exists backup || { echo "need to run setup_basics first"; return 1; }
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
 	crontab -l > "$TMP_FILE" 2>/dev/null || true;  # ignore missing crontab
-	echo '0 12 * * * backup' >> "$TMP_FILE" && crontab "$TMP_FILE"
+	echo "0 12 * * * $BACKUP_COMMAND" >> "$TMP_FILE" && crontab "$TMP_FILE"
 	rm -f "$TMP_FILE"
-	unset TMP_FILE
+	unset BACKUP_COMMAND TMP_FILE
 }
 
 setup_install_global () {
@@ -498,8 +513,8 @@ run() {
 		bas*) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
-		vi*|4) setup_basics && setup_vim;;
-		bac*|5) setup_basics && setup_backup;;
+		vi*|4) setup_vim;;
+		bac*|5) setup_backup;;
 		l*|6) setup_install_local && setup_python;;
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
