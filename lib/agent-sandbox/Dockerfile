@@ -2,7 +2,7 @@
 
 ARG BASE_IMAGE=node:slim
 
-FROM debian:trixie-slim AS tools
+FROM alpine:3.22 AS tools
 COPY ./lib/agent-sandbox/install-tools.sh /usr/local/bin/install-agent-tools
 ARG GH_VERSION=2.76.1
 ARG JJ_VERSION=0.42.0
