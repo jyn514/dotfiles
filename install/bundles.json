@@ -1,0 +1,18 @@
+{
+  "cpptools": {
+    "destination": ".local/lib/cpptools",
+    "executable": "extension/debugAdapters/bin/OpenDebugAD7",
+    "platforms": {
+      "linux-aarch64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-linux-arm64.vsix",
+      "linux-musl-aarch64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-alpine-arm64.vsix",
+      "linux-musl-x86_64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-alpine-x64.vsix",
+      "linux-x86_64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-linux-x64.vsix"
+    }
+  },
+  "powershell-editor-services": {
+    "destination": ".local/lib/PowerShellEditorServices",
+    "platforms": {
+      "all": "https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip"
+    }
+  }
+}
