@@ -11,11 +11,6 @@ machine-readable provenance and checksums are in `install/vendored.json`.
   upstream commit and the upstream license is stored beside it.
 - `bin/git-filter-repo` is the upstream v2.38.0 single-file program. Its
   built-in `--version` output is the upstream Git blob ID, not the release tag.
-- `bin/android-file-transfer` is a legacy x86-64 Linux binary. Its strings
-  identify the whoozle/android-file-transfer-linux project, but its exact
-  source revision, build recipe, and corresponding license were not recorded
-  when it was added in 2017. Do not redistribute or update it without resolving
-  that missing provenance. Prefer replacing it with a package-managed tool.
 
 ## Updating an artifact
 

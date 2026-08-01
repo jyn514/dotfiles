@@ -1,12 +1,5 @@
 {
   "artifacts": {
-    "android-file-transfer": {
-      "license": null,
-      "path": "bin/android-file-transfer",
-      "sha256": "e548ce969ef3611bbf9c0d00f30985547273f153e7c1839f685de432f29c2907",
-      "source": "https://github.com/whoozle/android-file-transfer-linux",
-      "version": null
-    },
     "dotbot-launcher": {
       "license": "lib/dotbot/LICENSE.md",
       "path": "lib/dotbot/bin/dotbot",
