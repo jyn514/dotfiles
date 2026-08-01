@@ -18,21 +18,16 @@ install_macos_local() {
 	fi
 }
 
-install_linux_lol() {
-	mkdir -p $libdir
-
-	cpp=$libdir/cpptools
-	# TODO: don't hard-code an arch lmao
-	if ! [ -d $cpp ]; then
-		vsix=$(download https://github.com/microsoft/vscode-cpptools/releases/latest/download/cpptools-linux-x64.vsix)
-		unzip "$vsix" -d $cpp
-		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
-	fi
-
-}
-
 mise_exec() {
 	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
+}
+
+install_platform_bundles() {
+	if exists apk; then
+		python3 lib/install_platform_bundles.py cpptools powershell-editor-services
+	else
+		mise_exec python lib/install_platform_bundles.py cpptools powershell-editor-services
+	fi
 }
 
 authenticate_mise_github() {
@@ -321,10 +316,9 @@ setup_install_local () {
 	fi
 	mkdir -p ~/.local/bin
 	install_mise || return
+	install_platform_bundles || return
 
-	if ! exists apk && [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
-		install_linux_lol || return
-	elif [ -n "${IS_MACOS:-}" ]; then
+	if [ -n "${IS_MACOS:-}" ]; then
 		install_macos_local || return
 	fi
 
@@ -348,11 +342,6 @@ setup_install_local () {
 	cmd_alias vi nvim
 	cmd_alias vim nvim
 
-	if ! [ -d $libdir/PowerShellEditorServices ]; then
-		mkdir -p $libdir/PowerShellEditorServices
-		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
-		unzip -q "$pslsp" -d $libdir/PowerShellEditorServices
-	fi
 	if exists bat; then
 		bat cache --build
 	fi
