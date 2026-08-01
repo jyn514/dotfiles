@@ -45,3 +45,4 @@ codex.rules=.codex/rules/default.rules
 claude-statusline.sh=.claude/statusline-command.sh
 claude.json=.claude/settings.json
 shared-agents.md=.agents/shared.md
+mise.toml=.config/mise/config.toml

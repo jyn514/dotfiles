@@ -19,7 +19,6 @@ export CARGO_HOME=$HOME/.local/lib/cargo
 export RUSTUP_HOME=$HOME/.local/lib/rustup
 export GOPATH=$HOME/.local/lib/go
 export GOBIN=$GOPATH/bin
-export NVM_DIR=$HOME/.local/lib/nvm
 
 export CARGO_TARGET_DIR=$HOME/.cache/cargo
 
