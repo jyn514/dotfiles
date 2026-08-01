@@ -39,6 +39,17 @@ mise_exec() {
 	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
 }
 
+offer_mise_github_oauth() {
+	[ -n "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ] || return 0
+	[ -t 0 ] && [ -r /dev/tty ] || return 0
+	mise token github 2>/dev/null | grep -qv '(none)' && return 0
+	printf 'Authenticate mise with GitHub now? [y/N] ' > /dev/tty
+	read -r authenticate_github < /dev/tty || return 0
+	case $authenticate_github in
+		y|Y|yes|YES) mise token github --oauth > /dev/tty || return;;
+	esac
+}
+
 install_mise() {
 	if ! exists mise; then
 		mise_installer=$(tmp_file mise-installer.XXXXXX)
@@ -58,11 +69,7 @@ install_mise() {
 			return 1
 		}
 	fi
-	if exists gh && github_token=$(gh auth token); then
-		export GITHUB_TOKEN=$github_token
-		unset github_token
-	fi
-	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes aqua:cargo-bins/cargo-binstall@latest < /dev/null || return
+	offer_mise_github_oauth || return
 	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
 	# These crates do not publish binaries that mise can install on every supported
 	# platform. Preserve the no-compilation policy and explicitly omit them there.
@@ -492,16 +499,17 @@ cd "$(dirname "$0")"
 . lib/lib.sh
 . lib/env.sh
 
-MISE_SETUP_CONFIG=$(realpath config/mise.toml)
-MISE_SETUP_CONFIG=$(tmp_file mise-config.XXXXXX)
+MISE_SETUP_DIR=$(tmp_dir mise-config.XXXXXX)
+MISE_SETUP_CONFIG=$MISE_SETUP_DIR/config.toml
 sed '/^"cargo:/d' config/mise.toml > "$MISE_SETUP_CONFIG"
+cp config/mise.lock "$MISE_SETUP_DIR/config.lock"
 if exists apk; then
 	# Preserve the old Alpine behavior: use packaged Python and difftastic, and
 	# skip Node because it has no musl release and would compile from source.
 	sed '/^node = /d; /^python = /d; /^"npm:/d; /^"aqua:Wilfred\/difftastic"/d; s/depends = \["python", "uv"\]/depends = ["uv"]/' "$MISE_SETUP_CONFIG" > "$MISE_SETUP_CONFIG.alpine"
 	mv "$MISE_SETUP_CONFIG.alpine" "$MISE_SETUP_CONFIG"
 fi
-trap 'rm -f "$MISE_SETUP_CONFIG"' EXIT HUP INT TERM
+trap 'rm -rf "$MISE_SETUP_DIR"' EXIT HUP INT TERM
 export MISE_SETUP_CONFIG
 
 run() {

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import platform
 import shlex
@@ -392,10 +393,6 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        self.assertIn(
-            ["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"],
-            commands,
-        )
         self.assertIn(["mise", "install", "--yes"], commands)
         rust_packages = [
             "bacon",
@@ -536,26 +533,26 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
-    def test_installs_cargo_binstall_before_declarative_cargo_tools(self) -> None:
+    def test_installs_declarative_tools_before_using_cargo_binstall(self) -> None:
         result = self.run_install()
 
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        bootstrap_install = commands.index(
-            ["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"]
-        )
         all_tools_install = commands.index(["mise", "install", "--yes"])
-        self.assertLess(bootstrap_install, all_tools_install)
+        cargo_binstall = next(
+            index
+            for index, command in enumerate(commands)
+            if command[:5] == ["mise", "exec", "--", "cargo", "binstall"]
+        )
+        self.assertLess(all_tools_install, cargo_binstall)
 
-    def test_cargo_binstall_bootstrap_does_not_bypass_runtime_config(self) -> None:
+    def test_mise_install_uses_runtime_config_and_lockfile(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
-        self.assertIn(
-            "MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes "
-            "aqua:cargo-bins/cargo-binstall@latest",
-            setup,
-        )
-        self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes rust", setup)
+        self.assertIn('cp config/mise.lock "$MISE_SETUP_DIR/config.lock"', setup)
+        self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install", setup)
+        self.assertNotIn("gh auth token", setup)
+        self.assertNotIn("export GITHUB_TOKEN", setup)
 
     def test_alpine_setup_omits_node_and_npm_tools(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
@@ -579,10 +576,7 @@ class LocalInstallationTests(unittest.TestCase):
         result = self.run_install_with(FAIL_MISE_INSTALL="1")
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertEqual(
-            [["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"]],
-            self.commands(),
-        )
+        self.assertEqual([["mise", "install", "--yes"]], self.commands())
 
     def test_cargo_tool_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_CARGO_TOOLS_INSTALL="1")
@@ -643,10 +637,30 @@ class MiseConfigTests(unittest.TestCase):
             tools["github:glide-browser/glide"],
         )
         self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
+        self.assertIs(True, config["settings"]["lockfile"])
+        self.assertIs(True, config["settings"]["github"]["use_git_credentials"])
         self.assertEqual(
             {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},
             set((ROOT / "install/rust.txt").read_text().splitlines()),
         )
+
+    def test_lockfile_covers_every_declared_tool(self) -> None:
+        with (ROOT / "config/mise.toml").open("rb") as config_file:
+            config = tomllib.load(config_file)
+        with (ROOT / "config/mise.lock").open("rb") as lock_file:
+            lock = tomllib.load(lock_file)
+
+        self.assertEqual(set(config["tools"]), set(lock["tools"]))
+        for tool, resolutions in lock["tools"].items():
+            self.assertTrue(resolutions, tool)
+            self.assertTrue(all("version" in resolution for resolution in resolutions), tool)
+
+    def test_dotbot_installs_mise_lock_beside_config(self) -> None:
+        install = json.loads((ROOT / "install.conf.json").read_text())
+        links = next(section["link"] for section in install if "link" in section)
+
+        self.assertEqual("config/mise.toml", links["$HOME/.config/mise/config.toml"])
+        self.assertEqual("config/mise.lock", links["$HOME/.config/mise/config.lock"])
 
     @staticmethod
     def backend_packages(tools: dict[str, object], backend: str) -> set[str]:
