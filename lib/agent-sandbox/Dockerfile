@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BASE_IMAGE=node:slim
+ARG BASE_IMAGE=node:alpine
 
 FROM alpine:3.22 AS tools
 COPY ./lib/agent-sandbox/install-tools.sh /usr/local/bin/install-agent-tools
