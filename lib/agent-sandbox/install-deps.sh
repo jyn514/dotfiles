@@ -48,6 +48,7 @@ if command -v apt-get >/dev/null; then
         procps \
         python3 \
         ripgrep \
+        shellcheck \
         socat \
         sudo \
         tar \
@@ -73,6 +74,7 @@ elif command -v apk >/dev/null; then
         procps \
         python3 \
         ripgrep \
+        shellcheck \
         socat \
         sudo \
         xz
@@ -107,6 +109,7 @@ elif command -v microdnf >/dev/null; then
         procps-ng \
         python3 \
         ripgrep \
+        ShellCheck \
         socat \
         sudo \
         tar \
@@ -155,6 +158,7 @@ trap - EXIT HUP INT TERM
 
 jq --version
 podman --version
+shellcheck --version
 typst --version
 ln -s /usr/local/bin/podman /usr/local/bin/docker
 docker --version
