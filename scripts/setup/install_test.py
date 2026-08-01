@@ -113,12 +113,6 @@ class InstallationTests(unittest.TestCase):
                 translated.extend(shlex.split(replacement))
         return translated
 
-    def assert_brew_packages(self, commands: list[list[str]]) -> None:
-        self.assertIn(
-            ["brew", "install", "-q", *self.manifest("brew_packages.txt")],
-            commands,
-        )
-
     def test_requests_platform_packages(self) -> None:
         platform = self.platform()
 
@@ -127,8 +121,6 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         packages = self.manifest("packages.txt")
-        self.assert_brew_packages(commands)
-
         if platform["ID"] == "alpine":
             replacements = {
                 "antidote": None,
@@ -138,7 +130,7 @@ class InstallationTests(unittest.TestCase):
                 "fd-find": "fd",
                 "fscrypt": None,
                 "fzy": None,
-                "gh": None,
+                "gh": "github-cli",
                 "git-delta": "delta",
                 "glow": None,
                 "ipp-usb": None,
@@ -569,6 +561,15 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertIn("sed '/^\"cargo:/d' config/mise.toml", setup)
 
+    def test_user_tools_no_longer_bootstrap_homebrew(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+        setup_sudo = (ROOT / "lib/setup_sudo.sh").read_text()
+
+        self.assertFalse((ROOT / "install/brew_packages.txt").exists())
+        self.assertNotIn("Homebrew/install", setup_sudo)
+        self.assertNotIn("brew_packages", setup_sudo)
+        self.assertNotIn("clojure/brew-install", setup)
+
     def test_alpine_local_install_requires_rust_runtime_library(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
@@ -621,12 +622,15 @@ class MiseConfigTests(unittest.TestCase):
             "mdbook",
         }
         aqua_tools = {
+            "LuaLS/lua-language-server",
             "cargo-bins/cargo-binstall",
+            "antonmedv/fx",
             "Wilfred/difftastic",
             "Byron/dua-cli",
             "jj-vcs/jj",
             "BurntSushi/ripgrep",
             "Myriad-Dreamin/tinymist",
+            "mvdan/sh",
         }
         npm_tools = {
             "pnpm",
@@ -637,7 +641,8 @@ class MiseConfigTests(unittest.TestCase):
             "vscode-langservers-extracted",
         }
         pipx_tools = {"git-revise", "pytest", "pylint", "yt-dlp"}
-        github_tools = {"glide-browser/glide"}
+        github_tools = {"clojure-lsp/clojure-lsp", "glide-browser/glide"}
+        asdf_tools = {"mise-plugins/mise-clojure"}
         self.assertEqual(cargo_tools, self.backend_packages(tools, "cargo"))
         for cargo_tool in cargo_tools:
             self.assertEqual(["rust"], tools[f"cargo:{cargo_tool}"]["depends"])
@@ -645,13 +650,19 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
         self.assertEqual(github_tools, self.backend_packages(tools, "github"))
+        self.assertEqual(asdf_tools, self.backend_packages(tools, "asdf"))
         self.assertEqual(
             {"version": "latest", "os": ["linux"], "filter_bins": "glide"},
             tools["github:glide-browser/glide"],
         )
         self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
         self.assertIs(True, config["settings"]["lockfile"])
+        self.assertIs(True, config["settings"]["locked"])
         self.assertIs(True, config["settings"]["github"]["use_git_credentials"])
+        self.assertEqual(
+            "gh auth token", config["settings"]["github"]["credential_command"]
+        )
+        self.assertEqual("", config["settings"]["github"]["oauth_export_env"])
         self.assertEqual(
             {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},
             set((ROOT / "install/rust.txt").read_text().splitlines()),

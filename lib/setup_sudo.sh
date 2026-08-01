@@ -9,7 +9,6 @@ if [ -n "$DOAS_USER" ]; then
 fi
 
 packages=
-brew_packages=
 here=$(realpath "$(dirname "$0")")
 my_home=
 if [ -n "${SUDO_USER:-}" ]; then
@@ -73,8 +72,7 @@ queue_install() {
 		esac	
 	elif [ "$IS_ALPINE" = 1 ]; then
 		case "$pkg" in
-			#gh) pkg=github-cli;;
-			gh) return;;  # don't want creds on remote servers
+			gh) pkg=github-cli;;
 			nvim) pkg=neovim;;
 			fd-find) pkg=fd;;
 			git-delta) pkg=delta;;
@@ -240,20 +238,6 @@ install_features () {
 	#zypper install gh
 	fi
 
-	brew_packages="$brew_packages $(grep -v '^\s*#' install/brew_packages.txt | tr '\n' ' ')"
-	if [ -n "$SUDO_USER" ]; then
-		if ! exists brew; then
-			set +x
-			sudo -u "$SUDO_USER" bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-			set -x
-			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
-		fi
-		sudo -u "$SUDO_USER" $(which brew) install -q $brew_packages
-	elif exists brew; then
-		brew install -q $brew_packages
-	else
-		echo "Homebrew is not installed; skipping Homebrew-only packages"
-	fi
 }
 
 install_security () {

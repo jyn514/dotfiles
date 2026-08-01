@@ -34,7 +34,6 @@ libterm-readline-gnu-perl
 liburi-perl
 libusb-1.0-0-dev
 perl-file-which
-lua-language-server
 manpages
 manpages-dev
 markdown-oxide
@@ -51,7 +50,6 @@ rclone
 sane
 sane-airscan
 shellcheck
-shfmt
 signal-desktop
 skanpage
 strace

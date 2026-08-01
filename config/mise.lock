@@ -78,6 +78,45 @@ checksum = "sha256:74d9ade19e02c09881e486a0fc90e917419ff710c041f0e6beb3ee84c798e
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496574720"
 
+[[tools."aqua:LuaLS/lua-language-server"]]
+version = "3.18.2"
+backend = "aqua:LuaLS/lua-language-server"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.linux-arm64"]
+checksum = "sha256:273af33f26f4a1143f27c96d9f9e1188aba619c71e0807042134f66b4bd27f24"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396268278"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.linux-arm64-musl"]
+checksum = "sha256:273af33f26f4a1143f27c96d9f9e1188aba619c71e0807042134f66b4bd27f24"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396268278"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.linux-x64"]
+checksum = "sha256:ca71415dd19f19e30aaa35a4915aefca9fdb5fec31b98331cc3d77f778d539c5"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396268957"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.linux-x64-musl"]
+checksum = "sha256:ca71415dd19f19e30aaa35a4915aefca9fdb5fec31b98331cc3d77f778d539c5"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396268957"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.macos-arm64"]
+checksum = "sha256:cec99d70b1f612acec4a10a79a03664e3aa0c229d4d8a586cb3f928ec37d509e"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396268945"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.macos-x64"]
+checksum = "sha256:e26cfefe423dd7326fc7c649539e4d4aaa4f35f34d2fefd8af2ed7090b72c556"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-darwin-x64.tar.gz"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396267609"
+
+[tools."aqua:LuaLS/lua-language-server"."platforms.windows-x64"]
+checksum = "sha256:a4439a8f5e8e9e6505c11f045a7bf45db602124a1e246371c1dbe34924f3cf71"
+url = "https://github.com/LuaLS/lua-language-server/releases/download/3.18.2/lua-language-server-3.18.2-win32-x64.zip"
+url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/396269455"
+
 [[tools."aqua:Myriad-Dreamin/tinymist"]]
 version = "0.15.2"
 backend = "aqua:Myriad-Dreamin/tinymist"
@@ -150,6 +189,45 @@ url_api = "https://api.github.com/repos/Wilfred/difftastic/releases/assets/40936
 checksum = "sha256:a5adbf57eb1b923b62d1c3596c4f827df143f5b52cfba48bb9e83f41dea90c02"
 url = "https://github.com/Wilfred/difftastic/releases/download/0.69.0/difft-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/Wilfred/difftastic/releases/assets/409362991"
+
+[[tools."aqua:antonmedv/fx"]]
+version = "39.2.0"
+backend = "aqua:antonmedv/fx"
+
+[tools."aqua:antonmedv/fx"."platforms.linux-arm64"]
+checksum = "sha256:85ea8435b0a80b6d31ffa9f61ac9b67d9bb8f0ffffabdfe5e7e587b07a0a0684"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_linux_arm64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468985"
+
+[tools."aqua:antonmedv/fx"."platforms.linux-arm64-musl"]
+checksum = "sha256:85ea8435b0a80b6d31ffa9f61ac9b67d9bb8f0ffffabdfe5e7e587b07a0a0684"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_linux_arm64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468985"
+
+[tools."aqua:antonmedv/fx"."platforms.linux-x64"]
+checksum = "sha256:17ea6549c7cf0b8be5ec109d04da7fbf1d5de9f7b99d957a6215081933528afe"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_linux_amd64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468989"
+
+[tools."aqua:antonmedv/fx"."platforms.linux-x64-musl"]
+checksum = "sha256:17ea6549c7cf0b8be5ec109d04da7fbf1d5de9f7b99d957a6215081933528afe"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_linux_amd64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468989"
+
+[tools."aqua:antonmedv/fx"."platforms.macos-arm64"]
+checksum = "sha256:5d7dadbf8ac4e4a55b5b6d31bdd958b90823292997ba9ddae395f66417bb4a9b"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_darwin_arm64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468988"
+
+[tools."aqua:antonmedv/fx"."platforms.macos-x64"]
+checksum = "sha256:2ad7d0a6e1ea67ab10a22cc06825fdc776511e8f412926d1c752b630eac12e02"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_darwin_amd64"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468986"
+
+[tools."aqua:antonmedv/fx"."platforms.windows-x64"]
+checksum = "sha256:00fbddd7bd67f747a51aecc0a5bafcc695a21dfae7b912684510722c8e2d6d22"
+url = "https://github.com/antonmedv/fx/releases/download/39.2.0/fx_windows_amd64.exe"
+url_api = "https://api.github.com/repos/antonmedv/fx/releases/assets/315468991"
 
 [[tools."aqua:cargo-bins/cargo-binstall"]]
 version = "1.21.1"
@@ -236,6 +314,52 @@ checksum = "sha256:582f63e55310eaa397782fcb528c3feff5b943a4e2db70666d105972a381f
 url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463827027"
 
+[[tools."aqua:mvdan/sh"]]
+version = "3.13.1"
+backend = "aqua:mvdan/sh"
+
+[tools."aqua:mvdan/sh".options]
+"vars.filter_bins" = "shfmt"
+
+[tools."aqua:mvdan/sh"."platforms.linux-arm64"]
+checksum = "sha256:32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322859"
+
+[tools."aqua:mvdan/sh"."platforms.linux-arm64-musl"]
+checksum = "sha256:32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322859"
+
+[tools."aqua:mvdan/sh"."platforms.linux-x64"]
+checksum = "sha256:fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322866"
+
+[tools."aqua:mvdan/sh"."platforms.linux-x64-musl"]
+checksum = "sha256:fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322866"
+
+[tools."aqua:mvdan/sh"."platforms.macos-arm64"]
+checksum = "sha256:9680526be4a66ea1ffe988ed08af58e1400fe1e4f4aef5bd88b20bb9b3da33f8"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322881"
+
+[tools."aqua:mvdan/sh"."platforms.macos-x64"]
+checksum = "sha256:6feedafc72915794163114f512348e2437d080d0047ef8b8fa2ec63b575f12af"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_darwin_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322886"
+
+[tools."aqua:mvdan/sh"."platforms.windows-x64"]
+checksum = "sha256:60cd368533d0ad73fa86d93d5bbf95ef40587245ce684ed138c1b31557b5fe97"
+url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/390322844"
+
+[[tools."asdf:mise-plugins/mise-clojure"]]
+version = "1.12.5.1664"
+backend = "asdf:mise-plugins/mise-clojure"
+
 [[tools."cargo:broot"]]
 version = "1.58.0"
 backend = "cargo:broot"
@@ -251,6 +375,45 @@ backend = "cargo:counts"
 [[tools."cargo:mdbook"]]
 version = "0.5.4"
 backend = "cargo:mdbook"
+
+[[tools."github:clojure-lsp/clojure-lsp"]]
+version = "2026.07.06-14.34.19"
+backend = "github:clojure-lsp/clojure-lsp"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.linux-arm64"]
+checksum = "sha256:0595e65a5934d3208246f529b5cf0497d7167d7e9b8317e9b391e05b5c0906d7"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-linux-aarch64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187448"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.linux-arm64-musl"]
+checksum = "sha256:0595e65a5934d3208246f529b5cf0497d7167d7e9b8317e9b391e05b5c0906d7"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-linux-aarch64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187448"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.linux-x64"]
+checksum = "sha256:520f724ee02f4b3ecb225395a7a5a4ccad3878d6d1418240cd9636afcf9b858e"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-linux-amd64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187255"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.linux-x64-musl"]
+checksum = "sha256:520f724ee02f4b3ecb225395a7a5a4ccad3878d6d1418240cd9636afcf9b858e"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-linux-amd64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187255"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.macos-arm64"]
+checksum = "sha256:dd9a8e36add53b8d8166bb3d7580c6e5563401aea87b62600786af2e7d37ccde"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-macos-aarch64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187564"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.macos-x64"]
+checksum = "sha256:0449f7f8fc975157cb4e5cdcf365bcd43bcf1fa47b99256427e7a86e4c17fc3f"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-macos-amd64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187531"
+
+[tools."github:clojure-lsp/clojure-lsp"."platforms.windows-x64"]
+checksum = "sha256:7b978ab266f7aa0ecf48b7484fc0aa6d3b3b7b395c27c47c949d6ce93174599d"
+url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/2026.07.06-14.34.19/clojure-lsp-native-windows-amd64.zip"
+url_api = "https://api.github.com/repos/clojure-lsp/clojure-lsp/releases/assets/468187598"
 
 [[tools."github:glide-browser/glide"]]
 version = "0.1.63a"
