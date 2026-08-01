@@ -286,7 +286,10 @@ class LocalInstallationTests(unittest.TestCase):
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
             'case "$name:$*:${FAIL_MISE_INSTALL:-}" in mise:install*:1) exit 1;; esac\n'
-            'if [ "$name:$*" = "mise:which gh" ]; then printf "%s\\n" "$FAKE_GH_PATH"; fi\n'
+            'case "$name:$*:${FAIL_OAUTH:-}" in mise:token\\ github\\ --oauth:1) exit 1;; esac\n'
+            'if [ "$name" = mise ] && [ "${1:-}" = token ]; then\n'
+            '  grep -q "oauth_client_id = \\"Iv23li0gR6P4iv8HXrsF\\"" "$MISE_GLOBAL_CONFIG_FILE" || exit 89\n'
+            'fi\n'
             'if [ "$name" = mise ] && [ "${1:-}" = install ]; then\n'
             '  lock_dir=${MISE_GLOBAL_CONFIG_FILE%/*}\n'
             '  [ -f "$lock_dir/mise.lock" ] || exit 88\n'
@@ -300,7 +303,6 @@ class LocalInstallationTests(unittest.TestCase):
             "cargo",
             "clojure",
             "glide",
-            "gh",
             "mise",
             "nvim",
             "pip3",
@@ -342,7 +344,6 @@ class LocalInstallationTests(unittest.TestCase):
         env.update(
             DOAS_USER="",
             HOME=str(self.home),
-            FAKE_GH_PATH=str(self.bin / "gh"),
             INSTALL_COMMAND_LOG=str(self.log),
             PATH=f"{self.bin}:{env['PATH']}",
             SSH_AUTH_SOCK="",
@@ -366,7 +367,6 @@ class LocalInstallationTests(unittest.TestCase):
         env.update(
             DOAS_USER="",
             HOME=str(self.home),
-            FAKE_GH_PATH=str(self.bin / "gh"),
             INSTALL_COMMAND_LOG=str(self.log),
             PATH=f"{self.bin}:{env['PATH']}",
             SSH_AUTH_SOCK="",
@@ -401,6 +401,7 @@ class LocalInstallationTests(unittest.TestCase):
         env.update(
             HOME=str(self.home),
             INSTALL_COMMAND_LOG=str(self.log),
+            MISE_SETUP_CONFIG=str(ROOT / "config/mise.toml"),
             PATH=f"{self.bin}:{env['PATH']}",
         )
         env.update(overrides)
@@ -429,6 +430,7 @@ class LocalInstallationTests(unittest.TestCase):
         env.update(
             HOME=str(self.home),
             INSTALL_COMMAND_LOG=str(self.log),
+            MISE_SETUP_CONFIG=str(ROOT / "config/mise.toml"),
             PATH=f"{self.bin}:{env['PATH']}",
             SETUP_INTERACTIVE="1",
         )
@@ -607,15 +609,13 @@ class LocalInstallationTests(unittest.TestCase):
         )
         self.assertLess(all_tools_install, cargo_binstall)
 
-    def test_installs_locked_gh_before_checking_github_auth(self) -> None:
+    def test_checks_github_auth_before_installing_tools(self) -> None:
         result = self.run_install()
 
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        gh_install = commands.index(["mise", "install", "--yes", "aqua:cli/cli"])
         auth_check = commands.index(["mise", "token", "github"])
         all_tools_install = commands.index(["mise", "install", "--yes"])
-        self.assertLess(gh_install, auth_check)
         self.assertLess(auth_check, all_tools_install)
 
     def test_mise_install_uses_runtime_config_and_lockfile(self) -> None:
@@ -626,31 +626,16 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotIn("gh auth token", setup)
         self.assertNotIn("export GITHUB_TOKEN", setup)
 
-    def test_github_auth_falls_back_to_gh_oauth_without_exporting_token(self) -> None:
+    def test_github_auth_uses_native_mise_oauth_without_exporting_token(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
-        native_oauth = setup.index("mise token github --oauth")
-        gh_oauth = setup.index(
-            "gh auth login --hostname github.com --git-protocol https --web"
-        )
-        self.assertLess(native_oauth, gh_oauth)
-        self.assertIn("GH_ACCESSIBLE_PROMPTER=1", setup)
-        self.assertIn("GH_PROMPT_DISABLED=1 GH_BROWSER=false", setup)
-        self.assertIn("${GH_BROWSER:-}${BROWSER:-}${DISPLAY:-}${WAYLAND_DISPLAY:-}", setup)
+        self.assertIn("mise token github --oauth", setup)
+        self.assertNotIn("gh auth login", setup)
         self.assertIn("Authenticate mise with GitHub to avoid API rate limits?", setup)
         self.assertNotIn("export GITHUB_TOKEN", setup)
 
-    def test_github_auth_helper_uses_gh_without_a_mise_client_id(self) -> None:
+    def test_github_auth_helper_uses_native_mise_oauth(self) -> None:
         result = self.run_github_auth_helper()
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            [["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"]],
-            self.commands(),
-        )
-
-    def test_github_auth_helper_prefers_native_mise_oauth(self) -> None:
-        result = self.run_github_auth_helper(MISE_GITHUB_OAUTH_CLIENT_ID="client-id")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual([["mise", "token", "github", "--oauth"]], self.commands())
@@ -663,7 +648,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(
             [
                 ["mise", "token", "github"],
-                ["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"],
+                ["mise", "token", "github", "--oauth"],
             ],
             self.commands(),
         )
@@ -683,13 +668,6 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIn("GitHub authentication skipped (setup is noninteractive)", result.stderr)
         self.assertIn("anonymous API rate limit", result.stderr)
 
-    def test_oauth_warning_explains_when_no_authenticator_is_available(self) -> None:
-        (self.bin / "gh").unlink()
-        result = self.run_github_auth_offer("", PATH=f"{self.bin}:/usr/bin:/bin")
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("neither gh nor MISE_GITHUB_OAUTH_CLIENT_ID is available", result.stderr)
-
     def test_oauth_warning_explains_when_stdin_reaches_eof(self) -> None:
         result = self.run_github_auth_offer("")
 
@@ -697,63 +675,10 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIn("no response was available on stdin", result.stderr)
 
     def test_oauth_warning_explains_when_login_fails(self) -> None:
-        gh = self.bin / "gh"
-        gh.unlink()
-        gh.write_text("#!/bin/sh\nexit 1\n")
-        gh.chmod(0o755)
-
-        result = self.run_github_auth_offer("y\n")
+        result = self.run_github_auth_offer("y\n", FAIL_OAUTH="1")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("OAuth login failed", result.stderr)
-
-    def test_headless_oauth_disables_prompts_and_browser_opening(self) -> None:
-        gh = self.bin / "gh"
-        gh.unlink()
-        gh.write_text(
-            "#!/bin/sh\n"
-            'printf "%s|%s|%s\\n" "${GH_PROMPT_DISABLED:-}" "${GH_BROWSER:-}" '
-            '"${GH_ACCESSIBLE_PROMPTER:-}" > "$AUTH_ENV_LOG"\n'
-        )
-        gh.chmod(0o755)
-        auth_log = self.directory / "auth-env.log"
-
-        result = self.run_github_auth_offer(
-            "y\n",
-            AUTH_ENV_LOG=str(auth_log),
-            BROWSER="",
-            DISPLAY="",
-            GH_ACCESSIBLE_PROMPTER="",
-            GH_BROWSER="",
-            WAYLAND_DISPLAY="",
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("1|false|\n", auth_log.read_text())
-
-    def test_desktop_oauth_preserves_browser_opening(self) -> None:
-        gh = self.bin / "gh"
-        gh.unlink()
-        gh.write_text(
-            "#!/bin/sh\n"
-            'printf "%s|%s|%s\\n" "${GH_PROMPT_DISABLED:-}" "${GH_BROWSER:-}" '
-            '"${GH_ACCESSIBLE_PROMPTER:-}" > "$AUTH_ENV_LOG"\n'
-        )
-        gh.chmod(0o755)
-        auth_log = self.directory / "auth-env.log"
-
-        result = self.run_github_auth_offer(
-            "y\n",
-            AUTH_ENV_LOG=str(auth_log),
-            BROWSER="browser-command",
-            DISPLAY="",
-            GH_BROWSER="",
-            GH_PROMPT_DISABLED="",
-            WAYLAND_DISPLAY="",
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("||1\n", auth_log.read_text())
 
     def test_alpine_setup_omits_node_and_npm_tools(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
@@ -805,7 +730,7 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
-            [["mise", "install", "--yes", "aqua:cli/cli"]],
+            [["mise", "token", "github"], ["mise", "install", "--yes"]],
             self.commands(),
         )
 
@@ -841,7 +766,6 @@ class MiseConfigTests(unittest.TestCase):
         aqua_tools = {
             "LuaLS/lua-language-server",
             "cargo-bins/cargo-binstall",
-            "cli/cli",
             "antonmedv/fx",
             "Wilfred/difftastic",
             "Byron/dua-cli",
@@ -878,8 +802,9 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIs(True, config["settings"]["locked"])
         self.assertIs(True, config["settings"]["github"]["use_git_credentials"])
         self.assertEqual(
-            "gh auth token", config["settings"]["github"]["credential_command"]
+            "Iv23li0gR6P4iv8HXrsF", config["settings"]["github"]["oauth_client_id"]
         )
+        self.assertNotIn("credential_command", config["settings"]["github"])
         self.assertEqual("", config["settings"]["github"]["oauth_export_env"])
         self.assertEqual(
             {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},

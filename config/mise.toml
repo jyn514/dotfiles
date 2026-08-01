@@ -5,7 +5,6 @@ rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "cli
 uv = "latest"
 "asdf:mise-plugins/mise-clojure" = "latest"
 "aqua:cargo-bins/cargo-binstall" = "latest"
-"aqua:cli/cli" = "latest"
 "github:clojure-lsp/clojure-lsp" = { version = "latest", filter_bins = "clojure-lsp" }
 "aqua:antonmedv/fx" = "latest"
 "aqua:LuaLS/lua-language-server" = "latest"
@@ -37,6 +36,6 @@ locked = true
 npm.package_manager = "npm"
 
 [settings.github]
-credential_command = "gh auth token"
+oauth_client_id = "Iv23li0gR6P4iv8HXrsF"
 oauth_export_env = ""
 use_git_credentials = true

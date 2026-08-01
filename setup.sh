@@ -35,20 +35,7 @@ mise_exec() {
 }
 
 authenticate_mise_github() {
-	if [ -n "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-		mise token github --oauth
-	elif exists gh; then
-		if [ -n "${GH_BROWSER:-}${BROWSER:-}${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] || [ "$(uname)" = Darwin ]; then
-			GH_ACCESSIBLE_PROMPTER=1 \
-				gh auth login --hostname github.com --git-protocol https --web
-		else
-			GH_PROMPT_DISABLED=1 GH_BROWSER=false \
-				gh auth login --hostname github.com --git-protocol https --web
-		fi
-	else
-		echo "GitHub authentication requires gh or MISE_GITHUB_OAUTH_CLIENT_ID" >&2
-		return 1
-	fi
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise token github --oauth
 }
 
 warn_mise_github_auth_skipped() {
@@ -56,16 +43,12 @@ warn_mise_github_auth_skipped() {
 }
 
 offer_mise_github_oauth() {
-	github_auth=$(mise token github 2>/dev/null || true)
+	github_auth=$(MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise token github 2>/dev/null || true)
 	case $github_auth in
 		''|*'(none)'*) ;;
 		*) unset github_auth; return 0;;
 	esac
 	unset github_auth
-	if ! exists gh && [ -z "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ]; then
-		warn_mise_github_auth_skipped "neither gh nor MISE_GITHUB_OAUTH_CLIENT_ID is available"
-		return 0
-	fi
 	if [ -t 0 ] && [ -r /dev/tty ]; then
 		printf 'Authenticate mise with GitHub to avoid API rate limits? [y/N] ' > /dev/tty
 		read -r authenticate_github < /dev/tty || return 0
@@ -117,10 +100,6 @@ install_mise() {
 			return 1
 		}
 	fi
-	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes aqua:cli/cli < /dev/null || return
-	gh_path=$(MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise which gh) || return
-	PATH=${gh_path%/*}:$PATH
-	unset gh_path
 	offer_mise_github_oauth || return
 	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
 	# These crates do not publish binaries that mise can install on every supported
