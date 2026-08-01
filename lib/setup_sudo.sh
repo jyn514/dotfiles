@@ -54,7 +54,8 @@ queue_install() {
 		# TODO
 	elif [ -n "$IS_ARCH" ]; then
 		case "$pkg" in
-			antidote|build-essential|manpages-dev|libpam-fscrypt) return;;
+			antidote|manpages-dev|libpam-fscrypt) return;;
+			build-essential) pkg=base-devel;;
 			# NOTE: -dev packages in Debian are just included by default in Arch packages
 			libusb-1.0-0-dev) pkg=libusb;;
 			libssl-dev) pkg=openssl;;
@@ -82,7 +83,8 @@ queue_install() {
 			liburi-perl) pkg=perl-uri ;;
 			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu ;;
 			manpages) pkg=man-pages ;;
-			antidote|bpytop|build-essential|clangd|cowsay|fscrypt|fzy|glow|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
+			build-essential) pkg=build-base;;
+			antidote|bpytop|clangd|cowsay|fscrypt|fzy|glow|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
 	elif [ "$IS_CHIMERA" = 1 ]; then

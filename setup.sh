@@ -32,15 +32,6 @@ install_linux_lol() {
 		chmod +x $cpp/extension/debugAdapters/bin/OpenDebugAD7
 	fi
 
-	if [ "$(uname)" = Linux ] && ! exists glide; then
-		set -x
-		glide=$(download "https://github.com/glide-browser/glide/releases/latest/download/glide.linux-$(uname -m).tar.xz")
-		tar -C $libdir -xf "$glide"
-		ln -sf $libdir/glide/glide-bin ~/.local/bin/glide
-		set +x
-		exit 1
-	fi
-
 	install_clojure
 }
 
@@ -57,7 +48,7 @@ install_mise() {
 		export GITHUB_TOKEN=$github_token
 		unset github_token
 	fi
-	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes rust@nightly aqua:cargo-bins/cargo-binstall@latest || return
+	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes aqua:cargo-bins/cargo-binstall@latest || return
 	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes || return
 	# These crates do not publish binaries that mise can install on every supported
 	# platform. Preserve the no-compilation policy and explicitly omit them there.
