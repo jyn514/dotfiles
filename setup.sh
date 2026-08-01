@@ -313,16 +313,6 @@ setup_install_global_packages () {
 	fi
 }
 
-# setup_macos() {
-# 	brew install -q duti
-# 	if exists nvim; then
-# 		create_macos_app nvim io.neovim
-# 	fi
-# 	if exists fx; then
-# 		create_macos_app fx wtf.fx
-# 	fi
-# }
-
 setup_install_local () {
 	echo Installing user packages
 	if exists apk && ! [ -e /usr/lib/libgcc_s.so.1 ]; then
@@ -336,11 +326,6 @@ setup_install_local () {
 		install_linux_lol || return
 	elif [ -n "${IS_MACOS:-}" ]; then
 		install_macos_local || return
-	fi
-
-	if [ -n "${IS_MACOS:-}" ]; then
-		:
-		# 	setup_macos
 	fi
 
 	if exists pacman && ! exists 1password; then
@@ -426,7 +411,6 @@ run() {
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
 		all|9) setup_all;;
-		macos|10) setup_macos;;
 		*) return 126;;
 	esac
 }
@@ -448,7 +432,7 @@ else
 	message
 	while read -r choice; do
 		if ! run "$choice"; then
-			echo "Please enter a number 0-8: "
+			echo "Please enter a number 0-9: "
 		fi
 		message
 	done
