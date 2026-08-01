@@ -494,7 +494,7 @@ cd "$(dirname "$0")"
 MISE_SETUP_DIR=$(tmp_dir mise-config.XXXXXX)
 MISE_SETUP_CONFIG=$MISE_SETUP_DIR/config.toml
 sed '/^"cargo:/d' config/mise.toml > "$MISE_SETUP_CONFIG"
-cp config/mise.lock "$MISE_SETUP_DIR/config.lock"
+cp config/mise.lock "$MISE_SETUP_DIR/mise.lock"
 if exists apk; then
 	# Preserve the old Alpine behavior: use packaged Python and difftastic, and
 	# skip Node because it has no musl release and would compile from source.
