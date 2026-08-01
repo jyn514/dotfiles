@@ -13,11 +13,17 @@
   },
   "macos": {
     "editor_utis": [
-      "public.text",
+      "public.plain-text",
       "public.source-code"
     ],
     "editor_extension_exceptions": [
-      "rs"
+      "markdown",
+      "md",
+      "rs",
+      "toml",
+      "txt",
+      "yaml",
+      "yml"
     ]
   }
 }

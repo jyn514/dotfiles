@@ -111,76 +111,9 @@ install_mise() {
 	fi
 }
 
-setup_linux_mimetypes() {
-	mime_list=$(tmp_file mimetypes.XXXXXX) || return
-	python3 lib/setup_mimetypes.py --policy lib/mimetypes.json linux \
-		--desktop-template config/nvim.desktop \
-		--desktop-output "$HOME/.local/share/applications/nvim-generated.desktop" \
-		> "$mime_list" || {
-		rm -f "$mime_list"
-		return 1
-	}
-	if exists update-desktop-database; then
-		update-desktop-database "$HOME/.local/share/applications" || {
-			rm -f "$mime_list"
-			return 1
-		}
-	fi
-	mime_status=0
-	while IFS= read -r mime; do
-		xdg-mime default nvim-generated.desktop "$mime" || {
-			mime_status=$?
-			break
-		}
-	done < "$mime_list"
-	rm -f "$mime_list"
-	[ "$mime_status" = 0 ] || return "$mime_status"
-}
-
-setup_macos_mimetypes() {
-	if ! exists duti; then
-		echo "macOS file associations require duti; run setup option 6 or 9 first" >&2
-		return 1
-	fi
-	if ! exists xcrun || ! xcrun --find swiftc >/dev/null 2>&1; then
-		echo "macOS file associations require the Xcode command line tools" >&2
-		return 1
-	fi
-	app="$HOME/Applications/nvim.app"
-	python3 lib/setup_mimetypes.py --policy lib/mimetypes.json macos-app "$app" || return
-	xcrun swiftc "$app/Contents/launcher.swift" -o "$app/Contents/MacOS/nvim-launcher" || return
-	lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-	"$lsregister" -f "$app" || return
-	python3 -c 'import json; print("\n".join(json.load(open("lib/mimetypes.json"))["macos"]["editor_utis"]))' |
-	while IFS= read -r uti; do
-		duti -s dev.jyn.nvim "$uti" editor || return
-	done || return
-	python3 -c 'import json; print("\n".join(json.load(open("lib/mimetypes.json"))["macos"]["editor_extension_exceptions"]))' |
-	while IFS= read -r extension; do
-		duti -s dev.jyn.nvim ".$extension" editor || return
-	done || return
-}
-
 setup_mimetypes() {
 	echo "Registering mimetypes"
-	if exists nvim; then
-		if [ -n "${IS_MACOS:-}" ]; then
-			setup_macos_mimetypes || return
-		elif exists xdg-mime; then
-			setup_linux_mimetypes || return
-		fi
-	fi
-
-	if [ -z "${IS_MACOS:-}" ] && exists fx && exists xdg-mime; then
-		xdg-mime default fx-usercreated-1.desktop application/json
-	fi
-
-	if exists xdg-settings \
-		&& browser=$(xdg-settings get default-web-browser) \
-		&& [ -n "$browser" ]
-	then
-		xdg-mime default "$browser" image/svg+xml
-	fi
+	python3 lib/setup_mimetypes.py
 }
 
 setup_dotfiles () {

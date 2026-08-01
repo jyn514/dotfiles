@@ -4,9 +4,11 @@ import importlib.util
 import os
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -135,17 +137,191 @@ class LinuxMimetypeTests(unittest.TestCase):
         desktop = home / ".local/share/applications/nvim-generated.desktop"
         self.assertIn("application/x-nested-source", desktop.read_text())
 
+    def test_dry_run_reports_defaults_without_writing_or_registering(self) -> None:
+        home = self.mime / "home"
+        binaries = self.mime / "bin"
+        data_root = self.mime / "xdg"
+        home.mkdir()
+        binaries.mkdir()
+        data_root.mkdir()
+        (data_root / "mime").symlink_to(self.mime, target_is_directory=True)
+        log = self.mime / "xdg-mime.log"
+        xdg_mime = binaries / "xdg-mime"
+        xdg_mime.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$MIME_LOG"\n')
+        xdg_mime.chmod(0o755)
+        env = os.environ.copy()
+        env.update(
+            HOME=str(home),
+            MIME_LOG=str(log),
+            PATH=f"{binaries}:{env['PATH']}",
+            XDG_DATA_DIRS=str(data_root),
+            XDG_DATA_HOME=str(self.mime / "empty-data-home"),
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "lib/setup_mimetypes.py"), "--dry-run"],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Neovim MIME defaults:", result.stdout)
+        self.assertIn("  application/x-nested-source", result.stdout)
+        self.assertFalse(log.exists())
+        self.assertFalse(
+            (home / ".local/share/applications/nvim-generated.desktop").exists()
+        )
+
 
 class MacOSMimetypeTests(unittest.TestCase):
-    def test_generated_app_declares_broad_text_utis_and_native_launcher(self) -> None:
+    def test_source_discovery_excludes_stale_managed_utis(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                "public.c-source\n"
+                "dev.jyn.source-code.rs\n"
+                "dev.jyn.plain-text.toml\n"
+            ),
+        )
+        with mock.patch.object(setup_mimetypes, "run", return_value=completed):
+            discovered = setup_mimetypes.filter_source_utis(
+                Path("classifier"), ["ignored by mock"]
+            )
+
+        self.assertEqual(["public.c-source"], discovered)
+
+    def test_extension_resolution_excludes_stale_managed_utis(self) -> None:
+        completed = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                "md\tnet.daringfireball.markdown\n"
+                "rs\tdev.jyn.source-code.rs\n"
+            ),
+        )
+        with mock.patch.object(setup_mimetypes, "run", return_value=completed):
+            resolved = setup_mimetypes.resolve_extension_utis(
+                Path("classifier"), ["md", "rs"]
+            )
+
+        self.assertEqual({"md": "net.daringfireball.markdown"}, resolved)
+
+    def test_policy_does_not_claim_broad_text_web_or_calendar_types(self) -> None:
+        policy = setup_mimetypes.load_policy(ROOT / "lib/mimetypes.json")["macos"]
+
+        self.assertNotIn("public.text", policy["editor_utis"])
+        self.assertNotIn("html", policy["editor_extension_exceptions"])
+        self.assertNotIn("htm", policy["editor_extension_exceptions"])
+        self.assertNotIn("ics", policy["editor_extension_exceptions"])
+        self.assertIn("toml", policy["editor_extension_exceptions"])
+
+    def test_cleanup_removes_only_neovim_handler_roles(self) -> None:
+        preferences = {
+            "UnrelatedPreference": True,
+            "LSHandlers": [
+                {
+                    "LSHandlerContentType": "public.html",
+                    "LSHandlerRoleAll": "dev.jyn.nvim",
+                },
+                {
+                    "LSHandlerContentType": "public.calendar-event",
+                    "LSHandlerRoleEditor": "dev.jyn.nvim",
+                    "LSHandlerRoleViewer": "com.apple.Calendar",
+                },
+                {
+                    "LSHandlerContentType": "public.toml",
+                    "LSHandlerRoleAll": "com.microsoft.VSCode",
+                },
+            ],
+        }
+
+        cleaned = setup_mimetypes.remove_macos_bundle_handlers(
+            preferences, "dev.jyn.nvim"
+        )
+
+        self.assertTrue(cleaned["UnrelatedPreference"])
+        self.assertEqual(
+            [
+                {
+                    "LSHandlerContentType": "public.calendar-event",
+                    "LSHandlerRoleViewer": "com.apple.Calendar",
+                },
+                {
+                    "LSHandlerContentType": "public.toml",
+                    "LSHandlerRoleAll": "com.microsoft.VSCode",
+                },
+            ],
+            cleaned["LSHandlers"],
+        )
+
+    def test_cleanup_preserves_neovim_roles_already_in_desired_state(self) -> None:
+        preferences = {
+            "LSHandlers": [
+                {
+                    "LSHandlerContentType": "public.text",
+                    "LSHandlerRoleEditor": "dev.jyn.nvim",
+                },
+                {
+                    "LSHandlerContentType": "net.daringfireball.markdown",
+                    "LSHandlerRoleEditor": "dev.jyn.nvim",
+                },
+            ]
+        }
+
+        cleaned = setup_mimetypes.remove_macos_bundle_handlers(
+            preferences,
+            "dev.jyn.nvim",
+            {"net.daringfireball.markdown"},
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "LSHandlerContentType": "net.daringfireball.markdown",
+                    "LSHandlerRoleEditor": "dev.jyn.nvim",
+                }
+            ],
+            cleaned["LSHandlers"],
+        )
+
+    def test_reads_unique_content_types_from_launch_services_preferences(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            preferences = Path(temporary_directory) / "handlers.plist"
+            with preferences.open("wb") as output:
+                plistlib.dump(
+                    {
+                        "LSHandlers": [
+                            {
+                                "LSHandlerContentType": "public.toml",
+                                "LSHandlerRoleAll": "com.microsoft.VSCode",
+                            },
+                            {"LSHandlerContentType": "public.toml"},
+                            {"LSHandlerContentType": "public.png"},
+                            {"LSHandlerContentTag": "rs"},
+                            "invalid entry",
+                        ]
+                    },
+                    output,
+                )
+
+            handlers = setup_mimetypes.read_macos_handler_utis(preferences)
+
+        self.assertEqual(["public.png", "public.toml"], handlers)
+
+    def test_generated_app_declares_narrow_text_utis_and_native_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             app = Path(temporary_directory) / "nvim.app"
             setup_mimetypes.write_macos_app(
                 app,
                 {
-                    "editor_utis": ["public.text", "public.source-code"],
+                    "editor_utis": ["public.plain-text", "public.source-code"],
                     "editor_extension_exceptions": ["rs"],
                 },
+                ROOT / "lib/nvim-launcher.swift",
             )
 
             with (app / "Contents/Info.plist").open("rb") as plist_file:
@@ -155,17 +331,26 @@ class MacOSMimetypeTests(unittest.TestCase):
 
         self.assertEqual("dev.jyn.nvim", plist["CFBundleIdentifier"])
         self.assertEqual(
-            ["public.text", "public.source-code", "dev.jyn.source-code.rs"],
+            [
+                "public.plain-text",
+                "public.source-code",
+                "dev.jyn.plain-text.rs",
+            ],
             document_type["LSItemContentTypes"],
         )
         self.assertEqual("Editor", document_type["CFBundleTypeRole"])
         imported = plist["UTImportedTypeDeclarations"][0]
-        self.assertEqual("dev.jyn.source-code.rs", imported["UTTypeIdentifier"])
+        self.assertEqual("dev.jyn.plain-text.rs", imported["UTTypeIdentifier"])
+        self.assertEqual(["public.plain-text"], imported["UTTypeConformsTo"])
         self.assertEqual(
             ["rs"], imported["UTTypeTagSpecification"]["public.filename-extension"]
         )
         self.assertIn("openFiles filenames", launcher)
         self.assertIn('["hx-hax", filename]', launcher)
+        self.assertIn('--filter-source-utis', launcher)
+        self.assertNotIn("type.conforms(to: .text)", launcher)
+        self.assertIn("type.conforms(to: .sourceCode)", launcher)
+        self.assertEqual((ROOT / "lib/nvim-launcher.swift").read_text(), launcher)
 
 
 if __name__ == "__main__":
