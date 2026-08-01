@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import json
 import subprocess
 import tempfile
 import unittest
@@ -50,9 +51,12 @@ class DotfileSetupTests(unittest.TestCase):
     @staticmethod
     def config_destinations() -> dict[str, str]:
         destinations: dict[str, str] = {}
-        for line in (ROOT / "install/config.txt").read_text().splitlines():
-            name, destination = line.split("=", 1)
-            destinations[name] = destination
+        config = json.loads((ROOT / "install.conf.json").read_text())
+        links = next(directive["link"] for directive in config if "link" in directive)
+        for destination, specification in links.items():
+            source = specification if isinstance(specification, str) else specification["path"]
+            if destination.startswith("$HOME/"):
+                destinations[Path(source).name] = destination.removeprefix("$HOME/")
         return destinations
 
     def destination_for(self, source: Path) -> Path:
@@ -106,6 +110,76 @@ class DotfileSetupTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
         self.assertEqual(0, second.returncode, second.stderr)
         self.assert_all_dotfiles_installed()
+
+    def test_collision_is_backed_up_before_target_is_linked(self) -> None:
+        destination = self.home / ".config/readline/inputrc"
+        destination.parent.mkdir(parents=True)
+        destination.write_text("machine-local inputrc\n")
+
+        result = self.run_setup()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        backup = self.home / ".local/config/inputrc"
+        self.assertEqual("machine-local inputrc\n", backup.read_text())
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual((ROOT / "config/inputrc").resolve(), destination.resolve())
+
+    def test_collision_replaces_an_existing_backup_with_the_same_name(self) -> None:
+        destination = self.home / ".config/readline/inputrc"
+        destination.parent.mkdir(parents=True)
+        destination.write_text("current machine customization\n")
+        backup = self.home / ".local/config/inputrc"
+        backup.parent.mkdir(parents=True)
+        backup.write_text("older machine customization\n")
+
+        result = self.run_setup()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("current machine customization\n", backup.read_text())
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual((ROOT / "config/inputrc").resolve(), destination.resolve())
+
+    def test_codex_rules_is_hard_linked_and_idempotent(self) -> None:
+        first = self.run_setup()
+        destination = self.destination_for(ROOT / "config/codex.rules")
+
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertFalse(destination.is_symlink())
+        self.assertTrue(os.path.samefile(ROOT / "config/codex.rules", destination))
+
+        second = self.run_setup()
+
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assertTrue(os.path.samefile(ROOT / "config/codex.rules", destination))
+
+    def test_jj_uses_reported_user_config_path_and_backs_up_collision(self) -> None:
+        destination = self.home / ".config/jj/custom.toml"
+        destination.parent.mkdir(parents=True)
+        destination.write_text("user = 'local'\n")
+
+        result = self.run_setup()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "user = 'local'\n",
+            (self.home / ".local/config/custom.toml").read_text(),
+        )
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual((ROOT / "config/jj.toml").resolve(), destination.resolve())
+        self.assertFalse((self.home / ".jj.toml").exists())
+
+    def test_jj_falls_back_to_default_user_config_path(self) -> None:
+        jj = self.bin / "jj"
+        jj.write_text("#!/bin/sh\nexit 1\n")
+        jj.chmod(0o755)
+        destination = self.home / ".config/jj/config.toml"
+
+        result = self.run_setup()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(destination.is_symlink())
+        self.assertEqual((ROOT / "config/jj.toml").resolve(), destination.resolve())
+        self.assertFalse((self.home / ".jj.toml").exists())
 
 
 if __name__ == "__main__":

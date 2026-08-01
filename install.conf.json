@@ -1,0 +1,83 @@
+[
+  {
+    "defaults": {
+      "link": {
+        "create": true,
+        "relink": true
+      }
+    }
+  },
+  {
+    "link": {
+      "$HOME/.codex/AGENTS.md": "config/AGENTS.md",
+      "$HOME/.claude/CLAUDE.md": "config/CLAUDE.md",
+      "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",
+      "$HOME/.XCompose": "config/XCompose",
+      "$HOME/.Xdefaults": "config/Xdefaults",
+      "$HOME/.config/tmux/attach-session.sh": "config/attach-session.sh",
+      "$HOME/.config/atuin/config.toml": "config/atuin.toml",
+      "$HOME/.config/bacon/prefs.toml": "config/bacon.toml",
+      "$HOME/.bash_aliases": "config/bash_aliases",
+      "$HOME/.bash_logout": "config/bash_logout",
+      "$HOME/.bashrc": "config/bashrc",
+      "$HOME/.config/bat/config": "config/batconfig",
+      "$HOME/.local/lib/cargo/config.toml": "config/cargo.toml",
+      "$HOME/.claude/statusline-command.sh": "config/claude-statusline.sh",
+      "$HOME/.claude/settings.json": "config/claude.json",
+      "$HOME/.codex/rules/default.rules": {
+        "path": "config/codex.rules",
+        "type": "hardlink"
+      },
+      "$HOME/.config/fish/config.fish": "config/config.fish",
+      "$HOME/.config/containers/containers.conf": "config/containers.conf",
+      "$HOME/.config/clojure/deps.edn": "config/deps.edn",
+      "$HOME/.editorconfig": "config/editorconfig",
+      "$HOME/.local/share/applications/fx-usercreated-1.desktop": "config/fx.desktop",
+      "$HOME/.config/gdb/gdbearlyinit": "config/gdbearlyinit",
+      "$HOME/.config/gdb/gdbinit": "config/gdbinit",
+      "$HOME/.config/git/config": "config/gitconfig",
+      "$HOME/.config/git/hooks": "config/githooks",
+      "$HOME/.config/git/ignore": "config/gitignore",
+      "$HOME/.config/glide/glide.ts": "config/glide.ts",
+      "$HOME/.config/grepme.toml": "config/grepme.toml",
+      "$HOME/.config/helix": "config/helix",
+      "$HOME/.config/readline/inputrc": "config/inputrc",
+      "$JJ_CONFIG_PATH": "config/jj.toml",
+      "$HOME/.config/kak/kakrc": "config/kakrc",
+      "$HOME/.config/gitui/key_bindings.ron": "config/key_bindings.ron",
+      "$HOME/.keybindings.ahk": "config/keybindings.ahk",
+      "$HOME/.config/kitty/campbell.conf": "config/kitty-campbell.conf",
+      "$HOME/.config/kitty/kitty.conf": "config/kitty.conf",
+      "$HOME/.config/lesskey": "config/lesskey",
+      "$HOME/.config/nvim/after/queries/markdown/textobjects.scm": "config/markdown-objects.scm",
+      "$HOME/.config/mise/config.toml": "config/mise.toml",
+      "$HOME/.config/nvim/syntax/mumps.vim": "config/mumps.vim",
+      "$HOME/.config/nvim/colors/ayu-evolve.lua": "config/nvim-ayu-evolve.lua",
+      "$HOME/.local/share/applications/nvim.desktop": "config/nvim.desktop",
+      "$HOME/.config/nvim/init.lua": "config/nvim.lua",
+      "$HOME/.config/openbox/lubuntu-rc.xml": "config/openbox.xml",
+      "$HOME/.profile": "config/profile",
+      "$HOME/.config/pylintrc": "config/pylintrc",
+      "$HOME/.config/clojure/rebel_readline.edn": "config/rebel_readline.edn",
+      "$HOME/.config/tmux/renumber-sessions.sh": "config/renumber-tmux-sessions.sh",
+      "$HOME/.selected_editor": "config/selected_editor",
+      "$HOME/.config/tmux/set-env.sh": "config/set-tmux-env.sh",
+      "$HOME/.agents/shared.md": "config/shared-agents.md",
+      "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
+      "$HOME/.julia/config/startup.jl": "config/startup.jl",
+      "$HOME/.config/tmux/tmux.conf": "config/tmux.conf",
+      "$HOME/.vimrc": "config/vimrc",
+      "$HOME/.config/wezterm/wezterm.lua": "config/wezterm.lua",
+      "$HOME/.config/youtube-dl/config": "config/youtube-dl",
+      "$HOME/.config/fish/completions/__zoxide_z.fish": "config/z.fish",
+      "$HOME/.zprofile": "config/zprofile",
+      "$HOME/.config/zsh/.zsh_plugins.txt": "config/zsh_plugins.txt",
+      "$HOME/.config/zsh/.zshrc": "config/zshrc"
+    }
+  },
+  {
+    "create": [
+      "$HOME/.local/state/zsh"
+    ]
+  }
+]

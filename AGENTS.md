@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-This repository stores dotfiles and bootstrap scripts. User-level configuration lives in `config/`, system-level files in `global/`, helpers in `bin/`, shared support in `lib/`, and package manifests in `install/`. Setup entry points are `setup.sh`, `setup.ps1`, and `track.sh`. Tests live under `scripts/<feature>/`, such as `scripts/open/` and `scripts/wezterm/`. Static assets belong in `assets/`.
+This repository stores dotfiles and bootstrap scripts. User-level configuration lives in `config/`, with its Dotbot mappings in `install.conf.json`. System-level files live in `global/`, helpers in `bin/`, shared support in `lib/`, and package manifests in `install/`. Setup entry points are `setup.sh`, `setup.ps1`, and `track.sh`. Tests live under `scripts/<feature>/`, such as `scripts/open/` and `scripts/wezterm/`. Static assets belong in `assets/`.
 
 ## Build, Test, and Development Commands
 
 - `./setup.sh`: installs or links tools and dotfiles for the current platform. Read the relevant function before using it on a new machine.
-- `./track.sh <existing file> [name]`: moves a user file into `config/` or copies a system file into `global/`, then records it in `install/*.txt`.
+- `./track.sh <existing file> [name]`: moves a user file into `config/` and adds its Dotbot mapping, or copies a system file into `global/` and records it in `install/global.txt`.
 - `python3 scripts/open/test_open.py`: runs unit tests for the editor/open wrapper behavior.
 - `python3 scripts/wezterm/wezterm_test.py`: validates selector patterns in `config/wezterm.lua`.
 - `shellcheck setup.sh track.sh bin/* lib/*.sh`: checks shell scripts where applicable; some `bin/` entries are not shell scripts.
@@ -26,4 +26,4 @@ Use Jujutsu (`jj`) by default for inspection and change management: `jj status`,
 
 ## Security & Configuration Tips
 
-Do not commit secrets, tokens, private hostnames, or machine-local paths unless they are already intentionally tracked. Be careful with `global/` changes: they may be copied with elevated privileges. Review `install/*.txt` when adding packages so bootstrap behavior remains predictable.
+Do not commit secrets, tokens, private hostnames, or machine-local paths unless they are already intentionally tracked. Be careful with `global/` changes: they may be copied with elevated privileges. Review `install.conf.json` when adding dotfiles and `install/*.txt` when adding packages so bootstrap behavior remains predictable.

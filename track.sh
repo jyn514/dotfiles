@@ -15,12 +15,13 @@ local=${2:-$(basename "$1" | sed 's/^\.//')}
 cd "$(dirname "$0")"
 
 set -x
-echo "$local=$(echo "$1" | sed "s#^$HOME/##")" >> install/$dir.txt
 if [ $dir = global ]; then
 	# we have to be careful here, we don't want to break the system.
+	echo "$local=$1" >> install/global.txt
 	cp "$1" "$dir/$local"
 	sudo lib/setup_sudo.sh copy_globals --force
 else
 	mv "$1" "$dir/$local"
 	ln -s "$(realpath "$dir/$local")" "$1"
+	python3 lib/add_dotfile.py "$1" "$dir/$local"
 fi
