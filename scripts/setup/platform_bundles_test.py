@@ -61,9 +61,10 @@ class PlatformBundleTests(unittest.TestCase):
                 "destination": ".local/lib/example",
                 "executable": "bin/tool",
                 "platforms": {"linux-x86_64": "https://example.invalid/tool.zip"},
+                "sha256": {"linux-x86_64": "unused by mocked download"},
             }
 
-            def fake_download(_url: str, destination: Path) -> None:
+            def fake_download(_url: str, destination: Path, _checksum: str) -> None:
                 with zipfile.ZipFile(destination, "w") as archive:
                     archive.writestr("bin/tool", "binary")
 
@@ -89,6 +90,7 @@ class PlatformBundleTests(unittest.TestCase):
                 {
                     "destination": ".local/lib/example",
                     "platforms": {"linux-x86_64": "https://example.invalid"},
+                    "sha256": {"linux-x86_64": "0" * 64},
                 },
                 home=home,
                 current_platform="macos-aarch64",
@@ -96,6 +98,22 @@ class PlatformBundleTests(unittest.TestCase):
 
             self.assertFalse(installed)
             self.assertFalse((home / ".local/lib/example").exists())
+
+    def test_download_rejects_a_checksum_mismatch(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.side_effect = [b"contents", b""]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "archive"
+            with mock.patch.object(bundles.urllib.request, "urlopen", return_value=response):
+                with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                    bundles.download("https://example.invalid", destination, "0" * 64)
+
+    def test_every_platform_asset_has_a_sha256_checksum(self) -> None:
+        for bundle in self.manifest.values():
+            self.assertEqual(set(bundle["platforms"]), set(bundle["sha256"]))
+            for checksum in bundle["sha256"].values():
+                self.assertEqual(64, len(checksum))
+                int(checksum, 16)
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-icezyclon/zoxide.fish
+icezyclon/zoxide.fish@27a058a661e2eba021b90e9248517b6c47a22674

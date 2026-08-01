@@ -14,7 +14,7 @@ install_macos_local() {
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 	if exists cargo; then
-		cargo install --git https://github.com/jyn514/brew-command-not-found --branch new-year-new-brew --locked
+		cargo install --git https://github.com/jyn514/brew-command-not-found --rev 45e60456edbe795cc293bfa2d2a787a7c557e4a6 --locked
 	fi
 }
 
@@ -145,10 +145,10 @@ setup_basics () {
 	set +ue
 	. config/profile
 	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
-		git clone https://github.com/tmux-plugins/tpm ~/.config/tmux/plugins/tpm
+		python3 lib/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm
 	fi
 	if ! [ -d "$libdir"/fzf-tab-completion ]; then
-		git clone https://github.com/lincheney/fzf-tab-completion "$libdir"/fzf-tab-completion/
+		python3 lib/install_bootstrap.py clone fzf-tab-completion "$libdir"/fzf-tab-completion
 	fi
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
@@ -166,7 +166,7 @@ setup_basics () {
 			cd "$(bat --config-dir)/syntaxes"
 			# TODO: just inline this into my dotfiles
 			if ! [ -e mumps.sublime-syntax ]; then
-				download https://github.com/ksherlock/MUMPS.tmbundle/raw/refs/heads/master/Syntaxes/mumps.sublime-syntax mumps.sublime-syntax
+				python3 "$OLDPWD/lib/install_bootstrap.py" download mumps-syntax mumps.sublime-syntax
 				sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
 			fi
 		)
@@ -187,12 +187,14 @@ setup_basics () {
 
 setup_kde() {
 	if ! [ -d ~/.local/share/kwin/scripts/krohnkite ]; then
-		krohnkite=$(download https://codeberg.org/anametologin/Krohnkite/releases/download/latest/krohnkite.kwinscript)
+		krohnkite=$(tmp_file krohnkite.XXXXXX)
+		python3 lib/install_bootstrap.py download krohnkite "$krohnkite" || return
 		kpackagetool6 -t KWin/Script -i "$krohnkite"
+		rm -f "$krohnkite"
 	fi
 
 	if ! [ -d $libdir/dynamic_workspaces ]; then
-		git clone https://github.com/maurges/dynamic_workspaces "$libdir"/dynamic_workspaces
+		python3 lib/install_bootstrap.py clone dynamic-workspaces "$libdir"/dynamic_workspaces
 		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
 	fi
 
@@ -241,14 +243,14 @@ setup_vim () {
 VIMDIR="$HOME/.vim/autoload"
 	if exists vim && ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
-		download https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim "$VIMDIR/plug.vim"
+		python3 lib/install_bootstrap.py download vim-plug "$VIMDIR/plug.vim"
 		vim -c PlugInstall -c q -c q
 	fi
 unset VIMDIR
 	if exists nvim; then
 LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
 		if ! [ -e "$LAZYDIR" ]; then
-			git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git "$LAZYDIR"
+			python3 lib/install_bootstrap.py clone lazy.nvim "$LAZYDIR"
 			nvim --headless +:q
 		fi
 unset LAZYDIR
@@ -329,10 +331,14 @@ setup_install_local () {
 	fi
 
 	if ! [ -e ~/.config/zsh/antidote ]; then
-		git clone --depth=1 https://github.com/mattmc3/antidote.git ~/.config/zsh/antidote
+		mise_exec python lib/install_bootstrap.py clone antidote ~/.config/zsh/antidote
 	fi
 	if ! [ -e ~/.config/fish/fish_plugins ]; then
-		curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
+		fisher_installer=$(tmp_file fisher.XXXXXX)
+		mise_exec python lib/install_bootstrap.py download fisher "$fisher_installer" || return
+		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@791da644d33d392216f6b1a9b5fc1e470db6d7f2' "$fisher_installer"
+		rm -f "$fisher_installer"
+		unset fisher_installer
 		fish -c 'fisher install (command cat install/fish.txt)'
 	fi
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
