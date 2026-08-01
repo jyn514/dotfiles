@@ -33,6 +33,13 @@ if [ "${image%%:*}" = alpine ]; then
 			exit 1
 		fi
 		grep -q "Alpine.*libgcc package is required for Rust" /tmp/local-bootstrap.out
+		mkdir -p /tmp/setup-bin
+		ln -s /bin/true /tmp/setup-bin/fish
+		if PATH="/tmp/setup-bin:$PATH" ./setup.sh 2 > /tmp/shell-bootstrap.out 2>&1; then
+			echo "shell setup unexpectedly succeeded without chsh" >&2
+			exit 1
+		fi
+		grep -q "chsh is required.*run setup option 7 or 9 first" /tmp/shell-bootstrap.out
 		if ./setup.sh 4 > /tmp/vim-bootstrap.out 2>&1; then
 			echo "vim setup unexpectedly succeeded without an editor" >&2
 			exit 1

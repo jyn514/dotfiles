@@ -311,6 +311,10 @@ setup_shell () {
 			break
 		elif exists $shell; then
 			echo "Changing default shell to $shell"
+			if ! exists chsh; then
+				echo "chsh is required to change shells; run setup option 7 or 9 first" >&2
+				return 1
+			fi
 			chsh -s "$(command -v $shell)" >/dev/null
 			break
 		fi

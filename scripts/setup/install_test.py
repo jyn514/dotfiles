@@ -167,6 +167,7 @@ class InstallationTests(unittest.TestCase):
                     "less",
                     "libgcc",
                     "py3-pip",
+                    "shadow",
                     "zsh",
                     *self.translated(packages, replacements),
                 ],
@@ -577,7 +578,7 @@ class LocalInstallationTests(unittest.TestCase):
     def test_alpine_global_install_explicitly_installs_libgcc(self) -> None:
         setup_sudo = (ROOT / "lib/setup_sudo.sh").read_text()
 
-        self.assertIn("apk add less libgcc py3-pip zsh", setup_sudo)
+        self.assertIn("apk add less libgcc py3-pip shadow zsh", setup_sudo)
 
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
