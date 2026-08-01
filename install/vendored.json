@@ -1,0 +1,25 @@
+{
+  "artifacts": {
+    "android-file-transfer": {
+      "license": null,
+      "path": "bin/android-file-transfer",
+      "sha256": "e548ce969ef3611bbf9c0d00f30985547273f153e7c1839f685de432f29c2907",
+      "source": "https://github.com/whoozle/android-file-transfer-linux",
+      "version": null
+    },
+    "dotbot-launcher": {
+      "license": "lib/dotbot/LICENSE.md",
+      "path": "lib/dotbot/bin/dotbot",
+      "sha256": "9d6abb7969c6de4897bd1b660b1cbd808cb4f0f3d058423c2e745d9b7e4cdadc",
+      "source": "https://github.com/anishathalye/dotbot",
+      "version": "087840716e0ba1edd60049094a0ab57a8aa3fbe3"
+    },
+    "git-filter-repo": {
+      "license": null,
+      "path": "bin/git-filter-repo",
+      "sha256": "69d2dae2d2331ce73b9c46d2a993046ec4bc26fd3c2328c2bcffb323b8338f8f",
+      "source": "https://github.com/newren/git-filter-repo",
+      "version": "v2.38.0"
+    }
+  }
+}
