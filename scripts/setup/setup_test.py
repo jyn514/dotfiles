@@ -36,10 +36,10 @@ class DotfileSetupTests(unittest.TestCase):
         env.update(
             HOME=str(self.home),
             PATH=f"{self.bin}:{env['PATH']}",
-            DOTFILES_SOURCE_ONLY="1",
         )
+        command = env.get("DOTFILES_SETUP_COMMAND", "./setup.sh dotfiles")
         return subprocess.run(
-            ["sh", "-c", ". ./setup.sh; setup_dotfiles"],
+            ["sh", "-c", command],
             cwd=ROOT,
             env=env,
             text=True,
