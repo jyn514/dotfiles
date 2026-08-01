@@ -234,7 +234,7 @@ done'
 	fi
 }
 
-setup_basics () {
+setup_dotfiles () {
 	echo Installing configuration to ~
 	LOCAL="$HOME/.local/config"
 	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
@@ -271,6 +271,11 @@ setup_basics () {
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
 	mkdir -p ~/.local/state/zsh
+unset DEST LOCAL f
+}
+
+setup_basics () {
+	setup_dotfiles
 
 	discord=$HOME/.config/discord/settings.json
 	if [ -e $discord ]; then
@@ -326,7 +331,6 @@ setup_basics () {
 	fi
 
 	setup_mimetypes
-unset DEST LOCAL f
 }
 
 setup_kde() {
@@ -536,7 +540,9 @@ run() {
 	esac
 }
 
-if ! [ $# = 0 ]; then
+if [ "${DOTFILES_SOURCE_ONLY:-0}" = 1 ]; then
+	:
+elif ! [ $# = 0 ]; then
 	run "$1"
 	if [ $? = 126 ]; then message; fi
 else
