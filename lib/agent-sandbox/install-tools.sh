@@ -75,6 +75,8 @@ mv "/usr/local/bin/podman-remote-static-linux_${podman_arch}" \
 rm -rf "$podman_download_dir"
 trap - EXIT HUP INT TERM
 
+ln -s /usr/local/bin/podman /usr/local/bin/docker
+docker --version
 gh --version
 jj --version
 podman --version

@@ -2,7 +2,7 @@
 
 ARG BASE_IMAGE=node:slim
 
-FROM ${BASE_IMAGE} AS tools
+FROM debian:trixie-slim AS tools
 COPY ./lib/agent-sandbox/install-tools.sh /usr/local/bin/install-agent-tools
 ARG GH_VERSION=2.76.1
 ARG JJ_VERSION=0.42.0
@@ -16,7 +16,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     JJ_VERSION=${JJ_VERSION} \
     PODMAN_VERSION=${PODMAN_VERSION} \
     TYPST_VERSION=${TYPST_VERSION} \
-    install-agent-tools
+    install-agent-tools \
+    && mkdir -p /opt/agent-tools/bin \
+    && cp -a \
+        /usr/local/bin/docker \
+        /usr/local/bin/gh \
+        /usr/local/bin/jj \
+        /usr/local/bin/podman \
+        /usr/local/bin/typst \
+        /opt/agent-tools/bin/
+
+FROM node:slim AS codex
+ARG CODEX_VERSION=0.144.4
+RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
+    && mkdir -p /opt/agent-codex/bin /opt/agent-codex/lib \
+    && cp -a /usr/local/lib/node_modules/@openai/codex /opt/agent-codex/lib/codex \
+    && ln -s ../lib/codex/bin/codex.js /opt/agent-codex/bin/codex
 
 FROM ${BASE_IMAGE}
 COPY ./lib/agent-sandbox/install-deps.sh /usr/local/bin/install-agent-deps
@@ -27,16 +42,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     KEEP_PACKAGE_CACHE=1 install-agent-deps \
     && rm /usr/local/bin/install-agent-deps
 
-COPY --from=tools /usr/local/bin/gh /usr/local/bin/gh
-COPY --from=tools /usr/local/bin/jj /usr/local/bin/jj
-COPY --from=tools /usr/local/bin/podman /usr/local/bin/podman
-COPY --from=tools /usr/local/bin/typst /usr/local/bin/typst
-RUN ln -s /usr/local/bin/podman /usr/local/bin/docker \
-    && docker --version \
-    && gh --version \
-    && jj --version \
-    && podman --version \
-    && typst --version
+COPY --link --from=tools /opt/agent-tools /opt/agent-tools
+COPY --link --from=codex /opt/agent-codex /opt/agent-codex
 
 COPY ./lib/agent-sandbox/create-user.sh .
 ARG AGENT_UID=1000
@@ -59,14 +66,11 @@ RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src/work \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
         ${HOME} ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src
 
-ARG CODEX_VERSION=0.144.4
-RUN npm install --global "@openai/codex@${CODEX_VERSION}"
-
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-wrappers /lib/agent-wrappers
-ENV PATH=/lib/agent-wrappers:${PATH}
+ENV PATH=/lib/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /src/work
@@ -75,4 +79,4 @@ ENV COLORTERM=truecolor
 ARG TERM=xterm-256color
 ENV TERM=${TERM}
 ENTRYPOINT ["codex", "--config=check_for_update_on_startup=false", \
-  "--config=shell_environment_policy.set.PATH=\"/lib/agent-wrappers:/usr/local/bin:/usr/bin:/bin\""]
+  "--config=shell_environment_policy.set.PATH=\"/lib/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:/usr/local/bin:/usr/bin:/bin\""]
