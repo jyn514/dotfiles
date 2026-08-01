@@ -101,15 +101,13 @@ install_mise() {
 		}
 	fi
 	offer_mise_github_oauth || return
-	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
-	# These crates do not publish binaries that mise can install on every supported
-	# platform. Preserve the no-compilation policy and explicitly omit them there.
-	case $(uname -m) in
-		aarch64|arm64) cargo_tools=$(sed '/^librespot$/d' install/rust.txt);;
-		*) cargo_tools=$(cat install/rust.txt);;
-	esac
-	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
-	unset cargo_tools
+	if exists apk; then
+		# Alpine supplies these itself, or has no compatible prebuilt release.
+		env MISE_DISABLE_TOOLS='node,python,npm:pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:vscode-langservers-extracted,aqua:Wilfred/difftastic' \
+			MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
+	else
+		MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
+	fi
 }
 
 # create_macos_app() {
@@ -527,17 +525,7 @@ cd "$(dirname "$0")"
 . lib/lib.sh
 . lib/env.sh
 
-MISE_SETUP_DIR=$(tmp_dir mise-config.XXXXXX)
-MISE_SETUP_CONFIG=$MISE_SETUP_DIR/config.toml
-sed '/^"cargo:/d' config/mise.toml > "$MISE_SETUP_CONFIG"
-cp config/mise.lock "$MISE_SETUP_DIR/mise.lock"
-if exists apk; then
-	# Preserve the old Alpine behavior: use packaged Python and difftastic, and
-	# skip Node because it has no musl release and would compile from source.
-	sed '/^node = /d; /^python = /d; /^"npm:/d; /^"aqua:Wilfred\/difftastic"/d; s/depends = \["python", "uv"\]/depends = ["uv"]/' "$MISE_SETUP_CONFIG" > "$MISE_SETUP_CONFIG.alpine"
-	mv "$MISE_SETUP_CONFIG.alpine" "$MISE_SETUP_CONFIG"
-fi
-trap 'rm -rf "$MISE_SETUP_DIR"' EXIT HUP INT TERM
+MISE_SETUP_CONFIG=$PWD/config/mise.toml
 export MISE_SETUP_CONFIG
 
 run() {

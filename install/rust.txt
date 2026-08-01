@@ -1,5 +1,0 @@
-bacon
-cargo-audit
-cargo-sweep
-cargo-tree
-librespot

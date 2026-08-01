@@ -9,10 +9,15 @@ uv = "latest"
 "aqua:antonmedv/fx" = "latest"
 "aqua:LuaLS/lua-language-server" = "latest"
 "aqua:mvdan/sh" = { version = "latest", filter_bins = "shfmt" }
-"cargo:broot" = { version = "latest", depends = ["rust"] }
-"cargo:cargo-outdated" = { version = "latest", depends = ["rust"] }
-"cargo:counts" = { version = "latest", depends = ["rust"] }
-"cargo:mdbook" = { version = "latest", depends = ["rust"] }
+"cargo:bacon" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:broot" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-audit" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-outdated" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-sweep" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:cargo-tree" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:counts" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"cargo:librespot" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"], os = ["linux/x64", "macos/x64", "windows/x64"] }
+"cargo:mdbook" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "aqua:Wilfred/difftastic" = "latest"
 "aqua:Byron/dua-cli" = "latest"
 "aqua:jj-vcs/jj" = "latest"
@@ -25,15 +30,17 @@ uv = "latest"
 "npm:typescript-language-server" = { version = "latest", depends = ["node"] }
 "npm:oxlint" = { version = "latest", depends = ["node"] }
 "npm:vscode-langservers-extracted" = { version = "latest", depends = ["node"] }
-"pipx:git-revise" = { version = "latest", depends = ["python", "uv"] }
-"pipx:pytest" = { version = "latest", depends = ["python", "uv"] }
-"pipx:pylint" = { version = "latest", depends = ["python", "uv"] }
-"pipx:yt-dlp" = { version = "latest", depends = ["python", "uv"] }
+"pipx:git-revise" = { version = "latest", depends = ["uv"] }
+"pipx:pytest" = { version = "latest", depends = ["uv"] }
+"pipx:pylint" = { version = "latest", depends = ["uv"] }
+"pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 
 [settings]
 lockfile = true
 locked = true
 npm.package_manager = "npm"
+cargo.binstall = true
+cargo.binstall_only = true
 
 [settings.github]
 oauth_client_id = "Iv23li0gR6P4iv8HXrsF"
