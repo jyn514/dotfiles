@@ -48,9 +48,11 @@ class MiseSmokeTests(unittest.TestCase):
             "bacon",
             "broot",
             "cargo-audit",
+            "cargo-binstall",
             "cargo-outdated",
             "cargo-sweep",
             "cargo-tree",
+            "counts",
             "difft",
             "dua",
             "rg",
@@ -69,7 +71,7 @@ class MiseSmokeTests(unittest.TestCase):
             "yt-dlp",
         ]
         if platform.machine() not in {"aarch64", "arm64"}:
-            commands.extend(("counts", "librespot"))
+            commands.append("librespot")
         script = "set -e; " + "; ".join(f"command -v {command}" for command in commands)
 
         self.assert_mise_command("sh", "-c", script)

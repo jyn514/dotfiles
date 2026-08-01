@@ -57,18 +57,12 @@ install_mise() {
 		export GITHUB_TOKEN=$github_token
 		unset github_token
 	fi
-	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes rust || return
-	if ! [ -x "$CARGO_HOME/bin/cargo-binstall" ]; then
-		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | sh
-		[ -x "$CARGO_HOME/bin/cargo-binstall" ] || return 1
-	else
-		mise_exec cargo binstall cargo-binstall || return
-	fi
+	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes rust@nightly aqua:cargo-bins/cargo-binstall@latest || return
 	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes || return
 	# These crates do not publish binaries that mise can install on every supported
 	# platform. Preserve the no-compilation policy and explicitly omit them there.
 	case $(uname -m) in
-		aarch64|arm64) cargo_tools=$(sed '/^counts$/d; /^librespot$/d' install/rust.txt);;
+		aarch64|arm64) cargo_tools=$(sed '/^librespot$/d' install/rust.txt);;
 		*) cargo_tools=$(cat install/rust.txt);;
 	esac
 	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
