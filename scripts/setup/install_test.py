@@ -165,6 +165,7 @@ class InstallationTests(unittest.TestCase):
                     "apk",
                     "add",
                     "less",
+                    "libgcc",
                     "py3-pip",
                     "zsh",
                     *self.translated(packages, replacements),
@@ -566,6 +567,17 @@ class LocalInstallationTests(unittest.TestCase):
         setup = (ROOT / "setup.sh").read_text()
 
         self.assertIn("sed '/^\"cargo:/d' config/mise.toml", setup)
+
+    def test_alpine_local_install_requires_rust_runtime_library(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn("exists apk && ! [ -e /usr/lib/libgcc_s.so.1 ]", setup)
+        self.assertIn("run setup option 7 or 9 first", setup)
+
+    def test_alpine_global_install_explicitly_installs_libgcc(self) -> None:
+        setup_sudo = (ROOT / "lib/setup_sudo.sh").read_text()
+
+        self.assertIn("apk add less libgcc py3-pip zsh", setup_sudo)
 
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")

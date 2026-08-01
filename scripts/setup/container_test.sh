@@ -26,8 +26,13 @@ if [ "${image%%:*}" = alpine ]; then
 				echo "setup option $option unexpectedly succeeded without python3" >&2
 				exit 1
 			fi
-			grep -q "dotfile setup requires python3; run setup option 7 or 9 first" /tmp/dotfiles-bootstrap.out
+		grep -q "dotfile setup requires python3; run setup option 7 or 9 first" /tmp/dotfiles-bootstrap.out
 		done
+		if ./setup.sh 6 > /tmp/local-bootstrap.out 2>&1; then
+			echo "local setup unexpectedly succeeded without libgcc" >&2
+			exit 1
+		fi
+		grep -q "Alpine.*libgcc package is required for Rust" /tmp/local-bootstrap.out
 		if ./setup.sh 4 > /tmp/vim-bootstrap.out 2>&1; then
 			echo "vim setup unexpectedly succeeded without an editor" >&2
 			exit 1
