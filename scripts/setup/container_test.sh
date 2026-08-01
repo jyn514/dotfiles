@@ -14,7 +14,7 @@ fi
 case $image in
 	alpine:*) install='apk add --no-cache coreutils python3';;
 	fedora:*) install='dnf install -y coreutils python3';;
-	archlinux:*) install='pacman --sync --refresh --sysupgrade --noconfirm coreutils python';;
+	archlinux:*) install='pacman --sync --refresh --sysupgrade --noconfirm --disable-sandbox coreutils python';;
 	ubuntu:*) install='export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends coreutils python3';;
 	*) echo "$0: unsupported image: $image" >&2; exit 2;;
 esac
@@ -22,6 +22,7 @@ esac
 container=$("$engine" create --workdir /work "$image" sh -ec "
 		$install
 		python3 scripts/setup/setup_test.py
+		python3 scripts/setup/install_test.py
 ")
 trap '"$engine" rm --force "$container" >/dev/null' EXIT HUP INT TERM
 
