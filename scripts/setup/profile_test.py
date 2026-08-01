@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProfileContractTests(unittest.TestCase):
-    @unittest.expectedFailure
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory) / "home"
