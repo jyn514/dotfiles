@@ -95,6 +95,40 @@ setup_kde() { record kde; }
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("parameter not set", result.stderr)
 
+    def test_shell_setup_explains_when_chsh_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            binary_directory = directory / "bin"
+            binary_directory.mkdir()
+            (binary_directory / "fish").symlink_to("/bin/true")
+            source = (ROOT / "setup.sh").read_text()
+            marker = "if ! [ $# = 0 ]; then\n"
+            source = source.replace(
+                marker,
+                'exists() { [ "$1" != chsh ] && command -v "$1" >/dev/null 2>&1; }\n'
+                + marker,
+                1,
+            )
+            script = directory / "setup.sh"
+            script.write_text(source)
+            (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
+            (directory / "config").symlink_to(ROOT / "config", target_is_directory=True)
+            env = os.environ.copy()
+            env.pop("SHELL", None)
+            env.update(HOME=str(directory), PATH=f"{binary_directory}:{env['PATH']}")
+
+            result = subprocess.run(
+                ["/bin/sh", str(script), "2"],
+                cwd=directory,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("chsh is required", result.stderr)
+
     def test_vim_and_backup_options_are_decoupled_from_basics(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
