@@ -19,12 +19,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     install-agent-tools \
     && mkdir -p /opt/agent-tools/bin \
     && cp -a \
-        /usr/local/bin/docker \
         /usr/local/bin/gh \
         /usr/local/bin/jj \
         /usr/local/bin/podman \
         /usr/local/bin/typst \
-        /opt/agent-tools/bin/
+        /opt/agent-tools/bin/ \
+    && ln -s podman /opt/agent-tools/bin/docker
 
 FROM node:slim AS codex
 ARG CODEX_VERSION=0.144.4
