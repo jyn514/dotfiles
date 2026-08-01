@@ -4,7 +4,24 @@ import argparse
 import json
 import os
 import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+POLICY_PATH = ROOT / "lib/mimetypes.json"
+BUNDLE_ID = "dev.jyn.nvim"
+MANAGED_UTI_PREFIXES = ("dev.jyn.plain-text.", "dev.jyn.source-code.")
+LAUNCH_SERVICES_DOMAIN = (
+    "com.apple.LaunchServices/com.apple.launchservices.secure"
+)
+LSREGISTER = Path(
+    "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+    "LaunchServices.framework/Support/lsregister"
+)
 
 
 def read_lines(path: Path) -> set[str]:
@@ -73,12 +90,62 @@ def write_linux_desktop(template: Path, destination: Path, mimes: list[str]) -> 
     destination.write_text("\n".join(lines) + "\n")
 
 
-def write_macos_app(app: Path, policy: dict) -> None:
+def read_macos_handler_utis(path: Path) -> list[str]:
+    with path.open("rb") as input_file:
+        preferences = plistlib.load(input_file)
+    handlers = preferences.get("LSHandlers", [])
+    return sorted(
+        {
+            content_type
+            for handler in handlers
+            if isinstance(handler, dict)
+            if isinstance(content_type := handler.get("LSHandlerContentType"), str)
+        }
+    )
+
+
+def remove_macos_bundle_handlers(
+    preferences: dict, bundle_id: str, keep_utis: set[str] | None = None
+) -> dict:
+    keep_utis = keep_utis or set()
+    handlers = []
+    for original in preferences.get("LSHandlers", []):
+        if not isinstance(original, dict):
+            handlers.append(original)
+            continue
+        if original.get("LSHandlerContentType") in keep_utis:
+            handler = original
+        else:
+            handler = {
+                key: value
+                for key, value in original.items()
+                if not (key.startswith("LSHandlerRole") and value == bundle_id)
+            }
+        if any(key.startswith("LSHandlerRole") for key in handler):
+            handlers.append(handler)
+    preferences["LSHandlers"] = handlers
+    return preferences
+
+
+def clean_macos_preferences(
+    source: Path,
+    destination: Path,
+    bundle_id: str,
+    keep_utis: set[str] | None = None,
+) -> None:
+    with source.open("rb") as input_file:
+        preferences = plistlib.load(input_file)
+    remove_macos_bundle_handlers(preferences, bundle_id, keep_utis)
+    with destination.open("wb") as output:
+        plistlib.dump(preferences, output, sort_keys=False)
+
+
+def write_macos_app(app: Path, policy: dict, launcher_source: Path) -> None:
     contents = app / "Contents"
     macos = contents / "MacOS"
     macos.mkdir(parents=True, exist_ok=True)
     extension_utis = [
-        f"dev.jyn.source-code.{extension.replace('_', '-')}"
+        f"dev.jyn.plain-text.{extension.replace('_', '-')}"
         for extension in policy["editor_extension_exceptions"]
     ]
     plist = {
@@ -100,8 +167,8 @@ def write_macos_app(app: Path, policy: dict) -> None:
         "LSUIElement": True,
         "UTImportedTypeDeclarations": [
             {
-                "UTTypeConformsTo": ["public.source-code", "public.text"],
-                "UTTypeDescription": f"{extension} source code",
+                "UTTypeConformsTo": ["public.plain-text"],
+                "UTTypeDescription": f"{extension} text",
                 "UTTypeIdentifier": identifier,
                 "UTTypeTagSpecification": {
                     "public.filename-extension": [extension]
@@ -115,60 +182,234 @@ def write_macos_app(app: Path, policy: dict) -> None:
     with (contents / "Info.plist").open("wb") as output:
         plistlib.dump(plist, output, sort_keys=False)
 
-    (contents / "launcher.swift").write_text(
-        """import AppKit
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        for filename in filenames {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["hx-hax", filename]
-            try? process.run()
-        }
-        sender.reply(toOpenOrPrint: .success)
-    }
-}
-
-let application = NSApplication.shared
-let delegate = AppDelegate()
-application.delegate = delegate
-application.setActivationPolicy(.accessory)
-application.run()
-"""
-    )
+    shutil.copyfile(launcher_source, contents / "launcher.swift")
 
 
 def load_policy(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--policy", type=Path, required=True)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    linux = subparsers.add_parser("linux")
-    linux.add_argument("--mime-dir", action="append", type=Path, default=[])
-    linux.add_argument("--desktop-template", type=Path)
-    linux.add_argument("--desktop-output", type=Path)
-    macos = subparsers.add_parser("macos-app")
-    macos.add_argument("app", type=Path)
-    arguments = parser.parse_args()
-    policy = load_policy(arguments.policy)
+def command_exists(command: str) -> bool:
+    return shutil.which(command) is not None
 
-    if arguments.command == "linux":
-        mime_directories = arguments.mime_dir or default_mime_directories()
-        mimes = discover_editor_mimes(policy["linux"], mime_directories)
-        if bool(arguments.desktop_template) != bool(arguments.desktop_output):
-            parser.error("--desktop-template and --desktop-output must be used together")
-        if arguments.desktop_template:
-            write_linux_desktop(
-                arguments.desktop_template, arguments.desktop_output, mimes
-            )
+
+def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+    return subprocess.run(command, check=True, **kwargs)
+
+
+def linux_setup(policy: dict, dry_run: bool) -> None:
+    mimes = discover_editor_mimes(
+        policy["linux"], default_mime_directories()
+    )
+    desktop = Path.home() / ".local/share/applications/nvim-generated.desktop"
+    if dry_run:
+        print("Neovim MIME defaults:")
         for mime in mimes:
-            print(mime)
+            print(f"  {mime}")
     else:
-        write_macos_app(arguments.app, policy["macos"])
+        write_linux_desktop(ROOT / "config/nvim.desktop", desktop, mimes)
+        if command_exists("update-desktop-database"):
+            run(["update-desktop-database", str(desktop.parent)])
+        for mime in mimes:
+            run(["xdg-mime", "default", desktop.name, mime])
+
+    if command_exists("fx"):
+        if dry_run:
+            print("fx MIME defaults:")
+            print("  application/json")
+        else:
+            run(
+                [
+                    "xdg-mime",
+                    "default",
+                    "fx-usercreated-1.desktop",
+                    "application/json",
+                ]
+            )
+
+    if command_exists("xdg-settings"):
+        browser = subprocess.run(
+            ["xdg-settings", "get", "default-web-browser"],
+            check=False,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+        if browser:
+            if dry_run:
+                print(f"Browser MIME defaults ({browser}):")
+                print("  image/svg+xml")
+            else:
+                run(["xdg-mime", "default", browser, "image/svg+xml"])
+
+
+def export_launch_services(path: Path) -> bool:
+    with path.open("wb") as output:
+        result = subprocess.run(
+            ["defaults", "export", LAUNCH_SERVICES_DOMAIN, "-"],
+            stdout=output,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    return result.returncode == 0
+
+
+def neovim_handler_roles(preferences: dict) -> list[tuple[str, str]]:
+    associations = []
+    for handler in preferences.get("LSHandlers", []):
+        if not isinstance(handler, dict):
+            continue
+        content_type = handler.get("LSHandlerContentType", "<unknown type>")
+        for key, value in handler.items():
+            if key.startswith("LSHandlerRole") and value == BUNDLE_ID:
+                associations.append((content_type, key.removeprefix("LSHandlerRole")))
+    return sorted(associations)
+
+
+def compile_launcher(output: Path) -> None:
+    run(
+        [
+            "xcrun",
+            "swiftc",
+            str(ROOT / "lib/nvim-launcher.swift"),
+            "-o",
+            str(output),
+        ]
+    )
+
+
+def filter_source_utis(classifier: Path, utis: list[str]) -> list[str]:
+    result = run(
+        [str(classifier), "--filter-source-utis"],
+        input="".join(f"{uti}\n" for uti in utis),
+        text=True,
+        capture_output=True,
+    )
+    return sorted(
+        uti
+        for uti in set(result.stdout.splitlines())
+        if not uti.startswith(MANAGED_UTI_PREFIXES)
+    )
+
+
+def resolve_extension_utis(
+    classifier: Path, extensions: list[str]
+) -> dict[str, str]:
+    result = run(
+        [str(classifier), "--extension-utis"],
+        input="".join(f"{extension}\n" for extension in extensions),
+        text=True,
+        capture_output=True,
+    )
+    resolved = {}
+    for line in result.stdout.splitlines():
+        extension, uti = line.split("\t", 1)
+        if not uti.startswith(MANAGED_UTI_PREFIXES):
+            resolved[extension] = uti
+    return resolved
+
+
+def macos_setup(policy: dict, dry_run: bool) -> None:
+    required_commands = ("xcrun",) if dry_run else ("duti", "xcrun")
+    missing = [
+        command for command in required_commands if not command_exists(command)
+    ]
+    if missing:
+        raise RuntimeError(f"missing required command: {', '.join(missing)}")
+
+    with tempfile.TemporaryDirectory(prefix="setup-mimetypes.") as temporary:
+        temporary_directory = Path(temporary)
+        preferences_path = temporary_directory / "handlers.plist"
+        clean_path = temporary_directory / "handlers-clean.plist"
+        classifier = temporary_directory / "nvim-launcher"
+        preferences_available = export_launch_services(preferences_path)
+        if preferences_available:
+            with preferences_path.open("rb") as input_file:
+                preferences = plistlib.load(input_file)
+        else:
+            print(
+                "warning: could not inspect existing Launch Services associations",
+                file=sys.stderr,
+            )
+            preferences = {"LSHandlers": []}
+            with preferences_path.open("wb") as output:
+                plistlib.dump(preferences, output)
+
+        compile_launcher(classifier)
+        registered_utis = read_macos_handler_utis(preferences_path)
+        source_utis = filter_source_utis(classifier, registered_utis)
+        explicit_utis = policy["macos"]["editor_utis"]
+        extensions = policy["macos"]["editor_extension_exceptions"]
+        extension_utis = resolve_extension_utis(classifier, extensions)
+        existing_roles = neovim_handler_roles(preferences)
+        existing_utis = {content_type for content_type, _ in existing_roles}
+        desired_utis = set([*explicit_utis, *source_utis, *extension_utis.values()])
+        stale_roles = [
+            role for role in existing_roles if role[0] not in desired_utis
+        ]
+        missing_utis = sorted(set([*explicit_utis, *source_utis]) - existing_utis)
+        missing_extensions = [
+            extension
+            for extension in extensions
+            if extension_utis.get(extension) not in existing_utis
+        ]
+
+        if dry_run:
+            print("Remove existing Neovim handler roles:")
+            if stale_roles:
+                for content_type, role in stale_roles:
+                    print(f"  {content_type} ({role or 'All'})")
+            else:
+                print("  (none)")
+            print("Register Neovim UTIs:")
+            if missing_utis:
+                for uti in missing_utis:
+                    print(f"  {uti}")
+            else:
+                print("  (none)")
+            print("Register Neovim extensions:")
+            if missing_extensions:
+                for extension in missing_extensions:
+                    print(f"  .{extension}")
+            else:
+                print("  (none)")
+            return
+
+        app = Path.home() / "Applications/nvim.app"
+        write_macos_app(app, policy["macos"], ROOT / "lib/nvim-launcher.swift")
+        compile_launcher(app / "Contents/MacOS/nvim-launcher")
+        run([str(LSREGISTER), "-f", str(app)])
+        if preferences_available:
+            clean_macos_preferences(
+                preferences_path, clean_path, BUNDLE_ID, desired_utis
+            )
+            run(
+                ["defaults", "import", LAUNCH_SERVICES_DOMAIN, str(clean_path)],
+                stdout=subprocess.DEVNULL,
+            )
+        for uti in missing_utis:
+            run(["duti", "-s", BUNDLE_ID, uti, "editor"])
+        for extension in missing_extensions:
+            run(["duti", "-s", BUNDLE_ID, f".{extension}", "editor"])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Configure default file handlers")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show the associations that would change without changing them",
+    )
+    arguments = parser.parse_args()
+    policy = load_policy(POLICY_PATH)
+    try:
+        if sys.platform == "darwin":
+            macos_setup(policy, arguments.dry_run)
+        elif command_exists("xdg-mime"):
+            linux_setup(policy, arguments.dry_run)
+        else:
+            raise RuntimeError("neither macOS Launch Services nor xdg-mime is available")
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        parser.exit(1, f"setup-mimetypes: {error}\n")
 
 
 if __name__ == "__main__":
