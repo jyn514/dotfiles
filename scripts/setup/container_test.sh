@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+image=${1:?usage: $0 <container-image>}
+
+if [ -n "${CONTAINER_ENGINE:-}" ]; then
+	engine=$CONTAINER_ENGINE
+elif command -v podman >/dev/null 2>&1; then
+	engine=podman
+else
+	engine=docker
+fi
+
+case $image in
+	alpine:*) install='apk add --no-cache coreutils python3';;
+	fedora:*) install='dnf install -y coreutils python3';;
+	archlinux:*) install='pacman --sync --refresh --sysupgrade --noconfirm coreutils python';;
+	ubuntu:*) install='export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends coreutils python3';;
+	*) echo "$0: unsupported image: $image" >&2; exit 2;;
+esac
+
+container=$("$engine" create --workdir /work "$image" sh -ec "
+		$install
+		python3 scripts/setup/setup_test.py
+")
+trap '"$engine" rm --force "$container" >/dev/null' EXIT HUP INT TERM
+
+"$engine" cp . "$container:/work"
+"$engine" start --attach "$container"
