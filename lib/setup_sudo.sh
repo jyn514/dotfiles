@@ -11,7 +11,16 @@ fi
 packages=
 brew_packages=
 here=$(realpath "$(dirname "$0")")
-my_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+my_home=
+if [ -n "${SUDO_USER:-}" ]; then
+	if exists getent; then
+		my_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+	elif is_macos; then
+		my_home=$(dscl . -read "/Users/$SUDO_USER" NFSHomeDirectory | awk '{print $2}')
+	else
+		fail "cannot find the home directory for $SUDO_USER"
+	fi
+fi
 
 queue_install() {
 	pkg="$1"

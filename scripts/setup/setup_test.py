@@ -37,7 +37,7 @@ class DotfileSetupTests(unittest.TestCase):
             HOME=str(self.home),
             PATH=f"{self.bin}:{env['PATH']}",
         )
-        command = env.get("DOTFILES_SETUP_COMMAND", "./setup.sh dotfiles")
+        command = f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} dotfiles"
         return subprocess.run(
             ["sh", "-c", command],
             cwd=ROOT,

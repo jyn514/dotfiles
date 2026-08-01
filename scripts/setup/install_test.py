@@ -3,6 +3,7 @@
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,7 @@ class InstallationTests(unittest.TestCase):
             "arch": ("pacman",),
             "debian": ("apt",),
             "fedora": ("dnf", "rpm"),
+            "macos": (),
             "ubuntu": ("apt",),
         }[platform["ID"]]
         for command in (*managers, "brew", "code", "keymapp", "pwsh"):
@@ -43,6 +45,9 @@ class InstallationTests(unittest.TestCase):
         apt_cache = self.bin / "apt-cache"
         apt_cache.write_text("#!/bin/sh\nprintf 'l=Ubuntu,c=universe\\n'\n")
         apt_cache.chmod(0o755)
+        fake_id = self.bin / "id"
+        fake_id.write_text("#!/bin/sh\n[ \"${1:-}\" = -u ] && printf '0\\n'\n")
+        fake_id.chmod(0o755)
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
@@ -56,7 +61,11 @@ class InstallationTests(unittest.TestCase):
             SUDO_USER="",
         )
         return subprocess.run(
-            ["./lib/setup_sudo.sh", "install_features"],
+            [
+                "sh",
+                "-c",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-global",
+            ],
             cwd=ROOT,
             env=env,
             text=True,
@@ -81,6 +90,8 @@ class InstallationTests(unittest.TestCase):
 
     @staticmethod
     def platform() -> dict[str, str]:
+        if sys.platform == "darwin":
+            return {"ID": "macos"}
         platform = {}
         for line in Path("/etc/os-release").read_text().splitlines():
             if "=" in line:
@@ -219,8 +230,181 @@ class InstallationTests(unittest.TestCase):
         elif platform["ID"] in ("debian", "ubuntu"):
             self.assertIn(["apt", "update"], commands)
             self.assertIn(["apt", "install", "-y", *packages], commands)
+        elif platform["ID"] == "macos":
+            replacements = {
+                "build-essential": None,
+                "clangd": None,
+                "fd-find": "fd",
+                "fscrypt": None,
+                "libpam-fscrypt": None,
+                "libssl-dev": None,
+                "libterm-readline-gnu-perl": None,
+                "liburi-perl": None,
+                "libusb-1.0-0-dev": None,
+                "manpages": None,
+                "manpages-dev": None,
+                "ninja-build": "ninja",
+                "openjdk21": "openjdk@21",
+                "python3-pip": None,
+                "python3-pylsp": "python-lsp-server",
+                "strace": None,
+                "traceroute": None,
+                "unzip": None,
+                "valgrind": None,
+                "xdg-utils": None,
+            }
+            self.assertIn(
+                [
+                    "brew",
+                    "install",
+                    "-q",
+                    *self.translated(packages, replacements),
+                ],
+                commands,
+            )
         else:
             self.fail(f"unsupported test platform: {platform['ID']}")
+
+
+class LocalInstallationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.directory = Path(self.tempdir.name)
+        self.home = self.directory / "home"
+        self.home.mkdir()
+        self.bin = self.directory / "bin"
+        self.bin.mkdir()
+        self.log = self.directory / "commands.log"
+
+        recorder = self.bin / "recorder"
+        recorder.write_text(
+            "#!/bin/sh\n"
+            'name=${0##*/}\n'
+            'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
+            'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
+            'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+        )
+        recorder.chmod(0o755)
+        for command in (
+            "1password",
+            "cargo",
+            "clojure",
+            "glide",
+            "pip3",
+            "python3",
+        ):
+            (self.bin / command).symlink_to(recorder)
+        if InstallationTests.platform()["ID"] == "macos":
+            (self.bin / "brew").symlink_to(recorder)
+
+        curl = self.bin / "curl"
+        curl.write_text("#!/bin/sh\nexit 0\n")
+        curl.chmod(0o755)
+        fish = self.bin / "fish"
+        fish.write_text(
+            "#!/bin/sh\n"
+            'script=$(printf "%s" "${2:-}" | tr "\\n" " ")\n'
+            'printf "fish <%s> <%s>\\n" "${1:-}" "$script" '
+            '>> "$INSTALL_COMMAND_LOG"\n'
+        )
+        fish.chmod(0o755)
+
+        (self.home / ".profile").symlink_to(ROOT / "config/profile")
+        for directory in (
+            ".config/zsh/antidote",
+            ".local/lib/PowerShellEditorServices",
+            ".local/lib/cargo/bin",
+            ".local/lib/cpptools",
+        ):
+            (self.home / directory).mkdir(parents=True)
+        cargo_binstall = self.home / ".local/lib/cargo/bin/cargo-binstall"
+        cargo_binstall.touch()
+        cargo_binstall.chmod(0o755)
+
+    def tearDown(self) -> None:
+        self.tempdir.cleanup()
+
+    def run_install(self) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env.update(
+            DOAS_USER="",
+            HOME=str(self.home),
+            INSTALL_COMMAND_LOG=str(self.log),
+            PATH=f"{self.bin}:{env['PATH']}",
+            SSH_AUTH_SOCK="",
+            SUDO_USER="",
+        )
+        return subprocess.run(
+            [
+                "sh",
+                "-c",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-local",
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def commands(self) -> list[list[str]]:
+        commands = []
+        for line in self.log.read_text().splitlines():
+            name, *arguments = line.split(" <")
+            commands.append([name, *(argument[:-1] for argument in arguments)])
+        return commands
+
+    def test_installs_user_tools_and_aliases(self) -> None:
+        result = self.run_install()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        commands = self.commands()
+        rust_packages = InstallationTests.manifest("rust.txt")
+        self.assertIn(["cargo", "binstall", "cargo-binstall"], commands)
+        self.assertIn(
+            [
+                "cargo",
+                "binstall",
+                "--quiet",
+                "--no-confirm",
+                "--rate-limit",
+                "10/1",
+                "--disable-strategies",
+                "compile",
+                "--continue-on-failure",
+                *rust_packages,
+            ],
+            commands,
+        )
+        fish_scripts = [command[2] for command in commands if command[0] == "fish"]
+        self.assertTrue(
+            any("fisher install jorgebucaran/fisher" in script for script in fish_scripts)
+        )
+        self.assertTrue(
+            any("command cat install/fish.txt" in script for script in fish_scripts)
+        )
+        if InstallationTests.platform()["ID"] != "alpine":
+            self.assertTrue(
+                any("xargs npm install -g" in script for script in fish_scripts)
+            )
+        self.assertIn(
+            [
+                "python",
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "--user",
+                "--break-system-packages",
+                "-r",
+                "install/python.txt",
+            ],
+            commands,
+        )
+        for alias, target in (("python", "python3"), ("py", "python3"), ("pip", "pip3")):
+            destination = self.home / ".local/bin" / alias
+            self.assertTrue(destination.is_symlink(), destination)
+            self.assertEqual((self.bin / target).resolve(), destination.resolve())
 
 
 if __name__ == "__main__":

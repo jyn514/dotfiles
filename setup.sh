@@ -424,6 +424,20 @@ setup_install_global () {
 	fi
 }
 
+setup_install_global_packages () {
+	echo Installing global packages
+	if [ "$(id -u)" = 0 ]; then
+		./lib/setup_sudo.sh install_features
+	elif exists sudo; then
+		sudo --preserve-env=PATH ./lib/setup_sudo.sh install_features
+	elif exists doas; then
+		doas ./lib/setup_sudo.sh install_features
+	else
+		echo "install-global requires root, sudo, or doas" >&2
+		return 1
+	fi
+}
+
 # setup_macos() {
 # 	brew install -q duti
 # 	if exists nvim; then
@@ -527,6 +541,8 @@ run() {
 	case "$1" in
 		q*|e*|0) exit 0;;
 		dot*|1) setup_dotfiles;;
+		install-global) setup_install_global_packages;;
+		install-local) setup_install_local; setup_python;;
 		bas*) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
