@@ -53,34 +53,26 @@ install_mise() {
 		curl https://mise.run | sh
 		PATH="$HOME/.local/bin:$PATH"
 	fi
-	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes
-}
-
-install_rust() {
-	mkdir -p ~/src && cd ~/src
-	cd "$OLDPWD"
-	# avoid recompiling so much
-	export CARGO_TARGET_DIR="${TMPDIR:-/tmp}/cargo"
-	mkdir -p "$CARGO_TARGET_DIR"
-	# set GITHUB_TOKEN if possible so this doesn't hit a rate limit
-	# to manually set a token see https://github.com/settings/tokens
-	if exists gh; then
-    	export GITHUB_TOKEN=$(gh auth token)
+	if exists gh && github_token=$(gh auth token); then
+		export GITHUB_TOKEN=$github_token
+		unset github_token
 	fi
-	# we need to check for the full path because we have a wrapper in dotfiles/bin
+	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes rust || return
 	if ! [ -x "$CARGO_HOME/bin/cargo-binstall" ]; then
-		# https://github.com/cargo-bins/cargo-binstall#installation
-		mise_exec cargo install cargo-binstall || return
+		curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | sh
+		[ -x "$CARGO_HOME/bin/cargo-binstall" ] || return 1
 	else
-		# update to latest version; old versions often hit a rate limit
 		mise_exec cargo binstall cargo-binstall || return
 	fi
-	tr -d '\r' < install/rust.txt | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
-	if exists bat; then
-		bat cache --build
-	fi
-
-	# extensions are managed by vscode itself
+	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes || return
+	# These crates do not publish binaries that mise can install on every supported
+	# platform. Preserve the no-compilation policy and explicitly omit them there.
+	case $(uname -m) in
+		aarch64|arm64) cargo_tools=$(sed '/^counts$/d; /^librespot$/d' install/rust.txt);;
+		*) cargo_tools=$(cat install/rust.txt);;
+	esac
+	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
+	unset cargo_tools
 }
 
 install_clojure() {
@@ -453,8 +445,6 @@ setup_install_local () {
 		curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | fish -c 'source && fisher install jorgebucaran/fisher'
 		fish -c 'fisher install (command cat install/fish.txt)'
 	fi
-	tr -d '\r' < install/npm.txt | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- npm install -g --no-fund --silent || return
-
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3
 	cmd_alias py python3
@@ -467,9 +457,10 @@ setup_install_local () {
 		pslsp=$(download https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.2.0/PowerShellEditorServices.zip)
 		unzip -q "$pslsp" -d $libdir/PowerShellEditorServices
 	fi
+	if exists bat; then
+		bat cache --build
+	fi
 
-	# needs a password for cargo-binstall to log into github
-	install_rust || return
 }
 
 setup_all () {

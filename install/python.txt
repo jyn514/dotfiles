@@ -1,6 +1,2 @@
-git-revise
-pytest
-pylint
 toml
 tomli
-yt-dlp

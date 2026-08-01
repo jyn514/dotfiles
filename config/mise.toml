@@ -2,3 +2,25 @@
 node = "lts"
 python = "latest"
 rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "clippy", "rust-analyzer", "miri"] }
+uv = "latest"
+"cargo:broot" = { version = "latest", depends = ["rust"] }
+"cargo:cargo-outdated" = { version = "latest", depends = ["rust"] }
+"cargo:mdbook" = { version = "latest", depends = ["rust"] }
+"aqua:Wilfred/difftastic" = "latest"
+"aqua:Byron/dua-cli" = "latest"
+"aqua:jj-vcs/jj" = "latest"
+"aqua:BurntSushi/ripgrep" = "latest"
+"aqua:Myriad-Dreamin/tinymist" = "latest"
+"npm:pnpm" = { version = "latest", depends = ["node"] }
+"npm:perlnavigator-server" = { version = "latest", depends = ["node"] }
+"npm:bash-language-server" = { version = "latest", depends = ["node"] }
+"npm:typescript-language-server" = { version = "latest", depends = ["node"] }
+"npm:oxlint" = { version = "latest", depends = ["node"] }
+"npm:vscode-langservers-extracted" = { version = "latest", depends = ["node"] }
+"pipx:git-revise" = { version = "latest", depends = ["python", "uv"] }
+"pipx:pytest" = { version = "latest", depends = ["python", "uv"] }
+"pipx:pylint" = { version = "latest", depends = ["python", "uv"] }
+"pipx:yt-dlp" = { version = "latest", depends = ["python", "uv"] }
+
+[settings]
+npm.package_manager = "npm"
