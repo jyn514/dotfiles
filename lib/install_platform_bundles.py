@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -33,9 +34,19 @@ def bundle_url(bundle: dict, current_platform: str) -> str | None:
     return platforms.get(current_platform) or platforms.get("all")
 
 
-def download(url: str, destination: Path) -> None:
+def bundle_checksum(bundle: dict, current_platform: str) -> str | None:
+    checksums = bundle["sha256"]
+    return checksums.get(current_platform) or checksums.get("all")
+
+
+def download(url: str, destination: Path, expected_checksum: str) -> None:
     with urllib.request.urlopen(url) as response, destination.open("wb") as output:
-        shutil.copyfileobj(response, output)
+        digest = hashlib.sha256()
+        while chunk := response.read(1024 * 1024):
+            digest.update(chunk)
+            output.write(chunk)
+    if digest.hexdigest() != expected_checksum:
+        raise ValueError(f"checksum mismatch for {url}: {digest.hexdigest()}")
 
 
 def install_bundle(
@@ -61,7 +72,10 @@ def install_bundle(
         archive = temporary_directory / "bundle.zip"
         staged = temporary_directory / "contents"
         staged.mkdir()
-        download(url, archive)
+        checksum = bundle_checksum(bundle, current_platform)
+        if checksum is None:
+            raise ValueError(f"missing checksum for {name} on {current_platform}")
+        download(url, archive, checksum)
         with zipfile.ZipFile(archive) as bundle_zip:
             bundle_zip.extractall(staged)
         executable = bundle.get("executable")
