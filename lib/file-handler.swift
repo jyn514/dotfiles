@@ -24,13 +24,20 @@ if CommandLine.arguments.dropFirst().first == "--extension-utis" {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        guard let command = Bundle.main.object(
+            forInfoDictionaryKey: "JynCommand"
+        ) as? [String] else {
+            sender.reply(toOpenOrPrint: .failure)
+            return
+        }
         for filename in filenames {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["hx-hax", filename]
+            process.arguments = command + [filename]
             try? process.run()
         }
         sender.reply(toOpenOrPrint: .success)
+        sender.terminate(nil)
     }
 }
 
