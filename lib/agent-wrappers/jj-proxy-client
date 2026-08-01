@@ -35,8 +35,13 @@ def main() -> int:
         relative = current.relative_to(repository)
     except ValueError as error:
         raise RuntimeError("current directory is outside the protected repository") from error
+    request = {"version": 1, "cwd": str(relative), "argv": sys.argv[1:]}
+    request.update(
+        user=os.environ.get("JJ_USER"),
+        email=os.environ.get("JJ_EMAIL"),
+    )
     body = json.dumps(
-        {"version": 1, "cwd": str(relative), "argv": sys.argv[1:]},
+        request,
         ensure_ascii=False, separators=(",", ":"),
     ).encode()
     if len(body) > MAX_REQUEST:

@@ -27,7 +27,15 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Request { version: u8, cwd: String, argv: Vec<String> }
+struct Request {
+    version: u8,
+    cwd: String,
+    argv: Vec<String>,
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,6 +146,18 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
 fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>) -> Response {
     let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
     if request.version != 1 { return failure("unsupported protocol version".into()); }
+    let valid_identity = |value: &str, limit: usize| {
+        !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
+    };
+    let (user, email) = match (&request.user, &request.email) {
+        (Some(user), Some(email))
+            if valid_identity(user, 128) && valid_identity(email, 254) =>
+        {
+            (user.as_str(), email.as_str())
+        }
+        (None, None) => ("Codex", "breq@jyn.dev"),
+        _ => return failure("invalid agent identity".into()),
+    };
     if request.argv.as_slice() == [":ready"] {
         return Response { version: 1, exit: 0, stdout: String::new(), stderr: String::new() };
     }
@@ -170,7 +190,7 @@ fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>
         ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
         ("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "core.excludesFile"),
         ("GIT_CONFIG_VALUE_0", "/trusted/gitignore"),
-        ("JJ_USER", "Codex"), ("JJ_EMAIL", "breq@jyn.dev"),
+        ("JJ_USER", user), ("JJ_EMAIL", email),
         ("RUST_BACKTRACE", "1"),
     ]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // SAFETY: the callback captures only the copied descriptor number and
@@ -236,7 +256,13 @@ fn client(args: Vec<String>) -> Result<i32> {
     let repo_path = fs::canonicalize(&repo).wrap_err("repository unavailable")?;
     let cwd = fs::canonicalize(cwd).wrap_err("cannot resolve current directory")?;
     let relative = cwd.strip_prefix(&repo_path).map_err(|_| eyre!("current directory is outside the protected repository"))?;
-    let request = Request { version: 1, cwd: relative.to_string_lossy().into_owned(), argv: args };
+    let request = Request {
+        version: 1,
+        cwd: relative.to_string_lossy().into_owned(),
+        argv: args,
+        user: env::var("JJ_USER").ok(),
+        email: env::var("JJ_EMAIL").ok(),
+    };
     let body = serde_json::to_vec(&request).wrap_err("cannot encode request")?;
     let proxy_dir = env::var("SANDBOX_PROXY_DIR").wrap_err("sandbox proxy directory is not configured")?;
     let mut stream = UnixStream::connect(format!("{proxy_dir}/jj/socket")).wrap_err("proxy unavailable")?;
