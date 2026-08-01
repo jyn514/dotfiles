@@ -34,14 +34,25 @@ mise_exec() {
 	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
 }
 
+authenticate_mise_github() {
+	if [ -n "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ]; then
+		mise token github --oauth
+	elif exists gh; then
+		gh auth login --hostname github.com --git-protocol https --web
+	else
+		echo "GitHub authentication requires gh or MISE_GITHUB_OAUTH_CLIENT_ID" >&2
+		return 1
+	fi
+}
+
 offer_mise_github_oauth() {
-	[ -n "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ] || return 0
 	[ -t 0 ] && [ -r /dev/tty ] || return 0
 	mise token github 2>/dev/null | grep -qv '(none)' && return 0
-	printf 'Authenticate mise with GitHub now? [y/N] ' > /dev/tty
+	exists gh || [ -n "${MISE_GITHUB_OAUTH_CLIENT_ID:-}" ] || return 0
+	printf 'Authenticate mise with GitHub to avoid API rate limits? [y/N] ' > /dev/tty
 	read -r authenticate_github < /dev/tty || return 0
 	case $authenticate_github in
-		y|Y|yes|YES) mise token github --oauth > /dev/tty || return;;
+		y|Y|yes|YES) authenticate_mise_github < /dev/tty > /dev/tty || return;;
 	esac
 }
 

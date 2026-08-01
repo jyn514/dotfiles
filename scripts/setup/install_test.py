@@ -390,6 +390,32 @@ class LocalInstallationTests(unittest.TestCase):
             commands.append([name, *(argument[:-1] for argument in arguments)])
         return commands
 
+    def run_github_auth_helper(self, **overrides: str) -> subprocess.CompletedProcess[str]:
+        source = (ROOT / "setup.sh").read_text()
+        functions = source[: source.index("install_mise()")]
+        env = os.environ.copy()
+        env.pop("MISE_GITHUB_OAUTH_CLIENT_ID", None)
+        env.update(
+            HOME=str(self.home),
+            INSTALL_COMMAND_LOG=str(self.log),
+            PATH=f"{self.bin}:{env['PATH']}",
+        )
+        env.update(overrides)
+        return subprocess.run(
+            [
+                "sh",
+                "-c",
+                functions
+                + '\nexists() { command -v "$1" >/dev/null 2>&1; }\n'
+                + "authenticate_mise_github\n",
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
     def test_installs_user_tools_and_aliases(self) -> None:
         result = self.run_install()
 
@@ -555,6 +581,36 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install", setup)
         self.assertNotIn("gh auth token", setup)
         self.assertNotIn("export GITHUB_TOKEN", setup)
+
+    def test_github_auth_falls_back_to_gh_oauth_without_exporting_token(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        native_oauth = setup.index("mise token github --oauth")
+        gh_oauth = setup.index(
+            "gh auth login --hostname github.com --git-protocol https --web"
+        )
+        self.assertLess(native_oauth, gh_oauth)
+        self.assertIn("Authenticate mise with GitHub to avoid API rate limits?", setup)
+        self.assertNotIn("export GITHUB_TOKEN", setup)
+
+    def test_github_auth_helper_uses_gh_without_a_mise_client_id(self) -> None:
+        (self.bin / "gh").symlink_to(self.bin / "recorder")
+
+        result = self.run_github_auth_helper()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"]],
+            self.commands(),
+        )
+
+    def test_github_auth_helper_prefers_native_mise_oauth(self) -> None:
+        (self.bin / "gh").symlink_to(self.bin / "recorder")
+
+        result = self.run_github_auth_helper(MISE_GITHUB_OAUTH_CLIENT_ID="client-id")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([["mise", "token", "github", "--oauth"]], self.commands())
 
     def test_alpine_setup_omits_node_and_npm_tools(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
