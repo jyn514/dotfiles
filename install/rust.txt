@@ -2,5 +2,4 @@ bacon
 cargo-audit
 cargo-sweep
 cargo-tree
-counts
 librespot

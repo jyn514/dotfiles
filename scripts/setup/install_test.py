@@ -390,9 +390,8 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        self.assertIn(["mise", "install", "--yes", "rust"], commands)
         self.assertIn(
-            ["mise", "exec", "--", "cargo", "binstall", "cargo-binstall"],
+            ["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"],
             commands,
         )
         self.assertIn(["mise", "install", "--yes"], commands)
@@ -401,11 +400,9 @@ class LocalInstallationTests(unittest.TestCase):
             "cargo-audit",
             "cargo-sweep",
             "cargo-tree",
-            "counts",
             "librespot",
         ]
         if platform.machine() in {"aarch64", "arm64"}:
-            rust_packages.remove("counts")
             rust_packages.remove("librespot")
         self.assertIn(
             [
@@ -484,26 +481,16 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertTrue(mise.is_symlink(), mise)
         self.assertIn(["mise", "install", "--yes"], self.commands())
 
-    def test_bootstraps_cargo_binstall_before_declarative_cargo_tools(self) -> None:
-        cargo_binstall = self.home / ".local/lib/cargo/bin/cargo-binstall"
-        cargo_binstall.unlink()
-        curl = self.bin / "curl"
-        curl.write_text(
-            "#!/bin/sh\n"
-            "printf '%s\\n' "
-            "'ln -sf \"$MISE_TEST_BINARY\" "
-            "\"$CARGO_HOME/bin/cargo-binstall\"'\n"
-        )
-        curl.chmod(0o755)
-
-        result = self.run_install_with(MISE_TEST_BINARY=str(self.bin / "recorder"))
+    def test_installs_cargo_binstall_before_declarative_cargo_tools(self) -> None:
+        result = self.run_install()
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue(cargo_binstall.is_symlink(), cargo_binstall)
         commands = self.commands()
-        rust_install = commands.index(["mise", "install", "--yes", "rust"])
+        bootstrap_install = commands.index(
+            ["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"]
+        )
         all_tools_install = commands.index(["mise", "install", "--yes"])
-        self.assertLess(rust_install, all_tools_install)
+        self.assertLess(bootstrap_install, all_tools_install)
 
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
@@ -514,7 +501,10 @@ class LocalInstallationTests(unittest.TestCase):
         result = self.run_install_with(FAIL_MISE_INSTALL="1")
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertEqual([["mise", "install", "--yes", "rust"]], self.commands())
+        self.assertEqual(
+            [["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"]],
+            self.commands(),
+        )
 
     def test_cargo_tool_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_CARGO_TOOLS_INSTALL="1")
@@ -542,9 +532,11 @@ class MiseConfigTests(unittest.TestCase):
         cargo_tools = {
             "broot",
             "cargo-outdated",
+            "counts",
             "mdbook",
         }
         aqua_tools = {
+            "cargo-bins/cargo-binstall",
             "Wilfred/difftastic",
             "Byron/dua-cli",
             "jj-vcs/jj",
@@ -566,7 +558,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
         self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
         self.assertEqual(
-            {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "counts", "librespot"},
+            {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},
             set((ROOT / "install/rust.txt").read_text().splitlines()),
         )
 
