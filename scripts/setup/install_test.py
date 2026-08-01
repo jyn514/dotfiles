@@ -283,6 +283,7 @@ class LocalInstallationTests(unittest.TestCase):
             'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+            'if [ "$name" = python3 ] && [ "${FAIL_PYTHON_INSTALL:-}" = 1 ]; then exit 1; fi\n'
         )
         recorder.chmod(0o755)
         for command in (
@@ -290,6 +291,7 @@ class LocalInstallationTests(unittest.TestCase):
             "cargo",
             "clojure",
             "glide",
+            "nvim",
             "pip3",
             "python3",
         ):
@@ -334,6 +336,30 @@ class LocalInstallationTests(unittest.TestCase):
             SSH_AUTH_SOCK="",
             SUDO_USER="",
         )
+        return subprocess.run(
+            [
+                "sh",
+                "-c",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-local",
+            ],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def run_install_with(self, **overrides: str) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env.update(
+            DOAS_USER="",
+            HOME=str(self.home),
+            INSTALL_COMMAND_LOG=str(self.log),
+            PATH=f"{self.bin}:{env['PATH']}",
+            SSH_AUTH_SOCK="",
+            SUDO_USER="",
+        )
+        env.update(overrides)
         return subprocess.run(
             [
                 "sh",
@@ -405,6 +431,110 @@ class LocalInstallationTests(unittest.TestCase):
             destination = self.home / ".local/bin" / alias
             self.assertTrue(destination.is_symlink(), destination)
             self.assertEqual((self.bin / target).resolve(), destination.resolve())
+
+        for alias in ("vi", "vim"):
+            destination = self.home / ".local/bin" / alias
+            self.assertTrue(destination.is_symlink(), destination)
+            self.assertEqual((self.bin / "nvim").resolve(), destination.resolve())
+
+    def test_second_local_install_preserves_aliases_and_succeeds(self) -> None:
+        first = self.run_install()
+        second = self.run_install()
+
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(0, second.returncode, second.stderr)
+        for alias in ("python", "py", "pip", "vi", "vim"):
+            self.assertTrue((self.home / ".local/bin" / alias).is_symlink(), alias)
+
+    @unittest.expectedFailure
+    def test_python_install_failure_makes_install_local_fail(self) -> None:
+        result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+
+
+class RustBootstrapTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.directory = Path(self.tempdir.name)
+        self.home = self.directory / "home"
+        self.home.mkdir()
+        self.bin = self.directory / "bin"
+        self.bin.mkdir()
+        self.log = self.directory / "commands.log"
+
+        recorder = self.bin / "recorder"
+        recorder.write_text(
+            "#!/bin/sh\n"
+            'name=${0##*/}\n'
+            'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
+            'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
+            'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+        )
+        recorder.chmod(0o755)
+        for command in ("1password", "clojure", "glide", "pip3", "python3"):
+            (self.bin / command).symlink_to(recorder)
+
+        rustup_init = self.bin / "rustup-init"
+        rustup_init.write_text(
+            "#!/bin/sh\n"
+            'printf "rustup-init" >> "$INSTALL_COMMAND_LOG"\n'
+            'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
+            'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+            'mkdir -p "$CARGO_HOME/bin"\n'
+            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/cargo"\n'
+            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/rustup"\n'
+            'printf "PATH=\\\"$CARGO_HOME/bin:$PATH\\\"; export PATH\\n" > "$CARGO_HOME/env"\n'
+        )
+        rustup_init.chmod(0o755)
+        for directory in (
+            ".config/fish",
+            ".config/zsh/antidote",
+            ".local/lib/PowerShellEditorServices",
+            ".local/lib/cpptools",
+            ".local/share/nvm/v-test",
+        ):
+            (self.home / directory).mkdir(parents=True)
+        (self.home / ".config/fish/fish_plugins").touch()
+        (self.home / ".profile").symlink_to(ROOT / "config/profile")
+
+    def tearDown(self) -> None:
+        self.tempdir.cleanup()
+
+    def test_fresh_rust_install_selects_components_and_nightly_default(self) -> None:
+        env = os.environ.copy()
+        env.update(
+            CARGO_HOME=str(self.home / ".local/lib/cargo"),
+            DOAS_USER="",
+            HOME=str(self.home),
+            INSTALL_COMMAND_LOG=str(self.log),
+            PATH=f"{self.bin}:{env['PATH']}",
+            RUSTUP_HOME=str(self.home / ".local/lib/rustup"),
+            RUSTUP_RECORDER=str(self.bin / "recorder"),
+            SSH_AUTH_SOCK="",
+            SUDO_USER="",
+        )
+
+        result = subprocess.run(
+            ["./setup.sh", "install-local"],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        commands = self.log.read_text().splitlines()
+        self.assertIn(
+            "rustup-init <-y> <--profile> <minimal> <-c> <rustfmt> <-c> <clippy> <-c> <rust-analyzer>",
+            commands,
+        )
+        self.assertIn(
+            "rustup <toolchain> <add> <nightly> <--profile> <minimal> <-c> <clippy> <-c> <miri>",
+            commands,
+        )
+        self.assertIn("rustup <default> <nightly>", commands)
 
 
 if __name__ == "__main__":
