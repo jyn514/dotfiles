@@ -47,36 +47,43 @@ backend = "aqua:Byron/dua-cli"
 checksum = "sha256:f73522d7374aead9477570e0c7bc969a4323c1fd5477cdfb8ad31b9386a447bc"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-aarch64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496573456"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.linux-arm64-musl"]
 checksum = "sha256:f73522d7374aead9477570e0c7bc969a4323c1fd5477cdfb8ad31b9386a447bc"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-aarch64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496573456"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.linux-x64"]
 checksum = "sha256:c46bd53054f5821ccb18d37704caec0295bdc72fd69374d86a1fb03d2152bd4b"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496573270"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.linux-x64-musl"]
 checksum = "sha256:c46bd53054f5821ccb18d37704caec0295bdc72fd69374d86a1fb03d2152bd4b"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496573270"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.macos-arm64"]
 checksum = "sha256:929eb5d16ddf602bc934a78e6c4469b0b6747940388863cf0a1d3e0ecbc89f8a"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496572774"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.macos-x64"]
 checksum = "sha256:929eb5d16ddf602bc934a78e6c4469b0b6747940388863cf0a1d3e0ecbc89f8a"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496572774"
+provenance = "github-attestations"
 
 [tools."aqua:Byron/dua-cli"."platforms.windows-x64"]
 checksum = "sha256:74d9ade19e02c09881e486a0fc90e917419ff710c041f0e6beb3ee84c798e70b"
 url = "https://github.com/Byron/dua-cli/releases/download/v2.40.0/dua-v2.40.0-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/Byron/dua-cli/releases/assets/496574720"
+provenance = "github-attestations"
 
 [[tools."aqua:LuaLS/lua-language-server"]]
 version = "3.18.2"
@@ -273,6 +280,52 @@ provenance = "github-attestations"
 checksum = "sha256:27aee4e73cd8b1d479730cb9cdbd89b1114453a135689d4ee1a7e7f913f0ffe1"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.21.1/cargo-binstall-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/489425215"
+provenance = "github-attestations"
+
+[[tools."aqua:cli/cli"]]
+version = "2.97.0"
+backend = "aqua:cli/cli"
+
+[tools."aqua:cli/cli"."platforms.linux-arm64"]
+checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108278"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.linux-arm64-musl"]
+checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108278"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.linux-x64"]
+checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108269"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.linux-x64-musl"]
+checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108269"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.macos-arm64"]
+checksum = "sha256:a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108298"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.macos-x64"]
+checksum = "sha256:63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108300"
+provenance = "github-attestations"
+
+[tools."aqua:cli/cli"."platforms.windows-x64"]
+checksum = "sha256:35d7fe05c4dd1411ffda1e73dfc7c6f44b75c936ca51fa6595c657fdc0350cec"
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108319"
 provenance = "github-attestations"
 
 [[tools."aqua:jj-vcs/jj"]]

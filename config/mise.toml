@@ -5,6 +5,7 @@ rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "cli
 uv = "latest"
 "asdf:mise-plugins/mise-clojure" = "latest"
 "aqua:cargo-bins/cargo-binstall" = "latest"
+"aqua:cli/cli" = "latest"
 "github:clojure-lsp/clojure-lsp" = { version = "latest", filter_bins = "clojure-lsp" }
 "aqua:antonmedv/fx" = "latest"
 "aqua:LuaLS/lua-language-server" = "latest"
