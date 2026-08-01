@@ -64,6 +64,10 @@ if [ -d "$NVM_DIR" ]; then
 	}
 fi
 
+case ":${PATH:-}:" in
+	*:"$DOTFILES/lib/agent-wrappers":*) add_path "$DOTFILES/lib/agent-wrappers";;
+esac
+
 if exists nvim; then
 	export EDITOR=editor-hax
 	export LESSEDIT='%E %g?lm\:%lm'
