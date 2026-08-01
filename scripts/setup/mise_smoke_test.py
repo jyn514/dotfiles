@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import platform
 import subprocess
 import unittest
 from pathlib import Path
@@ -42,16 +43,33 @@ class MiseSmokeTests(unittest.TestCase):
         for component in ("rustfmt", "clippy", "rust-analyzer", "miri"):
             self.assertIn(component, output)
 
-    def test_representative_package_commands_resolve(self) -> None:
-        commands = (
+    def test_package_commands_resolve(self) -> None:
+        commands = [
             "bacon",
+            "broot",
+            "cargo-audit",
+            "cargo-outdated",
+            "cargo-sweep",
+            "cargo-tree",
+            "difft",
+            "dua",
             "rg",
             "jj",
+            "mdbook",
+            "tinymist",
             "pnpm",
+            "perlnavigator",
             "bash-language-server",
+            "typescript-language-server",
+            "oxlint",
+            "vscode-css-language-server",
             "git-revise",
+            "pytest",
+            "pylint",
             "yt-dlp",
-        )
+        ]
+        if platform.machine() not in {"aarch64", "arm64"}:
+            commands.extend(("counts", "librespot"))
         script = "set -e; " + "; ".join(f"command -v {command}" for command in commands)
 
         self.assert_mise_command("sh", "-c", script)
@@ -60,7 +78,7 @@ class MiseSmokeTests(unittest.TestCase):
         self.assert_mise_command(
             "python",
             "-c",
-            "import pylint, pytest, toml, tomli",
+            "import toml, tomli",
         )
 
 

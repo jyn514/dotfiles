@@ -1,14 +1,6 @@
 bacon
-broot
 cargo-audit
-cargo-outdated
 cargo-sweep
 cargo-tree
 counts
-difftastic
-dua-cli
-jj-cli
-ripgrep
-mdbook
 librespot
-tinymist
