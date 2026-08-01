@@ -526,7 +526,8 @@ cd "$(dirname "$0")"
 run() {
 	case "$1" in
 		q*|e*|0) exit 0;;
-		dot*|bas*|1) setup_basics;;
+		dot*|1) setup_dotfiles;;
+		bas*) setup_basics;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
 		vi*|4) setup_basics; setup_vim;;
@@ -540,9 +541,7 @@ run() {
 	esac
 }
 
-if [ "${DOTFILES_SOURCE_ONLY:-0}" = 1 ]; then
-	:
-elif ! [ $# = 0 ]; then
+if ! [ $# = 0 ]; then
 	run "$1"
 	if [ $? = 126 ]; then message; fi
 else
