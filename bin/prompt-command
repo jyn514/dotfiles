@@ -18,6 +18,22 @@ display_pwd () {
 	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
 }
 
+prompt_hostname () {
+	if [ -n "${container:-}" ]; then
+		printf %s "$container"
+		container_os=$(
+			# The path is an argument so this helper can be tested without changing /etc.
+			# shellcheck disable=SC1090
+			. "${1:-/etc/os-release}" 2>/dev/null || exit
+			printf %s "${ID:-}"
+		)
+		[ -n "$container_os" ] && printf ':%s' "$container_os"
+		unset container_os
+	else
+		hostname | tr -d '\n'
+	fi
+}
+
 # apparently on macOS `timeout` itself is slow???
 # you've got to be kidding me.
 if is_macos; then
@@ -126,7 +142,7 @@ prompt_command() {
 	export ZSH_VERSION
 
 	printf %s "$FAINT_WHITE($(basename -- "$shell")"
-	printf "@"; hostname | tr -d '\n'
+	printf "@"; prompt_hostname /etc/os-release
 	[ -n "$SSH_TTY" ] && printf '%s[ssh]' "${RED}"
 	[ "$(id -u)" -eq 0 ] && printf %s "$RESET,${RED}root"
 	printf %s "$FAINT_WHITE) "; display_pwd | tr -d '\n'
