@@ -482,6 +482,7 @@ class RustBootstrapTests(unittest.TestCase):
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
             'mkdir -p "$CARGO_HOME/bin"\n'
             'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/cargo"\n'
+            'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/cargo-binstall"\n'
             'ln -sf "$RUSTUP_RECORDER" "$CARGO_HOME/bin/rustup"\n'
             'printf "PATH=\\\"$CARGO_HOME/bin:$PATH\\\"; export PATH\\n" > "$CARGO_HOME/env"\n'
         )

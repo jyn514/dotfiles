@@ -29,7 +29,7 @@ class ProfileContractTests(unittest.TestCase):
 
             result = subprocess.run(
                 [
-                    "sh",
+                    "/bin/sh",
                     "-c",
                     '. "$HOME/.profile"; printf "%s\\n" "$PATH"',
                 ],
