@@ -137,6 +137,13 @@ setup_kde() { record kde; }
         self.assertNotIn("vi*|4) setup_basics", setup)
         self.assertNotIn("bac*|5) setup_basics", setup)
 
+    def test_menu_has_no_dead_routes_and_reports_full_numbered_range(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertNotIn("setup_macos", setup)
+        self.assertNotIn("macos|10", setup)
+        self.assertIn("Please enter a number 0-9", setup)
+
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
