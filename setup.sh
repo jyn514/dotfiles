@@ -195,42 +195,14 @@ done'
 
 setup_dotfiles () {
 	echo Installing configuration to ~
-	LOCAL="$HOME/.local/config"
-	if ! [ -d "$LOCAL" ]; then mkdir -p "$LOCAL"; fi
-	for f in "$(realpath config)"/*; do
-		base=$(basename "$f")
-		case $base in
-			jj.toml) DEST=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml");;
-			git*) DEST="$HOME/.config/git/$(echo $base | sed s/^git//)";;
-			*) while IFS="=" read local home; do
-					if [ "$local" = "$base" ]; then
-						DEST=$HOME/$home
-						break
-					fi
-				done < install/config.txt
-				DEST=${DEST:-$HOME/."$base"}
-		esac
-
-		if [ "$base" = codex.rules ] && [ -e "$DEST" ] && [ "$f" -ef "$DEST" ]; then
-			unset DEST
-			continue
-		elif [ -L "$DEST" ]; then rm -f "$DEST"
-		elif [ -e "$DEST" ]; then
-				mv "$DEST" "$LOCAL"
-		fi
-		mkdir -p "$(dirname "$DEST")"
-		if [ "$base" = codex.rules ]; then
-			ln "$(realpath "$f")" "$DEST"
-		else
-			ln -s "$(realpath "$f")" "$DEST"
-		fi
-		unset DEST
-	done
+	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
+	export JJ_CONFIG_PATH
+	python3 lib/backup_dotfile_collisions.py install.conf.json || return
+	lib/dotbot/bin/dotbot -d "$(pwd)" -c install.conf.json || return
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
-	mkdir -p ~/.local/state/zsh
-unset DEST LOCAL f
+	unset JJ_CONFIG_PATH
 }
 
 setup_basics () {
