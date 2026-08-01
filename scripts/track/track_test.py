@@ -21,7 +21,7 @@ class TrackTests(unittest.TestCase):
         for directory in ("bin", "config", "global", "install", "lib"):
             (self.fixture / directory).mkdir()
         shutil.copy2(ROOT / "install.conf.json", self.fixture / "install.conf.json")
-        shutil.copy2(ROOT / "lib/add_dotfile.py", self.fixture / "lib/add_dotfile.py")
+        shutil.copy2(ROOT / "lib/track_file.py", self.fixture / "lib/track_file.py")
         (self.fixture / "install/global.txt").write_text("")
         (self.fixture / "lib/setup_sudo.sh").write_text("#!/bin/sh\nexit 99\n")
 
@@ -33,9 +33,11 @@ class TrackTests(unittest.TestCase):
         sudo.write_text(
             "#!/bin/sh\n"
             'printf "%s\\n" "$*" > "$TRACK_SUDO_LOG"\n'
+            '[ ! -e "$TRACK_SUDO_FAIL_FILE" ]\n'
         )
         sudo.chmod(0o755)
         self.sudo_log = Path(self.tempdir.name) / "sudo.log"
+        self.sudo_fail = Path(self.tempdir.name) / "sudo.fail"
 
     def tearDown(self) -> None:
         self.tempdir.cleanup()
@@ -46,6 +48,7 @@ class TrackTests(unittest.TestCase):
             HOME=str(self.home),
             PATH=f"{self.fake_bin}:{env['PATH']}",
             TRACK_SUDO_LOG=str(self.sudo_log),
+            TRACK_SUDO_FAIL_FILE=str(self.sudo_fail),
         )
         return subprocess.run(
             ["sh", str(self.fixture / "track.sh"), *arguments],
@@ -113,10 +116,59 @@ class TrackTests(unittest.TestCase):
         missing = self.run_track()
         extra = self.run_track("one", "two", "three")
 
-        self.assertEqual(1, missing.returncode)
-        self.assertIn("usage:", missing.stdout)
-        self.assertEqual(1, extra.returncode)
-        self.assertIn("usage:", extra.stdout)
+        self.assertEqual(2, missing.returncode)
+        self.assertIn("usage:", missing.stderr)
+        self.assertEqual(2, extra.returncode)
+        self.assertIn("usage:", extra.stderr)
+
+    def test_dry_run_does_not_move_or_modify_home_file(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        original_config = (self.fixture / "install.conf.json").read_text()
+
+        result = self.run_track("--dry-run", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertFalse((self.fixture / "config/example").exists())
+        self.assertEqual(original_config, (self.fixture / "install.conf.json").read_text())
+        self.assertIn("move", result.stdout)
+
+    def test_rejects_duplicate_destination_before_moving_file(self) -> None:
+        source = self.home / ".bashrc"
+        source.write_text("local bashrc\n")
+
+        result = self.run_track(str(source))
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("already tracked", result.stderr)
+        self.assertEqual("local bashrc\n", source.read_text())
+
+    def test_global_failure_rolls_back_manifest_and_copy(self) -> None:
+        source = Path(self.tempdir.name) / "system.conf"
+        source.write_text("system configuration\n")
+        self.sudo_fail.touch()
+
+        result = self.run_track(str(source))
+
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("", (self.fixture / "install/global.txt").read_text())
+        self.assertFalse((self.fixture / "global/system.conf").exists())
+        self.assertEqual("system configuration\n", source.read_text())
+
+    def test_manifest_write_failure_restores_home_file(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        self.fixture.chmod(0o555)
+        try:
+            result = self.run_track(str(source))
+        finally:
+            self.fixture.chmod(0o755)
+
+        self.assertEqual(1, result.returncode)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertFalse((self.fixture / "config/example").exists())
 
 
 if __name__ == "__main__":
