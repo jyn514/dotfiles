@@ -227,7 +227,7 @@ install_features () {
 		dnf install -y $packages
 	elif [ -n "$IS_ALPINE" ]; then
 		# Use GNU less so Delta works properly
-		apk add less py3-pip zsh $packages
+		apk add less libgcc py3-pip zsh $packages
 	elif [ -n "$IS_ARCH" ]; then
 		pacman --sync --refresh --sysupgrade --needed $packages
 	elif [ -n "$IS_CHIMERA" ]; then

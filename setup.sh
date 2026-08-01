@@ -419,6 +419,10 @@ setup_install_global_packages () {
 
 setup_install_local () {
 	echo Installing user packages
+	if exists apk && ! [ -e /usr/lib/libgcc_s.so.1 ]; then
+		echo "Alpine's libgcc package is required for Rust; run setup option 7 or 9 first" >&2
+		return 1
+	fi
 	mkdir -p ~/.local/bin
 	install_mise || return
 
