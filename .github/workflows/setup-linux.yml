@@ -1,0 +1,24 @@
+name: Linux setup tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dotfiles:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - alpine:latest
+          - fedora:latest
+          - archlinux:latest
+          - ubuntu:22.04
+          - ubuntu:24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test dotfile setup
+        env:
+          CONTAINER_ENGINE: docker
+        run: scripts/setup/container_test.sh "${{ matrix.image }}"
