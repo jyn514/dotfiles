@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProfileContractTests(unittest.TestCase):
+    def test_makeflags_has_an_explicit_parallelism_value(self) -> None:
+        env = (ROOT / "lib/env.sh").read_text()
+
+        self.assertIn("export MAKEFLAGS='-j4'", env)
+        self.assertNotIn("export MAKEFLAGS='-j'\n", env)
+
     def test_interactive_shells_activate_mise(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 

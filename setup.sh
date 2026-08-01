@@ -36,27 +36,41 @@ install_linux_lol() {
 }
 
 mise_exec() {
-	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- "$@"
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
 }
 
 install_mise() {
 	if ! exists mise; then
-		curl https://mise.run | sh
+		mise_installer=$(tmp_file mise-installer.XXXXXX)
+		download https://mise.run "$mise_installer" || {
+			rm -f "$mise_installer"
+			return 1
+		}
+		sh "$mise_installer" || {
+			rm -f "$mise_installer"
+			return 1
+		}
+		rm -f "$mise_installer"
+		unset mise_installer
 		PATH="$HOME/.local/bin:$PATH"
+		exists mise || {
+			echo "mise installer completed without installing mise" >&2
+			return 1
+		}
 	fi
 	if exists gh && github_token=$(gh auth token); then
 		export GITHUB_TOKEN=$github_token
 		unset github_token
 	fi
-	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes aqua:cargo-bins/cargo-binstall@latest || return
-	MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise install --yes || return
+	MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes aqua:cargo-bins/cargo-binstall@latest < /dev/null || return
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
 	# These crates do not publish binaries that mise can install on every supported
 	# platform. Preserve the no-compilation policy and explicitly omit them there.
 	case $(uname -m) in
 		aarch64|arm64) cargo_tools=$(sed '/^librespot$/d' install/rust.txt);;
 		*) cargo_tools=$(cat install/rust.txt);;
 	esac
-	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$(realpath config/mise.toml)" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
+	printf '%s\n' "$cargo_tools" | tr -d '\r' | xargs env MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- cargo binstall --quiet --no-confirm --rate-limit 10/1 --disable-strategies compile --continue-on-failure || return
 	unset cargo_tools
 }
 
@@ -195,6 +209,14 @@ done'
 
 setup_dotfiles () {
 	echo Installing configuration to ~
+	if ! exists python3; then
+		if exists apk && [ "$(id -u)" = 0 ]; then
+			apk add python3 || return
+		else
+			echo "dotfile setup requires python3; run the global package setup first" >&2
+			return 1
+		fi
+	fi
 	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
 	export JJ_CONFIG_PATH
 	python3 lib/backup_dotfile_collisions.py install.conf.json || return
@@ -296,7 +318,11 @@ unset shell
 
 setup_python () {
 	echo Installing python packages in python.txt
-	mise_exec python -m pip install --quiet -r install/python.txt
+	if exists apk; then
+		python3 -m pip install --quiet --break-system-packages -r install/python.txt
+	else
+		mise_exec python -m pip install --quiet -r install/python.txt
+	fi
 }
 
 setup_vim () {
@@ -336,12 +362,14 @@ setup_backup () {
 
 setup_install_global () {
 	echo Installing global packages
-	if exists sudo; then
+	if [ "$(id -u)" = 0 ]; then
+		./lib/setup_sudo.sh main
+	elif exists sudo; then
 		sudo --preserve-env=PATH ./lib/setup_sudo.sh main
 	elif exists doas; then
 		doas ./lib/setup_sudo.sh main
 	elif exists su; then
-		su root -c ./lib/setup_sudo.sh main
+		su root -c './lib/setup_sudo.sh main'
 	else
 		./lib/setup_sudo.sh main
 	fi
@@ -452,6 +480,18 @@ Choose setup to run: "
 cd "$(dirname "$0")"
 . lib/lib.sh
 . lib/env.sh
+
+MISE_SETUP_CONFIG=$(realpath config/mise.toml)
+MISE_SETUP_CONFIG=$(tmp_file mise-config.XXXXXX)
+sed '/^"cargo:/d' config/mise.toml > "$MISE_SETUP_CONFIG"
+if exists apk; then
+	# Preserve the old Alpine behavior: use packaged Python and difftastic, and
+	# skip Node because it has no musl release and would compile from source.
+	sed '/^node = /d; /^python = /d; /^"npm:/d; /^"aqua:Wilfred\/difftastic"/d; s/depends = \["python", "uv"\]/depends = ["uv"]/' "$MISE_SETUP_CONFIG" > "$MISE_SETUP_CONFIG.alpine"
+	mv "$MISE_SETUP_CONFIG.alpine" "$MISE_SETUP_CONFIG"
+fi
+trap 'rm -f "$MISE_SETUP_CONFIG"' EXIT HUP INT TERM
+export MISE_SETUP_CONFIG
 
 run() {
 	case "$1" in

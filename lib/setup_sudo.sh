@@ -84,7 +84,7 @@ queue_install() {
 			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu ;;
 			manpages) pkg=man-pages ;;
 			build-essential) pkg=build-base;;
-			antidote|bpytop|clangd|cowsay|fscrypt|fzy|glow|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|xdot) return;; # ¯\_(ツ)_/¯
+			antidote|bpytop|clangd|cowsay|fscrypt|fzy|glow|ipp-usb|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|skanpage|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
 	elif [ "$IS_CHIMERA" = 1 ]; then
@@ -249,8 +249,10 @@ install_features () {
 			eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 		fi
 		sudo -u "$SUDO_USER" $(which brew) install -q $brew_packages
-	else
+	elif exists brew; then
 		brew install -q $brew_packages
+	else
+		echo "Homebrew is not installed; skipping Homebrew-only packages"
 	fi
 }
 
@@ -376,7 +378,9 @@ main() {
 	fi
 
 	remove_unwanted
-	encrypt
+	if [ -n "${SUDO_USER:-}" ]; then
+		encrypt
+	fi
 	set +x
 }
 
