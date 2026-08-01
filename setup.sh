@@ -10,6 +10,7 @@ fi
 install_macos_local() {
 	# note that we don't actually pass sudo here
 	./lib/setup_sudo.sh install_features
+	brew install -q duti
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 	if exists cargo; then
@@ -110,127 +111,75 @@ install_mise() {
 	fi
 }
 
-# create_macos_app() {
-# 	cli=$1
-# 	domain=dev.jyn.$cli
-# 	pb=/usr/libexec/PlistBuddy
-# 	app=${cli}.app
-# 	app_plist=$app/Contents/Info.plist
-# 	workflow_plist="$app/Contents/Resources/document.wflow/Contents.plist"
-#
-# 	mkdir -p ~/Applications
-# 	(
-# 		cd ~/Applications
-# 		mkdir -p $app/Contents/MacOS $app/Contents/Resources $(dirname $workflow_plist)
-# 		# note: hard link
-# 		if [ $cli = nvim ]; then
-# 			p=$(which hx-hax)
-# 			n=hx-hax
-# 		else
-# 			p=$(which $cli)
-# 			n=$cli
-# 		fi
-# 		$pb -c "add CFBundleDisplayName string $cli" $app_plist
-# 		$pb -c "add CFBundleExecutable string Application Stub" $app_plist
-# 		$pb -c "add CFBundleIdentifier string $domain" $app_plist
-# 		$pb -c "add CFBundlePackageType string APPL" $app_plist
-# 		$pb -c "add CFBundleDocumentTypes array" $app_plist
-# 		$pb -c "add CFBundleDocumentTypes:0 dict" $app_plist
-# 		$pb -c "add CFBundleDocumentTypes:0:CFBundleTypeRole string Editor" $app_plist
-# 		$pb -c "add CFBundleDocumentTypes:0:LSItemContentTypes array" $app_plist
-# 		$pb -c "add CFBundleDocumentTypes:0:LSItemContentTypes:0 string public.data" $app_plist
-# 		# $pb -c "add NSPrincipalClass string NSApplication" $plist
-# 		# /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f $app
-# 	
-# 		cp -r "/System/Library/CoreServices/Automator Application Stub.app/Contents/" "$app/"
-# 		# $pb -c "Clear dict" "$workflow_plist" 2>/dev/null || true
-# 		$pb -c "Add :AMApplicationBuild string 2.10" "$workflow_plist"
-# 		$pb -c "Add :AMApplicationVersion string 2.10" "$workflow_plist"
-# 		$pb -c "Add :actions array" "$workflow_plist"
-# 		$pb -c "Add :actions:0 dict" "$workflow_plist"
-# 		$pb -c "Add :actions:0:action string com.apple.coreservices.RunShellScript" "$workflow_plist"
-# 		$pb -c "Add :actions:0:parameters dict" "$workflow_plist"
-# 		$pb -c 'Add :actions:0:parameters:COMMAND_STRING string '$cli'"$@"' "$workflow_plist"
-# 		$pb -c "Add :actions:0:parameters:shell string /bin/bash" "$workflow_plist"
-# 		$pb -c "Add :actions:0:parameters:inputMethod integer 0" "$workflow_plist"
-# 	)
-# }
-
-register_editor() {
-	cli=$1
-	mime=$2
-	if exists xdg-mime; then
-		xdg-mime default $cli.desktop $mime
-	elif exists duti; then
-		kind=${3:-editor}
-		id=com.apple.automator.$cli;
-
-		duti -s $id $mime $kind
-
-		case $mime in
-			*/plain) ext=txt;;
-			*-python*) ext=py;;
-			*-perl*) ext=perl;;
-			*-javascript*) ext=js;;
-			*-csh*) ext=csh;;
-			*-c++*) ext=cpp;;
-			*-chdr) ext=h;;
-			*-csrc|*-c) ext=c;;
-			*-java) ext=java;;
-			*/json) ext=json;;
-			*/markdown) ext=md;;
-			*) return;;
-		esac
-		set -x
-		duti -s $id .${ext} $kind
-		set +x
+setup_linux_mimetypes() {
+	mime_list=$(tmp_file mimetypes.XXXXXX) || return
+	python3 lib/setup_mimetypes.py --policy lib/mimetypes.json linux \
+		--desktop-template config/nvim.desktop \
+		--desktop-output "$HOME/.local/share/applications/nvim-generated.desktop" \
+		> "$mime_list" || {
+		rm -f "$mime_list"
+		return 1
+	}
+	if exists update-desktop-database; then
+		update-desktop-database "$HOME/.local/share/applications" || {
+			rm -f "$mime_list"
+			return 1
+		}
 	fi
+	mime_status=0
+	while IFS= read -r mime; do
+		xdg-mime default nvim-generated.desktop "$mime" || {
+			mime_status=$?
+			break
+		}
+	done < "$mime_list"
+	rm -f "$mime_list"
+	[ "$mime_status" = 0 ] || return "$mime_status"
+}
+
+setup_macos_mimetypes() {
+	if ! exists duti; then
+		echo "macOS file associations require duti; run setup option 6 or 9 first" >&2
+		return 1
+	fi
+	if ! exists xcrun || ! xcrun --find swiftc >/dev/null 2>&1; then
+		echo "macOS file associations require the Xcode command line tools" >&2
+		return 1
+	fi
+	app="$HOME/Applications/nvim.app"
+	python3 lib/setup_mimetypes.py --policy lib/mimetypes.json macos-app "$app" || return
+	xcrun swiftc "$app/Contents/launcher.swift" -o "$app/Contents/MacOS/nvim-launcher" || return
+	lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+	"$lsregister" -f "$app" || return
+	python3 -c 'import json; print("\n".join(json.load(open("lib/mimetypes.json"))["macos"]["editor_utis"]))' |
+	while IFS= read -r uti; do
+		duti -s dev.jyn.nvim "$uti" editor || return
+	done || return
+	python3 -c 'import json; print("\n".join(json.load(open("lib/mimetypes.json"))["macos"]["editor_extension_exceptions"]))' |
+	while IFS= read -r extension; do
+		duti -s dev.jyn.nvim ".$extension" editor || return
+	done || return
 }
 
 setup_mimetypes() {
 	echo "Registering mimetypes"
 	if exists nvim; then
 		if [ -n "${IS_MACOS:-}" ]; then
-			if [ -d /Applications/nvim.app ]; then
-				defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType=public.plain-text;LSHandlerRoleAll=com.apple.automator.nvim;}'
-				echo "To see updated mimetype handlers, you must restart your MacBook" >&2
-			else
-				echo "To setup nvim file associations, you need to create a Application using Automator."
-				echo "Go to File -> New -> Application -> Run Shell Script -> Pass input -> as arguments."
-				echo "Then, copy paste this script:"
-				echo
-echo 'for f in "$@"
-do
-	hx-hax "$f"
-done'
-				echo
-				echo "Finally, go to File -> Save -> Save as 'nvim' -> Where 'Applications'."
-				echo 'Do the same for fx with the script: fx "$@"'
-				exit 1
-			fi
+			setup_macos_mimetypes || return
+		elif exists xdg-mime; then
+			setup_linux_mimetypes || return
 		fi
-
-		# lol, the nvim desktop file has the exact same mimetype
-		for mime in $(grep MimeType config/Helix.desktop | cut -d = -f 2 | tr \; '\n'); do
-			register_editor nvim "$mime"
-		done
-		for mime in text/markdown text/x-python text/x-python3 text/x-perl application/javascript application/x-csh; do
-			register_editor nvim $mime
-		done
 	fi
 
-	if [ -n "${IS_MACOS:-}" ]; then
-		for ext in rs; do
-			duti -s com.apple.automator.nvim .${ext} editor
-		done
-	elif exists fx; then
-		register_editor fx application/json viewer
+	if [ -z "${IS_MACOS:-}" ] && exists fx && exists xdg-mime; then
+		xdg-mime default fx-usercreated-1.desktop application/json
 	fi
 
-	if exists xdg-settings && browser=$(xdg-settings get default-web-browser); then
-		for mime in image/svg+xml; do
-			register_editor "$browser" $mime viewer
-		done
+	if exists xdg-settings \
+		&& browser=$(xdg-settings get default-web-browser) \
+		&& [ -n "$browser" ]
+	then
+		xdg-mime default "$browser" image/svg+xml
 	fi
 }
 
@@ -535,6 +484,7 @@ run() {
 		install-global) setup_install_global_packages;;
 		install-local) setup_install_local && setup_python;;
 		bas*) setup_basics;;
+		mime*) setup_mimetypes;;
 		sh*|2) setup_shell;;
 		py*|3) setup_python;;
 		vi*|4) setup_vim;;

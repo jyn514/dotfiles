@@ -1,0 +1,23 @@
+{
+  "linux": {
+    "editor_mime_prefixes": [
+      "text/"
+    ],
+    "editor_mime_roots": [
+      "text/plain"
+    ],
+    "editor_mime_exceptions": [
+      "application/javascript",
+      "application/x-csh"
+    ]
+  },
+  "macos": {
+    "editor_utis": [
+      "public.text",
+      "public.source-code"
+    ],
+    "editor_extension_exceptions": [
+      "rs"
+    ]
+  }
+}
