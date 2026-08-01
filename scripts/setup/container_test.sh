@@ -21,13 +21,22 @@ case $image in
 esac
 
 if [ "${image%%:*}" = alpine ]; then
-	bootstrap_check='for option in 1 4 5; do
+	bootstrap_check='for option in 1; do
 			if ./setup.sh "$option" > /tmp/dotfiles-bootstrap.out 2>&1; then
 				echo "setup option $option unexpectedly succeeded without python3" >&2
 				exit 1
 			fi
 			grep -q "dotfile setup requires python3; run setup option 7 or 9 first" /tmp/dotfiles-bootstrap.out
-		done'
+		done
+		if ./setup.sh 4 > /tmp/vim-bootstrap.out 2>&1; then
+			echo "vim setup unexpectedly succeeded without an editor" >&2
+			exit 1
+		fi
+		grep -q "no vim installed" /tmp/vim-bootstrap.out
+		! grep -q "dotfile setup requires python3" /tmp/vim-bootstrap.out
+		./setup.sh 5 > /tmp/backup-bootstrap.out 2>&1
+		grep -q "Setting up daily backup" /tmp/backup-bootstrap.out
+		! grep -q "dotfile setup requires python3" /tmp/backup-bootstrap.out'
 	post_install_check='printf "1\n0\n" | ./setup.sh'
 else
 	bootstrap_check=:

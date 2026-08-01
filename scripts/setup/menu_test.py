@@ -32,8 +32,8 @@ setup_kde() { record kde; }
             "1": ["dotfiles"],
             "2": ["shell"],
             "3": ["python"],
-            "4": ["basics", "vim"],
-            "5": ["basics", "backup"],
+            "4": ["vim"],
+            "5": ["backup"],
             "6": ["local", "python"],
             "7": ["global"],
             "8": ["kde"],
@@ -95,12 +95,13 @@ setup_kde() { record kde; }
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("parameter not set", result.stderr)
 
-    def test_basics_failure_stops_vim_and_backup_options(self) -> None:
+    def test_vim_and_backup_options_are_decoupled_from_basics(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
-        self.assertIn("setup_dotfiles || return", setup)
-        self.assertIn("vi*|4) setup_basics && setup_vim", setup)
-        self.assertIn("bac*|5) setup_basics && setup_backup", setup)
+        self.assertIn("vi*|4) setup_vim", setup)
+        self.assertIn("bac*|5) setup_backup", setup)
+        self.assertNotIn("vi*|4) setup_basics", setup)
+        self.assertNotIn("bac*|5) setup_basics", setup)
 
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
