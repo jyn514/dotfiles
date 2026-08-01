@@ -2,7 +2,6 @@
 
 import json
 import os
-import platform
 import shlex
 import subprocess
 import sys
@@ -295,7 +294,6 @@ class LocalInstallationTests(unittest.TestCase):
             '  [ -f "$lock_dir/mise.lock" ] || exit 88\n'
             'fi\n'
             'case "$name:$*:${FAIL_PYTHON_INSTALL:-}" in mise:*python*:1|python:*:1|python3:*:1) exit 1;; esac\n'
-            'case "$name:$*:${FAIL_CARGO_TOOLS_INSTALL:-}" in mise:*cargo\\ binstall\\ --quiet*:1) exit 1;; esac\n'
         )
         recorder.chmod(0o755)
         for command in (
@@ -457,33 +455,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         self.assertIn(["mise", "install", "--yes"], commands)
-        rust_packages = [
-            "bacon",
-            "cargo-audit",
-            "cargo-sweep",
-            "cargo-tree",
-            "librespot",
-        ]
-        if platform.machine() in {"aarch64", "arm64"}:
-            rust_packages.remove("librespot")
-        self.assertIn(
-            [
-                "mise",
-                "exec",
-                "--",
-                "cargo",
-                "binstall",
-                "--quiet",
-                "--no-confirm",
-                "--rate-limit",
-                "10/1",
-                "--disable-strategies",
-                "compile",
-                "--continue-on-failure",
-                *rust_packages,
-            ],
-            commands,
-        )
+        self.assertFalse(any("binstall" in command for command in commands))
         fish_scripts = [command[2] for command in commands if command[0] == "fish"]
         self.assertTrue(
             any("fisher install jorgebucaran/fisher" in script for script in fish_scripts)
@@ -596,18 +568,12 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
-    def test_installs_declarative_tools_before_using_cargo_binstall(self) -> None:
+    def test_installs_all_declarative_tools_in_one_mise_command(self) -> None:
         result = self.run_install()
 
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        all_tools_install = commands.index(["mise", "install", "--yes"])
-        cargo_binstall = next(
-            index
-            for index, command in enumerate(commands)
-            if command[:5] == ["mise", "exec", "--", "cargo", "binstall"]
-        )
-        self.assertLess(all_tools_install, cargo_binstall)
+        self.assertEqual(1, commands.count(["mise", "install", "--yes"]))
 
     def test_checks_github_auth_before_installing_tools(self) -> None:
         result = self.run_install()
@@ -621,7 +587,9 @@ class LocalInstallationTests(unittest.TestCase):
     def test_mise_install_uses_runtime_config_and_lockfile(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
-        self.assertIn('cp config/mise.lock "$MISE_SETUP_DIR/mise.lock"', setup)
+        self.assertIn("MISE_SETUP_CONFIG=$PWD/config/mise.toml", setup)
+        self.assertNotIn("MISE_SETUP_DIR", setup)
+        self.assertNotIn("sed '/^\"cargo:/d'", setup)
         self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install", setup)
         self.assertNotIn("gh auth token", setup)
         self.assertNotIn("export GITHUB_TOKEN", setup)
@@ -684,14 +652,17 @@ class LocalInstallationTests(unittest.TestCase):
         setup = (ROOT / "setup.sh").read_text()
 
         self.assertIn("if exists apk; then", setup)
-        self.assertIn("/^node = /d; /^python = /d; /^\"npm:/d", setup)
-        self.assertIn('/^\"aqua:Wilfred\\/difftastic\"/d', setup)
-        self.assertIn('depends = [\"uv\"]', setup)
+        self.assertIn("MISE_DISABLE_TOOLS='node,python,npm:pnpm", setup)
+        self.assertIn("aqua:Wilfred/difftastic'", setup)
+        self.assertNotIn("MISE_SETUP_CONFIG.alpine", setup)
 
-    def test_setup_installs_cargo_tools_only_through_explicit_binstall(self) -> None:
+    def test_setup_delegates_cargo_tools_to_mise(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
+        with (ROOT / "config/mise.toml").open("rb") as config_file:
+            config = tomllib.load(config_file)
 
-        self.assertIn("sed '/^\"cargo:/d' config/mise.toml", setup)
+        self.assertNotIn("cargo binstall", setup)
+        self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
 
     def test_user_tools_no_longer_bootstrap_homebrew(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
@@ -734,12 +705,6 @@ class LocalInstallationTests(unittest.TestCase):
             self.commands(),
         )
 
-    def test_cargo_tool_install_failure_makes_install_local_fail(self) -> None:
-        result = self.run_install_with(FAIL_CARGO_TOOLS_INSTALL="1")
-
-        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
-
-
 class MiseConfigTests(unittest.TestCase):
     def test_runtime_contract_is_declared_in_global_config(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
@@ -758,9 +723,14 @@ class MiseConfigTests(unittest.TestCase):
         self.assertNotIn("idiomatic_version_file_enable_tools", config.get("settings", {}))
 
         cargo_tools = {
+            "bacon",
             "broot",
+            "cargo-audit",
             "cargo-outdated",
+            "cargo-sweep",
+            "cargo-tree",
             "counts",
+            "librespot",
             "mdbook",
         }
         aqua_tools = {
@@ -787,7 +757,10 @@ class MiseConfigTests(unittest.TestCase):
         asdf_tools = {"mise-plugins/mise-clojure"}
         self.assertEqual(cargo_tools, self.backend_packages(tools, "cargo"))
         for cargo_tool in cargo_tools:
-            self.assertEqual(["rust"], tools[f"cargo:{cargo_tool}"]["depends"])
+            self.assertEqual(
+                ["rust", "aqua:cargo-bins/cargo-binstall"],
+                tools[f"cargo:{cargo_tool}"]["depends"],
+            )
         self.assertEqual(aqua_tools, self.backend_packages(tools, "aqua"))
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
@@ -798,6 +771,8 @@ class MiseConfigTests(unittest.TestCase):
             tools["github:glide-browser/glide"],
         )
         self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
+        self.assertIs(True, config["settings"]["cargo"]["binstall"])
+        self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
         self.assertIs(True, config["settings"]["lockfile"])
         self.assertIs(True, config["settings"]["locked"])
         self.assertIs(True, config["settings"]["github"]["use_git_credentials"])
@@ -806,10 +781,7 @@ class MiseConfigTests(unittest.TestCase):
         )
         self.assertNotIn("credential_command", config["settings"]["github"])
         self.assertEqual("", config["settings"]["github"]["oauth_export_env"])
-        self.assertEqual(
-            {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},
-            set((ROOT / "install/rust.txt").read_text().splitlines()),
-        )
+        self.assertFalse((ROOT / "install/rust.txt").exists())
 
     def test_lockfile_covers_every_declared_tool(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
