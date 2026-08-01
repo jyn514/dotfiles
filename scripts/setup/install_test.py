@@ -131,7 +131,7 @@ class InstallationTests(unittest.TestCase):
         if platform["ID"] == "alpine":
             replacements = {
                 "antidote": None,
-                "build-essential": None,
+                "build-essential": "build-base",
                 "clangd": None,
                 "cowsay": None,
                 "fd-find": "fd",
@@ -202,7 +202,7 @@ class InstallationTests(unittest.TestCase):
         elif platform["ID"] == "arch":
             replacements = {
                 "antidote": None,
-                "build-essential": None,
+                "build-essential": "base-devel",
                 "clangd": "clang",
                 "fd-find": "fd",
                 "gh": "github-cli",
@@ -391,7 +391,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         self.assertIn(
-            ["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"],
+            ["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"],
             commands,
         )
         self.assertIn(["mise", "install", "--yes"], commands)
@@ -487,10 +487,20 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         bootstrap_install = commands.index(
-            ["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"]
+            ["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"]
         )
         all_tools_install = commands.index(["mise", "install", "--yes"])
         self.assertLess(bootstrap_install, all_tools_install)
+
+    def test_cargo_binstall_bootstrap_does_not_bypass_runtime_config(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn(
+            "MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes "
+            "aqua:cargo-bins/cargo-binstall@latest",
+            setup,
+        )
+        self.assertNotIn("MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --yes rust", setup)
 
     def test_python_install_failure_makes_install_local_fail(self) -> None:
         result = self.run_install_with(FAIL_PYTHON_INSTALL="1")
@@ -502,7 +512,7 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
-            [["mise", "install", "--yes", "rust@nightly", "aqua:cargo-bins/cargo-binstall@latest"]],
+            [["mise", "install", "--yes", "aqua:cargo-bins/cargo-binstall@latest"]],
             self.commands(),
         )
 
@@ -552,10 +562,18 @@ class MiseConfigTests(unittest.TestCase):
             "vscode-langservers-extracted",
         }
         pipx_tools = {"git-revise", "pytest", "pylint", "yt-dlp"}
+        github_tools = {"glide-browser/glide"}
         self.assertEqual(cargo_tools, self.backend_packages(tools, "cargo"))
+        for cargo_tool in cargo_tools:
+            self.assertEqual(["rust"], tools[f"cargo:{cargo_tool}"]["depends"])
         self.assertEqual(aqua_tools, self.backend_packages(tools, "aqua"))
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
+        self.assertEqual(github_tools, self.backend_packages(tools, "github"))
+        self.assertEqual(
+            {"version": "latest", "os": ["linux"], "filter_bins": "glide"},
+            tools["github:glide-browser/glide"],
+        )
         self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
         self.assertEqual(
             {"bacon", "cargo-audit", "cargo-sweep", "cargo-tree", "librespot"},
@@ -572,6 +590,11 @@ class MiseConfigTests(unittest.TestCase):
 
         self.assertIn("mise activate fish | source", fish_config)
         self.assertNotIn("nvm use", fish_config)
+
+    def test_setup_no_longer_installs_glide_imperatively(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertNotIn("glide-browser/glide/releases", setup)
 
 
 if __name__ == "__main__":

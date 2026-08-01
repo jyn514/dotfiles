@@ -4,15 +4,16 @@ python = "latest"
 rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "clippy", "rust-analyzer", "miri"] }
 uv = "latest"
 "aqua:cargo-bins/cargo-binstall" = "latest"
-"cargo:broot" = "latest"
-"cargo:cargo-outdated" = "latest"
-"cargo:counts" = "latest"
-"cargo:mdbook" = "latest"
+"cargo:broot" = { version = "latest", depends = ["rust"] }
+"cargo:cargo-outdated" = { version = "latest", depends = ["rust"] }
+"cargo:counts" = { version = "latest", depends = ["rust"] }
+"cargo:mdbook" = { version = "latest", depends = ["rust"] }
 "aqua:Wilfred/difftastic" = "latest"
 "aqua:Byron/dua-cli" = "latest"
 "aqua:jj-vcs/jj" = "latest"
 "aqua:BurntSushi/ripgrep" = "latest"
 "aqua:Myriad-Dreamin/tinymist" = "latest"
+"github:glide-browser/glide" = { version = "latest", os = ["linux"], filter_bins = "glide" }
 "npm:pnpm" = { version = "latest", depends = ["node"] }
 "npm:perlnavigator-server" = { version = "latest", depends = ["node"] }
 "npm:bash-language-server" = { version = "latest", depends = ["node"] }
