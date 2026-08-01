@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  dotfiles:
+  setup:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -18,7 +18,7 @@ jobs:
           - ubuntu:24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Test dotfile setup
+      - name: Test setup
         env:
           CONTAINER_ENGINE: docker
         run: scripts/setup/container_test.sh "${{ matrix.image }}"
