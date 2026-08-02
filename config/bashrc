@@ -108,5 +108,7 @@ if exists atuin; then
 	unset atuin_init
 fi
 if exists direnv; then
-	eval "$(direnv hook bash)"
+	direnv_init=$(direnv hook bash) || return
+	eval "$direnv_init" || return
+	unset direnv_init
 fi

@@ -866,6 +866,26 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
         self.assertEqual("", remaining.stdout)
 
+    def test_git_autosquash_propagates_fallback_branch_failure(self) -> None:
+        self.executable(
+            "git",
+            'case "$1" in\n'
+            "  symbolic-ref) exit 1;;\n"
+            "  for-each-ref) exit 24;;\n"
+            "  *) exit 99;;\n"
+            "esac\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/git-autosquash")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(24, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

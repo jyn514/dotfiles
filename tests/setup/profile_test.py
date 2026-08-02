@@ -162,6 +162,7 @@ class ProfileContractTests(unittest.TestCase):
             "abbreviations=$(grep -Ev '^(#|$)' \"$DOTFILES/lib/abbr.txt\") || return",
             profile,
         )
+        self.assertIn('eval "$snap_bin" || return', profile)
 
     def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
         result = subprocess.run(

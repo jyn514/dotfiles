@@ -77,7 +77,7 @@ if ! exists cowsay && [ -e /usr/games/cowsay ]; then
 	add_path /usr/games
 fi
 if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
-	eval "$snap_bin"
+	eval "$snap_bin" || return
 	add_path "$SNAPD_BIN"
 	unset snap_bin
 fi
