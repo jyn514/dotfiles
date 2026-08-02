@@ -852,9 +852,17 @@ class CommandTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        parent = subprocess.run(
+            ["/usr/bin/git", "-c", config, "parent"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
 
         self.assertNotEqual(0, default_branch.returncode)
         self.assertNotEqual(0, branch_log.returncode)
+        self.assertNotEqual(0, parent.returncode)
         self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
         self.assertEqual("", remaining.stdout)
 

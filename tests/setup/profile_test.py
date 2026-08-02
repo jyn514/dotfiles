@@ -39,6 +39,38 @@ class ProfileContractTests(unittest.TestCase):
             profile.index("linuxbrew/.linuxbrew/bin/brew shellenv"),
             profile.index('. "$DOTFILES/lib/shell/paths.sh"'),
         )
+        self.assertIn(
+            "brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || return",
+            profile,
+        )
+
+    def test_noninteractive_profile_propagates_keychain_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            keychain = binaries / "keychain"
+            keychain.write_text("#!/bin/sh\nexit 23\n")
+            keychain.chmod(0o755)
+
+            result = subprocess.run(
+                ["/bin/sh", "-c", '. "$HOME/.profile"'],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                    "SSH_AUTH_SOCK": "",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(23, result.returncode)
 
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

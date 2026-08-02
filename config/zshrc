@@ -37,8 +37,8 @@ ABBR_AUTOLOAD=0
 RPS1="%F{240}loading%f"
 
 # package manager
-source $ZDOTDIR/antidote/antidote.zsh
-antidote load
+source $ZDOTDIR/antidote/antidote.zsh || return
+antidote load || return
 
 zsh-defer -12p bindkey '^[l' autosuggest-execute
 zsh-defer -12p abbr import-aliases --session --quiet
@@ -257,7 +257,9 @@ zle -N fzf-file
 bindkey "^[t" fzf-file
 
 if exists atuin; then
-	zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
+	atuin_init=$(atuin init zsh --disable-up-arrow) || return
+	zsh-defer -12p -c "$atuin_init"
+	unset atuin_init
 	zsh-defer -12p bindkey -M vicmd '^r' atuin-search
 fi
 zsh-defer -12p bindkey -M vicmd / vi-find-next-char
@@ -270,7 +272,9 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion atuin-quiet)
 
 # https://direnv.net/
 if exists direnv; then
-	zsh-defer -12p -c "$(direnv hook zsh)"
+	direnv_init=$(direnv hook zsh) || return
+	zsh-defer -12p -c "$direnv_init"
+	unset direnv_init
 fi
 
 # Needs to be initialized after all completions are loaded
@@ -308,9 +312,11 @@ if typeset -f fork_github >/dev/null; then
 	unfunction fork_github
 fi
 
-zsh-defer -12p -c 'if exists jj; then source <(jj util completion zsh); fi'
+zsh-defer -12p -c 'if exists jj; then jj_completion=$(jj util completion zsh) || return; eval "$jj_completion" || return; unset jj_completion; fi'
 if exists atuin; then
-	zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
+	atuin_completions=$(atuin gen-completions --shell zsh) || return
+	zsh-defer -12p -c "$atuin_completions"
+	unset atuin_completions
 fi
 # add `-p` here if you see errors during delayed loading
 zsh-defer -c RPS1=
