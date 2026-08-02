@@ -847,6 +847,7 @@ class MiseConfigTests(unittest.TestCase):
 
     def test_shell_startup_guards_optional_tools_and_formats_durations_plainly(self) -> None:
         fish_config = (ROOT / "config/config.fish").read_text()
+        fish_z = (ROOT / "config/z.fish").read_text()
         bashrc = (ROOT / "config/bashrc").read_text()
         zshrc = (ROOT / "config/zshrc").read_text()
 
@@ -881,6 +882,13 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('. ~/.profile || return', zshrc)
         self.assertIn('source ~/.local/bashrc || return', bashrc)
         self.assertIn('fzf-bash-completion.sh || return', bashrc)
+        self.assertIn("set -l profile_path (realpath ~/.profile); or return", fish_config)
+        self.assertIn("if exists cargo; then", bashrc)
+        self.assertIn("complete_alias c cargo || return", bashrc)
+        self.assertIn("if exists git; then", bashrc)
+        self.assertIn("complete_alias g git || return", bashrc)
+        self.assertIn("compinit -C || return", zshrc)
+        self.assertIn("set -l results (command zoxide query", fish_z)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

@@ -287,7 +287,7 @@ fi
 
 autoload -Uz compinit
 # having weird cache invalidation issues; for now, tell zsh to unconditionally reuse the cache. at some point completion will be buggy and we can investigate further then.
-compinit -C
+compinit -C || return
 
 # Uses compdef; needs to come after compinit
 compdef '_arguments --' fzf  # takes no positional arguments

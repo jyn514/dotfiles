@@ -86,6 +86,12 @@ class LinuxMimetypeTests(unittest.TestCase):
         )
         self.assertNotIn("MimeType=text/plain;\n", generated)
 
+    def test_helix_desktop_selects_helix(self) -> None:
+        desktop = (ROOT / "config/Helix.desktop").read_text()
+
+        self.assertIn("TryExec=hx-hax\n", desktop)
+        self.assertIn("Exec=env REAL_EDITOR=hx hx-hax %F\n", desktop)
+
     def test_setup_registers_discovered_and_special_case_handlers(self) -> None:
         home = self.mime / "home"
         binaries = self.mime / "bin"

@@ -9,7 +9,9 @@
 # 	eval (set SHELL /bin/sh lesspipe)
 # end
 
-set DOTFILES (dirname (dirname (realpath ~/.profile)))
+set -l profile_path (realpath ~/.profile); or return
+set DOTFILES (dirname (dirname $profile_path)); or return
+set -e profile_path
 
 # fish 3 doesn't support most `abbr` and `complete` arguments :/
 if string match -q "3.*" $FISH_VERSION
