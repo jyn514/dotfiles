@@ -11,6 +11,7 @@ git_dir=$(git rev-parse --git-dir) || exit
 GIT_DIR=$(realpath "$git_dir") || exit
 unset git_dir
 export GIT_DIR
+hook_dir=$(realpath "$(dirname "$0")") || exit
 
 # Run local hooks first, since those are more important.
 local_hook=$(git rev-parse --git-common-dir)/hooks/$(basename "$0")
@@ -29,5 +30,5 @@ git diff --name-only -z --cached --no-ext-diff --diff-filter=d \
 cd "$tmpdir"
 
 for c in symlinks case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do
-    find . -type f -print0 | xargs -0 python "$(realpath "$(dirname "$0")")"/pre_commit_hooks/check_$c.py
+    find . -type f -print0 | xargs -0 python "$hook_dir/pre_commit_hooks/check_$c.py"
 done

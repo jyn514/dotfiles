@@ -547,6 +547,25 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("https://codeberg.org/\n", result.stdout)
 
+    def test_git_uses_installed_global_hooks(self) -> None:
+        result = subprocess.run(
+            [
+                "git",
+                "config",
+                "--no-includes",
+                "-f",
+                str(ROOT / "config/gitconfig"),
+                "--get",
+                "core.hooksPath",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("~/.config/git/hooks\n", result.stdout)
+
     def test_path_consumers_and_comment_regex_preserve_literal_text(self) -> None:
         tmux = (ROOT / "config/tmux.conf").read_text()
         nvim = (ROOT / "config/nvim.lua").read_text()
@@ -592,6 +611,10 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("let l:status = v:shell_error", vimrc)
         self.assertIn("return l:status", vimrc)
         self.assertIn("function! CompileTex()", vimrc)
+        self.assertEqual(7, vimrc.count("function! "))
+        self.assertNotIn("\nfunction ", vimrc)
+        self.assertIn("Plug 'vim-latex/vim-latex', { 'for': 'tex' }", vimrc)
+        self.assertNotIn("{ 'for': 'latex' }", vimrc)
         self.assertIn("ZSH_PROFILE_READ=1\n. ~/.profile || return", zprofile)
         self.assertIn('awk -v arg="$1"', profile)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
@@ -614,6 +637,12 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("vim.fs.root(buf, { 'package.json', 'tsconfig.json' })", nvim)
         self.assertIn("'markdown_oxide', 'oxc', 'tinymist'", nvim)
         self.assertNotIn("vim.fs.root(0, { 'package.json'", nvim)
+        self.assertIn("codelens.refresh { bufnr = bufnr }", nvim)
+        self.assertNotIn("codelens.refresh { bufnr = 0 }", nvim)
+        self.assertIn("if win >= 0 then vim.lsp.foldclose('imports', win) end", nvim)
+        self.assertIn("nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })", nvim)
+        self.assertIn("nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })", nvim)
+        self.assertNotIn("highlight! link Keyword Special", nvim)
         self.assertEqual(
             1,
             nvim.count(

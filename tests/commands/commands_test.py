@@ -582,10 +582,15 @@ class CommandTest(unittest.TestCase):
             '  "checkout-index "*) printf "<%s>\\n" "$4" > "$CHECKOUT";;\n'
             'esac\n',
         )
-        self.executable("xargs", "cat >/dev/null\n")
+        self.executable(
+            "xargs",
+            'for argument do checker=$argument; done\n'
+            '[ -f "$checker" ] || exit 41\n'
+            "cat >/dev/null\n",
+        )
 
         result = subprocess.run(
-            [str(ROOT / "config/githooks/pre-commit")],
+            [os.path.relpath(ROOT / "config/githooks/pre-commit", self.directory)],
             cwd=self.directory,
             text=True,
             stdout=subprocess.PIPE,

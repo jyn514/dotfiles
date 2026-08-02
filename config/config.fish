@@ -148,15 +148,23 @@ end
 fish_hybrid_key_bindings
 
 function get_fzf_selection
-	set -l bindings
-	for key in enter tab ctrl-o ctrl-y ctrl-l
-		set -a bindings "$key:replace-query+print($key)+accept-or-print-query"
-	end
-	fzf --bind "(string join , $bindings)" $argv
+	fzf --expect=tab,ctrl-o,ctrl-y,ctrl-l $argv
 end
 
 function fzf_action
-	get_fzf_selection | read --line key selection
+	get_fzf_selection $argv | read --null --line key selection
+	set -l statuses $pipestatus
+	switch $statuses[1]
+		case 0
+		case 1 130
+			return 0
+		case '*'
+			return $statuses[1]
+	end
+	[ $statuses[2] -eq 0 ]; or return $statuses[2]
+	if [ -z "$key" ]
+		set key enter
+	end
 	set -l escaped_selection (string escape -- $selection)
 	switch $key
 		case enter
@@ -177,12 +185,19 @@ function fzf_action
 	end
 end
 
+function fzf_file_action
+	fd --print0 | fzf_action --read0 --print0
+	set -l statuses $pipestatus
+	[ $statuses[1] -eq 0 ]; or return $statuses[1]
+	return $statuses[2]
+end
+
 abbr --add --global :ec "$EDITOR ~/.config/fish/config.fish"
 bind -M insert alt-e '$EDITOR ~/.config/fish/config.fish'
 bind -M insert alt-r 'source ~/.config/fish/config.fish'
 bind -M insert alt-shift-e edit_command_buffer
-bind -M insert alt-t 'fd | fzf_action'
-bind -M insert ctrl-o 'fd | fzf_action'
+bind -M insert alt-t fzf_file_action
+bind -M insert ctrl-o fzf_file_action
 bind -M insert alt-k \
 	'for cmd in sudo doas please run0
 		if command -q $cmd
