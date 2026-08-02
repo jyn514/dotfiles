@@ -5,7 +5,7 @@ if ! [ $# -eq 1 ]; then
 	exit 1
 fi
 
-. $(dirname "$0")/../lib/shell/lib.sh
+. "$(dirname "$0")/../lib/shell/lib.sh"
 open_html() {
 	if exists open; then open "$1"; return; fi
 	for b in x-www-browser firefox google-chrome; do
@@ -20,4 +20,9 @@ open_html() {
 	return 1
 }
 
-pulldown-cmark -TFSLPHMG < "$1" > tmp.html && open_html tmp.html && sleep 1 && rm -f tmp.html
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/view-markdown.XXXXXX") || exit
+trap 'rm -rf "$tmp_dir"' 0
+trap 'exit 1' 1 2 15
+out=$tmp_dir/page.html
+
+pulldown-cmark -TFSLPHMG < "$1" > "$out" && open_html "$out" && sleep 1

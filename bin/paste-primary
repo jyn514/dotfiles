@@ -3,20 +3,35 @@
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/paste-primary.XXXXXX") || exit
 primary=$tmp_dir/primary
 clipboard=$tmp_dir/clipboard
+log=$tmp_dir/log
 cleanup() { rm -rf "$tmp_dir"; }
 trap cleanup 0
 trap 'exit 1' 1 2 15
 
-if paste --primary > "$primary" && [ -s "$primary" ]; then
+paste_primary() {
+	paste --primary > "$primary" || return
+	[ -s "$primary" ] || return 0
+
 	# hack: pasting from primary works horribly in firefox
-	paste > "$clipboard" || exit
-	copy < "$primary"
+	paste > "$clipboard" || return
+	copy < "$primary" || return
+	result=0
 	if command -v ydotool >/dev/null; then
 		# see /usr/include/linux/input-event-codes.h
-		ydotool key 135:1 135:0
+		ydotool key 135:1 135:0 || result=$?
 	else
-		xdotool key --window "$(xdotool getactivewindow)" XF86Paste
+		if window=$(xdotool getactivewindow); then
+			xdotool key --window "$window" XF86Paste || result=$?
+		else
+			result=$?
+		fi
 	fi
 	sleep .1  # give firefox time to handle the event
-	copy < "$clipboard"
-fi 2>&1 | logger -t paste-primary
+	copy < "$clipboard" || return
+	return "$result"
+}
+
+paste_primary > "$log" 2>&1
+result=$?
+logger -t paste-primary < "$log"
+exit "$result"

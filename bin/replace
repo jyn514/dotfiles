@@ -3,11 +3,13 @@
 
 if [ $# -ne 2 ]; then
 	echo "usage: $(basename "$0") <current> <replace-with>"
+	exit 1
+elif [ -z "$1" ]; then
+	echo "replace: search text must not be empty" >&2
+	exit 1
 else
-	# sed accepts anything as delimeter, not just '/'
-	# need to escape backslashes and quotes
-
-	first="$(echo "$1"  | sed 's%"%\\"%g')"
-	second="$(echo "$2" | sed 's%"%\\"%g')"
-	find . -type f | xargs sed -i "s%$first%$second%g"
+	REPLACE_FROM=$1 REPLACE_TO=$2
+	export REPLACE_FROM REPLACE_TO
+	find . -type f -exec perl -pi -e \
+		's/\Q$ENV{REPLACE_FROM}\E/$ENV{REPLACE_TO}/g' {} +
 fi
