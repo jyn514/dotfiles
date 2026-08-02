@@ -322,7 +322,9 @@ purge_removed () (
 )
 
 excuse () {
-	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
+	local telnet_output
+	telnet_output=$(telnet towel.blinkenlights.nl 666 2>/dev/null) || return
+	printf '%s\n' "$telnet_output" | tail -2 | cowsay -f dragon
 }
 
 dad () { curl https://icanhazdadjoke.com && echo; }

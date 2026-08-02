@@ -243,9 +243,9 @@ function shorten_unique_prefixes(haystack) {
 	});
 }
 
-function strip(text) {
+function strip(text: string | null) {
 	// strip numbers, non-ascii text, and annoying-to-type characters
-	return text.replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
+	return (text ?? "").replace(/[0-9]+/g, '').replace(/[^a-zA-Z0-9-]/g, '').toLowerCase();
 }
 
 function labels(texts) {
@@ -289,6 +289,6 @@ function labels(texts) {
 
 glide.o.hint_label_generator = async ({ content }) => {
 	const texts = await content.map(element => [element.textContent, element.ariaLabel]);
-	const haystack = texts.map(([text, label]) => strip(text) || strip(label || ""));
+	const haystack = texts.map(([text, label]) => strip(text) || strip(label));
 	return labels(haystack);
 };
