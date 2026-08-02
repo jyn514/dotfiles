@@ -133,9 +133,13 @@ prototype and contract test:
   after NFC normalization and Unicode full case folding, while retaining the
   original filesystem spelling and bytes for diagnostics and Git calls. This
   deliberately rejects some pairs that a particular host might permit.
-- Make database parsing: verify the relevant GNU Make versions and fixtures.
-  If no stable record grammar can be documented, retain the existing helper
-  instead of replacing a small parser with a larger fragile one.
+- Make database parsing: retain the existing native helper. The GNU Make manual
+  documents that `--print-data-base` emits rules, variables, version details,
+  and source locations, but it does not specify stable section markers, record
+  delimiters, or ordering. The current `# Files`/blank-record parser therefore
+  remains a display convenience rather than a protocol to reimplement. Revisit
+  only if GNU Make documents a machine-readable grammar or the repository owns
+  versioned output fixtures for every supported Make release.
 - Python runtime: distinguish the version needed to run installed commands from
   the version used by repository development tests. Either enforce a minimum
   runtime in `setup.sh` or choose data formats and APIs available on every
@@ -306,15 +310,11 @@ name=expansion text
 
 / Current functions: `tasks`, `recipes`, and `recipies` in `config/profile`.
 
-/ Provisional target: Subject to the open Make decision above, a Python command
-  runs a supported GNU Make version with `-npRr`, parses its documented database
-  records, and emits either target names or complete rule records.
-
-/ Convert: All parsing. The command must preserve numeric target names, colons in
-  recipes, tabs, and multiline bodies, and must propagate Make failures.
-
-/ Keep in shell: Optional aliases named `tasks`, `recipes`, and the misspelled
-  compatibility alias. They should directly execute the Python command.
+/ Decision: Do not port these functions. There is no documented database-record
+  grammar on which to base the provisional Python command, so the current short
+  AWK display helpers and misspelled compatibility alias remain native shell.
+  They must continue to preserve numeric target names, colons in recipes, tabs,
+  multiline bodies, and Make's failure status.
 
 / Verification: Pattern rules, special targets, numeric targets, generated
   targets, included makefiles, empty databases, failed includes, and recipe text
