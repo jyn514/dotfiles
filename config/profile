@@ -13,6 +13,7 @@ fi
 DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..")
 
 add_path () {
+	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac
 	for p in "$@"; do
 		new_path=
 		old_ifs=$IFS
@@ -33,10 +34,12 @@ add_path () {
 			PATH=$p
 		fi
 	done
-	unset existing new_path old_ifs p
+	[ -z "$restore_glob" ] || set +f
+	unset existing new_path old_ifs p restore_glob
 }
 
 remove_path () {
+	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac
 	new_path=
 	old_ifs=$IFS
 	IFS=:
@@ -47,7 +50,8 @@ remove_path () {
 	done
 	IFS=$old_ifs
 	PATH=$new_path
-	unset existing new_path old_ifs
+	[ -z "$restore_glob" ] || set +f
+	unset existing new_path old_ifs restore_glob
 }
 
 add_path_if_present() {

@@ -83,6 +83,36 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(1, paths.count(str(cargo_bin)))
             self.assertEqual(1, paths.count(str(mise_shims)))
 
+    def test_path_helpers_do_not_expand_glob_characters(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            home = directory / "home"
+            home.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            (directory / "literal-a").touch()
+            env = os.environ.copy()
+            env.update(HOME=str(home), SSH_AUTH_SOCK="")
+
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$HOME/.profile"; cd "$1" || exit; '
+                    "PATH='literal-*:/bin'; add_path /new; remove_path /missing; "
+                    'printf "%s\\n" "$PATH"',
+                    "sh",
+                    str(directory),
+                ],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("/new:literal-*:/bin\n", result.stdout)
+
     def test_portable_profile_and_cross_platform_config_paths(self) -> None:
         profile = (ROOT / "config/profile").read_text()
         languages = (ROOT / "config/helix/languages.toml").read_text()

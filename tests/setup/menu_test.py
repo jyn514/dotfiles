@@ -144,6 +144,36 @@ setup_kde() { record kde; }
         self.assertNotEqual(0, result.returncode)
         self.assertIn("chsh is required", result.stderr)
 
+    def test_shell_setup_rejects_substring_match_and_propagates_chsh_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            binary_directory = directory / "bin"
+            binary_directory.mkdir()
+            fish = binary_directory / "fish"
+            fish.write_text("#!/bin/sh\nexit 0\n")
+            fish.chmod(0o755)
+            chsh = binary_directory / "chsh"
+            chsh.write_text("#!/bin/sh\nexit 23\n")
+            chsh.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                HOME=str(directory),
+                PATH=f"{binary_directory}:{env['PATH']}",
+                SHELL="/bin/fishery",
+            )
+
+            result = subprocess.run(
+                ["./setup.sh", "2"],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertIn("Changing default shell to fish", result.stdout)
+
     def test_vim_and_backup_options_are_decoupled_from_basics(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
