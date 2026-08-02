@@ -53,7 +53,7 @@ allow([[
 ]])
 allow(["zola", "build"])
 allow(["yt-dlp", "--list-subs"])
-allow(["tea", "issue"])
+allow(["tea", "issue", ["list", "ls", "--help", "-h"]])
 allow(["jj", "workspace", "add"])
 allow(["jj", "commit"])
 allow(["skopeo", ["inspect", "list-tags"]])
