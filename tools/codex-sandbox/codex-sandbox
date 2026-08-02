@@ -456,6 +456,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--env", "CODEX_SQLITE_HOME=/codex-sqlite",
         "--volume", f"codex-sqlite-{state.uid}:/codex-sqlite",
         "--mount", f"type=bind,src={state.skills_tmp},dst=/home/codex/.agents/skills",
+        "--mount", f"type=bind,src={DOTFILES / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
         "--volume", f"{state.home / '.codex'}:{state.home / '.codex'}",
         "--volume", f"{state.home / '.codex/rules'}:{state.home / '.codex/rules'}:ro",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
