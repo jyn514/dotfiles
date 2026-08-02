@@ -394,7 +394,7 @@ class ProfileContractTests(unittest.TestCase):
             "abbreviations=$(grep -Ev '^(#|$)' \"$DOTFILES/lib/abbr.txt\") || return",
             profile,
         )
-        self.assertIn('eval "$snap_bin" || return', profile)
+        self.assertIn('eval "$snap_bin" || {', profile)
         self.assertIn('alias "$name"="$expn" || return', profile)
         for source in (
             '. "$DOTFILES/lib/shell/env.sh" || return',
@@ -553,6 +553,7 @@ class ProfileContractTests(unittest.TestCase):
         glide = (ROOT / "config/glide.ts").read_text()
         kakoune = (ROOT / "config/kakrc").read_text()
         profile = (ROOT / "config/profile").read_text()
+        vimrc = (ROOT / "config/vimrc").read_text()
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
@@ -579,12 +580,24 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('return (text ?? "").replace', glide)
         for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
+        self.assertEqual(3, nvim.count("vim.fn.fnameescape("))
+        self.assertNotIn("'edit ' .. config", nvim)
+        self.assertNotIn("'source ' .. config", nvim)
+        self.assertIn("*.h,*.c set filetype=c", vimrc)
+        self.assertIn("*.cc,*.cpp,*.C,*.ino set filetype=cpp", vimrc)
+        self.assertNotIn("*.h,*.c,*.cc", vimrc)
         self.assertIn('awk -v arg="$1"', profile)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("local codename http_status man_index section url", profile)
         self.assertNotIn("\n\t\t\tcheck()", profile)
         self.assertIn("local existing new_path old_ifs p restore_glob", profile)
+        self.assertIn("what_runs () {\n\tlocal file files", profile)
+        self.assertIn("what_package () {\n\tlocal prog", profile)
+        self.assertIn("crontab() {\n\tlocal argument reply", profile)
+        self.assertIn("pip_upgrade_all () {\n\tlocal packages pip_data result", profile)
+        self.assertIn("fork_github() {\n\tlocal dir", profile)
+        self.assertIn('bash --norc --noprofile "$@"', profile)
         self.assertIn("local abbreviations alias expn name", profile)
         self.assertIn("local conflict_diff result", profile)
         self.assertIn("telnet_output=$(telnet", profile)

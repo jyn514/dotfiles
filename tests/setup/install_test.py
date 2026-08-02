@@ -917,8 +917,10 @@ class MiseConfigTests(unittest.TestCase):
         for line in zshrc.splitlines():
             if line.lstrip().startswith("zsh-defer "):
                 self.assertTrue("|| return" in line or "|| {" in line, line)
-        self.assertIn("files=$(fd) || return", zshrc)
-        self.assertIn("printf '%s\\n' \"$files\" | fzf", zshrc)
+        self.assertIn("setopt localoptions pipefail", zshrc)
+        self.assertIn("fd --print0 | fzf --read0 --print0", zshrc)
+        self.assertIn('selected=("${(@0)output}")', zshrc)
+        self.assertNotIn("files=$(fd)", zshrc)
         self.assertIn("set -l startup_status $status", fish_config)
         self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
         self.assertIn("set --local init_output (command $argv)", fish_config)

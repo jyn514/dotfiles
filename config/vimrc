@@ -209,7 +209,8 @@ call TwoSpacesSoftTabs()
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
 
 " forcibly use the c filetype for all header files
-autocmd BufNewFile,BufRead *.h,*.c,*.cc,*.cpp,*.C,*.ino set filetype=c
+autocmd BufNewFile,BufRead *.h,*.c set filetype=c
+autocmd BufNewFile,BufRead *.cc,*.cpp,*.C,*.ino set filetype=cpp
 
 " use tex filetype for *.tex
 autocmd BufNewFile,BufRead *.tex,*.sty set filetype=tex
