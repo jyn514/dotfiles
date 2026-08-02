@@ -374,6 +374,61 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("-i -r 0xright -b add,above\n", calls.read_text())
 
+    def test_audio_action_survives_notification_failure(self) -> None:
+        calls = self.directory / "cmus-calls"
+        self.executable("cmus", "exit 0\n")
+        self.executable("notify-send", "exit 1\n")
+        self.executable("cmus-remote", 'printf "%s\\n" "$*" > "$CMUS_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/audio"), "toggle"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "CMUS_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("--pause\n", calls.read_text())
+
+    def test_ssid_preserves_spaces_from_machine_readable_output(self) -> None:
+        calls = self.directory / "nmcli-calls"
+        self.executable(
+            "nmcli",
+            'printf "%s\\n" "$*" > "$NMCLI_CALLS"\n'
+            "printf 'no:Other Network\\nyes:Justice of Toren\\n'\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/ssid")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "NMCLI_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("Justice of Toren\n", result.stdout)
+        self.assertEqual("--terse --fields active,ssid device wifi\n", calls.read_text())
+
+    def test_show_path_collapses_adjacent_duplicates(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "bin/show_path")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": "/usr/bin:/usr/bin:/bin"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("\n/usr/bin\n/bin\n\n", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

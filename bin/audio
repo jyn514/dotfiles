@@ -47,8 +47,8 @@ fi
 
 send_notification () {
 	if [ "$QUIET" != "YES" ] ; then
-		notify-send --urgency=low --expire-time=750 $@
-		echo "send notification $@"
+		notify-send --urgency=low --expire-time=750 "$@" || true
+		printf 'send notification %s\n' "$*"
 	fi
 
 }
@@ -144,7 +144,7 @@ case "$VERB" in
 		fi
 		;;
 	help)
-		echo "usage: $(basename $0) [verb]"
+		echo "usage: $(basename "$0") [verb]"
 		exit 1
 		;;
 	*)
