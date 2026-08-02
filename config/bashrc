@@ -2,14 +2,14 @@ BASH_PROFILE_READ=1
 if [ -z "${MY_GITHUB:-}" ]; then
    # these are set by the distro and break functions >:(
    unalias ls la ll l alert ip .. 2>/dev/null
-	source ~/.profile
+	source ~/.profile || return
 fi
 shopt -s histappend
 shopt -s checkwinsize
 [ "$BASH_VERSINFO" -gt 3 ] && shopt -s globstar
 shopt -s checkhash
 if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
+    . ~/.bash_aliases || return
 fi
 case "$-" in
 	*i*) ;;
@@ -95,10 +95,12 @@ if exists zoxide; then
    complete_alias cd z
 fi
 
-[ -f ~/.local/bashrc ] && source ~/.local/bashrc
+if [ -f ~/.local/bashrc ]; then
+	source ~/.local/bashrc || return
+fi
 
 if [ -f ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh ]; then
-	source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh
+	source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh || return
 	bind -x '"\t": fzf_bash_completion'
 fi
 

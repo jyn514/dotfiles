@@ -177,6 +177,7 @@ for alias in $abbreviations
 	echo $alias | read --delimiter = name value
 	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
+	or return
 end
 set --erase abbreviations
 
@@ -191,6 +192,7 @@ if [ -z "$old_fish" ]
 		else
 			abbr --add --global --command git $name -- $value
 		end
+		or return
 	end
 	set --erase git_aliases
 end

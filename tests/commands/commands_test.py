@@ -704,6 +704,22 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(23, result.returncode)
         self.assertEqual("", result.stdout)
 
+    def test_claude_statusline_propagates_filter_failure(self) -> None:
+        self.executable("prompt-command", 'printf "prompt\\n; "\n')
+        self.executable("sed", "exit 24\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/claude-statusline.sh")],
+            text=True,
+            input='{"model":{"display_name":"tea"}}',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(24, result.returncode)
+        self.assertEqual("", result.stdout)
+
     def test_attach_session_propagates_tmux_query_failures(self) -> None:
         self.executable(
             "tmux",
