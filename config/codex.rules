@@ -21,7 +21,7 @@ allow(["git", "diff", "--check"])
 
 # Read-only utils
 allow([[
-        "true", "cat", "grep", "jq", "head", "tail", "ps", "echo", "wc",
+        "true", "cat", "grep", "rg", "jq", "head", "tail", "ps", "echo", "wc",
         "diff", "ls", "sort", "nl", "sleep", "diff-check",
         "stat", "file", "df", "du", "lsof", "uname", "id"
 ]])
