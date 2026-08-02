@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import unicodedata
 from typing import Iterable
 from typing import Iterator
 from typing import Sequence
@@ -10,8 +11,13 @@ from util import cmd_output
 from util import zsplit
 
 
-def lower_set(iterable: Iterable[str]) -> set[str]:
-    return {x.lower() for x in iterable}
+def normalized_name(value: str) -> str:
+    """Emulate a conservative Unicode-normalizing, case-insensitive filesystem."""
+    return unicodedata.normalize('NFC', value).casefold()
+
+
+def normalized_set(iterable: Iterable[str]) -> set[str]:
+    return {normalized_name(value) for value in iterable}
 
 
 def parents(file: str) -> Iterator[str]:
@@ -35,20 +41,21 @@ def find_conflicting_filenames(filenames: Sequence[str]) -> int:
     retv = 0
 
     # new file conflicts with existing file
-    conflicts = lower_set(repo_files) & lower_set(relevant_files)
+    conflicts = normalized_set(repo_files) & normalized_set(relevant_files)
 
     # new file conflicts with other new file
-    lowercase_relevant_files = lower_set(relevant_files)
+    normalized_relevant_files = normalized_set(relevant_files)
     for filename in set(relevant_files):
-        if filename.lower() in lowercase_relevant_files:
-            lowercase_relevant_files.remove(filename.lower())
+        normalized = normalized_name(filename)
+        if normalized in normalized_relevant_files:
+            normalized_relevant_files.remove(normalized)
         else:
-            conflicts.add(filename.lower())
+            conflicts.add(normalized)
 
     if conflicts:
         conflicting_files = [
             x for x in repo_files | relevant_files
-            if x.lower() in conflicts
+            if normalized_name(x) in conflicts
         ]
         for filename in sorted(conflicting_files):
             print(f'Case-insensitivity conflict found: {filename}')

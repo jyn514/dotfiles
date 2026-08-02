@@ -7,7 +7,6 @@ import subprocess
 from typing import Sequence
 
 from util import added_files
-from util import zsplit
 
 
 def filter_lfs_files(filenames: set[str]) -> None:  # pragma: no cover (lfs)
@@ -19,15 +18,14 @@ def filter_lfs_files(filenames: set[str]) -> None:  # pragma: no cover (lfs)
         ('git', 'check-attr', 'filter', '-z', '--stdin'),
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        encoding='utf-8',
         check=True,
-        input='\0'.join(filenames),
+        input=b'\0'.join(os.fsencode(filename) for filename in filenames),
     )
-    stdout = zsplit(check_attr.stdout)
+    stdout = check_attr.stdout.strip(b'\0').split(b'\0') if check_attr.stdout else []
     for i in range(0, len(stdout), 3):
         filename, filter_tag = stdout[i], stdout[i + 2]
-        if filter_tag == 'lfs':
-            filenames.remove(filename)
+        if filter_tag == b'lfs':
+            filenames.remove(os.fsdecode(filename))
 
 
 def find_large_added_files(

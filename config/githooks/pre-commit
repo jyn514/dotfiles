@@ -1,41 +1,15 @@
-#!/usr/bin/env bash
-set -euo pipefail
-if git diff --quiet --cached --no-ext-diff --diff-filter=d --; then
-	exit 0
-else
-	status=$?
-	[ "$status" -eq 1 ] || exit "$status"
-fi
+#!/usr/bin/env python3
+"""Run the repository's Python pre-commit driver."""
 
-git_dir=$(git rev-parse --git-dir) || exit
-GIT_DIR=$(CDPATH='' cd -- "$git_dir" && pwd -P) || exit
-unset git_dir
-export GIT_DIR
-hook_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P) || exit
+from pathlib import Path
+import sys
 
-# Run local hooks first, since those are more important.
-local_hook=$(git rev-parse --git-common-dir)/hooks/$(basename "$0")
-if [ -e "$local_hook" ]; then
-    # TODO: adopt these hooks to work with the CWD instead?
-    "$local_hook"
-fi
 
-# Now run global hooks.
-repository_name=$(basename "$(pwd -P)") || exit
-tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/$repository_name-pre-commit.XXXX")
-unset repository_name
-trap 'rm -r "$tmpdir"' EXIT
-git diff --name-only -z --cached --no-ext-diff --diff-filter=d \
-	| while IFS= read -r -d '' file; do
-		git checkout-index --prefix="$tmpdir/" -- "$file"
-	done
-cd "$tmpdir"
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools/git-hooks"))
 
-find . -type l -print0 | xargs -0 python3 "$hook_dir/pre_commit_hooks/check_symlinks.py"
-find . -type f -print0 | xargs -0 python3 "$hook_dir/pre_commit_hooks/destroyed_symlinks.py"
-for c in case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do
-    find . -type f -print0 | xargs -0 python3 "$hook_dir/pre_commit_hooks/check_$c.py"
-done
-find . -type f -name '*.xml' -exec python3 "$hook_dir/pre_commit_hooks/check_xml.py" {} +
-find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
-	-exec python3 "$hook_dir/pre_commit_hooks/check_yaml.py" {} +
+from git_hooks.pre_commit import main  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:], hook_directory=Path(__file__).resolve().parent))

@@ -128,9 +128,11 @@ stable common contract is visible.
 Do not begin the affected migration until its decision is recorded by a small
 prototype and contract test:
 
-- Case conflicts: name the target filesystems and decide whether the hook
-  enforces a conservative portable naming policy or emulates one filesystem.
-  Unicode normalization and folding must follow that decision.
+- Case conflicts: enforce a conservative conflict-equivalence policy for
+  case-insensitive Windows, macOS, and Linux filesystems. Compare path names
+  after NFC normalization and Unicode full case folding, while retaining the
+  original filesystem spelling and bytes for diagnostics and Git calls. This
+  deliberately rejects some pairs that a particular host might permit.
 - Make database parsing: verify the relevant GNU Make versions and fixtures.
   If no stable record grammar can be documented, retain the existing helper
   instead of replacing a small parser with a larger fragile one.
