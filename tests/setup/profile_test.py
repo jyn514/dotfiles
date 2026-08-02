@@ -289,8 +289,13 @@ class ProfileContractTests(unittest.TestCase):
             r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action open --read0)'",
             tmux_config,
         )
+        edit_command = re.search(
+            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action edit --read0)'",
+            tmux_config,
+        )
         self.assertIsNotNone(search_command)
         self.assertIsNotNone(open_command)
+        self.assertIsNotNone(edit_command)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -299,7 +304,7 @@ class ProfileContractTests(unittest.TestCase):
             calls = root / "calls"
             marker = root / "injected"
             payload = f"odd ' $(touch {marker})\nname"
-            for name in ("dragon", "open"):
+            for name in ("dragon", "open", "tmux"):
                 executable = binaries / name
                 executable.write_text(
                     '#!/bin/sh\nprintf "%s" "$*" > "$ACTION_CALLS"\n'
@@ -338,6 +343,20 @@ class ProfileContractTests(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(payload, calls.read_text())
+
+            command = edit_command.group(1).replace(
+                "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
+            )
+            result = subprocess.run(
+                ["/bin/bash", "-c", command],
+                input=payload,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertFalse(marker.exists())
 
             command = search_command.group(1).replace(
                 "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
@@ -950,7 +969,7 @@ class ProfileContractTests(unittest.TestCase):
         zprofile = (ROOT / "config/zprofile").read_text()
 
         self.assertNotIn("; xargs open", tmux)
-        self.assertEqual(1, tmux.count("xargs -0"))
+        self.assertNotIn("xargs -0", tmux)
         self.assertEqual(5, tmux.count("bash -o pipefail -c"))
         self.assertNotIn("tmux load-buffer -b clipboard -;", tmux)
         self.assertNotIn("tmux load-buffer -b primary_selection -;", tmux)
@@ -1050,7 +1069,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("export JULIA_EDITOR=editor-hax", fish)
         self.assertNotIn("JULIA_EDITOR=hx-hax", profile + fish)
         self.assertNotIn("xargs -I {}", tmux)
-        self.assertEqual(1, tmux.count("xargs -0"))
+        self.assertNotIn("xargs -0", tmux)
+        self.assertIn("picker-action edit --read0", tmux)
         self.assertIn("picker-action open --read0", tmux)
         self.assertIn("picker-action search --read0", tmux)
         self.assertNotIn('urlencode({"q": sys.argv[1]})', tmux)
