@@ -865,6 +865,7 @@ class MiseConfigTests(unittest.TestCase):
         zshrc = (ROOT / "config/zshrc").read_text()
         keybindings = (ROOT / "config/keybindings.ahk").read_text()
         inputrc = (ROOT / "config/inputrc").read_text()
+        abbreviations = (ROOT / "lib/abbr.txt").read_text().splitlines()
         pre_commit = (ROOT / "config/githooks/pre-commit").read_text()
         tmux = (ROOT / "config/tmux.conf").read_text()
 
@@ -885,6 +886,15 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('source "$ZDOTDIR/antidote/antidote.zsh" || return', zshrc)
         self.assertIn("set keyseq-timeout 100", inputrc)
         self.assertNotIn("set keyseq-timeout 1\n", inputrc)
+        self.assertLess(
+            inputrc.index("$include /etc/inputrc"),
+            inputrc.index("set keyseq-timeout"),
+        )
+        abbreviation_names = [
+            line.partition("=")[0] for line in abbreviations if "=" in line
+        ]
+        self.assertEqual(len(abbreviation_names), len(set(abbreviation_names)))
+        self.assertIn("t=tmux", abbreviations)
         self.assertIn("zmodload -i zsh/termcap || return", zshrc)
         self.assertIn('bindkey "\\e[3;3~" delete-word', zshrc)
         self.assertNotIn('bindkey "3~" delete-word', zshrc)
@@ -983,6 +993,8 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("pre_commit_hooks/destroyed_symlinks.py", pre_commit)
         self.assertIn('printf -v path %q "$1"', tmux)
         self.assertNotIn('send-keys "${EDITOR:-vi} {}"', tmux)
+        self.assertIn("SSH_AGENT_PID", tmux)
+        self.assertNotIn("SSH_AUTH_PID", tmux)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

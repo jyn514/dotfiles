@@ -1,3 +1,5 @@
+$include /etc/inputrc
+
 # instead of enabling vi mode, which kinda sucks, use emacs mode by default but enable vi normal mode
 set keyseq-timeout 100
 set keymap vi-command
@@ -26,8 +28,6 @@ set keymap emacs
 
 # only require a single tab to complete directories
 set mark-symlinked-directories on
-
-$include /etc/inputrc
 
 # tab-complete case-insensitive
 set completion-ignore-case On

@@ -921,11 +921,8 @@ vim.keymap.set('n', '<leader><C-_>', function()
 end, { desc = "Search current package or workspace" })
 
 vim.keymap.set('n', '<leader>g', function()
-	pickers.git_files({
-		prompt = "Modified Files",
-		cmd = "git ls-files --modified",
-	})
-end, { desc = "Modified files" })
+	pickers.git_status({ prompt = "Changed Files" })
+end, { desc = "Changed files" })
 bind('<leader>k', pickers.keymaps, 'Show all active keybindings')
 bind('<leader>j', pickers.jumps, 'Show browsing history')
 bind('<leader>u', pickers.undotree, 'Show edit history')
@@ -1133,7 +1130,7 @@ vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, { desc = "Rename symbol" })
 vim.keymap.set('n', '<leader>s', pickers.lsp_document_symbols, { desc = "Show symbols in the current buffer" })
 vim.keymap.set('n', '<leader>S', pickers.lsp_workspace_symbols, { desc = "Show all symbols in the workspace" })
 vim.keymap.set('n', '<leader>q', pickers.quickfix, { desc = "Show quickfixes" })
-vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show workspace diagnostics (errors)" })
+vim.keymap.set('n', '<leader>d', pickers.lsp_document_diagnostics, { desc = "Show document diagnostics" })
 vim.keymap.set('n', '<leader>D', pickers.lsp_workspace_diagnostics, { desc = "Show workspace diagnostics (all)" })
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = "Show details for errors on the current line" })
 vim.keymap.set({ 'n', 'v' }, 'g=', vim.lsp.buf.format, { desc = "Format whole file" })
