@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-set -eu
-if git diff --quiet --cached --no-ext-diff --diff-filter=d --; then exit 0; fi
+set -euo pipefail
+if git diff --quiet --cached --no-ext-diff --diff-filter=d --; then
+	exit 0
+else
+	status=$?
+	[ "$status" -eq 1 ] || exit "$status"
+fi
 
 GIT_DIR=$(realpath "$(git rev-parse --git-dir)")
 export GIT_DIR
@@ -15,9 +20,10 @@ fi
 # Now run global hooks.
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/$(basename "$(realpath .)")-pre-commit.XXXX")
 trap 'rm -r "$tmpdir"' EXIT
-while IFS= read -r -d '' file; do
-	git checkout-index --prefix="$tmpdir/" -- "$file"
-done < <(git diff --name-only -z --cached --no-ext-diff --diff-filter=d)
+git diff --name-only -z --cached --no-ext-diff --diff-filter=d \
+	| while IFS= read -r -d '' file; do
+		git checkout-index --prefix="$tmpdir/" -- "$file"
+	done
 cd "$tmpdir"
 
 for c in symlinks case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do

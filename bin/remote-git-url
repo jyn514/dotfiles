@@ -63,7 +63,7 @@ if ! [ "$commit" ]; then
 fi
 
 upstream=$(git remote get-url "$remote")
-relative=${relative// /%20}
+relative=$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe="/"))' "$relative")
 # handle ssh, git, https urls
 repo=$(echo "$upstream" | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1 | rev | sed 's#^/*##; s#^.*\.com/##')
 

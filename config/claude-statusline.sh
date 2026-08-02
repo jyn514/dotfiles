@@ -1,4 +1,6 @@
 #!/bin/sh
+set -e
+
 # Claude Code statusLine: reuse the dotfiles PS1 driver (prompt-command).
 # Model name takes the "shell@host" slot; cwd drives git/jj info.
 # Strip \01/\02 readline non-print markers (PS1-only; literal bytes in a statusline).

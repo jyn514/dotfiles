@@ -101,7 +101,7 @@ class CommandTest(unittest.TestCase):
     def test_remote_git_url_handles_spaces_and_blank_lines_offline(self) -> None:
         repository = self.directory / "repository with spaces"
         repository.mkdir()
-        source = repository / "file with spaces"
+        source = repository / "file #%? with spaces"
         source.write_text("unique line\n\n")
         calls = self.directory / "git-calls"
         self.executable(
@@ -140,13 +140,13 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(1, matched.returncode, matched.stderr)
         self.assertEqual(
-            "https://github.com/user/repo/blob/abc123/file%20with%20spaces#L1\n",
+            "https://github.com/user/repo/blob/abc123/file%20%23%25%3F%20with%20spaces#L1\n",
             matched.stdout,
             matched.stderr + calls.read_text(),
         )
         self.assertEqual(1, blank.returncode)
         self.assertEqual(
-            "https://github.com/user/repo/blob/HEAD/file%20with%20spaces#L2\n",
+            "https://github.com/user/repo/blob/HEAD/file%20%23%25%3F%20with%20spaces#L2\n",
             blank.stdout,
         )
         call_lines = calls.read_text().splitlines()
@@ -182,6 +182,25 @@ class CommandTest(unittest.TestCase):
             calls.read_text(),
         )
 
+    def test_set_tmux_env_propagates_profile_failure(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable("env", "exit 17\n")
+        self.executable("tmux", 'printf "%s\\n" "$*" > "$TMUX_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/set-tmux-env.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(17, result.returncode)
+        self.assertFalse(calls.exists())
+
     def test_renumber_tmux_sessions_avoids_name_collisions(self) -> None:
         calls = self.directory / "tmux-calls"
         self.executable(
@@ -212,6 +231,19 @@ class CommandTest(unittest.TestCase):
             [line[2] for line in renames[:3]],
             [line[1] for line in renames[3:]],
         )
+
+    def test_renumber_tmux_sessions_propagates_listing_failure(self) -> None:
+        self.executable("tmux", "exit 19\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(19, result.returncode)
 
     def test_merge_copies_dotfiles_before_removing_source(self) -> None:
         source = self.directory / "source"
@@ -399,7 +431,7 @@ class CommandTest(unittest.TestCase):
         self.executable(
             "nmcli",
             'printf "%s\\n" "$*" > "$NMCLI_CALLS"\n'
-            "printf 'no:Other Network\\nyes:Justice of Toren\\n'\n",
+            "printf 'no:Other Network\\nyes:Justice:of\\\\Toren\\n'\n",
         )
 
         result = subprocess.run(
@@ -414,8 +446,11 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("Justice of Toren\n", result.stdout)
-        self.assertEqual("--terse --fields active,ssid device wifi\n", calls.read_text())
+        self.assertEqual("Justice:of\\Toren\n", result.stdout)
+        self.assertEqual(
+            "--terse --escape no --fields active,ssid device wifi\n",
+            calls.read_text(),
+        )
 
     def test_show_path_collapses_adjacent_duplicates(self) -> None:
         result = subprocess.run(
@@ -534,6 +569,41 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("<line\nbreak>\n", checkout.read_text())
 
+    def test_pre_commit_propagates_git_diff_failure(self) -> None:
+        self.executable("git", "exit 23\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-commit")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(23, result.returncode)
+
+    def test_pre_push_does_not_split_newlines_into_rust_filenames(self) -> None:
+        calls = self.directory / "cargo-calls"
+        (self.directory / "Cargo.toml").touch()
+        self.executable("git", 'printf "fake.rs\\nnot-rust\\0"\n')
+        self.executable("cargo", 'printf "%s\\n" "$*" > "$CARGO_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "CARGO_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(calls.exists())
+
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"
         self.executable(
@@ -580,6 +650,18 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(1, result.returncode)
+        self.assertEqual("", result.stdout)
+
+    def test_claude_statusline_rejects_malformed_json(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "config/claude-statusline.sh")],
+            text=True,
+            input="not json",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertNotEqual(0, result.returncode)
         self.assertEqual("", result.stdout)
 
 
