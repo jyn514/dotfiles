@@ -996,9 +996,24 @@ class MiseConfigTests(unittest.TestCase):
 
     def test_kitty_disables_automatic_shell_integration(self) -> None:
         kitty = (ROOT / "config/kitty.conf").read_text()
+        bash = (ROOT / "config/bashrc").read_text()
+        fish = (ROOT / "config/config.fish").read_text()
+        zsh = (ROOT / "config/zshrc").read_text()
 
         self.assertIn("\nshell_integration disabled\n", kitty)
         self.assertNotIn("#shell_integration disabled", kitty)
+        self.assertIn('source "$KITTY_INSTALLATION_DIR/shell-integration/bash/kitty.bash"', bash)
+        self.assertIn(
+            'source "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish"',
+            fish,
+        )
+        self.assertIn(
+            'autoload -Uz -- "$KITTY_INSTALLATION_DIR"/shell-integration/zsh/kitty-integration',
+            zsh,
+        )
+        self.assertIn("export KITTY_SHELL_INTEGRATION=enabled", bash)
+        self.assertIn("set --global KITTY_SHELL_INTEGRATION enabled", fish)
+        self.assertIn("export KITTY_SHELL_INTEGRATION=enabled", zsh)
 
 
 if __name__ == "__main__":

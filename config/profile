@@ -253,14 +253,23 @@ what_package () {
 
 # Do not remove a crontab without warning, even where crontab lacks -i.
 crontab() {
-	local argument reply
+	local argument options reply
+	options=1
 	for argument do
-		if [ "$argument" = -r ]; then
-			printf 'remove crontab? [y/N] '
-			IFS= read -r reply || return
-			[ "$reply" = y ] || return 0
-			break
-		fi
+		[ -n "$options" ] || continue
+		case $argument in
+			--) options=;;
+			-?*)
+				case ${argument#-} in
+					*r*)
+						printf 'remove crontab? [y/N] '
+						IFS= read -r reply || return
+						[ "$reply" = y ] || return 0
+						break
+						;;
+				esac
+				;;
+		esac
 	done
 	command crontab "$@"
 }

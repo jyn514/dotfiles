@@ -82,6 +82,44 @@ class PromptHostnameTests(unittest.TestCase):
 
 
 class PromptJujutsuTests(unittest.TestCase):
+    def test_unborn_repository_detection_does_not_depend_on_find(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            marker = root / "find-called"
+            git = binaries / "git"
+            git.write_text(
+                "#!/bin/sh\n"
+                'case "$1:$2" in\n'
+                "  rev-parse:--git-dir) printf '.git\\n';;\n"
+                "  diff-index:*) exit 1;;\n"
+                "  rev-parse:--verify) exit 1;;\n"
+                "  symbolic-ref:--short) printf 'main\\n';;\n"
+                "  *) exit 99;;\n"
+                "esac\n"
+            )
+            git.chmod(0o755)
+            find = binaries / "find"
+            find.write_text(f"#!/bin/sh\ntouch {marker}\nexit 99\n")
+            find.chmod(0o755)
+            result = subprocess.run(
+                [str(ROOT / "bin/prompt-command"), "fish", "0"],
+                cwd=root,
+                env=os.environ
+                | {
+                    "DOTFILES": str(ROOT),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("\x1b[2;32m", result.stdout)
+        self.assertFalse(marker.exists())
+
     def test_hanging_jj_cannot_block_prompt_rendering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -116,6 +116,16 @@ if not status --is-interactive
 	return
 end
 
+if set -q KITTY_INSTALLATION_DIR
+	set --global KITTY_SHELL_INTEGRATION enabled
+	source "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish"
+	or return
+	set -l kitty_completions "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_completions.d"
+	if not contains -- $kitty_completions $fish_complete_path
+		set --prepend fish_complete_path $kitty_completions
+	end
+end
+
 if exists mise
 	set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
 	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)

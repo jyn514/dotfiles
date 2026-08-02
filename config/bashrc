@@ -16,6 +16,11 @@ case "$-" in
 	*) return;;
 esac
 
+if [ -n "${KITTY_INSTALLATION_DIR:-}" ]; then
+	export KITTY_SHELL_INTEGRATION=enabled
+	source "$KITTY_INSTALLATION_DIR/shell-integration/bash/kitty.bash" || return
+fi
+
 ## History ##
 # don't put duplicate lines in the history.
 HISTCONTROL=ignoredups

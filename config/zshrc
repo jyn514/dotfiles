@@ -38,6 +38,13 @@ case "$-" in
   *)	return 0;;
 esac
 
+if [[ -n ${KITTY_INSTALLATION_DIR:-} ]]; then
+	export KITTY_SHELL_INTEGRATION=enabled
+	autoload -Uz -- "$KITTY_INSTALLATION_DIR"/shell-integration/zsh/kitty-integration || return
+	kitty-integration || return
+	unfunction kitty-integration
+fi
+
 ABBR_AUTOLOAD=0
 RPS1="%F{240}loading%f"
 
