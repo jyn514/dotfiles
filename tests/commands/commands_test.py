@@ -319,6 +319,61 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("doc --document-private-items --no-deps\n", calls.read_text())
 
+    def test_git_backup_commands_do_not_overwrite_tar_output(self) -> None:
+        calls = self.directory / "git-calls"
+        self.executable("git", 'printf "%s\\n" "$*" >> "$GIT_CALLS"\n')
+
+        for command in ("git-save", "git-backup"):
+            with self.subTest(command=command):
+                output = self.directory / command
+                archive = Path(f"{output}.tar")
+                archive.write_text("existing\n")
+                result = subprocess.run(
+                    [str(ROOT / f"bin/{command}"), "repository", str(output)],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=os.environ | {
+                        "GIT_CALLS": str(calls),
+                        "PATH": f"{self.directory}:{os.environ['PATH']}",
+                        "TMPDIR": str(self.directory),
+                    },
+                )
+
+                self.assertEqual(1, result.returncode)
+                self.assertEqual("existing\n", archive.read_text())
+        self.assertFalse(calls.exists())
+
+    def test_take_a_break_matches_the_window_pid_field(self) -> None:
+        calls = self.directory / "wmctrl-calls"
+        dialog_pid = self.directory / "dialog-pid"
+        self.executable("zenity", 'printf "%s\\n" "$$" > "$DIALOG_PID"\n')
+        self.executable(
+            "wmctrl",
+            'if [ "$1" = -l ]; then\n'
+            '  pid=$(cat "$DIALOG_PID")\n'
+            '  printf "0xwrong 0 999 host title-%s\\n" "$pid"\n'
+            '  printf "0xright 0 %s host title\\n" "$pid"\n'
+            "else\n"
+            '  printf "%s\\n" "$*" > "$WMCTRL_CALLS"\n'
+            "fi\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/take-a-break")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "DIALOG_PID": str(dialog_pid),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "WMCTRL_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("-i -r 0xright -b add,above\n", calls.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
