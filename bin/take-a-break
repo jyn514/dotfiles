@@ -1,16 +1,15 @@
-#!/bin/sh
+#!/usr/bin/env python3
+"""Stable launcher for the break-reminder dialog."""
 
-# https://unix.stackexchange.com/a/524391/229104
-modify_win_by_pid() {
-    pid=$1
+from pathlib import Path
+import sys
 
-    sleep 0.2
-    win_id=$(wmctrl -l -p | awk -v pid="$pid" '$3 == pid {print $1; exit}')
-    [ -n "$win_id" ] || return 1
-    wmctrl -i -r "$win_id" -b add,above
-}
 
-zenity --question --text=please --title='take a break' --ok-label='i will' --cancel-label='fuck you' --modal &
-dialog=$!
-modify_win_by_pid "$dialog"
-wait "$dialog"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "take-a-break"))
+
+from take_a_break.main import main  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
