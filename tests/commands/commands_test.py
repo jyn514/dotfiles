@@ -246,6 +246,68 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("", unsupported.stdout)
         self.assertIn("unsupported upstream", unsupported.stderr)
 
+    def test_remote_git_url_validates_ranges_before_running_git(self) -> None:
+        source = self.directory / "file"
+        source.write_text("one\ntwo\n")
+        calls = self.directory / "git-calls"
+        self.executable("git", 'touch "$GIT_CALLS"\nexit 99\n')
+        environment = os.environ | {
+            "GIT_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        for lines in (("expression",), ("0",), ("00",), ("2", "1")):
+            result = subprocess.run(
+                [str(ROOT / "bin/remote-git-url"), str(source), *lines],
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(2, result.returncode, lines)
+        self.assertFalse(calls.exists())
+
+    def test_remote_git_url_propagates_remote_and_source_read_failures(self) -> None:
+        repository = self.directory / "repository"
+        repository.mkdir()
+        source = repository / "file"
+        source.write_text("line\n")
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "rev-parse --show-toplevel") printf "%s\\n" "$REPOSITORY";;\n'
+            '  "remote ") exit 23;;\n'
+            'esac\n',
+        )
+        environment = os.environ | {
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "REPOSITORY": str(repository),
+        }
+
+        remote_failure = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.executable("head", "exit 24\n")
+        read_failure = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(23, remote_failure.returncode)
+        self.assertEqual(24, read_failure.returncode)
+
     def test_set_tmux_env_preserves_whitespace_and_equals(self) -> None:
         calls = self.directory / "tmux-calls"
         self.executable(
@@ -633,6 +695,92 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("8.05\n", result.stdout)
+
+    def test_groupme_transcript_reads_file_and_flushes_final_messages(self) -> None:
+        transcript = self.directory / "groupme transcript"
+        transcript.write_text("Avatar\nAlice\nFirst\n9:00 PM\nAvatar\nBob\nFinal\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/groupme2transcript"), "--input", str(transcript)],
+            input="Avatar\nWrong\nstdin\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("[][Alice]: First\n", result.stdout)
+        self.assertIn("[9:00 PM][Bob]: Final\n", result.stdout)
+        self.assertNotIn("Wrong", result.stdout)
+
+    def test_pretty_parser_does_not_execute_input(self) -> None:
+        marker = self.directory / "executed"
+        malicious = f'__import__("pathlib").Path({str(marker)!r}).touch()'
+        rejected = subprocess.run(
+            [str(ROOT / "bin/pretty.py")],
+            input=malicious + "\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        valid = subprocess.run(
+            [str(ROOT / "bin/pretty.py")],
+            input="[65, 66]\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertFalse(marker.exists())
+        self.assertEqual(0, valid.returncode, valid.stderr)
+        self.assertEqual("AB\n", valid.stdout)
+
+    def test_watch_displays_failed_command_before_next_iteration(self) -> None:
+        root = self.directory / "watch-root"
+        binaries = root / "bin"
+        libexec = root / "libexec"
+        mocks = root / "mocks"
+        binaries.mkdir(parents=True)
+        libexec.mkdir()
+        mocks.mkdir()
+        watch = binaries / "watch"
+        watch.write_text((ROOT / "bin/watch").read_text())
+        watch.chmod(0o755)
+        runner = libexec / "runinpty.py"
+        runner.write_text("#!/bin/sh\nprintf 'failed output'\nexit 7\n")
+        runner.chmod(0o755)
+        for name, contents in (
+            ("clear", "exit 0\n"),
+            ("tput", "exit 0\n"),
+            ("sleep", "exit 31\n"),
+        ):
+            executable = mocks / name
+            executable.write_text("#!/bin/sh\n" + contents)
+            executable.chmod(0o755)
+
+        result = subprocess.run(
+            [str(watch), "command"],
+            env=os.environ | {"PATH": f"{mocks}:{os.environ['PATH']}"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(31, result.returncode)
+        self.assertEqual("failed output\n[exit 7]", result.stdout)
+
+    def test_archive_webpage_rejects_path_titles_and_serializes_metadata(self) -> None:
+        archive = (ROOT / "bin/archive-webpage").read_text()
+
+        self.assertIn('page_title === "." || page_title === ".."', archive)
+        self.assertIn('/[\\/\\\\]/.test(page_title)', archive)
+        self.assertIn("JSON.stringify({", archive)
+        self.assertNotIn("'\"title\": \"' + page.title", archive)
 
     def test_callgraph_stops_at_each_failed_producer(self) -> None:
         self.executable(

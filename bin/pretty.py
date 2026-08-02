@@ -1,2 +1,5 @@
 #!/usr/bin/env python3
-print("".join(chr(c) for c in eval(input())))
+import ast
+
+
+print("".join(chr(c) for c in ast.literal_eval(input())))

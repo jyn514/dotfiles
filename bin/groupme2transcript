@@ -15,16 +15,15 @@ web client) and get a neatly formatted transcript out as a result.
 """
 
 parser = argparse.ArgumentParser(description=descr)
-parser.add_argument("--input", "-i", default=sys.stdin,
+parser.add_argument("--input", "-i", type=argparse.FileType("r", encoding="utf-8"),
+                    default=sys.stdin,
                     help="Specify input file. " +
                     "(default: standard in)")
 
 args = parser.parse_args()
 
-if args.input is not sys.stdin:
-    args.input = open(sys.stdin, 'ro')
 
-def format_message(timestamp, name, text, width = 80):
+def format_message(timestamp, name, text, width=80):
     """format_message
 
     Format the given message so that it takes up not more than 80 columns, and
@@ -45,6 +44,19 @@ def format_message(timestamp, name, text, width = 80):
             textwrap.wrap(text, text_width))
 
     return leftpart + text
+
+
+def flush_messages(messages, timestamp, last_text):
+    for message in messages:
+        text = message['text'].strip()
+        name = message.get('name', '')
+
+        if text in ("GroupMe", "Loading...", "") or text == last_text:
+            continue
+        last_text = text
+        sys.stdout.write(format_message(timestamp, name, text))
+        sys.stdout.write("\n")
+    return last_text
 
 
 # This is a buffer that stores a list of messages we have collected, but not
@@ -72,7 +84,7 @@ last_text = ""
 # This is used when multiple messages in a row have the same name.
 last_name = ""
 
-for line in sys.stdin:
+for line in args.input:
     line = line.strip()
 
     # Line with the time always end with AM or PM (this assumes a US English
@@ -83,37 +95,12 @@ for line in sys.stdin:
             # If we mad a message in progress, make sure it gets included
             # in the output.
             messages.append(message)
+            message = {}
 
         # The current time is stored in this line.
         time = line
 
-        # Display each message.
-        for message in messages:
-
-            message['text'] = message['text'].strip()
-
-            # Use blank names if none was found.
-            if 'name' not in message:
-                message['name'] = ''
-
-            # Filter spurious message text.
-            if message['text'] == "GroupMe":
-                continue
-            if message['text'] == 'Loading...':
-                continue
-            if message['text'] == '':
-                continue
-
-            # Prevent duplicate output.
-            if message['text'] == last_text:
-                continue
-            last_text = message['text']
-
-            # Display the current message.
-            sys.stdout.write(format_message(time_prev,
-                                            message['name'],
-                                            message['text']))
-            sys.stdout.write("\n")
+        last_text = flush_messages(messages, time_prev, last_text)
 
         # Clear message buffer.
         messages = []
@@ -139,7 +126,7 @@ for line in sys.stdin:
             # Lines which are just ints are from the 'like' button, and are not
             # part of the text.
             int(line)
-        except Exception:
+        except ValueError:
             # Otherwise append to running message.
             message['text'] = line
 
@@ -149,3 +136,7 @@ for line in sys.stdin:
             messages.append(message)
             last_name = message['name']
             message = {}
+
+if 'text' in message:
+    messages.append(message)
+flush_messages(messages, time_prev, last_text)
