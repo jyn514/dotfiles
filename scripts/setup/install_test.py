@@ -825,6 +825,8 @@ class MiseConfigTests(unittest.TestCase):
 
     def test_fish_activates_mise_and_no_longer_uses_nvm(self) -> None:
         fish_config = (ROOT / "config/config.fish").read_text()
+        install = json.loads((ROOT / "install.conf.json").read_text())
+        links = next(section["link"] for section in install if "link" in section)
 
         self.assertIn("mise activate fish | source", fish_config)
         self.assertIn(
@@ -833,6 +835,10 @@ class MiseConfigTests(unittest.TestCase):
         )
         self.assertIn(
             'contains --index -- "$HOME/.local/share/mise/shims" $PATH', fish_config
+        )
+        self.assertEqual(
+            "config/mise-activate.fish",
+            links["$HOME/.config/fish/conf.d/mise-activate.fish"],
         )
         self.assertNotIn("nvm use", fish_config)
 
