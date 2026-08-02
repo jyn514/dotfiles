@@ -306,6 +306,8 @@ end
 function fork-github
 	set -l directory (command fork-github $argv)
 		or return
+	[ -n "$directory" ]
+		or return 1
 	cd $directory
 end
 function ip
@@ -360,7 +362,7 @@ end
 # load custom syntax
 
 function last_history_line
-	echo $history[1]
+	printf '%s\n' "$history[1]"
 end
 
 function expand_history_line
@@ -368,13 +370,13 @@ function expand_history_line
 		case !!
 			set -q history[1]
 				or return 1
-			echo $history[1]
+			printf '%s\n' "$history[1]"
 		case "!-*"
 			set -l offset (string split - $argv[1])[2]
 			if [ $offset -lt 1 ] || [ $offset -gt (count $history) ]
 				return 1
 			end
-			echo $history[$offset]
+			printf '%s\n' "$history[$offset]"
 		case "*"
 			return 1
 	end
