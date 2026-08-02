@@ -559,6 +559,39 @@ class ProfileContractTests(unittest.TestCase):
             self.assertNotIn("remove crontab?", operand.stdout)
             self.assertEqual("-- -report\n", calls.read_text())
 
+    def test_fork_github_uses_portable_cd_without_calling_shell_wrapper(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("fork_github() {")
+        end = profile.index("\n}\n", start) + 2
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout = root / "checkout with spaces"
+            checkout.mkdir()
+            helper = root / "fork-github"
+            helper.write_text('#!/bin/sh\nprintf "%s\\n" "$CHECKOUT"\n')
+            helper.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    definition
+                    + '\ncd() { return 99; }\nfork_github || exit\ncommand pwd',
+                ],
+                env=os.environ
+                | {
+                    "CHECKOUT": str(checkout),
+                    "PATH": f"{root}:{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(f"{checkout}\n{checkout}\n", result.stdout)
+
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 

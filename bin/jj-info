@@ -13,6 +13,7 @@ fi
 RED="$(ansi_escape "\033[0;31m")"
 FAINT_GREEN="$(ansi_escape "\033[2;32m")"
 FAINT_WHITE="$(ansi_escape "\033[2;37m")"
+RESET="$(ansi_escape "\033[0;0m")"
 
 print_jj_desc() {
 	desc=$1; color=$2
@@ -20,10 +21,10 @@ print_jj_desc() {
 }
 
 # hack: gather info for a bunch of commits at once, because jj takes ~50 ms to startup on rl-/rust.
-# if there's an error here, we'll see it because we don't redirect stderr.
+# Propagate query failures so prompt-command can fall back to Git refs.
 info=$(jj log -r '@|@-' \
 	-T 'empty++":"++if(bookmarks.len()>0,bookmarks.first(),"")++":"++description++"\n"' \
-	--no-graph --ignore-working-copy --config ui.paginate=never)
+	--no-graph --ignore-working-copy --config ui.paginate=never) || exit
 
 color=$RED
 if [ "$(echo "$info" | head -n1 | cut -d : -f1)" = true ]; then

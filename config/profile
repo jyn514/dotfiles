@@ -376,7 +376,7 @@ pip_upgrade_all () {
 fork_github() {
 	local dir
 	dir=$(command fork-github "$@") || return
-	builtin cd "$dir" || return
+	command cd "$dir" || return
 	echo "$dir"
 }
 

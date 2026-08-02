@@ -128,9 +128,10 @@ git_info() {
 	if is_jj_workspace; then
 		timeout .2 jj-info 2>/dev/null
 		case $? in
-      # 124 is SIGALRM, 142 is what `timeout` returns natively
+			0) return ;;
+			# 124 is SIGALRM, 142 is what `timeout` returns natively
 			124|142) ;;
-			*) return ;;
+			*) ;;
 		esac
 	fi
 
