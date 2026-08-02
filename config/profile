@@ -148,7 +148,7 @@ git_reset_author() {
 }
 
 show_conflicts() {
-	jj diff --from @-- --to @- "$(jj resolve --list | awk '{print $1}')" --git | grepdiff --output-matching=hunk '<<<<<<<' | less
+	jj diff --from @-- --to @- --git | grepdiff --output-matching=hunk '<<<<<<<' | less
 }
 
 HEAD() {
@@ -182,7 +182,9 @@ what_belongs () {
 }
 
 what_runs () {
-	what_belongs "$@" | while IFS= read -r file; do
+	files=$(what_belongs "$@") || return
+	[ -n "$files" ] || return 0
+	printf '%s\n' "$files" | while IFS= read -r file; do
 		[ -f "$file" ] && [ -x "$file" ] && echo "$file"
 	done
 }
@@ -271,7 +273,9 @@ ip() {
 }
 
 purge_removed () {
-	dpkg -l | awk '/^rc/ {print $2}' | xargs sudo dpkg --purge
+	set -- $(dpkg -l | awk '/^rc/ {print $2}')
+	[ $# -gt 0 ] || return 0
+	sudo dpkg --purge "$@"
 }
 
 excuse () {
