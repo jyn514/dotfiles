@@ -105,6 +105,10 @@ if (argv.length > 3) {
 	var page_title = argv[3];
 	console.log('INFO: page title set to: ' + page_title);
 }
+if (page_title === "." || page_title === ".." || /[\/\\]/.test(page_title)) {
+	console.log("FATAL: page title must be a filename, not a path");
+	phantom.exit(1);
+}
 var html_dir = output_dir + "/" + page_title  +"_html";
 var yaml_file = output_dir + "/" +"page_meta.yaml";
 
@@ -140,12 +144,12 @@ function onPageReady() {
 
 	console.log("INFO: writing metadata...");
 	try {
-		fs.write(yaml_file, "{", "w");
-		fs.write(yaml_file, '"title": "' + page.title + '",', 'a');
-		fs.write(yaml_file, '"date": "' + Date() + '",', 'a');
-		fs.write(yaml_file, '"url": "' + target_url + '",', 'a');
-		fs.write(yaml_file, '"tags": []', 'a');
-		fs.write(yaml_file, "}", "a");
+		fs.write(yaml_file, JSON.stringify({
+			title: page.title,
+			date: Date(),
+			url: target_url,
+			tags: []
+		}), "w");
 
 	} catch (e) {
 		console.log("ERROR: encountered error while writing YAML file...");
@@ -195,4 +199,3 @@ page.open(target_url, function (status) {
 
 	checkReadyState();
 });
-

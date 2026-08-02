@@ -42,9 +42,13 @@ tput smcup || true
 clear
 while :; do
   # reduce flicker by not updating until the command finishes executing
-  o=$("$here/../libexec/runinpty.py" $shell -c "$*" 2>&1)
+  set +e
+  o=$("$here/../libexec/runinpty.py" "$shell" -c "$*" 2>&1)
+  command_status=$?
+  set -e
   clear -x
   printf %s "$o"
+  [ "$command_status" -eq 0 ] || printf '\n[exit %s]' "$command_status"
   sleep "$interval"
 done
 clear -x
