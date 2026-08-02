@@ -402,19 +402,11 @@ def main(arguments: list[str]) -> int:
                     status,
                     int(os.environ.get("COLUMNS", "0")),
                     vscode=os.environ.get("VSCODE_SHELL_INTEGRATION") == "1",
-                )
-        elif len(arguments) == 2:
-            # One-transition compatibility for claude-statusline.sh and old shell configs.
-            output = render_left(
-                collect(arguments[0]),
-                "plain",
-                integer(arguments[1], "status"),
-                0,
-                vscode=os.environ.get("VSCODE_SHELL_INTEGRATION") == "1",
             )
         else:
             raise ValueError(
-                "usage: prompt-command <bash|zsh|fish-left|fish-right> <status> <duration-ms>"
+                "usage: prompt-command claude | prompt-command "
+                "<bash|zsh|fish-left|fish-right> <status> <duration-ms>"
             )
     except (json.JSONDecodeError, OSError, ValueError) as error:
         print(f"prompt-command: {error}", file=sys.stderr)

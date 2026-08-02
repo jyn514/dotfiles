@@ -1969,51 +1969,57 @@ class CommandTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertEqual("", result.stdout)
 
-    def test_claude_statusline_finds_prompt_command_on_path(self) -> None:
-        self.executable("prompt-command", 'printf "prompt from path\\n; "\n')
+    def test_claude_statusline_uses_resolved_renderer_not_path(self) -> None:
+        marker = self.directory / "path-renderer-called"
+        self.executable("prompt-command", f'touch "{marker}"\nexit 99\n')
+        workspace = self.directory / "workspace"
+        workspace.mkdir()
+        installed = self.directory / "statusline-command.sh"
+        installed.symlink_to(ROOT / "config/claude-statusline.sh")
 
         result = subprocess.run(
-            [str(ROOT / "config/claude-statusline.sh")],
+            [str(installed)],
             text=True,
-            input='{"model":{"display_name":"tea"},"context_window":{"used_percentage":42.4}}',
+            input=(
+                '{"workspace":{"current_dir":'
+                + json.dumps(str(workspace))
+                + '},"model":{"display_name":"tea"},'
+                '"context_window":{"used_percentage":42.4}}'
+            ),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+            env=os.environ
+            | {
+                "HOME": str(self.directory),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "container": "fixture",
+            },
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(" ctx:42% prompt from path", result.stdout)
+        self.assertTrue(result.stdout.startswith(" ctx:42% (tea@fixture"), result.stdout)
+        self.assertTrue(result.stdout.endswith(") ~/workspace"), result.stdout)
+        self.assertFalse(marker.exists())
 
-    def test_claude_statusline_propagates_prompt_command_failure(self) -> None:
-        self.executable("prompt-command", "exit 23\n")
-
+    def test_claude_statusline_rejects_invalid_model_without_partial_output(self) -> None:
         result = subprocess.run(
             [str(ROOT / "config/claude-statusline.sh")],
             text=True,
-            input='{"model":{"display_name":"tea"},"context_window":{"used_percentage":42}}',
+            input='{"model":{"display_name":42}}',
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
         )
 
-        self.assertEqual(23, result.returncode)
+        self.assertNotEqual(0, result.returncode)
         self.assertEqual("", result.stdout)
+        self.assertIn("model name must be a string", result.stderr)
 
-    def test_claude_statusline_propagates_filter_failure(self) -> None:
-        self.executable("prompt-command", 'printf "prompt\\n; "\n')
-        self.executable("head", "exit 24\n")
+    def test_claude_statusline_contains_no_json_or_shell_filters(self) -> None:
+        launcher = (ROOT / "config/claude-statusline.sh").read_text()
 
-        result = subprocess.run(
-            [str(ROOT / "config/claude-statusline.sh")],
-            text=True,
-            input='{"model":{"display_name":"tea"}}',
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
-        )
-
-        self.assertEqual(24, result.returncode)
-        self.assertEqual("", result.stdout)
+        self.assertIn('os.execv(command, [str(command), "claude"])', launcher)
+        for old_filter in ("jq -r", "head -n", "tr -d", "input=$(cat)", "command -v"):
+            self.assertNotIn(old_filter, launcher)
 
     def test_attach_session_propagates_tmux_query_failures(self) -> None:
         self.executable(

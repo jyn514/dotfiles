@@ -1,27 +1,19 @@
-#!/bin/sh
-set -e
+#!/usr/bin/env python3
+"""Execute the Claude render target from the installed dotfiles tree."""
 
-# Claude Code statusLine: reuse the dotfiles PS1 driver (prompt-command).
-# Model name takes the "shell@host" slot; cwd drives git/jj info.
-# Strip \01/\02 readline non-print markers (PS1-only; literal bytes in a statusline).
+import os
+from pathlib import Path
+import sys
 
-input=$(cat)
-cwd=$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // empty')
-model=$(printf '%s' "$input" | jq -r '.model.display_name // "claude"')
-used=$(printf '%s' "$input" | jq -r '.context_window.used_percentage // empty')
 
-if [ -n "$cwd" ]; then
-  cd "$cwd" 2>/dev/null || exit 1
-fi
-prompt_command=$(command -v prompt-command) || exit
-context=
-if [ -n "$used" ]; then
-  context=$(printf ' ctx:%.0f%% ' "$used") || exit
-fi
+def main() -> int:
+    command = Path(__file__).resolve().parents[1] / "bin/prompt-command"
+    try:
+        os.execv(command, [str(command), "claude"])
+    except OSError as error:
+        print(f"claude-statusline: could not execute renderer: {error}", file=sys.stderr)
+        return 127
 
-# prompt-command emits a second prompt line ("; "); keep only the first line.
-# (GIT_OPTIONAL_LOCKS is set inside prompt-command's git_info now.)
-prompt=$("$prompt_command" "$model" 0) || exit
-prompt=$(printf '%s\n' "$prompt" | tr -d '\001\002') || exit
-prompt=$(printf '%s\n' "$prompt" | head -n1) || exit
-printf '%s%s' "$context" "$prompt"
+
+if __name__ == "__main__":
+    raise SystemExit(main())
