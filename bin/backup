@@ -18,9 +18,79 @@
 
 ## Runtime ##
 
-#sudo -u restic $(which backup) --dry-run
+# sudo -u restic $(which backup) --dry-run
+# backup check checks repository metadata and 5% of its data.
+# backup prune applies the retention policy below and removes unreferenced data.
+# Set HEALTHCHECKS_URL in restic.env to receive start, success, and failure pings.
 
 set -eu
-. ~jyn/.local/config/restic.env
-cd ~jyn/Documents
-restic backup ~jyn/Documents/backups --exclude notes/ --skip-if-unchanged --cache-dir ~restic/cache "$@" .
+
+backup_home=${BACKUP_HOME:-$(cd ~jyn && pwd)}
+restic_home=${RESTIC_HOME:-$(cd ~restic && pwd)}
+restic_env=${RESTIC_ENV_FILE:-$backup_home/.local/config/restic.env}
+# The path is configurable for testing and alternate hosts.
+# shellcheck disable=SC1090
+. "$restic_env"
+
+cache_dir=${RESTIC_CACHE_DIR:-$restic_home/cache}
+documents=${BACKUP_DOCUMENTS:-$backup_home/Documents}
+backup_tag=${BACKUP_TAG:-documents-backup}
+case "${1:-}" in
+backup|check|prune)
+	command=$1
+	shift
+	;;
+""|-*) command=backup;;
+*) command=$1;;
+esac
+
+usage() {
+	echo "usage: backup [backup|check|prune] [restic arguments...]" >&2
+	exit 2
+}
+
+ping() {
+	[ -n "${HEALTHCHECKS_URL:-}" ] || return 0
+	suffix=${1:+/$1}
+	if ! curl -fsS --retry 3 --max-time 10 "$HEALTHCHECKS_URL$suffix" >/dev/null; then
+		echo "backup: healthcheck ping failed: ${1:-success}" >&2
+	fi
+}
+
+finish() {
+	result=$?
+	trap - EXIT HUP INT TERM
+	if [ "$result" -eq 0 ]; then
+		ping ""
+	else
+		echo "backup: $command failed with status $result" >&2
+		ping fail
+	fi
+	exit "$result"
+}
+
+case "$command" in backup|check|prune) ;; *) usage;; esac
+
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+ping start
+
+case "$command" in
+backup)
+	cd "$documents"
+	restic backup "$documents/backups" --exclude notes/ --skip-if-unchanged \
+		--cache-dir "$cache_dir" --tag "$backup_tag" "$@" .
+	;;
+check)
+	restic check --read-data-subset=5% "$@"
+	;;
+prune)
+	restic forget --cache-dir "$cache_dir" \
+		--tag "$backup_tag" \
+		--keep-daily 7 --keep-weekly 5 --keep-monthly 12 --keep-yearly 3 \
+		--prune "$@"
+	restic check
+	;;
+esac
