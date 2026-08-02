@@ -73,6 +73,86 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(2, len(opened_paths))
         self.assertTrue(all(not path.exists() for path in opened_paths))
 
+    def test_desktop_files_preserves_spaces_in_xdg_directories(self) -> None:
+        first = self.directory / "first data"
+        second = self.directory / "second data"
+        for directory, name in ((first, "first.desktop"), (second, "second.desktop")):
+            applications = directory / "applications"
+            applications.mkdir(parents=True)
+            (applications / name).touch()
+
+        result = subprocess.run(
+            [str(ROOT / "bin/desktop-files")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "HOME": str(self.directory / "home"),
+                "XDG_DATA_DIRS": f"{first}:{second}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            {first / "applications/first.desktop", second / "applications/second.desktop"},
+            {Path(path) for path in result.stdout.splitlines()},
+        )
+
+    def test_remote_git_url_handles_spaces_and_blank_lines_offline(self) -> None:
+        repository = self.directory / "repository with spaces"
+        repository.mkdir()
+        source = repository / "file with spaces"
+        source.write_text("unique line\n\n")
+        calls = self.directory / "git-calls"
+        self.executable(
+            "git",
+            'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
+            'case "$1 $2" in\n'
+            '  "rev-parse --show-toplevel") printf "%s\\n" "$REPOSITORY";;\n'
+            '  "remote get-url") printf "https://github.com/user/repo.git\\n";;\n'
+            '  "remote ") printf "origin\\n";;\n'
+            '  "rev-list --remotes") printf "abc123\\n";;\n'
+            '  "grep --line-number") printf "abc123:file with spaces\\n1:unique line\\n";;\n'
+            'esac\n',
+        )
+        environment = os.environ | {
+            "GIT_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "REPOSITORY": str(repository.resolve()),
+        }
+
+        matched = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        blank = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "2"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+
+        self.assertEqual(1, matched.returncode, matched.stderr)
+        self.assertEqual(
+            "https://github.com/user/repo/blob/abc123/file%20with%20spaces#L1\n",
+            matched.stdout,
+            matched.stderr + calls.read_text(),
+        )
+        self.assertEqual(1, blank.returncode)
+        self.assertEqual(
+            "https://github.com/user/repo/blob/HEAD/file%20with%20spaces#L2\n",
+            blank.stdout,
+        )
+        call_lines = calls.read_text().splitlines()
+        self.assertNotIn("remote set-head --auto origin", call_lines)
+        self.assertEqual(1, sum(line.startswith("grep --line-number") for line in call_lines))
+
 
 if __name__ == "__main__":
     unittest.main()
