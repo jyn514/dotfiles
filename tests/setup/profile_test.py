@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -525,7 +527,43 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('printf \'%s\\n\' "$telnet_output" | tail -2', profile)
         self.assertIn("local marker = vim.fs.find", nvim)
         self.assertIn("return marker and vim.fs.dirname(marker)", nvim)
+        self.assertEqual(
+            1,
+            nvim.count(
+                'nvim_create_augroup("lsp_document_highlight", { clear = true })'
+            ),
+        )
+        self.assertIn("group = lsp_document_highlight", nvim)
+        self.assertIn("group = lsp_attach", nvim)
+        self.assertIn('desc = "Run codelens", buffer = bufnr', nvim)
         self.assertIn("base64 | tr -d '\\n'", kakoune)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_glide_hint_labels_are_short_and_distinct(self) -> None:
+        glide = (ROOT / "config/glide.ts").read_text()
+        start = glide.index("function shorten_unique_prefixes")
+        end = glide.index("glide.o.hint_label_generator", start)
+        implementation = glide[start:end]
+        cases = [
+            (["a", "b", "c"], ["a", "b", "c"]),
+            (["", "", ""], ["0", "1", "2"]),
+            (["abcdefg", "ac"], ["ab", "ac"]),
+            (["abcdefg", "abcdfff"], ["abc", "abd"]),
+            (["apple", "application"], ["app", "apl"]),
+            (["test", "test", "testing"], ["tes", "tet", "tei"]),
+            (["", "a", ""], ["0", "a", "1"]),
+        ]
+        script = implementation + "\nprocess.stdout.write(JSON.stringify(labels(INPUT)));"
+
+        for texts, expected in cases:
+            result = subprocess.run(
+                ["node", "-e", f"const INPUT = {texts!r};\n{script}"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(expected, json.loads(result.stdout))
 
 
 if __name__ == "__main__":
