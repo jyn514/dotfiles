@@ -51,7 +51,6 @@ class MiseSmokeTests(unittest.TestCase):
             "cargo-binstall",
             "cargo-outdated",
             "cargo-sweep",
-            "cargo-tree",
             "counts",
             "clojure",
             "clojure-lsp",
@@ -82,6 +81,7 @@ class MiseSmokeTests(unittest.TestCase):
         script = "set -e; " + "; ".join(f"command -v {command}" for command in commands)
 
         self.assert_mise_command("sh", "-c", script)
+        self.assert_mise_command("cargo", "tree", "--help")
 
     def test_python_libraries_import(self) -> None:
         self.assert_mise_command(
