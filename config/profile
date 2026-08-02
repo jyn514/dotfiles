@@ -80,11 +80,14 @@ fi
 if ! exists cowsay && [ -e /usr/games/cowsay ]; then
 	add_path /usr/games
 fi
-if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
-	eval "$snap_bin" || { set -- "$?"; unset snap_bin; return "$1"; }
-	add_path "$SNAPD_BIN"
-	unset snap_bin
-else
+if exists snap; then
+	snap_paths=$(snap debug paths) || { set -- "$?"; unset snap_paths; return "$1"; }
+	snap_bin=$(printf '%s\n' "$snap_paths" | grep '^SNAPD_BIN=') || snap_bin=
+	unset snap_paths
+	if [ -n "$snap_bin" ]; then
+		eval "$snap_bin" || { set -- "$?"; unset snap_bin; return "$1"; }
+		add_path "$SNAPD_BIN"
+	fi
 	unset snap_bin
 fi
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
