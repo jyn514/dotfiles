@@ -213,6 +213,51 @@ class CommandTest(unittest.TestCase):
             [line[1] for line in renames[3:]],
         )
 
+    def test_merge_copies_dotfiles_before_removing_source(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / ".hidden").write_text("kept\n")
+        self.executable("stat", "printf 'different-device\\n'\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/merge"), str(source), str(destination)],
+            text=True,
+            input="y\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("kept\n", (destination / ".hidden").read_text())
+        self.assertFalse(source.exists())
+
+    def test_merge_retains_source_when_destination_entries_are_skipped(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        (source / "collision").write_text("source\n")
+        (destination / "collision").write_text("destination\n")
+        self.executable("stat", "printf 'different-device\\n'\n")
+        self.executable("cp", "exit 0\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/merge"), str(source), str(destination)],
+            text=True,
+            input="y\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("source\n", (source / "collision").read_text())
+        self.assertEqual("destination\n", (destination / "collision").read_text())
+        self.assertIn("Source retained", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
