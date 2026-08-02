@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import tomllib
@@ -508,6 +510,90 @@ class CommandTest(unittest.TestCase):
         recovery = renames[-3:]
         self.assertEqual(["0", "2", "10"], [line[2] for line in recovery])
         self.assertTrue(all("recovery" in line[1] for line in recovery))
+
+    def test_renumber_tmux_sessions_restores_state_after_each_failure_or_signal(self) -> None:
+        tmux = self.directory / "tmux"
+        tmux.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, signal, sys\n"
+            "state_path = os.environ['TMUX_STATE']\n"
+            "count_path = os.environ['TMUX_COUNT']\n"
+            "names = json.loads(open(state_path).read())\n"
+            "if sys.argv[1] == 'list-sessions':\n"
+            "    print('\\n'.join(names))\n"
+            "    raise SystemExit(0)\n"
+            "count = int(open(count_path).read()) + 1\n"
+            "open(count_path, 'w').write(str(count))\n"
+            "old, new = sys.argv[3:5]\n"
+            "if old not in names or (new != old and new in names):\n"
+            "    raise SystemExit(90)\n"
+            "fail_at = {int(value) for value in os.environ.get('TMUX_FAIL_AT', '').split(',') if value}\n"
+            "if count in fail_at:\n"
+            "    raise SystemExit(27)\n"
+            "names[names.index(old)] = new\n"
+            "open(state_path, 'w').write(json.dumps(names))\n"
+            "if count == int(os.environ.get('TMUX_SIGNAL_AT', '0')):\n"
+            "    os.kill(os.getppid(), signal.SIGTERM)\n"
+        )
+        tmux.chmod(0o755)
+        state = self.directory / "state"
+        count = self.directory / "count"
+        original = ["10", "named-session", "0", "2"]
+        environment = os.environ | {
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "TMUX_STATE": str(state),
+            "TMUX_COUNT": str(count),
+        }
+
+        for fail_at in range(1, 7):
+            with self.subTest(fail_at=fail_at):
+                state.write_text(json.dumps(original))
+                count.write_text("0")
+                result = subprocess.run(
+                    [str(ROOT / "config/renumber-tmux-sessions.sh")],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=environment | {"TMUX_FAIL_AT": str(fail_at)},
+                )
+                self.assertEqual(27, result.returncode, result.stderr)
+                self.assertEqual(set(original), set(json.loads(state.read_text())))
+
+        state.write_text(json.dumps(original))
+        count.write_text("0")
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment | {"TMUX_SIGNAL_AT": "2"},
+        )
+        self.assertEqual(128 + signal.SIGTERM, result.returncode, result.stderr)
+        self.assertEqual(set(original), set(json.loads(state.read_text())))
+
+        state.write_text(json.dumps(original))
+        count.write_text("0")
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"1", "2", "3", "named-session"}, set(json.loads(state.read_text())))
+
+        state.write_text(json.dumps(original))
+        count.write_text("0")
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment | {"TMUX_FAIL_AT": "4,5"},
+        )
+        self.assertEqual(27, result.returncode)
+        self.assertIn("during rollback", result.stderr)
 
     def test_merge_copies_dotfiles_before_removing_source(self) -> None:
         source = self.directory / "source"
