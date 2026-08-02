@@ -951,10 +951,8 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn(". ~/.local/profile.fish\n\tor return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/env.sh; or return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/paths.sh; or return", fish_config)
-        self.assertIn("[ $brew_command -nt $brew_cache ]", fish_config)
-        self.assertIn('set -l pending_cache "$brew_cache.$fish_pid"', fish_config)
-        self.assertIn("if $brew_command shellenv fish > $pending_cache", fish_config)
-        self.assertIn("command mv $pending_cache $brew_cache; or return", fish_config)
+        self.assertIn("refresh-fish-cache --destination $brew_cache --dependency $brew_command", fish_config)
+        self.assertIn("contains $brew_status 0 75; or return $brew_status", fish_config)
         self.assertIn(". $brew_cache; or return", fish_config)
         self.assertIn(". /usr/share/bash-completion/bash_completion || return", bashrc)
         self.assertIn(". /etc/bash_completion || return", bashrc)
@@ -976,19 +974,12 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
         self.assertIn("set --local init_output (command $argv)", fish_config)
         self.assertNotIn("command $argv | source", fish_config)
-        self.assertEqual(2, fish_config.count("if . $pending_cache"))
-        pending_sources = [
-            offset
-            for offset in range(len(fish_config))
-            if fish_config.startswith("if . $pending_cache", offset)
-        ]
-        cache_moves = [
-            fish_config.index("command mv $pending_cache $brew_cache"),
+        self.assertEqual(1, fish_config.count("if . $pending_cache"))
+        self.assertLess(
+            fish_config.index("if . $pending_cache"),
             fish_config.index("command mv $pending_cache $cargo_alias_cache"),
-        ]
-        self.assertTrue(
-            all(source < move for source, move in zip(pending_sources, cache_moves))
         )
+        self.assertNotIn("command mv $pending_cache $brew_cache", fish_config)
         self.assertIn('string escape -- "$expansion"', fish_config)
         self.assertIn('string escape -- "cargo $cmd"', fish_config)
         self.assertIn("Run 'wt.exe'", keybindings)

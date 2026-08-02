@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Refresh a generated Fish cache transactionally."""
+
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools/shell-cache"))
+
+from shell_cache.main import main  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
