@@ -65,6 +65,19 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertEqual(
             "1|-j4|cat|vi|/sandbox-home/.local/lib/cargo\n", result.stdout
         )
+
+        path_result = subprocess.run(
+            ["sh", "-c", f'. "{DOTFILES_PROFILE}"; printf "%s\\n" "$PATH"'],
+            env={"HOME": "/sandbox-home", "PATH": "/usr/local/bin:/usr/bin:/bin"},
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        )
+        self.assertEqual(
+            "/lib/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:"
+            "/usr/local/bin:/usr/bin:/bin\n",
+            path_result.stdout,
+        )
         profile = DOTFILES_PROFILE.read_text(encoding="utf-8")
         for interactive_hook in ("mise activate", "prompt-command", "keychain", "direnv"):
             self.assertNotIn(interactive_hook, profile)

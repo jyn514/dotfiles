@@ -16,3 +16,12 @@ export EDITOR=vi
 export VISUAL=$EDITOR
 export PAGER=cat
 export GIT_PAGER=cat
+
+for directory in /opt/agent-codex/bin /opt/agent-tools/bin /lib/agent-wrappers; do
+	case ":$PATH:" in
+		*:$directory:*) ;;
+		*) PATH=$directory:$PATH ;;
+	esac
+done
+unset directory
+export PATH
