@@ -1,2 +1,3 @@
 #!/bin/sh
-nmcli | head -1 | cut -d' ' -f4
+nmcli --terse --fields active,ssid device wifi \
+	| awk -F: '$1 == "yes" {sub(/^yes:/, ""); print; exit}'
