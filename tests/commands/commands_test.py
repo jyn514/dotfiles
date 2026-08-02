@@ -1449,12 +1449,8 @@ class CommandTest(unittest.TestCase):
         self.executable(
             "cargo",
             'if [ -n "${CARGO_STATUS:-}" ]; then exit "$CARGO_STATUS"; fi\n'
-            'printf \'{"workspace_root":"%s"}\\n\' "$WORKSPACE"\n',
-        )
-        self.executable(
-            "jq",
-            'if [ -n "${JQ_STATUS:-}" ]; then exit "$JQ_STATUS"; fi\n'
-            "python3 -c 'import json, sys; print(json.load(sys.stdin)[\"workspace_root\"])'\n",
+            'if [ -n "${MALFORMED_METADATA:-}" ]; then printf "not json\\n"; '
+            'else printf \'{"workspace_root":"%s"}\\n\' "$WORKSPACE"; fi\n',
         )
         self.executable("bacon", 'pwd > "$BACON_CWD"\n')
         environment = os.environ | {
@@ -1467,14 +1463,16 @@ class CommandTest(unittest.TestCase):
         cargo_failure = subprocess.run(
             [str(ROOT / "bin/b")], env=environment | {"CARGO_STATUS": "23"}, check=False
         )
-        jq_failure = subprocess.run(
-            [str(ROOT / "bin/b")], env=environment | {"JQ_STATUS": "24"}, check=False
+        malformed = subprocess.run(
+            [str(ROOT / "bin/b")],
+            env=environment | {"MALFORMED_METADATA": "1"},
+            check=False,
         )
 
         self.assertEqual(0, success.returncode)
         self.assertEqual(f"{workspace}\n", bacon_cwd.read_text())
         self.assertEqual(23, cargo_failure.returncode)
-        self.assertEqual(24, jq_failure.returncode)
+        self.assertEqual(1, malformed.returncode)
 
     def test_bandit_preserves_spaces_and_hyphens_in_password(self) -> None:
         calls = self.directory / "sshpass-calls"
