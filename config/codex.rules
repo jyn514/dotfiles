@@ -38,6 +38,7 @@ allow(["xcode-select", "-p"])
 
 # Misc non-destructive mutating commands
 allow(["git", ["bug", "clone"]])
+allow(["git", "submodule", "update"])
 
 docker_cmds = ["ps", "images", "inspect", "logs", "stats", "version", "info"]
 allow([["podman", "docker"], docker_cmds])
