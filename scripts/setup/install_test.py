@@ -774,6 +774,10 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual(aqua_tools, self.backend_packages(tools, "aqua"))
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
+        self.assertEqual(
+            "--with pytest-xdist --with pytest-sugar --with pytest-instafail",
+            tools["pipx:pytest"]["uvx_args"],
+        )
         self.assertEqual(github_tools, self.backend_packages(tools, "github"))
         self.assertEqual(asdf_tools, self.backend_packages(tools, "asdf"))
         self.assertEqual(
@@ -790,7 +794,9 @@ class MiseConfigTests(unittest.TestCase):
             "Iv23li0gR6P4iv8HXrsF", config["settings"]["github"]["oauth_client_id"]
         )
         self.assertNotIn("credential_command", config["settings"]["github"])
-        self.assertEqual("", config["settings"]["github"]["oauth_export_env"])
+        self.assertEqual(
+            "GITHUB_TOKEN", config["settings"]["github"]["oauth_export_env"]
+        )
         self.assertFalse((ROOT / "install/rust.txt").exists())
 
     def test_lockfile_covers_every_declared_tool(self) -> None:
