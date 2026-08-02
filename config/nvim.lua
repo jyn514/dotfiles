@@ -1229,19 +1229,18 @@ if first_run then
 	lsplang.flix.setup {}
 end
 
-vim.lsp.config.powershell_es = {
-	bundle_path = '~/.local/lib/PowerShellEditorServices',
-}
-vim.lsp.config.perlnavigator = {
+vim.lsp.config('powershell_es', {
+	bundle_path = vim.fn.expand('~/.local/lib/PowerShellEditorServices'),
+})
+vim.lsp.config('perlnavigator', {
 	settings = {
 		perlnavigator = {
 			perlcriticEnabled = false,
 		}
 	}
-}
+})
 
-vim.lsp.config('oxc', {
-	cmd = { "oxc_language_server" },
+vim.lsp.config('oxlint', {
 	root_dir = function(buf, on_dir)
 		local dir = vim.fs.root(buf, { 'package.json', 'tsconfig.json' }) -- order matters
 		if dir then on_dir(dir) end
@@ -1257,10 +1256,12 @@ vim.lsp.config('tinymist', {
 	}
 })
 
-for _, lsp in ipairs {
+local enabled_lsps = {
 	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
-	'clojure_lsp', 'cssls', 'markdown_oxide', 'oxc', 'tinymist',
-} do
+	'clojure_lsp', 'cssls', 'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'tinymist',
+}
+for _, lsp in ipairs(enabled_lsps) do
+	if not first_run then vim.lsp.enable(lsp, false) end
 	vim.lsp.enable(lsp)
 end
 
@@ -1361,16 +1362,4 @@ vim.lsp.config('rust_analyzer', {
 -- begin saving session immediately on startup
 if vim.fn.ObsessionStatus('a') ~= 'a' and not vim.uv.fs_stat('.session.vim') then
 	vim.cmd.Obsess(".session.vim")
-end
-
-if not first_run then
-	-- vim.cmd.bufdo('silent! edit')
-	local current_buf = vim.api.nvim_get_current_buf()
-	local current_view = vim.fn.winsaveview()
-	local restart_ok, restart_error = pcall(vim.cmd.bufdo, 'LspRestart')
-	if vim.api.nvim_buf_is_valid(current_buf) then
-		vim.api.nvim_set_current_buf(current_buf)
-		vim.fn.winrestview(current_view)
-	end
-	if not restart_ok then error(restart_error) end
 end
