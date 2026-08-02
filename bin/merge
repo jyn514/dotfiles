@@ -32,7 +32,29 @@ if [ "$(device_number "$source")" = "$(device_number "$dest")" ]; then
 	# -l: use hard links to reduce IO
 	FLAGS=l$FLAGS
 fi
-cp -$FLAGS "$source"/* "$dest"
+
+collision=false
+for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+	if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
+		continue
+	fi
+	name=${entry##*/}
+	if [ -e "$dest/$name" ] || [ -L "$dest/$name" ]; then
+		collision=true
+	fi
+done
+
+set +e
+cp -$FLAGS "$source"/. "$dest"
+copy_status=$?
+set -e
+
+if $collision; then
+	echo "Source retained because destination entries were skipped."
+	exit "$copy_status"
+fi
+
+[ "$copy_status" -eq 0 ] || exit "$copy_status"
 
 printf "Remove old directory? y/[n] "
 read -r REPLY
