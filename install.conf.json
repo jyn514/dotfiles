@@ -29,6 +29,7 @@
         "type": "hardlink"
       },
       "$HOME/.config/fish/config.fish": "config/config.fish",
+      "$HOME/.config/fish/conf.d/mise-activate.fish": "config/mise-activate.fish",
       "$HOME/.config/containers/containers.conf": "config/containers.conf",
       "$HOME/.config/clojure/deps.edn": "config/deps.edn",
       "$HOME/.editorconfig": "config/editorconfig",
