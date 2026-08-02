@@ -82,7 +82,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	recent = for-each-ref --sort=committerdate --format='%(committerdate:short): %(color:green)%(refname:short)%(color:default) | %(contents:subject)' refs/heads/
 
 	# https://stackoverflow.com/questions/3161204/how-to-find-the-nearest-parent-of-a-git-branch
-	parent = !git show-branch --topo-order --current "upstream/*" | grep -v "^\\s*!" | grep "refs/remotes/upstream/" | grep "^[^\\[]*\\*" | head -n1 | grep -Eo "refs/remotes/upstream/[^]]*" | xargs git rev-parse --symbolic-full-name
+	parent = "!f() { branches=$(git show-branch --topo-order --current 'upstream/*') || return; parent=$(echo \"$branches\" | awk '!/^[[:space:]]*!/ && /refs\\/remotes\\/upstream\\// && /^[^[]*\\*/ { line=$0; sub(/^.*refs\\/remotes\\/upstream\\//, \"refs/remotes/upstream/\", line); sub(/].*$/, \"\", line); print line; exit }') || return; [ -n \"$parent\" ] || return 1; git rev-parse --symbolic-full-name \"$parent\"; }; f"
 	default-branch = "!f() { ref=$(git symbolic-ref refs/remotes/upstream/HEAD) || return; echo \"$ref\" | sed 's@^refs/remotes/upstream/@@'; }; f"
 
 	delete-merged = "!f() { branches=$(git branch -r --merged) || return; branches=$(echo \"$branches\" | sed -n 's@^[ *]*personal/@@p') || return; [ -z \"$branches\" ] || git push personal --delete --no-verify $branches; }; f"

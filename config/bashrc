@@ -78,7 +78,9 @@ complete_alias g git
 # one command ending and the other starting. refresh the completions between each invocation of jj.
 if exists jj; then
    __jj_dynamic() {
-      source <(jj util completion bash)
+      jj_completion=$(jj util completion bash) || return
+      eval "$jj_completion" || return
+      unset jj_completion
       _jj "$@"
       # `jj util completion` overrides our `complete` >:(
       complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
@@ -101,7 +103,9 @@ if [ -f ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh ]; then
 fi
 
 if exists atuin; then
-	eval "$(atuin init bash --disable-up-arrow)"
+	atuin_init=$(atuin init bash --disable-up-arrow) || return
+	eval "$atuin_init" || return
+	unset atuin_init
 fi
 if exists direnv; then
 	eval "$(direnv hook bash)"

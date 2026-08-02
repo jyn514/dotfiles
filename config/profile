@@ -3,8 +3,12 @@
 # do this even for non-interactive shells so `mosh home` works even if we're not already in a WSL session
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
-	eval "$(keychain --quiet --eval --agents ssh)"
-	. ~/.keychain/"$(hostname | tr -d '\n')"-sh
+	keychain_env=$(keychain --quiet --eval --agents ssh) || return
+	eval "$keychain_env" || return
+	unset keychain_env
+	keychain_file=$HOME/.keychain/"$(hostname | tr -d '\n')"-sh
+	. "$keychain_file" || return
+	unset keychain_file
 fi
 
 if ! exists realpath; then
@@ -78,7 +82,9 @@ if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
 	unset snap_bin
 fi
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
-	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
+	brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || return
+	eval "$brew_env" || return
+	unset brew_env
 fi
 
 . "$DOTFILES/lib/shell/paths.sh"
