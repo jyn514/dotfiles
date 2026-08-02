@@ -862,8 +862,8 @@ pickers.setup {
 	},
 	files = {
 		-- file_icons = false,
-		rg_opts = [[-g "!src/llvm-project" -g "!src/tools/rustc-perf"]],
-		fd_opts = [[--no-hidden --exclude src/llvm-project --exclude src/tools/rustc-perf]],
+		rg_opts = [[--color=never --files -g "!.git" -g "!.jj" -g "!src/llvm-project" -g "!src/tools/rustc-perf"]],
+		fd_opts = [[--color=never --type f --type l --exclude .git --exclude .jj --exclude src/llvm-project --exclude src/tools/rustc-perf]],
 	},
 	git = {
 		files = {
@@ -902,8 +902,8 @@ vim.keymap.set('n', '<leader>f', function()
 end, { desc = "Open '''smart''' fuzzy file picker" })
 
 vim.keymap.set('n', '<leader><C-f>', function()
-	pickers.files({ winopts = { title = "All tracked files" } })
-end, { desc = "Open file picker (all files in current directory)" })
+	pickers.git_files({ winopts = { title = "All tracked files" } })
+end, { desc = "Open file picker (all tracked files)" })
 
 vim.keymap.set('n', '<leader><A-f>', function()
 	pickers.files({ no_ignore = true, no_ignore_parent = true, hidden = true })
@@ -1314,7 +1314,7 @@ vim.api.nvim_create_autocmd("FileType", {
 	group = config_group,
 	pattern = "typst",
 	callback = function(opts)
-		if string.match(opts.file, "main.typ$") then
+		if vim.fs.basename(opts.file) == "main.typ" then
 			vim.cmd.TypstPreview("slide")
 		end
 	end

@@ -168,6 +168,75 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertEqual(29, result.returncode)
 
+    def test_profile_rejects_partial_snap_path_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            snap = binaries / "snap"
+            snap.write_text("#!/bin/sh\nprintf 'SNAPD_BIN=/partial\\n'\nexit 23\n")
+            snap.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$HOME/.profile"; status=$?; '
+                    'printf "%s:%s\\n" "$status" "${SNAPD_BIN-unset}"',
+                ],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                    "SSH_AUTH_SOCK": "present",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("23:unset\n", result.stdout)
+
+    def test_profile_adds_a_successful_snap_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            snap = binaries / "snap"
+            snap.write_text("#!/bin/sh\nprintf 'SNAPD_BIN=/snap/bin\\n'\n")
+            snap.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$HOME/.profile"; printf "%s:%s\\n" "$SNAPD_BIN" "$PATH"',
+                ],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                    "SSH_AUTH_SOCK": "present",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        snap_bin, path = result.stdout.rstrip().split(":", 1)
+        self.assertEqual("/snap/bin", snap_bin)
+        self.assertIn("/snap/bin", path.split(":"))
+
     def test_tmux_paste_bindings_do_not_paste_after_clipboard_failure(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
         commands = re.findall(
@@ -880,6 +949,12 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("function BufferDelete(", nvim)
         self.assertIn("bind_ts(ts {", nvim)
         self.assertIn("}, { buffer = args.buf })", nvim)
+        self.assertIn('rg_opts = [[--color=never --files -g "!.git" -g "!.jj"', nvim)
+        self.assertIn("fd_opts = [[--color=never --type f --type l --exclude .git --exclude .jj", nvim)
+        self.assertIn('pickers.git_files({ winopts = { title = "All tracked files" } })', nvim)
+        self.assertIn('desc = "Open file picker (all tracked files)"', nvim)
+        self.assertIn('vim.fs.basename(opts.file) == "main.typ"', nvim)
+        self.assertNotIn('string.match(opts.file, "main.typ$")', nvim)
         self.assertIn("vim.lsp.codelens.refresh { bufnr = bufnr }", nvim)
         self.assertNotIn('nvim_create_autocmd({ "BufEnter", "LspAttach" }', nvim)
         self.assertNotIn("\n_ = [[\n", nvim)
