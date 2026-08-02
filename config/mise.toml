@@ -31,7 +31,7 @@ uv = "latest"
 "npm:oxlint" = { version = "latest", depends = ["node"] }
 "npm:vscode-langservers-extracted" = { version = "latest", depends = ["node"] }
 "pipx:git-revise" = { version = "latest", depends = ["uv"] }
-"pipx:pytest" = { version = "latest", depends = ["uv"] }
+"pipx:pytest" = { version = "latest", depends = ["uv"], uvx_args = "--with pytest-xdist --with pytest-sugar --with pytest-instafail" }
 "pipx:pylint" = { version = "latest", depends = ["uv"] }
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 
@@ -44,5 +44,5 @@ cargo.binstall_only = true
 
 [settings.github]
 oauth_client_id = "Iv23li0gR6P4iv8HXrsF"
-oauth_export_env = ""
+oauth_export_env = "GITHUB_TOKEN"
 use_git_credentials = true
