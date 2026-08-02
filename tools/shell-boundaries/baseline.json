@@ -1,9 +1,6 @@
 [
   "bin/claude:nested-substitution:79707384684d60b7",
   "bin/codex:nested-substitution:79707384684d60b7",
-  "bin/flash-moonlander:nested-substitution:379c8eb5cb22c8a8",
-  "bin/flash-moonlander:nested-substitution:e189b6e431eba3f9",
-  "bin/flash-moonlander:unchecked-pipeline:e189b6e431eba3f9",
   "bin/nvim:nested-substitution:3fa3019f25698507",
   "bin/youtube_search:nested-substitution:62b771af07d1abed",
   "config/profile:nested-substitution:74a5009b711a4e7e",
@@ -44,8 +41,5 @@
   "tools/agent-podman/teardown.sh:unchecked-pipeline:8efe4b6866788e39",
   "tools/agent-podman/teardown.sh:unchecked-pipeline:ee324eca74fec4ad",
   "tools/agent-podman/woodpecker-supervisor.sh:filename-lines:8890b67e173cfd66",
-  "tools/agent-split/bb:nested-substitution:6350ba65fbcede6e",
-  "tools/moonlander/flash-moonlander:nested-substitution:379c8eb5cb22c8a8",
-  "tools/moonlander/flash-moonlander:nested-substitution:e189b6e431eba3f9",
-  "tools/moonlander/flash-moonlander:unchecked-pipeline:e189b6e431eba3f9"
+  "tools/agent-split/bb:nested-substitution:6350ba65fbcede6e"
 ]
