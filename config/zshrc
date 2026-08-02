@@ -204,8 +204,8 @@ zstyle ':completion:*' format 'Completing %d'
 zstyle ':completion:*' group-name ''
 zstyle ':completion:*' menu select=2
 if exists dircolors; then
-  dircolors_init=$(dircolors -b) || return
-  eval "$dircolors_init" || return
+  dircolors_init=$(dircolors -b) || { set -- "$?"; unset dircolors_init; return "$1"; }
+  eval "$dircolors_init" || { set -- "$?"; unset dircolors_init; return "$1"; }
   unset dircolors_init
 fi
 zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
@@ -265,8 +265,8 @@ zle -N fzf-file
 bindkey "^[t" fzf-file
 
 if exists atuin; then
-	atuin_init=$(atuin init zsh --disable-up-arrow) || return
-	zsh-defer -12p -c "$atuin_init" || return
+	atuin_init=$(atuin init zsh --disable-up-arrow) || { set -- "$?"; unset atuin_init; return "$1"; }
+	zsh-defer -12p -c "$atuin_init" || { set -- "$?"; unset atuin_init; return "$1"; }
 	unset atuin_init
 	zsh-defer -12p bindkey -M vicmd '^r' atuin-search || return
 fi
@@ -280,8 +280,8 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion atuin-quiet)
 
 # https://direnv.net/
 if exists direnv; then
-	direnv_init=$(direnv hook zsh) || return
-	zsh-defer -12p -c "$direnv_init" || return
+	direnv_init=$(direnv hook zsh) || { set -- "$?"; unset direnv_init; return "$1"; }
+	zsh-defer -12p -c "$direnv_init" || { set -- "$?"; unset direnv_init; return "$1"; }
 	unset direnv_init
 fi
 
@@ -299,8 +299,8 @@ compinit -C || return
 compdef '_arguments --' fzf  # takes no positional arguments
 
 if exists zoxide; then
-   zoxide_init=$(zoxide init zsh) || return
-   eval "$zoxide_init" || return
+   zoxide_init=$(zoxide init zsh) || { set -- "$?"; unset zoxide_init; return "$1"; }
+   eval "$zoxide_init" || { set -- "$?"; unset zoxide_init; return "$1"; }
    unset zoxide_init
    cd() { z "$@" && status; }
    # NOTE: only shows a FZF menu if there's a space after the query filter
@@ -320,10 +320,10 @@ if typeset -f fork_github >/dev/null; then
 	unfunction fork_github
 fi
 
-zsh-defer -12p -c 'if exists jj; then jj_completion=$(jj util completion zsh) || return; eval "$jj_completion" || return; unset jj_completion; fi' || return
+zsh-defer -12p -c 'if exists jj; then jj_completion=$(jj util completion zsh) || { set -- "$?"; unset jj_completion; return "$1"; }; eval "$jj_completion" || { set -- "$?"; unset jj_completion; return "$1"; }; unset jj_completion; fi' || return
 if exists atuin; then
-	atuin_completions=$(atuin gen-completions --shell zsh) || return
-	zsh-defer -12p -c "$atuin_completions" || return
+	atuin_completions=$(atuin gen-completions --shell zsh) || { set -- "$?"; unset atuin_completions; return "$1"; }
+	zsh-defer -12p -c "$atuin_completions" || { set -- "$?"; unset atuin_completions; return "$1"; }
 	unset atuin_completions
 fi
 # add `-p` here if you see errors during delayed loading

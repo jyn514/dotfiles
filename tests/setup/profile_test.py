@@ -23,16 +23,16 @@ class ProfileContractTests(unittest.TestCase):
     def test_interactive_shells_activate_mise(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 
-        self.assertIn("mise_activation=$(mise activate bash) || return", profile)
-        self.assertIn("mise_activation=$(mise activate zsh) || return", profile)
-        self.assertIn('eval "$mise_activation" || return', profile)
+        self.assertIn("mise_activation=$(mise activate bash) || {", profile)
+        self.assertIn("mise_activation=$(mise activate zsh) || {", profile)
+        self.assertIn('eval "$mise_activation" || {', profile)
         self.assertLess(
             profile.index("unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH"),
-            profile.index("mise_activation=$(mise activate bash) || return"),
+            profile.index("mise_activation=$(mise activate bash) || {"),
         )
         self.assertLess(
             profile.index('remove_path "$HOME/.local/share/mise/shims"'),
-            profile.index("mise_activation=$(mise activate bash) || return"),
+            profile.index("mise_activation=$(mise activate bash) || {"),
         )
 
     def test_mise_shims_are_added_after_linuxbrew(self) -> None:
@@ -43,9 +43,70 @@ class ProfileContractTests(unittest.TestCase):
             profile.index('. "$DOTFILES/lib/shell/paths.sh"'),
         )
         self.assertIn(
-            "brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || return",
+            "brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || {",
             profile,
         )
+
+    def test_path_helpers_preserve_caller_variables(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            home.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    "p=caller-p; existing=caller-existing; new_path=caller-new; "
+                    "old_ifs=caller-ifs; restore_glob=caller-glob; "
+                    '. "$HOME/.profile"; add_path /added; remove_path /added; '
+                    "printf '%s|%s|%s|%s|%s\\n' \"$p\" \"$existing\" "
+                    '"$new_path" "$old_ifs" "$restore_glob"',
+                ],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": "/usr/bin:/bin",
+                    "SSH_AUTH_SOCK": "present",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "caller-p|caller-existing|caller-new|caller-ifs|caller-glob\n",
+            result.stdout,
+        )
+
+    def test_bash_startup_cleans_failed_initializer_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binaries = Path(directory)
+            zoxide = binaries / "zoxide"
+            zoxide.write_text("#!/bin/sh\nprintf 'partial output\\n'\nexit 42\n")
+            zoxide.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    "--noprofile",
+                    "--norc",
+                    "-ic",
+                    'exists() { [ "$1" = zoxide ]; }; MY_GITHUB=1; '
+                    'source "$1"; startup_status=$?; '
+                    'printf "%s:%s\\n" "$startup_status" "${zoxide_init-unset}"',
+                    "bash",
+                    str(ROOT / "config/bashrc"),
+                ],
+                env=os.environ
+                | {"PATH": f"{binaries}:/usr/bin:/bin", "TERM": "dumb"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("42:unset\n", result.stdout)
 
     def test_noninteractive_profile_propagates_keychain_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -523,6 +584,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("local codename http_status man_index section url", profile)
         self.assertNotIn("\n\t\t\tcheck()", profile)
+        self.assertIn("local existing new_path old_ifs p restore_glob", profile)
+        self.assertIn("local abbreviations alias expn name", profile)
+        self.assertIn("local conflict_diff result", profile)
         self.assertIn("telnet_output=$(telnet", profile)
         self.assertIn('printf \'%s\\n\' "$telnet_output" | tail -2', profile)
         self.assertIn("local marker = vim.fs.find", nvim)

@@ -3,24 +3,25 @@
 # do this even for non-interactive shells so `mosh home` works even if we're not already in a WSL session
 exists () { command -v "$1" >/dev/null 2>&1; }
 if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
-	keychain_env=$(keychain --quiet --eval --agents ssh) || return
-	eval "$keychain_env" || return
+	keychain_env=$(keychain --quiet --eval --agents ssh) || { set -- "$?"; unset keychain_env; return "$1"; }
+	eval "$keychain_env" || { set -- "$?"; unset keychain_env; return "$1"; }
 	unset keychain_env
-	keychain_hostname=$(hostname) || { result=$?; unset keychain_hostname; return "$result"; }
+	keychain_hostname=$(hostname) || { set -- "$?"; unset keychain_hostname; return "$1"; }
 	keychain_file=$HOME/.keychain/"$keychain_hostname"-sh
 	unset keychain_hostname
-	. "$keychain_file" || return
+	. "$keychain_file" || { set -- "$?"; unset keychain_file; return "$1"; }
 	unset keychain_file
 fi
 
 if ! exists realpath; then
 	. "$(dirname "$(readlink ~/.profile)")/../lib/shell/realpath.sh" || return
 fi
-profile_path=$(realpath ~/.profile) || return
-DOTFILES=$(realpath "$(dirname "$profile_path")/..") || { result=$?; unset profile_path; return "$result"; }
+profile_path=$(realpath ~/.profile) || { set -- "$?"; unset profile_path; return "$1"; }
+DOTFILES=$(realpath "$(dirname "$profile_path")/..") || { set -- "$?"; unset DOTFILES profile_path; return "$1"; }
 unset profile_path
 
 add_path () {
+	local existing new_path old_ifs p restore_glob
 	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac
 	for p in "$@"; do
 		new_path=
@@ -43,10 +44,10 @@ add_path () {
 		fi
 	done
 	[ -z "$restore_glob" ] || set +f
-	unset existing new_path old_ifs p restore_glob
 }
 
 remove_path () {
+	local existing new_path old_ifs restore_glob
 	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac
 	new_path=
 	old_ifs=$IFS
@@ -59,7 +60,6 @@ remove_path () {
 	IFS=$old_ifs
 	PATH=$new_path
 	[ -z "$restore_glob" ] || set +f
-	unset existing new_path old_ifs restore_glob
 }
 
 add_path_if_present() {
@@ -81,13 +81,15 @@ if ! exists cowsay && [ -e /usr/games/cowsay ]; then
 	add_path /usr/games
 fi
 if exists snap && snap_bin=$(snap debug paths | grep '^SNAPD_BIN='); then
-	eval "$snap_bin" || return
+	eval "$snap_bin" || { set -- "$?"; unset snap_bin; return "$1"; }
 	add_path "$SNAPD_BIN"
+	unset snap_bin
+else
 	unset snap_bin
 fi
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
-	brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || return
-	eval "$brew_env" || return
+	brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || { set -- "$?"; unset brew_env; return "$1"; }
+	eval "$brew_env" || { set -- "$?"; unset brew_env; return "$1"; }
 	unset brew_env
 fi
 
@@ -118,12 +120,12 @@ if exists mise; then
 	unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
 	remove_path "$HOME/.local/share/mise/shims"
 	if [ -n "${BASH_VERSION:-}" ]; then
-		mise_activation=$(mise activate bash) || return
+		mise_activation=$(mise activate bash) || { set -- "$?"; unset mise_activation; return "$1"; }
 	elif [ -n "${ZSH_VERSION:-}" ]; then
-		mise_activation=$(mise activate zsh) || return
+		mise_activation=$(mise activate zsh) || { set -- "$?"; unset mise_activation; return "$1"; }
 	fi
 	if [ -n "${mise_activation:-}" ]; then
-		eval "$mise_activation" || return
+		eval "$mise_activation" || { set -- "$?"; unset mise_activation; return "$1"; }
 		unset mise_activation
 	fi
 fi
@@ -138,22 +140,38 @@ fi
 . "$DOTFILES/lib/shell/lib.sh" || return
 . "$DOTFILES/bin/show-status" || return
 
-if gpg_tty=$(tty 2>/dev/null); then
-	export GPG_TTY=$gpg_tty
-fi
+_set_gpg_tty() {
+	local gpg_tty
+	if gpg_tty=$(tty 2>/dev/null); then
+		export GPG_TTY=$gpg_tty
+	fi
+}
+_set_gpg_tty
+unset -f _set_gpg_tty
 
 # set up aliases
 
-abbreviations=$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt") || return
-# https://www.etalabs.net/sh_tricks.html#:~:text=Reading%20input%20line%2Dby%2Dline
-while IFS= read -r alias; do
-	name=${alias%=*}
-	expn=${alias#*=}
-	alias "$name"="$expn" || return
-done << EOF
+_load_aliases() {
+	local abbreviations alias expn name
+	abbreviations=$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt") || return
+	# https://www.etalabs.net/sh_tricks.html#:~:text=Reading%20input%20line%2Dby%2Dline
+	while IFS= read -r alias; do
+		name=${alias%=*}
+		expn=${alias#*=}
+		alias "$name"="$expn" || return
+	done << EOF
 $abbreviations
 EOF
-unset abbreviations
+}
+_load_aliases
+_load_aliases_status=$?
+unset -f _load_aliases
+if [ "$_load_aliases_status" -ne 0 ]; then
+	set -- "$_load_aliases_status"
+	unset _load_aliases_status
+	return "$1"
+fi
+unset _load_aliases_status
 
 # fish handles these with a regex
 alias ...=../..
@@ -168,11 +186,11 @@ git_reset_author() {
 }
 
 show_conflicts() {
+	local conflict_diff result
 	conflict_diff=$(jj diff --from @-- --to @- --git) || return
 	conflict_diff=$(printf '%s\n' "$conflict_diff" | grepdiff --output-matching=hunk '<<<<<<<') || return
 	printf '%s\n' "$conflict_diff" | less
 	result=$?
-	unset conflict_diff
 	return "$result"
 }
 

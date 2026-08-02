@@ -862,18 +862,27 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("if exists atuin\n\t\tsource_init atuin", fish_config)
         self.assertIn("if exists zoxide\n\t\tsource_init zoxide", fish_config)
         self.assertIn('if [ -z "${MY_GITHUB:-}" ]; then', bashrc)
-        self.assertIn("zoxide_init=$(zoxide init bash) || return", bashrc)
-        self.assertIn("zoxide_init=$(zoxide init zsh) || return", zshrc)
+        self.assertIn("zoxide_init=$(zoxide init bash) || {", bashrc)
+        self.assertIn("zoxide_init=$(zoxide init zsh) || {", zshrc)
         self.assertIn("jj_completion=$(jj util completion bash) || return", bashrc)
         self.assertNotIn("source <(jj util completion bash)", bashrc)
         self.assertIn('source "$ZDOTDIR/antidote/antidote.zsh" || return', zshrc)
         self.assertIn('if [ -z "${DOTFILES:-}" ]; then', zshrc)
         self.assertIn("antidote load || return", zshrc)
-        self.assertIn("atuin_init=$(atuin init zsh --disable-up-arrow) || return", zshrc)
-        self.assertIn("direnv_init=$(direnv hook zsh) || return", zshrc)
-        self.assertIn("atuin_init=$(atuin init bash --disable-up-arrow) || return", bashrc)
-        self.assertIn("direnv_init=$(direnv hook bash) || return", bashrc)
-        self.assertIn("dircolors_init=$(dircolors -b) || return", zshrc)
+        self.assertIn("atuin_init=$(atuin init zsh --disable-up-arrow) || {", zshrc)
+        self.assertIn("direnv_init=$(direnv hook zsh) || {", zshrc)
+        self.assertIn("atuin_init=$(atuin init bash --disable-up-arrow) || {", bashrc)
+        self.assertIn("direnv_init=$(direnv hook bash) || {", bashrc)
+        self.assertIn("dircolors_init=$(dircolors -b) || {", zshrc)
+        for variable in (
+            "zoxide_init",
+            "atuin_init",
+            "direnv_init",
+            "dircolors_init",
+            "atuin_completions",
+            "jj_completion",
+        ):
+            self.assertIn(f"unset {variable}", bashrc + zshrc)
         self.assertIn("set abbreviations (grep -Ev", fish_config)
         self.assertIn("set git_aliases (git config --get-regexp", fish_config)
         self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
@@ -907,7 +916,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn(". /etc/bash_completion || return", bashrc)
         for line in zshrc.splitlines():
             if line.lstrip().startswith("zsh-defer "):
-                self.assertIn("|| return", line)
+                self.assertTrue("|| return" in line or "|| {" in line, line)
         self.assertIn("files=$(fd) || return", zshrc)
         self.assertIn("printf '%s\\n' \"$files\" | fzf", zshrc)
         self.assertIn("set -l startup_status $status", fish_config)

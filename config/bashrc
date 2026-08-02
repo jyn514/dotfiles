@@ -82,6 +82,7 @@ fi
 # one command ending and the other starting. refresh the completions between each invocation of jj.
 if exists jj; then
    __jj_dynamic() {
+      local jj_completion
       jj_completion=$(jj util completion bash) || return
       eval "$jj_completion" || return
       unset jj_completion
@@ -92,8 +93,8 @@ if exists jj; then
    complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
 fi
 if exists zoxide; then
-   zoxide_init=$(zoxide init bash) || return
-   eval "$zoxide_init" || return
+   zoxide_init=$(zoxide init bash) || { set -- "$?"; unset zoxide_init; return "$1"; }
+   eval "$zoxide_init" || { set -- "$?"; unset zoxide_init; return "$1"; }
    unset zoxide_init
    cd() { z "$@" && status; }
    complete_alias cd z || return
@@ -109,12 +110,12 @@ if [ -f ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh ]; then
 fi
 
 if exists atuin; then
-	atuin_init=$(atuin init bash --disable-up-arrow) || return
-	eval "$atuin_init" || return
+	atuin_init=$(atuin init bash --disable-up-arrow) || { set -- "$?"; unset atuin_init; return "$1"; }
+	eval "$atuin_init" || { set -- "$?"; unset atuin_init; return "$1"; }
 	unset atuin_init
 fi
 if exists direnv; then
-	direnv_init=$(direnv hook bash) || return
-	eval "$direnv_init" || return
+	direnv_init=$(direnv hook bash) || { set -- "$?"; unset direnv_init; return "$1"; }
+	eval "$direnv_init" || { set -- "$?"; unset direnv_init; return "$1"; }
 	unset direnv_init
 fi
