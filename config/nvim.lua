@@ -222,7 +222,7 @@ vim.keymap.set('i', '\\f', '⚘', { desc = "Floret" })
 
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
-	local col = vim.fn.getcurpos()[3] - 1 -- convert 1-indexed to 0-indexed
+	local col = vim.fn.virtcol('.') - 1 -- convert 1-indexed to 0-indexed
 	local ws = vim.regex('^\\s*$')
 	-- TODO: figure out how to do this with match_line
 	local line = vim.fn.getline('.'):sub(0, col)
@@ -230,7 +230,7 @@ vim.keymap.set('i', '<Tab>', function()
 		return '<Tab>'
 	else
 		local sw = vim.fn.shiftwidth()
-		local width = sw - ((col - 1) % sw)
+		local width = sw - (col % sw)
 		return vim.fn['repeat'](' ', width)
 	end
 end, { expr = true, desc = "Don't insert hard tabs in the middle of lines" })
@@ -279,8 +279,11 @@ function BufferDelete(args)
 	end
 	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 		if vim.api.nvim_buf_is_loaded(buf) and buf ~= vim.api.nvim_get_current_buf() then
-			vim.cmd('let @# = ' .. buf)
-			break
+			local name = vim.api.nvim_buf_get_name(buf)
+			if name ~= '' then
+				vim.cmd.balt(vim.fn.fnameescape(name))
+				break
+			end
 		end
 	end
 	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer

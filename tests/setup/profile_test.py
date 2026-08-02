@@ -207,10 +207,11 @@ class ProfileContractTests(unittest.TestCase):
     def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
         dragon_commands = re.findall(
-            r"'cd #\{q:pane_current_path\}; ([^']*xargs -0 dragon -x)'",
+            r"'cd #\{q:pane_current_path\}; ([^']*xargs -0 ~/\.config/tmux/dragon\.sh)'",
             tmux_config,
         )
         self.assertEqual(2, len(dragon_commands))
+        self.assertEqual(5, tmux_config.count("~/.config/tmux/dragon.sh"))
         search_program = (
             'import os, sys; from urllib.parse import urlencode; '
             'os.execlp("open", "open", "https://www.google.com/search?" + '
@@ -245,6 +246,9 @@ class ProfileContractTests(unittest.TestCase):
             }
 
             for command in dragon_commands:
+                command = command.replace(
+                    "~/.config/tmux/dragon.sh", str(ROOT / "config/dragon.sh")
+                )
                 result = subprocess.run(
                     ["/bin/bash", "-c", command],
                     input=payload,
@@ -281,6 +285,15 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("if [[ -z $BUFFER ]]", body)
         self.assertIn("zle up-line-or-history", body)
         self.assertIn('LBUFFER="sudo $LBUFFER"', body)
+
+    def test_neovim_tab_alignment_and_alternate_buffer_use_editor_columns(self) -> None:
+        nvim = (ROOT / "config/nvim.lua").read_text()
+
+        self.assertIn("local col = vim.fn.virtcol('.') - 1", nvim)
+        self.assertIn("local width = sw - (col % sw)", nvim)
+        self.assertNotIn("sw - ((col - 1) % sw)", nvim)
+        self.assertIn("vim.cmd.balt(vim.fn.fnameescape(name))", nvim)
+        self.assertNotIn("let @#", nvim)
 
     def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
@@ -681,7 +694,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('return (text ?? "").replace', glide)
         for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
-        self.assertEqual(3, nvim.count("vim.fn.fnameescape("))
+        self.assertEqual(4, nvim.count("vim.fn.fnameescape("))
         self.assertNotIn("'edit ' .. config", nvim)
         self.assertNotIn("'source ' .. config", nvim)
         self.assertIn("*.h,*.c set filetype=c", vimrc)
