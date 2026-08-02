@@ -335,17 +335,7 @@ excuse () {
 
 dad () { curl https://icanhazdadjoke.com && echo; }
 
-pip_upgrade_all () {
-	local packages pip_data result
-	pip_data=$(pip list --format=freeze) || { result=$?; unset pip_data; return "$result"; }
-	packages=$(printf '%s\n' "$pip_data" | sed 's/==.*//') || { result=$?; unset pip_data packages; return "$result"; }
-	unset pip_data
-	[ -n "$packages" ] || { unset packages; return 0; }
-	printf '%s\n' "$packages" | xargs pip install -U "$@"
-	set -- "$?"
-	unset packages
-	return "$1"
-}
+alias pip_upgrade_all=pip-upgrade-all
 
 fork_github() {
 	local dir
