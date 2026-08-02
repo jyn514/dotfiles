@@ -1,19 +1,76 @@
-#!/bin/sh
-# bandit - will automatically login to last available user in $file
-# $file must be of format "$num - $pass"
+#!/usr/bin/env python3
+"""Log in to the latest OverTheWire Bandit level from bandit.txt."""
 
-set -eu
+from __future__ import annotations
 
-line=$(tail -n1 bandit.txt) || exit
-case $line in
-	*' - '*)
-		num=${line%% - *}
-		password=${line#* - }
-		;;
-	*)
-		echo 'bandit: expected "number - password" in bandit.txt' >&2
-		exit 1
-		;;
-esac
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import subprocess
+import sys
+from typing import Callable
 
-sshpass -p "$password" ssh -p 2220 "bandit$num@bandit.labs.overthewire.org"
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(arguments: list[bytes]) -> Result:
+    try:
+        completed = subprocess.run(arguments, check=False)
+    except OSError as error:
+        program = os.fsdecode(arguments[0])
+        print(f"bandit: could not execute {program!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode))
+
+
+def last_line(content: bytes) -> bytes:
+    if content.endswith(b"\n"):
+        content = content[:-1]
+    return content.rsplit(b"\n", 1)[-1]
+
+
+def credential(content: bytes) -> tuple[bytes, bytes]:
+    line = last_line(content)
+    if b"\0" in line:
+        raise ValueError("credential contains a NUL byte")
+    number, separator, password = line.partition(b" - ")
+    if not separator:
+        raise ValueError('expected "number - password" in bandit.txt')
+    return number, password
+
+
+def login(
+    _arguments: list[str],
+    *,
+    runner: Callable[[list[bytes]], Result] = run,
+    credential_path: Path = Path("bandit.txt"),
+) -> int:
+    try:
+        number, password = credential(credential_path.read_bytes())
+    except OSError as error:
+        print(f"bandit: could not read {credential_path}: {error}", file=sys.stderr)
+        return 1
+    except ValueError as error:
+        print(f"bandit: {error}", file=sys.stderr)
+        return 1
+
+    destination = b"bandit" + number + b"@bandit.labs.overthewire.org"
+    connected = runner(
+        [b"sshpass", b"-p", password, b"ssh", b"-p", b"2220", destination]
+    )
+    return connected.status
+
+
+def main(arguments: list[str]) -> int:
+    return login(arguments)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
