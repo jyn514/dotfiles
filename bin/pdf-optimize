@@ -86,12 +86,12 @@ if [ "$#" -ne 1 ] && [ "$#" -ne 2 ] ; then
   exit 1
 fi
 
-GS_PATH=$(command -v $GS_COMMAND_NAME)
 # validate that ghostscript exists
-if [ $? -ne 0 ] ; then
+if ! GS_PATH=$(command -v "$GS_COMMAND_NAME"); then
   echo "ERROR: ghostscript was not found on this system"
   exit 1
 fi
+set -e
 
 # validate input file
 if [ ! -f "$INPUT_FILE" ] ; then
@@ -128,10 +128,12 @@ cp "$INPUT_FILE" "$TEMPIF"
 
 
 START=$(date +%s)
-$GS_PATH $GS_OPTS "$TEMPOF" "$TEMPIF" > "$GS_LOG_PATH" 2>&1
+# GS_OPTS is deliberately expanded into separate Ghostscript arguments.
+# shellcheck disable=SC2086
+"$GS_PATH" $GS_OPTS "$TEMPOF" "$TEMPIF" > "$GS_LOG_PATH" 2>&1
 echo "done"
 END=$(date +%s)
-DIFF=$(( $END - $START ))
+DIFF=$((END - START))
 echo "INFO: optimized PDF in $DIFF seconds"
 
 cp "$TEMPOF" "$OUTPUT_FILE"
@@ -146,5 +148,3 @@ IFSIZE=$(du -h "$INPUT_FILE" | cut -f 1)
 OFSIZE=$(du -h "$OUTPUT_FILE" | cut -f 1)
 echo "Input file size: $IFSIZE"
 echo "Output file size: $OFSIZE"
-
-

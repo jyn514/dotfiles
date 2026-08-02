@@ -429,6 +429,77 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("\n/usr/bin\n/bin\n\n", result.stdout)
 
+    def test_pdf_optimize_propagates_ghostscript_failure(self) -> None:
+        source = self.directory / "source.pdf"
+        output = self.directory / "output.pdf"
+        source.write_text("pdf\n")
+        self.executable("file", "printf 'PDF document\\n'\n")
+        self.executable("gs", "exit 42\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/pdf-optimize"), str(source), str(output)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMPDIR": str(self.directory),
+            },
+        )
+
+        self.assertEqual(42, result.returncode)
+        self.assertFalse(output.exists())
+
+    def test_fork_github_strips_page_url_suffixes(self) -> None:
+        calls = self.directory / "git-calls"
+        self.executable(
+            "git",
+            'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
+            'if [ "$1" = clone ]; then mkdir "$4"; fi\n',
+        )
+
+        result = subprocess.run(
+            [
+                str(ROOT / "bin/fork-github"),
+                "https://github.com/user/repository?tab=readme-ov-file",
+            ],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "GIT_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "clone --filter=blob:none https://github.com/user/repository.git repository",
+            calls.read_text().splitlines()[0],
+        )
+
+    def test_youtube_search_passes_only_search_terms(self) -> None:
+        calls = self.directory / "ddg-calls"
+        self.executable("ddg", 'printf "<%s>\\n" "$@" > "$DDG_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/youtube_search"), "tea", "ceremony"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "DDG": str(self.directory / "ddg"),
+                "DDG_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "<site:youtube.com/playlist>\n<tea>\n<ceremony>\n",
+            calls.read_text(),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
