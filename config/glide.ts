@@ -117,10 +117,6 @@ glide.keymaps.set("normal", "p", async() => {
 glide.keymaps.set("normal", "U", "keys <C-S-z>");
 glide.keymaps.set("normal", "U", "keys <D-S-z>");
 
-// forward/back arrows
-glide.keymaps.set(["insert", "normal"], "<A-Right>", "forward");
-glide.keymaps.set(["insert", "normal"], "<A-Left>", "back");
-
 // help
 // https://github.com/glide-browser/glide/discussions/155
 glide.keymaps.set("normal", "<C-?>",
@@ -289,4 +285,3 @@ glide.o.hint_label_generator = async ({ content }) => {
 	const haystack = texts.map(([text, label]) => strip(text) || strip(label || ""));
 	return labels(haystack);
 };
-
