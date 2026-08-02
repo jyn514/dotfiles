@@ -85,7 +85,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	parent = "!f() { branches=$(git show-branch --topo-order --current 'upstream/*') || return; parent=$(echo \"$branches\" | awk '!/^[[:space:]]*!/ && /refs\\/remotes\\/upstream\\// && /^[^[]*\\*/ { line=$0; sub(/^.*refs\\/remotes\\/upstream\\//, \"refs/remotes/upstream/\", line); sub(/].*$/, \"\", line); print line; exit }') || return; [ -n \"$parent\" ] || return 1; git rev-parse --symbolic-full-name \"$parent\"; }; f"
 	default-branch = "!f() { ref=$(git symbolic-ref refs/remotes/upstream/HEAD) || return; echo \"$ref\" | sed 's@^refs/remotes/upstream/@@'; }; f"
 
-	delete-merged = "!f() { branches=$(git branch -r --merged) || return; branches=$(echo \"$branches\" | sed -n 's@^[ *]*personal/@@p') || return; [ -z \"$branches\" ] || git push personal --delete --no-verify $branches; }; f"
+	delete-merged = "!f() { remote_head=$(git symbolic-ref --quiet --short refs/remotes/personal/HEAD 2>/dev/null) || remote_head=; remote_head=${remote_head#personal/}; branches=$(git branch -r --merged) || return; branches=$(printf '%s\\n' \"$branches\" | awk -v head=\"$remote_head\" '/ -> / { next } /^[ *]*personal\\// { sub(/^[ *]*personal\\//, \"\"); if ($0 != head) print }') || return; [ -z \"$branches\" ] || git push personal --delete --no-verify $branches; }; f"
 	mr = "!sh -c 'git fetch \"$1\" \"merge-requests/$2/head:mr-$2\" && git checkout \"mr-$2\"' -"
 
 [status]
