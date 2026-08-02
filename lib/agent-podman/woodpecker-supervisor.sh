@@ -45,7 +45,10 @@ run)
 	[ "$#" -eq 0 ] || die "run accepts arguments only through standard input"
 	[ -d "$RUN_DIR/repo" ] || die "unknown run"
 	args=()
-	mapfile -d '' -t args
+	while IFS= read -r -d '' argument; do
+		args+=("$argument")
+	done
+	unset argument
 	[ "${#args[@]}" -ge 2 ] && [ "${args[0]}" = exec ] || \
 		die "run requires a Woodpecker exec command"
 	podman run --rm --volume "$RUN_DIR/repo:/workspace:z" "$RELABEL_IMAGE" /bin/true

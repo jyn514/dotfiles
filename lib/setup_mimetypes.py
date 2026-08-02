@@ -536,7 +536,8 @@ def main() -> None:
     arguments = parser.parse_args()
     policy = load_policy(POLICY_PATH)
     try:
-        if sys.platform == "darwin":
+        platform = os.environ.get("SETUP_MIMETYPES_PLATFORM", sys.platform)
+        if platform == "darwin":
             macos_setup(policy, arguments.dry_run)
         elif command_exists("xdg-mime"):
             linux_setup(policy, arguments.dry_run)

@@ -45,7 +45,7 @@ class InstallationTests(unittest.TestCase):
             "macos": (),
             "ubuntu": ("apt",),
         }[platform["ID"]]
-        for command in (*managers, "brew", "code", "keymapp", "pwsh"):
+        for command in (*managers, "brew", "code", "curl", "keymapp", "pwsh"):
             (self.bin / command).symlink_to(recorder)
 
         apt_cache = self.bin / "apt-cache"
@@ -63,7 +63,7 @@ class InstallationTests(unittest.TestCase):
         env.update(
             DOAS_USER="",
             INSTALL_COMMAND_LOG=str(self.log),
-            PATH=f"{self.bin}:{env['PATH']}",
+            PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             SUDO_USER="",
         )
         return subprocess.run(
@@ -236,6 +236,7 @@ class InstallationTests(unittest.TestCase):
             replacements = {
                 "build-essential": None,
                 "clangd": None,
+                "curl": None,
                 "fd-find": "fd",
                 "fscrypt": None,
                 "libpam-fscrypt": None,
@@ -344,7 +345,7 @@ class LocalInstallationTests(unittest.TestCase):
             DOAS_USER="",
             HOME=str(self.home),
             INSTALL_COMMAND_LOG=str(self.log),
-            PATH=f"{self.bin}:{env['PATH']}",
+            PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             SSH_AUTH_SOCK="",
             SUDO_USER="",
         )
@@ -367,7 +368,7 @@ class LocalInstallationTests(unittest.TestCase):
             DOAS_USER="",
             HOME=str(self.home),
             INSTALL_COMMAND_LOG=str(self.log),
-            PATH=f"{self.bin}:{env['PATH']}",
+            PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             SSH_AUTH_SOCK="",
             SUDO_USER="",
         )

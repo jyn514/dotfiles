@@ -118,6 +118,14 @@ class SupervisorTest(unittest.TestCase):
         podman = self.bin / "podman"
         podman.write_text("#!/bin/sh\nexit 0\n")
         podman.chmod(0o755)
+        setsid = self.bin / "setsid"
+        setsid.write_text(
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "os.setsid()\n"
+            "os.execvp(sys.argv[1], sys.argv[1:])\n"
+        )
+        setsid.chmod(0o755)
         self.cli = self.home / ".local/bin/woodpecker-cli"
         self.cli.parent.mkdir(parents=True)
         self.env = os.environ.copy()

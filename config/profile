@@ -7,6 +7,9 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 	. ~/.keychain/"$(hostname | tr -d '\n')"-sh
 fi
 
+if ! exists realpath; then
+	. "$(dirname "$(readlink ~/.profile)")/../lib/realpath.sh"
+fi
 DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..")
 
 add_path () {
