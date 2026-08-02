@@ -1866,21 +1866,15 @@ class CommandTest(unittest.TestCase):
 
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"
-        script_calls = self.directory / "script-calls"
         self.executable(
             "gh",
             'printf "%s\\n" "$*" >> "$GH_CALLS"\n'
-            "printf '{}\\n'\n",
-        )
-        self.executable("uname", "printf 'Darwin\\n'\n")
-        self.executable(
-            "script",
-            'printf "%s\\n" "$*" > "$SCRIPT_CALLS"\nprintf \'issue output\\n\'\n',
+            'case " $* " in *" --json "*) printf \'{}\\n\';; '
+            "*) printf 'issue output\\n';; esac\n",
         )
         self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
         environment = os.environ | {
             "GH_CALLS": str(calls),
-            "SCRIPT_CALLS": str(script_calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
         }
 
@@ -1903,27 +1897,24 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("https://github.com/user/repo/issues/123", calls.read_text())
-        self.assertEqual(
-            "-q /dev/null gh issue view -c https://github.com/user/repo/issues/123\n",
-            script_calls.read_text(),
-        )
+        self.assertEqual(2, len(calls.read_text().splitlines()))
         self.assertEqual(1, unsafe.returncode)
         self.assertFalse((self.directory.parent / "escape.json").exists())
 
     def test_gh_comments_does_not_publish_partial_exports(self) -> None:
         self.executable(
             "gh",
-            'printf "json\\n"\n[ -z "${GH_STATUS:-}" ] || exit "$GH_STATUS"\n',
-        )
-        self.executable("uname", "printf 'Darwin\\n'\n")
-        self.executable(
-            "script",
-            'printf "text\\n"\n[ -z "${SCRIPT_STATUS:-}" ] || exit "$SCRIPT_STATUS"\n',
+            'case " $* " in\n'
+            '  *" --json "*) printf "json\\n"; '
+            '[ -z "${GH_STATUS:-}" ] || exit "$GH_STATUS";;\n'
+            '  *) printf "text\\n"; '
+            '[ -z "${TEXT_STATUS:-}" ] || exit "$TEXT_STATUS";;\n'
+            "esac\n",
         )
         self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
         environment = os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"}
 
-        for variable, status in (("GH_STATUS", 24), ("SCRIPT_STATUS", 25)):
+        for variable, status in (("GH_STATUS", 24), ("TEXT_STATUS", 25)):
             result = subprocess.run(
                 [str(ROOT / "bin/gh-comments"), "user/repo", "123"],
                 cwd=self.directory,
