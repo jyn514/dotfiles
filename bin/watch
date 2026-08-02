@@ -1,54 +1,15 @@
-#!/usr/bin/env bash
-set -eu
+#!/usr/bin/env python3
+"""Stable launcher for the buffered terminal watch command."""
 
-here=$(realpath "$(dirname "$0")")
+from pathlib import Path
+import sys
 
-usage() { echo "usage: $0 [-n <interval>] [-x <shell>] <...args>" >&2; exit 1; }
-get() {
-  i=1
-  k=$1; shift
-  v=${1/-$k/}; shift
-  if ! [ "$v" ]; then
-    if [ $# -lt 1 ]; then usage; fi
-    v="$1"; shift
-    i=2
-  fi
-  printf "%s;%d" "$v" "$i"
-}
 
-interval=2
-shell=${SHELL:-sh}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "watch"))
 
-[ $# = 0 ] && usage
+from watch_command.main import main  # noqa: E402
 
-while [ $# -gt 0 ]; do
-  case "$1" in
-  -n*) IFS=';' read -r interval ind <<< "$(get n "$@")"
-    if ! [ "$ind" ]; then exit 1; fi
-    shift "$ind"
-    ;;
-  -x*) IFS=';' read -r shell ind <<< "$(get x "$@")"
-    if ! [ "$ind" ]; then exit 1; fi
-    shift "$ind"
-    ;;
-  *) break;;
-  esac
-done
 
-echo "$interval $shell $*" >&2
-
-trap 'tput rmcup' EXIT
-tput smcup || true
-clear
-while :; do
-  # reduce flicker by not updating until the command finishes executing
-  set +e
-  o=$("$here/../libexec/runinpty.py" "$shell" -c "$*" 2>&1)
-  command_status=$?
-  set -e
-  clear -x
-  printf %s "$o"
-  [ "$command_status" -eq 0 ] || printf '\n[exit %s]' "$command_status"
-  sleep "$interval"
-done
-clear -x
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
