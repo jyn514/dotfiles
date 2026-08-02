@@ -219,16 +219,7 @@ whatismyip() {
 
 alias what_belongs=what-belongs
 
-what_runs () {
-	local file files
-	files=$(command what-belongs "$@") || return
-	[ -n "$files" ] || return 0
-	printf '%s\n' "$files" | while IFS= read -r file; do
-		if [ -f "$file" ] && [ -x "$file" ]; then
-			echo "$file"
-		fi
-	done
-}
+alias what_runs=what-runs
 
 what_package () {
 	local prog
