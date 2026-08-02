@@ -1,100 +1,62 @@
+def allow(pattern):
+    prefix_rule(pattern=pattern, decision="allow")
+
+
 # Project-independent clojure tools.deps commands
-prefix_rule(pattern=["clojure", "-Sdeps"], decision="allow")
-prefix_rule(pattern=["clojure", "-Spath"], decision="allow")
-prefix_rule(pattern=["bb", "tasks"], decision="allow")
+allow(["clojure", ["-Sdeps", "-Spath"]])
+allow(["bb", "tasks"])
 
 # Read-only jj commands
-prefix_rule(pattern=["jj", "status"], decision="allow")
-prefix_rule(pattern=["jj", "diff"], decision="allow")
-prefix_rule(pattern=["jj", "log"], decision="allow")
-prefix_rule(pattern=["jj", "show"], decision="allow")
-prefix_rule(pattern=["jj", "interdiff"], decision="allow")
-prefix_rule(pattern=["jj", "file", "list"], decision="allow")
-prefix_rule(pattern=["jj", "file", "show"], decision="allow")
-prefix_rule(pattern=["jj", "help"], decision="allow")
-prefix_rule(pattern=["jj", "config", "list"], decision="allow")
-prefix_rule(pattern=["jj", "config", "get"], decision="allow")
-prefix_rule(pattern=["jj", "--version"], decision="allow")
-prefix_rule(pattern=["jj", "bookmark", "list"], decision="allow")
-prefix_rule(pattern=["jj", "bookmark", "advance", "--help"], decision="allow")
-prefix_rule(pattern=["jj", "workspace", "list"], decision="allow")
+allow(["jj", ["status", "diff", "log", "show", "interdiff", "help", "--version"]])
+allow(["jj", "file", ["list", "show"]])
+allow(["jj", "config", ["list", "get"]])
+allow(["jj", "bookmark", "list"])
+allow(["jj", "bookmark", "advance", "--help"])
+allow(["jj", "workspace", "list"])
 
 # Read-only git commands
-prefix_rule(pattern=["git", "ls-remote"], decision="allow")
-prefix_rule(pattern=["git", "cherry"], decision="allow")
-prefix_rule(pattern=["git", "push", "--dry-run"], decision="allow")
-prefix_rule(pattern=["git", "cat-file"], decision="allow")
-prefix_rule(pattern=["git", "diff", "--check"], decision="allow")
+allow(["git", ["ls-remote", "cherry", "cat-file"]])
+allow(["git", "push", "--dry-run"])
+allow(["git", "diff", "--check"])
 
 # Read-only utils
-prefix_rule(pattern=["true"], decision="allow")
-prefix_rule(pattern=["cat"], decision="allow")
-prefix_rule(pattern=["rg"], decision="allow")
-prefix_rule(pattern=["grep"], decision="allow")
-prefix_rule(pattern=["jq"], decision="allow")
-prefix_rule(pattern=["head"], decision="allow")
-prefix_rule(pattern=["tail"], decision="allow")
-prefix_rule(pattern=["ps"], decision="allow")
-prefix_rule(pattern=["echo"], decision="allow")
-prefix_rule(pattern=["wc"], decision="allow")
-prefix_rule(pattern=["diff"], decision="allow")
-prefix_rule(pattern=["ls"], decision="allow")
-prefix_rule(pattern=["find"], decision="allow")
-prefix_rule(pattern=["sort"], decision="allow")
-prefix_rule(pattern=["nl"], decision="allow")
-prefix_rule(pattern=["sleep"], decision="allow")
-prefix_rule(pattern=["diff-check"], decision="allow")
-prefix_rule(pattern=["mise", "activate"], decision="allow")
+allow([[
+        "true", "cat", "rg", "grep", "jq", "head", "tail", "ps", "echo",
+        "wc", "diff", "ls", "find", "sort", "nl", "sleep", "diff-check",
+]])
+allow(["mise", "activate"])
 
 # Misc non-destructive mutating commands
-prefix_rule(pattern=["git", "bug"], decision="allow")
-prefix_rule(pattern=["podman", "ps"], decision="allow")
-prefix_rule(pattern=["podman", "images"], decision="allow")
-prefix_rule(pattern=["podman", "inspect"], decision="allow")
-prefix_rule(pattern=["podman", "logs"], decision="allow")
-prefix_rule(pattern=["podman", "stats"], decision="allow")
-prefix_rule(pattern=["podman", "version"], decision="allow")
-prefix_rule(pattern=["podman", "info"], decision="allow")
-prefix_rule(pattern=["podman", "image"], decision="allow")
-prefix_rule(pattern=["zola", "build"], decision="allow")
-prefix_rule(pattern=["kaocha"], decision="allow")
-prefix_rule(pattern=["yt-dlp", "--list-subs"], decision="allow")
-prefix_rule(pattern=["woodpecker-cli", "exec"], decision="allow")
-prefix_rule(pattern=["act", "pull_request"], decision="allow")
-prefix_rule(pattern=["tree-sitter"], decision="allow")
-prefix_rule(pattern=["cargo"], decision="allow")
-prefix_rule(pattern=["go"], decision="allow")
-prefix_rule(pattern=["gofmt"], decision="allow")
-prefix_rule(pattern=["tea", "issue"], decision="allow")
-prefix_rule(pattern=["pgrep"], decision="allow")
-prefix_rule(pattern=["jcmd"], decision="allow")
-prefix_rule(pattern=["git", "clone"], decision="allow")
-prefix_rule(pattern=["jj", "workspace", "add"], decision="allow")
-prefix_rule(pattern=["jj", "commit"], decision="allow")
-prefix_rule(pattern=["lpstat"], decision="allow")
-prefix_rule(pattern=["lpinfo"], decision="allow")
-prefix_rule(pattern=["skopeo", "inspect"], decision="allow")
-prefix_rule(pattern=["skopeo", "list-tags"], decision="allow")
+allow(["git", ["bug", "clone"]])
+
+docker_cmds = ["ps", "images", "inspect", "logs", "stats", "version", "info"]
+allow([["podman", "docker"], docker_cmds])
+allow([["podman", "docker"], "image", "list"])
+
+allow([[
+        "kaocha", "tree-sitter", "cargo", "go", "gofmt", "pgrep", "jcmd",
+        "lpstat", "lpinfo",
+]])
+allow(["zola", "build"])
+allow(["yt-dlp", "--list-subs"])
+allow(["woodpecker-cli", "exec"])
+allow(["act", "pull_request"])
+allow(["tea", "issue"])
+allow(["jj", "workspace", "add"])
+allow(["jj", "commit"])
+allow(["skopeo", ["inspect", "list-tags"]])
 
 # Watchman read-only commands
-prefix_rule(pattern=["watchman", "watch-list"], decision="allow")
-prefix_rule(pattern=["watchman", "version"], decision="allow")
-prefix_rule(pattern=["watchman", "get-config"], decision="allow")
-prefix_rule(pattern=["watchman", "subscription-list"], decision="allow")
-prefix_rule(pattern=["watchman", "since"], decision="allow")
-prefix_rule(pattern=["watchman", "query"], decision="allow")
-prefix_rule(pattern=["watchman", "debug-get-subscriptions"], decision="allow")
-prefix_rule(pattern=["watchman", "find"], decision="allow")
+allow(["watchman", [
+        "watch-list", "version", "get-config", "subscription-list", "since",
+        "query", "debug-get-subscriptions", "find",
+]])
 
 # Tmux read-only commands
-prefix_rule(pattern=["tmux", "show-option"], decision="allow")
-prefix_rule(pattern=["tmux", "show-hooks"], decision="allow")
-prefix_rule(pattern=["tmux", "list-keys"], decision="allow")
-prefix_rule(pattern=["tmux", "source-file", "-n"], decision="allow")
-prefix_rule(pattern=["tmux", "list-commands"], decision="allow")
-prefix_rule(pattern=["tmux", "info"], decision="allow")
-prefix_rule(pattern=["tmux", "display-message"], decision="allow")
-prefix_rule(pattern=["tmux", "list-panes"], decision="allow")
+allow(["tmux", [
+        "show-option", "show-hooks", "list-keys", "list-commands", "info",
+        "display-message", "list-panes",
+]])
+allow(["tmux", "source-file", "-n"])
 
 # Unsorted
-prefix_rule(pattern=["id"], decision="allow")
