@@ -201,6 +201,7 @@ what_belongs () {
 		rpm -ql "$@"
 	else
 		echo "no supported package manager found" >&2
+		return 1
 	fi
 }
 
@@ -222,17 +223,21 @@ what_package () {
 		rpm -qf "$prog" "$@"
 	else
 		echo "no supported package manager found" >&2
+		return 1
 	fi
 }
 
-# don't replace crontab without warning
+# Do not remove a crontab without warning, even where crontab lacks -i.
 crontab() {
-	if command crontab -i -l >/dev/null 2>/dev/null; then
-		crontab () { command crontab -i "$@"; }
-	else
-		crontab () { command crontab "$@"; }
-	fi
-	crontab "$@"
+	for argument do
+		if [ "$argument" = -r ]; then
+			printf 'remove crontab? [y/N] '
+			IFS= read -r reply || return
+			[ "$reply" = y ] || return 0
+			break
+		fi
+	done
+	command crontab "$@"
 }
 
 # show a makefile as a dependency graph

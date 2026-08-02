@@ -218,6 +218,10 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("tail --lines=+3", profile)
         self.assertIn('$HOME/.config/helix/steel-lsp', languages)
         self.assertNotIn("/home/jyn", languages)
+        self.assertEqual(2, profile.count('echo "no supported package manager found" >&2\n\t\treturn 1'))
+        self.assertIn("printf 'remove crontab? [y/N] '", profile)
+        self.assertIn('IFS= read -r reply || return', profile)
+        self.assertNotIn("crontab -i -l", profile)
 
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
