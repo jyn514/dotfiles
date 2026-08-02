@@ -14,7 +14,6 @@ uv = "latest"
 "cargo:cargo-audit" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:cargo-outdated" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:cargo-sweep" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
-"cargo:cargo-tree" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:counts" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:librespot" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"], os = ["linux/x64", "macos/x64", "windows/x64"] }
 "cargo:mdbook" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }

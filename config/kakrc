@@ -57,7 +57,7 @@ map global picker c ': comment-line<ret>' -docstring "comment out the current li
 map global picker . ': lsp-code-actions<ret>' -docstring "show LSP actions"
 
 # LSP
-eval %sh{kak-lsp --kakoune -s $kak_session}  # Not needed if you load it with plug.kak.
+eval %sh{kak-lsp --kakoune -s "$kak_session"}  # Not needed if you load it with plug.kak.
 lsp-enable
 
 hook global WinSetOption filetype=.* %{

@@ -34,3 +34,6 @@ find . -type f -print0 | xargs -0 python3 "$hook_dir/pre_commit_hooks/destroyed_
 for c in case_conflict end_of_file executables_have_shebangs json merge_conflict shebang_scripts_are_executable toml vcs_permalinks; do
     find . -type f -print0 | xargs -0 python3 "$hook_dir/pre_commit_hooks/check_$c.py"
 done
+find . -type f -name '*.xml' -exec python3 "$hook_dir/pre_commit_hooks/check_xml.py" {} +
+find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
+	-exec python3 "$hook_dir/pre_commit_hooks/check_yaml.py" {} +

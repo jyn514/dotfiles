@@ -739,7 +739,6 @@ class MiseConfigTests(unittest.TestCase):
             "cargo-audit",
             "cargo-outdated",
             "cargo-sweep",
-            "cargo-tree",
             "counts",
             "librespot",
             "mdbook",
@@ -799,6 +798,20 @@ class MiseConfigTests(unittest.TestCase):
             "GITHUB_TOKEN", config["settings"]["github"]["oauth_export_env"]
         )
         self.assertFalse((ROOT / "install/rust.txt").exists())
+        self.assertIn(
+            "ruamel.yaml", (ROOT / "install/python.txt").read_text().splitlines()
+        )
+
+        cargo_config = tomllib.loads((ROOT / "config/cargo.toml").read_text())
+        self.assertEqual(
+            [
+                "cargo:token",
+                "cargo:libsecret",
+                "cargo:macos-keychain",
+                "cargo:wincred",
+            ],
+            cargo_config["registry"]["global-credential-providers"],
+        )
 
     def test_lockfile_covers_every_declared_tool(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
@@ -909,6 +922,10 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("complete_alias cd z || return", bashrc)
         self.assertIn("compinit -C || return", zshrc)
         self.assertIn("set -l results (command zoxide query", fish_z)
+        self.assertIn("-name '*.xml'", pre_commit)
+        self.assertIn('check_xml.py"', pre_commit)
+        self.assertIn("-name '*.yaml' -o -name '*.yml'", pre_commit)
+        self.assertIn('check_yaml.py"', pre_commit)
         self.assertIn(". ~/.local/profile.fish\n\tor return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/env.sh; or return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/paths.sh; or return", fish_config)

@@ -387,10 +387,6 @@ backend = "cargo:cargo-outdated"
 version = "0.8.0"
 backend = "cargo:cargo-sweep"
 
-[[tools."cargo:cargo-tree"]]
-version = "0.29.0"
-backend = "cargo:cargo-tree"
-
 [[tools."cargo:counts"]]
 version = "1.0.7"
 backend = "cargo:counts"

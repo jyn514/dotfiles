@@ -619,6 +619,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("{ 'for': 'latex' }", vimrc)
         self.assertIn("ZSH_PROFILE_READ=1\n. ~/.profile || return", zprofile)
         self.assertIn('awk -v arg="$1"', profile)
+        self.assertIn('kak-lsp --kakoune -s "$kak_session"', kakoune)
+        self.assertNotIn('kak-lsp --kakoune -s $kak_session', kakoune)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("local codename http_status man_index section url", profile)
