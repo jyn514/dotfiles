@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+
+import argparse
+import copy
+import difflib
+import hashlib
+import json
+import os
+import subprocess
+import tempfile
+import urllib.request
+from pathlib import Path
+from typing import Callable
+
+
+ROOT = Path(__file__).resolve().parent.parent
+JsonFetcher = Callable[[str], dict]
+BytesFetcher = Callable[[str], bytes]
+
+
+def request(url: str) -> urllib.request.Request:
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "dotfiles-lock-updater"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {token}"
+    return urllib.request.Request(url, headers=headers)
+
+
+def fetch_json(url: str) -> dict:
+    with urllib.request.urlopen(request(url)) as response:
+        return json.load(response)
+
+
+def fetch_bytes(url: str) -> bytes:
+    with urllib.request.urlopen(request(url)) as response:
+        return response.read()
+
+
+def git_revision(url: str, reference: str = "HEAD") -> str:
+    result = subprocess.run(
+        ["git", "ls-remote", url, reference, f"{reference}^{{}}"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    revisions = [line.split()[0] for line in result.stdout.splitlines()]
+    if not revisions:
+        raise ValueError(f"no revision found for {url} {reference}")
+    return revisions[-1]
+
+
+def github_release(repository: str, get_json: JsonFetcher) -> dict:
+    return get_json(f"https://api.github.com/repos/{repository}/releases/latest")
+
+
+def update_git_entries(manifest: dict, get_json: JsonFetcher) -> None:
+    for entry in manifest["git"].values():
+        update = entry["update"]
+        if update["type"] == "git-head":
+            entry["revision"] = git_revision(entry["url"])
+        elif update["type"] == "github-release":
+            release = github_release(update["repository"], get_json)
+            entry["revision"] = git_revision(entry["url"], f"refs/tags/{release['tag_name']}")
+        else:
+            raise ValueError(f"unknown Git update type: {update['type']}")
+
+
+def checksum(url: str, get_bytes: BytesFetcher) -> str:
+    return hashlib.sha256(get_bytes(url)).hexdigest()
+
+
+def update_download_entries(
+    manifest: dict, get_json: JsonFetcher, get_bytes: BytesFetcher
+) -> None:
+    for entry in manifest["downloads"].values():
+        update = entry["update"]
+        if update["type"] == "github-file":
+            source = manifest["git"][update["revision_from"]]
+            repository = source["url"].removeprefix("https://github.com/").removesuffix(".git")
+            entry["url"] = (
+                f"https://raw.githubusercontent.com/{repository}/"
+                f"{source['revision']}/{update['path']}"
+            )
+        elif update["type"] == "codeberg-release":
+            release = get_json(
+                f"https://codeberg.org/api/v1/repos/{update['repository']}/releases/latest"
+            )
+            asset = next(
+                asset for asset in release["assets"] if asset["name"] == update["asset"]
+            )
+            entry["url"] = asset["browser_download_url"]
+        else:
+            raise ValueError(f"unknown download update type: {update['type']}")
+        entry["sha256"] = checksum(entry["url"], get_bytes)
+
+
+def update_bundles(manifest: dict, get_json: JsonFetcher, get_bytes: BytesFetcher) -> None:
+    for bundle in manifest.values():
+        update = bundle["update"]
+        release = github_release(update["repository"], get_json)
+        release_assets = {asset["name"]: asset for asset in release["assets"]}
+        for platform, asset_name in update["assets"].items():
+            asset = release_assets[asset_name]
+            bundle["platforms"][platform] = asset["browser_download_url"]
+            digest = asset.get("digest") or ""
+            if digest.startswith("sha256:"):
+                bundle["sha256"][platform] = digest.removeprefix("sha256:")
+            else:
+                bundle["sha256"][platform] = checksum(asset["browser_download_url"], get_bytes)
+
+
+def serialized(value: dict) -> str:
+    return json.dumps(value, indent=2, sort_keys=True) + "\n"
+
+
+def atomic_write(path: Path, contents: str) -> None:
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            output.write(contents)
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def show_diff(path: Path, before: str, after: str) -> None:
+    print(
+        "".join(
+            difflib.unified_diff(
+                before.splitlines(keepends=True),
+                after.splitlines(keepends=True),
+                fromfile=str(path),
+                tofile=str(path),
+            )
+        ),
+        end="",
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Refresh pinned bootstrap revisions and checksums")
+    parser.add_argument("--dry-run", action="store_true", help="show changes without writing them")
+    parser.add_argument(
+        "--bootstrap-manifest", type=Path, default=ROOT / "install/bootstrap.lock.json"
+    )
+    parser.add_argument(
+        "--bundles-manifest", type=Path, default=ROOT / "install/bundles.json"
+    )
+    arguments = parser.parse_args()
+    paths = (arguments.bootstrap_manifest, arguments.bundles_manifest)
+    before = {path: path.read_text() for path in paths}
+    manifests = {path: copy.deepcopy(json.loads(before[path])) for path in paths}
+    try:
+        update_git_entries(manifests[arguments.bootstrap_manifest], fetch_json)
+        update_download_entries(
+            manifests[arguments.bootstrap_manifest], fetch_json, fetch_bytes
+        )
+        update_bundles(manifests[arguments.bundles_manifest], fetch_json, fetch_bytes)
+    except (KeyError, OSError, StopIteration, ValueError, subprocess.CalledProcessError) as error:
+        parser.exit(1, f"lock update failed: {error}\n")
+
+    changed = False
+    for path in paths:
+        after = serialized(manifests[path])
+        if after == before[path]:
+            continue
+        changed = True
+        if arguments.dry_run:
+            show_diff(path, before[path], after)
+        else:
+            atomic_write(path, after)
+            print(f"updated {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+    if not changed:
+        print("bootstrap locks are up to date")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

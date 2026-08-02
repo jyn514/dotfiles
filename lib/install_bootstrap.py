@@ -67,9 +67,23 @@ def main() -> int:
         subparser = subparsers.add_parser(command)
         subparser.add_argument("name")
         subparser.add_argument("destination", type=Path)
+    get_parser = subparsers.add_parser("get")
+    get_parser.add_argument("kind", choices=("downloads", "git"))
+    get_parser.add_argument("name")
+    get_parser.add_argument("field")
     arguments = parser.parse_args()
-    kind = "downloads" if arguments.command == "download" else "git"
     try:
+        if arguments.command == "get":
+            value = load_entry(
+                arguments.manifest, arguments.kind, arguments.name
+            ).get(arguments.field)
+            if not isinstance(value, str):
+                raise ValueError(
+                    f"locked {arguments.kind} source {arguments.name} has no string field {arguments.field}"
+                )
+            print(value)
+            return 0
+        kind = "downloads" if arguments.command == "download" else "git"
         entry = load_entry(arguments.manifest, kind, arguments.name)
         if arguments.command == "download":
             download(entry, arguments.destination)

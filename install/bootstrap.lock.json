@@ -2,37 +2,97 @@
   "downloads": {
     "fisher": {
       "sha256": "0fb6c81ae3003e95b5671766fa6c25c3597066e29965b7772f6c1b007387356d",
+      "update": {
+        "path": "functions/fisher.fish",
+        "revision_from": "fisher",
+        "type": "github-file"
+      },
       "url": "https://raw.githubusercontent.com/jorgebucaran/fisher/791da644d33d392216f6b1a9b5fc1e470db6d7f2/functions/fisher.fish"
     },
     "krohnkite": {
       "sha256": "42f7f66531d366c74b5fc860381da3517ccb4cdccd1f80c122fcab6e9a8fcf7e",
+      "update": {
+        "asset": "krohnkite.kwinscript",
+        "repository": "anametologin/Krohnkite",
+        "type": "codeberg-release"
+      },
       "url": "https://codeberg.org/anametologin/Krohnkite/releases/download/0.9.9.2/krohnkite.kwinscript"
     },
     "vim-plug": {
       "sha256": "20b4c895f98d13848204698068c4dd031730d4e7c9c4b630d6273b9b9afcdcdb",
+      "update": {
+        "path": "plug.vim",
+        "revision_from": "vim-plug",
+        "type": "github-file"
+      },
       "url": "https://raw.githubusercontent.com/junegunn/vim-plug/0.14.0/plug.vim"
     }
   },
   "git": {
     "antidote": {
       "revision": "de483db6da7fe50c0047fbe842974eb24a0ee279",
+      "update": {
+        "type": "git-head"
+      },
       "url": "https://github.com/mattmc3/antidote.git"
+    },
+    "brew-command-not-found": {
+      "revision": "45e60456edbe795cc293bfa2d2a787a7c557e4a6",
+      "update": {
+        "type": "git-head"
+      },
+      "url": "https://github.com/jyn514/brew-command-not-found.git"
     },
     "dynamic-workspaces": {
       "revision": "a06e723804398d672be74eba0cd4ccee062e1410",
+      "update": {
+        "type": "git-head"
+      },
       "url": "https://github.com/maurges/dynamic_workspaces.git"
+    },
+    "fisher": {
+      "revision": "791da644d33d392216f6b1a9b5fc1e470db6d7f2",
+      "update": {
+        "type": "git-head"
+      },
+      "url": "https://github.com/jorgebucaran/fisher.git"
     },
     "fzf-tab-completion": {
       "revision": "7014e0a7cd68fe3530e2f58c45740d17e98f05b8",
+      "update": {
+        "type": "git-head"
+      },
       "url": "https://github.com/lincheney/fzf-tab-completion.git"
     },
     "lazy.nvim": {
       "revision": "85c7ff3711b730b4030d03144f6db6375044ae82",
+      "update": {
+        "repository": "folke/lazy.nvim",
+        "type": "github-release"
+      },
       "url": "https://github.com/folke/lazy.nvim.git"
     },
     "tpm": {
       "revision": "e261deb1b47614eed3400089ce7197dc68acc4eb",
+      "update": {
+        "type": "git-head"
+      },
       "url": "https://github.com/tmux-plugins/tpm.git"
+    },
+    "vim-plug": {
+      "revision": "d80f495fabff8446972b8695ba251ca636a047b0",
+      "update": {
+        "repository": "junegunn/vim-plug",
+        "type": "github-release"
+      },
+      "url": "https://github.com/junegunn/vim-plug.git"
+    },
+    "zoxide.fish": {
+      "revision": "27a058a661e2eba021b90e9248517b6c47a22674",
+      "update": {
+        "type": "git-head"
+      },
+      "url": "https://github.com/icezyclon/zoxide.fish.git"
     }
   }
 }
