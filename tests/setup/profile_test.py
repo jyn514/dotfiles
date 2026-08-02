@@ -151,6 +151,8 @@ class ProfileContractTests(unittest.TestCase):
         languages = (ROOT / "config/helix/languages.toml").read_text()
 
         self.assertIn("pip list --format=freeze", profile)
+        self.assertIn("pip_data=$(pip list --format=freeze) ||", profile)
+        self.assertIn("packages=$(printf '%s\\n' \"$pip_data\" | sed", profile)
         self.assertNotIn("tail --lines=+3", profile)
         self.assertIn('$HOME/.config/helix/steel-lsp', languages)
         self.assertNotIn("/home/jyn", languages)
@@ -191,6 +193,38 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertIn('git fetch "$1" "merge-requests/$2/head:mr-$2"', alias)
         self.assertIn('git checkout "mr-$2"', alias)
+
+    def test_git_update_prompt_is_portable_and_declining_succeeds(self) -> None:
+        alias = subprocess.run(
+            [
+                "git",
+                "config",
+                "--no-includes",
+                "-f",
+                str(ROOT / "config/gitconfig"),
+                "--get",
+                "alias.update",
+            ],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.removeprefix("!")
+
+        with tempfile.TemporaryDirectory() as directory:
+            git = Path(directory) / "git"
+            git.write_text("#!/bin/sh\nexit 0\n")
+            git.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", alias],
+                input="n\n",
+                env=os.environ | {"PATH": f"{directory}:/usr/bin:/bin"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("push? [y/N] ", result.stdout)
 
     def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
         result = subprocess.run(

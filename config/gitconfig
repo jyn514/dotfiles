@@ -70,7 +70,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	message = log --format=%B -n1
 	fetch-update = !git fetch upstream && git rebase upstream/HEAD
 	rdiff = range-diff upstream/HEAD @{u} HEAD
-	update = !git fetch-update && git rdiff && read -p "'push? [y/N] '" REPLY && [ \"$REPLY\" = y ] && git pf
+	update = "!f() { git fetch-update && git rdiff || return; printf 'push? [y/N] '; IFS= read -r REPLY || return; if [ \"$REPLY\" = y ]; then git pf; fi; }; f"
 	new = !git fetch upstream && git checkout upstream/HEAD && git checkout -b
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
