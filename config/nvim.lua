@@ -94,6 +94,7 @@ function hard_tabs(count)
 end
 
 function spaces(count, global)
+	local opt
 	if global then
 		opt = vim.opt
 	else

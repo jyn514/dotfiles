@@ -389,6 +389,8 @@ class ProfileContractTests(unittest.TestCase):
     def test_path_consumers_and_comment_regex_preserve_literal_text(self) -> None:
         tmux = (ROOT / "config/tmux.conf").read_text()
         nvim = (ROOT / "config/nvim.lua").read_text()
+        glide = (ROOT / "config/glide.ts").read_text()
+        kakoune = (ROOT / "config/kakrc").read_text()
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
@@ -401,6 +403,12 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("buffer = buf,\n\t\tcallback", nvim)
         for variable in ("selections", "swaps", "moves", "upper"):
             self.assertIn(f"local {variable} =", nvim)
+        self.assertIn("function spaces(count, global)\n\tlocal opt", nvim)
+        self.assertEqual(1, glide.count('glide.keymaps.set("normal", "U"'))
+        self.assertIn('os === "mac" ? "<D-S-z>" : "<C-S-z>"', glide)
+        self.assertEqual(2, glide.count("if (currentTab?.id == null) return;"))
+        self.assertIn("if (next?.id == null) return;", glide)
+        self.assertIn("base64 | tr -d '\\n'", kakoune)
 
 
 if __name__ == "__main__":

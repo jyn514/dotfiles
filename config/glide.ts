@@ -114,8 +114,10 @@ glide.keymaps.set("normal", "p", async() => {
 });
 
 // undo
-glide.keymaps.set("normal", "U", "keys <C-S-z>");
-glide.keymaps.set("normal", "U", "keys <D-S-z>");
+glide.keymaps.set("normal", "U", async () => {
+	const { os } = await browser.runtime.getPlatformInfo();
+	await glide.keys.send(os === "mac" ? "<D-S-z>" : "<C-S-z>");
+});
 
 // help
 // https://github.com/glide-browser/glide/discussions/155
@@ -134,13 +136,16 @@ glide.keymaps.set("normal", "<D-/>",
 // move tab to new window
 glide.keymaps.set("normal", "W", async() => {
 	const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
-	browser.windows.create({ tabId: currentTab.id });
+	if (currentTab?.id == null) return;
+	await browser.windows.create({ tabId: currentTab.id });
 });
 // move tab into existing window
 glide.keymaps.set("normal", "<A-w>", async() => {
 	const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
+	if (currentTab?.id == null) return;
 	const windows = await browser.windows.getAll({ windowTypes: ["normal"] });
 	const next = windows.find(w => w.id != currentTab.windowId);
+	if (next?.id == null) return;
 
 	await browser.tabs.move(currentTab.id, { windowId: next.id, index: -1 });
 	await browser.tabs.update(currentTab.id, { active: true });
