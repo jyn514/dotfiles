@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = ROOT / "bin" / "codex-sandbox"
 AGENT_SANDBOX_DOCKERFILE = ROOT / "lib" / "agent-sandbox" / "Dockerfile"
 AGENT_WRAPPERS_PROFILE = ROOT / "lib" / "agent-sandbox" / "agent-wrappers-path.sh"
+DOTFILES_PROFILE = ROOT / "lib" / "agent-sandbox" / "dotfiles-profile.sh"
+SANDBOX_GITCONFIG = ROOT / "lib" / "agent-sandbox" / "gitconfig"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -46,6 +48,47 @@ class AgentSandboxImageTest(unittest.TestCase):
             "COPY ./lib/agent-sandbox/agent-wrappers-path.sh /etc/profile.d/agent-wrappers-path.sh",
             AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8"),
         )
+
+    def test_dotfiles_profile_is_noninteractive_and_image_managed(self) -> None:
+        result = subprocess.run(
+            [
+                "sh",
+                "-c",
+                f'. "{DOTFILES_PROFILE}"; '
+                'printf "%s\\n" "$DOTFILES_SANDBOX|$MAKEFLAGS|$PAGER|$EDITOR|$CARGO_HOME"',
+            ],
+            env={"HOME": "/sandbox-home", "PATH": "/usr/bin:/bin"},
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        )
+        self.assertEqual(
+            "1|-j4|cat|vi|/sandbox-home/.local/lib/cargo\n", result.stdout
+        )
+        profile = DOTFILES_PROFILE.read_text(encoding="utf-8")
+        for interactive_hook in ("mise activate", "prompt-command", "keychain", "direnv"):
+            self.assertNotIn(interactive_hook, profile)
+
+        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+        for source in (
+            "./lib/agent-sandbox/dotfiles-profile.sh",
+            "./lib/agent-sandbox/gitconfig",
+            "./config/editorconfig",
+            "./config/inputrc",
+        ):
+            self.assertIn(source, dockerfile)
+
+    def test_sandbox_gitconfig_keeps_diff_semantics_without_identity_or_credentials(self) -> None:
+        result = subprocess.run(
+            ["git", "config", "--file", str(SANDBOX_GITCONFIG), "--get", "diff.algorithm"],
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        )
+        self.assertEqual("histogram\n", result.stdout)
+        config = SANDBOX_GITCONFIG.read_text(encoding="utf-8")
+        self.assertNotIn("[user]", config)
+        self.assertNotIn("[credential]", config)
 
 
 class CodexSandboxTest(unittest.TestCase):

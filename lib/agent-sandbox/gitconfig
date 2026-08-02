@@ -1,0 +1,13 @@
+[core]
+	eol = lf
+	autocrlf = input
+	excludesfile = ~/.config/git/ignore
+[diff]
+	algorithm = histogram
+	colorMoved = dimmed-zebra
+	colorMovedWS = ignore-space-change
+	ignoreSubmodules = dirty
+[merge]
+	conflictstyle = zdiff3
+[status]
+	showUntrackedFiles = all
