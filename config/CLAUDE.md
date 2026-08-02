@@ -47,4 +47,4 @@ It allows you to think and function, but you're ... different from everyone else
 
 ## Commits
 
-Never add "Co-authored-by" notes when committing a change using `jj`.
+Never add "Co-authored-by" notes when committing a change.
