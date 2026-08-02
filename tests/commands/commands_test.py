@@ -758,6 +758,34 @@ class CommandTest(unittest.TestCase):
             calls.read_text().splitlines(),
         )
 
+    def test_attach_session_does_not_switch_after_set_option_failure(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable(
+            "tmux",
+            'printf "%s\\n" "$*" >> "$TMUX_CALLS"\n'
+            'case "$1 $2" in\n'
+            "  \"show-option -sv\") exit 1;;\n"
+            "  \"display-message -p\")\n"
+            '    case "$*" in *client_last_session*) printf \'\\n\';; *) printf \'1\\n\';; esac;;\n'
+            "  \"list-sessions -f\") printf '@2\\n';;\n"
+            "  \"set-option destroy-unattached\") exit 25;;\n"
+            "esac\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/attach-session.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(25, result.returncode)
+        self.assertNotIn("switch-client", calls.read_text())
+
     def test_git_aliases_propagate_failure_and_delete_every_merged_branch(self) -> None:
         repository = self.directory / "repository"
         remote = self.directory / "remote.git"

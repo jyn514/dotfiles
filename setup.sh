@@ -124,11 +124,23 @@ setup_dotfiles () {
 	fi
 	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
 	export JJ_CONFIG_PATH
-	python3 libexec/backup_dotfile_collisions.py install.conf.json || return
-	vendor/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
+	python3 libexec/backup_dotfile_collisions.py install.conf.json || {
+		result=$?
+		unset JJ_CONFIG_PATH
+		return "$result"
+	}
+	vendor/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || {
+		result=$?
+		unset JJ_CONFIG_PATH
+		return "$result"
+	}
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
-	touch ~/.config/git/credentials || return
+	touch ~/.config/git/credentials || {
+		result=$?
+		unset JJ_CONFIG_PATH
+		return "$result"
+	}
 	unset JJ_CONFIG_PATH
 }
 
@@ -149,7 +161,10 @@ setup_basics () {
 		grep -v 'set -.*e' < lib/shell/realpath.sh >> ~/.local/profile || return
 	fi
 	set +ue
-	. config/profile || return
+	. config/profile
+	result=$?
+	set -u
+	[ "$result" -eq 0 ] || return "$result"
 	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
 		python3 libexec/setup/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm || return
 	fi
@@ -305,7 +320,12 @@ setup_backup () {
 	crontab -l > "$TMP_FILE" 2>/dev/null || true;  # ignore missing crontab
 	cron_entry="0 12 * * * $BACKUP_COMMAND"
 	if ! grep -Fqx "$cron_entry" "$TMP_FILE"; then
-		echo "$cron_entry" >> "$TMP_FILE"
+		printf '%s\n' "$cron_entry" >> "$TMP_FILE" || {
+			result=$?
+			rm -f "$TMP_FILE"
+			unset BACKUP_COMMAND TMP_FILE cron_entry
+			return "$result"
+		}
 	fi
 	crontab "$TMP_FILE" || {
 		result=$?

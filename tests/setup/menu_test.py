@@ -208,6 +208,14 @@ setup_kde() { record kde; }
         self.assertNotIn("vi*|4) setup_basics", setup)
         self.assertNotIn("bac*|5) setup_basics", setup)
 
+    def test_setup_restores_strict_mode_and_checks_cron_writes(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        profile_source = setup.index("\t. config/profile\n")
+        self.assertGreater(setup.index("\tset -u\n", profile_source), profile_source)
+        self.assertIn("printf '%s\\n' \"$cron_entry\" >> \"$TMP_FILE\" || {", setup)
+        self.assertGreaterEqual(setup.count("unset JJ_CONFIG_PATH"), 4)
+
     def test_menu_has_no_dead_routes_and_reports_full_numbered_range(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 

@@ -93,10 +93,14 @@ fi
 
 [ -f ~/.local/bashrc ] && source ~/.local/bashrc
 
-source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh
-bind -x '"\t": fzf_bash_completion'
+if [ -f ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh ]; then
+	source ~/.local/lib/fzf-tab-completion/bash/fzf-bash-completion.sh
+	bind -x '"\t": fzf_bash_completion'
+fi
 
-eval "$(atuin init bash --disable-up-arrow)"
+if exists atuin; then
+	eval "$(atuin init bash --disable-up-arrow)"
+fi
 if exists direnv; then
 	eval "$(direnv hook bash)"
 fi

@@ -256,8 +256,10 @@ fzf-file() {
 zle -N fzf-file
 bindkey "^[t" fzf-file
 
-zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
-zsh-defer -12p bindkey -M vicmd '^r' atuin-search
+if exists atuin; then
+	zsh-defer -12p -c "$(atuin init zsh --disable-up-arrow)"
+	zsh-defer -12p bindkey -M vicmd '^r' atuin-search
+fi
 zsh-defer -12p bindkey -M vicmd / vi-find-next-char
 zsh-defer -12p bindkey -M vicmd '?' vi-find-prev-char
 _zsh_autosuggest_strategy_atuin-quiet() {
@@ -267,7 +269,9 @@ _zsh_autosuggest_strategy_atuin-quiet() {
 ZSH_AUTOSUGGEST_STRATEGY=(history completion atuin-quiet)
 
 # https://direnv.net/
-zsh-defer -12p -c "$(direnv hook zsh)"
+if exists direnv; then
+	zsh-defer -12p -c "$(direnv hook zsh)"
+fi
 
 # Needs to be initialized after all completions are loaded
 export FPATH=~/.local/share/zsh/site-functions:$FPATH
@@ -303,6 +307,8 @@ if typeset -f fork_github >/dev/null; then
 fi
 
 zsh-defer -12p -c 'if exists jj; then source <(jj util completion zsh); fi'
-zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
+if exists atuin; then
+	zsh-defer -12p -c "$(atuin gen-completions --shell zsh)"
+fi
 # add `-p` here if you see errors during delayed loading
 zsh-defer -c RPS1=

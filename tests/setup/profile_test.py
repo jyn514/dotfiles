@@ -122,6 +122,14 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('$HOME/.config/helix/steel-lsp', languages)
         self.assertNotIn("/home/jyn", languages)
 
+    def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+
+        self.assertIn(
+            "abbreviations=$(grep -Ev '^(#|$)' \"$DOTFILES/lib/abbr.txt\") || return",
+            profile,
+        )
+
     def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
         result = subprocess.run(
             [
