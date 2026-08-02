@@ -209,7 +209,9 @@ what_runs () {
 	files=$(what_belongs "$@") || return
 	[ -n "$files" ] || return 0
 	printf '%s\n' "$files" | while IFS= read -r file; do
-		[ -f "$file" ] && [ -x "$file" ] && echo "$file"
+		if [ -f "$file" ] && [ -x "$file" ]; then
+			echo "$file"
+		fi
 	done
 }
 
@@ -261,12 +263,13 @@ tasks () (
 )
 
 # same as tasks, but show body of recipe
-recipies () (
+recipes () (
 	make_data=$(make -npRr) || { result=$?; unset make_data; return "$result"; }
 	recipe_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}') || { result=$?; unset make_data recipe_data; return "$result"; }
 	printf '%s\n' "$recipe_data" | awk '!/^#/'
 	return $?
 )
+recipies () { recipes "$@"; }
 
 # launch and disown a command
 background () {
