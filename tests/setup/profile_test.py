@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import tempfile
@@ -282,20 +281,11 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(2, len(dragon_commands))
         self.assertEqual(5, tmux_config.count("~/.config/tmux/dragon.sh"))
         self.assertNotIn("xargs -0 ~/.config/tmux/dragon.sh", tmux_config)
-        search_program = (
-            'import os, sys; from urllib.parse import urlencode; '
-            'os.execlp("open", "open", "https://www.google.com/search?" + '
-            'urlencode({"q": sys.argv[1]}))'
+        search_command = re.search(
+            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action search --read0)'",
+            tmux_config,
         )
-        search_command = (
-            '{ cat; printf "\\0"; } | xargs -0 python3 -c '
-            + shlex.quote(search_program)
-        )
-        self.assertIn(
-            '{ cat; printf "\\0"; } | xargs -0 python3 -c', tmux_config
-        )
-        self.assertIn('urlencode({"q": sys.argv[1]})', tmux_config)
-        self.assertIn(search_program, tmux_config)
+        self.assertIsNotNone(search_command)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -330,8 +320,11 @@ class ProfileContractTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(f"-x {payload}", calls.read_text())
 
+            command = search_command.group(1).replace(
+                "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
+            )
             result = subprocess.run(
-                ["/bin/bash", "-c", search_command],
+                ["/bin/bash", "-c", command],
                 input=payload,
                 env=env,
                 text=True,
@@ -1038,8 +1031,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("export JULIA_EDITOR=editor-hax", fish)
         self.assertNotIn("JULIA_EDITOR=hx-hax", profile + fish)
         self.assertNotIn("xargs -I {}", tmux)
-        self.assertEqual(3, tmux.count("xargs -0"))
-        self.assertIn('urlencode({"q": sys.argv[1]})', tmux)
+        self.assertEqual(2, tmux.count("xargs -0"))
+        self.assertIn("picker-action search --read0", tmux)
+        self.assertNotIn('urlencode({"q": sys.argv[1]})', tmux)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("man() {\n\t\t\tlocal status", profile)
