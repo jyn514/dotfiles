@@ -18,8 +18,7 @@ main() {
 	if exists xclip; then
 		prog=xclip
 		type=--type
-		# https://wiki.archlinux.org/title/Tmux#On_Xorg
-		in="-in >/dev/null"
+		in=-in
 		out=-out
 		primary="-selection primary"
 		clipboard="-selection clipboard"
@@ -29,7 +28,7 @@ main() {
 		in=--input
 		out=--output
 		primary=--primary
-		clipboard=--cliboard
+		clipboard=--clipboard
 
 	# Wayland
 	elif exists wl-copy; then
@@ -72,7 +71,7 @@ main() {
 		type=
 	fi
 
-	case "${mode}:${2}" in
+	case "${mode}:${1:-}" in
 		copy:--primary) $prog $in $type $primary;;
 		paste:--primary) $prog $out $type $primary;;
 		copy:*) $prog $in $type $clipboard;;
