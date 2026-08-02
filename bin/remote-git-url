@@ -43,10 +43,16 @@ contents=$(printf '%s\n' "$contents" | head -n1)
 commit=
 line=
 if [ -n "$contents" ]; then
-	revision=$(git rev-list --remotes "$remote"'/HEAD~^!' | head -n1)
+	revision=$(git rev-list --remotes "$remote"'/HEAD~^!' --max-count=1) || exit
 	if [ -n "$revision" ]; then
-		out=$(git grep --line-number --heading --fixed-strings \
-			-e "$contents" "$revision" -- "$relative" | head -n2)
+		if out=$(git grep --max-count=1 --line-number --heading --fixed-strings \
+				-e "$contents" "$revision" -- "$relative"); then
+			:
+		else
+			status=$?
+			[ "$status" -eq 1 ] || exit "$status"
+			out=
+		fi
 		commit=$(echo "$out" | head -n1 | cut -d: -f1)
 		# the line number may have changed in a past commit
 		line=$(echo "$out" | tail -n1 | cut -d: -f1)
@@ -80,7 +86,7 @@ case "$upstream" in
 		fi
 		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line${end:-}"
 		;;
-	*) echo unsupported upstream "$upstream" >&2; s=2 ;;
+	*) echo unsupported upstream "$upstream" >&2; exit 2 ;;
 esac
 
 # helix doesn't respect pipes :( so we have to do this directly here
