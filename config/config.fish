@@ -373,7 +373,17 @@ else
 end
 
 function fish_prompt
-	prompt-command $fish_name $status
+	set -l last_status $status
+	set -l prompt_columns 0
+	set -q COLUMNS; and set prompt_columns $COLUMNS
+	set -l rendered (env COLUMNS=$prompt_columns \
+		prompt-command fish-left $last_status $duration $fish_name | string collect)
+	set -l render_statuses $pipestatus
+	if [ $render_statuses[1] -eq 0 ]; and [ $render_statuses[2] -eq 0 ]
+		printf %s $rendered
+	else
+		printf '\n; '
+	end
 end
 
 function fish_mode_prompt
@@ -413,12 +423,10 @@ function record_duration --on-event fish_postexec
 end
 
 function fish_right_prompt
-	if [ -n "$prompt_timestamp" ]
-		printf "\e[2;37m%s" $prompt_timestamp
-	else if [ -z "$old_fish" ] && [ "$duration" -gt 99 ]
-		set_color white --dim
-		set -l seconds (math --scale=2 "$duration / 1000")
-		printf "+%ss" $seconds
+	set -l rendered (prompt-command fish-right 0 $duration $prompt_timestamp | string collect)
+	set -l render_statuses $pipestatus
+	if [ $render_statuses[1] -eq 0 ]; and [ $render_statuses[2] -eq 0 ]
+		printf %s $rendered
 	end
 end
 

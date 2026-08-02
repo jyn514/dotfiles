@@ -527,6 +527,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("31:unset\n", result.stdout)
 
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is unavailable")
     def test_zsh_restores_native_emulation_after_profile_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -777,9 +778,61 @@ class ProfileContractTests(unittest.TestCase):
             '. "$DOTFILES/lib/shell/paths.sh" || return',
             '. "$DOTFILES/lib/shell/lib.sh" || return',
             '. "$DOTFILES/bin/show-status" || return',
-            '. "$DOTFILES/bin/prompt-command" || return',
         ):
             self.assertIn(source, profile)
+        self.assertIn('command prompt-command "$target" "$last_status" 0 "$label"', profile)
+        self.assertIn("printf '\\n; '", profile)
+        self.assertNotIn('. "$DOTFILES/bin/prompt-command"', profile)
+
+    def test_prompt_adapter_discards_partial_failed_render(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("prompt_adapter() (")
+        end = profile.index("\n)\n", start) + 3
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            renderer = Path(directory) / "prompt-command"
+            renderer.write_text("#!/bin/sh\nprintf partial\nexit 23\n")
+            renderer.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", definition + "\nprompt_adapter 9"],
+                env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("\n; ", result.stdout)
+        self.assertNotIn("partial", result.stdout)
+
+    def test_prompt_adapter_installs_complete_multiline_render(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("prompt_adapter() (")
+        end = profile.index("\n)\n", start) + 3
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            renderer = Path(directory) / "prompt-command"
+            renderer.write_text(
+                "#!/bin/sh\n"
+                f'printf "%s|%s\\n" "$COLUMNS" "$*" > "{calls}"\n'
+                "printf 'first\\nsecond'\n"
+            )
+            renderer.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", definition + "\nCOLUMNS=42; prompt_adapter 7"],
+                env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            call_text = calls.read_text()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("first\nsecond", result.stdout)
+        self.assertEqual("42|bash 7 0 sh\n", call_text)
 
     def test_git_merge_request_alias_quotes_dynamic_arguments(self) -> None:
         alias = subprocess.run(
