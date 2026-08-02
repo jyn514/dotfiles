@@ -55,10 +55,11 @@ end
 
 if [ -f ~/.local/profile.fish ]
 	. ~/.local/profile.fish
+	or return
 end
 
-. $DOTFILES/lib/shell/env.sh
-. $DOTFILES/lib/shell/paths.sh
+. $DOTFILES/lib/shell/env.sh; or return
+. $DOTFILES/lib/shell/paths.sh; or return
 
 # compat for old `bat` versions
 if exists bat; and string match --quiet --regex "0\.1[0-9]\." (bat --version)
@@ -81,8 +82,10 @@ export VISUAL=$EDITOR
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 	if ! [ -e ~/.local/config/brew.fish ]
 		/home/linuxbrew/.linuxbrew/bin/brew shellenv fish > ~/.local/config/brew.fish
+		or return
 	end
 	. ~/.local/config/brew.fish
+	or return
 end
 
 if [ -z "$SSH_AUTH_SOCK" ]

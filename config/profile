@@ -318,7 +318,9 @@ excuse () {
 dad () { curl https://icanhazdadjoke.com && echo; }
 
 pip_upgrade_all () {
-	packages=$(pip list --format=freeze | sed 's/==.*//') || return
+	pip_data=$(pip list --format=freeze) || { result=$?; unset pip_data; return "$result"; }
+	packages=$(printf '%s\n' "$pip_data" | sed 's/==.*//') || { result=$?; unset pip_data packages; return "$result"; }
+	unset pip_data
 	[ -n "$packages" ] || { unset packages; return 0; }
 	printf '%s\n' "$packages" | xargs pip install -U "$@"
 	set -- "$?"
