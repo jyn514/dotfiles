@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from picker_actions import search
+from picker_actions import open_action, search
 
 
 def main(arguments: list[str]) -> int:
@@ -12,6 +12,8 @@ def main(arguments: list[str]) -> int:
         print("usage: picker-action action [selection options]", file=sys.stderr)
         return 2
     action, action_arguments = arguments[0], arguments[1:]
+    if action == "open":
+        return open_action.main(action_arguments)
     if action == "search":
         return search.main(action_arguments)
     print(f"unknown picker action: {action}", file=sys.stderr)
