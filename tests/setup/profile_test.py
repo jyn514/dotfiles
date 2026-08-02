@@ -289,8 +289,10 @@ class ProfileContractTests(unittest.TestCase):
     def test_neovim_tab_alignment_and_alternate_buffer_use_editor_columns(self) -> None:
         nvim = (ROOT / "config/nvim.lua").read_text()
 
-        self.assertIn("local col = vim.fn.virtcol('.') - 1", nvim)
-        self.assertIn("local width = sw - (col % sw)", nvim)
+        self.assertIn("local byte_col = vim.fn.getcurpos()[3] - 1", nvim)
+        self.assertIn("local display_col = vim.fn.virtcol('.') - 1", nvim)
+        self.assertIn("vim.fn.getline('.'):sub(1, byte_col)", nvim)
+        self.assertIn("local width = sw - (display_col % sw)", nvim)
         self.assertNotIn("sw - ((col - 1) % sw)", nvim)
         self.assertIn("vim.cmd.balt(vim.fn.fnameescape(name))", nvim)
         self.assertNotIn("let @#", nvim)
