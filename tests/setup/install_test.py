@@ -549,7 +549,7 @@ class LocalInstallationTests(unittest.TestCase):
             [
                 "/bin/sh",
                 "-c",
-                f'. ./libexec/shell/lib.sh; download https://mise.run "{output}"',
+                f'. ./lib/shell/lib.sh; download https://mise.run "{output}"',
             ],
             cwd=ROOT,
             env=env,

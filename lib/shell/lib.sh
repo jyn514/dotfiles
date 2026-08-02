@@ -89,7 +89,7 @@ shim_resolve() {
 }
 
 if ! exists realpath; then
-	. libexec/shell/realpath.sh
+	. lib/shell/realpath.sh
 	HAS_REALPATH=0
 else
 	HAS_REALPATH=1

@@ -11,7 +11,7 @@ for argument in "$@"; do
 done
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-. "$root/libexec/shell/lib.sh"
+. "$root/lib/shell/lib.sh"
 REAL=$(shim_resolve "$0" rg)
 
 # Ignore RIPGREP_CONFIG_PATH so a configuration file cannot restore --pre.

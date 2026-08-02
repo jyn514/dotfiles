@@ -8,7 +8,7 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 fi
 
 if ! exists realpath; then
-	. "$(dirname "$(readlink ~/.profile)")/../libexec/shell/realpath.sh"
+	. "$(dirname "$(readlink ~/.profile)")/../lib/shell/realpath.sh"
 fi
 DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..")
 
@@ -57,7 +57,7 @@ add_path_if_present() {
 }
 
 # Set tool homes before paths.sh uses them to construct PATH.
-. "$DOTFILES/libexec/shell/env.sh"
+. "$DOTFILES/lib/shell/env.sh"
 
 if [ -f ~/.local/profile ]; then
 	. ~/.local/profile
@@ -77,7 +77,7 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 	eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh)"
 fi
 
-. "$DOTFILES/libexec/shell/paths.sh"
+. "$DOTFILES/lib/shell/paths.sh"
 
 case ":${PATH:-}:" in
 	*:"$DOTFILES/libexec/agent-wrappers":*) add_path "$DOTFILES/libexec/agent-wrappers";;
@@ -117,7 +117,7 @@ if [ -n "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
 	. ${ZDOTDIR:-$HOME}/.zshrc
 fi
 
-. "$DOTFILES/libexec/shell/lib.sh"
+. "$DOTFILES/lib/shell/lib.sh"
 . "$DOTFILES/bin/show-status"
 
 export GPG_TTY=$(tty)

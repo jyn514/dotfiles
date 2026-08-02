@@ -123,7 +123,7 @@ setup_dotfiles () {
 	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
 	export JJ_CONFIG_PATH
 	python3 libexec/backup_dotfile_collisions.py install.conf.json || return
-	libexec/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
+	vendor/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
@@ -143,7 +143,7 @@ setup_basics () {
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
 	if [ "$HAS_REALPATH" = 0 ]; then
-		grep -v 'set -.*e' < libexec/shell/realpath.sh >> ~/.local/profile
+		grep -v 'set -.*e' < lib/shell/realpath.sh >> ~/.local/profile
 	fi
 	set +ue
 	. config/profile
@@ -389,8 +389,8 @@ Choose setup to run: "
 # main
 
 cd "$(dirname "$0")"
-. libexec/shell/lib.sh
-. libexec/shell/env.sh
+. lib/shell/lib.sh
+. lib/shell/env.sh
 
 MISE_SETUP_CONFIG=$PWD/config/mise.toml
 export MISE_SETUP_CONFIG

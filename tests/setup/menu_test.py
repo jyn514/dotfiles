@@ -163,14 +163,14 @@ setup_kde() { record kde; }
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             (directory / "setup.sh").write_bytes((ROOT / "setup.sh").read_bytes())
-            shell_library = directory / "libexec" / "shell"
+            shell_library = directory / "lib" / "shell"
             shell_library.mkdir(parents=True)
             (shell_library / "lib.sh").write_text(
                 'exists() { command -v "$1" >/dev/null 2>&1; }\n'
             )
             (shell_library / "env.sh").write_text("")
             setup_directory = directory / "libexec" / "setup"
-            setup_directory.mkdir()
+            setup_directory.mkdir(parents=True)
             setup_sudo = setup_directory / "setup_sudo.sh"
             setup_sudo.write_text(
                 "#!/bin/sh\n"

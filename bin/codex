@@ -4,7 +4,7 @@
 # CODEX_THREAD_ID). Codex has no system-prompt override — its instruction layer
 # is ~/.codex/AGENTS.md + project AGENTS.md — so this only fixes up PATH.
 DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
-. "$DOTFILES/libexec/shell/lib.sh"
+. "$DOTFILES/lib/shell/lib.sh"
 REAL=$(shim_resolve "$0" codex)
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 exec "$REAL" "$@"

@@ -45,8 +45,8 @@ if [ -f ~/.local/profile.fish ]
 	. ~/.local/profile.fish
 end
 
-. $DOTFILES/libexec/shell/env.sh
-. $DOTFILES/libexec/shell/paths.sh
+. $DOTFILES/lib/shell/env.sh
+. $DOTFILES/lib/shell/paths.sh
 
 # compat for old `bat` versions
 if string match --quiet --regex "0\.1[0-9]\." (bat --version)

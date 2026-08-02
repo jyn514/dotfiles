@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class ProfileContractTests(unittest.TestCase):
     def test_makeflags_has_an_explicit_parallelism_value(self) -> None:
-        env = (ROOT / "libexec/shell/env.sh").read_text()
+        env = (ROOT / "lib/shell/env.sh").read_text()
 
         self.assertIn("export MAKEFLAGS='-j4'", env)
         self.assertNotIn("export MAKEFLAGS='-j'\n", env)
@@ -36,7 +36,7 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertLess(
             profile.index("linuxbrew/.linuxbrew/bin/brew shellenv"),
-            profile.index('. "$DOTFILES/libexec/shell/paths.sh"'),
+            profile.index('. "$DOTFILES/lib/shell/paths.sh"'),
         )
 
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
