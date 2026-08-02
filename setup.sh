@@ -9,12 +9,12 @@ fi
 
 install_macos_local() {
 	# note that we don't actually pass sudo here
-	./lib/setup_sudo.sh install_features
+	./libexec/setup/setup_sudo.sh install_features
 	brew install -q duti
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 	if exists cargo; then
-		brew_revision=$(mise_exec python lib/install_bootstrap.py get git brew-command-not-found revision)
+		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision)
 		cargo install --git https://github.com/jyn514/brew-command-not-found \
 			--rev "$brew_revision" --locked
 		unset brew_revision
@@ -27,9 +27,9 @@ mise_exec() {
 
 install_platform_bundles() {
 	if exists apk; then
-		python3 lib/install_platform_bundles.py cpptools powershell-editor-services
+		python3 libexec/setup/install_platform_bundles.py cpptools powershell-editor-services
 	else
-		mise_exec python lib/install_platform_bundles.py cpptools powershell-editor-services
+		mise_exec python libexec/setup/install_platform_bundles.py cpptools powershell-editor-services
 	fi
 }
 
@@ -111,7 +111,7 @@ install_mise() {
 
 setup_mimetypes() {
 	echo "Registering mimetypes"
-	python3 lib/setup_mimetypes.py
+	python3 libexec/setup/setup_mimetypes.py
 }
 
 setup_dotfiles () {
@@ -122,8 +122,8 @@ setup_dotfiles () {
 	fi
 	JJ_CONFIG_PATH=$(jj config path --user 2>/dev/null || echo "$HOME/.config/jj/config.toml")
 	export JJ_CONFIG_PATH
-	python3 lib/backup_dotfile_collisions.py install.conf.json || return
-	lib/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
+	python3 libexec/backup_dotfile_collisions.py install.conf.json || return
+	libexec/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
 	touch ~/.config/git/credentials
@@ -143,15 +143,15 @@ setup_basics () {
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
 	if [ "$HAS_REALPATH" = 0 ]; then
-		grep -v 'set -.*e' < lib/realpath.sh >> ~/.local/profile
+		grep -v 'set -.*e' < libexec/shell/realpath.sh >> ~/.local/profile
 	fi
 	set +ue
 	. config/profile
 	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
-		python3 lib/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm
+		python3 libexec/setup/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm
 	fi
 	if ! [ -d "$libdir"/fzf-tab-completion ]; then
-		python3 lib/install_bootstrap.py clone fzf-tab-completion "$libdir"/fzf-tab-completion
+		python3 libexec/setup/install_bootstrap.py clone fzf-tab-completion "$libdir"/fzf-tab-completion
 	fi
 	~/.config/tmux/plugins/tpm/bin/install_plugins
 
@@ -185,13 +185,13 @@ setup_basics () {
 setup_kde() {
 	if ! [ -d ~/.local/share/kwin/scripts/krohnkite ]; then
 		krohnkite=$(tmp_file krohnkite.XXXXXX)
-		python3 lib/install_bootstrap.py download krohnkite "$krohnkite" || return
+		python3 libexec/setup/install_bootstrap.py download krohnkite "$krohnkite" || return
 		kpackagetool6 -t KWin/Script -i "$krohnkite"
 		rm -f "$krohnkite"
 	fi
 
 	if ! [ -d $libdir/dynamic_workspaces ]; then
-		python3 lib/install_bootstrap.py clone dynamic-workspaces "$libdir"/dynamic_workspaces
+		python3 libexec/setup/install_bootstrap.py clone dynamic-workspaces "$libdir"/dynamic_workspaces
 		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
 	fi
 
@@ -243,14 +243,14 @@ setup_vim () {
 VIMDIR="$HOME/.vim/autoload"
 	if exists vim && ! [ -e "$VIMDIR/plug.vim" ]; then
 		mkdir -p "$VIMDIR"
-		python3 lib/install_bootstrap.py download vim-plug "$VIMDIR/plug.vim"
+		python3 libexec/setup/install_bootstrap.py download vim-plug "$VIMDIR/plug.vim"
 		vim -c PlugInstall -c q -c q
 	fi
 unset VIMDIR
 	if exists nvim; then
 LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
 		if ! [ -e "$LAZYDIR" ]; then
-			python3 lib/install_bootstrap.py clone lazy.nvim "$LAZYDIR"
+			python3 libexec/setup/install_bootstrap.py clone lazy.nvim "$LAZYDIR"
 			nvim --headless +:q
 		fi
 unset LAZYDIR
@@ -288,26 +288,26 @@ setup_backup () {
 setup_install_global () {
 	echo Installing global packages
 	if [ "$(id -u)" = 0 ]; then
-		./lib/setup_sudo.sh main
+		./libexec/setup/setup_sudo.sh main
 	elif exists sudo; then
-		sudo --preserve-env=PATH ./lib/setup_sudo.sh main
+		sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh main
 	elif exists doas; then
-		doas ./lib/setup_sudo.sh main
+		doas ./libexec/setup/setup_sudo.sh main
 	elif exists su; then
-		su root -c './lib/setup_sudo.sh main'
+		su root -c './libexec/setup/setup_sudo.sh main'
 	else
-		./lib/setup_sudo.sh main
+		./libexec/setup/setup_sudo.sh main
 	fi
 }
 
 setup_install_global_packages () {
 	echo Installing global packages
 	if [ "$(id -u)" = 0 ]; then
-		./lib/setup_sudo.sh install_features
+		./libexec/setup/setup_sudo.sh install_features
 	elif exists sudo; then
-		sudo --preserve-env=PATH ./lib/setup_sudo.sh install_features
+		sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh install_features
 	elif exists doas; then
-		doas ./lib/setup_sudo.sh install_features
+		doas ./libexec/setup/setup_sudo.sh install_features
 	else
 		echo "install-global requires root, sudo, or doas" >&2
 		return 1
@@ -329,20 +329,20 @@ setup_install_local () {
 	fi
 
 	if exists pacman && ! exists 1password; then
-		./lib/install_1password_arch.sh || return
+		./libexec/setup/install_1password_arch.sh || return
 	fi
 
 	if ! [ -e ~/.config/zsh/antidote ]; then
-		mise_exec python lib/install_bootstrap.py clone antidote ~/.config/zsh/antidote
+		mise_exec python libexec/setup/install_bootstrap.py clone antidote ~/.config/zsh/antidote
 	fi
 	if ! [ -e ~/.config/fish/fish_plugins ]; then
 		fisher_installer=$(tmp_file fisher.XXXXXX)
-		mise_exec python lib/install_bootstrap.py download fisher "$fisher_installer" || return
-		fisher_revision=$(mise_exec python lib/install_bootstrap.py get git fisher revision)
+		mise_exec python libexec/setup/install_bootstrap.py download fisher "$fisher_installer" || return
+		fisher_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git fisher revision)
 		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@$argv[2]' \
 			"$fisher_installer" "$fisher_revision"
 		rm -f "$fisher_installer"
-		zoxide_revision=$(mise_exec python lib/install_bootstrap.py get git zoxide.fish revision)
+		zoxide_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git zoxide.fish revision)
 		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision"
 		unset fisher_installer fisher_revision zoxide_revision
 	fi
@@ -389,8 +389,8 @@ Choose setup to run: "
 # main
 
 cd "$(dirname "$0")"
-. lib/lib.sh
-. lib/env.sh
+. libexec/shell/lib.sh
+. libexec/shell/env.sh
 
 MISE_SETUP_CONFIG=$PWD/config/mise.toml
 export MISE_SETUP_CONFIG

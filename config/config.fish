@@ -45,8 +45,8 @@ if [ -f ~/.local/profile.fish ]
 	. ~/.local/profile.fish
 end
 
-. $DOTFILES/lib/env.sh
-. $DOTFILES/lib/paths.sh
+. $DOTFILES/libexec/shell/env.sh
+. $DOTFILES/libexec/shell/paths.sh
 
 # compat for old `bat` versions
 if string match --quiet --regex "0\.1[0-9]\." (bat --version)
@@ -364,8 +364,8 @@ function fish_right_prompt
 end
 
 function fish_command_not_found
-	if [ -e $DOTFILES/lib/command-not-found ]
-		$DOTFILES/lib/command-not-found $argv
+	if [ -e $DOTFILES/libexec/command-not-found ]
+		$DOTFILES/libexec/command-not-found $argv
 	else
 		__fish_default_command_not_found_handler $argv
 	end

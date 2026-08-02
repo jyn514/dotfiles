@@ -230,7 +230,7 @@ def validate_repository(state: State) -> None:
 
 
 def image_sources() -> list[Path]:
-    dockerfile = Path("lib/agent-sandbox/Dockerfile")
+    dockerfile = Path("libexec/agent-sandbox/Dockerfile")
     sources = [dockerfile]
     for line in (DOTFILES / dockerfile).read_text(encoding="utf-8").splitlines():
         fields = line.split()
@@ -272,7 +272,7 @@ def ensure_image(state: State, base_image: str) -> str:
     iidfile = temporary_file()
     try:
         run([
-            "docker", "build", "-f", "lib/agent-sandbox/Dockerfile",
+            "docker", "build", "-f", "libexec/agent-sandbox/Dockerfile",
             "--build-arg", f"AGENT_UID={state.uid}",
             "--build-arg", f"AGENT_GID={state.gid}",
             "--build-arg", f"CODEX_HOME={state.home / '.codex'}",

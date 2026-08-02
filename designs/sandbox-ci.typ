@@ -52,7 +52,7 @@ The dotfiles Podman integration owns:
 - garbage-collecting staged repositories
 - preparing staged directories for safe sharing between Woodpecker job containers
 
-The adapter belongs under `lib/agent-podman`, rather than the general agent-wrapper layer, because remote path staging and daemon placement are properties of the Podman-machine integration.
+The adapter belongs under `libexec/agent-podman`, rather than the general agent-wrapper layer, because remote path staging and daemon placement are properties of the Podman-machine integration.
 
 = Command behavior
 

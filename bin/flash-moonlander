@@ -45,7 +45,7 @@ unzip "$archive"
 mv zsa_moonlander_*_source "$layout_dst"
 
 # CHANGES GO HERE
-python3 "$DOTFILES/scripts/moonlander/patch_keymap.py" "$layout_dst/keymap.c"
+python3 "$DOTFILES/libexec/moonlander/patch_keymap.py" "$layout_dst/keymap.c"
 cat "$DOTFILES/lib/keymap-additions.c" >> "$layout_dst/keymap.c"
 echo 'KEY_OVERRIDE_ENABLE = yes' >> "$layout_dst/rules.mk"
 echo 'UNICODE_COMMON = yes' >> "$layout_dst/rules.mk"

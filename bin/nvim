@@ -1,6 +1,6 @@
 #!/bin/sh
 
-. "$(dirname -- "$(realpath -- "$0")")/../lib/lib.sh"
+. "$(dirname -- "$(realpath -- "$0")")/../libexec/shell/lib.sh"
 REAL=$(shim_resolve "$0" nvim)
 
 if [ -e Session.vim ]; then f=Session.vim; elif [ -e .session.vim ]; then f=.session.vim; fi

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-. "${DOTFILES:-$(dirname "$0")/..}/lib/lib.sh"
+. "${DOTFILES:-$(dirname "$0")/..}/libexec/shell/lib.sh"
 
 ## pwd
 

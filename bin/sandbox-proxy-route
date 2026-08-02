@@ -2,4 +2,4 @@
 set -eu
 
 DOTFILES=$(dirname -- "$(dirname -- "$(realpath -- "$0")")")
-exec python3 "$DOTFILES/lib/sandbox-proxies.py" route "$@"
+exec python3 "$DOTFILES/libexec/sandbox-proxies.py" route "$@"

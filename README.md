@@ -5,10 +5,10 @@ Partly taken (with love) from Charles Daniels' [excellent repository](https://gi
 
 ## Maintenance
 
-Run `scripts/update-bootstrap-lock --dry-run` to preview newer plugin revisions,
+Run `dev/update-bootstrap-lock --dry-run` to preview newer plugin revisions,
 release assets, and checksums. Run it without `--dry-run` to update
 `install/bootstrap.lock.json` and `install/bundles.json`, then review the diff
-and run `scripts/test`. The updater uses `GITHUB_TOKEN` when it is already set,
+and run `dev/test`. The updater uses `GITHUB_TOKEN` when it is already set,
 but does not require or export one.
 
 
