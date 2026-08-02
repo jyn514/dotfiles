@@ -162,6 +162,9 @@ setup_basics () {
 	if exists batcat; then
 		cmd_alias bat batcat
 	fi
+	if exists fdfind; then
+		cmd_alias fd fdfind
+	fi
 
 	if exists bat; then
 		mkdir -p "$(bat --config-dir)/syntaxes"
