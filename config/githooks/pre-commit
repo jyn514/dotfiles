@@ -8,10 +8,10 @@ else
 fi
 
 git_dir=$(git rev-parse --git-dir) || exit
-GIT_DIR=$(realpath "$git_dir") || exit
+GIT_DIR=$(CDPATH='' cd -- "$git_dir" && pwd -P) || exit
 unset git_dir
 export GIT_DIR
-hook_dir=$(realpath "$(dirname "$0")") || exit
+hook_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P) || exit
 
 # Run local hooks first, since those are more important.
 local_hook=$(git rev-parse --git-common-dir)/hooks/$(basename "$0")
@@ -21,7 +21,9 @@ if [ -e "$local_hook" ]; then
 fi
 
 # Now run global hooks.
-tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/$(basename "$(realpath .)")-pre-commit.XXXX")
+repository_name=$(basename "$(pwd -P)") || exit
+tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/$repository_name-pre-commit.XXXX")
+unset repository_name
 trap 'rm -r "$tmpdir"' EXIT
 git diff --name-only -z --cached --no-ext-diff --diff-filter=d \
 	| while IFS= read -r -d '' file; do

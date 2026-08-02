@@ -991,6 +991,8 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("xargs -0 python3", pre_commit)
         self.assertNotIn("xargs -0 python ", pre_commit)
         self.assertIn("pre_commit_hooks/destroyed_symlinks.py", pre_commit)
+        self.assertNotIn("realpath", pre_commit)
+        self.assertIn("CDPATH='' cd -- \"$git_dir\" && pwd -P", pre_commit)
         self.assertIn('printf -v path %q "$1"', tmux)
         self.assertNotIn('send-keys "${EDITOR:-vi} {}"', tmux)
         self.assertIn("SSH_AGENT_PID", tmux)
@@ -1014,6 +1016,7 @@ class MiseConfigTests(unittest.TestCase):
 
         self.assertIn("\nshell_integration disabled\n", kitty)
         self.assertNotIn("#shell_integration disabled", kitty)
+        self.assertIn("# XF86Cut (0x1008ff58), treated as another copy key", kitty)
         self.assertIn('source "$KITTY_INSTALLATION_DIR/shell-integration/bash/kitty.bash"', bash)
         self.assertIn(
             'source "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish"',

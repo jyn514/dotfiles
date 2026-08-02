@@ -928,6 +928,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("buffer = buf,\n\t\tcallback", nvim)
         for variable in ("selections", "swaps", "moves", "upper"):
             self.assertIn(f"local {variable} =", nvim)
+        self.assertIn("local function indentgroup(lang, func)", nvim)
+        self.assertIn("lang .. 'indent', { clear = true }", nvim)
+        self.assertNotRegex(nvim, r"(?m)^function indentgroup\(")
         self.assertIn("function spaces(count, global)\n\tlocal opt", nvim)
         self.assertEqual(1, glide.count('glide.keymaps.set("normal", "U"'))
         self.assertIn('os === "mac" ? "<D-S-z>" : "<C-S-z>"', glide)
