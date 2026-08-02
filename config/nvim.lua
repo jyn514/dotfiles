@@ -76,8 +76,8 @@ vim.api.nvim_create_autocmd('VimResized', {
 
 ---- Filetype options ----
 
-function indentgroup(lang, func)
-	local group = vim.api.nvim_create_augroup(lang .. 'indent', {})
+local function indentgroup(lang, func)
+	local group = vim.api.nvim_create_augroup(lang .. 'indent', { clear = true })
 	vim.api.nvim_create_autocmd('FileType', {
 		group = group,
 		callback = function(event)

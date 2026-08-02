@@ -310,13 +310,16 @@ class CommandTest(unittest.TestCase):
 
     def test_set_tmux_env_preserves_whitespace_and_equals(self) -> None:
         calls = self.directory / "tmux-calls"
-        self.executable(
-            "env",
-            "printf 'EDITOR=editor --wait\\nPATH=/one path:/two=parts\\n'\n",
+        (self.directory / ".profile").write_text(
+            "unset VISUAL CARGO_HOME RUSTUP_HOME\n"
+            "EDITOR='editor\n--wait'\n"
+            "PATH='/one path:/two=parts'\n"
+            "export EDITOR PATH\n"
         )
         self.executable(
             "tmux",
-            'printf "<%s><%s><%s>\\n" "$1" "$2" "$3" >> "$TMUX_CALLS"\n',
+            'printf "%s\\0%s\\0%s\\0%s\\0%s\\0" '
+            f'"$1" "$2" "$3" "$TMUX" "$TMUX_TMPDIR" >> "{calls}"\n',
         )
 
         result = subprocess.run(
@@ -326,20 +329,24 @@ class CommandTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             env=os.environ | {
                 "PATH": f"{self.directory}:{os.environ['PATH']}",
-                "TMUX_CALLS": str(calls),
+                "HOME": str(self.directory),
+                "TMUX": "socket value",
+                "TMUX_TMPDIR": "/socket directory",
             },
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            "<set-environment><EDITOR><editor --wait>\n"
-            "<set-environment><PATH></one path:/two=parts>\n",
-            calls.read_text(),
+            b"set-environment\0EDITOR\0editor\n--wait\0"
+            b"socket value\0/socket directory\0"
+            b"set-environment\0PATH\0/one path:/two=parts\0"
+            b"socket value\0/socket directory\0",
+            calls.read_bytes(),
         )
 
     def test_set_tmux_env_propagates_profile_failure(self) -> None:
         calls = self.directory / "tmux-calls"
-        self.executable("env", "exit 17\n")
+        (self.directory / ".profile").write_text("return 17\n")
         self.executable("tmux", 'printf "%s\\n" "$*" > "$TMUX_CALLS"\n')
 
         result = subprocess.run(
@@ -349,6 +356,7 @@ class CommandTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             env=os.environ | {
                 "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "HOME": str(self.directory),
                 "TMUX_CALLS": str(calls),
             },
         )
