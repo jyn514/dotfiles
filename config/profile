@@ -159,7 +159,7 @@ _load_aliases() {
 	abbreviations=$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt") || return
 	# https://www.etalabs.net/sh_tricks.html#:~:text=Reading%20input%20line%2Dby%2Dline
 	while IFS= read -r alias; do
-		name=${alias%=*}
+		name=${alias%%=*}
 		expn=${alias#*=}
 		alias "$name"="$expn" || return
 	done << EOF

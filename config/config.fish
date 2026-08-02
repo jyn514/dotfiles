@@ -203,7 +203,10 @@ bind -M insert alt-k \
 set abbreviations (grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt)
 or return
 for alias in $abbreviations
-	echo $alias | read --delimiter = name value
+	set -l fields (string split --max 1 = -- $alias)
+	or return
+	set -l name $fields[1]
+	set -l value $fields[2]
 	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
 	or return
