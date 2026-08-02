@@ -278,6 +278,8 @@ end
 function expand_history_line
 	switch $argv[1]
 		case !!
+			set -q history[1]
+				or return 1
 			echo $history[1]
 		case "!-*"
 			set -l offset (string split - $argv[1])[2]
@@ -344,15 +346,15 @@ function fish_mode_prompt
 		set_color --bold cyan
 		switch $fish_bind_mode
 			case default
-				echo '[N]'
+				printf '[N]'
 			case insert
-				echo '[I]'
+				printf '[I]'
 			case replace_one
-				echo '[R]'
+				printf '[R]'
 			case replace
-				echo '[R]'
+				printf '[R]'
 			case visual
-				echo '[V]'
+				printf '[V]'
 		end
 		set_color normal
 		printf ' '
@@ -405,7 +407,9 @@ if exists direnv
 	direnv hook fish | source
 end
 
-stty -ixon
+if isatty 0
+	stty -ixon
+end
 
 [ -x ~/.local/startup-hook ] && ~/.local/startup-hook
 # `exit` in fish only exits the file, not the shell as a whole.

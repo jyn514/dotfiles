@@ -355,5 +355,7 @@ PS1='$(prompt_command "${ZSH_ARGZERO:-$0}" "$?")'
 # also reset the cursor mode (https://stackoverflow.com/a/59728228)
 PS0=$(printf '\e[2 q')
 
-stty -ixon
+if [ -t 0 ]; then
+	stty -ixon
+fi
 remember
