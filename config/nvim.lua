@@ -287,6 +287,7 @@ function autosave_enable()
 	vim.notify("autosaving " .. buf_name)
 	timers[buf] = vim.api.nvim_create_autocmd("CursorHold", {
 		desc = "Save " .. buf_name .. " on change",
+		buffer = buf,
 		callback = function()
 			vim.api.nvim_buf_call(buf, function() vim.cmd "silent update" end)
 		end
@@ -615,12 +616,12 @@ require('blink.cmp').setup {
 ---- Treesitter ---
 
 local function ts(binds)
-	selections = {}
-	swaps = {
+	local selections = {}
+	local swaps = {
 		swap_next = {},
 		swap_previous = {},
 	}
-	moves = {
+	local moves = {
 		goto_next_start = {},
 		goto_next_end = {},
 		goto_previous_start = {},
@@ -634,7 +635,7 @@ local function ts(binds)
 		local outer = vim.deepcopy(query)
 		inner.kind = 'inner'
 		outer.kind = 'outer'
-		upper = string.upper(bind)
+		local upper = string.upper(bind)
 		if upper == bind then
 			if bind == ';' then
 				upper = ':'
@@ -844,7 +845,6 @@ pickers.setup {
 	git = {
 		files = {
 			git_icons = false,
-			cmd = "git ls-files --cached --others --exclude-standard",
 		}
 	},
 	oldfiles = {
@@ -900,6 +900,7 @@ end, { desc = "Search current package or workspace" })
 vim.keymap.set('n', '<leader>g', function()
 	pickers.git_files({
 		prompt = "Modified Files",
+		cmd = "git ls-files --modified",
 	})
 end, { desc = "Modified files" })
 bind('<leader>k', pickers.keymaps, 'Show all active keybindings')

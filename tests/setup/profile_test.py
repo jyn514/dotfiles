@@ -394,9 +394,13 @@ class ProfileContractTests(unittest.TestCase):
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
         self.assertIn("if (save != \\\"\\\")", tmux)
         self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
-        self.assertIn(
+        self.assertIn('cmd = "git ls-files --modified"', nvim)
+        self.assertNotIn(
             'cmd = "git ls-files --cached --others --exclude-standard"', nvim
         )
+        self.assertIn("buffer = buf,\n\t\tcallback", nvim)
+        for variable in ("selections", "swaps", "moves", "upper"):
+            self.assertIn(f"local {variable} =", nvim)
 
 
 if __name__ == "__main__":

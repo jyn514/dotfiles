@@ -921,6 +921,12 @@ class MiseConfigTests(unittest.TestCase):
 
         self.assertEqual("opus", settings["model"])
 
+    def test_kitty_disables_automatic_shell_integration(self) -> None:
+        kitty = (ROOT / "config/kitty.conf").read_text()
+
+        self.assertIn("\nshell_integration disabled\n", kitty)
+        self.assertNotIn("#shell_integration disabled", kitty)
+
 
 if __name__ == "__main__":
     unittest.main()
