@@ -1,4 +1,3 @@
-t=triples
 e=$EDITOR
 E=hx-hax
 mkdc=mkcd

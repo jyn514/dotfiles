@@ -917,9 +917,13 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("tmux load-buffer -b primary_selection -;", tmux)
         self.assertIn("if (save != \\\"\\\")", tmux)
         self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
-        self.assertIn('cmd = "git ls-files --modified"', nvim)
+        self.assertIn('pickers.git_status({ prompt = "Changed Files" })', nvim)
         self.assertNotIn(
             'cmd = "git ls-files --cached --others --exclude-standard"', nvim
+        )
+        self.assertIn(
+            "pickers.lsp_document_diagnostics, { desc = \"Show document diagnostics\" }",
+            nvim,
         )
         self.assertIn("buffer = buf,\n\t\tcallback", nvim)
         for variable in ("selections", "swaps", "moves", "upper"):
