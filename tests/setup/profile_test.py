@@ -607,6 +607,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("*.cc,*.cpp,*.C,*.ino set filetype=cpp", vimrc)
         self.assertNotIn("*.h,*.c,*.cc", vimrc)
         self.assertIn("augroup dotfiles_config\nautocmd!", vimrc)
+        self.assertIn("augroup dotfiles_checktime\n\tautocmd!", vimrc)
+        self.assertNotIn("\nau FocusGained,BufEnter", vimrc)
         self.assertEqual(1, vimrc.count("augroup dotfiles_config"))
         self.assertIn("let l:status = v:shell_error", vimrc)
         self.assertIn("return l:status", vimrc)
@@ -643,6 +645,11 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })", nvim)
         self.assertIn("nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })", nvim)
         self.assertNotIn("highlight! link Keyword Special", nvim)
+        self.assertIn("return s:match'^(.*%S)%s*$' or ''", nvim)
+        self.assertIn("local function rtrim(s)", nvim)
+        self.assertIn("local current_buf = vim.api.nvim_get_current_buf()", nvim)
+        self.assertIn("pcall(vim.cmd.bufdo, 'LspRestart')", nvim)
+        self.assertIn("vim.api.nvim_set_current_buf(current_buf)", nvim)
         self.assertEqual(
             1,
             nvim.count(

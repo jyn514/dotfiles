@@ -9,7 +9,7 @@ set keymap emacs
 "\e[1;3C": forward-word ### Alt right
 "\eh": backward-word
 "\el": forward-word
-"\Cl": forward-word
+"\C-l": forward-word
 
 "\e": "\2\e"
 "\2": vi-editing-mode
