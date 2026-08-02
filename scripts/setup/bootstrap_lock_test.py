@@ -64,6 +64,14 @@ class BootstrapLockTests(unittest.TestCase):
         self.assertNotIn("releases/download/latest", setup)
         self.assertNotIn("fisher/main/functions/fisher.fish", setup)
 
+    def test_mumps_syntax_is_local_configuration(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+        manifest = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
+
+        self.assertNotIn("mumps-syntax", manifest["downloads"])
+        self.assertIn('config/bat/mumps.sublime-syntax"', setup)
+        self.assertNotIn("sed -i", setup)
+
 
 if __name__ == "__main__":
     unittest.main()
