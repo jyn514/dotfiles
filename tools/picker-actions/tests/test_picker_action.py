@@ -18,6 +18,7 @@ class PickerActionTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
         self.calls = self.directory / "calls"
+        self.clipboard = self.directory / "clipboard"
 
     def opener(self, status: int = 0) -> None:
         path = self.directory / "open"
@@ -38,13 +39,29 @@ class PickerActionTest(unittest.TestCase):
         )
         path.chmod(0o755)
 
+    def copy(self, status: int = 0) -> None:
+        path = self.directory / "copy"
+        path.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            "open(os.environ['COPY_CALLS'], 'w').write(json.dumps(sys.argv[1:]))\n"
+            "open(os.environ['CLIPBOARD'], 'wb').write(sys.stdin.buffer.read())\n"
+            f"raise SystemExit({status})\n"
+        )
+        path.chmod(0o755)
+
     def run_command(
         self,
         *arguments: str,
         selection: bytes = b"",
         environment: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[bytes]:
-        values = {"PATH": str(self.directory), "TMUX_CALLS": str(self.calls)}
+        values = {
+            "PATH": str(self.directory),
+            "TMUX_CALLS": str(self.calls),
+            "COPY_CALLS": str(self.calls),
+            "CLIPBOARD": str(self.clipboard),
+        }
         if environment:
             values.update(environment)
         return subprocess.run(
@@ -143,6 +160,34 @@ class PickerActionTest(unittest.TestCase):
         result = self.run_command("edit", "selection")
 
         self.assertEqual(40, result.returncode)
+
+    def test_copy_streams_one_opaque_selection_to_requested_clipboard(self) -> None:
+        self.copy()
+        payload = b"spaces\n-leading\xff"
+
+        result = self.run_command(
+            "copy", "--primary", "--read0", selection=payload + b"\0"
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["--primary"], json.loads(self.calls.read_text()))
+        self.assertEqual(payload, self.clipboard.read_bytes())
+
+    def test_copy_rejects_multiple_selections_before_launch(self) -> None:
+        self.copy()
+
+        result = self.run_command("copy", "--read0", selection=b"one\0two\0")
+
+        self.assertEqual(2, result.returncode)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.clipboard.exists())
+
+    def test_copy_propagates_clipboard_failure(self) -> None:
+        self.copy(status=41)
+
+        result = self.run_command("copy", "selection")
+
+        self.assertEqual(41, result.returncode)
 
     def test_empty_selection_is_cancellation(self) -> None:
         self.opener()

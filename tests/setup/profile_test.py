@@ -1073,6 +1073,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("picker-action edit --read0", tmux)
         self.assertIn("picker-action open --read0", tmux)
         self.assertIn("picker-action search --read0", tmux)
+        self.assertIn("picker-action copy --primary -- #{q:mouse_hyperlink}", tmux)
+        self.assertNotIn("printf %s #{q:mouse_hyperlink} | copy --primary", tmux)
         self.assertNotIn('urlencode({"q": sys.argv[1]})', tmux)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
