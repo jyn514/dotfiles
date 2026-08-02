@@ -247,9 +247,11 @@ zstyle ':fzf-tab:*' accept-line enter
 # making this part of normal tab complete is too slow and hangs
 # really wish zsh would show partial matches instead of waiting for all of them to finish
 fzf-file() {
-  local files selected
-  files=$(fd) || return
-  IFS=$'\n' selected=($(printf '%s\n' "$files" | fzf --expect=tab --no-sort --query="$BUFFER"))
+  local output
+  local -a selected
+  setopt localoptions pipefail
+  output=$(fd --print0 | fzf --read0 --print0 --expect=tab --no-sort --query="$BUFFER") || return
+  selected=("${(@0)output}")
   if [[ ! "$selected" ]]; then
     return
   fi

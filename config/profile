@@ -226,6 +226,7 @@ what_belongs () {
 }
 
 what_runs () {
+	local file files
 	files=$(what_belongs "$@") || return
 	[ -n "$files" ] || return 0
 	printf '%s\n' "$files" | while IFS= read -r file; do
@@ -236,6 +237,7 @@ what_runs () {
 }
 
 what_package () {
+	local prog
 	prog=$(command which "$1") || return
 	prog=$(realpath "$prog") || return
 	shift
@@ -251,6 +253,7 @@ what_package () {
 
 # Do not remove a crontab without warning, even where crontab lacks -i.
 crontab() {
+	local argument reply
 	for argument do
 		if [ "$argument" = -r ]; then
 			printf 'remove crontab? [y/N] '
@@ -303,7 +306,7 @@ background () {
 }
 
 pure_shell() {
-   env -i HOME="$HOME" TERM="$TERM" PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile
+   env -i HOME="$HOME" TERM="$TERM" PS1='; ' HISTSIZE=-1 HISTFILE= bash --norc --noprofile "$@"
 }
 
 # doesn't show broken symlinks; doesn't use hyperlinks
@@ -350,6 +353,7 @@ excuse () {
 dad () { curl https://icanhazdadjoke.com && echo; }
 
 pip_upgrade_all () {
+	local packages pip_data result
 	pip_data=$(pip list --format=freeze) || { result=$?; unset pip_data; return "$result"; }
 	packages=$(printf '%s\n' "$pip_data" | sed 's/==.*//') || { result=$?; unset pip_data packages; return "$result"; }
 	unset pip_data
@@ -361,6 +365,7 @@ pip_upgrade_all () {
 }
 
 fork_github() {
+	local dir
 	dir=$(command fork-github "$@") || return
 	builtin cd "$dir" || return
 	echo "$dir"
