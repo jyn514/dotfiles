@@ -13,6 +13,9 @@ import subprocess
 import sys
 import unicodedata
 
+from .jujutsu import parse_log as parse_jj_log
+from .jujutsu import QUERY as JJ_QUERY
+
 
 ESCAPE = "\x1b"
 COLORS = {
@@ -157,32 +160,14 @@ def jj_workspace(cwd: Path) -> bool:
 
 
 def jj_description() -> tuple[str, str] | None:
-    result = run(
-        [
-            b"jj",
-            b"log",
-            b"-r",
-            b"@|@-",
-            b"-T",
-            b'empty++":"++if(bookmarks.len()>0,bookmarks.first(),"")++":"++description++"\\n"',
-            b"--no-graph",
-            b"--ignore-working-copy",
-            b"--config",
-            b"ui.paginate=never",
-        ],
-        timeout=0.2,
-    )
+    result = run(JJ_QUERY, timeout=0.2)
     if result is None or result.returncode:
         return None
-    lines = result.stdout.splitlines()
-    if len(lines) < 2:
+    parsed = parse_jj_log(result.stdout)
+    if parsed is None:
         return None
-    working = lines[0].split(b":", 1)[0]
-    parent = lines[1].split(b":", 2)
-    if len(parent) < 3:
-        return None
-    description = parent[1] or parent[2]
-    return ("faint-green" if working == b"true" else "red", os.fsdecode(description))
+    current_empty, description = parsed
+    return ("faint-green" if current_empty else "red", description)
 
 
 def git_repository(cwd: Path) -> Repository | None:

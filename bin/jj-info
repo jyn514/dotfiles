@@ -1,42 +1,15 @@
-#!/bin/sh
-# jj doesn't really use branches, so we don't print anything other than whether the workspace is modified
-# if there are branches, this is probably a co-located git repo, so `git_info` will just work without having to call this function.
+#!/usr/bin/env python3
+"""Stable launcher for the Jujutsu prompt fragment command."""
 
-if [ -n "$ZSH_VERSION" ]; then
-	ansi_escape () { printf "%%{$1%%}"; }
-elif [ -n "$FISH_VERSION" ]; then
-	ansi_escape () { command printf "\e(0%s\e(1" "${1}"; }
-else
-	ansi_escape () { command printf "\01$1\02"; }
-fi
+from pathlib import Path
+import sys
 
-RED="$(ansi_escape "\033[0;31m")"
-FAINT_GREEN="$(ansi_escape "\033[2;32m")"
-FAINT_WHITE="$(ansi_escape "\033[2;37m")"
-RESET="$(ansi_escape "\033[0;0m")"
 
-print_jj_desc() {
-	desc=$1; color=$2
-	printf %s " $FAINT_WHITE(${color}jj${FAINT_WHITE}: ${RESET}${desc}${FAINT_WHITE})"
-}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "prompt"))
 
-# hack: gather info for a bunch of commits at once, because jj takes ~50 ms to startup on rl-/rust.
-# Propagate query failures so prompt-command can fall back to Git refs.
-info=$(jj log -r '@|@-' \
-	-T 'empty++":"++if(bookmarks.len()>0,bookmarks.first(),"")++":"++description++"\n"' \
-	--no-graph --ignore-working-copy --config ui.paginate=never) || exit
+from prompt_renderer.jj_info import main  # noqa: E402
 
-color=$RED
-if [ "$(echo "$info" | head -n1 | cut -d : -f1)" = true ]; then
-	color=$FAINT_GREEN
-fi
 
-head=$(echo "$info" | head -n2 | tail -n+2)
-branch=$(echo "$head" | cut -d : -f2)
-if [ -n "$branch" ]; then
-	desc=$branch
-else
-	desc=$(echo "$head" | cut -d : -f3-)
-fi
-
-print_jj_desc "$desc" "$color"
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
