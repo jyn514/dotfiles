@@ -116,6 +116,68 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(1, paths.count(str(cargo_bin)))
             self.assertEqual(1, paths.count(str(mise_shims)))
 
+    def test_profile_does_not_fabricate_dotfiles_when_profile_resolution_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            realpath = binaries / "realpath"
+            realpath.write_text(
+                "#!/bin/sh\n"
+                '[ "$1" = "$HOME/.profile" ] && exit 31\n'
+                'exec /usr/bin/realpath "$@"\n'
+            )
+            realpath.chmod(0o755)
+            result = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    '. "$1"; profile_status=$?; '
+                    'printf "%s:%s\\n" "$profile_status" "${DOTFILES-unset}"',
+                    "sh",
+                    str(ROOT / "config/profile"),
+                ],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:/usr/bin:/bin",
+                    "SSH_AUTH_SOCK": "present",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("31:unset\n", result.stdout)
+
+    def test_zsh_restores_native_emulation_after_profile_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home / ".profile").write_text("return 23\n")
+            result = subprocess.run(
+                [
+                    "zsh",
+                    "-f",
+                    "-c",
+                    'unset DOTFILES; source "$1"; source_status=$?; '
+                    'if [[ -o SH_WORD_SPLIT ]]; then mode=sh; else mode=zsh; fi; '
+                    'printf "%s:%s\\n" "$source_status" "$mode"',
+                    "zsh",
+                    str(ROOT / "config/zshrc"),
+                ],
+                env=os.environ | {"HOME": str(home)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("23:zsh\n", result.stdout)
+
     def test_path_helpers_do_not_expand_glob_characters(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

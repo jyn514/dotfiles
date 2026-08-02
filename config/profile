@@ -14,7 +14,9 @@ fi
 if ! exists realpath; then
 	. "$(dirname "$(readlink ~/.profile)")/../lib/shell/realpath.sh" || return
 fi
-DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..") || return
+profile_path=$(realpath ~/.profile) || return
+DOTFILES=$(realpath "$(dirname "$profile_path")/..") || { result=$?; unset profile_path; return "$result"; }
+unset profile_path
 
 add_path () {
 	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac

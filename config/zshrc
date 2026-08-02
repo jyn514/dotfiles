@@ -24,8 +24,13 @@ if [ -z $DOTFILES ]; then
   # remove conflicting aliases
   unalias ls la ll l alert ip .. 2>/dev/null
   # Set up the prompt
-  . ~/.profile || return
+  . ~/.profile
+  profile_status=$?
   emulate zsh
+  if [ "$profile_status" -ne 0 ]; then
+    return "$profile_status"
+  fi
+  unset profile_status
 fi
 
 case "$-" in
