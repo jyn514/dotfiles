@@ -36,7 +36,7 @@ def check_diff(lines: Iterable[bytes]) -> bool:
 
 def main() -> int:
     process = subprocess.Popen(
-        ["jj", "diff", "--git", *sys.argv[1:]],
+        ["jj", "diff", "--ignore-working-copy", "--git", *sys.argv[1:]],
         stdout=subprocess.PIPE,
     )
     assert process.stdout is not None
