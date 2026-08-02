@@ -41,6 +41,16 @@ function exists
 	command -q $argv[1]
 end
 
+function source_init
+	command $argv | source
+	set --local statuses $pipestatus
+	for init_status in $statuses
+		if test $init_status -ne 0
+			return $init_status
+		end
+	end
+end
+
 if [ -f ~/.local/profile.fish ]
 	. ~/.local/profile.fish
 end
@@ -90,7 +100,8 @@ if exists mise
 	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
 		set --erase PATH[$shim_index]
 	end
-	mise activate fish | source
+	source_init mise activate fish
+	or return
 end
 
 ## options
@@ -394,17 +405,20 @@ function fish_command_not_found
 end
 
 if [ -z "$old_fish" ]
-	atuin init fish --disable-up-arrow | source
+	source_init atuin init fish --disable-up-arrow
+	or return
 	bind -M default / _atuin_search
 
-	zoxide init fish | source
+	source_init zoxide init fish
+	or return
 	function cd; z $argv; end
 	complete --erase cd
 	complete cd --wraps __zoxide_z
 end
 
 if exists direnv
-	direnv hook fish | source
+	source_init direnv hook fish
+	or return
 end
 
 if isatty 0

@@ -174,6 +174,32 @@ setup_kde() { record kde; }
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("Changing default shell to fish", result.stdout)
 
+    def test_shell_setup_fails_when_no_supported_shell_exists(self) -> None:
+        source = (ROOT / "setup.sh").read_text()
+        marker = "if ! [ $# = 0 ]; then\n"
+        source = source.replace(marker, "exists() { return 1; }\n" + marker, 1)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            script = directory / "setup.sh"
+            script.write_text(source)
+            (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
+            (directory / "libexec").symlink_to(
+                ROOT / "libexec", target_is_directory=True
+            )
+            (directory / "config").symlink_to(ROOT / "config", target_is_directory=True)
+            result = subprocess.run(
+                ["/bin/sh", str(script), "2"],
+                cwd=directory,
+                env=os.environ | {"HOME": str(directory), "SHELL": ""},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("no supported shell found", result.stderr)
+
     def test_vim_and_backup_options_are_decoupled_from_basics(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 

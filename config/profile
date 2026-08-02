@@ -152,7 +152,12 @@ git_reset_author() {
 }
 
 show_conflicts() {
-	jj diff --from @-- --to @- --git | grepdiff --output-matching=hunk '<<<<<<<' | less
+	conflict_diff=$(jj diff --from @-- --to @- --git) || return
+	conflict_diff=$(printf '%s\n' "$conflict_diff" | grepdiff --output-matching=hunk '<<<<<<<') || return
+	printf '%s\n' "$conflict_diff" | less
+	result=$?
+	unset conflict_diff
+	return "$result"
 }
 
 HEAD() {

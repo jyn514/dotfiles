@@ -146,43 +146,43 @@ setup_basics () {
 	# don't break when sourcing .bashrc
 	if alias | grep -q ' ls='; then unalias ls; fi
 	if [ "$HAS_REALPATH" = 0 ]; then
-		grep -v 'set -.*e' < lib/shell/realpath.sh >> ~/.local/profile
+		grep -v 'set -.*e' < lib/shell/realpath.sh >> ~/.local/profile || return
 	fi
 	set +ue
-	. config/profile
+	. config/profile || return
 	if ! [ -d ~/.config/tmux/plugins/tpm ]; then
-		python3 libexec/setup/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm
+		python3 libexec/setup/install_bootstrap.py clone tpm ~/.config/tmux/plugins/tpm || return
 	fi
 	if ! [ -d "$libdir"/fzf-tab-completion ]; then
-		python3 libexec/setup/install_bootstrap.py clone fzf-tab-completion "$libdir"/fzf-tab-completion
+		python3 libexec/setup/install_bootstrap.py clone fzf-tab-completion "$libdir"/fzf-tab-completion || return
 	fi
-	~/.config/tmux/plugins/tpm/bin/install_plugins
+	~/.config/tmux/plugins/tpm/bin/install_plugins || return
 
 	if exists dconf; then
-		dconf load / < lib/gnome-keybindings.ini
+		dconf load / < lib/gnome-keybindings.ini || return
 	fi
 
 	if exists batcat; then
-		cmd_alias bat batcat
+		cmd_alias bat batcat || return
 	fi
 	if exists fdfind; then
-		cmd_alias fd fdfind
+		cmd_alias fd fdfind || return
 	fi
 
 	if exists bat; then
-		mkdir -p "$(bat --config-dir)/syntaxes"
+		mkdir -p "$(bat --config-dir)/syntaxes" || return
 		ln -fs "$PWD/config/bat/mumps.sublime-syntax" \
-			"$(bat --config-dir)/syntaxes/mumps.sublime-syntax"
-		bat cache --build >/dev/null
+			"$(bat --config-dir)/syntaxes/mumps.sublime-syntax" || return
+		bat cache --build >/dev/null || return
 	fi
 
 	if exists atuin; then
-		mkdir -p ~/.config/fish/completions
-		atuin gen-completions --shell fish > ~/.config/fish/completions/atuin.fish
+		mkdir -p ~/.config/fish/completions || return
+		atuin gen-completions --shell fish > ~/.config/fish/completions/atuin.fish || return
 	fi
 
 	if [ -e  ~/.config/kglobalshortcutsrc ]; then
-		setup_kde
+		setup_kde || return
 	fi
 
 	setup_mimetypes
@@ -217,10 +217,12 @@ setup_kde() {
 
 setup_shell () {
 	echo Changing default shell
+	selected_shell=
 	for shell in fish zsh bash; do
 		case ${SHELL:-} in
 		*/"$shell"|"$shell")
 			echo using current shell "$shell"
+			selected_shell=$shell
 			break
 			;;
 		*) if exists "$shell"; then
@@ -230,11 +232,18 @@ setup_shell () {
 				return 1
 			fi
 			chsh -s "$(command -v "$shell")" >/dev/null || return
+			selected_shell=$shell
 			break
 		fi;;
 		esac
 	done
-unset shell
+	unset shell
+	if [ -z "$selected_shell" ]; then
+		echo "no supported shell found" >&2
+		unset selected_shell
+		return 1
+	fi
+	unset selected_shell
 }
 
 setup_python () {
@@ -343,7 +352,7 @@ setup_install_local () {
 		echo "Alpine's libgcc package is required for Rust; run setup option 7 or 9 first" >&2
 		return 1
 	fi
-	mkdir -p ~/.local/bin
+	mkdir -p ~/.local/bin || return
 	install_mise || return
 	install_platform_bundles || return
 
@@ -356,28 +365,38 @@ setup_install_local () {
 	fi
 
 	if ! [ -e ~/.config/zsh/antidote ]; then
-		mise_exec python libexec/setup/install_bootstrap.py clone antidote ~/.config/zsh/antidote
+		mise_exec python libexec/setup/install_bootstrap.py clone antidote ~/.config/zsh/antidote || return
 	fi
 	if ! [ -e ~/.config/fish/fish_plugins ]; then
 		fisher_installer=$(tmp_file fisher.XXXXXX)
-		mise_exec python libexec/setup/install_bootstrap.py download fisher "$fisher_installer" || return
-		fisher_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git fisher revision)
+		mise_exec python libexec/setup/install_bootstrap.py download fisher "$fisher_installer" || {
+			rm -f "$fisher_installer"
+			return 1
+		}
+		fisher_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git fisher revision) || {
+			rm -f "$fisher_installer"
+			return 1
+		}
 		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@$argv[2]' \
-			"$fisher_installer" "$fisher_revision"
+			"$fisher_installer" "$fisher_revision" || {
+			result=$?
+			rm -f "$fisher_installer"
+			return "$result"
+		}
 		rm -f "$fisher_installer"
-		zoxide_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git zoxide.fish revision)
-		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision"
+		zoxide_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git zoxide.fish revision) || return
+		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision" || return
 		unset fisher_installer fisher_revision zoxide_revision
 	fi
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
-	cmd_alias python python3
-	cmd_alias py python3
-	cmd_alias pip pip3
-	cmd_alias vi nvim
-	cmd_alias vim nvim
+	cmd_alias python python3 || return
+	cmd_alias py python3 || return
+	cmd_alias pip pip3 || return
+	cmd_alias vi nvim || return
+	cmd_alias vim nvim || return
 
 	if exists bat; then
-		bat cache --build
+		bat cache --build || return
 	fi
 
 }

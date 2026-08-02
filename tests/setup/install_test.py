@@ -828,7 +828,10 @@ class MiseConfigTests(unittest.TestCase):
         install = json.loads((ROOT / "install.conf.json").read_text())
         links = next(section["link"] for section in install if "link" in section)
 
-        self.assertIn("mise activate fish | source", fish_config)
+        self.assertIn("source_init mise activate fish", fish_config)
+        self.assertIn("source_init atuin init fish --disable-up-arrow", fish_config)
+        self.assertIn("source_init zoxide init fish", fish_config)
+        self.assertIn("source_init direnv hook fish", fish_config)
         self.assertIn(
             "set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH",
             fish_config,
