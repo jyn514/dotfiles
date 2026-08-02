@@ -677,6 +677,103 @@ class CommandTest(unittest.TestCase):
             calls.read_text().splitlines()[0],
         )
 
+    def test_fork_github_keeps_repository_name_when_checkout_directory_differs(self) -> None:
+        calls = self.directory / "git-calls"
+        self.executable(
+            "git",
+            'printf "<%s>\\n" "$@" >> "$GIT_CALLS"\n'
+            'if [ "$1" = clone ]; then mkdir "$4"; fi\n',
+        )
+        environment = os.environ | {
+            "GIT_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        result = subprocess.run(
+            [str(ROOT / "bin/fork-github"), "owner/repository", "custom checkout"],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        missing = subprocess.run(
+            [str(ROOT / "bin/fork-github")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("custom checkout\n", result.stdout)
+        self.assertEqual(
+            ["<remote>", "<add>", "<origin>", "<git@github.com:jyn514/repository.git>"],
+            calls.read_text().splitlines()[-4:],
+        )
+        self.assertEqual(2, missing.returncode)
+        self.assertIn("usage:", missing.stderr)
+
+    def test_b_enters_workspace_and_preserves_metadata_failures(self) -> None:
+        workspace = self.directory / "workspace with spaces"
+        workspace.mkdir()
+        bacon_cwd = self.directory / "bacon-cwd"
+        self.executable(
+            "cargo",
+            'if [ -n "${CARGO_STATUS:-}" ]; then exit "$CARGO_STATUS"; fi\n'
+            'printf \'{"workspace_root":"%s"}\\n\' "$WORKSPACE"\n',
+        )
+        self.executable(
+            "jq",
+            'if [ -n "${JQ_STATUS:-}" ]; then exit "$JQ_STATUS"; fi\n'
+            "python3 -c 'import json, sys; print(json.load(sys.stdin)[\"workspace_root\"])'\n",
+        )
+        self.executable("bacon", 'pwd > "$BACON_CWD"\n')
+        environment = os.environ | {
+            "BACON_CWD": str(bacon_cwd),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "WORKSPACE": str(workspace),
+        }
+
+        success = subprocess.run([str(ROOT / "bin/b")], env=environment, check=False)
+        cargo_failure = subprocess.run(
+            [str(ROOT / "bin/b")], env=environment | {"CARGO_STATUS": "23"}, check=False
+        )
+        jq_failure = subprocess.run(
+            [str(ROOT / "bin/b")], env=environment | {"JQ_STATUS": "24"}, check=False
+        )
+
+        self.assertEqual(0, success.returncode)
+        self.assertEqual(f"{workspace}\n", bacon_cwd.read_text())
+        self.assertEqual(23, cargo_failure.returncode)
+        self.assertEqual(24, jq_failure.returncode)
+
+    def test_bandit_preserves_spaces_and_hyphens_in_password(self) -> None:
+        calls = self.directory / "sshpass-calls"
+        (self.directory / "bandit.txt").write_text("7 - tea time-with-hyphens\n")
+        self.executable("sshpass", 'printf "<%s>\\n" "$@" > "$SSHPASS_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/bandit")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "SSHPASS_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "<-p>\n<tea time-with-hyphens>\n<ssh>\n<-p>\n<2220>\n"
+            "<bandit7@bandit.labs.overthewire.org>\n",
+            calls.read_text(),
+        )
+
     def test_youtube_search_passes_only_search_terms(self) -> None:
         calls = self.directory / "ddg-calls"
         self.executable("ddg", 'printf "<%s>\\n" "$@" > "$DDG_CALLS"\n')
@@ -1427,6 +1524,36 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(24, result.returncode)
+
+    def test_git_autosquash_only_defaults_remote_for_a_missing_config_key(self) -> None:
+        calls = self.directory / "git-calls"
+        self.executable(
+            "git",
+            'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
+            'case "$1" in\n'
+            '  symbolic-ref) printf "main\\n";;\n'
+            '  config) exit "${CONFIG_STATUS:-1}";;\n'
+            '  merge-base) printf "abc123\\n";;\n'
+            '  revise) exit 0;;\n'
+            'esac\n',
+        )
+        environment = os.environ | {
+            "GIT_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        missing = subprocess.run(
+            [str(ROOT / "bin/git-autosquash")], env=environment, check=False
+        )
+        fatal = subprocess.run(
+            [str(ROOT / "bin/git-autosquash")],
+            env=environment | {"CONFIG_STATUS": "25"},
+            check=False,
+        )
+
+        self.assertEqual(0, missing.returncode)
+        self.assertIn("merge-base HEAD origin/HEAD", calls.read_text().splitlines())
+        self.assertEqual(25, fatal.returncode)
 
 
 if __name__ == "__main__":
