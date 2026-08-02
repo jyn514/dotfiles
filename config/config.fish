@@ -97,7 +97,8 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 end
 
 if [ -z "$SSH_AUTH_SOCK" ]
-	if [ "(uname)" = Darwin ]
+	set -l kernel (uname); or return
+	if [ "$kernel" = Darwin ]
 		export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 	else
 		export SSH_AUTH_SOCK=$HOME/.1password/agent.sock
