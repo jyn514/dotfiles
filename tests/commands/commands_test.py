@@ -689,6 +689,49 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("prompt from path", result.stdout)
 
+    def test_attach_session_propagates_tmux_query_failures(self) -> None:
+        self.executable(
+            "tmux",
+            'case "$1" in\n'
+            "  show-option) exit 1;;\n"
+            "  display-message) exit 23;;\n"
+            "esac\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/attach-session.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(23, result.returncode)
+
+    def test_attach_session_propagates_session_listing_failure(self) -> None:
+        self.executable(
+            "tmux",
+            'case "$1" in\n'
+            "  show-option) exit 1;;\n"
+            "  display-message)\n"
+            '    case "$*" in\n'
+            "      *client_last_session*) printf '\\n';;\n"
+            "      *session_attached*) printf '1\\n';;\n"
+            "    esac;;\n"
+            "  list-sessions) exit 24;;\n"
+            "esac\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/attach-session.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(24, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,14 +9,16 @@ fi
 
 install_macos_local() {
 	# note that we don't actually pass sudo here
-	./libexec/setup/setup_sudo.sh install_features
-	brew install -q duti
-	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
-	cmd_alias gdu gdu-go
+	./libexec/setup/setup_sudo.sh install_features || return
+	brew install -q duti || return
+	brew_prefix=$(brew --prefix) || return
+	ln -fs "$brew_prefix/opt/antidote/share/antidote" ~/.config/zsh/antidote || return
+	unset brew_prefix
+	cmd_alias gdu gdu-go || return
 	if exists cargo; then
-		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision)
+		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision) || return
 		cargo install --git https://github.com/jyn514/brew-command-not-found \
-			--rev "$brew_revision" --locked
+			--rev "$brew_revision" --locked || return
 		unset brew_revision
 	fi
 }
@@ -126,7 +128,7 @@ setup_dotfiles () {
 	vendor/dotbot/bin/dotbot --quiet -d "$(pwd)" -c install.conf.json || return
 
 	# otherwise git defaults to ~/.git-credentials: https://git-scm.com/docs/git-credential-store#FILES
-	touch ~/.config/git/credentials
+	touch ~/.config/git/credentials || return
 	unset JJ_CONFIG_PATH
 }
 
@@ -189,14 +191,21 @@ setup_basics () {
 setup_kde() {
 	if ! [ -d ~/.local/share/kwin/scripts/krohnkite ]; then
 		krohnkite=$(tmp_file krohnkite.XXXXXX)
-		python3 libexec/setup/install_bootstrap.py download krohnkite "$krohnkite" || return
-		kpackagetool6 -t KWin/Script -i "$krohnkite"
+		python3 libexec/setup/install_bootstrap.py download krohnkite "$krohnkite" || {
+			rm -f "$krohnkite"
+			return 1
+		}
+		kpackagetool6 -t KWin/Script -i "$krohnkite" || {
+			result=$?
+			rm -f "$krohnkite"
+			return "$result"
+		}
 		rm -f "$krohnkite"
 	fi
 
-	if ! [ -d $libdir/dynamic_workspaces ]; then
-		python3 libexec/setup/install_bootstrap.py clone dynamic-workspaces "$libdir"/dynamic_workspaces
-		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
+	if ! [ -d "$libdir/dynamic_workspaces" ]; then
+		python3 libexec/setup/install_bootstrap.py clone dynamic-workspaces "$libdir"/dynamic_workspaces || return
+		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces || return
 	fi
 
 	if ! patch --forward --silent ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch; then
@@ -209,18 +218,21 @@ setup_kde() {
 setup_shell () {
 	echo Changing default shell
 	for shell in fish zsh bash; do
-		if echo "${SHELL:-}" | grep $shell; then
+		case ${SHELL:-} in
+		*/"$shell"|"$shell")
 			echo using current shell "$shell"
 			break
-		elif exists $shell; then
+			;;
+		*) if exists "$shell"; then
 			echo "Changing default shell to $shell"
 			if ! exists chsh; then
 				echo "chsh is required to change shells; run setup option 7 or 9 first" >&2
 				return 1
 			fi
-			chsh -s "$(command -v $shell)" >/dev/null
+			chsh -s "$(command -v "$shell")" >/dev/null || return
 			break
-		fi
+		fi;;
+		esac
 	done
 unset shell
 }
@@ -246,16 +258,18 @@ setup_vim () {
 	prepare_vim_setup || return
 VIMDIR="$HOME/.vim/autoload"
 	if exists vim && ! [ -e "$VIMDIR/plug.vim" ]; then
-		mkdir -p "$VIMDIR"
-		python3 libexec/setup/install_bootstrap.py download vim-plug "$VIMDIR/plug.vim"
-		vim -c PlugInstall -c q -c q
+		mkdir -p "$VIMDIR" || return
+		python3 libexec/setup/install_bootstrap.py download vim-plug "$VIMDIR/plug.vim" || return
+		vim -c PlugInstall -c q -c q || return
 	fi
 unset VIMDIR
 	if exists nvim; then
-LAZYDIR=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1)/lazy/lazy.nvim
+		NVIM_DATA=$(nvim --cmd ":echo stdpath('data')" --cmd :q --headless --clean 2>&1) || return
+		LAZYDIR=$NVIM_DATA/lazy/lazy.nvim
+		unset NVIM_DATA
 		if ! [ -e "$LAZYDIR" ]; then
-			python3 libexec/setup/install_bootstrap.py clone lazy.nvim "$LAZYDIR"
-			nvim --headless +:q
+			python3 libexec/setup/install_bootstrap.py clone lazy.nvim "$LAZYDIR" || return
+			nvim --headless +:q || return
 		fi
 unset LAZYDIR
 	fi
@@ -284,7 +298,12 @@ setup_backup () {
 	if ! grep -Fqx "$cron_entry" "$TMP_FILE"; then
 		echo "$cron_entry" >> "$TMP_FILE"
 	fi
-	crontab "$TMP_FILE"
+	crontab "$TMP_FILE" || {
+		result=$?
+		rm -f "$TMP_FILE"
+		unset BACKUP_COMMAND TMP_FILE cron_entry
+		return "$result"
+	}
 	rm -f "$TMP_FILE"
 	unset BACKUP_COMMAND TMP_FILE cron_entry
 }
@@ -392,7 +411,7 @@ Choose setup to run: "
 
 # main
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit
 . lib/shell/lib.sh
 . lib/shell/env.sh
 
