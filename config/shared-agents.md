@@ -51,6 +51,7 @@ Quoting may prevent the sandbox from matching an approved command prefix, even w
 
 - Write executable and subcommand tokens literally. Do not generate commands that quote every argument: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
 - Quote only arguments that require shell quoting, such as titles containing spaces.
+- Escape arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
 - If command generation is genuinely necessary, preserve the literal approved prefix and generate only the trailing arguments.
 
 ## Commits
