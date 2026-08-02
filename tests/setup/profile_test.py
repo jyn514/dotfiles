@@ -726,6 +726,21 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("let l:status = v:shell_error", vimrc)
         self.assertIn("return l:status", vimrc)
         self.assertIn("function! CompileTex()", vimrc)
+        for option in ("tabstop", "shiftwidth", "softtabstop"):
+            self.assertNotRegex(vimrc, rf"\n\tset {option}=")
+            self.assertIn(f"\n\tsetlocal {option}=", vimrc)
+        self.assertIn(
+            "setglobal tabstop=2 shiftwidth=2 softtabstop=2 expandtab", vimrc
+        )
+        self.assertIn("autocmd FileType tex inoremap <buffer> <C-l>", vimrc)
+        self.assertIn("autocmd FileType tex nnoremap <buffer> <C-l>", vimrc)
+        self.assertNotIn("\ninoremap <C-l>", vimrc)
+        self.assertNotIn("\nnnoremap <C-l>", vimrc)
+        self.assertIn("fnamemodify(l:source, ':h')", vimrc)
+        self.assertIn("' && cd ' . shellescape(l:directory)", vimrc)
+        self.assertIn("shellescape(l:build)", vimrc)
+        self.assertIn("shellescape(l:filename)", vimrc)
+        self.assertIn("silent! unmap <TAB>", vimrc)
         self.assertEqual(7, vimrc.count("function! "))
         self.assertNotIn("\nfunction ", vimrc)
         self.assertIn("Plug 'vim-latex/vim-latex', { 'for': 'tex' }", vimrc)

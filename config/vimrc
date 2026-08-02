@@ -159,58 +159,62 @@ set listchars+=tab:>-
 """"""""10""""""""20"""""""" indentation settings """"""""60""""""""70""""""""80
 
 function! TwoSpacesSoftTabs()
-	set tabstop=2
-	set shiftwidth=2
-	set softtabstop=2
-	set expandtab
+	setlocal tabstop=2
+	setlocal shiftwidth=2
+	setlocal softtabstop=2
+	setlocal expandtab
 endfunction
 
 function! EightSpacesHardTabs()
-	set tabstop=8
-	set shiftwidth=8
-	set softtabstop=8
-	set noexpandtab
+	setlocal tabstop=8
+	setlocal shiftwidth=8
+	setlocal softtabstop=8
+	setlocal noexpandtab
 endfunction
 
 function! EightSpacesSoftTabs()
-	set tabstop=8
-	set shiftwidth=4
-	set softtabstop=8
-	set expandtab
+	setlocal tabstop=8
+	setlocal shiftwidth=4
+	setlocal softtabstop=8
+	setlocal expandtab
 endfunction
 
 function! FourSpacesSoftTabs()
-	set tabstop=4
-	set shiftwidth=4
-	set softtabstop=4
-	set expandtab
+	setlocal tabstop=4
+	setlocal shiftwidth=4
+	setlocal softtabstop=4
+	setlocal expandtab
 endfunction
 
 function! FourSpacesHardTabs()
-	set tabstop=4
-	set shiftwidth=4
-	set softtabstop=4
-	set noexpandtab
+	setlocal tabstop=4
+	setlocal shiftwidth=4
+	setlocal softtabstop=4
+	setlocal noexpandtab
 endfunction
 
 function! CompileTex()
-    " save the file first
-    w
-    " put build artifacts in a subdirectory so they're not so annoying
-    silent !mkdir -p build && pdflatex -output-directory build %
+	" Save the file first, then compile from its directory so relative inputs work.
+	write
+	let l:source = expand('%:p')
+	let l:directory = fnamemodify(l:source, ':h')
+	let l:build = l:directory . '/build'
+	let l:filename = './' . fnamemodify(l:source, ':t')
+	let l:command = 'mkdir -p ' . shellescape(l:build)
+		\ . ' && cd ' . shellescape(l:directory)
+		\ . ' && pdflatex -output-directory ' . shellescape(l:build)
+		\ . ' ' . shellescape(l:filename)
+	execute 'silent !' . l:command
 	let l:status = v:shell_error
-    " link the outputs into the current directory
-    "silent !ln -s build/*.pdf .
-    redraw!
+	redraw!
 	if l:status != 0
 		echoerr 'pdflatex failed with status ' . l:status
 	endif
 	return l:status
 endfunction
-inoremap <C-l> <Esc>:call CompileTex()<Enter>i
-nnoremap <C-l> :call CompileTex()<Enter>
 
 " use 2 spaces by default
+setglobal tabstop=2 shiftwidth=2 softtabstop=2 expandtab
 call TwoSpacesSoftTabs()
 
 
@@ -240,6 +244,8 @@ autocmd FileType c call FourSpacesSoftTabs()
 autocmd FileType java call TwoSpacesSoftTabs()
 autocmd FileType python call FourSpacesSoftTabs()
 autocmd FileType tex call FourSpacesSoftTabs()
+autocmd FileType tex inoremap <buffer> <C-l> <Esc>:call CompileTex()<Enter>i
+autocmd FileType tex nnoremap <buffer> <C-l> :call CompileTex()<Enter>
 autocmd FileType yaml call FourSpacesSoftTabs()
 autocmd FileType sh call FourSpacesHardTabs()
 autocmd FileType perl call EightSpacesHardTabs()
@@ -263,5 +269,5 @@ if has("spell")
 	set spellcapcheck=
 endif
 
-unmap <TAB>
+silent! unmap <TAB>
 set viminfo+=n~/.vim/viminfo
