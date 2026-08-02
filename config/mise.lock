@@ -557,6 +557,9 @@ backend = "pipx:pylint"
 version = "9.1.1"
 backend = "pipx:pytest"
 
+[tools."pipx:pytest".options]
+uvx_args = "--with pytest-xdist --with pytest-sugar --with pytest-instafail"
+
 [[tools."pipx:yt-dlp"]]
 version = "2026.7.4"
 backend = "pipx:yt-dlp"

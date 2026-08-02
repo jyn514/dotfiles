@@ -13,10 +13,10 @@ else
 fi
 
 case $image in
-	alpine:*) install='apk add --no-cache coreutils python3';;
-	fedora:*) install='dnf install -y coreutils python3';;
-	archlinux:*) install='pacman --sync --refresh --sysupgrade --noconfirm --disable-sandbox coreutils python';;
-	ubuntu:*) install='export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends coreutils python3';;
+	alpine:*) install='apk add --no-cache bash coreutils git jq py3-pip python3 ripgrep';;
+	fedora:*) install='dnf install -y bash coreutils git jq python3 python3-pip ripgrep';;
+	archlinux:*) install='pacman --sync --refresh --sysupgrade --noconfirm --disable-sandbox bash coreutils git jq python python-pip ripgrep';;
+	ubuntu:*) install='export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y --no-install-recommends bash coreutils git jq python3 python3-pip python3-venv ripgrep';;
 	*) echo "$0: unsupported image: $image" >&2; exit 2;;
 esac
 
@@ -58,14 +58,11 @@ fi
 container=$("$engine" create --env SETUP_COMMAND_PREFIX="$setup_command_prefix" --workdir /work "$image" sh -ec "
 		$bootstrap_check
 		$install
+		python3 -m venv /tmp/test-venv
+		/tmp/test-venv/bin/pip install --quiet --requirement install/test.txt
+		export PATH=/tmp/test-venv/bin:\$PATH
 		$post_install_check
-		python3 scripts/setup/setup_test.py
-		python3 scripts/setup/menu_test.py
-		python3 scripts/setup/idempotence_test.py
-		python3 scripts/track/track_test.py
-		python3 scripts/setup/install_test.py
-		python3 scripts/setup/mise_smoke_test.py
-		python3 scripts/setup/profile_test.py
+		scripts/test --jobs 4
 ")
 trap '"$engine" rm --force "$container" >/dev/null' EXIT HUP INT TERM
 
