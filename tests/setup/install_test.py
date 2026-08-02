@@ -892,7 +892,11 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn(". ~/.local/profile.fish\n\tor return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/env.sh; or return", fish_config)
         self.assertIn(". $DOTFILES/lib/shell/paths.sh; or return", fish_config)
-        self.assertIn(". ~/.local/config/brew.fish\n\tor return", fish_config)
+        self.assertIn("[ $brew_command -nt $brew_cache ]", fish_config)
+        self.assertIn('set -l pending_cache "$brew_cache.$fish_pid"', fish_config)
+        self.assertIn("if $brew_command shellenv fish > $pending_cache", fish_config)
+        self.assertIn("command mv $pending_cache $brew_cache; or return", fish_config)
+        self.assertIn(". $brew_cache; or return", fish_config)
         self.assertIn(". /usr/share/bash-completion/bash_completion || return", bashrc)
         self.assertIn(". /etc/bash_completion || return", bashrc)
         for line in zshrc.splitlines():
@@ -903,6 +907,11 @@ class MiseConfigTests(unittest.TestCase):
         setup = (ROOT / "setup.sh").read_text()
 
         self.assertNotIn("glide-browser/glide/releases", setup)
+
+    def test_claude_settings_are_valid_json(self) -> None:
+        settings = json.loads((ROOT / "config/claude.json").read_text())
+
+        self.assertEqual("opus", settings["model"])
 
 
 if __name__ == "__main__":
