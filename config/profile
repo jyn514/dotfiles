@@ -217,20 +217,11 @@ whatismyip() {
 	dig +short myip.opendns.com @resolver4.opendns.com
 }
 
-what_belongs () {
-	if command -v dpkg > /dev/null; then
-		dpkg -L "$@"
-	elif command -v rpm > /dev/null; then
-		rpm -ql "$@"
-	else
-		echo "no supported package manager found" >&2
-		return 1
-	fi
-}
+alias what_belongs=what-belongs
 
 what_runs () {
 	local file files
-	files=$(what_belongs "$@") || return
+	files=$(command what-belongs "$@") || return
 	[ -n "$files" ] || return 0
 	printf '%s\n' "$files" | while IFS= read -r file; do
 		if [ -f "$file" ] && [ -x "$file" ]; then
