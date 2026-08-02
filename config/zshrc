@@ -42,7 +42,7 @@ ABBR_AUTOLOAD=0
 RPS1="%F{240}loading%f"
 
 # package manager
-source $ZDOTDIR/antidote/antidote.zsh || return
+source "$ZDOTDIR/antidote/antidote.zsh" || return
 antidote load || return
 
 zsh-defer -12p bindkey '^[l' autosuggest-execute || return

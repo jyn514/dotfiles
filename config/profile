@@ -355,7 +355,7 @@ if [ "$DISPLAY" ]; then
 	else
 		# you know what unix if you can't come up with working hyperlinks in 50 years then fuck you too
 		man() {
-			local section
+			local codename http_status man_index section url
 			case "$1" in
 				-*) command man "$@"; return;;
 				*) if [ -r /etc/manpath.config ] &&
@@ -375,12 +375,9 @@ if [ "$DISPLAY" ]; then
 				return
 			fi
 
-			check() {
-				[ 200 = "$(curl -I -m 1 -s -o /dev/null -w "%{http_code}" "$@")" ]
-			}
-
 			url=https://man.openbsd.org/$1${section:+.$section}
-			if check "$url"; then
+			http_status=$(curl -I -m 1 -s -o /dev/null -w '%{http_code}' "$url") || http_status=
+			if [ "$http_status" = 200 ]; then
 				xdg-open "$url"
 				return
 			fi
@@ -388,8 +385,10 @@ if [ "$DISPLAY" ]; then
 				man_index=$(command man -k "$1") || man_index=
 				section=$(printf '%s\n' "$man_index" | awk -v arg="$1" '$1 == arg { gsub(/[()]/, "", $2); print $2; exit }')
 			fi
-			url=https://manpages.ubuntu.com/manpages/$(lsb_release -cs)/man$section/$1.$section.html
-			if check "$url"; then
+			codename=$(lsb_release -cs) || codename=
+			url=https://manpages.ubuntu.com/manpages/$codename/man$section/$1.$section.html
+			http_status=$(curl -I -m 1 -s -o /dev/null -w '%{http_code}' "$url") || http_status=
+			if [ "$codename" ] && [ "$http_status" = 200 ]; then
 				xdg-open "$url"
 				return
 			fi
