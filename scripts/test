@@ -3,14 +3,16 @@ set -eu
 
 jobs=${TEST_JOBS:-8}
 run_containers=0
+verbose=0
 
 usage() {
-	echo "usage: $0 [--containers] [--jobs count]" >&2
+	echo "usage: $0 [--containers] [--jobs count] [--verbose]" >&2
 }
 
 while [ $# -gt 0 ]; do
 	case $1 in
 		--containers) run_containers=1;;
+		-v|--verbose) verbose=1;;
 		--jobs)
 			shift
 			[ $# -gt 0 ] || { usage; exit 2; }
@@ -30,21 +32,41 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 results=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-tests.XXXXXX")
 trap 'rm -rf "$results"' EXIT HUP INT TERM
 export results
+export verbose
 
 cd "$root"
+started=$(date +%s)
+python_results=$results/python
+mkdir "$python_results"
+python_count=$(find scripts -type f \( -name '*_test.py' -o -name 'test_*.py' \) | wc -l | tr -d ' ')
+printf 'Running %s test files (%s jobs)...\n' "$python_count" "$jobs"
 
 find scripts -type f \( -name '*_test.py' -o -name 'test_*.py' \) -print0 |
 	xargs -0 -n1 -P "$jobs" sh -c '
 		test_file=$1
 		log_name=$(printf "%s" "$test_file" | tr / _)
-		if python3 "$test_file" > "$results/$log_name" 2>&1; then
-			printf "PASS %s\n" "$test_file"
+		log="$results/python/$log_name.log"
+		if python3 "$test_file" > "$log" 2>&1; then
+			printf "%s\n" "$test_file" > "$results/python/$log_name.pass"
+			if [ "$verbose" = 1 ]; then printf "PASS %s\n" "$test_file"; fi
 		else
-			printf "FAIL %s\n" "$test_file"
-			cat "$results/$log_name"
-			exit 1
+			printf "%s\n" "$test_file" > "$results/python/$log_name.fail"
 		fi
 	' sh
+
+failed=0
+for marker in "$python_results"/*.fail; do
+	[ -e "$marker" ] || continue
+	test_file=$(cat "$marker")
+	printf '\nFAIL %s\n' "$test_file" >&2
+	cat "${marker%.fail}.log" >&2
+	failed=1
+done
+if [ "$failed" = 1 ]; then
+	printf '\n%s of %s test files failed.\n' \
+		"$(find "$python_results" -name '*.fail' | wc -l | tr -d ' ')" "$python_count" >&2
+	exit 1
+fi
 
 shell_files=$(rg -l '^#!/bin/sh$' setup.sh track.sh lib bin scripts || true)
 if [ -n "$shell_files" ]; then
@@ -60,16 +82,34 @@ if [ "$run_containers" = 1 ]; then
 	container_results=$results/containers
 	mkdir "$container_results"
 	export container_results
+	printf 'Running 4 container suites in parallel...\n'
 	printf '%s\n' alpine:latest archlinux:latest fedora:latest ubuntu:26.04 |
 		xargs -n1 -P 4 sh -c '
 			image=$1
 			name=${image%%:*}
-			if scripts/setup/container_test.sh "$image" > "$container_results/$name" 2>&1; then
-				printf "PASS container %s\n" "$image"
+			log="$container_results/$name.log"
+			if scripts/setup/container_test.sh "$image" > "$log" 2>&1; then
+				printf "%s\n" "$image" > "$container_results/$name.pass"
+				if [ "$verbose" = 1 ]; then printf "PASS container %s\n" "$image"; fi
 			else
-				printf "FAIL container %s\n" "$image"
-				cat "$container_results/$name"
-				exit 1
+				printf "%s\n" "$image" > "$container_results/$name.fail"
 			fi
 		' sh
+	for marker in "$container_results"/*.fail; do
+		[ -e "$marker" ] || continue
+		image=$(cat "$marker")
+		printf '\nFAIL container %s\n' "$image" >&2
+		cat "${marker%.fail}.log" >&2
+		failed=1
+	done
+	if [ "$failed" = 1 ]; then
+		exit 1
+	fi
+fi
+
+elapsed=$(($(date +%s) - started))
+if [ "$run_containers" = 1 ]; then
+	printf 'All %s test files and 4 container suites passed in %ss.\n' "$python_count" "$elapsed"
+else
+	printf 'All %s test files passed in %ss.\n' "$python_count" "$elapsed"
 fi
