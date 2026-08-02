@@ -8,8 +8,8 @@
       "version": "18ce5d4734d4f0e856db3861428800e2a07efd72"
     },
     "dotbot-launcher": {
-      "license": "libexec/dotbot/LICENSE.md",
-      "path": "libexec/dotbot/bin/dotbot",
+      "license": "vendor/dotbot/LICENSE.md",
+      "path": "vendor/dotbot/bin/dotbot",
       "sha256": "9d6abb7969c6de4897bd1b660b1cbd808cb4f0f3d058423c2e745d9b7e4cdadc",
       "source": "https://github.com/anishathalye/dotbot",
       "version": "087840716e0ba1edd60049094a0ab57a8aa3fbe3"

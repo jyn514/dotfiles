@@ -2,7 +2,7 @@
 set -eu
 
 cd "$(dirname "$0")/../.."
-. libexec/shell/lib.sh
+. lib/shell/lib.sh
 
 fingerprint=3FEF9748469ADBE15DA7CA80AC2D62742012EA22
 workdir=$(tmp_dir 1password.XXXXXX)

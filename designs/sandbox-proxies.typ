@@ -5,7 +5,7 @@
 
 = Sandbox command proxies
 
-*Status:* Design only.
+*Status:* Implemented.
 
 == Objective
 
@@ -138,6 +138,12 @@ A representative first manifest is:
 }
 ```
 
+Repositories that need no additional command proxies may omit the manifest or provide an empty one:
+
+```json
+{"version": 1, "commands": {}}
+```
+
 The launcher implicitly mounts the validated repository read-only at its common repository path and overlays `.agents/sandbox` read-only; the manifest cannot omit or weaken either protection.
 `workdir`, mount sources, and mount targets are relative to the repository root unless the schema explicitly defines a launcher-owned source.
 The launcher resolves targets beneath its container repository path, so the manifest does not depend on an absolute path such as `/src/work`.
@@ -161,6 +167,8 @@ Like `.agents/sandbox/base-image`, the command may inspect the trusted startup c
 It prints exactly one resolved image hash on standard output and sends progress or diagnostics to standard error.
 The launcher rejects an empty, malformed, or multi-line result and starts the proxy by the returned immutable image hash rather than by a mutable tag.
 An image builder that needs stronger reproducibility may also pin and verify an OCI digest.
+
+A proxy image starts the fixed server named by `argv`, binds `/run/sandbox-proxy/socket` only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
 
 The image command and everything it loads from `.agents/sandbox` are trusted manifest support code.
 It completes before the agent starts and never reruns during the session, so agent edits cannot rebuild or replace the resolved image.
@@ -236,6 +244,17 @@ The router chooses one path:
 + If it acquires the host lock, remove stale session metadata, run the local bridge with the human's authority, then release the lock
 + If the launcher holds the lock and valid metadata exists, use `podman exec` or the equivalent daemon API to run a fixed immutable byte-forwarding client in the recorded proxy container
 + If the lock is held without metadata, wait for metadata or lock release, then retry
+
+A command-specific host shim invokes the same router directly:
+
+```sh
+sandbox-proxy-route \
+  --repo "$repository" \
+  --command example \
+  -- local-example-bridge
+```
+
+The request and response remain on standard input and output.
 
 Every proxy image contains that launcher-owned client at one conventional absolute path.
 The router sends the framed request to the client's standard input; the client connects to the conventional in-VM Unix socket and copies the framed response to standard output without interpreting either message.
@@ -313,8 +332,10 @@ Authoritative issue state remains in Git refs.
 
 `jj-proxy` accepts a broad but validated Jujutsu argument grammar because interactive repository work needs operands and options.
 Jujutsu atomically links temporary objects between `.jj` and `.git`, so separate writable bind mounts introduce an unusable cross-device boundary.
-Its repository bind is writable to preserve filesystem identity, while a fail-closed Landlock policy permits writes only beneath `.git`, `.jj`, the proxy's private configuration directory, and its socket directory.
+Its repository bind starts at the nearest common ancestor of a linked worktree, its `gitdir`, and its common Git directory, and is writable to preserve filesystem identity.
+A fail-closed Landlock policy permits reads only from the selected worktree, its resolved metadata, and trusted runtime files; it permits writes only beneath the resolved Git metadata, `.jj`, the proxy's private configuration directory, and its socket directory.
 Metadata operations remain available, while commands that would update ordinary working-copy files fail at the Landlock boundary.
+Execution is permitted only beneath `/trusted/bin`, giving the working tree the same effective `noexec` property under Docker and Podman without unsafe syscall bindings or a hard-coded kernel ABI.
 The `bug` protocol is narrower than Jujutsu's grammar: it forwards one bridge subcommand, rewrites body input, rejects `push` and `raw`, and leaves issue-operation validation to the trusted bridge.
 
 The generic manifest does not replace `jj-proxy`'s command-specific validation.

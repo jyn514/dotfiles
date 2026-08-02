@@ -2,7 +2,7 @@
 
 set -e
 
-. libexec/shell/lib.sh
+. lib/shell/lib.sh
 
 if [ -n "$DOAS_USER" ]; then
 	SUDO_USER=$DOAS_USER
@@ -326,7 +326,7 @@ remove_unwanted () {
 }
 
 DIR="$(dirname "$(realpath "$0")")"
-. "$DIR"/../shell/lib.sh
+. "$DIR"/../../lib/shell/lib.sh
 if exists dpkg; then
 	IS_DEB=1
 elif exists dnf; then
