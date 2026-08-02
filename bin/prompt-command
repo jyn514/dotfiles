@@ -68,15 +68,26 @@ FAINT_WHITE="$(ansi_escape "\033[2;37m")"
 
 ## git handling
 
+is_jj_workspace() {
+	candidate=$PWD
+	while :; do
+		[ -e "$candidate/.jj" ] && return 0
+		parent=${candidate%/*}
+		[ -n "$parent" ] || parent=/
+		[ "$parent" != "$candidate" ] || return 1
+		candidate=$parent
+	done
+}
+
 git_info() {
 	# Display probe only: never take optional locks (e.g. git status writing
 	# index.lock), so rendering the prompt can't fight a real git command.
 	# Scoped here, not exported globally: git_info only ever runs in the
 	# `git_info | ...` pipe subshell, so this stays out of the interactive shell.
 	export GIT_OPTIONAL_LOCKS=0
-  # if this isn't a git repo, we can't show anything useful
+	# if this isn't a git repo, we can't show anything useful
 	if ! git rev-parse --git-dir >/dev/null 2>&1; then
-		if [ -e .jj ]; then timeout .2 jj-info 2>/dev/null; fi
+		if is_jj_workspace; then timeout .2 jj-info 2>/dev/null; fi
 		return
 	else
 		printf ' '
@@ -106,7 +117,7 @@ git_info() {
 
 	# if this is a jj repo, prefer jj's working-copy description over scanning
 	# every git ref in large co-located repositories.
-	if is_jj_repo; then
+	if is_jj_workspace; then
 		timeout .2 jj-info 2>/dev/null
 		case $? in
       # 124 is SIGALRM, 142 is what `timeout` returns natively

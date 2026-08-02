@@ -827,6 +827,13 @@ class MiseConfigTests(unittest.TestCase):
         fish_config = (ROOT / "config/config.fish").read_text()
 
         self.assertIn("mise activate fish | source", fish_config)
+        self.assertIn(
+            "set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH",
+            fish_config,
+        )
+        self.assertIn(
+            'contains --index -- "$HOME/.local/share/mise/shims" $PATH', fish_config
+        )
         self.assertNotIn("nvm use", fish_config)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:

@@ -36,6 +36,20 @@ add_path () {
 	unset existing new_path old_ifs p
 }
 
+remove_path () {
+	new_path=
+	old_ifs=$IFS
+	IFS=:
+	for existing in ${PATH:-}; do
+		if [ "$existing" != "$1" ]; then
+			new_path=${new_path:+$new_path:}$existing
+		fi
+	done
+	IFS=$old_ifs
+	PATH=$new_path
+	unset existing new_path old_ifs
+}
+
 add_path_if_present() {
 	if [ -d "$1" ]; then
 		add_path "$1"
@@ -87,6 +101,8 @@ case "$-" in
 esac
 
 if exists mise; then
+	unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
+	remove_path "$HOME/.local/share/mise/shims"
 	if [ -n "${BASH_VERSION:-}" ]; then
 		eval "$(mise activate bash)"
 	elif [ -n "${ZSH_VERSION:-}" ]; then
