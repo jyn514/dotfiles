@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -26,13 +28,31 @@ class PickerActionTest(unittest.TestCase):
         )
         path.chmod(0o755)
 
-    def run_command(self, *arguments: str, selection: bytes = b"") -> subprocess.CompletedProcess[bytes]:
+    def tmux(self, status: int = 0) -> None:
+        path = self.directory / "tmux"
+        path.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            "open(os.environ['TMUX_CALLS'], 'w').write(json.dumps(sys.argv[1:]))\n"
+            f"raise SystemExit({status})\n"
+        )
+        path.chmod(0o755)
+
+    def run_command(
+        self,
+        *arguments: str,
+        selection: bytes = b"",
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        values = {"PATH": str(self.directory), "TMUX_CALLS": str(self.calls)}
+        if environment:
+            values.update(environment)
         return subprocess.run(
             [sys.executable, str(COMMAND), *arguments],
             input=selection,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={"PATH": str(self.directory)},
+            env=values,
             check=False,
         )
 
@@ -77,6 +97,52 @@ class PickerActionTest(unittest.TestCase):
         result = self.run_command("open", "one", "two")
 
         self.assertEqual(39, result.returncode)
+
+    def test_edit_sends_one_literal_quoted_command_sequence(self) -> None:
+        self.tmux()
+        payload = b"odd ' $(touch injected)\n-invalid-\xff"
+
+        result = self.run_command(
+            "edit",
+            "--read0",
+            selection=payload + b"\0",
+            environment={"EDITOR": "editor --wait"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        expected_command = shlex.join(["editor", "--wait", os.fsdecode(payload)])
+        self.assertEqual(
+            [
+                "send-keys",
+                "C-q",
+                ";",
+                "send-keys",
+                "-l",
+                expected_command,
+                ";",
+                "send-keys",
+                "C-m",
+            ],
+            json.loads(self.calls.read_text()),
+        )
+
+    def test_edit_validates_selection_and_editor_before_tmux(self) -> None:
+        self.tmux()
+        multiple = self.run_command("edit", "--read0", selection=b"one\0two\0")
+        malformed_editor = self.run_command(
+            "edit", "one", environment={"EDITOR": "unterminated '"}
+        )
+
+        self.assertEqual(2, multiple.returncode)
+        self.assertEqual(2, malformed_editor.returncode)
+        self.assertFalse(self.calls.exists())
+
+    def test_edit_propagates_tmux_failure(self) -> None:
+        self.tmux(status=40)
+
+        result = self.run_command("edit", "selection")
+
+        self.assertEqual(40, result.returncode)
 
     def test_empty_selection_is_cancellation(self) -> None:
         self.opener()
