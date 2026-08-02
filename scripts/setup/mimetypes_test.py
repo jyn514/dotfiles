@@ -110,6 +110,7 @@ class LinuxMimetypeTests(unittest.TestCase):
             HOME=str(home),
             MIME_LOG=str(log),
             PATH=f"{binaries}:{env['PATH']}",
+            SETUP_MIMETYPES_PLATFORM="linux",
             XDG_DATA_DIRS=str(data_root),
             XDG_DATA_HOME=str(self.mime / "empty-data-home"),
         )
@@ -154,6 +155,7 @@ class LinuxMimetypeTests(unittest.TestCase):
             HOME=str(home),
             MIME_LOG=str(log),
             PATH=f"{binaries}:{env['PATH']}",
+            SETUP_MIMETYPES_PLATFORM="linux",
             XDG_DATA_DIRS=str(data_root),
             XDG_DATA_HOME=str(self.mime / "empty-data-home"),
         )

@@ -78,11 +78,11 @@ setup_kde() { record kde; }
             )
             chsh.chmod(0o755)
             env = os.environ.copy()
-            env.pop("SHELL", None)
             env.update(
                 CHSH_LOG=str(chsh_log),
                 HOME=str(directory),
                 PATH=f"{binary_directory}:{env['PATH']}",
+                SHELL="",
             )
 
             results = [
@@ -120,8 +120,11 @@ setup_kde() { record kde; }
             (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
             (directory / "config").symlink_to(ROOT / "config", target_is_directory=True)
             env = os.environ.copy()
-            env.pop("SHELL", None)
-            env.update(HOME=str(directory), PATH=f"{binary_directory}:{env['PATH']}")
+            env.update(
+                HOME=str(directory),
+                PATH=f"{binary_directory}:{env['PATH']}",
+                SHELL="",
+            )
 
             result = subprocess.run(
                 ["/bin/sh", str(script), "2"],
