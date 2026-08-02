@@ -50,18 +50,20 @@ setup_kde() { record kde; }
                 log = directory / f"option-{option}.log"
                 env = os.environ.copy()
                 env.update(HOME=str(directory), SETUP_OPTION_LOG=str(log))
-                result = subprocess.run(
-                    ["sh", str(script), option],
-                    cwd=ROOT,
-                    env=env,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-
-                self.assertEqual(0, result.returncode, (option, result.stderr))
+                for run in range(2):
+                    result = subprocess.run(
+                        ["sh", str(script), option],
+                        cwd=ROOT,
+                        env=env,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        0, result.returncode, (option, run, result.stderr)
+                    )
                 actual = log.read_text().splitlines() if log.exists() else []
-                self.assertEqual(calls, actual, option)
+                self.assertEqual(calls * 2, actual, option)
 
     def test_shell_setup_handles_an_unset_shell(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -83,17 +85,21 @@ setup_kde() { record kde; }
                 PATH=f"{binary_directory}:{env['PATH']}",
             )
 
-            result = subprocess.run(
-                ["./setup.sh", "2"],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            results = [
+                subprocess.run(
+                    ["./setup.sh", "2"],
+                    cwd=ROOT,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                for _ in range(2)
+            ]
 
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertNotIn("parameter not set", result.stderr)
+        for result in results:
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertNotIn("parameter not set", result.stderr)
 
     def test_shell_setup_explains_when_chsh_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

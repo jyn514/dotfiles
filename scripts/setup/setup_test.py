@@ -69,6 +69,9 @@ class DotfileSetupTests(unittest.TestCase):
 
     def assert_all_dotfiles_installed(self) -> None:
         for source in (ROOT / "config").iterdir():
+            # Supporting assets can live below config/ without being Dotbot links.
+            if not source.is_file():
+                continue
             destination = self.destination_for(source)
             self.assertTrue(destination.exists(), destination)
             if source.name == "codex.rules":
