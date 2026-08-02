@@ -29,6 +29,6 @@ set -f
 set -- $sessions
 target=${1:-}
 if [ "$target" ]; then
-  tmux set-option destroy-unattached
-  tmux switch-client -t "$target"
+  tmux set-option destroy-unattached &&
+    tmux switch-client -t "$target"
 fi

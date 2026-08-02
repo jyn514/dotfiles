@@ -130,14 +130,16 @@ fi
 
 # set up aliases
 
+abbreviations=$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt") || return
 # https://www.etalabs.net/sh_tricks.html#:~:text=Reading%20input%20line%2Dby%2Dline
 while IFS= read -r alias; do
 	name=${alias%=*}
 	expn=${alias#*=}
 	alias "$name"="$expn"
 done << EOF
-$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt")
+$abbreviations
 EOF
+unset abbreviations
 
 # fish handles these with a regex
 alias ...=../..

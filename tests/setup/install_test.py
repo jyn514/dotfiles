@@ -845,6 +845,18 @@ class MiseConfigTests(unittest.TestCase):
         )
         self.assertNotIn("nvm use", fish_config)
 
+    def test_shell_startup_guards_optional_tools_and_formats_durations_plainly(self) -> None:
+        fish_config = (ROOT / "config/config.fish").read_text()
+        bashrc = (ROOT / "config/bashrc").read_text()
+        zshrc = (ROOT / "config/zshrc").read_text()
+
+        self.assertIn('math --scale=2 "$duration / 1000"', fish_config)
+        self.assertNotIn('printf "%.2g"', fish_config)
+        self.assertIn("if [ -f ~/.local/lib/fzf-tab-completion", bashrc)
+        self.assertIn("if exists atuin; then", bashrc)
+        self.assertGreaterEqual(zshrc.count("if exists atuin; then"), 2)
+        self.assertIn("if exists direnv; then", zshrc)
+
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
 
