@@ -69,7 +69,7 @@ if exists nvim
 	export LESSEDIT='%E %g?lm\:%lm'
 	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
 	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
-	export JULIA_EDITOR=hx-hax
+	export JULIA_EDITOR=editor-hax
 else
 	export EDITOR=vi
 	export JULIA_EDITOR=open
