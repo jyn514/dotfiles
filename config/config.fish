@@ -80,12 +80,20 @@ end
 export VISUAL=$EDITOR
 
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
-	if ! [ -e ~/.local/config/brew.fish ]
-		/home/linuxbrew/.linuxbrew/bin/brew shellenv fish > ~/.local/config/brew.fish
-		or return
+	set -l brew_command /home/linuxbrew/.linuxbrew/bin/brew
+	set -l brew_cache ~/.local/config/brew.fish
+	if ! [ -e $brew_cache ]; or [ $brew_command -nt $brew_cache ]
+		set -l pending_cache "$brew_cache.$fish_pid"
+		command mkdir -p (dirname $brew_cache); or return
+		if $brew_command shellenv fish > $pending_cache
+			command mv $pending_cache $brew_cache; or return
+		else
+			set -l brew_status $status
+			command rm -f $pending_cache
+			return $brew_status
+		end
 	end
-	. ~/.local/config/brew.fish
-	or return
+	. $brew_cache; or return
 end
 
 if [ -z "$SSH_AUTH_SOCK" ]

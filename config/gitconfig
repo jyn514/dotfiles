@@ -71,7 +71,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	fetch-update = !git fetch upstream && git rebase upstream/HEAD
 	rdiff = range-diff upstream/HEAD @{u} HEAD
 	update = "!f() { git fetch-update && git rdiff || return; printf 'push? [y/N] '; IFS= read -r REPLY || return; if [ \"$REPLY\" = y ]; then git pf; fi; }; f"
-	new = !git fetch upstream && git checkout upstream/HEAD && git checkout -b
+	new = "!f() { [ $# -eq 1 ] || { echo 'usage: git new <branch>' >&2; return 2; }; git fetch upstream && git checkout -b \"$1\" upstream/HEAD; }; f"
 	delta-diff = !env -u GIT_EXTERNAL_DIFF git diff
 	pure-diff = !env -u GIT_EXTERNAL_DIFF git -c core.pager= diff
 	stat = l --stat upstream..

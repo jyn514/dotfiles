@@ -226,6 +226,79 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("push? [y/N] ", result.stdout)
 
+    def test_git_new_creates_the_branch_without_detaching_first(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory) / "repository"
+            repository.mkdir()
+            subprocess.run(
+                ["git", "init"], cwd=repository, check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"], cwd=repository, check=True
+            )
+            (repository / "file").write_text("tea\n")
+            subprocess.run(["git", "add", "file"], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "initial"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "remote", "add", "upstream", str(repository)],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "fetch", "upstream"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "symbolic-ref",
+                    "refs/remotes/upstream/HEAD",
+                    f"refs/remotes/upstream/{branch}",
+                ],
+                cwd=repository,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "branch", "topic"], cwd=repository, check=True
+            )
+            config = f"include.path={ROOT / 'config/gitconfig'}"
+            result = subprocess.run(
+                ["/usr/bin/git", "-c", config, "new", "topic"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            current_branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(branch, current_branch)
+
     def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
         result = subprocess.run(
             [
