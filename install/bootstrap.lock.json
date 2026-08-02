@@ -70,7 +70,8 @@
         "repository": "folke/lazy.nvim",
         "type": "github-release"
       },
-      "url": "https://github.com/folke/lazy.nvim.git"
+      "url": "https://github.com/folke/lazy.nvim.git",
+      "version": "v11.17.5"
     },
     "tpm": {
       "revision": "e261deb1b47614eed3400089ce7197dc68acc4eb",
@@ -85,7 +86,8 @@
         "repository": "junegunn/vim-plug",
         "type": "github-release"
       },
-      "url": "https://github.com/junegunn/vim-plug.git"
+      "url": "https://github.com/junegunn/vim-plug.git",
+      "version": "0.14.0"
     },
     "zoxide.fish": {
       "revision": "27a058a661e2eba021b90e9248517b6c47a22674",

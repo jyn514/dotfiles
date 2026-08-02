@@ -49,6 +49,7 @@ class LockUpdateTests(unittest.TestCase):
 
         self.assertEqual("a" * 40, manifest["git"]["head"]["revision"])
         self.assertEqual("b" * 40, manifest["git"]["release"]["revision"])
+        self.assertEqual("v2.0.0", manifest["git"]["release"]["version"])
         revision.assert_any_call("https://github.com/example/head.git")
         revision.assert_any_call(
             "https://github.com/example/release.git", "refs/tags/v2.0.0"
@@ -82,6 +83,35 @@ class LockUpdateTests(unittest.TestCase):
             entry["url"],
         )
         self.assertEqual(updater.hashlib.sha256(b"new").hexdigest(), entry["sha256"])
+
+    def test_release_file_url_keeps_the_human_readable_tag(self) -> None:
+        manifest = {
+            "git": {
+                "plugin": {
+                    "url": "https://github.com/example/plugin.git",
+                    "revision": "a" * 40,
+                    "version": "v2.0.0",
+                }
+            },
+            "downloads": {
+                "installer": {
+                    "url": "old",
+                    "sha256": "old",
+                    "update": {
+                        "type": "github-file",
+                        "revision_from": "plugin",
+                        "path": "install.sh",
+                    },
+                }
+            },
+        }
+
+        updater.update_download_entries(manifest, lambda _url: {}, lambda _url: b"new")
+
+        self.assertEqual(
+            "https://raw.githubusercontent.com/example/plugin/v2.0.0/install.sh",
+            manifest["downloads"]["installer"]["url"],
+        )
 
     def test_bundle_uses_release_digest_without_downloading_asset(self) -> None:
         manifest = {
