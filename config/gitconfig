@@ -83,9 +83,9 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 
 	# https://stackoverflow.com/questions/3161204/how-to-find-the-nearest-parent-of-a-git-branch
 	parent = !git show-branch --topo-order --current "upstream/*" | grep -v "^\\s*!" | grep "refs/remotes/upstream/" | grep "^[^\\[]*\\*" | head -n1 | grep -Eo "refs/remotes/upstream/[^]]*" | xargs git rev-parse --symbolic-full-name
-	default-branch = !git symbolic-ref refs/remotes/upstream/HEAD | sed 's@^refs/remotes/upstream/@@'
+	default-branch = "!f() { ref=$(git symbolic-ref refs/remotes/upstream/HEAD) || return; echo \"$ref\" | sed 's@^refs/remotes/upstream/@@'; }; f"
 
-	delete-merged = !git branch -a --merged | grep personal | tail -n+2  | cut -d/ -f3- | xargs git push personal --delete --no-verify
+	delete-merged = "!f() { branches=$(git branch -r --merged) || return; branches=$(echo \"$branches\" | sed -n 's@^[ *]*personal/@@p') || return; [ -z \"$branches\" ] || git push personal --delete --no-verify $branches; }; f"
 	mr = !sh -c 'git fetch $1 merge-requests/$2/head:mr-$2 && git checkout mr-$2' -
 
 [status]

@@ -732,6 +732,81 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(24, result.returncode)
 
+    def test_attach_session_modes_do_not_run_session_queries(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable("tmux", 'printf "%s\\n" "$*" >> "$TMUX_CALLS"\n')
+        environment = os.environ | {
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "TMUX_CALLS": str(calls),
+        }
+
+        for mode in ("disable", "enable"):
+            result = subprocess.run(
+                [str(ROOT / "config/attach-session.sh"), mode],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+
+        self.assertEqual(
+            [
+                "set-option -s @attach-session-disable 1",
+                "set-option -su @attach-session-disable",
+            ],
+            calls.read_text().splitlines(),
+        )
+
+    def test_git_aliases_propagate_failure_and_delete_every_merged_branch(self) -> None:
+        repository = self.directory / "repository"
+        remote = self.directory / "remote.git"
+        repository.mkdir()
+        subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+        subprocess.run(["git", "init"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.invalid"],
+            cwd=repository,
+            check=True,
+        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repository, check=True)
+        (repository / "file").write_text("tea\n")
+        subprocess.run(["git", "add", "file"], cwd=repository, check=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, capture_output=True)
+        subprocess.run(["git", "remote", "add", "personal", str(remote)], cwd=repository, check=True)
+        subprocess.run(
+            ["git", "push", "personal", "HEAD:refs/heads/first", "HEAD:refs/heads/second"],
+            cwd=repository,
+            check=True,
+            capture_output=True,
+        )
+        config = f"include.path={ROOT / 'config/gitconfig'}"
+
+        default_branch = subprocess.run(
+            ["/usr/bin/git", "-c", config, "default-branch"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        delete_merged = subprocess.run(
+            ["/usr/bin/git", "-c", config, "delete-merged"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        remaining = subprocess.run(
+            ["git", "ls-remote", "--heads", str(remote)],
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        )
+
+        self.assertNotEqual(0, default_branch.returncode)
+        self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
+        self.assertEqual("", remaining.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

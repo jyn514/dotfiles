@@ -2,8 +2,8 @@
 
 # this script messes up tmux-resurrect quite a lot. don't run it when restoring.
 case "$1" in
-  disable) tmux set-option  -s  @attach-session-disable 1;;
-  enable)  tmux set-option  -su @attach-session-disable;;
+  disable) exec tmux set-option  -s  @attach-session-disable 1;;
+  enable)  exec tmux set-option  -su @attach-session-disable;;
   *)    if tmux show-option -sv @attach-session-disable 2>/dev/null; then exit 0; fi;;
 esac
 
