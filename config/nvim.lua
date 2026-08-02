@@ -1189,9 +1189,8 @@ lsplang.flix = {
 		filetypes = { "flix" },
 		root_dir = function(fname)
 			-- Search for flix.toml/flix.jar upwards recursively, with a fallback to the current directory
-			local root_dir = vim.fs.dirname(vim.fs.find({ "flix.toml", "flix.jar" }, { path = fname, upward = true })[1])
-					or vim.fs.dirname(fname)
-			return root_dir
+			local marker = vim.fs.find({ "flix.toml", "flix.jar" }, { path = fname, upward = true })[1]
+			return marker and vim.fs.dirname(marker) or vim.fs.dirname(fname)
 		end,
 		settings = {},
 	},
