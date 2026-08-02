@@ -20,6 +20,8 @@ Keep scripts portable unless a file already targets one platform. Shell scripts 
 
 Add focused tests beside the feature under `scripts/<feature>/`. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
 
+For undocumented mutation APIs, test end-to-end on an owned disposable resource, verify the complete result, and restore or delete the resource before touching production.
+
 ## Commit & Pull Request Guidelines
 
 Use Jujutsu (`jj`) by default for inspection and change management: `jj status`, `jj diff`, and `jj log`. Use a short imperative subject, for example `Fix PATH entry detection`. Add a commit body when the motivation, failure mode, design constraint, or verification would not be obvious to a future reader. Keep commits narrow and name the affected tool when useful. Pull requests should state the user-visible change, list commands run, note platform assumptions, and include screenshots only for visual terminal or desktop behavior.

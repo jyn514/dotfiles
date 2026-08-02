@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import difflib
 import json
 import os
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -37,11 +39,32 @@ query LayoutSnapshot($hashId: String!, $geometry: String!, $revisionId: String!)
     hashId title geometry privacy
     tags { hashId name }
     revision {
-      hashId model config swatch navigators
+      hashId model config swatch navigators qmkVersion
       layers { hashId title position color automouse keys }
       combos { name layerIdx keyIndices trigger }
     }
   }
+}
+"""
+
+MY_LAYOUTS_QUERY = """
+query MyLayouts {
+  myLayouts {
+    hashId
+    revisions { hashId qmkVersion }
+  }
+}
+"""
+
+FORK_REVISION_MUTATION = """
+mutation ForkRevision($hashId: String!) {
+  forkRevision(hashId: $hashId) { hashId }
+}
+"""
+
+DELETE_LAYOUT_MUTATION = """
+mutation DeleteLayout($hashId: String!) {
+  deleteLayout(hashId: $hashId) { hashId }
 }
 """
 
@@ -165,6 +188,24 @@ def pretty(snapshot: dict[str, Any]) -> str:
     return json.dumps(snapshot, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+def write_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as output:
+            output.write(pretty(snapshot))
+            temporary = Path(output.name)
+        temporary.replace(path)
+    except OSError as error:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        raise SyncError(f"cannot write {path}: {error}") from error
+
+
 def snapshot_diff(expected: dict[str, Any], actual: dict[str, Any]) -> str:
     return "".join(
         difflib.unified_diff(
@@ -194,6 +235,61 @@ def fetch_snapshot(client: GraphQLClient, expected: dict[str, Any]) -> tuple[dic
     if current["layout"]["hashId"] != layout["hashId"]:
         raise SyncError("Oryx returned a different layout ID")
     return current, raw
+
+
+def prepare_apply(
+    client: GraphQLClient,
+    expected: dict[str, Any],
+    current: dict[str, Any],
+    raw: dict[str, Any],
+) -> tuple[dict[str, Any], str | None]:
+    """Verify ownership and fork an immutable revision when revision data changed."""
+    layout_id = expected["layout"]["hashId"]
+    revision_id = raw["revision"]["hashId"]
+    data = client.execute(MY_LAYOUTS_QUERY, {}, "MyLayouts")
+    owned = next(
+        (layout for layout in data.get("myLayouts") or [] if layout["hashId"] == layout_id),
+        None,
+    )
+    if owned is None:
+        raise SyncError(f"authenticated account does not own Oryx layout {layout_id}")
+    owned_revision = next(
+        (
+            revision
+            for revision in owned.get("revisions") or []
+            if revision["hashId"] == revision_id
+        ),
+        None,
+    )
+    if owned_revision is None:
+        raise SyncError(
+            f"latest revision {revision_id} is not owned by layout {layout_id}"
+        )
+    if expected["layout"]["revision"] == current["layout"]["revision"]:
+        return expected, None
+    if owned_revision.get("qmkVersion") is None:
+        return expected, None
+
+    data = client.execute(
+        FORK_REVISION_MUTATION,
+        {"hashId": revision_id},
+        "ForkRevision",
+    )
+    fork_id = (data.get("forkRevision") or {}).get("hashId")
+    if not isinstance(fork_id, str) or not fork_id or fork_id == layout_id:
+        raise SyncError("Oryx returned an invalid layout ID while forking the revision")
+    prepared = copy.deepcopy(expected)
+    prepared["layout"]["hashId"] = fork_id
+    print(f"forked compiled layout {layout_id} as editable layout {fork_id}", file=sys.stderr)
+    return prepared, fork_id
+
+
+def delete_layout(client: GraphQLClient, layout_id: str) -> None:
+    client.execute(
+        DELETE_LAYOUT_MUTATION,
+        {"hashId": layout_id},
+        "DeleteLayout",
+    )
 
 
 @dataclass(frozen=True)
@@ -364,6 +460,35 @@ def apply(client: GraphQLClient, expected: dict[str, Any]) -> None:
     raise SyncError("Oryx did not converge after 50 mutations")
 
 
+def complete_apply(
+    client: GraphQLClient,
+    prepared: dict[str, Any],
+    fork_id: str | None,
+    snapshot_path: Path,
+) -> None:
+    try:
+        apply(client, prepared)
+        verified, _ = fetch_snapshot(client, prepared)
+        if verified != prepared:
+            raise SyncError("post-apply verification did not match the repository snapshot")
+        if fork_id is not None:
+            write_snapshot(snapshot_path, prepared)
+            print(
+                f"repository snapshot now tracks forked layout {fork_id}",
+                file=sys.stderr,
+            )
+    except SyncError as apply_error:
+        if fork_id is not None:
+            try:
+                delete_layout(client, fork_id)
+                print(f"deleted failed fork {fork_id}", file=sys.stderr)
+            except SyncError as cleanup_error:
+                raise SyncError(
+                    f"{apply_error}; failed to delete fork {fork_id}: {cleanup_error}"
+                ) from apply_error
+        raise
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT)
@@ -394,10 +519,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply and not token:
             raise SyncError("--apply requires ORYX_TOKEN")
         client = GraphQLClient(token=token)
-        current, _ = fetch_snapshot(client, expected)
+        current, raw = fetch_snapshot(client, expected)
         if args.pull:
             validate_snapshot(current)
-            args.snapshot.write_text(pretty(current))
+            write_snapshot(args.snapshot, current)
             print(f"updated {args.snapshot}")
             return 0
         difference = snapshot_diff(expected, current)
@@ -407,10 +532,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(difference)
         if not args.apply:
             return 1
-        apply(client, expected)
-        verified, _ = fetch_snapshot(client, expected)
-        if verified != expected:
-            raise SyncError("post-apply verification did not match the repository snapshot")
+        prepared, fork_id = prepare_apply(client, expected, current, raw)
+        complete_apply(client, prepared, fork_id, args.snapshot)
         print("Oryx now matches the repository snapshot", file=sys.stderr)
         return 0
     except SyncError as error:
