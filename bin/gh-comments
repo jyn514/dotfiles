@@ -38,14 +38,32 @@ if [ -e "$issue.json" ] || [ -e "$issue.txt" ]; then
   fatal "$name: error: $issue.json/txt already exists"
 fi
 
-gh issue view -c "$url" --json title,createdAt,number,body,state,comments > "$issue.json" &
+json_pending=.$issue.json.$$
+text_pending=.$issue.txt.$$
+cleanup() {
+  rm -f "$json_pending" "$text_pending"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+gh issue view -c "$url" --json title,createdAt,number,body,state,comments > "$json_pending" &
+json_pid=$!
+text_status=0
 if [ "$(uname -s)" = Darwin ]; then
-  script -q /dev/null gh issue view -c "$url" > "$issue.txt"
+  script -q /dev/null gh issue view -c "$url" > "$text_pending" || text_status=$?
 else
-  script --return --quiet -c "gh issue view -c '$url'" /dev/null > "$issue.txt"
+  script --return --quiet -c "gh issue view -c '$url'" /dev/null > "$text_pending" || text_status=$?
 fi
+json_status=0
+wait "$json_pid" || json_status=$?
+[ "$text_status" -eq 0 ] || exit "$text_status"
+[ "$json_status" -eq 0 ] || exit "$json_status"
 # for some reason \r is counted as a newline unless we anchor it
-perl -pi -e 's/^.*\r(.)/$1/' "$issue.txt"
+perl -pi -e 's/^.*\r(.)/$1/' "$text_pending"
+mv "$json_pending" "$issue.json"
+mv "$text_pending" "$issue.txt"
+trap - EXIT HUP INT TERM
 less "$issue.txt"
-wait
 echo "saved $issue.txt and $issue.json"

@@ -2,8 +2,13 @@
 # if [ -e dev/user.clj ]; then
 # 	cp="-Scp $(clojure -Spath "$@" -Xrebel):dev"
 # fi
-if clojure -X:deps aliases | grep -q :dev; then
-	args="-A:dev"
+aliases=$(clojure -X:deps aliases) || exit
+if printf '%s\n' "$aliases" | grep -q :dev; then
+	set -- -A:dev "$@"
+else
+	status=$?
+	[ "$status" -eq 1 ] || exit "$status"
 fi
+unset aliases
 # https://github.com/bhauman/rebel-readline
-exec clojure -J--enable-native-access=ALL-UNNAMED $args "$@" -Xrebel
+exec clojure -J--enable-native-access=ALL-UNNAMED "$@" -Xrebel

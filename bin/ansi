@@ -22,7 +22,7 @@ ansi::addCode() {
 ansi::addColor() {
     OUTPUT="$OUTPUT$CSI${1}m"
 
-    if [ ! -z "$2" ]; then
+    if [[ -n "$2" ]]; then
         SUFFIX="$CSI${2}m$SUFFIX"
     fi
 }
@@ -110,15 +110,13 @@ ansi::isAnsiSupported() {
     str=
     cont=true
 
-    while $cont && read -n 1 -s -t 0.1 c; do
+    while $cont && read -r -n 1 -s -t 0.1 c; do
         if [[ -n "$c" ]]; then
             str+=$c
         else
             cont=false
         fi
     done
-
-    set | grep ^str=
 
     # If we get anything back, the terminal is consuming the color codes and
     # will probably do its best. Let's assume there's color.
@@ -575,7 +573,7 @@ ansi() {
                 ;;
 
             --reset-background)
-                OUTPUT="$OUTPUT${CSI}39m"
+                OUTPUT="$OUTPUT${CSI}49m"
                 ;;
 
             --reset-color)
