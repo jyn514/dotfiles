@@ -1,3 +1,4 @@
+#!/usr/bin/env bb
 (ns scripts.jj-split-patch
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
@@ -7,7 +8,7 @@
 (defn- script-file []
   (if (not-empty *file*)
     *file*
-    "src/scripts/jj_split_patch.clj"))
+    "tools/agent-split/src/scripts/agent-split.clj"))
 
 (load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
                          "temp.clj")))
@@ -293,14 +294,12 @@
       {:original-index original
        :selected-index selected-index})))
 
-(defn- script-root []
+(defn- script-dir []
   (-> (if (and (not-empty *file*)
                (fs/regular-file? *file*))
         *file*
-        "src/scripts/jj_split_patch.clj")
+        "tools/agent-split/src/scripts/agent-split.clj")
       fs/canonicalize
-      fs/parent
-      fs/parent
       fs/parent))
 
 (defn- split-tool-config [editor]
@@ -308,7 +307,7 @@
    "merge-tools.agent-split.edit-args=[\"$left\",\"$right\"]"])
 
 (defn- run-split! [patch message revision]
-  (let [editor (str (fs/file (script-root) "src" "scripts" "jj-agent-split-editor"))
+  (let [editor (str (fs/file (script-dir) "agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
         result (process/shell {:out :string
                                :err :string

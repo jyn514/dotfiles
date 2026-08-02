@@ -8,7 +8,7 @@
 (defn- script-file []
   (if (not-empty *file*)
     *file*
-    "src/scripts/jj-agent-split-editor"))
+    "tools/agent-split/src/scripts/agent-split-editor"))
 
 (load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
                          "temp.clj")))
