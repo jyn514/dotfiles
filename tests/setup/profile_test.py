@@ -815,6 +815,21 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("~/.config/git/hooks\n", result.stdout)
 
+    def test_remember_does_not_write_terminal_escapes_to_a_pipe(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("remember() {")
+        end = profile.index("\n}\n", start) + 2
+
+        result = subprocess.run(
+            ["/bin/sh", "-c", profile[start:end] + "\nremember"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+
     def test_path_consumers_and_comment_regex_preserve_literal_text(self) -> None:
         tmux = (ROOT / "config/tmux.conf").read_text()
         nvim = (ROOT / "config/nvim.lua").read_text()
@@ -851,6 +866,12 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('return (text ?? "").replace', glide)
         for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
+        for helper in ("bind", "set_spider", "bind_ts"):
+            self.assertIn(f"local function {helper}(", nvim)
+            self.assertNotRegex(nvim, rf"(?m)^function {helper}\(")
+        self.assertNotIn("\n_ = [[\n", nvim)
+        self.assertIn("<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page down'", nvim)
+        self.assertIn("<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page up'", nvim)
         self.assertEqual(4, nvim.count("vim.fn.fnameescape("))
         self.assertNotIn("'edit ' .. config", nvim)
         self.assertNotIn("'source ' .. config", nvim)

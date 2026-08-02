@@ -448,6 +448,7 @@ fi
 command_not_found_handler() { command_not_found_handle "$@"; }
 
 remember() {
+	[ -t 1 ] || return 0
 	printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' 'obsidian://open?vault=notes&file=global%20checklist' 'are you forgetting something?'
 }
 
