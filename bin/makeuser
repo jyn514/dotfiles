@@ -3,16 +3,17 @@
 # N.B. this script must be run as root
 set -euv
 
-printf "create user $1 with ssh public key $2? y/[n] "
-read REPLY
+printf 'create user %s with ssh public key %s? y/[n] ' "$1" "$2"
+read -r REPLY
 
-if ! [ $REPLY = y ]; then
+if [ "$REPLY" != y ]; then
 	echo "error: aborting"
+	exit 1
 fi
 
 user=$1
-adduser $user
-cd /home/$user
+adduser "$user"
+cd "/home/$user"
 mkdir .ssh
-echo "$2" > .ssh/authorized_keys
-chown -R $user:$user .ssh
+printf '%s\n' "$2" > .ssh/authorized_keys
+chown -R "$user:$user" .ssh

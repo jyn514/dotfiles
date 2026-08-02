@@ -1,2 +1,3 @@
 #!/bin/sh
-/mnt/c/Program\ Files/Mozilla\ Firefox/firefox.exe $(wslpath -w "$1")
+firefox=${FIREFOX:-'/mnt/c/Program Files/Mozilla Firefox/firefox.exe'}
+exec "$firefox" "$(wslpath -w "$1")"
