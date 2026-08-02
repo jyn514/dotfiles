@@ -1,3 +1,94 @@
-#!/usr/bin/env bash
-set -euo pipefail
-paste --type image/png | zbarimg -q - | cut -d: -f2- | tee /dev/tty | copy --primary
+#!/usr/bin/env python3
+"""Decode a clipboard image, display the result, and copy it as text."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+    stdout: bytes = b""
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(
+    arguments: list[str],
+    *,
+    input_bytes: bytes | None = None,
+    capture_output: bool = True,
+) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            arguments,
+            input=input_bytes,
+            stdout=subprocess.PIPE if capture_output else None,
+            check=False,
+        )
+    except OSError as error:
+        print(f"decode-qr: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode), completed.stdout or b"")
+
+
+def strip_decoder_prefix(output: bytes) -> bytes:
+    """Implement `cut -d: -f2-` without decoding arbitrary QR payload bytes."""
+    lines = []
+    for line in output.splitlines(keepends=True):
+        _, separator, payload = line.partition(b":")
+        lines.append(payload if separator else line)
+    return b"".join(lines)
+
+
+def decode(
+    runner: Callable[..., Result] = run,
+    tty_path: Path = Path("/dev/tty"),
+) -> int:
+    image = runner(["paste", "--type", "image/png"])
+    if image.status:
+        return image.status
+
+    decoded = runner(["zbarimg", "-q", "-"], input_bytes=image.stdout)
+    if decoded.status:
+        return decoded.status
+    payload = strip_decoder_prefix(decoded.stdout)
+
+    try:
+        with tty_path.open("wb", buffering=0) as terminal:
+            remaining = memoryview(payload)
+            while remaining:
+                written = terminal.write(remaining)
+                if written is None or written == 0:
+                    raise OSError("short write")
+                remaining = remaining[written:]
+    except OSError as error:
+        print(f"decode-qr: could not write decoded text to {tty_path}: {error}", file=sys.stderr)
+        return 1
+
+    copied = runner(
+        ["copy", "--primary"], input_bytes=payload, capture_output=False
+    )
+    return copied.status
+
+
+def main(arguments: list[str]) -> int:
+    if arguments:
+        print("usage: decode-qr", file=sys.stderr)
+        return 2
+    return decode()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
