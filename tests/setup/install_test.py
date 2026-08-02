@@ -865,7 +865,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("zoxide_init=$(zoxide init zsh) || return", zshrc)
         self.assertIn("jj_completion=$(jj util completion bash) || return", bashrc)
         self.assertNotIn("source <(jj util completion bash)", bashrc)
-        self.assertIn("source $ZDOTDIR/antidote/antidote.zsh || return", zshrc)
+        self.assertIn('source "$ZDOTDIR/antidote/antidote.zsh" || return', zshrc)
         self.assertIn("antidote load || return", zshrc)
         self.assertIn("atuin_init=$(atuin init zsh --disable-up-arrow) || return", zshrc)
         self.assertIn("direnv_init=$(direnv hook zsh) || return", zshrc)

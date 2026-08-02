@@ -411,11 +411,13 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("if (next?.id == null) return;", glide)
         self.assertIn("if (tab?.id == null) return;", glide)
         self.assertIn("if (selection == null) return;", glide)
-        for variable in ("paredit", "comment_api", "MiniStatusline"):
+        for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
         self.assertIn('awk -v arg="$1"', profile)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
+        self.assertIn("local codename http_status man_index section url", profile)
+        self.assertNotIn("\n\t\t\tcheck()", profile)
         self.assertIn("base64 | tr -d '\\n'", kakoune)
 
 

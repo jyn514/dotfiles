@@ -964,7 +964,7 @@ MiniStatusline.setup {
 	}
 }
 if first_run then
-	wk = require('which-key')
+	local wk = require('which-key')
 	wk.setup({
 		preset = 'helix',
 		delay = 150,
