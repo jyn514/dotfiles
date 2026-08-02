@@ -15,7 +15,15 @@ display_pwd () {
 	# 2. first group: match first character (~ or /)
 	# 3. anything in the middle
 	# 4. second group: last $PROMPT_DIRTRIM directories
-	pwd | sed "s#$HOME#~#; s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
+	display_path=$PWD
+	case $display_path in
+		"$HOME") display_path='~';;
+		"$HOME"/*) display_path="~/${display_path#"$HOME"/}";;
+	esac
+	printf '%s\n' "$display_path" | sed "s#^\(~\?/\).*\(\(/[^/]\+\)\{$PROMPT_DIRTRIM\}\)#\1...\2#"
+	result=$?
+	unset display_path
+	return "$result"
 }
 
 prompt_hostname () {

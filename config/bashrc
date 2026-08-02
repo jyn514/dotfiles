@@ -1,5 +1,5 @@
 BASH_PROFILE_READ=1
-if [ -z $MY_GITHUB ]; then
+if [ -z "${MY_GITHUB:-}" ]; then
    # these are set by the distro and break functions >:(
    unalias ls la ll l alert ip .. 2>/dev/null
 	source ~/.profile
@@ -86,7 +86,9 @@ if exists jj; then
    complete -F __jj_dynamic -o nosort -o bashdefault -o default jj
 fi
 if exists zoxide; then
-   source <(zoxide init bash)
+   zoxide_init=$(zoxide init bash) || return
+   eval "$zoxide_init" || return
+   unset zoxide_init
    cd() { z "$@" && status; }
    complete_alias cd z
 fi
