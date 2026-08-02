@@ -123,22 +123,22 @@ end
 
 function fzf_action
 	get_fzf_selection | read --line key selection
-	set selection (string escape $selection)
+	set -l escaped_selection (string escape -- $selection)
 	switch $key
 		case enter
-			commandline -i $selection
+			commandline -i $escaped_selection
 			commandline -f execute
 		case tab
-			commandline -i $selection
+			commandline -i $escaped_selection
 		case ctrl-y
 			printf %s $selection | copy
 		case ctrl-o
 			commandline -r open
-			commandline -i " $selection"
+			commandline -i " $escaped_selection"
 			commandline -f execute
 		case ctrl-l
 			commandline -r $EDITOR
-			commandline -i " $selection"
+			commandline -i " $escaped_selection"
 			commandline -f execute
 	end
 end
@@ -183,12 +183,12 @@ function reload_cargo_aliases
 		set value (string trim $value)
 		if set expansion (string match --groups-only --regex '^alias: (.*)' -- $value)
 			echo "abbr --add --command cargo $name -- $expansion"
-			set cmd expansion
+			set cmd $expansion
 		else
 			set cmd $name
 		end
 		if contains $name c d; continue; end
-		echo "abbr --add --global 'c$name' -- 'cargo $expansion'"
+		echo "abbr --add --global 'c$name' -- 'cargo $cmd'"
 	end
 end
 
@@ -356,7 +356,7 @@ end
 function fish_right_prompt
 	if [ -n "$prompt_timestamp" ]
 		printf "\e[2;37m%s" $prompt_timestamp
-	else if [ -z "$old_fish" ] && [ "$duration" -gt 9 ]
+	else if [ -z "$old_fish" ] && [ "$duration" -gt 99 ]
 		set_color white --dim
 		set -l seconds (printf "%.2g" (math $duration/1000))
 		printf "+%.4ss" $seconds
