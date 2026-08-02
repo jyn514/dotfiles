@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -71,6 +72,103 @@ class ProfileContractTests(unittest.TestCase):
             )
 
         self.assertEqual(23, result.returncode)
+
+    def test_noninteractive_profile_propagates_hostname_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            keychain = binaries / "keychain"
+            keychain.write_text("#!/bin/sh\nprintf ':\\n'\n")
+            keychain.chmod(0o755)
+            hostname = binaries / "hostname"
+            hostname.write_text("#!/bin/sh\nexit 29\n")
+            hostname.chmod(0o755)
+
+            result = subprocess.run(
+                ["/bin/sh", "-c", '. "$HOME/.profile"'],
+                cwd=ROOT,
+                env=os.environ
+                | {
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                    "SSH_AUTH_SOCK": "",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(29, result.returncode)
+
+    def test_tmux_paste_bindings_do_not_paste_after_clipboard_failure(self) -> None:
+        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        commands = re.findall(
+            r"bash -o pipefail -c '([^']*paste(?: --primary)? \| tmux load-buffer[^']*)'",
+            tmux_config,
+        )
+        self.assertEqual(4, len(commands))
+
+        with tempfile.TemporaryDirectory() as directory:
+            binaries = Path(directory)
+            paste = binaries / "paste"
+            paste.write_text("#!/bin/sh\nexit 31\n")
+            paste.chmod(0o755)
+            tmux = binaries / "tmux"
+            tmux.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TMUX_CALLS\"\n")
+            tmux.chmod(0o755)
+            calls = binaries / "calls"
+            env = os.environ | {
+                "PATH": f"{binaries}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            }
+
+            for command in commands:
+                result = subprocess.run(
+                    ["/bin/bash", "-o", "pipefail", "-c", command],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(31, result.returncode, command)
+
+            tmux_calls = calls.read_text()
+            self.assertIn("load-buffer", tmux_calls)
+            self.assertNotIn("paste-buffer", tmux_calls)
+
+    def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
+        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        [command] = re.findall(
+            r"bash -o pipefail -c '([^']*attach-session\.sh[^']*)'",
+            tmux_config,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            hook = home / ".config/tmux/attach-session.sh"
+            hook.parent.mkdir(parents=True)
+            hook.write_text("#!/bin/sh\nexit 37\n")
+            hook.chmod(0o755)
+            binaries = Path(directory) / "bin"
+            binaries.mkdir()
+            logger = binaries / "logger"
+            logger.write_text("#!/bin/sh\ncat >/dev/null\n")
+            logger.chmod(0o755)
+
+            result = subprocess.run(
+                ["/bin/bash", "-o", "pipefail", "-c", command],
+                env=os.environ
+                | {"HOME": str(home), "PATH": f"{binaries}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(37, result.returncode)
 
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -395,6 +493,9 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
+        self.assertEqual(5, tmux.count("bash -o pipefail -c"))
+        self.assertNotIn("tmux load-buffer -b clipboard -;", tmux)
+        self.assertNotIn("tmux load-buffer -b primary_selection -;", tmux)
         self.assertIn("if (save != \\\"\\\")", tmux)
         self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
         self.assertIn('cmd = "git ls-files --modified"', nvim)
