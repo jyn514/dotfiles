@@ -5,4 +5,5 @@ if [ $# -eq 0 ]; then
 	exit 1
 fi
 
-"$(realpath "$(dirname "$0")")/ddg" "$COMMAND" site:youtube.com/playlist "$@"
+ddg=${DDG:-"$(realpath "$(dirname "$0")")/ddg"}
+"$ddg" site:youtube.com/playlist "$@"
