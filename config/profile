@@ -374,9 +374,23 @@ remember() {
 	printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' 'obsidian://open?vault=notes&file=global%20checklist' 'are you forgetting something?'
 }
 
-. "$DOTFILES/bin/prompt-command" || return
+prompt_adapter() (
+	last_status=$1
+	if [ -n "${ZSH_VERSION:-}" ]; then
+		target=zsh
+		label=${ZSH_ARGZERO:-zsh}
+	else
+		target=bash
+		label=${0##*/}
+	fi
+	if rendered=$(COLUMNS=${COLUMNS:-0} command prompt-command "$target" "$last_status" 0 "$label"); then
+		printf %s "$rendered"
+	else
+		printf '\n; '
+	fi
+)
 
-PS1='$(prompt_command "${ZSH_ARGZERO:-$0}" "$?")'
+PS1='$(prompt_adapter "$?")'
 # also reset the cursor mode (https://stackoverflow.com/a/59728228)
 PS0=$(printf '\e[2 q')
 
