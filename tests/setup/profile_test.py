@@ -391,6 +391,7 @@ class ProfileContractTests(unittest.TestCase):
         nvim = (ROOT / "config/nvim.lua").read_text()
         glide = (ROOT / "config/glide.ts").read_text()
         kakoune = (ROOT / "config/kakrc").read_text()
+        profile = (ROOT / "config/profile").read_text()
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
@@ -408,6 +409,13 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('os === "mac" ? "<D-S-z>" : "<C-S-z>"', glide)
         self.assertEqual(2, glide.count("if (currentTab?.id == null) return;"))
         self.assertIn("if (next?.id == null) return;", glide)
+        self.assertIn("if (tab?.id == null) return;", glide)
+        self.assertIn("if (selection == null) return;", glide)
+        for variable in ("paredit", "comment_api", "MiniStatusline"):
+            self.assertIn(f"local {variable} =", nvim)
+        self.assertIn('awk -v arg="$1"', profile)
+        self.assertNotIn("arg=\"'\"$1\"'\"", profile)
+        self.assertNotIn('rg "^$1"', profile)
         self.assertIn("base64 | tr -d '\\n'", kakoune)
 
 

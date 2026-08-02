@@ -500,7 +500,7 @@ bind('<leader><Enter>', function()
 	vim.cmd('SnipRun')
 end, 'Run code block on current line')
 
-paredit = require 'nvim-paredit'
+local paredit = require 'nvim-paredit'
 paredit.setup {
 	indent = { enabled = true },
 	dragging = { auto_drag_pairs = false },
@@ -788,7 +788,7 @@ ft_comment.set('dl', ft_comment.get('c'))
 ft_comment.set('flix', ft_comment.get('c'))
 ft_comment.set('rhombus', ft_comment.get('c'))
 
-comment_api = require 'Comment.api'
+local comment_api = require 'Comment.api'
 vim.keymap.set({ 'n', 'i' }, '<C-_>', comment_api.toggle.linewise.current, { desc = "Toggle comment" })
 vim.keymap.set('n', '<C-c>', comment_api.toggle.linewise.current, { desc = "Toggle comment" })
 -- TODO: find a way to only comment out the selected region
@@ -937,7 +937,7 @@ vim.cmd.colorscheme 'alabaster-black'
 require('mini.icons').setup {
 	-- style = 'ascii',
 }
-MiniStatusline = require 'mini.statusline'
+local MiniStatusline = require 'mini.statusline'
 MiniStatusline.setup {
 	content = {
 		active = function()
