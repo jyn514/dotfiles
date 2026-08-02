@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Purge Debian packages left in residual-config state."""
+
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools/package-inspection"))
+
+from package_inspection.purge_removed import main  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

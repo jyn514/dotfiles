@@ -315,17 +315,7 @@ ip() {
 	ip "$@"
 }
 
-purge_removed () (
-	packages=$(dpkg -l) || { result=$?; unset packages; return "$result"; }
-	packages=$(printf '%s\n' "$packages" | awk '/^rc/ {print $2}') || { result=$?; unset packages; return "$result"; }
-	IFS='
-'
-	set -f
-	# shellcheck disable=SC2086  # Split the newline-delimited package list.
-	set -- $packages
-	[ $# -gt 0 ] || return 0
-	sudo dpkg --purge "$@"
-)
+alias purge_removed=purge-removed
 
 excuse () {
 	local telnet_output

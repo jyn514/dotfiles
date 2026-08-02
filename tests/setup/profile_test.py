@@ -562,8 +562,10 @@ class ProfileContractTests(unittest.TestCase):
         languages = (ROOT / "config/helix/languages.toml").read_text()
 
         self.assertIn("alias pip_upgrade_all=pip-upgrade-all", profile)
+        self.assertIn("alias purge_removed=purge-removed", profile)
         self.assertNotIn("pip list --format=freeze", profile)
         self.assertNotIn("pip_upgrade_all ()", profile)
+        self.assertNotIn("purge_removed ()", profile)
         self.assertNotIn("tail --lines=+3", profile)
         self.assertIn('$HOME/.config/helix/steel-lsp', languages)
         self.assertNotIn("/home/jyn", languages)
