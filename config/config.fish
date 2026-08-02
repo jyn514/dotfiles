@@ -228,59 +228,23 @@ end
 
 abbr --add --global --command git -- -nv --no-verify
 
-function reload_cargo_aliases
-	set -l cargo_commands (cargo --list)
-		or return
-	for line in $cargo_commands[2..]
-		echo $line | read -l name value
-		set value (string trim $value)
-		if set expansion (string match --groups-only --regex '^alias: (.*)' -- $value)
-			set -l escaped_name (string escape -- "$name"); or return
-			set -l escaped_expansion (string escape -- "$expansion"); or return
-			printf 'abbr --add --command cargo %s -- %s\n' $escaped_name $escaped_expansion
-			set cmd $expansion
-		else
-			set cmd $name
-		end
-		if contains $name c d; continue; end
-		set -l escaped_short_name (string escape -- "c$name"); or return
-		set -l escaped_short_expansion (string escape -- "cargo $cmd"); or return
-		printf 'abbr --add --global %s -- %s\n' $escaped_short_name $escaped_short_expansion
-	end
-end
-
 # load cargo aliases
 if [ -z "$old_fish" ]; and exists cargo
 	set -l cargo_alias_cache ~/.local/config/cargo.fish
 	set -l cargo_command (command --search cargo)
-	set -l generated_cargo_cache
-	if ! [ -e $cargo_alias_cache ] \
-			|| [ $DOTFILES/config/config.fish -nt $cargo_alias_cache ] \
-			|| [ $cargo_command -nt $cargo_alias_cache ] \
-			|| [ $CARGO_HOME/bin -nt $cargo_alias_cache ]
-		set -l pending_cache "$cargo_alias_cache.$fish_pid"
-		command mkdir -p (dirname $cargo_alias_cache)
+	set -l cargo_abbr_command (command --search generate-cargo-fish-abbr)
 		or return
-		if reload_cargo_aliases > $pending_cache
-			if . $pending_cache
-				command mv $pending_cache $cargo_alias_cache
-				or return
-				set generated_cargo_cache 1
-			else
-				set -l reload_status $status
-				command rm -f $pending_cache
-				return $reload_status
-			end
-		else
-			set -l reload_status $status
-			command rm -f $pending_cache
-			return $reload_status
-		end
+	set -l cache_arguments --destination $cargo_alias_cache \
+		--dependency $DOTFILES/config/config.fish \
+		--dependency $cargo_command \
+		--dependency $cargo_abbr_command
+	if set -q CARGO_HOME; and [ -d $CARGO_HOME/bin ]
+		set --append cache_arguments --dependency $CARGO_HOME/bin
 	end
-	if not set -q generated_cargo_cache
-		. $cargo_alias_cache
-		or return
-	end
+	refresh-fish-cache $cache_arguments -- $cargo_abbr_command $cargo_command
+	set -l cargo_cache_status $status
+	contains $cargo_cache_status 0 75; or return $cargo_cache_status
+	. $cargo_alias_cache; or return
 end
 
 if exists bat
