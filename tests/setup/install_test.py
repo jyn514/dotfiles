@@ -850,6 +850,7 @@ class MiseConfigTests(unittest.TestCase):
         fish_z = (ROOT / "config/z.fish").read_text()
         bashrc = (ROOT / "config/bashrc").read_text()
         zshrc = (ROOT / "config/zshrc").read_text()
+        keybindings = (ROOT / "config/keybindings.ahk").read_text()
 
         self.assertIn('math --scale=2 "$duration / 1000"', fish_config)
         self.assertNotIn('printf "%.2g"', fish_config)
@@ -911,6 +912,25 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("printf '%s\\n' \"$files\" | fzf", zshrc)
         self.assertIn("set -l startup_status $status", fish_config)
         self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
+        self.assertIn("set --local init_output (command $argv)", fish_config)
+        self.assertNotIn("command $argv | source", fish_config)
+        self.assertEqual(2, fish_config.count("if . $pending_cache"))
+        pending_sources = [
+            offset
+            for offset in range(len(fish_config))
+            if fish_config.startswith("if . $pending_cache", offset)
+        ]
+        cache_moves = [
+            fish_config.index("command mv $pending_cache $brew_cache"),
+            fish_config.index("command mv $pending_cache $cargo_alias_cache"),
+        ]
+        self.assertTrue(
+            all(source < move for source, move in zip(pending_sources, cache_moves))
+        )
+        self.assertIn('string escape -- "$expansion"', fish_config)
+        self.assertIn('string escape -- "cargo $cmd"', fish_config)
+        self.assertIn("Run 'wt.exe'", keybindings)
+        self.assertNotIn("RunWait 'wt.exe'", keybindings)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
