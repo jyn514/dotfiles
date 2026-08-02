@@ -783,6 +783,34 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("dirty worktree", result.stderr)
 
+    def test_pre_push_formats_jj_working_copy_commit(self) -> None:
+        sha = "a" * 40
+        calls = self.directory / "calls"
+        (self.directory / "Cargo.toml").touch()
+        self.executable(
+            "git",
+            'case "$1" in\n'
+            '  diff) printf "src/lib.rs\\0";;\n'
+            f'  rev-parse) printf "{"b" * 40}\\n";;\n'
+            'esac\n',
+        )
+        self.executable("jj", f'printf "{sha}\\n"\n')
+        self.executable("cargo", 'printf "%s\\n" "$*" > "$CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            input=f"refs/heads/main {sha} refs/heads/main {'c' * 40}\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {"CALLS": str(calls), "PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("fmt --check\n", calls.read_text())
+
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"
         script_calls = self.directory / "script-calls"
