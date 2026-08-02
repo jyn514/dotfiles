@@ -1184,7 +1184,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
 			-- https://github.com/neovim/neovim/issues/34965
 			vim.api.nvim_clear_autocmds { buffer = bufnr, group = lsp_codelens }
 			vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
-				callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
+				callback = function() vim.lsp.codelens.refresh { bufnr = bufnr } end,
 				buffer = bufnr,
 				group = lsp_codelens,
 				desc = "Refresh codelens actions",
@@ -1275,6 +1275,11 @@ vim.filetype.add { extension = {
 	pet  = 'petal'
 } }
 
+local function set_mumps_highlights()
+	vim.api.nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })
+	vim.api.nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })
+end
+
 vim.api.nvim_create_autocmd("FileType", {
 	group = config_group,
 	callback = function()
@@ -1285,7 +1290,7 @@ vim.api.nvim_create_autocmd("FileType", {
 			vim.bo.commentstring = '//%s'
 		elseif ft == "mumps" then
 			vim.bo.commentstring = ';%s'
-			vim.cmd('highlight! link Keyword Special')
+			set_mumps_highlights()
 		elseif ft == "petal" then
 			vim.bo.commentstring = "//%s"
 		end
@@ -1295,10 +1300,7 @@ vim.api.nvim_create_autocmd("FileType", {
 vim.api.nvim_create_autocmd("ColorScheme", {
 	group = config_group,
 	callback = function()
-		local ft = vim.bo.filetype
-		if ft == 'mumps' then
-			vim.cmd('highlight! link Keyword Special')
-		end
+		set_mumps_highlights()
 	end
 })
 
@@ -1347,7 +1349,8 @@ vim.api.nvim_create_autocmd("FileType", {
 vim.lsp.config('rust_analyzer', {
 	on_attach = function(client, bufnr)
 		if bufnr > 0 then
-			vim.lsp.foldclose('imports', vim.fn.bufwinid(bufnr))
+			local win = vim.fn.bufwinid(bufnr)
+			if win >= 0 then vim.lsp.foldclose('imports', win) end
 			vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
 		end
 	end,

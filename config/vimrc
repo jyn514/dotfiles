@@ -4,7 +4,7 @@ call plug#begin('~/.vim/plugged')
 Plug 'mzlogin/vim-markdown-toc', { 'for': 'markdown' }
 Plug 'csexton/trailertrash.vim', { 'on': 'TrailerTrim' }
 Plug 'Chiel92/vim-autoformat'
-Plug 'vim-latex/vim-latex', { 'for': 'latex' }
+Plug 'vim-latex/vim-latex', { 'for': 'tex' }
 Plug 'roxma/vim-paste-easy'
 Plug 'tpope/vim-fugitive'
 Plug 'airblade/vim-gitgutter'
@@ -20,7 +20,7 @@ if has('nvim')
   source ~/.nvimrc
 endif
 
-function Paste()
+function! Paste()
   put
 endfunction
 
@@ -155,35 +155,35 @@ set listchars+=tab:>-
 
 """"""""10""""""""20"""""""" indentation settings """"""""60""""""""70""""""""80
 
-function TwoSpacesSoftTabs()
+function! TwoSpacesSoftTabs()
 	set tabstop=2
 	set shiftwidth=2
 	set softtabstop=2
 	set expandtab
 endfunction
 
-function EightSpacesHardTabs()
+function! EightSpacesHardTabs()
 	set tabstop=8
 	set shiftwidth=8
 	set softtabstop=8
 	set noexpandtab
 endfunction
 
-function EightSpacesSoftTabs()
+function! EightSpacesSoftTabs()
 	set tabstop=8
 	set shiftwidth=4
 	set softtabstop=8
 	set expandtab
 endfunction
 
-function FourSpacesSoftTabs()
+function! FourSpacesSoftTabs()
 	set tabstop=4
 	set shiftwidth=4
 	set softtabstop=4
 	set expandtab
 endfunction
 
-function FourSpacesHardTabs()
+function! FourSpacesHardTabs()
 	set tabstop=4
 	set shiftwidth=4
 	set softtabstop=4
