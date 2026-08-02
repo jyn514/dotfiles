@@ -785,7 +785,6 @@ class CommandTest(unittest.TestCase):
 
     def test_audio_action_survives_notification_failure(self) -> None:
         calls = self.directory / "cmus-calls"
-        self.executable("cmus", "exit 0\n")
         self.executable("which", "exit 99\n")
         self.executable("notify-send", "exit 1\n")
         self.executable("cmus-remote", 'printf "%s\\n" "$*" > "$CMUS_CALLS"\n')
@@ -803,6 +802,42 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("--pause\n", calls.read_text())
+
+    def test_audio_media_action_requires_the_command_it_invokes(self) -> None:
+        self.executable("cmus", "exit 0\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/audio"), "play", "quiet"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": str(self.directory)},
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("no known media player", result.stderr)
+
+    def test_audio_does_not_announce_a_failed_media_action(self) -> None:
+        notifications = self.directory / "notifications"
+        self.executable("cmus-remote", "exit 23\n")
+        self.executable(
+            "notify-send",
+            'printf "%s\\n" "$*" > "$NOTIFICATIONS"\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/audio"), "next"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "NOTIFICATIONS": str(notifications),
+                "PATH": str(self.directory),
+            },
+        )
+
+        self.assertEqual(23, result.returncode)
+        self.assertFalse(notifications.exists())
 
     def test_hours_parses_meridiem_and_zero_pads_fractional_hours(self) -> None:
         result = subprocess.run(

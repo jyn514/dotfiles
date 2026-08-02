@@ -58,10 +58,14 @@ if command -v amixer >/dev/null 2>&1; then
 	VOLUME_MANAGER="amixer"
 fi
 
-HAS_CMUS="NO"
-if command -v cmus >/dev/null 2>&1; then
-	HAS_CMUS="YES"
-fi
+case "$VERB" in
+	play|pause|toggle|next|prev)
+		if ! command -v cmus-remote >/dev/null 2>&1; then
+			echo "ERROR: no known media player available" >&2
+			exit 1
+		fi
+		;;
+esac
 
 case "$VERB" in
 	up)
@@ -114,34 +118,24 @@ case "$VERB" in
 		esac
 		;;
 	play)
+		cmus-remote --play
 		send_notification "playing music"
-		if [ "$HAS_CMUS" = "YES" ] ; then
-			cmus-remote --play
-		fi
 		;;
 	pause)
+		cmus-remote --pause
 		send_notification "pausing music"
-		if [ "$HAS_CMUS" = "YES" ] ; then
-			cmus-remote --pause
-		fi
 		;;
 	toggle)
+		cmus-remote --pause
 		send_notification "toggled play/pause"
-		if [ "$HAS_CMUS" = "YES" ] ; then
-			cmus-remote --pause
-		fi
 		;;
 	next)
+		cmus-remote --next
 		send_notification "skipping track"
-		if [ "$HAS_CMUS" = "YES" ] ; then
-			cmus-remote --next
-		fi
 		;;
 	prev)
+		cmus-remote --prev
 		send_notification "previous track"
-		if [ "$HAS_CMUS" = "YES" ] ; then
-			cmus-remote --prev
-		fi
 		;;
 	help)
 		echo "usage: $(basename "$0") [verb]"

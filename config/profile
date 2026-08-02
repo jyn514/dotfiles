@@ -439,8 +439,8 @@ fi
 
 # Delta is bad at doing version detection.
 # https://github.com/dandavison/delta/issues/488
-if ! less --version >/dev/null 2>&1; then
-  export GIT_PAGER=less
+if less --version >/dev/null 2>&1; then
+	export GIT_PAGER=less
 fi
 
 # really this is a bash/zsh thing, but sh just ignores this function if it doesn't support it
