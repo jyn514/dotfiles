@@ -17,11 +17,15 @@ This repository stores dotfiles and bootstrap scripts. User command links and sm
 
 Keep scripts portable unless a file already targets one platform. Shell scripts use POSIX `sh` where declared, tab-indented blocks in existing files, and explicit `set -e` or `set -u` when failure handling matters. Python uses standard-library `unittest`, type-friendly signatures, `Path` for filesystem work, and four-space indentation. Match each config file's native style rather than normalizing unrelated formatting.
 
+For shell and generated configuration, preserve producer failures. Avoid nested command substitutions and unchecked pipelines that can mask an earlier error; source generated output only after its producer succeeds, and update persistent caches transactionally. Add regression tests for both success and failure paths.
+
 ## Testing Guidelines
 
 Keep subsystem-owned tests under `tools/<name>/tests/`; add cross-cutting tests under the matching `tests/<feature>/` directory. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
 
 For undocumented mutation APIs, test end-to-end on an owned disposable resource, verify the complete result, and restore or delete the resource before touching production.
+
+Validate configuration with its native parser or application when practical, in addition to repository tests. Examples include shell syntax checks, `jq empty config/claude.json`, headless Neovim startup, Kitty's configuration loader, and `claude doctor`; distinguish parser failures from unrelated runtime, authentication, or environment warnings.
 
 ## Commit & Pull Request Guidelines
 
