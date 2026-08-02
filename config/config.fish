@@ -105,7 +105,9 @@ set fish_color_comment white --dim
 set -g fish_greeting
 
 # load x.py completions at runtime
-set -a fish_complete_path src/etc/completions
+if not contains -- src/etc/completions $fish_complete_path
+	set -a fish_complete_path src/etc/completions
+end
 
 ## keybinds
 
@@ -178,7 +180,9 @@ end
 abbr --add --global --command git -- -nv --no-verify
 
 function reload_cargo_aliases
-	for line in (cargo --list | tail -n+2)
+	set -l cargo_commands (cargo --list)
+		or return
+	for line in $cargo_commands[2..]
 		echo $line | read -l name value
 		set value (string trim $value)
 		if set expansion (string match --groups-only --regex '^alias: (.*)' -- $value)
@@ -194,15 +198,27 @@ end
 
 # load cargo aliases
 if [ -z "$old_fish" ]
-  if ! [ -e ~/.local/config/cargo.fish ]
-    reload_cargo_aliases > ~/.local/config/cargo.fish
-  end
-  . ~/.local/config/cargo.fish
+	set -l cargo_alias_cache ~/.local/config/cargo.fish
+	set -l cargo_command (command --search cargo)
+	if ! [ -e $cargo_alias_cache ] \
+			|| [ $DOTFILES/config/config.fish -nt $cargo_alias_cache ] \
+			|| [ $cargo_command -nt $cargo_alias_cache ] \
+			|| [ $CARGO_HOME/bin -nt $cargo_alias_cache ]
+		set -l pending_cache "$cargo_alias_cache.$fish_pid"
+		if reload_cargo_aliases > $pending_cache
+			command mv $pending_cache $cargo_alias_cache
+		else
+			command rm -f $pending_cache
+		end
+	end
+	. $cargo_alias_cache
 end
 
 function cat; bat -p $argv; end
 function fork-github
-	cd (command fork-github $argv)
+	set -l directory (command fork-github $argv)
+		or return
+	cd $directory
 end
 function ip
 	functions --erase ip
@@ -264,7 +280,11 @@ function expand_history_line
 		case !!
 			echo $history[1]
 		case "!-*"
-			echo $history[(string split - $argv[1])[2]]
+			set -l offset (string split - $argv[1])[2]
+			if [ $offset -lt 1 ] || [ $offset -gt (count $history) ]
+				return 1
+			end
+			echo $history[$offset]
 		case "*"
 			return 1
 	end
@@ -292,7 +312,7 @@ function bind_qmark
 end
 
 abbr --add --global !!      --position anywhere --function expand_history_line
-abbr --add --global history --position anywhere --regex '!-[0-9]+'  --function expand_history_line
+abbr --add --global history --position anywhere --regex '!-[1-9][0-9]*' --function expand_history_line
 abbr --add --global - 'cd -'
 
 # https://github.com/fish-shell/fish-shell/issues/11710
