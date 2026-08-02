@@ -14,6 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/prompt"))
 from prompt_renderer import main as renderer  # noqa: E402
+from prompt_renderer import jj_info  # noqa: E402
+from prompt_renderer.jujutsu import QUERY as JJ_QUERY  # noqa: E402
 
 
 class PromptFactTests(unittest.TestCase):
@@ -165,11 +167,51 @@ class PromptRenderingTests(unittest.TestCase):
 
 
 class PromptJujutsuTests(unittest.TestCase):
+    def test_jj_info_shell_markers_match_native_prompt_protocols(self) -> None:
+        code = "\x1b[0;31m"
+        self.assertEqual("\x01\x1b[0;31m\x02", jj_info.marker(code, {}))
+        self.assertEqual("%{\x1b[0;31m%}", jj_info.marker(code, {"ZSH_VERSION": "5"}))
+        self.assertEqual(
+            "\x1b(0\\033[0;31m\x1b(1",
+            jj_info.marker(code, {"FISH_VERSION": "3"}),
+        )
+
     def test_jj_info_resets_description_color(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             binaries = Path(directory)
+            arguments = binaries / "arguments"
             jj = binaries / "jj"
-            jj.write_text("#!/bin/sh\nprintf 'false::parent\ntrue:bookmark:description\n'\n")
+            jj.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$@" > "$JJ_ARGUMENTS"\n'
+                "printf 'false::parent\ntrue:bookmark:description\n'\n"
+            )
+            jj.chmod(0o755)
+            result = subprocess.run(
+                [str(ROOT / "bin/jj-info")],
+                env=os.environ
+                | {
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                    "JJ_ARGUMENTS": str(arguments),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            recorded_arguments = arguments.read_text().splitlines()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("\x01\x1b[0;0m\x02bookmark", result.stdout)
+        self.assertEqual(
+            [os.fsdecode(argument) for argument in JJ_QUERY[1:]],
+            recorded_arguments,
+        )
+
+    def test_jj_info_preserves_colons_and_escapes_terminal_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binaries = Path(directory)
+            jj = binaries / "jj"
+            jj.write_text("#!/bin/sh\nprintf 'false::current\\nfalse::tea:leaf\\033[31m\\n'\n")
             jj.chmod(0o755)
             result = subprocess.run(
                 [str(ROOT / "bin/jj-info")],
@@ -180,7 +222,42 @@ class PromptJujutsuTests(unittest.TestCase):
             )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("\x01\x1b[0;0m\x02bookmark", result.stdout)
+        self.assertIn("tea:leaf\\u001b[31m", result.stdout)
+        self.assertNotIn("leaf\x1b[31m", result.stdout)
+
+    def test_jj_info_propagates_query_failure_without_partial_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            jj = Path(directory) / "jj"
+            jj.write_text("#!/bin/sh\nprintf partial\nexit 29\n")
+            jj.chmod(0o755)
+            result = subprocess.run(
+                [str(ROOT / "bin/jj-info")],
+                env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(29, result.returncode)
+        self.assertEqual(b"", result.stdout)
+
+    def test_jj_info_rejects_malformed_query_output(self) -> None:
+        for output in ("true::only-one-record\\n", "true::one\\ntrue::two\\nextra\\n"):
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                jj = Path(directory) / "jj"
+                jj.write_text(f"#!/bin/sh\nprintf '{output}'\n")
+                jj.chmod(0o755)
+                result = subprocess.run(
+                    [str(ROOT / "bin/jj-info")],
+                    env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+            self.assertEqual(1, result.returncode)
+            self.assertEqual(b"", result.stdout)
+            self.assertIn(b"malformed jj log output", result.stderr)
 
     def test_failed_jj_query_falls_back_to_git_refs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
