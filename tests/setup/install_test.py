@@ -917,7 +917,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("set abbreviations (grep -Ev", fish_config)
         self.assertIn("set git_aliases (git config --get-regexp", fish_config)
         self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
-        self.assertIn("return $reload_status", fish_config)
+        self.assertIn("return $cargo_cache_status", fish_config)
         self.assertIn("if exists bat\n\tfunction cat", fish_config)
         self.assertIn(
             'set -l directory (command fork-github $argv)\n'
@@ -974,14 +974,11 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
         self.assertIn("set --local init_output (command $argv)", fish_config)
         self.assertNotIn("command $argv | source", fish_config)
-        self.assertEqual(1, fish_config.count("if . $pending_cache"))
-        self.assertLess(
-            fish_config.index("if . $pending_cache"),
-            fish_config.index("command mv $pending_cache $cargo_alias_cache"),
-        )
-        self.assertNotIn("command mv $pending_cache $brew_cache", fish_config)
-        self.assertIn('string escape -- "$expansion"', fish_config)
-        self.assertIn('string escape -- "cargo $cmd"', fish_config)
+        self.assertNotIn("if . $pending_cache", fish_config)
+        self.assertNotIn("command mv $pending_cache", fish_config)
+        self.assertIn("--dependency $cargo_abbr_command", fish_config)
+        self.assertIn("contains $cargo_cache_status 0 75; or return $cargo_cache_status", fish_config)
+        self.assertIn(". $cargo_alias_cache; or return", fish_config)
         self.assertIn("Run 'wt.exe'", keybindings)
         self.assertNotIn("RunWait 'wt.exe'", keybindings)
         self.assertIn('"\\C-l": forward-word', inputrc)
