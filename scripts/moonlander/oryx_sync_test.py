@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("oryx_sync.py")
@@ -57,7 +58,7 @@ def snapshot():
     }
 
 
-def raw(snapshot_value=None):
+def raw(snapshot_value=None, qmk_version=None):
     value = snapshot_value or snapshot()
     layout = value["layout"]
     revision = layout["revision"]
@@ -69,6 +70,7 @@ def raw(snapshot_value=None):
         "tags": layout["tags"],
         "revision": {
             "hashId": "revision-id",
+            "qmkVersion": qmk_version,
             "model": revision["model"],
             "config": revision["config"],
             "swatch": revision["swatch"],
@@ -187,6 +189,136 @@ class MutationPlanningTests(unittest.TestCase):
         self.assertEqual(pending.name, "DeleteLayer")
         self.assertEqual(pending.variables["hashId"], "layer-1")
 
+
+class FakeClient:
+    def __init__(self, layouts, fork_id="fork-layout"):
+        self.layouts = layouts
+        self.fork_id = fork_id
+        self.calls = []
+
+    def execute(self, _query, variables, operation_name):
+        self.calls.append((operation_name, variables))
+        if operation_name == "MyLayouts":
+            return {"myLayouts": copy.deepcopy(self.layouts)}
+        if operation_name == "ForkRevision":
+            return {"forkRevision": {"hashId": self.fork_id}}
+        raise AssertionError(f"unexpected operation {operation_name}")
+
+
+class ApplyPreparationTests(unittest.TestCase):
+    def owned_layout(self, qmk_version):
+        return {
+            "hashId": "layout-id",
+            "revisions": [
+                {"hashId": "revision-id", "qmkVersion": qmk_version}
+            ],
+        }
+
+    def changed_revision(self):
+        wanted = snapshot()
+        wanted["layout"]["revision"]["layers"][0]["keys"][3] = key("KC_D")
+        return wanted
+
+    def test_forks_owned_compiled_revision_and_retargets_copy(self):
+        wanted = self.changed_revision()
+        client = FakeClient([self.owned_layout("25.0")])
+
+        prepared, fork_id = oryx_sync.prepare_apply(
+            client, wanted, snapshot(), raw(qmk_version="25.0")
+        )
+
+        self.assertEqual(fork_id, "fork-layout")
+        self.assertEqual(prepared["layout"]["hashId"], "fork-layout")
+        self.assertEqual(wanted["layout"]["hashId"], "layout-id")
+        self.assertEqual(
+            client.calls,
+            [("MyLayouts", {}), ("ForkRevision", {"hashId": "revision-id"})],
+        )
+
+    def test_uses_owned_editable_revision_without_forking(self):
+        wanted = self.changed_revision()
+        client = FakeClient([self.owned_layout(None)])
+
+        prepared, fork_id = oryx_sync.prepare_apply(
+            client, wanted, snapshot(), raw()
+        )
+
+        self.assertIs(prepared, wanted)
+        self.assertIsNone(fork_id)
+        self.assertEqual(client.calls, [("MyLayouts", {})])
+
+    def test_metadata_only_change_does_not_fork_compiled_revision(self):
+        wanted = snapshot()
+        wanted["layout"]["title"] = "new title"
+        client = FakeClient([self.owned_layout("25.0")])
+
+        prepared, fork_id = oryx_sync.prepare_apply(
+            client, wanted, snapshot(), raw(qmk_version="25.0")
+        )
+
+        self.assertIs(prepared, wanted)
+        self.assertIsNone(fork_id)
+        self.assertEqual(client.calls, [("MyLayouts", {})])
+
+    def test_refuses_layout_not_owned_by_authenticated_account(self):
+        client = FakeClient([])
+
+        with self.assertRaisesRegex(oryx_sync.SyncError, "does not own"):
+            oryx_sync.prepare_apply(
+                client,
+                self.changed_revision(),
+                snapshot(),
+                raw(qmk_version="25.0"),
+            )
+
+        self.assertEqual(client.calls, [("MyLayouts", {})])
+
+
+class ApplyCompletionTests(unittest.TestCase):
+    def test_failed_apply_deletes_only_new_fork(self):
+        client = object()
+        with (
+            mock.patch.object(
+                oryx_sync, "apply", side_effect=oryx_sync.SyncError("mutation failed")
+            ),
+            mock.patch.object(oryx_sync, "delete_layout") as delete_layout,
+        ):
+            with self.assertRaisesRegex(oryx_sync.SyncError, "mutation failed"):
+                oryx_sync.complete_apply(
+                    client, snapshot(), "fork-layout", Path("snapshot.json")
+                )
+
+        delete_layout.assert_called_once_with(client, "fork-layout")
+
+    def test_failed_editable_draft_is_not_deleted(self):
+        client = object()
+        with (
+            mock.patch.object(
+                oryx_sync, "apply", side_effect=oryx_sync.SyncError("mutation failed")
+            ),
+            mock.patch.object(oryx_sync, "delete_layout") as delete_layout,
+        ):
+            with self.assertRaisesRegex(oryx_sync.SyncError, "mutation failed"):
+                oryx_sync.complete_apply(client, snapshot(), None, Path("snapshot.json"))
+
+        delete_layout.assert_not_called()
+
+    def test_verified_fork_is_written_after_remote_match(self):
+        client = object()
+        wanted = snapshot()
+        with (
+            mock.patch.object(oryx_sync, "apply") as apply,
+            mock.patch.object(
+                oryx_sync, "fetch_snapshot", return_value=(wanted, raw())
+            ),
+            mock.patch.object(oryx_sync, "write_snapshot") as write_snapshot,
+        ):
+            oryx_sync.complete_apply(
+                client, wanted, "fork-layout", Path("snapshot.json")
+            )
+
+        apply.assert_called_once_with(client, wanted)
+        write_snapshot.assert_called_once_with(Path("snapshot.json"), wanted)
 
 class FakeResponse:
     def __init__(self, payload):
