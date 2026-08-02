@@ -39,7 +39,11 @@ if [ -e "$issue.json" ] || [ -e "$issue.txt" ]; then
 fi
 
 gh issue view -c "$url" --json title,createdAt,number,body,state,comments > "$issue.json" &
-script --return --quiet -c "gh issue view -c '$url'" /dev/null > "$issue.txt"
+if [ "$(uname -s)" = Darwin ]; then
+  script -q /dev/null gh issue view -c "$url" > "$issue.txt"
+else
+  script --return --quiet -c "gh issue view -c '$url'" /dev/null > "$issue.txt"
+fi
 # for some reason \r is counted as a newline unless we anchor it
 perl -pi -e 's/^.*\r(.)/$1/' "$issue.txt"
 less "$issue.txt"

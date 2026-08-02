@@ -213,26 +213,32 @@ crontab() {
 }
 
 # show a makefile as a dependency graph
-visualize () {
+visualize () (
 	command -v makefile2graph > /dev/null || { echo "makefile2graph not found"; return 1; }
 	command -v dot > /dev/null || { echo "dot not found"; return 1; }
 	command -v xdot > /dev/null || { echo "xdot not found"; return 1; }
-	makefile2graph | dot | xdot /dev/stdin
-}
+	graph=$(makefile2graph) || { result=$?; unset graph; return "$result"; }
+	graph=$(printf '%s\n' "$graph" | dot) || { result=$?; unset graph; return "$result"; }
+	printf '%s\n' "$graph" | xdot /dev/stdin
+	return $?
+)
 
 # for use with a makefile in the current directory
-tasks () {
-	make -npRr | \
-	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
-	grep -v "^[#$(printf '\t')]" | sed 's/:.*$//'
-}
+tasks () (
+	make_data=$(make -npRr) || { result=$?; unset make_data; return "$result"; }
+	task_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}') || { result=$?; unset make_data task_data; return "$result"; }
+	task_data=$(printf '%s\n' "$task_data" | awk '!/^[#\t]/') || { result=$?; unset make_data task_data; return "$result"; }
+	printf '%s\n' "$task_data" | sed 's/:.*$//'
+	return $?
+)
 
 # same as tasks, but show body of recipe
-recipies () {
-	make -npRr | \
-	awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | \
-	grep -v "^#"
-}
+recipies () (
+	make_data=$(make -npRr) || { result=$?; unset make_data; return "$result"; }
+	recipe_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}') || { result=$?; unset make_data recipe_data; return "$result"; }
+	printf '%s\n' "$recipe_data" | awk '!/^#/'
+	return $?
+)
 
 # launch and disown a command
 background () {
@@ -272,11 +278,17 @@ ip() {
 	ip "$@"
 }
 
-purge_removed () {
-	set -- $(dpkg -l | awk '/^rc/ {print $2}')
+purge_removed () (
+	packages=$(dpkg -l) || { result=$?; unset packages; return "$result"; }
+	packages=$(printf '%s\n' "$packages" | awk '/^rc/ {print $2}') || { result=$?; unset packages; return "$result"; }
+	IFS='
+'
+	set -f
+	# shellcheck disable=SC2086  # Split the newline-delimited package list.
+	set -- $packages
 	[ $# -gt 0 ] || return 0
 	sudo dpkg --purge "$@"
-}
+)
 
 excuse () {
 	telnet towel.blinkenlights.nl 666 2>/dev/null | tail -2 | cowsay -f dragon
