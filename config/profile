@@ -182,7 +182,7 @@ what_belongs () {
 }
 
 what_runs () {
-	for file in $(what_belongs "$@"); do
+	what_belongs "$@" | while IFS= read -r file; do
 		[ -f "$file" ] && [ -x "$file" ] && echo "$file"
 	done
 }
@@ -313,7 +313,11 @@ if [ "$DISPLAY" ]; then
 			esac
 			if [ $# -ne 1 ]; then
 				# oops something went wrong
-				command man "$section" "$@"
+				if [ "$section" ]; then
+					command man "$section" "$@"
+				else
+					command man "$@"
+				fi
 				return
 			fi
 
@@ -334,7 +338,11 @@ if [ "$DISPLAY" ]; then
 				xdg-open "$url"
 				return
 			fi
-			command man "$section" "$@"
+			if [ "$section" ]; then
+				command man "$section" "$@"
+			else
+				command man "$@"
+			fi
 		}
 	fi
 fi

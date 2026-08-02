@@ -79,7 +79,7 @@ bindkey "^Q" push-line
 zle-vicmd-push() { zle push-line; zle vi-insert; }
 zle-vicmd-copy() {
     zle vi-yank
-    printf %s "$CUTBUFFER" | xclip -i -selection clipboard
+    printf %s "$CUTBUFFER" | copy
 }
 zle-sudo() {
   zle up-line-or-history
