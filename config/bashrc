@@ -96,7 +96,7 @@ if exists zoxide; then
    eval "$zoxide_init" || return
    unset zoxide_init
    cd() { z "$@" && status; }
-   complete_alias cd z
+   complete_alias cd z || return
 fi
 
 if [ -f ~/.local/bashrc ]; then
