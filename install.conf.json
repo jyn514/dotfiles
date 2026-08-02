@@ -42,6 +42,7 @@
       "$HOME/.config/git/hooks": "config/githooks",
       "$HOME/.config/git/ignore": "config/gitignore",
       "$HOME/.config/glide/glide.ts": "config/glide.ts",
+      "$HOME/.config/glide/glide-algorithms.ts": "config/glide-algorithms.ts",
       "$HOME/.config/grepme.toml": "config/grepme.toml",
       "$HOME/.config/helix": "config/helix",
       "$HOME/.config/readline/inputrc": "config/inputrc",

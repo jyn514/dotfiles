@@ -1084,8 +1084,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("if (next?.id == null) return;", glide)
         self.assertIn("if (tab?.id == null) return;", glide)
         self.assertIn("if (selection == null) return;", glide)
-        self.assertIn("function strip(text: string | null)", glide)
-        self.assertIn('return (text ?? "").replace', glide)
+        self.assertNotIn("console.log(", glide)
+        self.assertEqual(1, glide.count('glide.include("glide-algorithms.ts")'))
         for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
         for helper in (
@@ -1221,10 +1221,7 @@ class ProfileContractTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_repository_urls_drop_page_routes_and_query_data(self) -> None:
-        glide = (ROOT / "config/glide.ts").read_text()
-        start = glide.index("function repository_from_url")
-        end = glide.index("// clone repo", start)
-        implementation = glide[start:end]
+        algorithms = (ROOT / "config/glide-algorithms.ts").as_uri()
         cases = {
             "https://github.com/org/repo/issues/1?q=x#note": [
                 "https://github.com/org/repo",
@@ -1240,8 +1237,10 @@ class ProfileContractTests(unittest.TestCase):
             ],
         }
         script = (
-            implementation
-            + "\nconst cases = "
+            "globalThis.glide = {g: {}};\n"
+            + f'await import("{algorithms}");\n'
+            + "const {repository_from_url} = glide.g.dotfiles_algorithms;\n"
+            + "const cases = "
             + json.dumps(list(cases))
             + ";\nfor (const value of cases) {\n"
             + "  const result = repository_from_url(value);\n"
@@ -1249,7 +1248,7 @@ class ProfileContractTests(unittest.TestCase):
             + "}\n"
         )
         result = subprocess.run(
-            ["node", "-e", script],
+            ["node", "--input-type=module", "-e", script],
             text=True,
             capture_output=True,
             check=False,
@@ -1259,12 +1258,56 @@ class ProfileContractTests(unittest.TestCase):
         actual = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(list(cases.values()), actual)
 
+        malformed = [
+            "not a URL",
+            "https://example.com/org/repo",
+            "https://github.com/org",
+            "https://gitlab.com/group/-/issues/1",
+        ]
+        script = (
+            "globalThis.glide = {g: {}};\n"
+            + f'await import("{algorithms}");\n'
+            + "const {repository_from_url} = glide.g.dotfiles_algorithms;\n"
+            + f"for (const value of {json.dumps(malformed)}) {{\n"
+            + "  try { repository_from_url(value); console.log('accepted'); }\n"
+            + "  catch { console.log('rejected'); }\n"
+            + "}\n"
+        )
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["rejected"] * len(malformed), result.stdout.splitlines())
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_glide_disabled_sites_restore_normal_mode_on_exit(self) -> None:
+        glide = (ROOT / "config/glide.ts").read_text()
+        start = glide.index("async function disable_shortcuts")
+        end = glide.index("const disabled_sites", start)
+        implementation = glide[start:end]
+        script = (
+            "const calls = [];\n"
+            + "const glide = {excmds: {execute(command) { calls.push(command); }}};\n"
+            + implementation
+            + "const cleanup = await disable_shortcuts();\n"
+            + "await cleanup();\n"
+            + "process.stdout.write(JSON.stringify(calls));\n"
+        )
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["mode_change ignore", "mode_change normal"], json.loads(result.stdout))
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_hint_labels_are_short_and_distinct(self) -> None:
-        glide = (ROOT / "config/glide.ts").read_text()
-        start = glide.index("function shorten_unique_prefixes")
-        end = glide.index("glide.o.hint_label_generator", start)
-        implementation = glide[start:end]
+        algorithms = (ROOT / "config/glide-algorithms.ts").as_uri()
         cases = [
             (["a", "b", "c"], ["a", "b", "c"]),
             (["", "", ""], ["0", "1", "2"]),
@@ -1273,18 +1316,44 @@ class ProfileContractTests(unittest.TestCase):
             (["apple", "application"], ["app", "apl"]),
             (["test", "test", "testing"], ["tes", "tet", "tei"]),
             (["", "a", ""], ["0", "a", "1"]),
+            (["猫", "猫", "café"], ["0", "1", "c"]),
         ]
-        script = implementation + "\nprocess.stdout.write(JSON.stringify(labels(INPUT)));"
+        script = (
+            "globalThis.glide = {g: {}};\n"
+            + f'await import("{algorithms}");\n'
+            + "const {hint_labels} = glide.g.dotfiles_algorithms;\n"
+            + "const elements = INPUT.map(textContent => ({textContent, ariaLabel: null}));\n"
+            + "process.stdout.write(JSON.stringify(hint_labels(elements)));"
+        )
 
         for texts, expected in cases:
             result = subprocess.run(
-                ["node", "-e", f"const INPUT = {texts!r};\n{script}"],
+                ["node", "--input-type=module", "-e", f"const INPUT = {texts!r};\n{script}"],
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(expected, json.loads(result.stdout))
+
+        fallback_script = script.replace(
+            "const elements = INPUT.map(textContent => ({textContent, ariaLabel: null}));",
+            "const elements = INPUT;",
+        )
+        result = subprocess.run(
+            [
+                "node",
+                "--input-type=module",
+                "-e",
+                "const INPUT = [{textContent: null, ariaLabel: 'Settings'}];\n"
+                + fallback_script,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["s"], json.loads(result.stdout))
 
 
 if __name__ == "__main__":
