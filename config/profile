@@ -120,7 +120,9 @@ fi
 . "$DOTFILES/lib/shell/lib.sh"
 . "$DOTFILES/bin/show-status"
 
-export GPG_TTY=$(tty)
+if gpg_tty=$(tty 2>/dev/null); then
+	export GPG_TTY=$gpg_tty
+fi
 
 # set up aliases
 
@@ -186,11 +188,13 @@ what_runs () {
 }
 
 what_package () {
-	prog="$(realpath "$1")"; shift
+	prog=$(command which "$1") || return
+	prog=$(realpath "$prog") || return
+	shift
 	if command -v dpkg > /dev/null; then
-		dpkg -S "$(command -v "$prog")" "$@"
+		dpkg -S "$prog" "$@"
 	elif command -v rpm > /dev/null; then
-		rpm -qf "$(command -v "$prog")" "$@"
+		rpm -qf "$prog" "$@"
 	else
 		echo "no supported package manager found" >&2
 	fi

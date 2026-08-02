@@ -381,7 +381,7 @@ function fish_right_prompt
 	else if [ -z "$old_fish" ] && [ "$duration" -gt 99 ]
 		set_color white --dim
 		set -l seconds (printf "%.2g" (math $duration/1000))
-		printf "+%.4ss" $seconds
+		printf "+%ss" $seconds
 	end
 end
 
