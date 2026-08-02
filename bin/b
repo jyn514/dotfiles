@@ -1,3 +1,6 @@
 #!/bin/sh
 # note: the `cd` makes tmux open helix in the right working directory
-builtin cd "$(cargo metadata --format-version 1 | jq .workspace_root -r)" && bacon "$@"
+metadata=$(cargo metadata --format-version 1) || exit
+workspace=$(printf '%s\n' "$metadata" | jq .workspace_root -r) || exit
+cd "$workspace" || exit
+exec bacon "$@"

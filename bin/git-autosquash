@@ -12,7 +12,13 @@ if [ -z "${1:-}" ]; then
 	if ! branch=$(git symbolic-ref --short --quiet HEAD); then
 		branch=$(git for-each-ref refs/heads/ --format '%(refname:short)' --sort=-committerdate --count=1) || exit
 	fi
-	remote=$(git config --get branch."${branch}".remote || echo origin)
+	if remote=$(git config --get branch."${branch}".remote); then
+		:
+	else
+		status=$?
+		[ "$status" -eq 1 ] || exit "$status"
+		remote=origin
+	fi
 	base=$(git merge-base HEAD "$remote"/HEAD)
 else
 	base=$1

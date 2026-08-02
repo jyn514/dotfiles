@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -eu
 
+if (( $# < 1 || $# > 2 )); then
+	echo "usage: $0 <repository> [directory]" >&2
+	exit 2
+fi
+
 if [[ "$1" =~ ^(https://github\.com/[^/]+/[^/?#]+) ]]; then
 	URL=${BASH_REMATCH[1]%.git}.git
 else
@@ -10,13 +15,20 @@ else
 	esac
 fi
 
-# https://stackoverflow.com/a/13840631
-DIR=${2:-$(echo "$URL" | sed -e 's|/$||' -e 's|:*/*\.git$||' -e 's|.*[/:]||g')}
-HOST=$(echo "$URL" | sed -e 's,^https://,,; s/^[^@]*@//' | cut -d: -f1 | cut -d/ -f1)
+repository=${URL%/}
+repository=${repository%.git}
+repository=${repository##*/}
+DIR=${2:-$repository}
+case $URL in
+	https://*) host_and_path=${URL#https://}; HOST=${host_and_path%%/*};;
+	ssh://*) host_and_path=${URL#ssh://}; host_and_path=${host_and_path#*@}; HOST=${host_and_path%%/*};;
+	git@*) host_and_path=${URL#git@}; HOST=${host_and_path%%:*};;
+esac
+HOST=${HOST%%:*}
 
 git clone --filter=blob:none "$URL" "$DIR"
 
 builtin cd "$DIR"
 git remote rename origin upstream
-git remote add origin "git@$HOST:jyn514/$DIR".git
-echo "$DIR"
+git remote add origin "git@$HOST:jyn514/$repository.git"
+printf '%s\n' "$DIR"

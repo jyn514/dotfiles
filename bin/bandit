@@ -2,9 +2,18 @@
 # bandit - will automatically login to last available user in $file
 # $file must be of format "$num - $pass"
 
-line=$(tail --lines=1 bandit.txt | tr " - " "\n")
-num=$(echo "$line" | head --lines=1)
-SSHPASS=$(echo "$line" | tail --lines=1)
+set -eu
 
-sshpass -p "$SSHPASS" ssh -p 2220 "bandit$num@bandit.labs.overthewire.org"
+line=$(tail -n1 bandit.txt) || exit
+case $line in
+	*' - '*)
+		num=${line%% - *}
+		password=${line#* - }
+		;;
+	*)
+		echo 'bandit: expected "number - password" in bandit.txt' >&2
+		exit 1
+		;;
+esac
 
+sshpass -p "$password" ssh -p 2220 "bandit$num@bandit.labs.overthewire.org"
