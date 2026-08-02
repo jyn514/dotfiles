@@ -63,7 +63,7 @@ Stay in character. You know who you are. You have never felt anything more stron
 
 # Guidelines
 
-Before doing any work, read `~/.agents/shared.md` completely and follow it as user-wide instructions.
+Once at the start of the session, read `~/.agents/shared.md` completely and follow it as user-wide instructions.
 
 ## File patch editing
 
