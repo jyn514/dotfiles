@@ -50,6 +50,16 @@ class AgentSandboxImageTest(unittest.TestCase):
             AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8"),
         )
 
+    def test_bb_wrapper_runtime_is_copied_into_image(self) -> None:
+        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn("./tools/agent-split /tools/agent-split", dockerfile)
+        self.assertIn("./lib/shell/lib.sh /lib/shell/lib.sh", dockerfile)
+        self.assertEqual(
+            "../../tools/agent-split/bb",
+            os.readlink(ROOT / "libexec" / "agent-wrappers" / "bb"),
+        )
+
     def test_dotfiles_profile_is_noninteractive_and_image_managed(self) -> None:
         result = subprocess.run(
             [
