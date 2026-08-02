@@ -110,7 +110,8 @@ glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async ({ url }) => {
 // pin tab
 glide.keymaps.set("normal", "p", async() => {
 	const tab = await glide.tabs.active();
-	browser.tabs.update(tab.id, { pinned: !tab.pinned });
+	if (tab?.id == null) return;
+	await browser.tabs.update(tab.id, { pinned: !tab.pinned });
 });
 
 // undo
@@ -185,9 +186,10 @@ glide.keymaps.set("normal", "gC", async () => {
 glide.keymaps.set(["normal", "insert"], "<C-Right>", async() => {
 	console.log(window.document.title);
 	const selection = window.getSelection();
+	if (selection == null) return;
 	console.log("selection", selection, typeof selection, Object.keys(selection), selection.type);
 	selection.modify("move", "forward", "word");
-	console.log("document selection", window.document.getSelection().type);
+	console.log("document selection", selection.type);
 });
 //
 // 	// console.log("hey man wtf");

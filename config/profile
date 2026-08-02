@@ -358,8 +358,8 @@ if [ "$DISPLAY" ]; then
 			local section
 			case "$1" in
 				-*) command man "$@"; return;;
-				*) if rg '^SECTION' /etc/manpath.config | \
-				      awk 'BEGIN { arg="'"$1"'"; code=1 } {for (i=2; i<=NF; i++) if($i == arg) { code=0 }} END { exit code }'
+				*) if [ -r /etc/manpath.config ] &&
+				      awk -v arg="$1" 'BEGIN { code=1 } /^SECTION/ {for (i=2; i<=NF; i++) if($i == arg) { code=0 }} END { exit code }' /etc/manpath.config
 				   then
 					    section=$1
 							shift
@@ -385,7 +385,8 @@ if [ "$DISPLAY" ]; then
 				return
 			fi
 			if ! [ "$section" ]; then
-				section=$(man -k "$1" | rg "^$1" | head -n1 | awk '{print $2}' | tr -d '()')
+				man_index=$(command man -k "$1") || man_index=
+				section=$(printf '%s\n' "$man_index" | awk -v arg="$1" '$1 == arg { gsub(/[()]/, "", $2); print $2; exit }')
 			fi
 			url=https://manpages.ubuntu.com/manpages/$(lsb_release -cs)/man$section/$1.$section.html
 			if check "$url"; then
