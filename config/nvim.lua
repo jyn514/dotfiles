@@ -165,7 +165,7 @@ end)
 -- what does this do lol
 -- vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 --
-function bind(binding, target, desc)
+local function bind(binding, target, desc)
 	vim.keymap.set({ 'n', 'v' }, binding, target, { desc = desc })
 end
 
@@ -187,8 +187,8 @@ vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
 
 vim.keymap.set('', '<S-ScrollWheelDown>', '5zl', { desc = 'Scroll right' })
 vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
-vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page up' })
-vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page down' })
+vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page down' })
+vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page up' })
 
 -- to insert newline without indentation, use `[ `
 
@@ -494,8 +494,8 @@ end
 
 -- https://gitlab.com/HiPhish/rainbow-delimiters.nvim/-/issues/23
 -- vim.g.rainbow_delimiters.query.rust = 'at-least-one-param'
-_ = [[
-	(parameters
+--[[
+(parameters
   "(" @delimiter
   (parameter)+
   ")" @delimiter @sentinel) @container
@@ -503,7 +503,7 @@ _ = [[
 
 require('nvim-surround').setup {}
 
-function set_spider(keybind, motion, desc)
+local function set_spider(keybind, motion, desc)
 	vim.keymap.set(
 		{ "n", "o", "x" },
 		keybind,
@@ -682,7 +682,7 @@ local function ts(binds)
 	return { selections = selections, swaps = swaps, moves = moves }
 end
 
-function bind_ts(capture_associations)
+local function bind_ts(capture_associations)
 	local select = require 'nvim-treesitter-textobjects.select'
 	local swap = require 'nvim-treesitter-textobjects.swap'
 	local move = require 'nvim-treesitter-textobjects.move'
