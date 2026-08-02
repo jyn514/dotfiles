@@ -13,9 +13,8 @@ language-servers = [ "clangd" ]
 indent = { tab-width = 8, unit = "  " }
 
 [language-server.steel]
-command = "steel-language-server"
-environment = { "STEEL_LSP_HOME" = "/home/jyn/.config/helix/steel-lsp" }
-args = []
+command = "sh"
+args = ["-c", "STEEL_LSP_HOME=\"$HOME/.config/helix/steel-lsp\" exec steel-language-server"]
 
 [language-server.rust-analyzer]
 # environment = { "RA_LOG" = "flycheck=debug" }

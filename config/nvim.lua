@@ -800,9 +800,8 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	local comment = vim.bo.commentstring
 	if comment == "" then return end
 	comment = string.gsub(comment, "%%s", "")
-	local escaped_comment = string.gsub(comment, "/", "\\/")
+	local escaped_comment = vim.fn.escape(comment, "\\/.*$^~[]")
 
-	-- TODO: need to escape regex metacharacters
 	-- {-} means "non-greedy *"
 	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]] .. escaped_comment .. [[.*\)/\1\3\r\1\2/e]]
 	for line = info.line2, info.line1, -1 do

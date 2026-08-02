@@ -534,6 +534,54 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("<line\nbreak>\n", checkout.read_text())
 
+    def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
+        calls = self.directory / "gh-calls"
+        self.executable(
+            "gh",
+            'printf "%s\\n" "$*" >> "$GH_CALLS"\n'
+            "printf '{}\\n'\n",
+        )
+        self.executable("script", "printf 'issue output\\n'\n")
+        self.executable("less", "exit 0\n")
+        environment = os.environ | {
+            "GH_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        result = subprocess.run(
+            [str(ROOT / "bin/gh-comments"), "github.com/user/repo/issues/123"],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        unsafe = subprocess.run(
+            [str(ROOT / "bin/gh-comments"), "user/repo", "../escape"],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("https://github.com/user/repo/issues/123", calls.read_text())
+        self.assertEqual(1, unsafe.returncode)
+        self.assertFalse((self.directory.parent / "escape.json").exists())
+
+    def test_claude_statusline_rejects_invalid_workspace(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "config/claude-statusline.sh")],
+            text=True,
+            input='{"cwd":"/directory/that/does/not/exist"}',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

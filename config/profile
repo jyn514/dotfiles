@@ -114,7 +114,7 @@ if [ -n "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc
 fi
 if [ -n "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
-	. ${ZDOTDIR:-$HOME}/.zshrc
+	. "${ZDOTDIR:-$HOME}/.zshrc"
 fi
 
 . "$DOTFILES/lib/shell/lib.sh"
@@ -285,7 +285,12 @@ excuse () {
 dad () { curl https://icanhazdadjoke.com && echo; }
 
 pip_upgrade_all () {
-	pip list | awk '{print $1}' | tail --lines=+3 | xargs pip install -U "$@"
+	packages=$(pip list --format=freeze | sed 's/==.*//') || return
+	[ -n "$packages" ] || { unset packages; return 0; }
+	printf '%s\n' "$packages" | xargs pip install -U "$@"
+	set -- "$?"
+	unset packages
+	return "$1"
 }
 
 fork_github() {
