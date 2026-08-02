@@ -340,32 +340,27 @@ function fish_mode_prompt
 end
 
 set duration 0
-set time "00:00"
+set prompt_time (date +%H:%M)
+set prompt_timestamp $prompt_time
 function record_duration --on-event fish_postexec
-	set duration $CMD_DURATION
+	set -g duration $CMD_DURATION
+	set -g prompt_timestamp ''
+
+	set -l current_time (date +%H:%M)
+	if ! [ "$current_time" = "$prompt_time" ]
+		set -g prompt_time $current_time
+		set -g prompt_timestamp $current_time
+	end
 end
 
 function fish_right_prompt
-	set -l width 0
-
-	if [ -z "$old_fish" ] && [ "$duration" -gt 9 ]
+	if [ -n "$prompt_timestamp" ]
+		printf "\e[2;37m%s" $prompt_timestamp
+	else if [ -z "$old_fish" ] && [ "$duration" -gt 9 ]
 		set_color white --dim
-		set -l minp (printf "%.2g" (math $duration/1000))
-		set -l maxp (printf "+%.4ss" $minp)
-		set s $maxp
-		set width (string length --visible $s)
+		set -l seconds (printf "%.2g" (math $duration/1000))
+		printf "+%.4ss" $seconds
 	end
-
-	set t (date +%H:%M)
-	if ! [ "$t" = "$time" ]
-		set time $t
-		printf "\e[2;37m%s" $t
-	else if [ "$width" -gt 0 ]
-		string repeat -n $width ' '
-		printf '%s' $s
-	end
-
-	set duration 0
 end
 
 function fish_command_not_found
