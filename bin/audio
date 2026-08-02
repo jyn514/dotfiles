@@ -54,12 +54,12 @@ send_notification () {
 }
 
 VOLUME_MANAGER="UNDEFINED"
-if [ -x "$(which amixer)" ] ; then
+if command -v amixer >/dev/null 2>&1; then
 	VOLUME_MANAGER="amixer"
 fi
 
 HAS_CMUS="NO"
-if [ -x "$(which cmus)" ] ; then
+if command -v cmus >/dev/null 2>&1; then
 	HAS_CMUS="YES"
 fi
 

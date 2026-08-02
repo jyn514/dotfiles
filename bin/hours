@@ -5,7 +5,7 @@ from sys import stdin
 # python < 3.9 compat
 def removesuffix(s, suffix):
     if s.endswith(suffix):
-        return s[:-suffix.len()]
+        return s[:-len(suffix)]
     return s
 
 def parse_hhmm(t):
@@ -27,7 +27,7 @@ def cell(s):
     min = sum(time_diff(ts.strip()) for ts in s.split(','))
     hour, min = divmod(min, 60)
     percent = round(min*100/60)
-    return f'{hour}.{percent}'
+    return f'{hour}.{percent:02}'
 
 try:
     for hours in stdin:
