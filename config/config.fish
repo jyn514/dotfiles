@@ -460,6 +460,11 @@ if isatty 0
 	stty -ixon
 end
 
-[ -x ~/.local/startup-hook ] && ~/.local/startup-hook
-# `exit` in fish only exits the file, not the shell as a whole.
-[ $status = 120 ] && exec true
+if [ -x ~/.local/startup-hook ]
+	~/.local/startup-hook
+	set -l startup_status $status
+	# `exit` in fish only exits the file, not the shell as a whole.
+	[ $startup_status = 120 ]; and exec true
+	return $startup_status
+end
+return 0

@@ -908,6 +908,8 @@ class MiseConfigTests(unittest.TestCase):
                 self.assertIn("|| return", line)
         self.assertIn("files=$(fd) || return", zshrc)
         self.assertIn("printf '%s\\n' \"$files\" | fzf", zshrc)
+        self.assertIn("set -l startup_status $status", fish_config)
+        self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

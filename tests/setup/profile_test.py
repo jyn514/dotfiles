@@ -222,6 +222,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("printf 'remove crontab? [y/N] '", profile)
         self.assertIn('IFS= read -r reply || return', profile)
         self.assertNotIn("crontab -i -l", profile)
+        self.assertIn('if [ -f "$file" ] && [ -x "$file" ]; then', profile)
+        self.assertIn("recipes () (", profile)
+        self.assertIn('recipies () { recipes "$@"; }', profile)
 
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
