@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 COMMAND = ROOT / "bin/git-backup"
+COMPATIBILITY_COMMAND = ROOT / "bin/git-save"
 
 
 class GitBackupTests(unittest.TestCase):
@@ -102,18 +103,20 @@ class GitBackupTests(unittest.TestCase):
         self.assertFalse(Path(f"{output}.tar").exists())
 
     def test_installed_symlink_works_from_another_directory(self) -> None:
-        installed = self.directory / "installed-git-backup"
-        installed.symlink_to(COMMAND)
-        output = self.directory / "linked"
-        result = subprocess.run(
-            [installed, self.repository, output],
-            cwd="/",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue(Path(f"{output}.tar").is_file())
+        for command in (COMMAND, COMPATIBILITY_COMMAND):
+            with self.subTest(command=command.name):
+                installed = self.directory / f"installed-{command.name}"
+                installed.symlink_to(command)
+                output = self.directory / f"linked-{command.name}"
+                result = subprocess.run(
+                    [installed, self.repository, output],
+                    cwd="/",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertTrue(Path(f"{output}.tar").is_file())
 
     @unittest.skipUnless(os.name == "posix", "byte paths require POSIX")
     def test_undecodable_repository_and_destination_names_round_trip(self) -> None:
