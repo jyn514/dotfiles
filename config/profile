@@ -221,20 +221,7 @@ alias what_belongs=what-belongs
 
 alias what_runs=what-runs
 
-what_package () {
-	local prog
-	prog=$(command -v "$1") || return
-	prog=$(realpath "$prog") || return
-	shift
-	if command -v dpkg > /dev/null; then
-		dpkg -S "$prog" "$@"
-	elif command -v rpm > /dev/null; then
-		rpm -qf "$prog" "$@"
-	else
-		echo "no supported package manager found" >&2
-		return 1
-	fi
-}
+alias what_package=what-package
 
 # Do not remove a crontab without warning, even where crontab lacks -i.
 crontab() {

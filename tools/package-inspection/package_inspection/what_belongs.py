@@ -11,14 +11,23 @@ def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def manager_command(packages: list[str]) -> list[str] | None:
+def package_manager() -> tuple[str, str] | None:
     dpkg = shutil.which("dpkg")
     if dpkg is not None:
-        return [dpkg, "-L", "--", *packages]
+        return "dpkg", dpkg
     rpm = shutil.which("rpm")
     if rpm is not None:
-        return [rpm, "-ql", "--", *packages]
+        return "rpm", rpm
     return None
+
+
+def manager_command(packages: list[str]) -> list[str] | None:
+    manager = package_manager()
+    if manager is None:
+        return None
+    name, executable = manager
+    option = "-L" if name == "dpkg" else "-ql"
+    return [executable, option, "--", *packages]
 
 
 def main(arguments: list[str]) -> int:
