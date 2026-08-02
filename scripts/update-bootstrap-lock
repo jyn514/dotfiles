@@ -60,7 +60,10 @@ def update_git_entries(manifest: dict, get_json: JsonFetcher) -> None:
             entry["revision"] = git_revision(entry["url"])
         elif update["type"] == "github-release":
             release = github_release(update["repository"], get_json)
-            entry["revision"] = git_revision(entry["url"], f"refs/tags/{release['tag_name']}")
+            entry["version"] = release["tag_name"]
+            entry["revision"] = git_revision(
+                entry["url"], f"refs/tags/{entry['version']}"
+            )
         else:
             raise ValueError(f"unknown Git update type: {update['type']}")
 
@@ -77,9 +80,10 @@ def update_download_entries(
         if update["type"] == "github-file":
             source = manifest["git"][update["revision_from"]]
             repository = source["url"].removeprefix("https://github.com/").removesuffix(".git")
+            reference = source.get("version", source["revision"])
             entry["url"] = (
                 f"https://raw.githubusercontent.com/{repository}/"
-                f"{source['revision']}/{update['path']}"
+                f"{reference}/{update['path']}"
             )
         elif update["type"] == "codeberg-release":
             release = get_json(

@@ -80,6 +80,14 @@ class BootstrapLockTests(unittest.TestCase):
         self.assertIn("get git zoxide.fish revision", setup)
         self.assertNotIn("791da644d33d392216f6b1a9b5fc1e470db6d7f2", setup)
 
+    def test_release_based_git_entries_record_version_and_revision(self) -> None:
+        manifest = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
+
+        for name in ("lazy.nvim", "vim-plug"):
+            entry = manifest["git"][name]
+            self.assertTrue(entry["version"])
+            self.assertEqual(40, len(entry["revision"]))
+
 
 if __name__ == "__main__":
     unittest.main()
