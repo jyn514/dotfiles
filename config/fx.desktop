@@ -5,4 +5,4 @@ Type=Application
 Terminal=true
 Name=fx
 NoDisplay=true
-Exec=fx
+Exec=fx %f

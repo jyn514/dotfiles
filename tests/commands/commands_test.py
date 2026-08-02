@@ -1242,6 +1242,32 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("0" * 40, fields[3])
         self.assertEqual(["tug", "push"], calls.read_text().splitlines())
 
+    def test_jj_push_bookmark_sanitizes_conventional_commit_subjects(self) -> None:
+        template = tomllib.loads((ROOT / "config/jj.toml").read_text())["templates"][
+            "git_push_bookmark"
+        ]
+        expression = template.replace("description", '"Fix: parser"', 1)
+
+        rendered = subprocess.run(
+            ["jj", "log", "--no-graph", "-r", "@", "-T", expression],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(0, rendered.returncode, rendered.stderr)
+        bookmark = rendered.stdout
+        self.assertEqual("jyn/Fix-", bookmark)
+        valid = subprocess.run(
+            ["git", "check-ref-format", f"refs/heads/{bookmark}"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(0, valid.returncode, valid.stderr)
+
     def test_git_autosquash_propagates_fallback_branch_failure(self) -> None:
         self.executable(
             "git",

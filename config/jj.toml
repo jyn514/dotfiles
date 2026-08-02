@@ -87,7 +87,7 @@ recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--templa
 conflicts = ["log", "--no-graph", "-T", "show_conflicts", "-r", "with_conflicts"]
 
 [templates]
-git_push_bookmark = '"jyn/" ++ description.split(regex:"\s").first()'
+git_push_bookmark = '"jyn/" ++ description.split(regex:"\\s").first().replace(regex:"[^A-Za-z0-9_-]+", "-")'
 workspace_list = 'name ++ " " ++ root++"\n"'
 [template-aliases]
 'recent' = 'committer.timestamp().ago() ++ ": " ++ bookmarks ++ " | " ++ description.first_line() ++ "\n"'
