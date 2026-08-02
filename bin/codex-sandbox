@@ -17,7 +17,7 @@ import time
 
 
 DOTFILES = Path(__file__).resolve().parent.parent
-PROXY_HELPER = DOTFILES / "lib" / "sandbox-proxies.py"
+PROXY_HELPER = DOTFILES / "libexec" / "sandbox-proxies.py"
 SANDBOX_NETWORK = "codex-public-only"
 SANDBOX_SUBNET = "10.254.254.0/24"
 SANDBOX_GATEWAY = "10.254.254.1"
