@@ -567,11 +567,13 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("tail --lines=+3", profile)
         self.assertIn('$HOME/.config/helix/steel-lsp', languages)
         self.assertNotIn("/home/jyn", languages)
-        self.assertEqual(1, profile.count('echo "no supported package manager found" >&2\n\t\treturn 1'))
+        self.assertNotIn('echo "no supported package manager found"', profile)
         self.assertIn("alias what_belongs=what-belongs", profile)
         self.assertIn("alias what_runs=what-runs", profile)
+        self.assertIn("alias what_package=what-package", profile)
         self.assertNotIn("what_belongs ()", profile)
         self.assertNotIn("what_runs ()", profile)
+        self.assertNotIn("what_package ()", profile)
         self.assertIn("printf 'remove crontab? [y/N] '", profile)
         self.assertIn('IFS= read -r reply || return', profile)
         self.assertNotIn("crontab -i -l", profile)
@@ -726,42 +728,6 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("tool two words\n", call_text)
-
-    def test_what_package_uses_shell_command_discovery(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("what_package () {")
-        end = profile.index("\n}\n", start) + 2
-        definition = profile[start:end]
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            calls = root / "dpkg-calls"
-            which_called = root / "which-called"
-            for name, contents in (
-                ("tool", "exit 0\n"),
-                ("dpkg", 'printf "%s\\n" "$*" > "$DPKG_CALLS"\n'),
-                ("which", f"touch {which_called}\nexit 99\n"),
-            ):
-                executable = root / name
-                executable.write_text("#!/bin/sh\n" + contents)
-                executable.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-c", definition + "\nwhat_package tool"],
-                env=os.environ
-                | {
-                    "DPKG_CALLS": str(calls),
-                    "PATH": f"{root}:{os.environ['PATH']}",
-                },
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            call_text = calls.read_text() if calls.exists() else ""
-            which_was_called = which_called.exists()
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertTrue(call_text.startswith("-S "))
-        self.assertFalse(which_was_called)
 
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
@@ -1076,7 +1042,6 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("man() {\n\t\t\tlocal status", profile)
         self.assertNotIn("\n\t\t\tcheck()", profile)
         self.assertIn("local existing new_path old_ifs p restore_glob", profile)
-        self.assertIn("what_package () {\n\tlocal prog", profile)
         self.assertIn("crontab() {\n\tlocal argument options reply", profile)
         self.assertIn("pip_upgrade_all () {\n\tlocal packages pip_data result", profile)
         self.assertIn("fork_github() {\n\tlocal dir", profile)
