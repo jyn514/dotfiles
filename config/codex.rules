@@ -32,6 +32,11 @@ allow(["git", ["bug", "clone"]])
 docker_cmds = ["ps", "images", "inspect", "logs", "stats", "version", "info"]
 allow([["podman", "docker"], docker_cmds])
 allow([["podman", "docker"], "image", "list"])
+allow([["podman", "docker"], "network", ["ls", "inspect"]])
+allow([["podman", "docker"], "volume", ["ls", "inspect"]])
+allow([["podman", "docker"], "system", "df"])
+allow([["podman", "docker"], ["port", "top"]])
+allow(["podman", "machine", ["list", "inspect"]])
 
 allow([[
         "kaocha", "tree-sitter", "cargo", "go", "gofmt", "pgrep", "jcmd",
