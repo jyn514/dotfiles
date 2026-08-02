@@ -59,6 +59,25 @@ class PickerActionTest(unittest.TestCase):
             self.calls.read_bytes(),
         )
 
+    def test_open_passes_multiple_nul_selections_as_opaque_arguments(self) -> None:
+        self.opener()
+        payload = b"relative path\0-line\nbreak\0invalid-\xff\0"
+
+        result = self.run_command("open", "--read0", selection=payload)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            b"relative path\0./-line\nbreak\0invalid-\xff\0",
+            self.calls.read_bytes(),
+        )
+
+    def test_open_propagates_launcher_failure(self) -> None:
+        self.opener(status=39)
+
+        result = self.run_command("open", "one", "two")
+
+        self.assertEqual(39, result.returncode)
+
     def test_empty_selection_is_cancellation(self) -> None:
         self.opener()
         for payload in (b"", b"\0"):
