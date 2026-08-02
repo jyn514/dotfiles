@@ -1,82 +1,33 @@
-#!/bin/sh
+#!/usr/bin/env python3
+"""Stable launcher for the repository backup command."""
 
 # .SCRIPTDOC
-# Back up a git repository to a local file. The file produced will be a tarfile
-# containing the git repository as a git .bundle file, as well as an xz
-# compressed tarball of the current HEAD for the master branch of the repo. The
-# latter is included so the archive produced is still useful if it needs to be
-# unpacked on a system without git, or if the git bundle format is ever
-# depricated.
+# Back up a Git repository to a local file. The resulting tar file contains a
+# Git bundle and an xz-compressed checkout of the repository's default branch.
+# The checkout keeps the backup useful on systems without Git.
 #
 # .SYNTAX
 #
-# $1 . . . URL of repository to back up
+# $1 . . . URL or path of repository to back up
 #
-# $2 . . . Path to backup file (.tar extension will be added automatically)
-
+# $2 . . . Path to backup file (.tar is added automatically)
+#
 # .LICENSE
-
+#
 # Copyright 2018, Charles A. Daniels
 # This software is distributed under the BSD 3-clause license. The full text
-# of this software's license may be retrieved from this URL:
-# https://github.com/charlesdaniels/dotfiles/blob/master/LICENSE
+# is available in the repository LICENSE file.
 # .ENDOC
 
-set -o nounset
-set -o errexit
+from pathlib import Path
+import sys
 
-if [ $# -ne 2 ] ; then
-	echo "ERROR: incorrect usage" > /dev/stderr
-	echo "$0 [URL] [local file]" > /dev/stderr
-	exit 1
-fi
 
-REPO_URL="$1"
-BACKUP_FILE="$(realpath "$2").tar"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/git-backup.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "git-backup"))
 
-if [ -e "$BACKUP_FILE" ] ; then
-	echo "ERROR: backup file '$BACKUP_FILE' already exists." > /dev/stderr
-	exit 1
-fi
+from git_backup.main import main  # noqa: E402
 
-cd "$TMP_DIR"
 
-printf "INFO: cloning repository... " > /dev/stderr
-git clone --quiet --mirror --bare "$REPO_URL"
-echo "DONE" > /dev/stderr
-
-REPO_NAME="$(basename "$(find . -type d -iname "*.git" -print | head -n 1)" .git)"
-echo "INFO: inferred repo name is '$REPO_NAME'"
-
-printf "INFO: creating bundle... " > /dev/stderr
-mkdir "$TMP_DIR/$REPO_NAME"
-cd "$REPO_NAME.git"
-if ! git bundle create "$TMP_DIR/$REPO_NAME/$REPO_NAME.bundle" --all > "$TMP_DIR/bundle.log" 2>&1 ; then
-	echo "FAIL" > /dev/stderr
-	echo "ERROR: git bundle failed, logfile follows..."
-	cat "$TMP_DIR/bundle.log" > /dev/stderr
-	exit 1
-fi
-echo "DONE" > /dev/stderr
-
-printf "INFO: arching master... " > /dev/stderr
-cd "$TMP_DIR/$REPO_NAME"
-git clone --quiet ./"$REPO_NAME".bundle ./master
-rm -rf ./master/.git
-tar cfJ master.tar.xz master/
-rm -rf ./master/
-echo "DONE" > /dev/stderr
-
-printf "INFO: generating backup file... " > /dev/stderr
-cd "$TMP_DIR"
-tar cf "$REPO_NAME.tar" "$REPO_NAME"
-mv "$REPO_NAME.tar" "$BACKUP_FILE"
-echo "DONE" > /dev/stderr
-
-printf "INFO: cleaning up... " > /dev/stderr
-cd
-rm -rf "$TMP_DIR"
-trap - EXIT
-echo "DONE" > /dev/stderr
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

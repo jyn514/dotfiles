@@ -4,8 +4,6 @@
   "bin/flash-moonlander:nested-substitution:379c8eb5cb22c8a8",
   "bin/flash-moonlander:nested-substitution:e189b6e431eba3f9",
   "bin/flash-moonlander:unchecked-pipeline:e189b6e431eba3f9",
-  "bin/git-backup:filename-lines:2211318822b68de6",
-  "bin/git-backup:nested-substitution:2211318822b68de6",
   "bin/git-save:filename-lines:2211318822b68de6",
   "bin/git-save:nested-substitution:2211318822b68de6",
   "bin/jj-info:unchecked-pipeline:0b71855b83847c91",
