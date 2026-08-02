@@ -4,6 +4,7 @@ set -eu
 [ -e Cargo.toml ] || exit 0
 
 zero=0000000000000000000000000000000000000000
+format_sha=
 while read -r _local_ref local_sha _remote_ref remote_sha; do
 	[ "$local_sha" != "$zero" ] || continue
 	if [ "$remote_sha" = "$zero" ]; then
@@ -19,8 +20,27 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 	set -e
 	[ "${statuses[0]}" -eq 0 ] || exit "${statuses[0]}"
 	case ${statuses[1]} in
-		0) exec cargo fmt --check;;
+		0)
+			if [ -n "$format_sha" ] && [ "$format_sha" != "$local_sha" ]; then
+				echo "error: cannot check Rust formatting for multiple pushed commits" >&2
+				exit 1
+			fi
+			format_sha=$local_sha
+			;;
 		1) ;;
 		*) exit "${statuses[1]}";;
 	esac
 done
+
+[ -n "$format_sha" ] || exit 0
+head=$(git rev-parse HEAD) || exit
+if [ "$format_sha" != "$head" ]; then
+	echo "error: cannot check Rust formatting for a commit that is not checked out" >&2
+	exit 1
+fi
+worktree_status=$(git status --porcelain --untracked-files=all) || exit
+if [ -n "$worktree_status" ]; then
+	echo "error: cannot check Rust formatting with a dirty worktree" >&2
+	exit 1
+fi
+exec cargo fmt --check

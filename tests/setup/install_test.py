@@ -896,6 +896,8 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('fzf-bash-completion.sh || return', bashrc)
         self.assertIn("set -l profile_path (realpath ~/.profile); or return", fish_config)
         self.assertIn("set -l kernel (uname); or return", fish_config)
+        self.assertIn("if not status --is-interactive\n\treturn\nend", fish_config)
+        self.assertNotIn("if not status --is-interactive\n\texit", fish_config)
         self.assertNotIn('"(uname)"', fish_config)
         self.assertIn("if exists cargo; then", bashrc)
         self.assertIn("complete_alias c cargo || return", bashrc)

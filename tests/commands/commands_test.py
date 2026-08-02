@@ -671,7 +671,10 @@ class CommandTest(unittest.TestCase):
         self.executable(
             "git",
             'printf "%s\\n" "$*" >> "$CALLS"\n'
-            'case "$1" in diff) printf "src/lib.rs\\0";; esac\n',
+            'case "$1" in\n'
+            '  diff) printf "src/lib.rs\\0";;\n'
+            f'  rev-parse) printf "{"a" * 40}\\n";;\n'
+            'esac\n',
         )
         self.executable("cargo", 'printf "cargo %s\\n" "$*" >> "$CALLS"\n')
 
@@ -692,9 +695,93 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             f"diff --name-only -z --no-ext-diff {'b' * 40} {'a' * 40}\n"
+            "rev-parse HEAD\n"
+            "status --porcelain --untracked-files=all\n"
             "cargo fmt --check\n",
             calls.read_text(),
         )
+
+    def test_pre_push_reads_every_ref_before_formatting(self) -> None:
+        calls = self.directory / "calls"
+        (self.directory / "Cargo.toml").touch()
+        rust_sha = "c" * 40
+        self.executable(
+            "git",
+            'printf "%s\\n" "$*" >> "$CALLS"\n'
+            'case "$1" in\n'
+            f'  diff) [ "$6" != "{rust_sha}" ] || printf "src/lib.rs\\0";;\n'
+            f'  rev-parse) printf "{rust_sha}\\n";;\n'
+            'esac\n',
+        )
+        self.executable("cargo", 'printf "cargo %s\\n" "$*" >> "$CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            input=(
+                f"refs/heads/one {'a' * 40} refs/heads/one {'b' * 40}\n"
+                f"refs/heads/two {rust_sha} refs/heads/two {'d' * 40}\n"
+            ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {"CALLS": str(calls), "PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(2, calls.read_text().count("diff --name-only"))
+        self.assertTrue(calls.read_text().endswith("cargo fmt --check\n"))
+
+    def test_pre_push_rejects_rust_commit_that_is_not_checked_out(self) -> None:
+        (self.directory / "Cargo.toml").touch()
+        self.executable(
+            "git",
+            'case "$1" in\n'
+            '  diff) printf "src/lib.rs\\0";;\n'
+            f'  rev-parse) printf "{"c" * 40}\\n";;\n'
+            'esac\n',
+        )
+        self.executable("cargo", "exit 99\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            input=f"refs/heads/main {'a' * 40} refs/heads/main {'b' * 40}\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("not checked out", result.stderr)
+
+    def test_pre_push_rejects_dirty_rust_worktree(self) -> None:
+        sha = "a" * 40
+        (self.directory / "Cargo.toml").touch()
+        self.executable(
+            "git",
+            'case "$1" in\n'
+            '  diff) printf "src/lib.rs\\0";;\n'
+            f'  rev-parse) printf "{sha}\\n";;\n'
+            '  status) printf "?? untracked.rs\\n";;\n'
+            'esac\n',
+        )
+        self.executable("cargo", "exit 99\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            input=f"refs/heads/main {sha} refs/heads/main {'b' * 40}\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("dirty worktree", result.stderr)
 
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"

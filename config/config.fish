@@ -113,7 +113,7 @@ if [ -z "$SSH_AUTH_SOCK" ]
 end
 
 if not status --is-interactive
-	exit
+	return
 end
 
 if exists mise

@@ -1243,7 +1243,7 @@ vim.lsp.config.perlnavigator = {
 vim.lsp.config('oxc', {
 	cmd = { "oxc_language_server" },
 	root_dir = function(buf, on_dir)
-		local dir = vim.fs.root(0, { 'package.json', 'tsconfig.json' }) -- order matters
+		local dir = vim.fs.root(buf, { 'package.json', 'tsconfig.json' }) -- order matters
 		if dir then on_dir(dir) end
 	end,
 })
@@ -1259,7 +1259,7 @@ vim.lsp.config('tinymist', {
 
 for _, lsp in ipairs {
 	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
-	'clojure_lsp', 'cssls', 'markdown_oxide', 'tinymist',
+	'clojure_lsp', 'cssls', 'markdown_oxide', 'oxc', 'tinymist',
 } do
 	vim.lsp.enable(lsp)
 end
