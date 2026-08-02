@@ -7,7 +7,9 @@ else
 	[ "$status" -eq 1 ] || exit "$status"
 fi
 
-GIT_DIR=$(realpath "$(git rev-parse --git-dir)")
+git_dir=$(git rev-parse --git-dir) || exit
+GIT_DIR=$(realpath "$git_dir") || exit
+unset git_dir
 export GIT_DIR
 
 # Run local hooks first, since those are more important.

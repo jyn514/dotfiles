@@ -387,6 +387,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
         self.assertIn("if (save != \\\"\\\")", tmux)
         self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
+        self.assertIn(
+            'cmd = "git ls-files --cached --others --exclude-standard"', nvim
+        )
 
 
 if __name__ == "__main__":

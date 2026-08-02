@@ -2,14 +2,25 @@
 set -eu
 
 [ -e Cargo.toml ] || exit 0
-set +e
-git diff --name-only -z --cached --no-ext-diff \
-	| python3 -c 'import sys; paths = sys.stdin.buffer.read().split(b"\0"); raise SystemExit(not any(path.endswith(b".rs") for path in paths))'
-statuses=("${PIPESTATUS[@]}")
-set -e
-[ "${statuses[0]}" -eq 0 ] || exit "${statuses[0]}"
-case ${statuses[1]} in
-	0) cargo fmt --check;;
-	1) ;;
-	*) exit "${statuses[1]}";;
-esac
+
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+	[ "$local_sha" != "$zero" ] || continue
+	if [ "$remote_sha" = "$zero" ]; then
+		base=$(git hash-object -t tree /dev/null) || exit
+	else
+		base=$remote_sha
+	fi
+
+	set +e
+	git diff --name-only -z --no-ext-diff "$base" "$local_sha" \
+		| python3 -c 'import sys; paths = sys.stdin.buffer.read().split(b"\0"); raise SystemExit(not any(path.endswith(b".rs") for path in paths))'
+	statuses=("${PIPESTATUS[@]}")
+	set -e
+	[ "${statuses[0]}" -eq 0 ] || exit "${statuses[0]}"
+	case ${statuses[1]} in
+		0) exec cargo fmt --check;;
+		1) ;;
+		*) exit "${statuses[1]}";;
+	esac
+done
