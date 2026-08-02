@@ -566,6 +566,127 @@ class CommandTest(unittest.TestCase):
         self.assertIn("error: aborting", result.stdout)
         self.assertFalse(calls.exists())
 
+    def test_makeuser_validates_arguments_before_privileged_commands(self) -> None:
+        calls = self.directory / "adduser-calls"
+        self.executable("adduser", 'touch "$ADDUSER_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/makeuser")],
+            env=os.environ
+            | {
+                "ADDUSER_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(2, result.returncode)
+        self.assertIn("usage:", result.stderr)
+        self.assertFalse(calls.exists())
+
+    def test_clj_ignores_ambient_args_and_propagates_alias_query_failure(self) -> None:
+        calls = self.directory / "clojure-calls"
+        self.executable(
+            "clojure",
+            'if [ "$1 $2" = "-X:deps aliases" ]; then\n'
+            '  [ -z "${QUERY_STATUS:-}" ] || exit "$QUERY_STATUS"\n'
+            '  printf "%s\\n" "${ALIASES:-}"\n'
+            'else\n'
+            '  printf "<%s>\\n" "$@" > "$CLOJURE_CALLS"\n'
+            'fi\n',
+        )
+        environment = os.environ | {
+            "args": "ambient injected arguments",
+            "CLOJURE_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        ordinary = subprocess.run(
+            [str(ROOT / "bin/clj"), "user-argument"], env=environment, check=False
+        )
+        ordinary_calls = calls.read_text()
+        calls.unlink()
+        development = subprocess.run(
+            [str(ROOT / "bin/clj")],
+            env=environment | {"ALIASES": ":dev"},
+            check=False,
+        )
+        development_calls = calls.read_text()
+        calls.unlink()
+        failed = subprocess.run(
+            [str(ROOT / "bin/clj")],
+            env=environment | {"QUERY_STATUS": "23"},
+            check=False,
+        )
+
+        self.assertEqual(0, ordinary.returncode)
+        self.assertNotIn("ambient", ordinary_calls)
+        self.assertIn("<user-argument>", ordinary_calls)
+        self.assertEqual(0, development.returncode)
+        self.assertIn("<-A:dev>", development_calls)
+        self.assertEqual(23, failed.returncode)
+        self.assertFalse(calls.exists())
+
+    def test_ansi_resets_background_without_debug_output(self) -> None:
+        command = (
+            f'source {ROOT / "bin/ansi"}; '
+            "ansi::isAnsiSupported() { return 0; }; "
+            "ansi --reset-background --no-restore tea"
+        )
+        result = subprocess.run(
+            ["bash", "-c", command],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("\x1b[49mtea", result.stdout)
+        self.assertNotIn("set | grep", (ROOT / "bin/ansi").read_text())
+
+    def test_ssh_wrapper_cleans_up_agents_and_propagates_startup_failure(self) -> None:
+        calls = self.directory / "ssh-wrapper-calls"
+        self.executable(
+            "ssh-add",
+            'printf "ssh-add %s\\n" "$*" >> "$SSH_WRAPPER_CALLS"\n'
+            'if [ "$1" = -l ] && [ ! -e "$AGENT_READY" ]; then exit 1; fi\n'
+            'touch "$AGENT_READY"\n',
+        )
+        self.executable(
+            "ssh-agent",
+            'printf "ssh-agent %s\\n" "$*" >> "$SSH_WRAPPER_CALLS"\n'
+            'if [ "$1" = -k ]; then exit 0; fi\n'
+            '[ -z "${AGENT_STATUS:-}" ] || exit "$AGENT_STATUS"\n'
+            'printf "SSH_AUTH_SOCK=/tmp/mock-agent; export SSH_AUTH_SOCK; SSH_AGENT_PID=123; export SSH_AGENT_PID;\\n"\n',
+        )
+        self.executable("systemctl", "exit 0\n")
+        self.executable("ssh", "exit 17\n")
+        environment = os.environ | {
+            "AGENT_READY": str(self.directory / "agent-ready"),
+            "SSH_WRAPPER_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        session = subprocess.run(
+            [str(ROOT / "bin/ssh.sh"), "host"], env=environment, check=False
+        )
+        call_text = calls.read_text()
+        calls.unlink()
+        (self.directory / "agent-ready").unlink(missing_ok=True)
+        startup_failure = subprocess.run(
+            [str(ROOT / "bin/ssh.sh"), "host"],
+            env=environment | {"AGENT_STATUS": "23"},
+            check=False,
+        )
+
+        self.assertEqual(17, session.returncode)
+        self.assertIn("ssh-agent -k", call_text)
+        self.assertEqual(23, startup_failure.returncode)
+
     def test_firefox_preserves_spaces_in_windows_path(self) -> None:
         calls = self.directory / "firefox-calls"
         self.executable("wslpath", "printf 'C:\\\\Users\\\\One Esk\\\\page.html\\n'\n")
@@ -1461,7 +1582,7 @@ class CommandTest(unittest.TestCase):
             "script",
             'printf "%s\\n" "$*" > "$SCRIPT_CALLS"\nprintf \'issue output\\n\'\n',
         )
-        self.executable("less", "exit 0\n")
+        self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
         environment = os.environ | {
             "GH_CALLS": str(calls),
             "SCRIPT_CALLS": str(script_calls),
@@ -1493,6 +1614,47 @@ class CommandTest(unittest.TestCase):
         )
         self.assertEqual(1, unsafe.returncode)
         self.assertFalse((self.directory.parent / "escape.json").exists())
+
+    def test_gh_comments_does_not_publish_partial_exports(self) -> None:
+        self.executable(
+            "gh",
+            'printf "json\\n"\n[ -z "${GH_STATUS:-}" ] || exit "$GH_STATUS"\n',
+        )
+        self.executable("uname", "printf 'Darwin\\n'\n")
+        self.executable(
+            "script",
+            'printf "text\\n"\n[ -z "${SCRIPT_STATUS:-}" ] || exit "$SCRIPT_STATUS"\n',
+        )
+        self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
+        environment = os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"}
+
+        for variable, status in (("GH_STATUS", 24), ("SCRIPT_STATUS", 25)):
+            result = subprocess.run(
+                [str(ROOT / "bin/gh-comments"), "user/repo", "123"],
+                cwd=self.directory,
+                env=environment | {variable: str(status)},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(status, result.returncode, variable)
+            self.assertFalse((self.directory / "123.json").exists())
+            self.assertFalse((self.directory / "123.txt").exists())
+            self.assertEqual([], list(self.directory.glob(".123.*")))
+
+        less_failure = subprocess.run(
+            [str(ROOT / "bin/gh-comments"), "user/repo", "123"],
+            cwd=self.directory,
+            env=environment | {"LESS_STATUS": "26"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(26, less_failure.returncode)
+        self.assertEqual("json\n", (self.directory / "123.json").read_text())
+        self.assertEqual("text\n", (self.directory / "123.txt").read_text())
 
     def test_claude_statusline_rejects_invalid_workspace(self) -> None:
         result = subprocess.run(

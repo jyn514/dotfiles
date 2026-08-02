@@ -1,6 +1,11 @@
 #!/bin/sh
 
 # N.B. this script must be run as root
+if [ $# -ne 2 ]; then
+	echo "usage: $0 <user> <ssh-public-key>" >&2
+	exit 2
+fi
+
 set -euv
 
 printf 'create user %s with ssh public key %s? y/[n] ' "$1" "$2"
