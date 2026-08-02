@@ -1104,8 +1104,8 @@ dap.listeners.before.event_exited.dapui_config = dapui.close
 ---- LSP ----
 
 -- https://snippets.bentasker.co.uk/posts/lua/trim-whitespace-from-end-of-string.html
-function rtrim(s)
-  return s:match'^(.*%S)%s*$'
+local function rtrim(s)
+  return s:match'^(.*%S)%s*$' or ''
 end
 require('vim.lsp.log').set_format_func(function(val)
 	if type(val) == "string" then return rtrim(val) end
@@ -1365,5 +1365,12 @@ end
 
 if not first_run then
 	-- vim.cmd.bufdo('silent! edit')
-	vim.cmd.bufdo('LspRestart')
+	local current_buf = vim.api.nvim_get_current_buf()
+	local current_view = vim.fn.winsaveview()
+	local restart_ok, restart_error = pcall(vim.cmd.bufdo, 'LspRestart')
+	if vim.api.nvim_buf_is_valid(current_buf) then
+		vim.api.nvim_set_current_buf(current_buf)
+		vim.fn.winrestview(current_view)
+	end
+	if not restart_ok then error(restart_error) end
 end

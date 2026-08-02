@@ -7,6 +7,7 @@ from typing import Sequence
 
 from util import added_files
 from util import cmd_output
+from util import zsplit
 
 
 def lower_set(iterable: Iterable[str]) -> set[str]:
@@ -26,7 +27,7 @@ def directories_for(files: set[str]) -> set[str]:
 
 
 def find_conflicting_filenames(filenames: Sequence[str]) -> int:
-    repo_files = set(cmd_output('git', 'ls-files').splitlines())
+    repo_files = set(zsplit(cmd_output('git', 'ls-files', '-z')))
     repo_files |= directories_for(repo_files)
     relevant_files = set(filenames) | added_files()
     relevant_files |= directories_for(relevant_files)

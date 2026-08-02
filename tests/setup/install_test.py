@@ -851,6 +851,9 @@ class MiseConfigTests(unittest.TestCase):
         bashrc = (ROOT / "config/bashrc").read_text()
         zshrc = (ROOT / "config/zshrc").read_text()
         keybindings = (ROOT / "config/keybindings.ahk").read_text()
+        inputrc = (ROOT / "config/inputrc").read_text()
+        pre_commit = (ROOT / "config/githooks/pre-commit").read_text()
+        tmux = (ROOT / "config/tmux.conf").read_text()
 
         self.assertIn('math --scale=2 "$duration / 1000"', fish_config)
         self.assertNotIn('printf "%.2g"', fish_config)
@@ -949,6 +952,15 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('string escape -- "cargo $cmd"', fish_config)
         self.assertIn("Run 'wt.exe'", keybindings)
         self.assertNotIn("RunWait 'wt.exe'", keybindings)
+        self.assertIn('"\\C-l": forward-word', inputrc)
+        self.assertNotIn('"\\Cl": forward-word', inputrc)
+        self.assertIn("find . -type l -print0", pre_commit)
+        self.assertIn("check_symlinks.py", pre_commit)
+        self.assertIn("xargs -0 python3", pre_commit)
+        self.assertNotIn("xargs -0 python ", pre_commit)
+        self.assertIn("pre_commit_hooks/destroyed_symlinks.py", pre_commit)
+        self.assertIn('printf -v path %q "$1"', tmux)
+        self.assertNotIn('send-keys "${EDITOR:-vi} {}"', tmux)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

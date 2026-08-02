@@ -55,7 +55,10 @@ nnoremap <C-b> :TagbarToggle<Enter>
 " prompt to reload buffer _before_ saving
 " https://vi.stackexchange.com/a/13092/15711
 set autoread
-au FocusGained,BufEnter * :checktime
+augroup dotfiles_checktime
+	autocmd!
+	autocmd FocusGained,BufEnter * checktime
+augroup END
 
 " o<pre><code>^M - insert '<pre><code>' on the next line
 " </code></pre> - insert on the following line

@@ -584,8 +584,9 @@ class CommandTest(unittest.TestCase):
         )
         self.executable(
             "xargs",
-            'for argument do checker=$argument; done\n'
-            '[ -f "$checker" ] || exit 41\n'
+            'checker=\n'
+            'for argument do [ ! -f "$argument" ] || checker=$argument; done\n'
+            '[ -n "$checker" ] || exit 41\n'
             "cat >/dev/null\n",
         )
 
@@ -619,6 +620,38 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(23, result.returncode)
 
+    def test_pre_commit_checks_broken_symlinks(self) -> None:
+        git_directory = self.directory / "git-directory"
+        common_directory = self.directory / "common-directory"
+        git_directory.mkdir()
+        common_directory.mkdir()
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "diff --quiet") exit 1;;\n'
+            f'  "rev-parse --git-dir") printf "%s\\n" "{git_directory}";;\n'
+            f'  "rev-parse --git-common-dir") printf "%s\\n" "{common_directory}";;\n'
+            '  "diff --name-only") printf "broken-link\\0";;\n'
+            '  "checkout-index "*) prefix=${2#--prefix=}; ln -s missing "$prefix$4";;\n'
+            'esac\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-commit")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMPDIR": str(self.directory),
+            },
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Broken symlink", result.stdout)
+
     def test_pre_commit_propagates_git_directory_query_failure(self) -> None:
         realpath_calls = self.directory / "realpath-calls"
         self.executable(
@@ -647,6 +680,33 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(29, result.returncode)
         self.assertFalse(realpath_calls.exists())
+
+    def test_case_conflict_keeps_newlines_inside_filenames(self) -> None:
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "ls-files -z") printf "foo\\nbar\\0";;\n'
+            '  "diff --staged") printf "FOO\\nbaz\\0";;\n'
+            'esac\n',
+        )
+
+        result = subprocess.run(
+            [
+                "python3",
+                str(
+                    ROOT
+                    / "config/githooks/pre_commit_hooks/check_case_conflict.py"
+                ),
+                "FOO\nbaz",
+            ],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_pre_push_does_not_split_newlines_into_rust_filenames(self) -> None:
         calls = self.directory / "cargo-calls"
