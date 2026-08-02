@@ -258,6 +258,67 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("destination\n", (destination / "collision").read_text())
         self.assertIn("Source retained", result.stdout)
 
+    def test_makeuser_stops_after_confirmation_is_refused(self) -> None:
+        calls = self.directory / "adduser-calls"
+        self.executable("adduser", 'printf "%s\\n" "$*" >> "$ADDUSER_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/makeuser"), "citizen", "ssh-ed25519 key"],
+            text=True,
+            input="n\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "ADDUSER_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("error: aborting", result.stdout)
+        self.assertFalse(calls.exists())
+
+    def test_firefox_preserves_spaces_in_windows_path(self) -> None:
+        calls = self.directory / "firefox-calls"
+        self.executable("wslpath", "printf 'C:\\\\Users\\\\One Esk\\\\page.html\\n'\n")
+        self.executable(
+            "firefox",
+            'printf "%s\\n%s\\n" "$#" "$1" > "$FIREFOX_CALLS"\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/firefox.sh"), "/mnt/c/Users/One Esk/page.html"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "FIREFOX": str(self.directory / "firefox"),
+                "FIREFOX_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("1\nC:\\Users\\One Esk\\page.html\n", calls.read_text())
+
+    def test_cargo_doc_dev_accepts_no_subcommand_argument(self) -> None:
+        calls = self.directory / "cargo-calls"
+        self.executable("cargo", 'printf "%s\\n" "$*" > "$CARGO_CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "bin/cargo-doc-dev")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "CARGO": str(self.directory / "cargo"),
+                "CARGO_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("doc --document-private-items --no-deps\n", calls.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
