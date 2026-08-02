@@ -1,0 +1,1 @@
+"""Desktop break-reminder integration."""
