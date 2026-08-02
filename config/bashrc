@@ -72,8 +72,12 @@ complete_alias() {
    printf -v quoted_alias %q "$alias"
    eval "${spec% *} $quoted_alias"
 }
-complete_alias c cargo
-complete_alias g git
+if exists cargo; then
+   complete_alias c cargo || return
+fi
+if exists git; then
+   complete_alias g git || return
+fi
 # jj has support for user-defined aliases. these can change between invocations, and even between
 # one command ending and the other starting. refresh the completions between each invocation of jj.
 if exists jj; then
