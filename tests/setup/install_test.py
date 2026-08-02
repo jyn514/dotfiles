@@ -966,6 +966,8 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('selected=("${(@0)output}")', zshrc)
         self.assertNotIn("files=$(fd)", zshrc)
         self.assertIn("fd --print0 | fzf_action --read0 --print0", fish_config)
+        self.assertIn("printf '%s\\0' \"$selection\" | picker-action copy --read0", fish_config)
+        self.assertNotIn("printf %s $selection | copy", fish_config)
         self.assertIn("read --null --line key selection", fish_config)
         self.assertIn("set -l statuses $pipestatus", fish_config)
         self.assertIn("bind -M insert alt-t fzf_file_action", fish_config)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from picker_actions import edit, open_action, search
+from picker_actions import copy_action, edit, open_action, search
 
 
 def main(arguments: list[str]) -> int:
@@ -12,6 +12,8 @@ def main(arguments: list[str]) -> int:
         print("usage: picker-action action [selection options]", file=sys.stderr)
         return 2
     action, action_arguments = arguments[0], arguments[1:]
+    if action == "copy":
+        return copy_action.main(action_arguments)
     if action == "edit":
         return edit.main(action_arguments)
     if action == "open":
