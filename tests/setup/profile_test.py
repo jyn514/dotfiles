@@ -297,6 +297,23 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("vim.cmd.balt(vim.fn.fnameescape(name))", nvim)
         self.assertNotIn("let @#", nvim)
 
+    def test_dynamic_shell_and_editor_values_are_computed_when_used(self) -> None:
+        fish_z = (ROOT / "config/z.fish").read_text()
+        nvim = (ROOT / "config/nvim.lua").read_text()
+
+        self.assertTrue(fish_z.startswith("function __z_arguments\n"))
+        self.assertIn(
+            "function __z_arguments\n\tset -l curr_tok (builtin commandline",
+            fish_z,
+        )
+        command = re.search(
+            r"nvim_create_user_command\('EditDailyJournal', function\(\)(.*?)end,",
+            nvim,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(command)
+        self.assertIn('os.date("%Y-%m-%d")', command.group(1))
+
     def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
         [command] = re.findall(
@@ -780,6 +797,46 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('encoded=$(printf "%s" "$kak_reg_dquote" | base64) || exit', kakoune)
         self.assertIn("encoded=$(printf '%s' \"$encoded\" | tr -d '\\n') || exit", kakoune)
         self.assertNotIn("base64 | tr", kakoune)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_glide_repository_urls_drop_page_routes_and_query_data(self) -> None:
+        glide = (ROOT / "config/glide.ts").read_text()
+        start = glide.index("function repository_from_url")
+        end = glide.index("// clone repo", start)
+        implementation = glide[start:end]
+        cases = {
+            "https://github.com/org/repo/issues/1?q=x#note": [
+                "https://github.com/org/repo",
+                "repo",
+            ],
+            "https://gitlab.com/group/subgroup/repo/-/issues/1?q=x#note": [
+                "https://gitlab.com/group/subgroup/repo",
+                "repo",
+            ],
+            "https://gitlab.com/group/subgroup/repo.git": [
+                "https://gitlab.com/group/subgroup/repo.git",
+                "repo",
+            ],
+        }
+        script = (
+            implementation
+            + "\nconst cases = "
+            + json.dumps(list(cases))
+            + ";\nfor (const value of cases) {\n"
+            + "  const result = repository_from_url(value);\n"
+            + "  console.log(JSON.stringify([result.url.toString(), result.repo]));\n"
+            + "}\n"
+        )
+        result = subprocess.run(
+            ["node", "-e", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        actual = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(list(cases.values()), actual)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_hint_labels_are_short_and_distinct(self) -> None:

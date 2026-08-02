@@ -257,8 +257,8 @@ vim.api.nvim_create_user_command('ReloadConfig', function()
 	vim.cmd.source(vim.fn.fnameescape(config))
 end, { desc = "reload Lua config", force = true })
 
-local journal = vim.fn.expand('~/Documents/notes/journal/') .. os.date("%Y-%m-%d") .. '.md'
 vim.api.nvim_create_user_command('EditDailyJournal', function()
+	local journal = vim.fn.expand('~/Documents/notes/journal/') .. os.date("%Y-%m-%d") .. '.md'
 	vim.cmd.edit(vim.fn.fnameescape(journal))
 end, { desc = "Open today's Obsidian daily journal", force = true })
 
