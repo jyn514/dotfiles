@@ -669,6 +669,61 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"{checkout}\n{checkout}\n", result.stdout)
 
+    def test_make_helpers_preserve_numeric_targets_and_recipe_bodies(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("tasks () (")
+        end = profile.index("\nrecipies ()", start)
+        definitions = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make = root / "make"
+            make.write_text(
+                "#!/bin/sh\n"
+                "printf '# File\\n\\n1: dependency\\n\\tprintf body\\n\\n"
+                "named: dependency\\n\\tprintf other\\n\\n"
+                "# Finished Make data base\\n'\n"
+            )
+            make.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", definitions + "\ntasks; printf -- '---\\n'; recipes"],
+                env=os.environ | {"PATH": f"{root}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "1\nnamed\n---\n1: dependency\n\tprintf body\n"
+            "named: dependency\n\tprintf other\n",
+            result.stdout,
+        )
+
+    def test_background_uses_nohup_when_disown_is_unavailable(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("background () {")
+        end = profile.index("\n}\n", start) + 2
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "calls"
+            nohup = root / "nohup"
+            nohup.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" > "{calls}"\n')
+            nohup.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", definition + "\nbackground tool 'two words'; wait"],
+                env=os.environ | {"PATH": f"{root}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            call_text = calls.read_text()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("tool two words\n", call_text)
+
     def test_what_package_uses_shell_command_discovery(self) -> None:
         profile = (ROOT / "config/profile").read_text()
         start = profile.index("what_package () {")

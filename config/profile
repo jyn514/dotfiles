@@ -291,7 +291,7 @@ visualize () (
 # for use with a makefile in the current directory
 tasks () (
 	make_data=$(make -npRr) || { result=$?; unset make_data; return "$result"; }
-	task_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}') || { result=$?; unset make_data task_data; return "$result"; }
+	task_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($0 !~ "^[#.]") {print $0}}') || { result=$?; unset make_data task_data; return "$result"; }
 	task_data=$(printf '%s\n' "$task_data" | awk '!/^[#\t]/') || { result=$?; unset make_data task_data; return "$result"; }
 	printf '%s\n' "$task_data" | sed 's/:.*$//'
 	return $?
@@ -300,7 +300,7 @@ tasks () (
 # same as tasks, but show body of recipe
 recipes () (
 	make_data=$(make -npRr) || { result=$?; unset make_data; return "$result"; }
-	recipe_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}') || { result=$?; unset make_data recipe_data; return "$result"; }
+	recipe_data=$(printf '%s\n' "$make_data" | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($0 !~ "^[#.]") {print $0}}') || { result=$?; unset make_data recipe_data; return "$result"; }
 	printf '%s\n' "$recipe_data" | awk '!/^#/'
 	return $?
 )
@@ -311,9 +311,11 @@ background () {
 	if [ $# -eq 0 ]
 		then echo usage: background '<command>'
 		return 1
-	else
+	elif command -v disown >/dev/null 2>&1; then
 		"$@" &
 		disown
+	else
+		nohup "$@" >/dev/null 2>&1 &
 	fi
 }
 

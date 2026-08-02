@@ -919,6 +919,13 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
         self.assertIn("return $reload_status", fish_config)
         self.assertIn("if exists bat\n\tfunction cat", fish_config)
+        self.assertIn(
+            'set -l directory (command fork-github $argv)\n'
+            '\t\tor return\n\t[ -n "$directory" ]',
+            fish_config,
+        )
+        self.assertEqual(3, fish_config.count("printf '%s\\n' \"$history["))
+        self.assertNotIn("echo $history[", fish_config)
         self.assertIn("abbr --add --global $name $value\n\tor return", fish_config)
         self.assertIn('source ~/.profile || return', bashrc)
         self.assertIn('. ~/.profile\n  profile_status=$?', zshrc)
