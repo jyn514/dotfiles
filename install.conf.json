@@ -15,6 +15,7 @@
       "$HOME/.XCompose": "config/XCompose",
       "$HOME/.Xdefaults": "config/Xdefaults",
       "$HOME/.config/tmux/attach-session.sh": "config/attach-session.sh",
+      "$HOME/.config/tmux/dragon.sh": "config/dragon.sh",
       "$HOME/.config/atuin/config.toml": "config/atuin.toml",
       "$HOME/.config/bacon/prefs.toml": "config/bacon.toml",
       "$HOME/.bash_aliases": "config/bash_aliases",

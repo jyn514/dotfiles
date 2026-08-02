@@ -20,6 +20,39 @@ class CommandTest(unittest.TestCase):
         path.write_text("#!/bin/sh\n" + contents)
         path.chmod(0o755)
 
+    def test_dragon_wrapper_disambiguates_option_like_filenames(self) -> None:
+        calls = self.directory / "dragon-calls"
+        self.executable("dragon", 'printf "%s\\n" "$@" > "$DRAGON_CALLS"\n')
+        environment = os.environ | {
+            "DRAGON_CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        for argument, expected in (
+            ("ordinary file", "ordinary file"),
+            ("-option-like", "./-option-like"),
+            ("https://example.invalid/file", "https://example.invalid/file"),
+        ):
+            result = subprocess.run(
+                [str(ROOT / "config/dragon.sh"), argument],
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(["-x", expected], calls.read_text().splitlines())
+
+        for arguments in ([], ["one", "two"]):
+            result = subprocess.run(
+                [str(ROOT / "config/dragon.sh"), *arguments],
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(2, result.returncode)
+
     def test_replace_treats_text_and_filenames_literally(self) -> None:
         nested = self.directory / "directory with spaces"
         nested.mkdir()
