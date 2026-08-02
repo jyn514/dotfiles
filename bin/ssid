@@ -1,3 +1,3 @@
 #!/bin/sh
-nmcli --terse --escape no --fields active,ssid device wifi \
-	| awk -F: '$1 == "yes" {sub(/^yes:/, ""); print; exit}'
+networks=$(nmcli --terse --escape no --fields active,ssid device wifi) || exit
+printf '%s\n' "$networks" | awk -F: '$1 == "yes" {sub(/^yes:/, ""); print; exit}'

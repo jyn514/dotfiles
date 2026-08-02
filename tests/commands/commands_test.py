@@ -146,7 +146,7 @@ class CommandTest(unittest.TestCase):
             '  "remote get-url") printf "https://github.com/user/repo.git\\n";;\n'
             '  "remote ") printf "origin\\n";;\n'
             '  "rev-list --remotes") printf "abc123\\n";;\n'
-            '  "grep --line-number") printf "abc123:file with spaces\\n1:unique line\\n";;\n'
+            '  "grep --max-count=1") printf "abc123:file with spaces\\n1:unique line\\n";;\n'
             'esac\n',
         )
         environment = os.environ | {
@@ -185,7 +185,66 @@ class CommandTest(unittest.TestCase):
         )
         call_lines = calls.read_text().splitlines()
         self.assertNotIn("remote set-head --auto origin", call_lines)
-        self.assertEqual(1, sum(line.startswith("grep --line-number") for line in call_lines))
+        self.assertEqual(1, sum(line.startswith("grep --max-count=1") for line in call_lines))
+
+    def test_remote_git_url_propagates_git_failures_and_rejects_unknown_hosts(self) -> None:
+        repository = self.directory / "repository"
+        repository.mkdir()
+        source = repository / "file"
+        source.write_text("unique line\n")
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "rev-parse --show-toplevel") printf "%s\\n" "$REPOSITORY";;\n'
+            '  "remote get-url") printf "%s\\n" "$REMOTE_URL";;\n'
+            '  "remote ") printf "origin\\n";;\n'
+            '  "rev-list --remotes") [ "${REV_LIST_STATUS:-0}" -eq 0 ] || exit "$REV_LIST_STATUS"; printf "abc123\\n";;\n'
+            '  "grep --max-count=1") exit "${GREP_STATUS:-1}";;\n'
+            'esac\n',
+        )
+        environment = os.environ | {
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "REPOSITORY": str(repository),
+            "REMOTE_URL": "https://github.com/user/repo.git",
+            "REV_LIST_STATUS": "23",
+        }
+
+        failed_query = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+        failed_grep = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment | {"REV_LIST_STATUS": "0", "GREP_STATUS": "24"},
+        )
+        unsupported = subprocess.run(
+            [str(ROOT / "bin/remote-git-url"), str(source), "1"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment
+            | {
+                "REMOTE_URL": "https://codeberg.org/user/repo.git",
+                "REV_LIST_STATUS": "0",
+            },
+        )
+
+        self.assertEqual(23, failed_query.returncode)
+        self.assertEqual("", failed_query.stdout)
+        self.assertEqual(24, failed_grep.returncode)
+        self.assertEqual("", failed_grep.stdout)
+        self.assertEqual(2, unsupported.returncode)
+        self.assertEqual("", unsupported.stdout)
+        self.assertIn("unsupported upstream", unsupported.stderr)
 
     def test_set_tmux_env_preserves_whitespace_and_equals(self) -> None:
         calls = self.directory / "tmux-calls"
@@ -513,6 +572,46 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("Justice:of\\Toren\n", result.stdout)
         self.assertEqual(
             "--terse --escape no --fields active,ssid device wifi\n",
+            calls.read_text(),
+        )
+
+    def test_ssid_propagates_nmcli_failure(self) -> None:
+        self.executable("nmcli", "exit 27\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/ssid")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(27, result.returncode)
+        self.assertEqual("", result.stdout)
+
+    def test_toggle_dnd_does_not_mutate_state_after_query_failure(self) -> None:
+        calls = self.directory / "gsettings-calls"
+        self.executable(
+            "gsettings",
+            'printf "%s\\n" "$*" >> "$GSETTINGS_CALLS"\n'
+            'case "$1" in get) exit 29;; esac\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/toggle-dnd")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "GSETTINGS_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(29, result.returncode)
+        self.assertEqual(
+            "get org.gnome.desktop.notifications show-banners\n",
             calls.read_text(),
         )
 
@@ -1043,7 +1142,7 @@ class CommandTest(unittest.TestCase):
 
     def test_claude_statusline_propagates_filter_failure(self) -> None:
         self.executable("prompt-command", 'printf "prompt\\n; "\n')
-        self.executable("sed", "exit 24\n")
+        self.executable("head", "exit 24\n")
 
         result = subprocess.run(
             [str(ROOT / "config/claude-statusline.sh")],
