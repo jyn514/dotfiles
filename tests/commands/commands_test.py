@@ -583,6 +583,35 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(23, result.returncode)
 
+    def test_pre_commit_propagates_git_directory_query_failure(self) -> None:
+        realpath_calls = self.directory / "realpath-calls"
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "diff --quiet") exit 1;;\n'
+            '  "rev-parse --git-dir") exit 29;;\n'
+            "esac\n",
+        )
+        self.executable(
+            "realpath", 'printf "%s\\n" "$*" > "$REALPATH_CALLS"\nprintf "/wrong\\n"\n'
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-commit")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "REALPATH_CALLS": str(realpath_calls),
+            },
+        )
+
+        self.assertEqual(29, result.returncode)
+        self.assertFalse(realpath_calls.exists())
+
     def test_pre_push_does_not_split_newlines_into_rust_filenames(self) -> None:
         calls = self.directory / "cargo-calls"
         (self.directory / "Cargo.toml").touch()
@@ -593,6 +622,7 @@ class CommandTest(unittest.TestCase):
             [str(ROOT / "config/githooks/pre-push")],
             cwd=self.directory,
             text=True,
+            input=f"refs/heads/main {'a' * 40} refs/heads/main {'b' * 40}\n",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=os.environ | {
@@ -603,6 +633,37 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertFalse(calls.exists())
+
+    def test_pre_push_formats_rust_files_in_the_pushed_range(self) -> None:
+        calls = self.directory / "calls"
+        (self.directory / "Cargo.toml").touch()
+        self.executable(
+            "git",
+            'printf "%s\\n" "$*" >> "$CALLS"\n'
+            'case "$1" in diff) printf "src/lib.rs\\0";; esac\n',
+        )
+        self.executable("cargo", 'printf "cargo %s\\n" "$*" >> "$CALLS"\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-push")],
+            cwd=self.directory,
+            text=True,
+            input=f"refs/heads/main {'a' * 40} refs/heads/main {'b' * 40}\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            f"diff --name-only -z --no-ext-diff {'b' * 40} {'a' * 40}\n"
+            "cargo fmt --check\n",
+            calls.read_text(),
+        )
 
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"

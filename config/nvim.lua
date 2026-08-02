@@ -844,7 +844,7 @@ pickers.setup {
 	git = {
 		files = {
 			git_icons = false,
-			cmd = "git ls-files --modified --exclude-standard --directory $(git rev-parse --show-toplevel)",
+			cmd = "git ls-files --cached --others --exclude-standard",
 		}
 	},
 	oldfiles = {
