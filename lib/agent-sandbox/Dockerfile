@@ -57,6 +57,7 @@ RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
     && rm ./create-user.sh
 
 COPY ./lib/agent-sandbox/agent-wrappers-path.sh /etc/profile.d/agent-wrappers-path.sh
+COPY ./lib/agent-sandbox/dotfiles-profile.sh /etc/profile.d/dotfiles-profile.sh
 
 ENV HOME=/home/codex
 ARG CODEX_HOME
@@ -66,6 +67,10 @@ RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src/work \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
         ${HOME} ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src
 
+# Reuse noninteractive dotfile semantics without personal shell hooks.
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/editorconfig ${HOME}/.editorconfig
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/inputrc ${HOME}/.config/readline/inputrc
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/agent-sandbox/gitconfig ${HOME}/.config/git/config
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
