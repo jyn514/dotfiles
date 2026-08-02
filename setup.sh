@@ -22,7 +22,7 @@ install_macos_local() {
 }
 
 mise_exec() {
-	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
+	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
 }
 
 install_platform_bundles() {
