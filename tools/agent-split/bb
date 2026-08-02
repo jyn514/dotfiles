@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+. "$root/lib/shell/lib.sh"
+real_bb=$(shim_resolve "$0" bb)
+
+if [ "${1:-}" = agent-split ]; then
+	shift
+	exec "$real_bb" "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
+fi
+
+exec "$real_bb" "$@"
