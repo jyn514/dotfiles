@@ -1866,6 +1866,47 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(25, result.returncode)
         self.assertNotIn("switch-client", calls.read_text())
 
+    def test_attach_session_selects_first_detached_session_with_exact_arguments(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable(
+            "tmux",
+            'printf "<%s>" "$1" >> "$TMUX_CALLS"\n'
+            'shift\n'
+            'printf " <%s>" "$@" >> "$TMUX_CALLS"\n'
+            'printf "\\n" >> "$TMUX_CALLS"\n'
+            'case "$(tail -n 1 "$TMUX_CALLS")" in\n'
+            '  "<show-option> <-sv> <@attach-session-disable>") exit 1;;\n'
+            '  "<list-sessions> <-f> <#{?session_attached,0,1}> <-F> <#{session_id}>")\n'
+            "    printf '@9\\n@12\\n';;\n"
+            '  *client_last_session*) printf \'\\n\';;\n'
+            '  *session_attached*) printf \'1\\n\';;\n'
+            'esac\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/attach-session.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [
+                "<show-option> <-sv> <@attach-session-disable>",
+                "<display-message> <-p> <#{client_last_session}>",
+                "<display-message> <-p> <#{session_attached}>",
+                "<list-sessions> <-f> <#{?session_attached,0,1}> <-F> <#{session_id}>",
+                "<set-option> <destroy-unattached>",
+                "<switch-client> <-t> <@9>",
+            ],
+            calls.read_text().splitlines(),
+        )
+
     def test_git_aliases_preserve_the_remote_default_when_deleting_merged_branches(self) -> None:
         repository = self.directory / "repository"
         remote = self.directory / "remote.git"

@@ -1,34 +1,66 @@
-#!/bin/sh
+#!/usr/bin/env python3
+"""Select an existing detached tmux session after a session is created."""
 
-# this script messes up tmux-resurrect quite a lot. don't run it when restoring.
-case "$1" in
-  disable) exec tmux set-option  -s  @attach-session-disable 1;;
-  enable)  exec tmux set-option  -su @attach-session-disable;;
-  *)    if tmux show-option -sv @attach-session-disable 2>/dev/null; then exit 0; fi;;
-esac
+from __future__ import annotations
 
-# if we're coming from another session the empty session is intentional; don't override the explicit command.
-last_session=$(tmux display-message -p '#{client_last_session}') || exit
-if [ -n "$last_session" ]; then
-  exit 0
-fi
+import subprocess
+import sys
 
-# if *this* is a detached session, it was almost certainly created programmatically.
-# don't mess with scripts.
-session_attached=$(tmux display-message -p '#{session_attached}') || exit
-if [ "$session_attached" = 0 ]; then
-	exit 0
-fi
 
-# switch to the first detached session, if it exists
-sessions=$(tmux list-sessions -f '#{?session_attached,0,1}' -F '#{session_id}') || exit
-IFS='
-'
-set -f
-# shellcheck disable=SC2086  # Select the first newline-delimited session ID.
-set -- $sessions
-target=${1:-}
-if [ "$target" ]; then
-  tmux set-option destroy-unattached &&
-    tmux switch-client -t "$target"
-fi
+DISABLE_OPTION = "@attach-session-disable"
+
+
+def run_tmux(*arguments: str, capture: bool = False) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["tmux", *arguments],
+        check=False,
+        stdout=subprocess.PIPE if capture else None,
+    )
+
+
+def query(*arguments: str) -> bytes:
+    result = run_tmux(*arguments, capture=True)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    return result.stdout.rstrip(b"\n")
+
+
+def main(arguments: list[str]) -> int:
+    if arguments == ["disable"]:
+        return run_tmux("set-option", "-s", DISABLE_OPTION, "1").returncode
+    if arguments == ["enable"]:
+        return run_tmux("set-option", "-su", DISABLE_OPTION).returncode
+
+    # tmux-resurrect brackets its restore with the modes above. An unset option
+    # is reported as a failed query, so only a successful query disables work.
+    disabled = subprocess.run(
+        ["tmux", "show-option", "-sv", DISABLE_OPTION],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if disabled.returncode == 0:
+        return 0
+
+    # An explicit switch from another session makes the new empty session
+    # intentional. A detached current session was likely created by a script.
+    if query("display-message", "-p", "#{client_last_session}"):
+        return 0
+    if query("display-message", "-p", "#{session_attached}") == b"0":
+        return 0
+
+    output = query(
+        "list-sessions", "-f", "#{?session_attached,0,1}", "-F", "#{session_id}"
+    )
+    sessions = output.splitlines()
+    if not sessions:
+        return 0
+
+    result = run_tmux("set-option", "destroy-unattached")
+    if result.returncode:
+        return result.returncode
+    return run_tmux("switch-client", "-t", sessions[0].decode("ascii")).returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
