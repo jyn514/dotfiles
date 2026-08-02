@@ -1226,11 +1226,13 @@ class CommandTest(unittest.TestCase):
             self.assertEqual(expected, result.returncode, stage)
             self.assertNotIn("generated callgraph", result.stdout)
 
-    def test_callgraph_comparison_propagates_ripgrep_failure(self) -> None:
-        self.executable("rg", "exit 26\n")
+    def test_callgraph_comparison_stops_before_diff_on_read_failure(self) -> None:
+        marker = self.directory / "diff-called"
+        self.executable("diff", f"touch {marker}\n")
 
         result = subprocess.run(
-            [str(ROOT / "bin/callgraph-cmp"), "first.dot", "second.dot"],
+            [str(ROOT / "bin/callgraph-cmp"), "missing.dot", "second.dot"],
+            cwd=self.directory,
             env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
             text=True,
             stdout=subprocess.PIPE,
@@ -1238,13 +1240,16 @@ class CommandTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(26, result.returncode)
+        self.assertEqual(1, result.returncode)
+        self.assertFalse(marker.exists())
 
     def test_callgraph_comparison_accepts_graphs_without_edges(self) -> None:
-        self.executable("rg", "exit 1\n")
+        (self.directory / "first.dot").write_text("digraph {}\n")
+        (self.directory / "second.dot").write_text("digraph {}\n")
 
         result = subprocess.run(
             [str(ROOT / "bin/callgraph-cmp"), "first.dot", "second.dot"],
+            cwd=self.directory,
             env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
             text=True,
             stdout=subprocess.PIPE,

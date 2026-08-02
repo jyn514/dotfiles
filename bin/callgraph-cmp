@@ -1,24 +1,75 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+"""Compare the unique edges in two Graphviz DOT call graphs."""
 
-set -euo pipefail
+from __future__ import annotations
 
-if ! [ $# = 2 ]; then
-	echo "usage: $0 <dot1> <dot2>"
-	exit 1
-fi
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+from typing import Callable
 
-cmp() {
-	if edges=$(rg --no-filename --no-heading --no-line-number -o -- \
-			'"[^"]+" -> "[^"]+"' "$1"); then
-		:
-	else
-		status=$?
-		[ "$status" -eq 1 ] || return "$status"
-		edges=
-	fi
-	[ -n "$edges" ] || return 0
-	printf '%s\n' "$edges" | sort -u
-}
-left=$(cmp "$1")
-right=$(cmp "$2")
-diff --color=always <(printf %s "$left") <(printf %s "$right")
+
+EDGE = re.compile(rb'"[^"\r\n]+" -> "[^"\r\n]+"')
+
+
+def edge_bytes(path: Path) -> bytes:
+    edges = sorted(set(EDGE.findall(path.read_bytes())))
+    return b"\n".join(edges)
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run_diff(arguments: list[str]) -> int:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(arguments, check=False)
+    except OSError as error:
+        print(
+            f"callgraph-cmp: could not execute {arguments[0]!r}: {error}",
+            file=sys.stderr,
+        )
+        return 127 if isinstance(error, FileNotFoundError) else 126
+    return exit_status(completed.returncode)
+
+
+def compare(
+    left_graph: Path,
+    right_graph: Path,
+    runner: Callable[[list[str]], int] = run_diff,
+) -> int:
+    try:
+        left_edges = edge_bytes(left_graph)
+        right_edges = edge_bytes(right_graph)
+    except OSError as error:
+        print(f"callgraph-cmp: could not read graph: {error}", file=sys.stderr)
+        return 1
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="callgraph-cmp-") as temporary:
+            directory = Path(temporary)
+            left = directory / "left.edges"
+            right = directory / "right.edges"
+            left.write_bytes(left_edges)
+            right.write_bytes(right_edges)
+            return runner(["diff", "--color=always", "--", str(left), str(right)])
+    except OSError as error:
+        print(f"callgraph-cmp: could not stage graph edges: {error}", file=sys.stderr)
+        return 1
+
+
+def main(arguments: list[str]) -> int:
+    if len(arguments) != 2:
+        print("usage: callgraph-cmp <dot1> <dot2>", file=sys.stderr)
+        return 1
+    return compare(Path(arguments[0]), Path(arguments[1]))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
