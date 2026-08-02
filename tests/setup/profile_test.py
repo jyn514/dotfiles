@@ -544,7 +544,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("vim.bo.colorcolumn", nvim)
         self.assertIn("vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }", nvim)
         self.assertNotIn('pattern = "markdown",\n\tcallback = function()\n\t\tvim.wo.colorcolumn', nvim)
-        self.assertIn("base64 | tr -d '\\n'", kakoune)
+        self.assertIn('encoded=$(printf "%s" "$kak_reg_dquote" | base64) || exit', kakoune)
+        self.assertIn("encoded=$(printf '%s' \"$encoded\" | tr -d '\\n') || exit", kakoune)
+        self.assertNotIn("base64 | tr", kakoune)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_hint_labels_are_short_and_distinct(self) -> None:

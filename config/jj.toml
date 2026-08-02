@@ -74,7 +74,13 @@ tug = ["bookmark", "advance"]
 init = ["git", "init"]
 
 # new commands
-publish = ["util", "exec", "bash", "--", "-c", "echo simulate a push lol lmao | git hook run pre-push --ignore-missing --to-stdin=/dev/stdin && jj tug && jj push"]
+publish = ["util", "exec", "bash", "--", "-c", '''
+local_sha=$(jj log --no-graph -r @ -T commit_id) || exit
+printf 'refs/heads/jj-publish %s refs/heads/jj-publish %040d\n' "$local_sha" 0 |
+  git hook run pre-push --ignore-missing --to-stdin=/dev/stdin &&
+  jj tug &&
+  jj push
+''']
 new-branch = ["bookmark", "create", "-r=@-"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]

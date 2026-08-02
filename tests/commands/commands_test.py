@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 
@@ -244,6 +245,36 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(19, result.returncode)
+
+    def test_renumber_tmux_sessions_rolls_back_second_phase_failure(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable(
+            "tmux",
+            'if [ "$1" = list-sessions ]; then\n'
+            "  printf '10\\n0\\n2\\n'\n"
+            "else\n"
+            '  printf "%s %s %s\\n" "$1" "$3" "$4" >> "$TMUX_CALLS"\n'
+            '  case "$3:$4" in __renumber-tmux-*-2:2) exit 27;; esac\n'
+            "fi\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(27, result.returncode)
+        renames = [line.split() for line in calls.read_text().splitlines()]
+        recovery = renames[-3:]
+        self.assertEqual(["0", "2", "10"], [line[2] for line in recovery])
+        self.assertTrue(all("recovery" in line[1] for line in recovery))
 
     def test_merge_copies_dotfiles_before_removing_source(self) -> None:
         source = self.directory / "source"
@@ -878,7 +909,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(25, result.returncode)
         self.assertNotIn("switch-client", calls.read_text())
 
-    def test_git_aliases_propagate_failure_and_delete_every_merged_branch(self) -> None:
+    def test_git_aliases_preserve_the_remote_default_when_deleting_merged_branches(self) -> None:
         repository = self.directory / "repository"
         remote = self.directory / "remote.git"
         repository.mkdir()
@@ -899,6 +930,16 @@ class CommandTest(unittest.TestCase):
             cwd=repository,
             check=True,
             capture_output=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "symbolic-ref",
+                "refs/remotes/personal/HEAD",
+                "refs/remotes/personal/first",
+            ],
+            cwd=repository,
+            check=True,
         )
         config = f"include.path={ROOT / 'config/gitconfig'}"
 
@@ -941,7 +982,53 @@ class CommandTest(unittest.TestCase):
         self.assertNotEqual(0, branch_log.returncode)
         self.assertNotEqual(0, parent.returncode)
         self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
-        self.assertEqual("", remaining.stdout)
+        self.assertIn("refs/heads/first", remaining.stdout)
+        self.assertNotIn("refs/heads/second", remaining.stdout)
+
+    def test_jj_publish_passes_a_valid_update_to_the_pre_push_hook(self) -> None:
+        publish = tomllib.loads((ROOT / "config/jj.toml").read_text())["aliases"][
+            "publish"
+        ]
+        command = publish[-1]
+        calls = self.directory / "jj-calls"
+        hook_input = self.directory / "hook-input"
+        commit = "a" * 40
+        self.executable(
+            "jj",
+            'if [ "$1" = log ]; then\n'
+            f'  printf "%s\\n" "{commit}"\n'
+            "else\n"
+            '  printf "%s\\n" "$*" >> "$JJ_CALLS"\n'
+            "fi\n",
+        )
+        self.executable(
+            "git",
+            'if [ "$1 $2 $3" = "hook run pre-push" ]; then\n'
+            '  cat > "$HOOK_INPUT"\n'
+            "else\n"
+            "  exit 99\n"
+            "fi\n",
+        )
+
+        result = subprocess.run(
+            ["/bin/bash", "-c", command],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "HOOK_INPUT": str(hook_input),
+                "JJ_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        fields = hook_input.read_text().split()
+        self.assertEqual(4, len(fields))
+        self.assertEqual(commit, fields[1])
+        self.assertEqual("0" * 40, fields[3])
+        self.assertEqual(["tug", "push"], calls.read_text().splitlines())
 
     def test_git_autosquash_propagates_fallback_branch_failure(self) -> None:
         self.executable(
