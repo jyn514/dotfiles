@@ -7,7 +7,7 @@ allow(["clojure", "-Spath"])
 allow(["bb", "tasks"])
 
 # Read-only jj commands
-allow(["jj", ["status", "diff", "log", "show", "interdiff", "help", "--version"]])
+allow(["jj", ["status", "diff", "log", "show", "interdiff", "root", "help", "--version"]])
 allow(["jj", "file", ["list", "show"]])
 allow(["jj", "config", ["list", "get"]])
 allow(["jj", "bookmark", "list"])
