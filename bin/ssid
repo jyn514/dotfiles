@@ -1,3 +1,89 @@
-#!/bin/sh
-networks=$(nmcli --terse --escape no --fields active,ssid device wifi) || exit
-printf '%s\n' "$networks" | awk -F: '$1 == "yes" {sub(/^yes:/, ""); print; exit}'
+#!/usr/bin/env python3
+"""Print the SSID of the first active NetworkManager Wi-Fi connection."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+import shlex
+import subprocess
+import sys
+from typing import BinaryIO
+from typing import Callable
+
+
+NMCLI_ARGUMENTS = [
+    "nmcli",
+    "--terse",
+    "--escape",
+    "no",
+    "--fields",
+    "active,ssid",
+    "device",
+    "wifi",
+]
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+    stdout: bytes = b""
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(arguments: list[str]) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            arguments,
+            stdout=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as error:
+        print(f"ssid: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode), completed.stdout)
+
+
+def active_ssid(records: bytes) -> bytes | None:
+    for record in records.split(b"\n"):
+        if record.startswith(b"yes:"):
+            return record[len(b"yes:") :]
+    return None
+
+
+def show_ssid(
+    runner: Callable[[list[str]], Result] = run,
+    output: BinaryIO | None = None,
+) -> int:
+    networks = runner(NMCLI_ARGUMENTS)
+    if networks.status:
+        return networks.status
+    ssid = active_ssid(networks.stdout)
+    if ssid is None:
+        return 0
+    destination = output if output is not None else sys.stdout.buffer
+    try:
+        remaining = memoryview(ssid + b"\n")
+        while remaining:
+            written = destination.write(remaining)
+            if written is None or written == 0:
+                raise OSError("short write")
+            remaining = remaining[written:]
+        destination.flush()
+    except OSError as error:
+        print(f"ssid: could not write active network: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(_arguments: list[str]) -> int:
+    return show_ssid()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
