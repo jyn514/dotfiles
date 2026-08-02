@@ -498,6 +498,67 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("recipes () (", profile)
         self.assertIn('recipies () { recipes "$@"; }', profile)
 
+    def test_crontab_wrapper_prompts_for_clustered_remove_options(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("crontab() {")
+        end = profile.index("\n}\n", start) + 2
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "calls"
+            crontab = root / "crontab"
+            crontab.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$CRONTAB_CALLS"\n')
+            crontab.chmod(0o755)
+            environment = os.environ | {
+                "CRONTAB_CALLS": str(calls),
+                "PATH": f"{root}:{os.environ['PATH']}",
+            }
+
+            for arguments in (("-ri",), ("-ir",)):
+                calls.unlink(missing_ok=True)
+                declined = subprocess.run(
+                    ["/bin/sh", "-c", definition + '\ncrontab "$@"', "sh", *arguments],
+                    input="n\n",
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, declined.returncode, declined.stderr)
+                self.assertIn("remove crontab?", declined.stdout)
+                self.assertFalse(calls.exists())
+
+            accepted = subprocess.run(
+                ["/bin/sh", "-c", definition + '\ncrontab "$@"', "sh", "-ri"],
+                input="y\n",
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            self.assertEqual("-ri\n", calls.read_text())
+
+            calls.unlink()
+            operand = subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    definition + '\ncrontab "$@"',
+                    "sh",
+                    "--",
+                    "-report",
+                ],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, operand.returncode, operand.stderr)
+            self.assertNotIn("remove crontab?", operand.stdout)
+            self.assertEqual("-- -report\n", calls.read_text())
+
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 
@@ -764,7 +825,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("local existing new_path old_ifs p restore_glob", profile)
         self.assertIn("what_runs () {\n\tlocal file files", profile)
         self.assertIn("what_package () {\n\tlocal prog", profile)
-        self.assertIn("crontab() {\n\tlocal argument reply", profile)
+        self.assertIn("crontab() {\n\tlocal argument options reply", profile)
         self.assertIn("pip_upgrade_all () {\n\tlocal packages pip_data result", profile)
         self.assertIn("fork_github() {\n\tlocal dir", profile)
         self.assertIn('bash --norc --noprofile "$@"', profile)
