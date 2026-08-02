@@ -192,7 +192,10 @@ setup_kde() {
 		kpackagetool6 -t KWin/Script -i "$libdir"/dynamic_workspaces
 	fi
 
-	patch ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch
+	if ! patch --forward --silent ~/.config/kglobalshortcutsrc lib/kde-keybindings.patch; then
+		patch --reverse --dry-run --silent ~/.config/kglobalshortcutsrc \
+			lib/kde-keybindings.patch >/dev/null 2>&1 || return
+	fi
 	gdbus call --session --dest org.kde.KWin --object-path /KWin --method org.kde.KWin.reconfigure
 }
 
@@ -270,9 +273,13 @@ setup_backup () {
 	# tried piping this straight to `crontab -`
 	# it failed when non-interactive for some reason
 	crontab -l > "$TMP_FILE" 2>/dev/null || true;  # ignore missing crontab
-	echo "0 12 * * * $BACKUP_COMMAND" >> "$TMP_FILE" && crontab "$TMP_FILE"
+	cron_entry="0 12 * * * $BACKUP_COMMAND"
+	if ! grep -Fqx "$cron_entry" "$TMP_FILE"; then
+		echo "$cron_entry" >> "$TMP_FILE"
+	fi
+	crontab "$TMP_FILE"
 	rm -f "$TMP_FILE"
-	unset BACKUP_COMMAND TMP_FILE
+	unset BACKUP_COMMAND TMP_FILE cron_entry
 }
 
 setup_install_global () {

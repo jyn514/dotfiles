@@ -119,9 +119,10 @@ class InstallationTests(unittest.TestCase):
     def test_requests_platform_packages(self) -> None:
         platform = self.platform()
 
-        result = self.run_install()
+        results = [self.run_install(), self.run_install()]
 
-        self.assertEqual(0, result.returncode, result.stderr)
+        for result in results:
+            self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         packages = self.manifest("packages.txt")
         if platform["ID"] == "alpine":
@@ -704,6 +705,14 @@ class LocalInstallationTests(unittest.TestCase):
             [["mise", "token", "github"], ["mise", "install", "--yes"]],
             self.commands(),
         )
+
+    def test_local_install_can_run_twice(self) -> None:
+        first = self.run_install_with(CI="1")
+        second = self.run_install_with(CI="1")
+
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assertEqual(2, self.commands().count(["mise", "install", "--yes"]))
 
 class MiseConfigTests(unittest.TestCase):
     def test_runtime_contract_is_declared_in_global_config(self) -> None:

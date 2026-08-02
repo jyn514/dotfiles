@@ -61,6 +61,7 @@ container=$("$engine" create --env SETUP_COMMAND_PREFIX="$setup_command_prefix" 
 		$post_install_check
 		python3 scripts/setup/setup_test.py
 		python3 scripts/setup/menu_test.py
+		python3 scripts/setup/idempotence_test.py
 		python3 scripts/track/track_test.py
 		python3 scripts/setup/install_test.py
 		python3 scripts/setup/mise_smoke_test.py

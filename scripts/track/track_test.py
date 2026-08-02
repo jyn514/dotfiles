@@ -159,11 +159,16 @@ class TrackTests(unittest.TestCase):
     def test_manifest_write_failure_restores_home_file(self) -> None:
         source = self.home / ".example"
         source.write_text("configuration\n")
-        self.fixture.chmod(0o555)
-        try:
-            result = self.run_track(str(source))
-        finally:
-            self.fixture.chmod(0o755)
+        implementation = self.fixture / "lib/track_file.py"
+        implementation.write_text(
+            implementation.read_text().replace(
+                "        atomic_write(config_path, new_config)\n",
+                '        raise OSError("simulated manifest write failure")\n',
+                1,
+            )
+        )
+
+        result = self.run_track(str(source))
 
         self.assertEqual(1, result.returncode)
         self.assertFalse(source.is_symlink())
