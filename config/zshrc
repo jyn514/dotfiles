@@ -79,7 +79,7 @@ bindkey "^Q" push-line
 zle-vicmd-push() { zle push-line; zle vi-insert; }
 zle-vicmd-copy() {
     zle vi-yank
-    echo "$CUTBUFFER" | xclip -i -selection clipboard
+    printf %s "$CUTBUFFER" | xclip -i -selection clipboard
 }
 zle-sudo() {
   zle up-line-or-history
@@ -242,14 +242,16 @@ zstyle ':fzf-tab:*' accept-line enter
 fzf-file() {
   local selected
   IFS=$'\n' selected=($(fd | fzf --expect=tab --no-sort --query="$BUFFER"))
-  if [[ "$selected" ]]; then
-    LBUFFER="$selected"
-    if [[ ${#selected[@]} -eq 2 ]]; then
-      LBUFFER="${selected[2]}"
-      zle reset-prompt
-    fi
+  if [[ ! "$selected" ]]; then
+    return
   fi
-  zle accept-line
+  if [[ ${#selected[@]} -eq 2 ]]; then
+    LBUFFER="${(q)selected[2]}"
+    zle reset-prompt
+  else
+    LBUFFER="${(q)selected[1]}"
+    zle accept-line
+  fi
 }
 zle -N fzf-file
 bindkey "^[t" fzf-file
