@@ -7,6 +7,10 @@ for argument in "$@"; do
 			echo "rg wrapper: --pre is not permitted" >&2
 			exit 2
 			;;
+		--hostname-bin|--hostname-bin=*)
+			echo "rg wrapper: --hostname-bin is not permitted" >&2
+			exit 2
+			;;
 	esac
 done
 

@@ -58,6 +58,20 @@ class RgWrapperTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(result.stdout, "")
 
+    def test_rejects_hostname_bin_in_both_forms(self) -> None:
+        for arguments in (
+            ("--hostname-bin", "evil"),
+            ("--hostname-bin=evil",),
+        ):
+            with self.subTest(arguments=arguments):
+                result = self.run_wrapper(*arguments)
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(
+                    result.stderr,
+                    "rg wrapper: --hostname-bin is not permitted\n",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
