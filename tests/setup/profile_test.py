@@ -637,7 +637,14 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("local marker = vim.fs.find", nvim)
         self.assertIn("return marker and vim.fs.dirname(marker)", nvim)
         self.assertIn("vim.fs.root(buf, { 'package.json', 'tsconfig.json' })", nvim)
-        self.assertIn("'markdown_oxide', 'oxc', 'tinymist'", nvim)
+        self.assertIn("vim.lsp.config('oxlint', {", nvim)
+        self.assertNotIn("vim.lsp.config('oxc', {", nvim)
+        self.assertIn(
+            "'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'tinymist'",
+            nvim,
+        )
+        self.assertIn("if not first_run then vim.lsp.enable(lsp, false) end", nvim)
+        self.assertNotIn("LspRestart", nvim)
         self.assertNotIn("vim.fs.root(0, { 'package.json'", nvim)
         self.assertIn("codelens.refresh { bufnr = bufnr }", nvim)
         self.assertNotIn("codelens.refresh { bufnr = 0 }", nvim)
@@ -647,9 +654,6 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("highlight! link Keyword Special", nvim)
         self.assertIn("return s:match'^(.*%S)%s*$' or ''", nvim)
         self.assertIn("local function rtrim(s)", nvim)
-        self.assertIn("local current_buf = vim.api.nvim_get_current_buf()", nvim)
-        self.assertIn("pcall(vim.cmd.bufdo, 'LspRestart')", nvim)
-        self.assertIn("vim.api.nvim_set_current_buf(current_buf)", nvim)
         self.assertEqual(
             1,
             nvim.count(
