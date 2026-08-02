@@ -1,5 +1,1 @@
-#!/bin/sh
-set -eu
-
-DOTFILES=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-exec python3 "$DOTFILES/libexec/moonlander/oryx_sync.py" "$@"
+../tools/moonlander/sync-moonlander

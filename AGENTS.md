@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository stores dotfiles and bootstrap scripts. User commands live in `bin/`, their substantial implementations and executable subsystems in `libexec/`, repository-maintenance commands in `dev/`, and tests in `tests/<feature>/`. User configuration lives in `config/`, system files in `global/`, setup data and static support assets in `lib/`, and package manifests in `install/`. Setup entry points are `setup.sh`, `setup.ps1`, and `track.sh`.
+This repository stores dotfiles and bootstrap scripts. User command links and small standalone commands live in `bin/`; self-contained executable subsystems, including their tests and documentation, live in `tools/<name>/`. Shared internal implementations remain in `libexec/`, repository-maintenance commands in `dev/`, and cross-cutting tests in `tests/<feature>/`. User configuration lives in `config/`, system files in `global/`, sourced support and static assets in `lib/`, vendored code in `vendor/`, and package manifests in `install/`. Setup entry points are `setup.sh`, `setup.ps1`, and `track.sh`.
 
 ## Build, Test, and Development Commands
 
@@ -11,7 +11,7 @@ This repository stores dotfiles and bootstrap scripts. User commands live in `bi
 - `python3 tests/open/test_open.py`: runs unit tests for the editor/open wrapper behavior.
 - `python3 tests/wezterm/wezterm_test.py`: validates selector patterns in `config/wezterm.lua`.
 - `dev/test`: runs the test suite and repository checks.
-- `shellcheck setup.sh track.sh bin/* dev/* libexec/**/*.sh`: checks shell scripts where applicable; some entries are not shell scripts.
+- `shellcheck setup.sh track.sh bin/* dev/* libexec/**/*.sh tools/**/*.sh`: checks shell scripts where applicable; some entries are not shell scripts.
 
 ## Coding Style & Naming Conventions
 
@@ -19,7 +19,7 @@ Keep scripts portable unless a file already targets one platform. Shell scripts 
 
 ## Testing Guidelines
 
-Add focused tests under the matching `tests/<feature>/` directory. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
+Keep subsystem-owned tests under `tools/<name>/tests/`; add cross-cutting tests under the matching `tests/<feature>/` directory. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
 
 For undocumented mutation APIs, test end-to-end on an owned disposable resource, verify the complete result, and restore or delete the resource before touching production.
 

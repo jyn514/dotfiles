@@ -20,11 +20,13 @@ jobs:
       - name: Test setup
         env:
           CONTAINER_ENGINE: docker
-        run: scripts/setup/container_test.sh "${{ matrix.image }}"
+        run: dev/setup/container-test "${{ matrix.image }}"
 
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install test runners
+        run: brew install babashka uv
       - name: Test setup
-        run: python3 -m unittest discover -s scripts/setup -p '*_test.py'
+        run: dev/test

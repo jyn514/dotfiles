@@ -21,8 +21,14 @@ class TestRunnerTests(unittest.TestCase):
 
     def test_runner_delegates_parallel_reporting_to_pytest(self) -> None:
         runner = (ROOT / "dev/test").read_text()
+        pytest = (ROOT / "pytest.ini").read_text()
 
         self.assertIn('pytest_args="-n $jobs --dist loadfile', runner)
+        self.assertIn("testpaths = tests tools", pytest)
+        self.assertIn("bb tools/extract-chat/tests/extract_chat_test.clj", runner)
+        self.assertIn("node tools/extract-chatgpt-share/tests/extract_chatgpt_share_test.js", runner)
+        self.assertIn("cargo test --manifest-path tools/jj-proxy/Cargo.toml", runner)
+        self.assertIn('if [ "$(uname -s)" = Linux ]', runner)
         self.assertIn("--instafail", runner)
         self.assertIn("export PYTHONUNBUFFERED=1", runner)
         self.assertIn('uvx --from "$pytest_requirement"', runner)
