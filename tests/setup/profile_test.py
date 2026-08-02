@@ -20,15 +20,16 @@ class ProfileContractTests(unittest.TestCase):
     def test_interactive_shells_activate_mise(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 
-        self.assertIn('eval "$(mise activate bash)"', profile)
-        self.assertIn('eval "$(mise activate zsh)"', profile)
+        self.assertIn("mise_activation=$(mise activate bash) || return", profile)
+        self.assertIn("mise_activation=$(mise activate zsh) || return", profile)
+        self.assertIn('eval "$mise_activation" || return', profile)
         self.assertLess(
             profile.index("unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH"),
-            profile.index('eval "$(mise activate bash)"'),
+            profile.index("mise_activation=$(mise activate bash) || return"),
         )
         self.assertLess(
             profile.index('remove_path "$HOME/.local/share/mise/shims"'),
-            profile.index('eval "$(mise activate bash)"'),
+            profile.index("mise_activation=$(mise activate bash) || return"),
         )
 
     def test_mise_shims_are_added_after_linuxbrew(self) -> None:
@@ -154,6 +155,7 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
+        self.assertIn("if (save != \\\"\\\")", tmux)
         self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
 
 

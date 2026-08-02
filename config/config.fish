@@ -59,7 +59,7 @@ end
 . $DOTFILES/lib/shell/paths.sh
 
 # compat for old `bat` versions
-if string match --quiet --regex "0\.1[0-9]\." (bat --version)
+if exists bat; and string match --quiet --regex "0\.1[0-9]\." (bat --version)
 	echo "ignoring 'rule' for old bat versions"
 	export BAT_STYLE=changes,header
 end
@@ -405,15 +405,19 @@ function fish_command_not_found
 end
 
 if [ -z "$old_fish" ]
-	source_init atuin init fish --disable-up-arrow
-	or return
-	bind -M default / _atuin_search
+	if exists atuin
+		source_init atuin init fish --disable-up-arrow
+		or return
+		bind -M default / _atuin_search
+	end
 
-	source_init zoxide init fish
-	or return
-	function cd; z $argv; end
-	complete --erase cd
-	complete cd --wraps __zoxide_z
+	if exists zoxide
+		source_init zoxide init fish
+		or return
+		function cd; z $argv; end
+		complete --erase cd
+		complete cd --wraps __zoxide_z
+	end
 end
 
 if exists direnv

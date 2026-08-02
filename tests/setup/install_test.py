@@ -856,6 +856,12 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("if exists atuin; then", bashrc)
         self.assertGreaterEqual(zshrc.count("if exists atuin; then"), 2)
         self.assertIn("if exists direnv; then", zshrc)
+        self.assertIn("if exists bat; and string match", fish_config)
+        self.assertIn("if exists atuin\n\t\tsource_init atuin", fish_config)
+        self.assertIn("if exists zoxide\n\t\tsource_init zoxide", fish_config)
+        self.assertIn('if [ -z "${MY_GITHUB:-}" ]; then', bashrc)
+        self.assertIn("zoxide_init=$(zoxide init bash) || return", bashrc)
+        self.assertIn("zoxide_init=$(zoxide init zsh) || return", zshrc)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

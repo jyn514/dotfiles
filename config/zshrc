@@ -287,7 +287,9 @@ compinit -C
 compdef '_arguments --' fzf  # takes no positional arguments
 
 if exists zoxide; then
-   source <(zoxide init zsh)
+   zoxide_init=$(zoxide init zsh) || return
+   eval "$zoxide_init" || return
+   unset zoxide_init
    cd() { z "$@" && status; }
    # NOTE: only shows a FZF menu if there's a space after the query filter
    compdef __zoxide_z_complete cd

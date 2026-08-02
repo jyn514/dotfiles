@@ -59,6 +59,27 @@ class PromptHostnameTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(os.uname().nodename, result.stdout)
 
+    def test_display_pwd_treats_home_as_literal_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home[1]&"
+            cwd = home / "one" / "two"
+            cwd.mkdir(parents=True)
+            result = subprocess.run(
+                [
+                    "sh",
+                    "-c",
+                    f"set --; . {ROOT / 'bin/prompt-command'}; display_pwd",
+                ],
+                cwd=cwd,
+                env=os.environ | {"DOTFILES": str(ROOT), "HOME": str(home.resolve())},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("~/one/two\n", result.stdout)
+
 
 class PromptJujutsuTests(unittest.TestCase):
     def test_hanging_jj_cannot_block_prompt_rendering(self) -> None:

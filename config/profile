@@ -108,9 +108,13 @@ if exists mise; then
 	unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
 	remove_path "$HOME/.local/share/mise/shims"
 	if [ -n "${BASH_VERSION:-}" ]; then
-		eval "$(mise activate bash)"
+		mise_activation=$(mise activate bash) || return
 	elif [ -n "${ZSH_VERSION:-}" ]; then
-		eval "$(mise activate zsh)"
+		mise_activation=$(mise activate zsh) || return
+	fi
+	if [ -n "${mise_activation:-}" ]; then
+		eval "$mise_activation" || return
+		unset mise_activation
 	fi
 fi
 

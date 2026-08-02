@@ -689,6 +689,21 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("prompt from path", result.stdout)
 
+    def test_claude_statusline_propagates_prompt_command_failure(self) -> None:
+        self.executable("prompt-command", "exit 23\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/claude-statusline.sh")],
+            text=True,
+            input='{"model":{"display_name":"tea"}}',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(23, result.returncode)
+        self.assertEqual("", result.stdout)
+
     def test_attach_session_propagates_tmux_query_failures(self) -> None:
         self.executable(
             "tmux",
@@ -830,8 +845,16 @@ class CommandTest(unittest.TestCase):
             stdout=subprocess.PIPE,
             check=True,
         )
+        branch_log = subprocess.run(
+            ["/usr/bin/git", "-c", config, "branch-log"],
+            cwd=repository,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
 
         self.assertNotEqual(0, default_branch.returncode)
+        self.assertNotEqual(0, branch_log.returncode)
         self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
         self.assertEqual("", remaining.stdout)
 

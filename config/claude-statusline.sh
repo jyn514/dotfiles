@@ -18,6 +18,6 @@ prompt_command=$(command -v prompt-command) || exit
 
 # prompt-command emits a second prompt line ("; "); keep only the first line.
 # (GIT_OPTIONAL_LOCKS is set inside prompt-command's git_info now.)
-"$prompt_command" "$model" 0 \
-  | tr -d '\001\002' \
-  | sed -n '1p' | tr -d '\n'
+prompt=$("$prompt_command" "$model" 0) || exit
+prompt=$(printf '%s\n' "$prompt" | tr -d '\001\002') || exit
+printf '%s\n' "$prompt" | sed -n '1p' | tr -d '\n'
