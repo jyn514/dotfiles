@@ -1,6 +1,10 @@
 def allow(pattern):
     prefix_rule(pattern=pattern, decision="allow")
+def deny(pattern, reason):
+    prefix_rule(pattern=pattern, decision="forbidden", justification=reason)
 
+# Can't approve sed generally because the language is complicated and allows rewriting in place.
+deny(["sed"], "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
 
 # Project-independent clojure tools.deps commands
 allow(["clojure", "-Spath"])
