@@ -1,5 +1,12 @@
 {
   "artifacts": {
+    "bat-mumps-syntax": {
+      "license": null,
+      "path": "config/bat/mumps.sublime-syntax",
+      "sha256": "da9f924dfde7c6a10471d8d73f1f03f5bbeba70ca76b37f43a0a84d736ce1b73",
+      "source": "https://github.com/ksherlock/MUMPS.tmbundle",
+      "version": "18ce5d4734d4f0e856db3861428800e2a07efd72"
+    },
     "dotbot-launcher": {
       "license": "lib/dotbot/LICENSE.md",
       "path": "lib/dotbot/bin/dotbot",

@@ -7,6 +7,8 @@ machine-readable provenance and checksums are in `install/vendored.json`.
 
 ## Inventory
 
+- `config/bat/mumps.sublime-syntax` is derived from MUMPS.tmbundle at the
+  recorded commit, with its file-extension list narrowed to `.m`.
 - `lib/dotbot/` is a minimal Dotbot snapshot. `VERSION` records the exact
   upstream commit and the upstream license is stored beside it.
 - `bin/git-filter-repo` is the upstream v2.38.0 single-file program. Its

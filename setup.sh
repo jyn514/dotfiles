@@ -162,14 +162,8 @@ setup_basics () {
 
 	if exists bat; then
 		mkdir -p "$(bat --config-dir)/syntaxes"
-		(
-			cd "$(bat --config-dir)/syntaxes"
-			# TODO: just inline this into my dotfiles
-			if ! [ -e mumps.sublime-syntax ]; then
-				python3 "$OLDPWD/lib/install_bootstrap.py" download mumps-syntax mumps.sublime-syntax
-				sed -i 's/^file_extensions:.*/file_extensions: [m]/' mumps.sublime-syntax
-			fi
-		)
+		ln -fs "$PWD/config/bat/mumps.sublime-syntax" \
+			"$(bat --config-dir)/syntaxes/mumps.sublime-syntax"
 		bat cache --build >/dev/null
 	fi
 
