@@ -1,49 +1,15 @@
-#!/usr/bin/env bash
-set -eu
+#!/usr/bin/env python3
+"""Run the repository's Python pre-push driver."""
 
-[ -e Cargo.toml ] || exit 0
+from pathlib import Path
+import sys
 
-zero=0000000000000000000000000000000000000000
-format_sha=
-while read -r _local_ref local_sha _remote_ref remote_sha; do
-	[ "$local_sha" != "$zero" ] || continue
-	if [ "$remote_sha" = "$zero" ]; then
-		base=$(git hash-object -t tree /dev/null) || exit
-	else
-		base=$remote_sha
-	fi
 
-	set +e
-	git diff --name-only -z --no-ext-diff "$base" "$local_sha" \
-		| python3 -c 'import sys; paths = sys.stdin.buffer.read().split(b"\0"); raise SystemExit(not any(path.endswith(b".rs") for path in paths))'
-	statuses=("${PIPESTATUS[@]}")
-	set -e
-	[ "${statuses[0]}" -eq 0 ] || exit "${statuses[0]}"
-	case ${statuses[1]} in
-		0)
-			if [ -n "$format_sha" ] && [ "$format_sha" != "$local_sha" ]; then
-				echo "error: cannot check Rust formatting for multiple pushed commits" >&2
-				exit 1
-			fi
-			format_sha=$local_sha
-			;;
-		1) ;;
-		*) exit "${statuses[1]}";;
-	esac
-done
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools/git-hooks"))
 
-[ -n "$format_sha" ] || exit 0
-head=$(git rev-parse HEAD) || exit
-if [ "$format_sha" = "$head" ]; then
-	worktree_status=$(git status --porcelain --untracked-files=all) || exit
-	if [ -n "$worktree_status" ]; then
-		echo "error: cannot check Rust formatting with a dirty worktree" >&2
-		exit 1
-	fi
-elif jj_head=$(jj log --no-graph -r @ -T commit_id 2>/dev/null) && [ "$format_sha" = "$jj_head" ]; then
-	:
-else
-	echo "error: cannot check Rust formatting for a commit that is not checked out" >&2
-	exit 1
-fi
-exec cargo fmt --check
+from git_hooks.pre_push import main  # noqa: E402
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
