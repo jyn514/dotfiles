@@ -6,7 +6,7 @@
 
 #t::{
 ; TODO: preserve current dir https://www.reddit.com/r/AutoHotkey/comments/176itsk/launch_terminal_in_current_directory/
-RunWait 'wt.exe'
+Run 'wt.exe'
 Sleep 1000
 WinActivate	"ahk_exe WindowsTerminal.exe"
 }

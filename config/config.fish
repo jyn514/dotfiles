@@ -44,13 +44,10 @@ function exists
 end
 
 function source_init
-	command $argv | source
-	set --local statuses $pipestatus
-	for init_status in $statuses
-		if test $init_status -ne 0
-			return $init_status
-		end
-	end
+	set --local init_output (command $argv)
+	or return
+	printf '%s\n' $init_output | source
+	or return
 end
 
 if [ -f ~/.local/profile.fish ]
@@ -82,18 +79,28 @@ export VISUAL=$EDITOR
 if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 	set -l brew_command /home/linuxbrew/.linuxbrew/bin/brew
 	set -l brew_cache ~/.local/config/brew.fish
+	set -l generated_brew_cache
 	if ! [ -e $brew_cache ]; or [ $brew_command -nt $brew_cache ]
 		set -l pending_cache "$brew_cache.$fish_pid"
 		command mkdir -p (dirname $brew_cache); or return
 		if $brew_command shellenv fish > $pending_cache
-			command mv $pending_cache $brew_cache; or return
+			if . $pending_cache
+				command mv $pending_cache $brew_cache; or return
+				set generated_brew_cache 1
+			else
+				set -l brew_status $status
+				command rm -f $pending_cache
+				return $brew_status
+			end
 		else
 			set -l brew_status $status
 			command rm -f $pending_cache
 			return $brew_status
 		end
 	end
-	. $brew_cache; or return
+	if not set -q generated_brew_cache
+		. $brew_cache; or return
+	end
 end
 
 if [ -z "$SSH_AUTH_SOCK" ]
@@ -220,13 +227,17 @@ function reload_cargo_aliases
 		echo $line | read -l name value
 		set value (string trim $value)
 		if set expansion (string match --groups-only --regex '^alias: (.*)' -- $value)
-			echo "abbr --add --command cargo $name -- $expansion"
+			set -l escaped_name (string escape -- "$name"); or return
+			set -l escaped_expansion (string escape -- "$expansion"); or return
+			printf 'abbr --add --command cargo %s -- %s\n' $escaped_name $escaped_expansion
 			set cmd $expansion
 		else
 			set cmd $name
 		end
 		if contains $name c d; continue; end
-		echo "abbr --add --global 'c$name' -- 'cargo $cmd'"
+		set -l escaped_short_name (string escape -- "c$name"); or return
+		set -l escaped_short_expansion (string escape -- "cargo $cmd"); or return
+		printf 'abbr --add --global %s -- %s\n' $escaped_short_name $escaped_short_expansion
 	end
 end
 
@@ -234,6 +245,7 @@ end
 if [ -z "$old_fish" ]; and exists cargo
 	set -l cargo_alias_cache ~/.local/config/cargo.fish
 	set -l cargo_command (command --search cargo)
+	set -l generated_cargo_cache
 	if ! [ -e $cargo_alias_cache ] \
 			|| [ $DOTFILES/config/config.fish -nt $cargo_alias_cache ] \
 			|| [ $cargo_command -nt $cargo_alias_cache ] \
@@ -242,16 +254,25 @@ if [ -z "$old_fish" ]; and exists cargo
 		command mkdir -p (dirname $cargo_alias_cache)
 		or return
 		if reload_cargo_aliases > $pending_cache
-			command mv $pending_cache $cargo_alias_cache
-			or return
+			if . $pending_cache
+				command mv $pending_cache $cargo_alias_cache
+				or return
+				set generated_cargo_cache 1
+			else
+				set -l reload_status $status
+				command rm -f $pending_cache
+				return $reload_status
+			end
 		else
 			set -l reload_status $status
 			command rm -f $pending_cache
 			return $reload_status
 		end
 	end
-	. $cargo_alias_cache
-	or return
+	if not set -q generated_cargo_cache
+		. $cargo_alias_cache
+		or return
+	end
 end
 
 if exists bat
