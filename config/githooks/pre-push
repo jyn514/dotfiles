@@ -34,13 +34,16 @@ done
 
 [ -n "$format_sha" ] || exit 0
 head=$(git rev-parse HEAD) || exit
-if [ "$format_sha" != "$head" ]; then
+if [ "$format_sha" = "$head" ]; then
+	worktree_status=$(git status --porcelain --untracked-files=all) || exit
+	if [ -n "$worktree_status" ]; then
+		echo "error: cannot check Rust formatting with a dirty worktree" >&2
+		exit 1
+	fi
+elif jj_head=$(jj log --no-graph -r @ -T commit_id 2>/dev/null) && [ "$format_sha" = "$jj_head" ]; then
+	:
+else
 	echo "error: cannot check Rust formatting for a commit that is not checked out" >&2
-	exit 1
-fi
-worktree_status=$(git status --porcelain --untracked-files=all) || exit
-if [ -n "$worktree_status" ]; then
-	echo "error: cannot check Rust formatting with a dirty worktree" >&2
 	exit 1
 fi
 exec cargo fmt --check
