@@ -1,6 +1,6 @@
 #!/bin/sh
 
-. "${DOTFILES:-$(dirname "$0")/..}/lib.sh"
+. "${DOTFILES:-$(dirname "$0")/..}/lib/shell/lib.sh"
 
 status() {
 	if is_jj_repo; then
