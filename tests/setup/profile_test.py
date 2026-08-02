@@ -592,6 +592,42 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"{checkout}\n{checkout}\n", result.stdout)
 
+    def test_what_package_uses_shell_command_discovery(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("what_package () {")
+        end = profile.index("\n}\n", start) + 2
+        definition = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "dpkg-calls"
+            which_called = root / "which-called"
+            for name, contents in (
+                ("tool", "exit 0\n"),
+                ("dpkg", 'printf "%s\\n" "$*" > "$DPKG_CALLS"\n'),
+                ("which", f"touch {which_called}\nexit 99\n"),
+            ):
+                executable = root / name
+                executable.write_text("#!/bin/sh\n" + contents)
+                executable.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", "-c", definition + "\nwhat_package tool"],
+                env=os.environ
+                | {
+                    "DPKG_CALLS": str(calls),
+                    "PATH": f"{root}:{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            call_text = calls.read_text() if calls.exists() else ""
+            which_was_called = which_called.exists()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(call_text.startswith("-S "))
+        self.assertFalse(which_was_called)
+
     def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 

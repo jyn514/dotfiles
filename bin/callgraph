@@ -1,4 +1,7 @@
 #!/bin/sh
+
+set -eu
+
 if [ $# = 0 ]; then
 	echo "usage: $0 <program> [args...]"
 	exit 1

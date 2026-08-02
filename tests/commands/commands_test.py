@@ -603,6 +603,7 @@ class CommandTest(unittest.TestCase):
     def test_audio_action_survives_notification_failure(self) -> None:
         calls = self.directory / "cmus-calls"
         self.executable("cmus", "exit 0\n")
+        self.executable("which", "exit 99\n")
         self.executable("notify-send", "exit 1\n")
         self.executable("cmus-remote", 'printf "%s\\n" "$*" > "$CMUS_CALLS"\n')
 
@@ -619,6 +620,97 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("--pause\n", calls.read_text())
+
+    def test_hours_parses_meridiem_and_zero_pads_fractional_hours(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "bin/hours")],
+            input="9:00AM-5:03PM\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("8.05\n", result.stdout)
+
+    def test_callgraph_stops_at_each_failed_producer(self) -> None:
+        self.executable(
+            "valgrind",
+            '[ "${FAIL_STAGE:-}" = valgrind ] && exit 23\nprintf "valgrind\\n" >> "$CALLS"\n',
+        )
+        self.executable(
+            "gprof2dot",
+            '[ "${FAIL_STAGE:-}" = gprof2dot ] && exit 24\nprintf "gprof2dot\\n" >> "$CALLS"\nprintf "digraph {}\\n"\n',
+        )
+        self.executable(
+            "dot",
+            '[ "${FAIL_STAGE:-}" = dot ] && exit 25\nprintf "dot\\n" >> "$CALLS"\nprintf "png\\n"\n',
+        )
+        calls = self.directory / "calls"
+        environment = os.environ | {
+            "CALLS": str(calls),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        for stage, expected in (("valgrind", 23), ("gprof2dot", 24), ("dot", 25)):
+            calls.unlink(missing_ok=True)
+            result = subprocess.run(
+                [str(ROOT / "bin/callgraph"), "program"],
+                cwd=self.directory,
+                env=environment | {"FAIL_STAGE": stage},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(expected, result.returncode, stage)
+            self.assertNotIn("generated callgraph", result.stdout)
+
+    def test_callgraph_comparison_propagates_ripgrep_failure(self) -> None:
+        self.executable("rg", "exit 26\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/callgraph-cmp"), "first.dot", "second.dot"],
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(26, result.returncode)
+
+    def test_callgraph_comparison_accepts_graphs_without_edges(self) -> None:
+        self.executable("rg", "exit 1\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/callgraph-cmp"), "first.dot", "second.dot"],
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_usage_propagates_du_failure_without_sorting(self) -> None:
+        marker = self.directory / "sort-called"
+        self.executable("du", "exit 27\n")
+        self.executable("sort", f"touch {marker}\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/usage"), str(self.directory)],
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(27, result.returncode)
+        self.assertFalse(marker.exists())
 
     def test_ssid_preserves_spaces_from_machine_readable_output(self) -> None:
         calls = self.directory / "nmcli-calls"

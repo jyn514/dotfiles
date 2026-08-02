@@ -1,4 +1,5 @@
 #!/bin/sh
 [ $# -eq 1 ] || { echo "usage: $(basename "$0") <path>"; exit 1; }
 
-du -h -x -d 1 "$1" 2>/dev/null | sort -h -r
+sizes=$(du -h -x -d 1 "$1" 2>/dev/null) || exit
+printf '%s\n' "$sizes" | sort -h -r

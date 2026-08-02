@@ -596,6 +596,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
+            run.return_value.returncode = 0
             self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:3"]), 0)
 
         run.assert_has_calls(
@@ -628,6 +629,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
+            run.return_value.returncode = 0
             self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:3"]), 0)
 
         run.assert_any_call(["tmux", "send-keys", "-t", "%4", "-X", "cancel"], check=False)
@@ -640,6 +642,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
+            run.return_value.returncode = 0
             self.assertEqual(module.open_in_tmux_editor([""]), 0)
 
         run.assert_any_call(["tmux", "send-keys", "-t", "%4", ": open ", "Enter"], check=False)
@@ -686,6 +689,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
+            run.return_value.returncode = 0
             self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:4"]), 0)
 
         run.assert_called_once_with(
@@ -768,6 +772,7 @@ class OpenScriptTest(unittest.TestCase):
             mock.patch.object(module, "activate_window_if_needed"),
             mock.patch.object(module.subprocess, "run") as run,
         ):
+            run.return_value.returncode = 0
             self.assertEqual(module.open_in_tmux_editor([f"{self.real(REPO / 'README.md')}:4:2"]), 0)
 
         run.assert_called_once_with(
@@ -785,6 +790,42 @@ class OpenScriptTest(unittest.TestCase):
             text=True,
             capture_output=True,
         )
+
+    def test_hx_hax_propagates_tmux_query_failure(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+
+        with mock.patch.object(
+            module,
+            "run_stdout",
+            side_effect=subprocess.CalledProcessError(27, ["tmux"]),
+        ):
+            self.assertEqual(module.open_in_tmux_editor(["README.md"]), 27)
+
+    def test_hx_hax_propagates_tmux_mutation_failure(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+
+        with (
+            mock.patch.object(module, "run_stdout", side_effect=["@2\n", "%4\n", "0\n"]),
+            mock.patch.object(module, "activate_window_if_needed") as activate,
+            mock.patch.object(module.subprocess, "run") as run,
+        ):
+            run.return_value.returncode = 28
+            self.assertEqual(module.open_in_tmux_editor(["README.md"]), 28)
+
+        activate.assert_not_called()
+
+    def test_hx_hax_propagates_tmux_split_failure(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+
+        with (
+            mock.patch.object(module, "run_stdout", side_effect=["@2\n", ""]),
+            mock.patch.object(module, "activate_window_if_needed") as activate,
+            mock.patch.object(module.subprocess, "run") as run,
+        ):
+            run.return_value.returncode = 29
+            self.assertEqual(module.open_in_tmux_editor(["README.md"]), 29)
+
+        activate.assert_not_called()
 
 
 def main() -> int:

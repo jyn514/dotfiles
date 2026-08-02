@@ -238,7 +238,7 @@ what_runs () {
 
 what_package () {
 	local prog
-	prog=$(command which "$1") || return
+	prog=$(command -v "$1") || return
 	prog=$(realpath "$prog") || return
 	shift
 	if command -v dpkg > /dev/null; then

@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 if ! [ $# = 2 ]; then
 	echo "usage: $0 <dot1> <dot2>"
 	exit 1
 fi
 
 cmp() {
-	rg --no-filename --no-heading --no-line-number -o -- '"[^"]+" -> "[^"]+"' "$1" | sort -u
+	if edges=$(rg --no-filename --no-heading --no-line-number -o -- \
+			'"[^"]+" -> "[^"]+"' "$1"); then
+		:
+	else
+		status=$?
+		[ "$status" -eq 1 ] || return "$status"
+		edges=
+	fi
+	[ -n "$edges" ] || return 0
+	printf '%s\n' "$edges" | sort -u
 }
-cmp "$1" | diff --color=always - <(cmp "$2")
+left=$(cmp "$1")
+right=$(cmp "$2")
+diff --color=always <(printf %s "$left") <(printf %s "$right")
