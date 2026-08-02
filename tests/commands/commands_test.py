@@ -606,15 +606,21 @@ class CommandTest(unittest.TestCase):
 
     def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
         calls = self.directory / "gh-calls"
+        script_calls = self.directory / "script-calls"
         self.executable(
             "gh",
             'printf "%s\\n" "$*" >> "$GH_CALLS"\n'
             "printf '{}\\n'\n",
         )
-        self.executable("script", "printf 'issue output\\n'\n")
+        self.executable("uname", "printf 'Darwin\\n'\n")
+        self.executable(
+            "script",
+            'printf "%s\\n" "$*" > "$SCRIPT_CALLS"\nprintf \'issue output\\n\'\n',
+        )
         self.executable("less", "exit 0\n")
         environment = os.environ | {
             "GH_CALLS": str(calls),
+            "SCRIPT_CALLS": str(script_calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
         }
 
@@ -637,6 +643,10 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("https://github.com/user/repo/issues/123", calls.read_text())
+        self.assertEqual(
+            "-q /dev/null gh issue view -c https://github.com/user/repo/issues/123\n",
+            script_calls.read_text(),
+        )
         self.assertEqual(1, unsafe.returncode)
         self.assertFalse((self.directory.parent / "escape.json").exists())
 
@@ -663,6 +673,21 @@ class CommandTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertEqual("", result.stdout)
+
+    def test_claude_statusline_finds_prompt_command_on_path(self) -> None:
+        self.executable("prompt-command", 'printf "prompt from path\\n; "\n')
+
+        result = subprocess.run(
+            [str(ROOT / "config/claude-statusline.sh")],
+            text=True,
+            input='{"model":{"display_name":"tea"}}',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("prompt from path", result.stdout)
 
 
 if __name__ == "__main__":

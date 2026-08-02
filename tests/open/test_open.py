@@ -125,7 +125,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
         original_path = "/still/here"
         failed = subprocess.CompletedProcess(
-            ["bash", "-c", ". ~/.profile; echo $PATH"], 1, stdout=""
+            ["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"'], 1, stdout=""
         )
 
         with (
@@ -134,6 +134,21 @@ class OpenScriptTest(unittest.TestCase):
         ):
             module.refresh_path_from_profile()
             self.assertEqual(module.os.environ["PATH"], original_path)
+
+    def test_profile_path_refresh_quotes_path(self) -> None:
+        module = self.load_open_module()
+        completed = subprocess.CompletedProcess([], 0, stdout="/space dir:/glob[*]\n")
+
+        with (
+            mock.patch.dict(module.os.environ, {"PATH": "/old"}),
+            mock.patch.object(module, "run", return_value=completed) as run,
+        ):
+            module.refresh_path_from_profile()
+            self.assertEqual(module.os.environ["PATH"], "/space dir:/glob[*]")
+
+        run.assert_called_once_with(
+            ["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"']
+        )
 
     def test_plain_multiple_args_are_forwarded_to_xdg_open(self) -> None:
         first = self.root / "first.txt"
@@ -268,6 +283,16 @@ class OpenScriptTest(unittest.TestCase):
             self.assertEqual(module.duti_default(str(target)), "org.example.Archive.desktop")
 
         run_stdout.assert_called_once_with(["duti", "-x", "gz"])
+
+    def test_extensionless_file_does_not_pass_path_as_duti_extension(self) -> None:
+        target = self.root / "README"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        with mock.patch.object(module, "run_stdout") as run_stdout:
+            self.assertEqual(module.duti_default(str(target)), "")
+
+        run_stdout.assert_not_called()
 
     def test_non_editor_default_with_multiple_args_preserves_preceding_args(self) -> None:
         target = self.root / "note.txt"

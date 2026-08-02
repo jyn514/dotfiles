@@ -134,10 +134,11 @@ setup_basics () {
 	setup_dotfiles || return
 
 	discord=$HOME/.config/discord/settings.json
-	if [ -e $discord ]; then
-		devtools=DANGEROUS_ENABLE_DEVTOOLS_ONLY_ENABLE_IF_YOU_KNOW_WHAT_YOURE_DOING 
-		# don't have `sponge` installed yet
-		jq ".$devtools = true" < $discord > tmp.json && mv tmp.json $discord
+	if [ -e "$discord" ]; then
+		devtools=DANGEROUS_ENABLE_DEVTOOLS_ONLY_ENABLE_IF_YOU_KNOW_WHAT_YOURE_DOING
+		settings=$(jq ".$devtools = true" < "$discord") || return
+		printf '%s\n' "$settings" > "$discord" || return
+		unset settings
 	fi
 
 	# don't break when sourcing .bashrc

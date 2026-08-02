@@ -126,7 +126,7 @@ def editor_commands(args: list[str]) -> list[str]:
 
 
 def refresh_path_from_profile() -> None:
-    result = run(["bash", "-c", ". ~/.profile; echo $PATH"])
+    result = run(["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"'])
     if result.returncode == 0 and result.stdout:
         os.environ["PATH"] = result.stdout.rstrip("\n")
 
@@ -215,10 +215,9 @@ def os_open(args: list[str]) -> int:
 
 def duti_default(file: str) -> str:
     basename = os.path.basename(file)
-    if "." in basename:
-        ext = basename.rsplit(".", 1)[1]
-    else:
-        ext = file
+    if "." not in basename:
+        return ""
+    ext = basename.rsplit(".", 1)[1]
     return run_stdout(["duti", "-x", ext]).split("\n")[0]
 
 

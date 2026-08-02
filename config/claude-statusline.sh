@@ -13,10 +13,11 @@ used=$(printf '%s' "$input" | jq -r '.context_window.used_percentage // empty')
 if [ -n "$cwd" ]; then
   cd "$cwd" 2>/dev/null || exit 1
 fi
+prompt_command=$(command -v prompt-command) || exit
 [ -n "$used" ] && printf ' ctx:%s%% ' "$(printf '%.0f' "$used")"
 
 # prompt-command emits a second prompt line ("; "); keep only the first line.
 # (GIT_OPTIONAL_LOCKS is set inside prompt-command's git_info now.)
-"$HOME/src/dotfiles/bin/prompt-command" "$model" 0 \
+"$prompt_command" "$model" 0 \
   | tr -d '\001\002' \
   | sed -n '1p' | tr -d '\n'
