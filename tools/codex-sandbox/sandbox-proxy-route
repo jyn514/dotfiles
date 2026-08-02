@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+SCRIPT=$(realpath -- "$0")
+exec python3 "$(dirname -- "$SCRIPT")/sandbox-proxies.py" route "$@"

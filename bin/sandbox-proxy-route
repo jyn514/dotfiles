@@ -1,5 +1,1 @@
-#!/bin/sh
-set -eu
-
-DOTFILES=$(dirname -- "$(dirname -- "$(realpath -- "$0")")")
-exec python3 "$DOTFILES/libexec/sandbox-proxies.py" route "$@"
+../tools/codex-sandbox/sandbox-proxy-route

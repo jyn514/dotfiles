@@ -6,7 +6,7 @@ cd "$DOTFILES"
 
 cache_key=$(
 	{
-		find lib/jj-proxy -type f -print
+		find tools/jj-proxy -type f -print
 		printf '%s\n' config/gitignore
 	} | LC_ALL=C sort |
 		while IFS= read -r path; do
@@ -16,7 +16,7 @@ cache_key=$(
 image="jj-proxy:$cache_key"
 if ! docker image inspect "$image" >/dev/null 2>&1; then
 	printf 'Building Jujutsu proxy image %s ...\n' "$image" >&2
-	docker build -f lib/jj-proxy/Dockerfile --tag "$image" . >&2
+	docker build -f tools/jj-proxy/Dockerfile --tag "$image" . >&2
 fi
 image_id=$(docker image inspect --format '{{.Id}}' "$image")
 printf 'sha256:%s\n' "${image_id#sha256:}"

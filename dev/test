@@ -66,7 +66,15 @@ else
 	exit 1
 fi
 
-shell_files=$(find setup.sh track.sh bin dev lib libexec tests \
+bb tools/extract-chat/tests/extract_chat_test.clj
+node tools/extract-chatgpt-share/tests/extract_chatgpt_share_test.js
+if [ "$(uname -s)" = Linux ]; then
+	cargo test --manifest-path tools/jj-proxy/Cargo.toml
+else
+	cargo test --manifest-path tools/jj-proxy/Cargo.toml --lib --bins
+fi
+
+shell_files=$(find setup.sh track.sh bin dev lib libexec tests tools \
 	-name __pycache__ -prune -o -type f \
 	-exec grep -Il '^#!/bin/sh$' {} + 2>/dev/null || true)
 if [ -n "$shell_files" ]; then

@@ -1,0 +1,303 @@
+#!/usr/bin/env bb
+;; Extract readable user/assistant turns from Codex and Claude session JSON/JSONL files.
+;;
+;; Usage:
+;;   extract-chat --session 019abcde-1234-7000-8000-0123456789ab
+;;   extract-chat --final-only ~/.codex/sessions
+;;   extract-chat --extract-dir out ~/.codex/sessions
+
+(ns tools.extract-chat
+  (:require [cheshire.core :as json]
+            [clojure.java.io :as io]
+            [clojure.string :as str])
+  (:import (java.nio.file Files Path)))
+
+(defn default-root [environment]
+  (str (or (get environment "CODEX_HOME")
+           (str (System/getProperty "user.home") "/.codex"))
+       "/sessions"))
+
+(defn- usage []
+  (println "Usage: extract-chat [--final-only] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
+  (println)
+  (println "With no paths, recursively scans ~/.codex/sessions for .json and .jsonl files.")
+  (println "With --session, extracts the Codex session whose filename ends in ID.")
+  (println "With --extract-dir, writes one markdown file per session instead of printing to stdout."))
+
+(defn- path [s]
+  (.toPath (io/file s)))
+
+(defn- regular-file? [^Path p]
+  (Files/isRegularFile p (make-array java.nio.file.LinkOption 0)))
+
+(defn- directory? [^Path p]
+  (Files/isDirectory p (make-array java.nio.file.LinkOption 0)))
+
+(defn- session-file? [^Path p]
+  (let [s (str p)]
+    (and (regular-file? p)
+         (or (str/ends-with? s ".json")
+             (str/ends-with? s ".jsonl")))))
+
+(defn- files-under [^Path p]
+  (if (directory? p)
+    (with-open [stream (Files/walk p (make-array java.nio.file.FileVisitOption 0))]
+      (->> (iterator-seq (.iterator stream))
+           (filter session-file?)
+           (sort-by str)
+           doall))
+    (when (session-file? p) [p])))
+
+(defn- session-file-name-matches? [session ^Path file]
+  (let [file-name (str (.getFileName file))
+        stem (str/replace file-name #"\.jsonl?$" "")]
+    (or (= session stem)
+        (str/ends-with? stem (str "-" session)))))
+
+(defn- find-session [session]
+  (let [root (default-root (System/getenv))
+        matches (filter #(session-file-name-matches? session %)
+                        (files-under (path root)))]
+    (case (count matches)
+      0 (throw (ex-info (str "No Codex session found for " session)
+                        {:session session :root root}))
+      1 (first matches)
+      (throw (ex-info (str "Multiple Codex sessions found for " session)
+                      {:session session :root root :matches matches})))))
+
+(defn- read-json-lines [file]
+  (with-open [r (io/reader (.toFile file))]
+    (doall
+     (for [line (line-seq r)
+           :let [line (str/trim line)]
+           :when (seq line)]
+       (json/parse-string line true)))))
+
+(defn- read-json-file [file]
+  (let [value (json/parse-string (slurp (.toFile file)) true)]
+    (cond
+      (sequential? value) value
+      (map? value) [value]
+      :else [])))
+
+(defn- read-events [file]
+  (if (str/ends-with? (str file) ".jsonl")
+    (read-json-lines file)
+    (try
+      (read-json-file file)
+      (catch Exception _
+        ;; Some exported session files are JSONL even when named .json.
+        (read-json-lines file)))))
+
+(defn- content-part-text [part]
+  (cond
+    (string? part) part
+    (map? part)
+    (case (:type part)
+      "text" (:text part)
+      "input_text" (:input_text part)
+      "output_text" (:output_text part)
+      nil (or (:text part) (:input_text part) (:output_text part))
+      nil)
+    :else nil))
+
+(defn- content-text [content]
+  (cond
+    (nil? content) ""
+    (string? content) content
+    (map? content) (or (content-part-text content) "")
+    (sequential? content) (str/join "\n" (keep content-part-text content))
+    :else ""))
+
+(defn- event-message [event]
+  (when (map? event)
+    (let [{event-type :type, :keys [payload]} event]
+      (when (= "event_msg" event-type)
+        (case (:type payload)
+          "user_message"
+          (when (seq (str/trim (:message payload)))
+            {:role "user"
+             :text (:message payload)})
+
+          "agent_message"
+          (when (seq (str/trim (:message payload)))
+            {:role "assistant"
+             :phase (:phase payload)
+             :text (:message payload)})
+
+          nil)))))
+
+(defn- response-item-message [event]
+  (when (map? event)
+    (let [{event-type :type, :keys [payload]} event]
+      (when (and (= "response_item" event-type)
+                 (= "message" (:type payload))
+                 (#{"user" "assistant"} (:role payload)))
+        (let [text (content-text (:content payload))]
+          (when (seq (str/trim text))
+            {:role (:role payload)
+             :phase (:phase payload)
+             :text text}))))))
+
+(defn- claude-message [event]
+  (when (map? event)
+    (let [{event-type :type, :keys [message]} event]
+      (when (case event-type ("assistant" "user") event-type nil)
+        (let [role (or (:role message) event-type)
+              text (content-text (:content message))]
+          (when (and (case role ("assistant" "user") role nil)
+                     (seq (str/trim text)))
+            {:role role
+             :text text}))))))
+
+(defn- messages [events]
+  (or (seq (keep event-message events))
+      (seq (keep response-item-message events))
+      (seq (keep claude-message events))))
+
+(defn- codex-session-meta [events]
+  (some (fn [{:keys [type payload timestamp]}]
+          (when (and (= "session_meta" type)
+                     (:session_id payload))
+            {:session-id (:session_id payload)
+             :timestamp (or (:timestamp payload) timestamp)}))
+        events))
+
+(defn- keep-message? [final-only? {:keys [role phase]}]
+  (or (not final-only?)
+      (= "user" role)
+      (nil? phase)
+      (= "final_answer" phase)))
+
+(defn- role-heading [{:keys [role phase]}]
+  (str "## "
+       (case role
+         "user" "User"
+         "assistant" "Assistant"
+         role)
+       (when (and phase (not= phase "final_answer"))
+         (str " (" phase ")"))))
+
+(defn- read-session [final-only? file]
+  (let [events (read-events file)]
+    (merge {:file file
+            :messages (vec (filter #(keep-message? final-only? %)
+                                   (messages events)))}
+           (codex-session-meta events))))
+
+(defn- session-markdown [{:keys [file messages]}]
+  (when (seq messages)
+    (str "# " file "\n\n"
+         (str/join
+          ""
+          (for [message messages]
+            (str (role-heading message) "\n\n"
+                 (:text message) "\n\n"))))))
+
+(defn- prefix? [prefix values]
+  (and (<= (count prefix) (count values))
+       (= prefix (subvec values 0 (count prefix)))))
+
+(defn- without-replayed-prefixes [sessions]
+  ;; Codex resumes and forks replay their history into a new rollout. A shared
+  ;; session id plus an exact whole-conversation prefix identifies that replay.
+  ;; An independently authored identical whole conversation under the same id
+  ;; is indistinguishable and is treated as replay. Identical conversations with
+  ;; different ids, and identical later turns that are not prefixes, remain.
+  (loop [seen-by-id {}
+         sessions sessions
+         deduplicated []]
+    (if-let [current (first sessions)]
+      (let [session-id (:session-id current)
+            prior-messages (when session-id (get seen-by-id session-id))
+            prefix (->> prior-messages
+                        (filter #(prefix? % (:messages current)))
+                        (sort-by count)
+                        last)
+            current (update current :messages subvec (count prefix))]
+        (recur (cond-> seen-by-id
+                 session-id (update session-id (fnil conj [])
+                                    (into (or prefix []) (:messages current))))
+               (next sessions)
+               (conj deduplicated current)))
+      deduplicated)))
+
+(defn- print-session [final-only? file]
+  (when-let [markdown (session-markdown (read-session final-only? file))]
+    (print markdown)))
+
+(defn- session-output-path [extract-dir file]
+  (let [file-name (str (.getFileName ^Path file))
+        markdown-name (str/replace file-name #"\.jsonl?$" ".md")]
+    (.toPath (io/file extract-dir markdown-name))))
+
+(defn- write-session [extract-dir {:keys [file] :as session}]
+  (when-let [markdown (session-markdown session)]
+    (let [output-file (session-output-path extract-dir file)]
+      (io/make-parents (.toFile output-file))
+      (spit (.toFile output-file) markdown))))
+
+(defn- parse-args [args]
+  (loop [opts {:paths []}
+         args (seq args)]
+    (if-not args
+      opts
+      (let [arg (first args)]
+        (cond
+          (= "--final-only" arg)
+          (recur (assoc opts :final-only? true) (next args))
+
+          (= "-h" arg)
+          (recur (assoc opts :help? true) (next args))
+
+          (= "--help" arg)
+          (recur (assoc opts :help? true) (next args))
+
+          (= "--extract-dir" arg)
+          (if-let [dir (second args)]
+            (recur (assoc opts :extract-dir dir) (nnext args))
+            (throw (ex-info "--extract-dir requires a directory" {:arg arg})))
+
+          (str/starts-with? arg "--extract-dir=")
+          (recur (assoc opts :extract-dir (subs arg (count "--extract-dir="))) (next args))
+
+          (= "--session" arg)
+          (if-let [session (second args)]
+            (recur (assoc opts :session session) (nnext args))
+            (throw (ex-info "--session requires an ID" {:arg arg})))
+
+          (str/starts-with? arg "--session=")
+          (recur (assoc opts :session (subs arg (count "--session="))) (next args))
+
+          :else
+          (recur (update opts :paths conj arg) (next args)))))))
+
+(defn main [args]
+  (let [{:keys [final-only? help? paths extract-dir session]} (parse-args args)]
+    (if help?
+      (usage)
+      (let [files (if session
+                    [(find-session session)]
+                    (let [roots (if (seq paths)
+                                  paths
+                                  [(default-root (System/getenv))])]
+                      (mapcat (comp files-under path) roots)))]
+        (when (and
+               (not (seq paths))
+               (not session)
+               (not extract-dir))
+          (println "Cowardly refusing to extract all conversations to stdout")
+          (usage)
+          (System/exit 1))
+        (if extract-dir
+          (let [sessions (->> files
+                              (map #(read-session final-only? %))
+                              (sort-by (juxt :timestamp (comp str :file)))
+                              without-replayed-prefixes)]
+            (doseq [session sessions]
+              (write-session extract-dir session)))
+          (doseq [file files]
+            (print-session final-only? file)))))))
+
+(when (= *file* (System/getProperty "babashka.file"))
+  (main *command-line-args*))
