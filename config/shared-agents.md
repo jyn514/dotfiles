@@ -37,6 +37,7 @@ Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
 
 `jj` must always run outside the sandbox because it snapshots the working directory.
+Run it as a separate command so that other commands don't need approval.
 
 Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead. For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
@@ -44,7 +45,20 @@ Do not run commands with `2>/dev/null` at the same time as a command that runs o
 Never use `git diff --check`; it's sometimes not installed in your sandbox.
 Use `diff-check` instead.
 
-## Commit messages
+### Shell command construction
+
+Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
+
+- Write executable and subcommand tokens literally. Do not generate commands that quote every argument: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
+- Quote only arguments that require shell quoting, such as titles containing spaces.
+- If command generation is genuinely necessary, preserve the literal approved prefix and generate only the trailing arguments.
+
+## Commits
+
+Always use `jj`, never `git` directly.
+`jj` snapshots your changes, supports `jj undo`, and allows editing history without modifying the working tree.
+
+### Commit messages
 
 Write commit messages for the next person debugging or reviewing the change, not merely to label the diff.
 
@@ -62,14 +76,6 @@ Do not narrate file-by-file edits or repeat the subject. Record information that
 For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe.
 
 Before running `jj describe`, inspect the complete diff and write the body from the finished change.
-
-### Shell command construction
-
-Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
-
-- Write executable and subcommand tokens literally. Do not generate commands that quote every argument: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
-- Quote only arguments that require shell quoting, such as titles containing spaces.
-- If command generation is genuinely necessary, preserve the literal approved prefix and generate only the trailing arguments.
 
 ## Corrections
 
