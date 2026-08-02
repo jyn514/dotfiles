@@ -133,18 +133,32 @@ glide.keymaps.set("normal", "<A-w>", async() => {
 	await browser.windows.update(next.id, { focused: true });
 });
 
+function repository_from_url(current_url) {
+	const url = new URL(current_url);
+	let path = url.pathname.split("/").filter(Boolean);
+	if (url.hostname === "github.com") {
+		path = path.slice(0, 2);
+	} else if (url.hostname === "gitlab.com") {
+		const route_separator = path.indexOf("-");
+		if (route_separator >= 0) path = path.slice(0, route_separator);
+	} else {
+		throw new Error("current URL is not a GitHub or GitLab repository");
+	}
+	if (path.length < 2)
+		throw new Error("current URL is not a GitHub or GitLab repository");
+
+	url.pathname = '/' + path.join('/');
+	url.search = '';
+	url.hash = '';
+	return { url, repo: path[path.length - 1].replace(/\.git$/, '') };
+}
+
 // clone repo
 // https://blog.craigie.dev/introducing-glide/
 glide.keymaps.set("normal", "gC", async () => {
-  // extract the owner and repo from a url like 'https://github.com/glide-browser/glide'
-	let url = glide.ctx.url;
-	const path = url.pathname.split("/").slice(1, 3);
-	const repo = path[1];
-	url.pathname = '/' + path.join('/');
-	if (!["github.com", "gitlab.com"].includes(url.hostname) || !repo)
-		throw new Error("current URL is not a github repo");
+	const { url, repo } = repository_from_url(glide.ctx.url);
 
-	// * clone the current github repo to ~/src/$repo
+	// * clone the current repository to ~/src/$repo
 	// * start kitty with neovim open at the cloned repo
 	const repo_path = glide.path.join(glide.path.home_dir, "src", repo);
 	await glide.process.execute("fork-github", [url.toString(), repo_path]);
