@@ -1,5 +1,5 @@
 # instead of enabling vi mode, which kinda sucks, use emacs mode by default but enable vi normal mode
-set keyseq-timeout 1
+set keyseq-timeout 100
 set keymap vi-command
 "i": emacs-editing-mode
 

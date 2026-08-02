@@ -71,7 +71,7 @@ class LinuxMimetypeTests(unittest.TestCase):
     def test_generated_desktop_advertises_every_discovered_type(self) -> None:
         template = self.mime / "nvim.desktop"
         destination = self.mime / "generated/nvim.desktop"
-        template.write_text("[Desktop Entry]\nExec=hx-hax %F\nMimeType=text/plain;\n")
+        template.write_text("[Desktop Entry]\nExec=hx-hax %f\nMimeType=text/plain;\n")
 
         setup_mimetypes.write_linux_desktop(
             template,
@@ -80,7 +80,7 @@ class LinuxMimetypeTests(unittest.TestCase):
         )
 
         generated = destination.read_text()
-        self.assertIn("Exec=hx-hax %F", generated)
+        self.assertIn("Exec=hx-hax %f", generated)
         self.assertIn(
             "MimeType=application/x-source;text/plain;text/x-rust;", generated
         )
@@ -88,9 +88,12 @@ class LinuxMimetypeTests(unittest.TestCase):
 
     def test_helix_desktop_selects_helix(self) -> None:
         desktop = (ROOT / "config/Helix.desktop").read_text()
+        nvim_desktop = (ROOT / "config/nvim.desktop").read_text()
 
         self.assertIn("TryExec=hx-hax\n", desktop)
-        self.assertIn("Exec=env REAL_EDITOR=hx hx-hax %F\n", desktop)
+        self.assertIn("Exec=env REAL_EDITOR=hx hx-hax %f\n", desktop)
+        self.assertIn("Exec=hx-hax %f\n", nvim_desktop)
+        self.assertNotIn("%F", desktop + nvim_desktop)
 
     def test_fx_desktop_passes_the_selected_json_file(self) -> None:
         desktop = (ROOT / "config/fx.desktop").read_text()

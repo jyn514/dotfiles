@@ -155,8 +155,9 @@ bindkey "\e[1;5C" forward-word
 # this overrides clear-screen, but i don't care about clear-screen
 bindkey "^L" delete-word
 # these are backwards because i have them bound to vi keys
-bindkey "${termcap[kN]}" backward-word
-bindkey "${termcap[kP]}" forward-word
+zmodload -i zsh/termcap || return
+if [[ -n ${termcap[kN]:-} ]]; then bindkey "${termcap[kN]}" backward-word; fi
+if [[ -n ${termcap[kP]:-} ]]; then bindkey "${termcap[kP]}" forward-word; fi
 
 # properly bind Home, End, Delete (had trouble with this at one point)
 # note: MUST come after 'bindkey -e'
@@ -167,10 +168,9 @@ bindkey "\e[3~" delete-char
 bindkey "\e[1~" beginning-of-line
 bindkey "\e[4~" end-of-line
 # ctrl+del
-bindkey "5~" delete-word
 bindkey "\e[3;5~" delete-word # tmux
 # alt+del
-bindkey "3~" delete-word
+bindkey "\e[3;3~" delete-word
 # ctrl+backspace
 bindkey '^H' backward-delete-word
 
