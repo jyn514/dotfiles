@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -210,14 +211,20 @@ class ProfileContractTests(unittest.TestCase):
             tmux_config,
         )
         self.assertEqual(2, len(dragon_commands))
+        search_program = (
+            'import os, sys; from urllib.parse import urlencode; '
+            'os.execlp("open", "open", "https://www.google.com/search?" + '
+            'urlencode({"q": sys.argv[1]}))'
+        )
         search_command = (
-            '{ cat; printf "\\0"; } | xargs -0 bash -c '
-            '\'open "https://www.google.com/search?q=$1"\' _'
+            '{ cat; printf "\\0"; } | xargs -0 python3 -c '
+            + shlex.quote(search_program)
         )
         self.assertIn(
-            '{ cat; printf "\\0"; } | xargs -0 bash -c', tmux_config
+            '{ cat; printf "\\0"; } | xargs -0 python3 -c', tmux_config
         )
-        self.assertIn('open "https://www.google.com/search?q=$1"', tmux_config)
+        self.assertIn('urlencode({"q": sys.argv[1]})', tmux_config)
+        self.assertIn(search_program, tmux_config)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -259,9 +266,21 @@ class ProfileContractTests(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
-                f"https://www.google.com/search?q={payload}", calls.read_text()
+                "https://www.google.com/search?"
+                "q=odd+%27+%24%28touch+"
+                f"{str(marker).replace('/', '%2F')}%29%0Aname",
+                calls.read_text(),
             )
             self.assertFalse(marker.exists())
+
+    def test_zsh_sudo_uses_the_current_buffer_when_present(self) -> None:
+        zshrc = (ROOT / "config/zshrc").read_text()
+        function = re.search(r"zle-sudo\(\) \{(.*?)\n\}", zshrc, re.DOTALL)
+        self.assertIsNotNone(function)
+        body = function.group(1)
+        self.assertIn("if [[ -z $BUFFER ]]", body)
+        self.assertIn("zle up-line-or-history", body)
+        self.assertIn('LBUFFER="sudo $LBUFFER"', body)
 
     def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
@@ -690,7 +709,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertNotIn("JULIA_EDITOR=hx-hax", profile + fish)
         self.assertNotIn("xargs -I {}", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 5)
-        self.assertIn('open "https://www.google.com/search?q=$1"', tmux)
+        self.assertIn('urlencode({"q": sys.argv[1]})', tmux)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("local codename http_status man_index section url", profile)

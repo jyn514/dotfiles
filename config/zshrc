@@ -87,7 +87,9 @@ zle-vicmd-copy() {
     printf %s "$CUTBUFFER" | copy
 }
 zle-sudo() {
-  zle up-line-or-history
+  if [[ -z $BUFFER ]]; then
+    zle up-line-or-history
+  fi
   LBUFFER="sudo $LBUFFER"
 }
 zle -N zle-vicmd-push

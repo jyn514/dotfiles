@@ -1138,7 +1138,14 @@ class CommandTest(unittest.TestCase):
         subprocess.run(["git", "commit", "-m", "initial"], cwd=repository, check=True, capture_output=True)
         subprocess.run(["git", "remote", "add", "personal", str(remote)], cwd=repository, check=True)
         subprocess.run(
-            ["git", "push", "personal", "HEAD:refs/heads/first", "HEAD:refs/heads/second"],
+            [
+                "git",
+                "push",
+                "personal",
+                "HEAD:refs/heads/first",
+                "HEAD:refs/heads/second",
+                "HEAD:refs/heads/-option-like",
+            ],
             cwd=repository,
             check=True,
             capture_output=True,
@@ -1196,6 +1203,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, delete_merged.returncode, delete_merged.stderr)
         self.assertIn("refs/heads/first", remaining.stdout)
         self.assertNotIn("refs/heads/second", remaining.stdout)
+        self.assertNotIn("refs/heads/-option-like", remaining.stdout)
 
     def test_jj_publish_passes_a_valid_update_to_the_pre_push_hook(self) -> None:
         publish = tomllib.loads((ROOT / "config/jj.toml").read_text())["aliases"][
