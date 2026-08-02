@@ -1,14 +1,58 @@
-#!/bin/sh
-# if [ -e dev/user.clj ]; then
-# 	cp="-Scp $(clojure -Spath "$@" -Xrebel):dev"
-# fi
-aliases=$(clojure -X:deps aliases) || exit
-if printf '%s\n' "$aliases" | grep -q :dev; then
-	set -- -A:dev "$@"
-else
-	status=$?
-	[ "$status" -eq 1 ] || exit "$status"
-fi
-unset aliases
-# https://github.com/bhauman/rebel-readline
-exec clojure -J--enable-native-access=ALL-UNNAMED "$@" -Xrebel
+#!/usr/bin/env python3
+"""Launch Rebel Readline with the development alias when it is available."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+import shlex
+import subprocess
+import sys
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+    stdout: bytes = b""
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(arguments: list[str], *, capture_output: bool = False) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            arguments,
+            stdout=subprocess.PIPE if capture_output else None,
+            check=False,
+        )
+    except OSError as error:
+        print(f"clj: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode), completed.stdout or b"")
+
+
+def launch(arguments: list[str], runner: Callable[..., Result] = run) -> int:
+    aliases = runner(["clojure", "-X:deps", "aliases"], capture_output=True)
+    if aliases.status:
+        return aliases.status
+
+    clojure_arguments = ["clojure", "-J--enable-native-access=ALL-UNNAMED"]
+    if b":dev" in aliases.stdout:
+        clojure_arguments.append("-A:dev")
+    clojure_arguments.extend(arguments)
+    clojure_arguments.append("-Xrebel")
+    launched = runner(clojure_arguments)
+    return launched.status
+
+
+def main(arguments: list[str]) -> int:
+    return launch(arguments)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
