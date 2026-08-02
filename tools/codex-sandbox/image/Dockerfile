@@ -73,6 +73,8 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/inputrc ${HOME}/.config/readline
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/gitconfig ${HOME}/.config/git/config
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client /tools/jj-proxy/client
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /tools/agent-podman/woodpecker-cli
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split /tools/agent-split
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
