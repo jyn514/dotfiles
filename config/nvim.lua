@@ -1133,7 +1133,11 @@ vim.api.nvim_create_autocmd("User", {
 -- use K for hover
 
 -- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
+local lsp_document_highlight = vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
+local lsp_codelens = vim.api.nvim_create_augroup("lsp_codelens", { clear = true })
+local lsp_attach = vim.api.nvim_create_augroup("lsp_attach", { clear = true })
 vim.api.nvim_create_autocmd("LspAttach", {
+	group = lsp_attach,
 	callback = function(args)
 		local bufnr = args.buf
 		local client = vim.lsp.get_client_by_id(args.data.client_id)
@@ -1141,29 +1145,30 @@ vim.api.nvim_create_autocmd("LspAttach", {
 		-- Server capabilities spec:
 		-- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#serverCapabilities
 		if client.server_capabilities.documentHighlightProvider then
-			vim.api.nvim_create_augroup("lsp_document_highlight", { clear = true })
-			vim.api.nvim_clear_autocmds { buffer = bufnr, group = "lsp_document_highlight" }
+			vim.api.nvim_clear_autocmds { buffer = bufnr, group = lsp_document_highlight }
 			vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
 				callback = vim.lsp.buf.document_highlight,
 				buffer = bufnr,
-				group = "lsp_document_highlight",
+				group = lsp_document_highlight,
 				desc = "Document Highlight",
 			})
 			vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
 				callback = vim.lsp.buf.clear_references,
 				buffer = bufnr,
-				group = "lsp_document_highlight",
+				group = lsp_document_highlight,
 				desc = "Clear All the References",
 			})
 		end
 		if client.server_capabilities.codeLensProvider then
-			vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens" })
+			vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens", buffer = bufnr })
 			-- TODO: should be CursorHold, but that causes flickering
 			-- TODO: why doesn't LspAttach work
 			-- https://github.com/neovim/neovim/issues/34965
+			vim.api.nvim_clear_autocmds { buffer = bufnr, group = lsp_codelens }
 			vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
 				callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
 				buffer = bufnr,
+				group = lsp_codelens,
 				desc = "Refresh codelens actions",
 			})
 		end
