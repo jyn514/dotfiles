@@ -222,15 +222,16 @@ vim.keymap.set('i', '\\f', '⚘', { desc = "Floret" })
 
 -- https://vi.stackexchange.com/a/43848
 vim.keymap.set('i', '<Tab>', function()
-	local col = vim.fn.virtcol('.') - 1 -- convert 1-indexed to 0-indexed
+	local byte_col = vim.fn.getcurpos()[3] - 1
+	local display_col = vim.fn.virtcol('.') - 1
 	local ws = vim.regex('^\\s*$')
 	-- TODO: figure out how to do this with match_line
-	local line = vim.fn.getline('.'):sub(0, col)
+	local line = vim.fn.getline('.'):sub(1, byte_col)
 	if ws:match_str(line) then
 		return '<Tab>'
 	else
 		local sw = vim.fn.shiftwidth()
-		local width = sw - (col % sw)
+		local width = sw - (display_col % sw)
 		return vim.fn['repeat'](' ', width)
 	end
 end, { expr = true, desc = "Don't insert hard tabs in the middle of lines" })
