@@ -22,6 +22,14 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertIn('eval "$(mise activate bash)"', profile)
         self.assertIn('eval "$(mise activate zsh)"', profile)
+        self.assertLess(
+            profile.index("unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH"),
+            profile.index('eval "$(mise activate bash)"'),
+        )
+        self.assertLess(
+            profile.index('remove_path "$HOME/.local/share/mise/shims"'),
+            profile.index('eval "$(mise activate bash)"'),
+        )
 
     def test_mise_shims_are_added_after_linuxbrew(self) -> None:
         profile = (ROOT / "config/profile").read_text()
