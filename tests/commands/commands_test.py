@@ -153,6 +153,66 @@ class CommandTest(unittest.TestCase):
         self.assertNotIn("remote set-head --auto origin", call_lines)
         self.assertEqual(1, sum(line.startswith("grep --line-number") for line in call_lines))
 
+    def test_set_tmux_env_preserves_whitespace_and_equals(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable(
+            "env",
+            "printf 'EDITOR=editor --wait\\nPATH=/one path:/two=parts\\n'\n",
+        )
+        self.executable(
+            "tmux",
+            'printf "<%s><%s><%s>\\n" "$1" "$2" "$3" >> "$TMUX_CALLS"\n',
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/set-tmux-env.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "<set-environment><EDITOR><editor --wait>\n"
+            "<set-environment><PATH></one path:/two=parts>\n",
+            calls.read_text(),
+        )
+
+    def test_renumber_tmux_sessions_avoids_name_collisions(self) -> None:
+        calls = self.directory / "tmux-calls"
+        self.executable(
+            "tmux",
+            'if [ "$1" = list-sessions ]; then\n'
+            "  printf '10\\n0\\n2\\n'\n"
+            "else\n"
+            '  printf "%s %s %s\\n" "$1" "$3" "$4" >> "$TMUX_CALLS"\n'
+            "fi\n",
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMUX_CALLS": str(calls),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        renames = [line.split() for line in calls.read_text().splitlines()]
+        self.assertEqual(["0", "2", "10"], [line[1] for line in renames[:3]])
+        self.assertEqual(["1", "2", "3"], [line[2] for line in renames[3:]])
+        self.assertEqual(
+            [line[2] for line in renames[:3]],
+            [line[1] for line in renames[3:]],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
