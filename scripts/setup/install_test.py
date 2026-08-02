@@ -462,8 +462,9 @@ class LocalInstallationTests(unittest.TestCase):
             any("fisher install jorgebucaran/fisher" in script for script in fish_scripts)
         )
         self.assertTrue(
-            any("command cat install/fish.txt" in script for script in fish_scripts)
+            any("fisher install icezyclon/zoxide.fish" in script for script in fish_scripts)
         )
+        self.assertFalse((ROOT / "install/fish.txt").exists())
         if InstallationTests.platform()["ID"] == "alpine":
             self.assertIn(
                 [

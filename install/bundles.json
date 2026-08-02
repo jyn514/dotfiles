@@ -13,6 +13,15 @@
       "linux-musl-aarch64": "4912b82f359b5b2e4d88b4ac18822a391cc25019282949801fdef56e88491a05",
       "linux-musl-x86_64": "850525bc45329bbc4f7734dbbedb8b73ee1dbead563bad233ce7c6348451cf5a",
       "linux-x86_64": "2931836d7fd3d41868631123a8f98f4c0932363183115d40a389cc2211e91b2b"
+    },
+    "update": {
+      "assets": {
+        "linux-aarch64": "cpptools-linux-arm64.vsix",
+        "linux-musl-aarch64": "cpptools-alpine-arm64.vsix",
+        "linux-musl-x86_64": "cpptools-alpine-x64.vsix",
+        "linux-x86_64": "cpptools-linux-x64.vsix"
+      },
+      "repository": "microsoft/vscode-cpptools"
     }
   },
   "powershell-editor-services": {
@@ -22,6 +31,12 @@
     },
     "sha256": {
       "all": "381f80294645e81bef52f9db07f3f852bb29233ccbdde1a09380ff31655d5289"
+    },
+    "update": {
+      "assets": {
+        "all": "PowerShellEditorServices.zip"
+      },
+      "repository": "PowerShell/PowerShellEditorServices"
     }
   }
 }

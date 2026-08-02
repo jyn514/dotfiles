@@ -72,6 +72,14 @@ class BootstrapLockTests(unittest.TestCase):
         self.assertIn('config/bat/mumps.sublime-syntax"', setup)
         self.assertNotIn("sed -i", setup)
 
+    def test_setup_reads_plugin_revisions_from_the_lock(self) -> None:
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertIn("get git brew-command-not-found revision", setup)
+        self.assertIn("get git fisher revision", setup)
+        self.assertIn("get git zoxide.fish revision", setup)
+        self.assertNotIn("791da644d33d392216f6b1a9b5fc1e470db6d7f2", setup)
+
 
 if __name__ == "__main__":
     unittest.main()

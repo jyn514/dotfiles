@@ -14,7 +14,10 @@ install_macos_local() {
 	ln -fs $(brew --prefix)/opt/antidote/share/antidote ~/.config/zsh/antidote
 	cmd_alias gdu gdu-go
 	if exists cargo; then
-		cargo install --git https://github.com/jyn514/brew-command-not-found --rev 45e60456edbe795cc293bfa2d2a787a7c557e4a6 --locked
+		brew_revision=$(mise_exec python lib/install_bootstrap.py get git brew-command-not-found revision)
+		cargo install --git https://github.com/jyn514/brew-command-not-found \
+			--rev "$brew_revision" --locked
+		unset brew_revision
 	fi
 }
 
@@ -335,10 +338,13 @@ setup_install_local () {
 	if ! [ -e ~/.config/fish/fish_plugins ]; then
 		fisher_installer=$(tmp_file fisher.XXXXXX)
 		mise_exec python lib/install_bootstrap.py download fisher "$fisher_installer" || return
-		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@791da644d33d392216f6b1a9b5fc1e470db6d7f2' "$fisher_installer"
+		fisher_revision=$(mise_exec python lib/install_bootstrap.py get git fisher revision)
+		fish -c 'source $argv[1]; fisher install jorgebucaran/fisher@$argv[2]' \
+			"$fisher_installer" "$fisher_revision"
 		rm -f "$fisher_installer"
-		unset fisher_installer
-		fish -c 'fisher install (command cat install/fish.txt)'
+		zoxide_revision=$(mise_exec python lib/install_bootstrap.py get git zoxide.fish revision)
+		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision"
+		unset fisher_installer fisher_revision zoxide_revision
 	fi
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3
