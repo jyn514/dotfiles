@@ -44,6 +44,12 @@ allow(["xcode-select", "-p"])
 allow(["git", ["bug", "clone"]])
 allow(["git", "submodule", "update"])
 
+allow(["jj", ["commit", "split", "squash", "duplicate"]])
+allow(["jj", "git", ["clone", "export", "fetch", "init"]])
+allow(["jj", "workspace", "add"])
+allow(["jj", "bookmark", "create"])
+allow(["bb", "agent-split"])
+
 docker_cmds = ["ps", "images", "inspect", "logs", "stats", "version", "info"]
 allow([["podman", "docker"], docker_cmds])
 allow([["podman", "docker"], "image", "list"])
@@ -59,8 +65,6 @@ allow([[
 allow(["zola", "build"])
 allow(["yt-dlp", "--list-subs"])
 allow(["tea", "issue", ["list", "ls", "--help", "-h"]])
-allow(["jj", "workspace", "add"])
-allow(["jj", "commit"])
 allow(["skopeo", ["inspect", "list-tags"]])
 
 # Watchman read-only commands
