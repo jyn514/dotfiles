@@ -5,5 +5,9 @@ if ! [ $# -eq 1 ]; then
 	exit 1
 fi
 
-out=tmp.svg
-dot -Tsvg < "$1" > $out && xdg-open $out && sleep 1 && rm -f $out
+tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/view-dot.XXXXXX") || exit
+trap 'rm -rf "$tmp_dir"' 0
+trap 'exit 1' 1 2 15
+out=$tmp_dir/graph.svg
+
+dot -Tsvg < "$1" > "$out" && xdg-open "$out" && sleep 1

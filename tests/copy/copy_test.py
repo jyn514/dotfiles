@@ -93,7 +93,7 @@ class ClipboardTest(unittest.TestCase):
             "fi\n",
         )
         for command in ("ydotool", "sleep"):
-            self.executable(command, "exit 0\n")
+            self.executable(command, 'exit "${YDOTOOL_STATUS:-0}"\n')
         self.executable("logger", "cat >/dev/null\n")
 
         result = self.run_command(
@@ -105,6 +105,32 @@ class ClipboardTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(b"primary\n\n", first_copy.read_bytes())
         self.assertEqual(b"clipboard\n\n", second_copy.read_bytes())
+
+    def test_paste_primary_restores_clipboard_and_returns_injection_failure(self) -> None:
+        first_copy = self.directory / "first-copy"
+        second_copy = self.directory / "second-copy"
+        self.executable(
+            "paste",
+            'if [ "${1:-}" = --primary ]; then printf primary; else printf clipboard; fi\n',
+        )
+        self.executable(
+            "copy",
+            'if [ -e "$FIRST_COPY" ]; then cat > "$SECOND_COPY"; '
+            'else cat > "$FIRST_COPY"; fi\n',
+        )
+        self.executable("ydotool", "exit 23\n")
+        self.executable("sleep", "exit 0\n")
+        self.executable("logger", "cat >/dev/null\n")
+
+        result = self.run_command(
+            [str(ROOT / "bin/paste-primary")],
+            FIRST_COPY=str(first_copy),
+            SECOND_COPY=str(second_copy),
+        )
+
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertEqual(b"primary", first_copy.read_bytes())
+        self.assertEqual(b"clipboard", second_copy.read_bytes())
 
 
 if __name__ == "__main__":
