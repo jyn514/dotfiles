@@ -39,7 +39,7 @@ alias global log logs
 
 # copy to system clipboard using OSC 52 escape codes
 hook global NormalKey y|d|c %{ nop %sh{
-	printf "\033]52;c;$(printf "%s" "$kak_reg_dquote" | base64)\007" > /dev/tty
+	printf "\033]52;c;$(printf "%s" "$kak_reg_dquote" | base64 | tr -d '\n')\007" > /dev/tty
 }}
 
 # add some common features from helix
@@ -66,4 +66,3 @@ hook global WinSetOption filetype=.* %{
     remove-hooks window semantic-tokens
   }
 }
-
