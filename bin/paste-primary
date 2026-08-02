@@ -4,7 +4,21 @@ tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/paste-primary.XXXXXX") || exit
 primary=$tmp_dir/primary
 clipboard=$tmp_dir/clipboard
 log=$tmp_dir/log
-cleanup() { rm -rf "$tmp_dir"; }
+swapped=false
+# Called by cleanup through the EXIT trap.
+# shellcheck disable=SC2329
+restore_clipboard() {
+	if $swapped; then
+		copy < "$clipboard"
+		swapped=false
+	fi
+}
+# Called by the EXIT trap.
+# shellcheck disable=SC2329
+cleanup() {
+	restore_clipboard
+	rm -rf "$tmp_dir"
+}
 trap cleanup 0
 trap 'exit 1' 1 2 15
 
@@ -15,6 +29,7 @@ paste_primary() {
 	# hack: pasting from primary works horribly in firefox
 	paste > "$clipboard" || return
 	copy < "$primary" || return
+	swapped=true
 	result=0
 	if command -v ydotool >/dev/null; then
 		# see /usr/include/linux/input-event-codes.h
@@ -28,6 +43,7 @@ paste_primary() {
 	fi
 	sleep .1  # give firefox time to handle the event
 	copy < "$clipboard" || return
+	swapped=false
 	return "$result"
 }
 

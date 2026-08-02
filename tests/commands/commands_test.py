@@ -500,6 +500,40 @@ class CommandTest(unittest.TestCase):
             calls.read_text(),
         )
 
+    def test_pre_commit_preserves_newlines_in_filenames(self) -> None:
+        checkout = self.directory / "checkout"
+        git_directory = self.directory / "git-directory"
+        common_directory = self.directory / "common-directory"
+        git_directory.mkdir()
+        common_directory.mkdir()
+        self.executable(
+            "git",
+            'case "$1 $2" in\n'
+            '  "diff --quiet") exit 1;;\n'
+            f'  "rev-parse --git-dir") printf "%s\\n" "{git_directory}";;\n'
+            f'  "rev-parse --git-common-dir") printf "%s\\n" "{common_directory}";;\n'
+            '  "diff --name-only") printf "line\\nbreak\\0";;\n'
+            '  "checkout-index "*) printf "<%s>\\n" "$4" > "$CHECKOUT";;\n'
+            'esac\n',
+        )
+        self.executable("xargs", "cat >/dev/null\n")
+
+        result = subprocess.run(
+            [str(ROOT / "config/githooks/pre-commit")],
+            cwd=self.directory,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "CHECKOUT": str(checkout),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+                "TMPDIR": str(self.directory),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("<line\nbreak>\n", checkout.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

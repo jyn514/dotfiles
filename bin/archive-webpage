@@ -160,28 +160,39 @@ function onPageReady() {
 
 	wget.on("exit", function (code) {
 		console.log("INFO: wget exited with: " + code);
-		console.log("INFO: all operations complete.");
-		phantom.exit();
+		if (code === 0) {
+			console.log("INFO: all operations complete.");
+		}
+		phantom.exit(code);
 	});
 }
 
 page.open(target_url, function (status) {
 	console.log("INFO: loading page...");
+	if (status !== "success") {
+		console.log("FATAL: page load failed with status: " + status);
+		phantom.exit(1);
+		return;
+	}
+	var readyChecks = 0;
 	function checkReadyState() {
 		setTimeout(function () {
+			readyChecks += 1;
 			var readyState = page.evaluate(function () {
 				return document.readyState;
 			});
 
 			if ("complete" === readyState) {
 				onPageReady();
+			} else if (readyChecks >= 300) {
+				console.log("FATAL: timed out waiting for the page to become ready.");
+				phantom.exit(1);
 			} else {
 				checkReadyState();
 			}
-		});
+		}, 100);
 	}
 
 	checkReadyState();
 });
-
 
