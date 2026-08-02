@@ -1004,6 +1004,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("CDPATH='' cd -- \"$git_dir\" && pwd -P", pre_commit)
         self.assertNotIn('printf -v path %q "$1"', tmux)
         self.assertIn("picker-action edit --read0", tmux)
+        self.assertIn("picker-action open -- #{q:mouse_hyperlink}", tmux)
         self.assertNotIn('send-keys "${EDITOR:-vi} {}"', tmux)
         self.assertIn("SSH_AGENT_PID", tmux)
         self.assertNotIn("SSH_AUTH_PID", tmux)

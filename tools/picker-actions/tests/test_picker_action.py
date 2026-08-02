@@ -115,6 +115,15 @@ class PickerActionTest(unittest.TestCase):
 
         self.assertEqual(39, result.returncode)
 
+    def test_open_treats_direct_hyperlink_as_one_opaque_argument(self) -> None:
+        self.opener()
+        hyperlink = "https://example.invalid/a path?q='tea'&next=$value"
+
+        result = self.run_command("open", "--", hyperlink)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(os.fsencode(hyperlink) + b"\0", self.calls.read_bytes())
+
     def test_edit_sends_one_literal_quoted_command_sequence(self) -> None:
         self.tmux()
         payload = b"odd ' $(touch injected)\n-invalid-\xff"
