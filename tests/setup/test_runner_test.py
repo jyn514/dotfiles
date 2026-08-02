@@ -30,6 +30,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn("node tools/extract-chatgpt-share/tests/extract_chatgpt_share_test.js", runner)
         self.assertIn("cargo test --manifest-path tools/jj-proxy/Cargo.toml", runner)
         self.assertIn("python3 tools/shell-data/main.py lib/abbr.txt", runner)
+        self.assertIn("python3 tools/shell-boundaries/main.py", runner)
         self.assertIn('if [ "$(uname -s)" = Linux ]', runner)
         self.assertIn("--instafail", runner)
         self.assertIn("export PYTHONUNBUFFERED=1", runner)
