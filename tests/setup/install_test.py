@@ -869,6 +869,13 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn("atuin_init=$(atuin init zsh --disable-up-arrow) || return", zshrc)
         self.assertIn("direnv_init=$(direnv hook zsh) || return", zshrc)
         self.assertIn("atuin_init=$(atuin init bash --disable-up-arrow) || return", bashrc)
+        self.assertIn("direnv_init=$(direnv hook bash) || return", bashrc)
+        self.assertIn("dircolors_init=$(dircolors -b) || return", zshrc)
+        self.assertIn("set abbreviations (grep -Ev", fish_config)
+        self.assertIn("set git_aliases (git config --get-regexp", fish_config)
+        self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
+        self.assertIn("return $reload_status", fish_config)
+        self.assertIn("if exists bat\n\tfunction cat", fish_config)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

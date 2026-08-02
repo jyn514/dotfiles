@@ -199,7 +199,9 @@ zstyle ':completion:*' format 'Completing %d'
 zstyle ':completion:*' group-name ''
 zstyle ':completion:*' menu select=2
 if exists dircolors; then
-  eval "$(dircolors -b)"
+  dircolors_init=$(dircolors -b) || return
+  eval "$dircolors_init" || return
+  unset dircolors_init
 fi
 zstyle ':completion:*:default' list-colors ${(s.:.)LS_COLORS}
 zstyle ':completion:*' list-colors ''

@@ -171,21 +171,28 @@ bind -M insert alt-k \
 	end'
 
 # load common aliases
-grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt | while read --line alias
+set abbreviations (grep -Ev '^(#|$)' $DOTFILES/lib/abbr.txt)
+or return
+for alias in $abbreviations
 	echo $alias | read --delimiter = name value
 	if [ $name = cat ]; continue; end
 	abbr --add --global $name $value
 end
+set --erase abbreviations
 
 # load git aliases
 if [ -z "$old_fish" ]
-git config --get-regexp 'alias\.' | string replace --regex '^alias.' '' | while read --delimiter ' ' name value
-	if set actual (string match --groups-only --regex '^!(.*)' -- $value)
-		abbr --add --global "g$name" -- "$actual"
-	else
-		abbr --add --global --command git $name -- $value
+	set git_aliases (git config --get-regexp 'alias\.')
+	or return
+	for alias in $git_aliases
+		string replace --regex '^alias.' '' -- $alias | read --delimiter ' ' name value
+		if set actual (string match --groups-only --regex '^!(.*)' -- $value)
+			abbr --add --global "g$name" -- "$actual"
+		else
+			abbr --add --global --command git $name -- $value
+		end
 	end
-end
+	set --erase git_aliases
 end
 
 abbr --add --global --command git -- -nv --no-verify
@@ -208,7 +215,7 @@ function reload_cargo_aliases
 end
 
 # load cargo aliases
-if [ -z "$old_fish" ]
+if [ -z "$old_fish" ]; and exists cargo
 	set -l cargo_alias_cache ~/.local/config/cargo.fish
 	set -l cargo_command (command --search cargo)
 	if ! [ -e $cargo_alias_cache ] \
@@ -216,16 +223,24 @@ if [ -z "$old_fish" ]
 			|| [ $cargo_command -nt $cargo_alias_cache ] \
 			|| [ $CARGO_HOME/bin -nt $cargo_alias_cache ]
 		set -l pending_cache "$cargo_alias_cache.$fish_pid"
+		command mkdir -p (dirname $cargo_alias_cache)
+		or return
 		if reload_cargo_aliases > $pending_cache
 			command mv $pending_cache $cargo_alias_cache
+			or return
 		else
+			set -l reload_status $status
 			command rm -f $pending_cache
+			return $reload_status
 		end
 	end
 	. $cargo_alias_cache
+	or return
 end
 
-function cat; bat -p $argv; end
+if exists bat
+	function cat; bat -p $argv; end
+end
 function fork-github
 	set -l directory (command fork-github $argv)
 		or return
