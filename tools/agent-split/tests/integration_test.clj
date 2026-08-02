@@ -4,7 +4,7 @@
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]))
 
-(def script (str (fs/canonicalize "src/scripts/jj_split_patch.clj")))
+(def script (str (fs/canonicalize "tools/agent-split/src/scripts/agent-split.clj")))
 
 (load-file script)
 
