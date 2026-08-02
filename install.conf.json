@@ -65,6 +65,7 @@
       "$HOME/.config/tmux/renumber-sessions.sh": "config/renumber-tmux-sessions.sh",
       "$HOME/.selected_editor": "config/selected_editor",
       "$HOME/.config/tmux/set-env.sh": "config/set-tmux-env.sh",
+      "$HOME/.config/tmux/set-environment": "tools/tmux-admin/set-environment",
       "$HOME/.agents/shared.md": "config/shared-agents.md",
       "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
       "$HOME/.julia/config/startup.jl": "config/startup.jl",
