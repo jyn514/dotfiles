@@ -22,18 +22,26 @@ else
     https://github.com/*) url=$1;;
     *) fatal "$name: error: <url> must start with github.com/";;
   esac
-  url=$1
-  issue=$(echo "$url" | awk -v FS=/ '{print $NF}')
+  issue_url=${url%%[?#]*}
+  issue=${issue_url##*/}
 fi
 
-if [ -e $issue.json ] || [ -e $issue.txt ]; then
+case $issue in
+  ''|*[!0-9]*) fatal "$name: error: <issue> must be a number";;
+esac
+url=${url%%[?#]*}
+if ! printf '%s\n' "$url" | grep -Eq '^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+$'; then
+  fatal "$name: error: URL is not a GitHub issue"
+fi
+
+if [ -e "$issue.json" ] || [ -e "$issue.txt" ]; then
   fatal "$name: error: $issue.json/txt already exists"
 fi
 
-gh issue view -c "$url" --json title,createdAt,number,body,state,comments > $issue.json &
-script --return --quiet -c "gh issue view -c '$url'" /dev/null > $issue.txt
+gh issue view -c "$url" --json title,createdAt,number,body,state,comments > "$issue.json" &
+script --return --quiet -c "gh issue view -c '$url'" /dev/null > "$issue.txt"
 # for some reason \r is counted as a newline unless we anchor it
-sed -i -E '1s/^.*\r(.)/\1/' $issue.txt
-less $issue.txt
+perl -pi -e 's/^.*\r(.)/$1/' "$issue.txt"
+less "$issue.txt"
 wait
 echo "saved $issue.txt and $issue.json"

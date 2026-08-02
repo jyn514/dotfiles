@@ -8,7 +8,9 @@ cwd=$(printf '%s' "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 model=$(printf '%s' "$input" | jq -r '.model.display_name // "claude"')
 used=$(printf '%s' "$input" | jq -r '.context_window.used_percentage // empty')
 
-[ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+if [ -n "$cwd" ]; then
+  cd "$cwd" 2>/dev/null || exit 1
+fi
 [ -n "$used" ] && printf ' ctx:%s%% ' "$(printf '%.0f' "$used")"
 
 # prompt-command emits a second prompt line ("; "); keep only the first line.

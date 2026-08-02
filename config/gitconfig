@@ -156,7 +156,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 [url "git@gitlab.com:"]
     pushInsteadOf = https://gitlab.com/
 [url "git@codeberg.org:"]
-    pushInsteadOf = https://codeberg.org
+    pushInsteadOf = https://codeberg.org/
 
 # TODO: figure out what this does lol
 [core]

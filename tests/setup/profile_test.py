@@ -83,6 +83,41 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(1, paths.count(str(cargo_bin)))
             self.assertEqual(1, paths.count(str(mise_shims)))
 
+    def test_portable_profile_and_cross_platform_config_paths(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        languages = (ROOT / "config/helix/languages.toml").read_text()
+
+        self.assertIn("pip list --format=freeze", profile)
+        self.assertNotIn("tail --lines=+3", profile)
+        self.assertIn('$HOME/.config/helix/steel-lsp', languages)
+        self.assertNotIn("/home/jyn", languages)
+
+    def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
+        result = subprocess.run(
+            [
+                "git",
+                "config",
+                "-f",
+                str(ROOT / "config/gitconfig"),
+                "--get",
+                "url.git@codeberg.org:.pushinsteadof",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("https://codeberg.org/\n", result.stdout)
+
+    def test_path_consumers_and_comment_regex_preserve_literal_text(self) -> None:
+        tmux = (ROOT / "config/tmux.conf").read_text()
+        nvim = (ROOT / "config/nvim.lua").read_text()
+
+        self.assertNotIn("; xargs open", tmux)
+        self.assertGreaterEqual(tmux.count("xargs -0"), 2)
+        self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
+
 
 if __name__ == "__main__":
     unittest.main()
