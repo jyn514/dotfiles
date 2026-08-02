@@ -1,0 +1,1 @@
+prefix_rule(pattern=["./scripts/test"], decision="allow")
