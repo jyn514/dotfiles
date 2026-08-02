@@ -1,4 +1,4 @@
-# Sandbox command proxies
+# Sandbox command proxy design
 
 `codex-sandbox` always adds its trusted `jj` proxy using the image builder from
 the dotfiles checkout that contains the launcher. A sandboxed repository may
