@@ -82,6 +82,63 @@ class PromptHostnameTests(unittest.TestCase):
 
 
 class PromptJujutsuTests(unittest.TestCase):
+    def test_jj_info_resets_description_color(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            binaries = Path(directory)
+            jj = binaries / "jj"
+            jj.write_text("#!/bin/sh\nprintf 'false::parent\\ntrue:bookmark:description\\n'\n")
+            jj.chmod(0o755)
+            result = subprocess.run(
+                [str(ROOT / "bin/jj-info")],
+                env=os.environ | {"PATH": f"{binaries}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("\x01\x1b[0;0m\x02bookmark", result.stdout)
+
+    def test_failed_jj_query_falls_back_to_git_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            (root / ".jj").mkdir()
+            git = binaries / "git"
+            git.write_text(
+                "#!/bin/sh\n"
+                'case "$1:$2" in\n'
+                "  rev-parse:--git-dir) printf '.git\\n';;\n"
+                "  diff-index:*) exit 0;;\n"
+                "  symbolic-ref:*) exit 1;;\n"
+                "  tag:*) exit 0;;\n"
+                "  for-each-ref:*) printf 'origin/main\\n';;\n"
+                "  *) exit 99;;\n"
+                "esac\n"
+            )
+            git.chmod(0o755)
+            jj = binaries / "jj"
+            jj.write_text("#!/bin/sh\nexit 23\n")
+            jj.chmod(0o755)
+
+            result = subprocess.run(
+                [str(ROOT / "bin/prompt-command"), "fish", "0"],
+                cwd=root,
+                env=os.environ
+                | {
+                    "DOTFILES": str(ROOT),
+                    "PATH": f"{binaries}:{os.environ['PATH']}",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("origin/main", result.stdout)
+        self.assertNotIn("(jj:", result.stdout)
+
     def test_unborn_repository_detection_does_not_depend_on_find(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
