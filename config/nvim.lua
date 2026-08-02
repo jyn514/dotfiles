@@ -272,7 +272,7 @@ vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	vim.fn.winrestview(view)
 end, { range = true, desc = "trim trailing spaces", force = true })
 
-function BufferDelete(args)
+local function buffer_delete(args)
 	if args.bang then
 		vim.cmd 'bdelete!'
 	else
@@ -290,7 +290,7 @@ function BufferDelete(args)
 	-- NOTE: does nothing if there is only one buffer open, i.e. `ga` will still go to the most recently closed buffer
 end
 
-vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
+vim.api.nvim_create_user_command('BufferDelete', buffer_delete,
 	{ bang = true, desc = "like :bdelete but also updates the alternate file", force = true })
 
 -- Show all highlights
@@ -300,7 +300,7 @@ end, { desc = "Show a list of all highlight groups", force = true })
 
 -- autosave on cursor hold
 local autosave_group = vim.api.nvim_create_augroup('dotfiles_autosave', { clear = false })
-function autosave_enable()
+local function autosave_enable()
 	local buf = vim.api.nvim_get_current_buf()
 	if #vim.api.nvim_get_autocmds({ group = autosave_group, buffer = buf }) > 0 then
 		return
@@ -321,7 +321,7 @@ end
 vim.api.nvim_create_user_command('AutoSave', autosave_enable,
 	{ desc = "Start saving each second on change", force = true })
 
-function autosave_disable()
+local function autosave_disable()
 	local buf = vim.api.nvim_get_current_buf()
 	vim.api.nvim_clear_autocmds({ group = autosave_group, buffer = buf })
 end
@@ -331,7 +331,7 @@ vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable,
 
 -- abbreviations
 -- https://vi.stackexchange.com/a/33221, plus hackery to only match at the start
-function abbrev(lhs, rhs)
+local function abbrev(lhs, rhs)
 	vim.keymap.set('ca', lhs, function()
 		if vim.fn.getcmdtype() == ':' and string.find(vim.fn.getcmdline(), "^%s*" .. lhs .. "%s*$") then
 			return rhs
@@ -682,7 +682,7 @@ local function ts(binds)
 	return { selections = selections, swaps = swaps, moves = moves }
 end
 
-local function bind_ts(capture_associations)
+local function bind_ts(capture_associations, keymap_opts)
 	local select = require 'nvim-treesitter-textobjects.select'
 	local swap = require 'nvim-treesitter-textobjects.swap'
 	local move = require 'nvim-treesitter-textobjects.move'
@@ -742,9 +742,10 @@ local function bind_ts(capture_associations)
 					name = '@' .. query.capture
 				end
 			end
+			local opts = vim.tbl_extend('force', keymap_opts or {}, { desc = desc .. ' ' .. name })
 			vim.keymap.set(spec.modes, binding, function()
 				spec.func(name, group)
-			end, { desc = desc .. ' ' .. name })
+			end, opts)
 		end
 	end
 end
@@ -1183,11 +1184,11 @@ vim.api.nvim_create_autocmd("LspAttach", {
 		end
 		if client.server_capabilities.codeLensProvider then
 			vim.keymap.set('n', '<leader>L', vim.lsp.codelens.run, { desc = "Run codelens", buffer = bufnr })
+			vim.lsp.codelens.refresh { bufnr = bufnr }
 			-- TODO: should be CursorHold, but that causes flickering
-			-- TODO: why doesn't LspAttach work
 			-- https://github.com/neovim/neovim/issues/34965
 			vim.api.nvim_clear_autocmds { buffer = bufnr, group = lsp_codelens }
-			vim.api.nvim_create_autocmd({ "BufEnter", "LspAttach" }, {
+			vim.api.nvim_create_autocmd("BufEnter", {
 				callback = function() vim.lsp.codelens.refresh { bufnr = bufnr } end,
 				buffer = bufnr,
 				group = lsp_codelens,
@@ -1322,13 +1323,13 @@ vim.api.nvim_create_autocmd("FileType", {
 vim.api.nvim_create_autocmd("FileType", {
 	group = config_group,
 	pattern = "markdown",
-	callback = function()
+	callback = function(args)
 		bind_ts(ts {
 			h = 'class', -- no clue why TS calls headers "classes" but sure whatever
 			c = 'code_cell',
 			-- why is this inconsistent with locals :((
 			v = { capture = 'variable', group = 'textobjects', no_suffix = true, },
-		})
+		}, { buffer = args.buf })
 		-- match obsidian bindings
 		vim.keymap.set({ 'n', 'v' }, '<C-b>', ":Mdn formatting strong_toggle<CR>", { desc = 'Toggle bold', buffer = true })
 		vim.keymap.set({ 'n', 'v' }, '<C-i>', ":Mdn formatting emphasis_toggle<CR>",

@@ -866,9 +866,22 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('return (text ?? "").replace', glide)
         for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
             self.assertIn(f"local {variable} =", nvim)
-        for helper in ("bind", "set_spider", "bind_ts"):
+        for helper in (
+            "abbrev",
+            "autosave_disable",
+            "autosave_enable",
+            "bind",
+            "bind_ts",
+            "buffer_delete",
+            "set_spider",
+        ):
             self.assertIn(f"local function {helper}(", nvim)
             self.assertNotRegex(nvim, rf"(?m)^function {helper}\(")
+        self.assertNotIn("function BufferDelete(", nvim)
+        self.assertIn("bind_ts(ts {", nvim)
+        self.assertIn("}, { buffer = args.buf })", nvim)
+        self.assertIn("vim.lsp.codelens.refresh { bufnr = bufnr }", nvim)
+        self.assertNotIn('nvim_create_autocmd({ "BufEnter", "LspAttach" }', nvim)
         self.assertNotIn("\n_ = [[\n", nvim)
         self.assertIn("<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page down'", nvim)
         self.assertIn("<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page up'", nvim)

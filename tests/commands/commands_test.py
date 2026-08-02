@@ -1721,14 +1721,14 @@ class CommandTest(unittest.TestCase):
         result = subprocess.run(
             [str(ROOT / "config/claude-statusline.sh")],
             text=True,
-            input='{"model":{"display_name":"tea"}}',
+            input='{"model":{"display_name":"tea"},"context_window":{"used_percentage":42.4}}',
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("prompt from path", result.stdout)
+        self.assertEqual(" ctx:42% prompt from path", result.stdout)
 
     def test_claude_statusline_propagates_prompt_command_failure(self) -> None:
         self.executable("prompt-command", "exit 23\n")
@@ -1736,7 +1736,7 @@ class CommandTest(unittest.TestCase):
         result = subprocess.run(
             [str(ROOT / "config/claude-statusline.sh")],
             text=True,
-            input='{"model":{"display_name":"tea"}}',
+            input='{"model":{"display_name":"tea"},"context_window":{"used_percentage":42}}',
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
