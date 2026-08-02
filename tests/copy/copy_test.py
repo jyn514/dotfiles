@@ -132,6 +132,30 @@ class ClipboardTest(unittest.TestCase):
         self.assertEqual(b"primary", first_copy.read_bytes())
         self.assertEqual(b"clipboard", second_copy.read_bytes())
 
+    def test_paste_primary_restores_clipboard_when_interrupted(self) -> None:
+        first_copy = self.directory / "first-copy"
+        second_copy = self.directory / "second-copy"
+        self.executable(
+            "paste",
+            'if [ "${1:-}" = --primary ]; then printf primary; else printf clipboard; fi\n',
+        )
+        self.executable(
+            "copy",
+            'if [ -e "$FIRST_COPY" ]; then cat > "$SECOND_COPY"; '
+            'else cat > "$FIRST_COPY"; fi\n',
+        )
+        self.executable("ydotool", 'kill -TERM "$PPID"\n')
+
+        result = self.run_command(
+            [str(ROOT / "bin/paste-primary")],
+            FIRST_COPY=str(first_copy),
+            SECOND_COPY=str(second_copy),
+        )
+
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual(b"primary", first_copy.read_bytes())
+        self.assertEqual(b"clipboard", second_copy.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()
