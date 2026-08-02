@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -103,6 +104,27 @@ def editor_exec_args(joined: list[str] | str) -> list[str]:
     return args
 
 
+def vim_fnameescape(value: str) -> str:
+    special = set(" \t\n*?[]{} `$\\%#'\"|!<")
+    return "".join(f"\\{char}" if char in special else char for char in value)
+
+
+def editor_commands(args: list[str]) -> list[str]:
+    command = "drop" if EDITOR == "nvim" else "open"
+    if EDITOR != "nvim":
+        quoted = [json.dumps(arg) if arg else "" for arg in args]
+        return [f": {command} {' '.join(quoted)}"]
+
+    file = args[-1]
+    commands = [f": {command} {vim_fnameescape(file)}"]
+    if len(args) > 1:
+        match = re.fullmatch(r"\+normal!(\d+)G(\d*)\|", args[0])
+        if match:
+            line, column = match.groups()
+            commands.append(f": call cursor({line}, {column or 1})")
+    return commands
+
+
 def refresh_path_from_profile() -> None:
     result = run(["bash", "-c", ". ~/.profile; echo $PATH"])
     if result.returncode == 0 and result.stdout:
@@ -143,11 +165,11 @@ def open_in_tmux_editor(args: list[str]) -> int:
         if trim(run_stdout(["tmux", "display-message", *target, "-p", "#{pane_in_mode}"])) == "1":
             subprocess.run(["tmux", "send-keys", *target, "-X", "cancel"], check=False)
         subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
-        command = "drop" if EDITOR == "nvim" else "open"
-        subprocess.run(
-            ["tmux", "send-keys", *target, f": {command} {' '.join(args)}", "Enter"],
-            check=False,
-        )
+        for editor_command in editor_commands(args):
+            subprocess.run(
+                ["tmux", "send-keys", *target, editor_command, "Enter"],
+                check=False,
+            )
         subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False)
 
     activate_window_if_needed(pane)

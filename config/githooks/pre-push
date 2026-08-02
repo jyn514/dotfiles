@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -eu
-files=$(git diff --name-only --cached --no-ext-diff)
-if echo "$files" | rg '\.rs$' -q && [ -e Cargo.toml ]; then
-    cargo fmt --check
-fi
+
+[ -e Cargo.toml ] || exit 0
+set +e
+git diff --name-only -z --cached --no-ext-diff \
+	| python3 -c 'import sys; paths = sys.stdin.buffer.read().split(b"\0"); raise SystemExit(not any(path.endswith(b".rs") for path in paths))'
+statuses=("${PIPESTATUS[@]}")
+set -e
+[ "${statuses[0]}" -eq 0 ] || exit "${statuses[0]}"
+case ${statuses[1]} in
+	0) cargo fmt --check;;
+	1) ;;
+	*) exit "${statuses[1]}";;
+esac

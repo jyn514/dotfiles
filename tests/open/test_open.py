@@ -582,7 +582,7 @@ class OpenScriptTest(unittest.TestCase):
                         "send-keys",
                         "-t",
                         "%4",
-                        f": open {self.real(REPO / 'README.md')}:3",
+                        f': open "{self.real(REPO / "README.md")}:3"',
                         "Enter",
                     ],
                     check=False,
@@ -618,6 +618,29 @@ class OpenScriptTest(unittest.TestCase):
             self.assertEqual(module.open_in_tmux_editor([""]), 0)
 
         run.assert_any_call(["tmux", "send-keys", "-t", "%4", ": open ", "Enter"], check=False)
+
+    def test_hx_hax_quotes_special_filenames_for_existing_pane(self) -> None:
+        module = self.load_open_module(real_editor="hx")
+        target = self.root / 'space; "armed".txt'
+        escaped_target = self.real(target).replace('"', '\\"')
+
+        self.assertEqual(
+            [f': open "{escaped_target}:7"'],
+            module.editor_commands([f"{self.real(target)}:7"]),
+        )
+
+    def test_nvim_existing_pane_escapes_filename_and_restores_position(self) -> None:
+        module = self.load_open_module(real_editor="nvim")
+        target = self.root / "space|armed.txt"
+        escaped_target = self.real(target).replace(" ", "\\ ").replace("|", "\\|")
+
+        self.assertEqual(
+            [
+                f": drop {escaped_target}",
+                ": call cursor(11, 2)",
+            ],
+            module.editor_commands(["+normal!11G2|", self.real(target)]),
+        )
 
     def test_hx_hax_rejects_multiple_args(self) -> None:
         module = self.load_open_module(real_editor="hx")

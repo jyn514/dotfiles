@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-sessions=$(tmux list-sessions -F '#{session_name}' | grep '^[0-9]\+$' | sort -n)
+session_names=$(tmux list-sessions -F '#{session_name}')
+sessions=$(printf '%s\n' "$session_names" | awk '/^[0-9]+$/' | sort -n)
 temporary="__renumber-tmux-$$-"
 new=1
 for old in $sessions
