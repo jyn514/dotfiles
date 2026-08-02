@@ -1,2 +1,2 @@
-prefix_rule(pattern=["./scripts/test"], decision="allow")
 prefix_rule(pattern=["bin/sync-moonlander", "--pull"], decision="allow")
+prefix_rule(pattern=["dev/test"], decision="allow")

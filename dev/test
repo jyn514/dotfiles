@@ -1,0 +1,117 @@
+#!/bin/sh
+set -eu
+
+jobs=${TEST_JOBS:-8}
+run_containers=0
+verbose=0
+
+usage() {
+	echo "usage: $0 [--containers] [--jobs count] [--verbose]" >&2
+}
+
+while [ $# -gt 0 ]; do
+	case $1 in
+		--containers) run_containers=1;;
+		-v|--verbose) verbose=1;;
+		--jobs)
+			shift
+			[ $# -gt 0 ] || { usage; exit 2; }
+			jobs=$1
+			;;
+		-h|--help) usage; exit 0;;
+		*) usage; exit 2;;
+	esac
+	shift
+done
+
+case $jobs in
+	''|*[!0-9]*|0) echo "test job count must be a positive integer" >&2; exit 2;;
+esac
+
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+results=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-tests.XXXXXX")
+trap 'rm -rf "$results"' EXIT HUP INT TERM
+export results
+export verbose
+export PYTHONUNBUFFERED=1
+
+cd "$root"
+started=$(date +%s)
+pytest_args="-n $jobs --dist loadfile --quiet --no-header --instafail"
+if [ "$verbose" = 1 ]; then
+	pytest_args="-n $jobs --dist loadfile --verbose --instafail"
+fi
+# pytest-sugar renders compact progress; pytest-instafail streams tracebacks.
+# shellcheck disable=SC2086
+if command -v pytest >/dev/null 2>&1 \
+	&& pytest --help 2>/dev/null | grep -q -- --instafail \
+	&& pytest --help 2>/dev/null | grep -q -- --numprocesses \
+	&& pytest --help 2>/dev/null | grep -q -- --force-sugar
+then
+	# shellcheck disable=SC2086
+	pytest $pytest_args
+elif command -v uv >/dev/null 2>&1; then
+	pytest_requirement=$(grep '^pytest==' install/test.txt)
+	xdist_requirement=$(grep '^pytest-xdist==' install/test.txt)
+	sugar_requirement=$(grep '^pytest-sugar==' install/test.txt)
+	instafail_requirement=$(grep '^pytest-instafail==' install/test.txt)
+	# shellcheck disable=SC2086
+	uvx --from "$pytest_requirement" \
+		--with "$xdist_requirement" \
+		--with "$sugar_requirement" \
+		--with "$instafail_requirement" \
+		pytest $pytest_args
+else
+	echo "pytest with xdist, sugar, and instafail is required; run setup option 6" >&2
+	exit 1
+fi
+
+shell_files=$(find setup.sh track.sh bin dev lib libexec tests \
+	-name __pycache__ -prune -o -type f \
+	-exec grep -Il '^#!/bin/sh$' {} + 2>/dev/null || true)
+if [ -n "$shell_files" ]; then
+	printf '%s\n' "$shell_files" |
+		xargs -n1 -P "$jobs" sh -n
+fi
+
+python3 -m json.tool install.conf.json >/dev/null
+python3 -m json.tool lib/mimetypes.json >/dev/null
+python3 -m json.tool lib/moonlander-layout.json >/dev/null
+python3 -c 'import tomllib; tomllib.load(open("config/mise.toml", "rb")); tomllib.load(open("config/mise.lock", "rb"))'
+
+failed=0
+if [ "$run_containers" = 1 ]; then
+	container_results=$results/containers
+	mkdir "$container_results"
+	export container_results
+	printf 'Running 4 container suites in parallel...\n'
+	printf '%s\n' alpine:latest archlinux:latest fedora:latest ubuntu:26.04 |
+		xargs -n1 -P 4 sh -c '
+			image=$1
+			name=${image%%:*}
+			log="$container_results/$name.log"
+			if dev/setup/container-test "$image" > "$log" 2>&1; then
+				printf "%s\n" "$image" > "$container_results/$name.pass"
+				if [ "$verbose" = 1 ]; then printf "PASS container %s\n" "$image"; fi
+			else
+				printf "%s\n" "$image" > "$container_results/$name.fail"
+			fi
+		' sh
+	for marker in "$container_results"/*.fail; do
+		[ -e "$marker" ] || continue
+		image=$(cat "$marker")
+		printf '\nFAIL container %s\n' "$image" >&2
+		cat "${marker%.fail}.log" >&2
+		failed=1
+	done
+	if [ "$failed" = 1 ]; then
+		exit 1
+	fi
+fi
+
+elapsed=$(($(date +%s) - started))
+if [ "$run_containers" = 1 ]; then
+	printf 'All checks and 4 container suites passed in %ss.\n' "$elapsed"
+else
+	printf 'All checks passed in %ss.\n' "$elapsed"
+fi
