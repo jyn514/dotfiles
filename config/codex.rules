@@ -3,7 +3,7 @@ def allow(pattern):
 
 
 # Project-independent clojure tools.deps commands
-allow(["clojure", ["-Sdeps", "-Spath"]])
+allow(["clojure", "-Spath"])
 allow(["bb", "tasks"])
 
 # Read-only jj commands
@@ -21,10 +21,20 @@ allow(["git", "diff", "--check"])
 
 # Read-only utils
 allow([[
-        "true", "cat", "rg", "grep", "jq", "head", "tail", "ps", "echo",
-        "wc", "diff", "ls", "find", "sort", "nl", "sleep", "diff-check",
+        "true", "cat", "grep", "jq", "head", "tail", "ps", "echo", "wc",
+        "diff", "ls", "sort", "nl", "sleep", "diff-check",
+        "stat", "file", "df", "du", "lsof", "uname", "id"
 ]])
 allow(["mise", "activate"])
+
+# macOS read-only diagnostics
+allow([["vm_stat", "iostat", "sw_vers"]])
+allow(["sysctl", ["-a", "-n"]])
+allow(["launchctl", "print"])
+allow(["scutil", "--dns"])
+allow(["log", "show"])
+allow(["xcrun", "--find"])
+allow(["xcode-select", "-p"])
 
 # Misc non-destructive mutating commands
 allow(["git", ["bug", "clone"]])
@@ -39,13 +49,10 @@ allow([["podman", "docker"], ["port", "top"]])
 allow(["podman", "machine", ["list", "inspect"]])
 
 allow([[
-        "kaocha", "tree-sitter", "cargo", "go", "gofmt", "pgrep", "jcmd",
-        "lpstat", "lpinfo",
+        "pgrep", "jcmd", "lpstat", "lpinfo",
 ]])
 allow(["zola", "build"])
 allow(["yt-dlp", "--list-subs"])
-allow(["woodpecker-cli", "exec"])
-allow(["act", "pull_request"])
 allow(["tea", "issue"])
 allow(["jj", "workspace", "add"])
 allow(["jj", "commit"])
