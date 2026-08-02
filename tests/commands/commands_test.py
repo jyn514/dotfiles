@@ -1155,17 +1155,9 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("AB\n", valid.stdout)
 
     def test_watch_displays_failed_command_before_next_iteration(self) -> None:
-        root = self.directory / "watch-root"
-        binaries = root / "bin"
-        libexec = root / "libexec"
-        mocks = root / "mocks"
-        binaries.mkdir(parents=True)
-        libexec.mkdir()
+        mocks = self.directory / "mocks"
         mocks.mkdir()
-        watch = binaries / "watch"
-        watch.write_text((ROOT / "bin/watch").read_text())
-        watch.chmod(0o755)
-        runner = libexec / "runinpty.py"
+        runner = self.directory / "runinpty.py"
         runner.write_text("#!/bin/sh\nprintf 'failed output'\nexit 7\n")
         runner.chmod(0o755)
         for name, contents in (
@@ -1178,8 +1170,12 @@ class CommandTest(unittest.TestCase):
             executable.chmod(0o755)
 
         result = subprocess.run(
-            [str(watch), "command"],
-            env=os.environ | {"PATH": f"{mocks}:{os.environ['PATH']}"},
+            [str(ROOT / "bin/watch"), "command"],
+            env=os.environ
+            | {
+                "PATH": f"{mocks}:{os.environ['PATH']}",
+                "WATCH_RUNNER": str(runner),
+            },
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
