@@ -722,6 +722,9 @@ class ProfileContractTests(unittest.TestCase):
                 "#!/bin/sh\n"
                 "printf '# File\\n\\n1: dependency\\n\\tprintf body\\n\\n"
                 "named: dependency\\n\\tprintf other\\n\\n"
+                "%%.generated: %%.source\\n\\tprintf body: # recipe text\\n"
+                "\\t# comment-like recipe line\\n\\n"
+                ".PHONY: named\\n\\n"
                 "# Finished Make data base\\n'\n"
             )
             make.chmod(0o755)
@@ -735,10 +738,42 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            "1\nnamed\n---\n1: dependency\n\tprintf body\n"
-            "named: dependency\n\tprintf other\n",
+            "1\nnamed\n%.generated\n---\n1: dependency\n\tprintf body\n"
+            "named: dependency\n\tprintf other\n"
+            "%.generated: %.source\n\tprintf body: # recipe text\n"
+            "\t# comment-like recipe line\n",
             result.stdout,
         )
+
+    def test_make_helpers_propagate_make_failure_without_partial_output(self) -> None:
+        profile = (ROOT / "config/profile").read_text()
+        start = profile.index("tasks () (")
+        end = profile.index("\nrecipies ()", start)
+        definitions = profile[start:end]
+
+        with tempfile.TemporaryDirectory() as directory:
+            make = Path(directory) / "make"
+            make.write_text("#!/bin/sh\nprintf 'partial database\\n'\nexit 23\n")
+            make.chmod(0o755)
+            environment = os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"}
+            tasks = subprocess.run(
+                ["/bin/sh", "-c", definitions + "\ntasks"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            recipes = subprocess.run(
+                ["/bin/sh", "-c", definitions + "\nrecipes"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        for result in (tasks, recipes):
+            self.assertEqual(23, result.returncode)
+            self.assertEqual("", result.stdout)
 
     def test_background_uses_nohup_when_disown_is_unavailable(self) -> None:
         profile = (ROOT / "config/profile").read_text()
