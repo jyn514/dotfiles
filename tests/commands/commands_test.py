@@ -228,12 +228,14 @@ class CommandTest(unittest.TestCase):
             '  "remote get-url") printf "https://github.com/user/repo.git\\n";;\n'
             '  "remote ") printf "origin\\n";;\n'
             '  "rev-list --remotes") printf "abc123\\n";;\n'
-            '  "grep --max-count=1") printf "abc123:file with spaces\\n1:unique line\\n";;\n'
+            '  "ls-tree -r") printf "%s\\0" "$RELATIVE";;\n'
+            '  "show "*) printf "unique line\\n\\n";;\n'
             'esac\n',
         )
         environment = os.environ | {
             "GIT_CALLS": str(calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "RELATIVE": source.name,
             "REPOSITORY": str(repository.resolve()),
         }
 
@@ -267,7 +269,7 @@ class CommandTest(unittest.TestCase):
         )
         call_lines = calls.read_text().splitlines()
         self.assertNotIn("remote set-head --auto origin", call_lines)
-        self.assertEqual(1, sum(line.startswith("grep --max-count=1") for line in call_lines))
+        self.assertEqual(1, sum(line.startswith("show abc123:") for line in call_lines))
 
     def test_remote_git_url_propagates_git_failures_and_rejects_unknown_hosts(self) -> None:
         repository = self.directory / "repository"
@@ -281,11 +283,13 @@ class CommandTest(unittest.TestCase):
             '  "remote get-url") printf "%s\\n" "$REMOTE_URL";;\n'
             '  "remote ") printf "origin\\n";;\n'
             '  "rev-list --remotes") [ "${REV_LIST_STATUS:-0}" -eq 0 ] || exit "$REV_LIST_STATUS"; printf "abc123\\n";;\n'
-            '  "grep --max-count=1") exit "${GREP_STATUS:-1}";;\n'
+            '  "ls-tree -r") printf "%s\\0" "$RELATIVE";;\n'
+            '  "show "*) exit "${SHOW_STATUS:-0}";;\n'
             'esac\n',
         )
         environment = os.environ | {
             "PATH": f"{self.directory}:{os.environ['PATH']}",
+            "RELATIVE": source.name,
             "REPOSITORY": str(repository),
             "REMOTE_URL": "https://github.com/user/repo.git",
             "REV_LIST_STATUS": "23",
@@ -305,7 +309,7 @@ class CommandTest(unittest.TestCase):
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=environment | {"REV_LIST_STATUS": "0", "GREP_STATUS": "24"},
+            env=environment | {"REV_LIST_STATUS": "0", "SHOW_STATUS": "24"},
         )
         unsupported = subprocess.run(
             [str(ROOT / "bin/remote-git-url"), str(source), "1"],
@@ -359,7 +363,7 @@ class CommandTest(unittest.TestCase):
             "git",
             'case "$1 $2" in\n'
             '  "rev-parse --show-toplevel") printf "%s\\n" "$REPOSITORY";;\n'
-            '  "remote ") exit 23;;\n'
+            '  "remote ") status=${REMOTE_STATUS:-23}; [ "$status" -eq 0 ] || exit "$status"; printf "origin\\n";;\n'
             'esac\n',
         )
         environment = os.environ | {
@@ -376,11 +380,11 @@ class CommandTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             check=False,
         )
-        self.executable("head", "exit 24\n")
+        source.unlink()
         read_failure = subprocess.run(
             [str(ROOT / "bin/remote-git-url"), str(source), "1"],
             cwd=repository,
-            env=environment,
+            env=environment | {"REMOTE_STATUS": "0"},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -388,7 +392,8 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(23, remote_failure.returncode)
-        self.assertEqual(24, read_failure.returncode)
+        self.assertEqual(1, read_failure.returncode)
+        self.assertIn("could not read", read_failure.stderr)
 
     def test_set_tmux_env_preserves_whitespace_and_equals(self) -> None:
         calls = self.directory / "tmux-calls"

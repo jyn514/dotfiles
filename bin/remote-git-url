@@ -1,121 +1,15 @@
-#!/usr/bin/env bash
-set -eu
+#!/usr/bin/env python3
+"""Stable launcher for source links into GitHub and GitLab repositories."""
 
-if [ $# -lt 2 ] || [ $# -gt 3 ]; then echo "usage: $0 <file> <line-start> [<line-end>]"; exit 1; fi
+from pathlib import Path
+import sys
 
-case $2 in ''|*[!0-9]*|0) echo "invalid start line: $2" >&2; exit 2;; esac
-case ${3:-$2} in ''|*[!0-9]*|0) echo "invalid end line: ${3:-$2}" >&2; exit 2;; esac
 
-s=0
-orig_file=${1#*"$(pwd)"/}  # https://stackoverflow.com/a/20615306
-file=$(realpath "$1")
-orig_start=$((10#$2))
-orig_end=$((10#${3:-$2}))
-if [ "$orig_start" -lt 1 ] || [ "$orig_end" -lt 1 ]; then
-	echo "line numbers must be positive" >&2
-	exit 2
-elif [ "$orig_end" -lt "$orig_start" ]; then
-	echo "end line precedes start line" >&2
-	exit 2
-fi
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools" / "remote-git-url"))
 
-cd "$(dirname "$file")"
-if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-	echo "unknown git repo for $file" >&2
-	exit 1
-fi
-root=$(git rev-parse --show-toplevel)
-relative=${file#"$root"/}
-if [ "$relative" = "$file" ]; then
-	echo "$file is outside git repository $root" >&2
-	exit 1
-fi
+from remote_git_url.main import main  # noqa: E402
 
-length=$((orig_end - orig_start + 1))
-head_contents=$(head -n "$orig_end" "$file" || exit; printf x) || exit
-head_contents=${head_contents%x}
-contents=$(printf %s "$head_contents" | tail -n "$length") || exit
-unset head_contents
-remotes=$(git remote) || exit
-if printf '%s\n' "$remotes" | grep -Fxq -- upstream; then
-	remote=upstream
-else
-	status=$?
-	[ "$status" -eq 1 ] || exit "$status"
-	remote=origin
-fi
-# TODO: for multi-line ranges, require all lines to match, not just the first.
-# This is hard because git doesn't support it (it treats newlines as an OR operator).
-# Probably we need to do something like:
-# ```
-# matches = 0
-# for each line:
-#   if line is commit:
-#     matches = 0
-#     break
-#   matches += 1
-#   if matches == length:
-#     break
-# ```
-# but that's annoying to do in bash, so for now just match the first line.
-contents=$(printf '%s\n' "$contents" | head -n1)
-# git grep doesn't allow specifying commits in remotes, apparently.
-# https://git-scm.com/docs/gitrevisions#Documentation/gitrevisions.txt-emltrevgtemegemHEADem-1
-commit=
-line=
-if [ -n "$contents" ]; then
-	revision=$(git rev-list --remotes "$remote"'/HEAD~^!' --max-count=1) || exit
-	if [ -n "$revision" ]; then
-		if out=$(git grep --max-count=1 --line-number --heading --fixed-strings \
-				-e "$contents" "$revision" -- "$relative"); then
-			:
-		else
-			status=$?
-			[ "$status" -eq 1 ] || exit "$status"
-			out=
-		fi
-		commit=$(echo "$out" | head -n1 | cut -d: -f1)
-		# the line number may have changed in a past commit
-		line=$(echo "$out" | tail -n1 | cut -d: -f1)
-	fi
-fi
 
-if ! [ "$commit" ]; then
-	# this line isn't present anywhere upstream, only in a local branch.
-	# use the default branch, but give a hint that this won't work as expected
-	commit=HEAD
-	line=$orig_start
-	echo "warning: $orig_file:$line does not exist in upstream" >&2
-	s=1
-fi
-
-upstream=$(git remote get-url "$remote")
-relative=$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe="/"))' "$relative")
-# handle ssh, git, https urls
-repo=$(echo "$upstream" | sed -e 's|/$||' -e 's|:*/*\.git$||' | rev | cut -d : -f1 | rev | sed 's#^/*##; s#^.*\.com/##')
-
-case "$upstream" in
-	*github.com*)
-		if [ $length -ne 1 ]; then
-			end=-L$((line + length - 1))
-		fi
-		url="https://github.com/$repo/blob/$commit/$relative#L$line${end:-}"
-		;;
-	*gitlab.com*)
-		if [ $length -ne 1 ]; then
-			end=-$((line + length - 1))
-		fi
-		url="https://gitlab.com/$repo/-/blob/$commit/$relative#L$line${end:-}"
-		;;
-	*) echo unsupported upstream "$upstream" >&2; exit 2 ;;
-esac
-
-# helix doesn't respect pipes :( so we have to do this directly here
-# TODO: fix `open` so we can use that consistently instead of the linux version
-if [ "${DISPLAY:-}" ]; then
-	xdg-open "$url"
-else
-	s=1
-	echo "$url"
-fi
-exit $s
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
