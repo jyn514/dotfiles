@@ -13,6 +13,7 @@
 -- use `:put =getcompletion('', 'command')` to get an exhaustive list of commands
 
 local first_run = not vim.g.lazy_did_setup
+local config_group = vim.api.nvim_create_augroup('dotfiles_config', { clear = true })
 
 ---- Options ----
 
@@ -62,11 +63,13 @@ vim.keymap.set('n', 'N', '?<CR>')
 ---- Autocommands ----
 
 vim.api.nvim_create_autocmd('TextYankPost', {
+	group = config_group,
 	desc = 'Highlight when copying text',
 	callback = function() vim.hl.on_yank() end,
 })
 
 vim.api.nvim_create_autocmd('VimResized', {
+	group = config_group,
 	desc = 'Automatically equalize windows on terminal size change',
 	command = 'wincmd ='
 })
@@ -107,26 +110,35 @@ function spaces(count, global)
 end
 
 function length(count)
-	vim.bo.colorcolumn = count
+	vim.wo.colorcolumn = tostring(count)
 end
 
 indent_tab = hard_tabs
 indent_space = spaces
 
-indentgroup('c', function()
-	vim.bo.colorcolumn = 132
-end)
--- c gets confused for cpp all the time 🥲
-indentgroup('cpp', function()
-	vim.bo.colorcolumn = 132
-end)
-indentgroup('csh', function()
-	vim.bo.colorcolumn = 132
-end)
 -- llvm uses 2 spaces and llvm is the only c++ codebase i care about
 -- indentgroup('cpp', function() spaces(2) end)
 
 vim.opt.colorcolumn = "+1"
+vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }, {
+	group = config_group,
+	desc = 'Set the color column for the current file type',
+	callback = function(args)
+		local ft = vim.bo[args.buf].filetype
+		local value
+		if ft == 'markdown' then
+			value = ''
+		elseif ft == 'c' or ft == 'cpp' or ft == 'csh' then
+			value = '132'
+		else
+			value = '+1'
+		end
+		local win = vim.fn.bufwinid(args.buf)
+		if win >= 0 then
+			vim.api.nvim_set_option_value('colorcolumn', value, { win = win })
+		end
+	end,
+})
 -- always keep this at 0, otherwise vim will force-wrap lines as you type 
 vim.opt.textwidth = 0
 
@@ -237,11 +249,12 @@ end, { desc = "View message history in a new searchable buffer" })
 ---- Commands ----
 
 local config = vim.fn.stdpath("config") .. '/init.lua'
-vim.api.nvim_create_user_command('EditConfig', 'edit ' .. config, { desc = "edit Lua config" })
-vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. config, { desc = "reload Lua config" })
+vim.api.nvim_create_user_command('EditConfig', 'edit ' .. config, { desc = "edit Lua config", force = true })
+vim.api.nvim_create_user_command('ReloadConfig', 'source ' .. config, { desc = "reload Lua config", force = true })
 
 local journal = vim.fn.expand('~/Documents/notes/journal/') .. os.date("%Y-%m-%d") .. '.md'
-vim.api.nvim_create_user_command('EditDailyJournal', 'edit ' .. journal, { desc = "Open today's Obsidian daily journal" })
+vim.api.nvim_create_user_command('EditDailyJournal', 'edit ' .. journal,
+	{ desc = "Open today's Obsidian daily journal", force = true })
 
 vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	local view = vim.fn.winsaveview()
@@ -251,7 +264,7 @@ vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	end
 	vim.cmd(cmd .. [[s/\s\+$//e]])
 	vim.fn.winrestview(view)
-end, { range = true, desc = "trim trailing spaces" })
+end, { range = true, desc = "trim trailing spaces", force = true })
 
 function BufferDelete(args)
 	if args.bang then
@@ -269,24 +282,25 @@ function BufferDelete(args)
 end
 
 vim.api.nvim_create_user_command('BufferDelete', BufferDelete,
-	{ bang = true, desc = "like :bdelete but also updates the alternate file" })
+	{ bang = true, desc = "like :bdelete but also updates the alternate file", force = true })
 
 -- Show all highlights
 vim.api.nvim_create_user_command('ShowHighlights', function()
 	vim.cmd('source $VIMRUNTIME/syntax/hitest.vim')
-end, { desc = "Show a list of all highlight groups" })
+end, { desc = "Show a list of all highlight groups", force = true })
 
 -- autosave on cursor hold
-local timers = {}
+local autosave_group = vim.api.nvim_create_augroup('dotfiles_autosave', { clear = false })
 function autosave_enable()
 	local buf = vim.api.nvim_get_current_buf()
-	if timers[buf] then
+	if #vim.api.nvim_get_autocmds({ group = autosave_group, buffer = buf }) > 0 then
 		return
 	end
 
 	local buf_name = vim.fn.expand '%'
 	vim.notify("autosaving " .. buf_name)
-	timers[buf] = vim.api.nvim_create_autocmd("CursorHold", {
+	vim.api.nvim_create_autocmd("CursorHold", {
+		group = autosave_group,
 		desc = "Save " .. buf_name .. " on change",
 		buffer = buf,
 		callback = function()
@@ -295,18 +309,16 @@ function autosave_enable()
 	})
 end
 
-vim.api.nvim_create_user_command('AutoSave', autosave_enable, { desc = "Start saving each second on change" })
+vim.api.nvim_create_user_command('AutoSave', autosave_enable,
+	{ desc = "Start saving each second on change", force = true })
 
 function autosave_disable()
 	local buf = vim.api.nvim_get_current_buf()
-	local cmd = timers[buf]
-	if cmd then
-		vim.api.nvim_del_autocmd(cmd)
-		timers[buf] = nil
-	end
+	vim.api.nvim_clear_autocmds({ group = autosave_group, buffer = buf })
 end
 
-vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable, { desc = "Stop autosaving" })
+vim.api.nvim_create_user_command('AutoSaveDisable', autosave_disable,
+	{ desc = "Stop autosaving", force = true })
 
 -- abbreviations
 -- https://vi.stackexchange.com/a/33221, plus hackery to only match at the start
@@ -815,7 +827,7 @@ vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	end
 
 	vim.fn.winrestview(view)
-end, { range = true, desc = "Move comment to line above" })
+end, { range = true, desc = "Move comment to line above", force = true })
 
 bind('gqk', ":MoveCommentUp<CR>", 'Move comment to line above')
 
@@ -1121,6 +1133,7 @@ vim.keymap.set('n', 'gc', pickers.lsp_incoming_calls, { desc = "Show incoming ca
 vim.keymap.set('n', 'gC', pickers.lsp_outgoing_calls, { desc = "Show outgoing calls" })
 
 vim.api.nvim_create_autocmd("User", {
+	group = config_group,
 	pattern = "TelescopePreviewerLoaded",
 	-- make previews show less space and more text
 	callback = function(args)
@@ -1258,6 +1271,7 @@ vim.filetype.add { extension = {
 } }
 
 vim.api.nvim_create_autocmd("FileType", {
+	group = config_group,
 	callback = function()
 		local ft = vim.bo.filetype
 		if ft == "uiua" then
@@ -1274,6 +1288,7 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 vim.api.nvim_create_autocmd("ColorScheme", {
+	group = config_group,
 	callback = function()
 		local ft = vim.bo.filetype
 		if ft == 'mumps' then
@@ -1283,6 +1298,7 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 })
 
 vim.api.nvim_create_autocmd("FileType", {
+	group = config_group,
 	pattern = "typst",
 	callback = function(opts)
 		if string.match(opts.file, "main.typ$") then
@@ -1292,9 +1308,9 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 vim.api.nvim_create_autocmd("FileType", {
+	group = config_group,
 	pattern = "markdown",
 	callback = function()
-		vim.wo.colorcolumn = ""
 		bind_ts(ts {
 			h = 'class', -- no clue why TS calls headers "classes" but sure whatever
 			c = 'code_cell',
