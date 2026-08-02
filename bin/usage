@@ -1,5 +1,69 @@
-#!/bin/sh
-[ $# -eq 1 ] || { echo "usage: $(basename "$0") <path>"; exit 1; }
+#!/usr/bin/env python3
+"""Display immediate filesystem usage in descending human-size order."""
 
-sizes=$(du -h -x -d 1 "$1" 2>/dev/null) || exit
-printf '%s\n' "$sizes" | sort -h -r
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+import shlex
+import subprocess
+import sys
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+    stdout: bytes = b""
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(
+    arguments: list[str],
+    *,
+    input_bytes: bytes | None = None,
+    capture_output: bool = False,
+    discard_stderr: bool = False,
+) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            arguments,
+            input=input_bytes,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.DEVNULL if discard_stderr else None,
+            check=False,
+        )
+    except OSError as error:
+        print(f"usage: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode), completed.stdout or b"")
+
+
+def show_usage(path: str, runner: Callable[..., Result] = run) -> int:
+    sizes = runner(
+        ["du", "-h", "-x", "-d", "1", "--", path],
+        capture_output=True,
+        discard_stderr=True,
+    )
+    if sizes.status:
+        return sizes.status
+    sorted_sizes = runner(
+        ["sort", "-h", "-r"], input_bytes=sizes.stdout, capture_output=False
+    )
+    return sorted_sizes.status
+
+
+def main(arguments: list[str]) -> int:
+    if len(arguments) != 1:
+        print("usage: usage <path>")
+        return 1
+    return show_usage(arguments[0])
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
