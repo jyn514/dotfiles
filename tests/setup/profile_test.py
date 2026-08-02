@@ -203,6 +203,66 @@ class ProfileContractTests(unittest.TestCase):
             self.assertIn("load-buffer", tmux_calls)
             self.assertNotIn("paste-buffer", tmux_calls)
 
+    def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
+        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        dragon_commands = re.findall(
+            r"'cd #\{q:pane_current_path\}; ([^']*xargs -0 dragon -x)'",
+            tmux_config,
+        )
+        self.assertEqual(2, len(dragon_commands))
+        search_command = (
+            '{ cat; printf "\\0"; } | xargs -0 bash -c '
+            '\'open "https://www.google.com/search?q=$1"\' _'
+        )
+        self.assertIn(
+            '{ cat; printf "\\0"; } | xargs -0 bash -c', tmux_config
+        )
+        self.assertIn('open "https://www.google.com/search?q=$1"', tmux_config)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            calls = root / "calls"
+            marker = root / "injected"
+            payload = f"odd ' $(touch {marker})\nname"
+            for name in ("dragon", "open"):
+                executable = binaries / name
+                executable.write_text(
+                    '#!/bin/sh\nprintf "%s" "$*" > "$ACTION_CALLS"\n'
+                )
+                executable.chmod(0o755)
+            env = os.environ | {
+                "ACTION_CALLS": str(calls),
+                "PATH": f"{binaries}:{os.environ['PATH']}",
+            }
+
+            for command in dragon_commands:
+                result = subprocess.run(
+                    ["/bin/bash", "-c", command],
+                    input=payload,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"-x {payload}", calls.read_text())
+
+            result = subprocess.run(
+                ["/bin/bash", "-c", search_command],
+                input=payload,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                f"https://www.google.com/search?q={payload}", calls.read_text()
+            )
+            self.assertFalse(marker.exists())
+
     def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
         [command] = re.findall(
@@ -571,6 +631,7 @@ class ProfileContractTests(unittest.TestCase):
         nvim = (ROOT / "config/nvim.lua").read_text()
         glide = (ROOT / "config/glide.ts").read_text()
         kakoune = (ROOT / "config/kakrc").read_text()
+        julia = (ROOT / "config/startup.jl").read_text()
         profile = (ROOT / "config/profile").read_text()
         vimrc = (ROOT / "config/vimrc").read_text()
         zprofile = (ROOT / "config/zprofile").read_text()
@@ -621,6 +682,11 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('awk -v arg="$1"', profile)
         self.assertIn('kak-lsp --kakoune -s "$kak_session"', kakoune)
         self.assertNotIn('kak-lsp --kakoune -s $kak_session', kakoune)
+        self.assertIn('define_editor("hx-hax", wait=true)', julia)
+        self.assertNotIn('define_editor("editor-hax"', julia)
+        self.assertNotIn("xargs -I {}", tmux)
+        self.assertGreaterEqual(tmux.count("xargs -0"), 5)
+        self.assertIn('open "https://www.google.com/search?q=$1"', tmux)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
         self.assertIn("local codename http_status man_index section url", profile)

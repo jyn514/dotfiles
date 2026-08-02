@@ -92,6 +92,11 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertIn("TryExec=hx-hax\n", desktop)
         self.assertIn("Exec=env REAL_EDITOR=hx hx-hax %F\n", desktop)
 
+    def test_fx_desktop_passes_the_selected_json_file(self) -> None:
+        desktop = (ROOT / "config/fx.desktop").read_text()
+
+        self.assertIn("Exec=fx %f\n", desktop)
+
     def test_setup_registers_discovered_and_special_case_handlers(self) -> None:
         home = self.mime / "home"
         binaries = self.mime / "bin"
