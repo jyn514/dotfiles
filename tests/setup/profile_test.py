@@ -482,6 +482,14 @@ class ProfileContractTests(unittest.TestCase):
 
     def test_portable_profile_and_cross_platform_config_paths(self) -> None:
         profile = (ROOT / "config/profile").read_text()
+
+        self.assertIn(
+            "if less --version >/dev/null 2>&1; then\n"
+            "\texport GIT_PAGER=less\n"
+            "fi",
+            profile,
+        )
+        self.assertNotIn("if ! less --version", profile)
         languages = (ROOT / "config/helix/languages.toml").read_text()
 
         self.assertIn("pip list --format=freeze", profile)
