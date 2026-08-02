@@ -22,7 +22,7 @@ if [ $# -ne 2 ] ; then
 fi
 
 REPO_URL="$1"
-BACKUP_FILE="$(realpath "$2")"
+BACKUP_FILE="$(realpath "$2").tar"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/git-save.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -62,7 +62,7 @@ echo "DONE" > /dev/stderr
 printf "INFO: generating backup file... " > /dev/stderr
 cd "$TMP_DIR"
 tar cf "$REPO_NAME.tar" "$REPO_NAME"
-mv "$REPO_NAME.tar" "$BACKUP_FILE.tar"
+mv "$REPO_NAME.tar" "$BACKUP_FILE"
 echo "DONE" > /dev/stderr
 
 printf "INFO: cleaning up... " > /dev/stderr
