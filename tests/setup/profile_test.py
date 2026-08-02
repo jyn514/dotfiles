@@ -276,11 +276,12 @@ class ProfileContractTests(unittest.TestCase):
     def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
         tmux_config = (ROOT / "config/tmux.conf").read_text()
         dragon_commands = re.findall(
-            r"'cd #\{q:pane_current_path\}; ([^']*xargs -0 ~/\.config/tmux/dragon\.sh)'",
+            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/dragon\.sh --read0)'",
             tmux_config,
         )
         self.assertEqual(2, len(dragon_commands))
         self.assertEqual(5, tmux_config.count("~/.config/tmux/dragon.sh"))
+        self.assertNotIn("xargs -0 ~/.config/tmux/dragon.sh", tmux_config)
         search_program = (
             'import os, sys; from urllib.parse import urlencode; '
             'os.execlp("open", "open", "https://www.google.com/search?" + '
@@ -1037,7 +1038,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("export JULIA_EDITOR=editor-hax", fish)
         self.assertNotIn("JULIA_EDITOR=hx-hax", profile + fish)
         self.assertNotIn("xargs -I {}", tmux)
-        self.assertGreaterEqual(tmux.count("xargs -0"), 5)
+        self.assertEqual(3, tmux.count("xargs -0"))
         self.assertIn('urlencode({"q": sys.argv[1]})', tmux)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
