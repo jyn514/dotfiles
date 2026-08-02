@@ -1,6 +1,87 @@
-#!/bin/sh
-# note: the `cd` makes tmux open helix in the right working directory
-metadata=$(cargo metadata --format-version 1) || exit
-workspace=$(printf '%s\n' "$metadata" | jq .workspace_root -r) || exit
-cd "$workspace" || exit
-exec bacon "$@"
+#!/usr/bin/env python3
+"""Launch Bacon from the Cargo workspace root."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+from typing import Callable
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+    stdout: bytes = b""
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(
+    arguments: list[str],
+    *,
+    cwd: Path | None = None,
+    capture_output: bool = False,
+) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(
+            arguments,
+            cwd=cwd,
+            stdout=subprocess.PIPE if capture_output else None,
+            check=False,
+        )
+    except OSError as error:
+        print(f"b: could not execute {arguments[0]!r}: {error}", file=sys.stderr)
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode), completed.stdout or b"")
+
+
+def workspace_root(metadata: bytes) -> Path:
+    try:
+        document = json.loads(metadata)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"Cargo returned invalid metadata JSON: {error}") from error
+    if not isinstance(document, dict):
+        raise ValueError("Cargo metadata must be a JSON object")
+    value = document.get("workspace_root")
+    if not isinstance(value, str) or not value:
+        raise ValueError("Cargo metadata has no string workspace_root")
+    try:
+        os.fsencode(value)
+    except UnicodeEncodeError as error:
+        raise ValueError("Cargo workspace_root is not a filesystem path") from error
+    return Path(value)
+
+
+def launch(arguments: list[str], runner: Callable[..., Result] = run) -> int:
+    metadata = runner(
+        ["cargo", "metadata", "--format-version", "1"], capture_output=True
+    )
+    if metadata.status:
+        return metadata.status
+    try:
+        workspace = workspace_root(metadata.stdout)
+    except ValueError as error:
+        print(f"b: {error}", file=sys.stderr)
+        return 1
+    if not workspace.is_dir():
+        print(f"b: Cargo workspace does not exist: {workspace}", file=sys.stderr)
+        return 1
+    bacon = runner(["bacon", *arguments], cwd=workspace)
+    return bacon.status
+
+
+def main(arguments: list[str]) -> int:
+    return launch(arguments)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
