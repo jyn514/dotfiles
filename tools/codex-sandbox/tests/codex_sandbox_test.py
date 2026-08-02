@@ -276,6 +276,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/shared-agents.md'},"
+            "dst=/home/codex/.agents/shared.md,readonly",
+            run,
+        )
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertLess(run.index("resume"), run.index("session-id"))
 
