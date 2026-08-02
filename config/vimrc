@@ -190,14 +190,19 @@ function FourSpacesHardTabs()
 	set noexpandtab
 endfunction
 
-function CompileTex()
+function! CompileTex()
     " save the file first
     w
     " put build artifacts in a subdirectory so they're not so annoying
     silent !mkdir -p build && pdflatex -output-directory build %
+	let l:status = v:shell_error
     " link the outputs into the current directory
     "silent !ln -s build/*.pdf .
     redraw!
+	if l:status != 0
+		echoerr 'pdflatex failed with status ' . l:status
+	endif
+	return l:status
 endfunction
 inoremap <C-l> <Esc>:call CompileTex()<Enter>i
 nnoremap <C-l> :call CompileTex()<Enter>
@@ -207,6 +212,9 @@ call TwoSpacesSoftTabs()
 
 
 """"""""10""""""""20""""""" filetype configuration """""""60""""""""70""""""""80
+
+augroup dotfiles_config
+autocmd!
 
 " forcibly use the c filetype for all header files
 autocmd BufNewFile,BufRead *.h,*.c set filetype=c
@@ -236,6 +244,8 @@ autocmd FileType html call TwoSpacesSoftTabs()
 autocmd FileType haskell call TwoSpacesSoftTabs()
 autocmd FileType scheme call TwoSpacesSoftTabs()
 autocmd FileType yacc call FourSpacesHardTabs()
+
+augroup END
 
 if has("spell")
 	" enable spell checking

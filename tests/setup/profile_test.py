@@ -554,6 +554,7 @@ class ProfileContractTests(unittest.TestCase):
         kakoune = (ROOT / "config/kakrc").read_text()
         profile = (ROOT / "config/profile").read_text()
         vimrc = (ROOT / "config/vimrc").read_text()
+        zprofile = (ROOT / "config/zprofile").read_text()
 
         self.assertNotIn("; xargs open", tmux)
         self.assertGreaterEqual(tmux.count("xargs -0"), 2)
@@ -586,6 +587,12 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("*.h,*.c set filetype=c", vimrc)
         self.assertIn("*.cc,*.cpp,*.C,*.ino set filetype=cpp", vimrc)
         self.assertNotIn("*.h,*.c,*.cc", vimrc)
+        self.assertIn("augroup dotfiles_config\nautocmd!", vimrc)
+        self.assertEqual(1, vimrc.count("augroup dotfiles_config"))
+        self.assertIn("let l:status = v:shell_error", vimrc)
+        self.assertIn("return l:status", vimrc)
+        self.assertIn("function! CompileTex()", vimrc)
+        self.assertIn("ZSH_PROFILE_READ=1\n. ~/.profile || return", zprofile)
         self.assertIn('awk -v arg="$1"', profile)
         self.assertNotIn("arg=\"'\"$1\"'\"", profile)
         self.assertNotIn('rg "^$1"', profile)
@@ -604,6 +611,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('printf \'%s\\n\' "$telnet_output" | tail -2', profile)
         self.assertIn("local marker = vim.fs.find", nvim)
         self.assertIn("return marker and vim.fs.dirname(marker)", nvim)
+        self.assertIn("vim.fs.root(buf, { 'package.json', 'tsconfig.json' })", nvim)
+        self.assertIn("'markdown_oxide', 'oxc', 'tinymist'", nvim)
+        self.assertNotIn("vim.fs.root(0, { 'package.json'", nvim)
         self.assertEqual(
             1,
             nvim.count(
