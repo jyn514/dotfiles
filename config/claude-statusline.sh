@@ -20,4 +20,5 @@ prompt_command=$(command -v prompt-command) || exit
 # (GIT_OPTIONAL_LOCKS is set inside prompt-command's git_info now.)
 prompt=$("$prompt_command" "$model" 0) || exit
 prompt=$(printf '%s\n' "$prompt" | tr -d '\001\002') || exit
-printf '%s\n' "$prompt" | sed -n '1p' | tr -d '\n'
+prompt=$(printf '%s\n' "$prompt" | sed -n '1p') || exit
+printf '%s' "$prompt"

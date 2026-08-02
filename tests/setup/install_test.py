@@ -876,6 +876,11 @@ class MiseConfigTests(unittest.TestCase):
         self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
         self.assertIn("return $reload_status", fish_config)
         self.assertIn("if exists bat\n\tfunction cat", fish_config)
+        self.assertIn("abbr --add --global $name $value\n\tor return", fish_config)
+        self.assertIn('source ~/.profile || return', bashrc)
+        self.assertIn('. ~/.profile || return', zshrc)
+        self.assertIn('source ~/.local/bashrc || return', bashrc)
+        self.assertIn('fzf-bash-completion.sh || return', bashrc)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

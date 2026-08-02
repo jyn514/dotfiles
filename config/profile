@@ -12,9 +12,9 @@ if ! [ "$SSH_AUTH_SOCK" ] && exists keychain; then
 fi
 
 if ! exists realpath; then
-	. "$(dirname "$(readlink ~/.profile)")/../lib/shell/realpath.sh"
+	. "$(dirname "$(readlink ~/.profile)")/../lib/shell/realpath.sh" || return
 fi
-DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..")
+DOTFILES=$(realpath "$(dirname "$(realpath ~/.profile)")/..") || return
 
 add_path () {
 	case $- in *f*) restore_glob=;; *) set -f; restore_glob=1;; esac
@@ -65,10 +65,10 @@ add_path_if_present() {
 }
 
 # Set tool homes before paths.sh uses them to construct PATH.
-. "$DOTFILES/lib/shell/env.sh"
+. "$DOTFILES/lib/shell/env.sh" || return
 
 if [ -f ~/.local/profile ]; then
-	. ~/.local/profile
+	. ~/.local/profile || return
 fi
 
 # note: the order is important, the latest addition takes precedence
@@ -87,7 +87,7 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 	unset brew_env
 fi
 
-. "$DOTFILES/lib/shell/paths.sh"
+. "$DOTFILES/lib/shell/paths.sh" || return
 
 case ":${PATH:-}:" in
 	*:"$DOTFILES/libexec/agent-wrappers":*) add_path "$DOTFILES/libexec/agent-wrappers";;
@@ -125,14 +125,14 @@ if exists mise; then
 fi
 
 if [ -n "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
-	. ~/.bashrc
+	. ~/.bashrc || return
 fi
 if [ -n "$ZSH_VERSION" ] && [ -z "$ZSH_PROFILE_READ" ]; then
-	. "${ZDOTDIR:-$HOME}/.zshrc"
+	. "${ZDOTDIR:-$HOME}/.zshrc" || return
 fi
 
-. "$DOTFILES/lib/shell/lib.sh"
-. "$DOTFILES/bin/show-status"
+. "$DOTFILES/lib/shell/lib.sh" || return
+. "$DOTFILES/bin/show-status" || return
 
 if gpg_tty=$(tty 2>/dev/null); then
 	export GPG_TTY=$gpg_tty
@@ -145,7 +145,7 @@ abbreviations=$(grep -Ev '^(#|$)' "$DOTFILES/lib/abbr.txt") || return
 while IFS= read -r alias; do
 	name=${alias%=*}
 	expn=${alias#*=}
-	alias "$name"="$expn"
+	alias "$name"="$expn" || return
 done << EOF
 $abbreviations
 EOF
@@ -403,7 +403,7 @@ remember() {
 	printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' 'obsidian://open?vault=notes&file=global%20checklist' 'are you forgetting something?'
 }
 
-. "$DOTFILES/bin/prompt-command"
+. "$DOTFILES/bin/prompt-command" || return
 
 PS1='$(prompt_command "${ZSH_ARGZERO:-$0}" "$?")'
 # also reset the cursor mode (https://stackoverflow.com/a/59728228)

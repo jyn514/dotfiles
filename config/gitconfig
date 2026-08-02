@@ -86,7 +86,7 @@ pretty = format:%C(auto)%h%d %s %C(green)%cr %C(bold blue)<%an>%C(auto)
 	default-branch = "!f() { ref=$(git symbolic-ref refs/remotes/upstream/HEAD) || return; echo \"$ref\" | sed 's@^refs/remotes/upstream/@@'; }; f"
 
 	delete-merged = "!f() { branches=$(git branch -r --merged) || return; branches=$(echo \"$branches\" | sed -n 's@^[ *]*personal/@@p') || return; [ -z \"$branches\" ] || git push personal --delete --no-verify $branches; }; f"
-	mr = !sh -c 'git fetch $1 merge-requests/$2/head:mr-$2 && git checkout mr-$2' -
+	mr = "!sh -c 'git fetch \"$1\" \"merge-requests/$2/head:mr-$2\" && git checkout \"mr-$2\"' -"
 
 [status]
 	showUntrackedFiles = all

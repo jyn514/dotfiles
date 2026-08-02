@@ -163,6 +163,34 @@ class ProfileContractTests(unittest.TestCase):
             profile,
         )
         self.assertIn('eval "$snap_bin" || return', profile)
+        self.assertIn('alias "$name"="$expn" || return', profile)
+        for source in (
+            '. "$DOTFILES/lib/shell/env.sh" || return',
+            '. "$DOTFILES/lib/shell/paths.sh" || return',
+            '. "$DOTFILES/lib/shell/lib.sh" || return',
+            '. "$DOTFILES/bin/show-status" || return',
+            '. "$DOTFILES/bin/prompt-command" || return',
+        ):
+            self.assertIn(source, profile)
+
+    def test_git_merge_request_alias_quotes_dynamic_arguments(self) -> None:
+        alias = subprocess.run(
+            [
+                "git",
+                "config",
+                "--no-includes",
+                "-f",
+                str(ROOT / "config/gitconfig"),
+                "--get",
+                "alias.mr",
+            ],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
+
+        self.assertIn('git fetch "$1" "merge-requests/$2/head:mr-$2"', alias)
+        self.assertIn('git checkout "mr-$2"', alias)
 
     def test_codeberg_push_url_rewrite_removes_the_https_slash(self) -> None:
         result = subprocess.run(
