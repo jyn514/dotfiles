@@ -31,6 +31,9 @@ allow([[
 ]])
 allow(["mise", "activate"])
 
+# Read-only network calls
+allow(["gh", "pr", ["diff", "checks", "list", "status", "view"]])
+
 # macOS read-only diagnostics
 allow([["vm_stat", "iostat", "sw_vers"]])
 allow(["sysctl", ["-a", "-n"]])
