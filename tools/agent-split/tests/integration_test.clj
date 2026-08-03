@@ -69,6 +69,19 @@
                     "nine\n"
                     "TEN\n")))
 
+(defn- init-deleted-symlink-repo! [repo]
+  (fs/create-dirs repo)
+  (let [init-result (run repo "jj" "git" "init" "--colocate")]
+    (when-not (zero? (:exit init-result))
+      (shell! repo "jj" "git" "init")))
+  (write-file! (fs/file repo ".gitignore") "target/\n")
+  (write-file! (fs/file repo "note.txt") "unchanged\n")
+  (fs/create-sym-link (fs/file repo "link") "missing-target")
+  (run repo "jj" "file" "track" ".gitignore" "link" "note.txt")
+  (shell! repo "jj" "commit" "-m" "base")
+  (fs/delete (fs/file repo "link"))
+  (write-file! (fs/file repo "note.txt") "remaining\n"))
+
 (def selected-patch
   (str "diff --git a/note.txt b/note.txt\n"
        "--- a/note.txt\n"
@@ -86,6 +99,16 @@
         repo (fs/file root "repo")]
     (try
       (init-repo! repo)
+      (f {:root root
+          :repo repo})
+      (finally
+        (fs/delete-tree root)))))
+
+(defn- with-deleted-symlink-repo* [f]
+  (let [root (temp-root)
+        repo (fs/file root "repo")]
+    (try
+      (init-deleted-symlink-repo! repo)
       (f {:root root
           :repo repo})
       (finally
@@ -109,3 +132,17 @@
                                 "+TEN")))
         (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
                            "+TEN"))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-selects-deleted-dangling-symlink
+  (with-deleted-symlink-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [patch (:out (shell! repo "jj" "diff" "--git" "--" "link"))
+            {:keys [exit out err]} (run-wrapper ctx patch)
+            selected (:out (shell! repo "jj" "diff" "--git" "-r" "@-"))
+            remaining (:out (shell! repo "jj" "diff" "--git" "-r" "@"))]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (str/includes? out "link (1 hunk)"))
+        (is (str/includes? selected "deleted file mode 120000"))
+        (is (not (str/includes? selected "+remaining")))
+        (is (str/includes? remaining "+remaining"))))))
