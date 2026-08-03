@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-// Extract readable user/assistant turns from a ChatGPT shared-chat HTML page.
+// Extract readable user/assistant turns from a ChatGPT or Claude shared chat.
 //
 // Usage:
-//   extract-chatgpt-share [OPTIONS] FILE.html|URL
+//   extract-chat-share [OPTIONS] FILE.html|URL
 
 const fs = require("fs");
+const path = require("path");
+const { execFile } = require("node:child_process");
 const { parseArgs } = require("node:util");
 
 function usage(stream = process.stderr) {
-  stream.write(`Usage: extract-chatgpt-share [OPTIONS] FILE.html|URL
+  stream.write(`Usage: extract-chat-share [OPTIONS] FILE.html|URL
 
-Extract readable turns from a ChatGPT shared conversation.
+Extract readable turns from a ChatGPT or Claude shared conversation.
+Claude URLs require Safari on macOS with JavaScript from Apple Events enabled.
 
 Options:
   --user-heading TEXT       User heading (default: User)
@@ -53,6 +56,33 @@ function isHttpUrl(input) {
   } catch (_error) {
     return false;
   }
+}
+
+function parsedHttpUrl(input) {
+  if (!isHttpUrl(input)) {
+    return null;
+  }
+
+  return new URL(input);
+}
+
+function claudeShareId(input) {
+  const url = parsedHttpUrl(input);
+
+  if (!url || url.hostname !== "claude.ai") {
+    return null;
+  }
+
+  const match =
+    /^\/share\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(
+      url.pathname
+    );
+  return match && match[1];
+}
+
+function isClaudeUrl(input) {
+  const url = parsedHttpUrl(input);
+  return url && url.hostname === "claude.ai";
 }
 
 async function readHtml(input, dependencies = {}) {
@@ -209,7 +239,123 @@ function extractTurns(html) {
     .filter((turn) => turn.text.trim().length > 0);
 }
 
-async function main(argv) {
+function extractClaudeTurns(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.chat_messages)) {
+    throw new Error("Could not find Claude share conversation messages");
+  }
+
+  return snapshot.chat_messages
+    .map((message, position) => ({ message, position }))
+    .sort((left, right) => {
+      const leftIndex = left.message.index;
+      const rightIndex = right.message.index;
+
+      if (Number.isFinite(leftIndex) && Number.isFinite(rightIndex)) {
+        return leftIndex - rightIndex;
+      }
+
+      return left.position - right.position;
+    })
+    .map(({ message }) => ({
+      role: message.sender === "human" ? "user" : message.sender,
+      text: Array.isArray(message.content)
+        ? message.content
+            .filter((part) => part && part.type === "text")
+            .map((part) => part.text)
+            .filter((text) => typeof text === "string" && text.length > 0)
+            .join("\n")
+        : "",
+    }))
+    .filter((turn) => turn.text.trim().length > 0);
+}
+
+function appleScriptPath() {
+  const executable = fs.realpathSync(__filename);
+  return path.join(path.dirname(executable), "extract-claude-share.applescript");
+}
+
+function executeFile(file, args, options, dependencies = {}) {
+  const run = dependencies.execFile || execFile;
+
+  return new Promise((resolve, reject) => {
+    run(file, args, options, (error, stdout, stderr) => {
+      if (!error) {
+        resolve(stdout);
+        return;
+      }
+
+      const detail = (stderr || error.message).trim();
+      reject(new Error(detail));
+    });
+  });
+}
+
+async function runSafariSnapshot(shareUrl, apiPath, dependencies = {}) {
+  const platform = dependencies.platform || process.platform;
+
+  if (platform !== "darwin") {
+    throw new Error("Claude share URLs require Safari on macOS");
+  }
+
+  try {
+    return await executeFile(
+      "/usr/bin/osascript",
+      [appleScriptPath(), shareUrl, apiPath],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      dependencies
+    );
+  } catch (error) {
+    throw new Error(
+      `Could not automate Safari: ${error.message}. ` +
+        "Enable Develop > Allow JavaScript from Apple Events in Safari"
+    );
+  }
+}
+
+async function readClaudeSnapshot(shareUrl, snapshotId, dependencies = {}) {
+  const apiPath =
+    `/api/chat_snapshots/${snapshotId}` +
+    "?rendering_mode=messages&render_all_tools=true";
+  const runSafari = dependencies.runSafari || runSafariSnapshot;
+  const output = await runSafari(shareUrl, apiPath, dependencies);
+  let result;
+
+  try {
+    result = JSON.parse(output);
+  } catch (_error) {
+    throw new Error("Safari returned an invalid Claude snapshot response");
+  }
+
+  if (!result.ok) {
+    const status = [result.status, result.statusText].filter(Boolean).join(" ");
+    throw new Error(`Could not fetch ${shareUrl}: ${status || "request failed"}`);
+  }
+
+  try {
+    return JSON.parse(result.body);
+  } catch (_error) {
+    throw new Error("Claude returned an invalid snapshot payload");
+  }
+}
+
+async function loadTurns(input, dependencies = {}) {
+  if (isClaudeUrl(input)) {
+    const snapshotId = claudeShareId(input);
+
+    if (!snapshotId) {
+      throw new Error(
+        "Expected a public Claude share URL like https://claude.ai/share/<uuid>"
+      );
+    }
+
+    const snapshot = await readClaudeSnapshot(input, snapshotId, dependencies);
+    return extractClaudeTurns(snapshot);
+  }
+
+  return extractTurns(await readHtml(input, dependencies));
+}
+
+async function main(argv, dependencies = {}) {
   if (argv.length === 0) {
     usage(process.stderr);
     return 2;
@@ -222,8 +368,8 @@ async function main(argv) {
     return 0;
   }
 
-  const html = await readHtml(command.input);
-  process.stdout.write(formatTurns(extractTurns(html), command.headings));
+  const turns = await loadTurns(command.input, dependencies);
+  process.stdout.write(formatTurns(turns, command.headings));
 
   return 0;
 }
@@ -240,4 +386,15 @@ if (require.main === module) {
   );
 }
 
-module.exports = { extractTurns, formatTurns, main, parseArguments, readHtml };
+module.exports = {
+  claudeShareId,
+  extractClaudeTurns,
+  extractTurns,
+  formatTurns,
+  loadTurns,
+  main,
+  parseArguments,
+  readClaudeSnapshot,
+  readHtml,
+  runSafariSnapshot,
+};

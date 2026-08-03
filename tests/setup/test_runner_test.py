@@ -27,7 +27,7 @@ class TestRunnerTests(unittest.TestCase):
         self.assertIn("testpaths = tests tools", pytest)
         self.assertIn("bb tools/extract-chat/tests/extract_chat_test.clj", runner)
         self.assertIn("bb -cp tools/agent-split/src tools/agent-split/tests/run.clj", runner)
-        self.assertIn("node tools/extract-chatgpt-share/tests/extract_chatgpt_share_test.js", runner)
+        self.assertIn("node tools/extract-chat-share/tests/extract_chat_share_test.js", runner)
         self.assertIn("cargo test --manifest-path tools/jj-proxy/Cargo.toml", runner)
         self.assertIn("python3 tools/shell-data/main.py lib/abbr.txt", runner)
         self.assertIn("python3 tools/shell-boundaries/main.py", runner)
