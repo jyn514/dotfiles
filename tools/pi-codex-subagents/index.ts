@@ -5,11 +5,14 @@ import {
   formatSize,
   truncateHead,
 } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { Text, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
   AgentManager,
   getAgentDefinitionsDescription,
+  loadSubagentConfig,
+  THINKING_LEVELS,
   type AgentCompletionEvent,
   type AgentInfo,
   type ThinkingLevel,
@@ -79,6 +82,35 @@ export default function (pi: ExtensionAPI) {
   let cachedSkillsSignature = "";
   let activeContext: any;
   const activeAgents = new Set<string>();
+
+  type SpawnModel = { provider: string; modelId: string };
+
+  const exactPair = (pattern: string): SpawnModel | undefined => {
+    const colon = pattern.lastIndexOf(":");
+    const reference = colon > 0 && (THINKING_LEVELS as readonly string[]).includes(pattern.slice(colon + 1)) ? pattern.slice(0, colon) : pattern;
+    const slash = reference.indexOf("/");
+    if (slash <= 0 || /[*?[\]]/.test(reference)) return undefined;
+    return { provider: reference.slice(0, slash), modelId: reference.slice(slash + 1) };
+  };
+
+  let spawnModels = new Map<string, SpawnModel>();
+
+  const resolveSpawnModels = (ctx: any) => {
+    const config = loadSubagentConfig();
+    const models = new Map<string, SpawnModel>();
+    const available = new Set(ctx.modelRegistry.getAvailable().map((model: any) => `${model.provider}/${model.id}`));
+    const unavailable: string[] = [];
+    for (const entry of config.models ?? []) {
+      const pair = exactPair(entry);
+      if (pair && available.has(`${pair.provider}/${pair.modelId}`)) models.set(`${pair.provider}/${pair.modelId}`, pair);
+      else unavailable.push(entry);
+    }
+    if (config.modelsFromEnabledModels) {
+      for (const { model } of ctx.scopedModels ?? []) models.set(`${model.provider}/${model.id}`, { provider: model.provider, modelId: model.id });
+    }
+    if (unavailable.length) ctx.ui?.notify?.(`spawn_agent models not available: ${unavailable.join(", ")}`, "warning");
+    return models;
+  };
 
   const isCurrentSession = (parentId: string) => {
     try { return activeContext && parentSessionId(activeContext) === parentId; }
@@ -156,7 +188,9 @@ export default function (pi: ExtensionAPI) {
     label: "Spawn Agent",
     get description() {
       return `Spawn a fresh-context Pi subagent for a concrete task. Automatic extension, skill, and prompt-template discovery is disabled. Agent templates may explicitly configure a provider/model pair, thinking level, tools, skills, and extensions. Omitted template settings inherit from the parent where applicable.
-
+${spawnModels.size ? `
+A task may run on a model of its own, without a template: \`model\` takes one of the values its schema lists, and \`thinking\` sets the reasoning effort.
+` : ""}
 Returns after the child accepts its initial task. Continue with independent work instead of waiting; the child's final response will be delivered automatically when ready. Use \`wait_agent\` or \`wait_all_agents\` only when your next action depends on the subagent response and you have no useful work to do meanwhile.
 
 \`agent_type\` is optional. Omit it for a generic subagent. Use a template only when the task matches it.
@@ -167,12 +201,20 @@ ${getAgentDefinitionsDescription()}
 Available parent skills that may be added by name:
 ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${skill.description}`).join("\n") : "No model-invocable skills are loaded in the parent session."}`;
     },
-    parameters: Type.Object({
-      task_name: Type.String({ description: "Task name for the new agent. Use letters, digits, underscores, dashes, and optional slash path separators." }),
-      message: Type.String({ description: "Initial task for the new agent." }),
-      agent_type: Type.Optional(Type.String({ description: "Optional agent template name from ~/.pi/agent/pi-codex-subagents/agents/." })),
-      skills: Type.Optional(Type.Array(Type.String(), { description: "Additional skill names from the loaded parent skills listed in this tool description." })),
-    }),
+    get parameters() {
+      return Type.Object({
+        task_name: Type.String({ description: "Task name for the new agent. Use letters, digits, underscores, dashes, and optional slash path separators." }),
+        message: Type.String({ description: "Initial task for the new agent." }),
+        agent_type: Type.Optional(Type.String({ description: "Optional agent template name from ~/.pi/agent/pi-codex-subagents/agents/." })),
+        skills: Type.Optional(Type.Array(Type.String(), { description: "Additional skill names from the loaded parent skills listed in this tool description." })),
+        ...(spawnModels.size
+          ? {
+              model: Type.Optional(StringEnum([...spawnModels.keys()], { description: "Optional model for this one task, for example an independent review by another vendor. Defaults to the template model, otherwise the parent model." })),
+              thinking: Type.Optional(StringEnum(THINKING_LEVELS, { description: "Optional thinking level. Defaults to the template level, otherwise the parent level." })),
+            }
+          : {}),
+      });
+    },
     async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
       const currentModel = ctx.model;
       if (!currentModel?.provider || !currentModel?.id) throw new Error("spawn_agent failed: the parent has no active provider/model pair.");
@@ -180,6 +222,11 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
       const loadedSkillPaths = Object.fromEntries(cachedSkills.map((skill) => [skill.name, skill.filePath]));
       const unavailableSkills = requestedSkills.filter((skill) => !Object.hasOwn(loadedSkillPaths, skill));
       if (unavailableSkills.length) throw new Error(`spawn_agent failed: skills are not loaded in the parent session: ${unavailableSkills.join(", ")}`);
+      const model = params.model ? spawnModels.get(params.model) : undefined;
+      if (params.model && !model) throw new Error(`spawn_agent failed: model "${params.model}" is not in the configured spawn models: ${[...spawnModels.keys()].join(", ") || "none"}`);
+      if (model && !ctx.modelRegistry.getAvailable().some((entry: any) => entry.provider === model.provider && entry.id === model.modelId)) {
+        throw new Error(`spawn_agent failed: model "${params.model}" is not currently available.`);
+      }
       try {
         const result = await manager.spawnAgent({
           task_name: params.task_name,
@@ -194,6 +241,8 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
           inheritedModelId: currentModel.id,
           inheritedThinking: pi.getThinkingLevel() as ThinkingLevel,
           inheritedTools: pi.getActiveTools().join(","),
+          model,
+          thinking: params.thinking,
         });
         return textResult(`Spawned ${result.task_name}.`, result);
       } catch (error) {
@@ -201,7 +250,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
       }
     },
     renderCall(args: any, theme: Theme) {
-      return new Text(theme.fg("toolTitle", theme.bold("spawn_agent ")) + theme.fg("accent", args.task_name || "?") + theme.fg("dim", args.agent_type ? ` [${args.agent_type}]` : ""), 0, 0);
+      return new Text(theme.fg("toolTitle", theme.bold("spawn_agent ")) + theme.fg("accent", args.task_name || "?") + theme.fg("dim", (args.agent_type ? ` [${args.agent_type}]` : "") + (args.model ? ` ${args.model}` : "")), 0, 0);
     },
     renderResult(result: any, _options: any, theme: Theme) {
       if (result.isError) return new Text(theme.fg("error", `✗ ${result.content?.[0]?.text || "failed"}`), 0, 0);
@@ -212,6 +261,9 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   pi.on("session_start", async (_event: any, ctx: any) => {
     activeContext = ctx;
     activeAgents.clear();
+    try { spawnModels = resolveSpawnModels(ctx); }
+    catch (error: any) { ctx.ui?.notify?.(`spawn_agent model resolution failed, keeping the previous list: ${error?.message || error}`, "warning"); }
+    pi.registerTool(spawnAgentTool);
     await manager.ready();
     if (activeContext !== ctx) return;
     for (const entry of manager.listAgents(undefined, parentSessionId(ctx))) {
