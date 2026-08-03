@@ -185,20 +185,45 @@
                                                     "-r" revision path)))))
         (fail! "preflight" (str "unsupported tree entry for " path ": " type))))))
 
+(defn- deleted-symlink-paths [patch-text]
+  (loop [[line & more] (str/split-lines patch-text)
+         file nil
+         paths []]
+    (cond
+      (nil? line) paths
+      (str/starts-with? line "diff --git ")
+      (recur more (some-> line split-diff-paths second) paths)
+      (and file (= line "deleted file mode 120000"))
+      (recur more file (conj paths file))
+      :else
+      (recur more file paths))))
+
+(defn- without-deleted-symlink-sections [patch-text]
+  (->> (str/split patch-text #"(?m)(?=^diff --git )")
+       (remove (fn [section]
+                 (some #{"deleted file mode 120000"}
+                       (str/split-lines section))))
+       (apply str)))
+
+(defn- delete-selected-symlinks! [tree paths]
+  (doseq [path paths
+          :let [link (fs/file tree path)]]
+    (if (fs/sym-link? link)
+      (fs/delete link)
+      (fail! "preflight" (str "expected deleted symlink at " path)))))
+
 (defn- apply-patch! [tree patch]
-  (let [directory (str "--directory=" tree)
-        check (process/shell {:dir (git-tool-dir)
+  (let [check (process/shell {:dir (str tree)
                               :out :string
                               :err :string
                               :shutdown nil
                               :continue true}
                              "git" "apply" "--unsafe-paths" "--check"
-                             directory
                              (str patch))]
     (when-not (zero? (:exit check))
       (fail! "preflight" (str "patch dry-run failed\n" (:err check))))
-    (run "preflight" {:dir (git-tool-dir)}
-         "git" "apply" "--unsafe-paths" directory (str patch))))
+    (run "preflight" {:dir (str tree)}
+         "git" "apply" "--unsafe-paths" (str patch))))
 
 (defn- diff-output [left right]
   (let [result (process/shell {:dir (git-tool-dir)
@@ -274,22 +299,36 @@
         (fail! "preflight"
                (str "selected change for " file " is not contained in original diff"))))))
 
-(defn- preflight! [patch patch-text revision helper-root]
+(defn- preflight! [patch-text revision helper-root]
   (validate-patch-paths! patch-text)
   (let [paths (patch-file-paths patch-text)
         left-revision (format "(%s)-" revision)
         left (fs/file helper-root "left")
-        selected (fs/file helper-root "selected")]
+        selected (fs/file helper-root "selected")
+        remaining-patch (fs/file helper-root "remaining.patch")
+        original (diff-change-index
+                  (:out (run "preflight" "jj" "diff" "--git" "-r" revision)))
+        deleted-symlinks (deleted-symlink-paths patch-text)]
+    (validate-contained! original
+                         (select-keys (diff-change-index patch-text)
+                                      deleted-symlinks))
     (fs/create-dirs left)
+    (fs/create-dirs selected)
     (materialize-patch-paths! left-revision paths left)
-    (fs/copy-tree left selected)
-    (apply-patch! selected patch)
-    (let [original (diff-change-index
-                    (:out (run "preflight" "jj" "diff" "--git" "-r" revision)))
-          selected-index (diff-change-index
-                          (normalize-diff-paths (diff-output left selected)
-                                                left
-                                                selected))]
+    (materialize-patch-paths! left-revision paths selected)
+    (delete-selected-symlinks! selected deleted-symlinks)
+    (let [remaining-text (without-deleted-symlink-sections patch-text)]
+      (when-not (str/blank? remaining-text)
+        (spit (str remaining-patch) remaining-text)
+        (apply-patch! selected remaining-patch)))
+    (let [selected-index (merge-with
+                          set/union
+                          (diff-change-index
+                           (normalize-diff-paths (diff-output left selected)
+                                                 left
+                                                 selected))
+                          (select-keys (diff-change-index patch-text)
+                                       deleted-symlinks))]
       (validate-contained! original selected-index)
       {:original-index original
        :selected-index selected-index})))
@@ -390,11 +429,11 @@
         repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "root")))
         artifact-root (fs/file repo-root "target" "jj-split")
         _ (fs/create-dirs artifact-root)
-        helper-root (fs/create-temp-dir {:dir artifact-root
+        helper-root (fs/create-temp-dir {:dir (temp-root)
                                          :prefix "jj-split-patch"})]
     (try
       (check-artifact-root-ignored! repo-root)
-      (let [preflight (preflight! patch patch-text revision helper-root)]
+      (let [preflight (preflight! patch-text revision helper-root)]
         (check-snapshot-safety! repo-root artifact-root patch helper-root)
         (->> (run-split! patch message revision)
              split-output-revisions

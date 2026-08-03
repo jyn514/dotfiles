@@ -140,21 +140,51 @@
       :else
       (recur more file in-hunk? index))))
 
+(defn- validate-index-contained! [original selected]
+  (doseq [[file selected-changes] selected]
+    (let [original-changes (get original file #{})]
+      (when (empty? selected-changes)
+        (fail! (str "selected diff for " file " is empty or malformed")))
+      (when-not (set/subset? selected-changes original-changes)
+        (let [missing (first (set/difference selected-changes original-changes))]
+          (fail! (str "selected change for " file
+                      " is not contained in original diff"
+                      (when missing
+                        (str ": " missing)))))))))
+
 (defn- validate-contained! [left right selected]
   (let [original (diff-change-index
                   (normalize-diff-paths (diff-output left right) left right))
         selected (diff-change-index
                   (normalize-diff-paths (diff-output left selected) left selected))]
-    (doseq [[file selected-changes] selected]
-      (let [original-changes (get original file #{})]
-        (when (empty? selected-changes)
-          (fail! (str "selected diff for " file " is empty or malformed")))
-        (when-not (set/subset? selected-changes original-changes)
-          (let [missing (first (set/difference selected-changes original-changes))]
-            (fail! (str "selected change for " file
-                        " is not contained in original diff"
-                        (when missing
-                          (str ": " missing))))))))))
+    (validate-index-contained! original selected)))
+
+(defn- deleted-symlink-paths [patch-text]
+  (loop [[line & more] (str/split-lines patch-text)
+         file nil
+         paths []]
+    (cond
+      (nil? line) paths
+      (str/starts-with? line "diff --git ")
+      (recur more (some-> line split-diff-paths second) paths)
+      (and file (= line "deleted file mode 120000"))
+      (recur more file (conj paths file))
+      :else
+      (recur more file paths))))
+
+(defn- without-deleted-symlink-sections [patch-text]
+  (->> (str/split patch-text #"(?m)(?=^diff --git )")
+       (remove (fn [section]
+                 (some #{"deleted file mode 120000"}
+                       (str/split-lines section))))
+       (apply str)))
+
+(defn- delete-selected-symlinks! [tree paths]
+  (doseq [path paths
+          :let [link (fs/file tree path)]]
+    (if (fs/sym-link? link)
+      (fs/delete link)
+      (fail! (str "expected deleted symlink at " path)))))
 
 (defn- copy-tree! [from to]
   (fs/create-dirs to)
@@ -189,11 +219,22 @@
     (let [patch-text (slurp patch)
           tmp-root (fs/create-temp-dir {:dir (str (temp-root))
                                         :prefix "jj-agent-split-editor"})
-          selected (fs/file tmp-root "selected")]
+          selected (fs/file tmp-root "selected")
+          remaining-patch (fs/file tmp-root "remaining.patch")
+          original (diff-change-index
+                    (normalize-diff-paths (diff-output left right) left right))
+          deleted-symlinks (deleted-symlink-paths patch-text)]
       (try
         (validate-patch-paths! left patch-text)
+        (validate-index-contained! original
+                                   (select-keys (diff-change-index patch-text)
+                                                deleted-symlinks))
         (copy-tree! left selected)
-        (apply-patch! selected patch)
+        (delete-selected-symlinks! selected deleted-symlinks)
+        (let [remaining-text (without-deleted-symlink-sections patch-text)]
+          (when-not (str/blank? remaining-text)
+            (spit (str remaining-patch) remaining-text)
+            (apply-patch! selected remaining-patch)))
         (validate-contained! left right selected)
         (copy-tree! selected right)
         (println "selected files:")
