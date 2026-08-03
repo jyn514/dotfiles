@@ -81,3 +81,4 @@ allow(["tmux", [
 allow(["tmux", "source-file", "-n"])
 
 # Unsorted
+prefix_rule(pattern=["bin/extract-chat-share"], decision="allow")
