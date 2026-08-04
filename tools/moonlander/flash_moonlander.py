@@ -115,7 +115,7 @@ def archive_root(archive: ZipFile) -> str:
         for root in roots
         if root.startswith("zsa_moonlander_") and root.endswith("_source")
     ]
-    if len(roots) != 1 or len(candidates) != 1:
+    if len(candidates) != 1:
         raise FlashError("Oryx archive must contain exactly one source directory")
     corrupt = archive.testzip()
     if corrupt is not None:
@@ -246,8 +246,8 @@ def flash(arguments: list[str], client: oryx_sync.GraphQLClient | None = None) -
         return 2
 
     require_success(
-        run([str(TOOL_DIR / "sync-moonlander")], stdout=subprocess.DEVNULL),
-        "layout synchronization check",
+        run([str(TOOL_DIR / "sync-moonlander"), "--pull"], stdout=subprocess.DEVNULL),
+        "layout synchronization",
     )
     layout, revision = latest_revision(client or oryx_sync.GraphQLClient())
 

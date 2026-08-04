@@ -19,12 +19,17 @@ def keymap_source():
     return (
         "SEND_STRING(SS_LCTL(SS_LSFT(SS_TAP(X_U))) "
         "SS_TAP(X_A) SS_TAP(X_E) SS_TAP(X_ENTER)); KC_F13\n"
+        "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n"
+        "  return true;\n"
+        "}\n"
     )
 
 
 def archive_bytes(root="zsa_moonlander_test_source", keymap=None):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("README.md", "Oryx build archive")
+        archive.writestr("zsa_moonlander_reva_test.bin", b"firmware")
         archive.writestr(f"{root}/keymap.c", keymap or keymap_source())
         archive.writestr(f"{root}/rules.mk", "")
         archive.writestr(f"{root}/config.h", "")
@@ -109,7 +114,9 @@ class FlashTests(unittest.TestCase):
                 self.assertEqual(flash_moonlander.flash([]), 0)
 
             self.assertEqual(len(calls), 2)
-            self.assertEqual(calls[0][0], [str(TOOL_DIR / "sync-moonlander")])
+            self.assertEqual(
+                calls[0][0], [str(TOOL_DIR / "sync-moonlander"), "--pull"]
+            )
             self.assertEqual(
                 calls[1][0],
                 ["qmk", "compile", "-kb", "zsa/moonlander/reva", "-km", "layout-revision"],

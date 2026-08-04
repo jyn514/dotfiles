@@ -3295,45 +3295,25 @@
               }
             },
             {
-              "customLabel": "back",
               "tap": {
-                "code": "KC_LEFT",
+                "code": "KC_WWW_BACK",
                 "color": null,
                 "description": null,
                 "layer": null,
                 "macro": null,
                 "modifier": null,
-                "modifiers": {
-                  "leftAlt": true,
-                  "leftCtrl": false,
-                  "leftGui": false,
-                  "leftShift": false,
-                  "rightAlt": false,
-                  "rightCtrl": false,
-                  "rightGui": false,
-                  "rightShift": false
-                }
+                "modifiers": null
               }
             },
             {
-              "customLabel": "forward",
               "tap": {
-                "code": "KC_RIGHT",
+                "code": "KC_WWW_FORWARD",
                 "color": null,
                 "description": null,
                 "layer": null,
                 "macro": null,
                 "modifier": null,
-                "modifiers": {
-                  "leftAlt": true,
-                  "leftCtrl": false,
-                  "leftGui": false,
-                  "leftShift": false,
-                  "rightAlt": false,
-                  "rightCtrl": false,
-                  "rightGui": false,
-                  "rightShift": false
-                }
+                "modifiers": null
               }
             },
             {
