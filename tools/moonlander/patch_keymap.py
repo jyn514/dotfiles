@@ -13,6 +13,24 @@ SEND_STRING = re.compile(r"SEND_STRING\((?P<body>[^;]*?)\);")
 HEX_TAP = re.compile(r"SS_TAP\(X_([0-9A-F])\)")
 ANY_TAP = re.compile(r"SS_TAP\(X_([A-Z0-9_]+)\)")
 SENTINELS = {"KC_F13": "UC_NEXT"}
+PROCESS_RECORD_USER = "bool process_record_user(uint16_t keycode, keyrecord_t *record) {"
+BROWSER_NAVIGATION = """
+  os_variant_t host_os = detected_host_os();
+  if (host_os == OS_MACOS || host_os == OS_IOS) {
+    switch (keycode) {
+      case KC_WWW_BACK:
+        if (record->event.pressed) {
+          tap_code16(G(KC_LBRC));
+        }
+        return false;
+      case KC_WWW_FORWARD:
+        if (record->event.pressed) {
+          tap_code16(G(KC_RBRC));
+        }
+        return false;
+    }
+  }
+"""
 BACKTICKS = (
     "SEND_STRING(SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_GRAVE) "
     "SS_DELAY(5) SS_TAP(X_GRAVE) SS_DELAY(5) SS_TAP(X_ENTER) "
@@ -82,6 +100,16 @@ def patch_keymap(source: str, require_sentinels: bool = True) -> str:
         if require_sentinels and count != 1:
             raise PatchError(f"expected one {placeholder} sentinel, found {count}")
         result = result.replace(placeholder, replacement)
+    process_record_count = result.count(PROCESS_RECORD_USER)
+    if process_record_count != 1:
+        raise PatchError(
+            "expected one process_record_user insertion point, "
+            f"found {process_record_count}"
+        )
+    result = result.replace(
+        PROCESS_RECORD_USER,
+        PROCESS_RECORD_USER + BROWSER_NAVIGATION,
+    )
     return result
 
 
