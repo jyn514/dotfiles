@@ -38,6 +38,7 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(set(), filenames)
         self.assertEqual(b"asset-\xff.bin", run.call_args.kwargs["input"])
 
+    @unittest.skipIf(sys.platform == "darwin", "macOS requires UTF-8 filenames")
     def test_snapshot_entries_preserve_byte_names_and_sort_them(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = os.fsencode(temporary)
@@ -82,7 +83,7 @@ class PreCommitTest(unittest.TestCase):
                 status = pre_commit.main([], hook_directory=ROOT / "config/githooks")
 
             self.assertEqual(128 + signal.SIGTERM, status)
-            self.assertEqual(directory, Path.cwd())
+            self.assertEqual(directory.resolve(), Path.cwd())
             self.assertEqual([], list(directory.glob("*-pre-commit.*")))
 
     def test_disposable_repository_accepts_adversarial_staged_names(self) -> None:
@@ -98,13 +99,14 @@ class PreCommitTest(unittest.TestCase):
                 check=True,
             )
             repository_bytes = os.fsencode(repository)
-            names = (
+            names = [
                 b"space name.txt",
                 b"line\nbreak.txt",
                 b"-leading.json",
                 "decomposed-e\N{COMBINING ACUTE ACCENT}.txt".encode(),
-                b"undecodable-\xff.txt",
-            )
+            ]
+            if sys.platform != "darwin":
+                names.append(b"undecodable-\xff.txt")
             for name in names:
                 descriptor = os.open(
                     os.path.join(repository_bytes, name),

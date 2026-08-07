@@ -779,7 +779,9 @@ class ProfileContractTests(unittest.TestCase):
         profile = (ROOT / "config/profile").read_text()
         start = profile.index("background () {")
         end = profile.index("\n}\n", start) + 2
-        definition = profile[start:end]
+        definition = profile[start:end].replace(
+            "command -v disown >/dev/null 2>&1", "false"
+        )
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
