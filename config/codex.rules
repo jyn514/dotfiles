@@ -66,6 +66,7 @@ allow([[
         "pgrep", "jcmd", "lpstat", "lpinfo",
 ]])
 allow(["zola", "build"])
+allow(["gofmt"])
 allow(["yt-dlp", "--list-subs"])
 allow(["tea", "issue", ["list", "ls", "--help", "-h"]])
 allow(["skopeo", ["inspect", "list-tags"]])
