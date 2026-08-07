@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -119,6 +120,7 @@ class GitBackupTests(unittest.TestCase):
                 self.assertTrue(Path(f"{output}.tar").is_file())
 
     @unittest.skipUnless(os.name == "posix", "byte paths require POSIX")
+    @unittest.skipIf(sys.platform == "darwin", "macOS requires UTF-8 filenames")
     def test_undecodable_repository_and_destination_names_round_trip(self) -> None:
         source = os.fsencode(self.repository)
         unusual_source = os.path.join(os.fsencode(self.directory), b"repository-\xff")

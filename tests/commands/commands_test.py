@@ -290,7 +290,7 @@ class CommandTest(unittest.TestCase):
         environment = os.environ | {
             "PATH": f"{self.directory}:{os.environ['PATH']}",
             "RELATIVE": source.name,
-            "REPOSITORY": str(repository),
+            "REPOSITORY": str(repository.resolve()),
             "REMOTE_URL": "https://github.com/user/repo.git",
             "REV_LIST_STATUS": "23",
         }
@@ -368,7 +368,7 @@ class CommandTest(unittest.TestCase):
         )
         environment = os.environ | {
             "PATH": f"{self.directory}:{os.environ['PATH']}",
-            "REPOSITORY": str(repository),
+            "REPOSITORY": str(repository.resolve()),
         }
 
         remote_failure = subprocess.run(
@@ -1470,7 +1470,7 @@ class CommandTest(unittest.TestCase):
         )
 
         self.assertEqual(0, success.returncode)
-        self.assertEqual(f"{workspace}\n", bacon_cwd.read_text())
+        self.assertEqual(f"{workspace.resolve()}\n", bacon_cwd.read_text())
         self.assertEqual(23, cargo_failure.returncode)
         self.assertEqual(1, malformed.returncode)
 
@@ -1545,7 +1545,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [os.path.relpath(ROOT / "config/githooks/pre-commit", self.directory)],
+            [str(ROOT / "config/githooks/pre-commit")],
             cwd=self.directory,
             text=True,
             stdout=subprocess.PIPE,

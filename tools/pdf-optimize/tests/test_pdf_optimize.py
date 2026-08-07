@@ -152,6 +152,7 @@ class PdfOptimizeTests(unittest.TestCase):
         self.assertTrue(destination.is_file())
 
     @unittest.skipUnless(os.name == "posix", "byte paths require POSIX")
+    @unittest.skipIf(sys.platform == "darwin", "macOS requires UTF-8 filenames")
     def test_undecodable_input_and_output_names_round_trip(self) -> None:
         self.successful_ghostscript()
         source = os.path.join(os.fsencode(self.directory), b"source-\xff.pdf")

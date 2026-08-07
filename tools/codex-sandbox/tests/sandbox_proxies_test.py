@@ -81,10 +81,11 @@ class ManifestTest(unittest.TestCase):
         main = self.repo
         worktree = Path(self.temporary.name + "-worktree")
         self.addCleanup(shutil.rmtree, worktree, True)
-        (main / "tracked").write_text("tracked", encoding="utf-8")
+        (main / "tracked").write_text("tracked\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(main), "add", "tracked"], check=True)
         subprocess.run([
             "git", "-C", str(main), "-c", "user.name=Test", "-c", "user.email=test@example.com",
+            "-c", "core.hooksPath=",
             "commit", "--quiet", "-m", "initial",
         ], check=True)
         subprocess.run(["git", "-C", str(main), "worktree", "add", "--quiet", str(worktree)], check=True)

@@ -211,7 +211,7 @@ class NativeLoaderTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            ["fish", "-c", script],
+            ["fish", "--no-config", "-c", script],
             env=os.environ | {"DOTFILES": str(self.dotfiles)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -255,7 +255,7 @@ class NativeLoaderTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            ["fish", "-c", script],
+            ["fish", "--no-config", "-c", script],
             env=os.environ | {"DOTFILES": str(self.dotfiles)},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

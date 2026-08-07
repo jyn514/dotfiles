@@ -36,6 +36,7 @@ class WhatRunsTest(unittest.TestCase):
             check=False,
         )
 
+    @unittest.skipIf(sys.platform == "darwin", "macOS requires UTF-8 filenames")
     def test_filters_bytes_paths_and_preserves_symlink_names(self) -> None:
         root = os.fsencode(self.directory)
         executable = root + b"/ordinary executable"
