@@ -35,6 +35,8 @@ target/
 .nrepl-port
 .DS_Store
 .nvimlog
+.pnpm-store/
+/.codex/rules/local.rules
 
 **/.claude/settings.local.json
 
