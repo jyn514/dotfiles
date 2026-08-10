@@ -60,6 +60,7 @@ class State:
     relay_port: int = 2222
     agent_podman: dict[str, str] | None = None
     repository: Path | None = None
+    zuliprc: Path | None = None
     image: str = ""
     manifest: Path | None = None
     proxy_state: Path | None = None
@@ -223,10 +224,18 @@ def validate_repository(state: State) -> None:
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
     state.repository = repository
     state.manifest = temporary_file()
-    helper(
+    snapshot_arguments = [
         "snapshot", "--repo", str(repository), "--output", str(state.manifest),
         "--jj-image-command", str(DOTFILES / ".agents/sandbox/jj-proxy-image"),
-    )
+    ]
+    zuliprc = state.home / ".zuliprc"
+    if zuliprc.exists() or zuliprc.is_symlink():
+        state.zuliprc = zuliprc
+        snapshot_arguments += [
+            "--zulip-image-command", str(DOTFILES / ".agents/sandbox/zulip-proxy-image"),
+            "--zuliprc", str(zuliprc),
+        ]
+    helper(*snapshot_arguments)
 
 
 def image_sources() -> list[Path]:
@@ -328,12 +337,15 @@ def acquire_lock(state: State) -> None:
 
 def attach_proxies(state: State) -> None:
     try:
-        helper(
+        arguments = [
             "attach", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
             "--session", str(state.lock_ready),
             "--state", str(state.proxy_state), "--helper-image", state.image,
             "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
-        )
+        ]
+        if state.zuliprc is not None:
+            arguments += ["--zuliprc", str(state.zuliprc)]
+        helper(*arguments)
     finally:
         state.lock_coordinated.touch()
 

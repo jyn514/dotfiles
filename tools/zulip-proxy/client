@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Export a Zulip channel through the read-only sandbox proxy."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import struct
+import subprocess
+import sys
+import time
+from urllib.parse import unquote, urlsplit
+
+
+MAX_REQUEST = 16 << 10
+MAX_RESPONSE = 16 << 20
+
+
+def arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="zulip")
+    parser.add_argument("channel", help="numeric channel ID or Zulip narrow URL")
+    parser.add_argument("--topic", help="limit the transcript to one topic")
+    parser.add_argument(
+        "--format", choices=("markdown", "jsonl"), default="markdown",
+        help="output format (default: markdown)",
+    )
+    return parser.parse_args()
+
+
+def decode_hash_component(value: str) -> str:
+    encoded = value.replace(".", "%")
+    if re.search(r"%(?![0-9A-Fa-f]{2})", encoded):
+        raise RuntimeError("narrow URL contains invalid percent encoding")
+    try:
+        return unquote(encoded, errors="strict")
+    except UnicodeDecodeError as error:
+        raise RuntimeError("narrow URL contains invalid UTF-8 encoding") from error
+
+
+def parse_channel(value: str, explicit_topic: str | None) -> tuple[int, str | None]:
+    if value.isascii() and value.isdecimal():
+        channel_id = int(value)
+        if channel_id > 0:
+            return channel_id, explicit_topic
+        raise RuntimeError("channel ID must be positive")
+
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.query:
+        raise RuntimeError("channel must be a numeric ID or HTTPS Zulip narrow URL")
+    parts = parsed.fragment.removeprefix("/").split("/")
+    if len(parts) < 3 or parts[:2] != ["narrow", "channel"]:
+        raise RuntimeError("URL is not a Zulip channel narrow")
+    match = re.fullmatch(r"([1-9][0-9]*)(?:-.+)?", parts[2])
+    if match is None:
+        raise RuntimeError("Zulip narrow URL has no valid numeric channel ID")
+    topic = None
+    remainder = parts[3:]
+    if remainder:
+        if remainder[0] == "topic" and len(remainder) >= 2:
+            topic = decode_hash_component(remainder[1])
+            remainder = remainder[2:]
+        if remainder and not (
+            len(remainder) == 2
+            and remainder[0] in {"near", "with"}
+            and remainder[1].isdecimal()
+        ):
+            raise RuntimeError("Zulip narrow URL has an unsupported suffix")
+    if topic is not None and explicit_topic is not None and topic != explicit_topic:
+        raise RuntimeError("--topic conflicts with the topic in the narrow URL")
+    return int(match.group(1)), explicit_topic if explicit_topic is not None else topic
+
+
+def receive_exact(connection: socket.socket, length: int) -> bytes:
+    result = bytearray()
+    while len(result) < length:
+        chunk = connection.recv(length - len(result))
+        if not chunk:
+            raise RuntimeError("proxy response ended early")
+        result.extend(chunk)
+    return bytes(result)
+
+
+def exchange_in_sandbox(body: bytes, proxy_dir: str) -> bytes:
+    path = Path(proxy_dir) / "zulip" / "socket"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(75)
+        connection.connect(str(path))
+        connection.sendall(body)
+        connection.shutdown(socket.SHUT_WR)
+        header = receive_exact(connection, 4)
+        length = struct.unpack(">I", header)[0]
+        if length > MAX_RESPONSE:
+            raise RuntimeError("proxy response is too large")
+        response = receive_exact(connection, length)
+        if connection.recv(1):
+            raise RuntimeError("proxy response has trailing bytes")
+        return header + response
+
+
+def exchange_on_host(body: bytes) -> bytes:
+    path = Path(__file__).resolve()
+    if len(path.parents) < 3:
+        raise RuntimeError("cannot locate the dotfiles repository from the Zulip client")
+    root = path.parents[2]
+    try:
+        repository = subprocess.run(
+            ["jj", "workspace", "root"], check=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ).stdout.strip()
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(error.stderr.strip() or "current directory is not a Jujutsu workspace") from error
+    result = subprocess.run(
+        [
+            str(root / "tools/codex-sandbox/sandbox-proxy-route"),
+            "--repo", repository, "--command", "zulip", "--",
+            str(root / "tools/zulip-proxy/local.py"),
+        ],
+        input=body, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        detail = result.stderr.decode(errors="replace").strip()
+        raise RuntimeError(detail or "host proxy route failed")
+    return result.stdout
+
+
+def request_page(channel_id: int, topic: str | None, anchor: str | int) -> dict:
+    request = {
+        "version": 1,
+        "channel_id": channel_id,
+        "topic": topic,
+        "anchor": anchor,
+        "include_anchor": anchor == "oldest",
+    }
+    payload = json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()
+    if len(payload) > MAX_REQUEST:
+        raise RuntimeError("proxy request is too large")
+    framed = struct.pack(">I", len(payload)) + payload
+    proxy_dir = os.environ.get("SANDBOX_PROXY_DIR")
+    response_frame = (
+        exchange_in_sandbox(framed, proxy_dir) if proxy_dir
+        else exchange_on_host(framed)
+    )
+    if len(response_frame) < 4:
+        raise RuntimeError("proxy response ended early")
+    length = struct.unpack(">I", response_frame[:4])[0]
+    if length > MAX_RESPONSE or len(response_frame) != length + 4:
+        raise RuntimeError("proxy returned an invalid response frame")
+    response = json.loads(response_frame[4:])
+    if not isinstance(response, dict) or response.get("version") != 1:
+        raise RuntimeError("proxy returned a malformed response")
+    if "error" in response:
+        raise RuntimeError(response["error"])
+    if set(response) != {"version", "messages", "found_newest", "history_limited"}:
+        raise RuntimeError("proxy returned a malformed response")
+    if (
+        not isinstance(response["messages"], list)
+        or not isinstance(response["found_newest"], bool)
+        or not isinstance(response["history_limited"], bool)
+    ):
+        raise RuntimeError("proxy returned malformed pagination data")
+    return response
+
+
+def markdown(message: dict) -> str:
+    timestamp = datetime.fromtimestamp(message["timestamp"], timezone.utc)
+    topic = message.get("subject", message.get("topic", ""))
+    return (
+        f"## {timestamp.isoformat().replace('+00:00', 'Z')} — "
+        f"{message['sender_full_name']}\n\n"
+        f"Channel: {message['display_recipient']}  \n"
+        f"Topic: {topic}  \n"
+        f"Message ID: {message['id']}\n\n"
+        f"{message['content']}\n\n"
+    )
+
+
+def main() -> int:
+    args = arguments()
+    channel_id, topic = parse_channel(args.channel, args.topic)
+    if args.format == "markdown":
+        print(f"# Zulip transcript for channel {channel_id}\n")
+    anchor: str | int = "oldest"
+    history_limited = False
+    while True:
+        response = request_page(channel_id, topic, anchor)
+        history_limited = history_limited or response["history_limited"]
+        messages = response["messages"]
+        for message in messages:
+            if args.format == "jsonl":
+                print(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
+            else:
+                sys.stdout.write(markdown(message))
+        if response["found_newest"]:
+            if history_limited:
+                print("zulip: warning: server history limits omitted older messages", file=sys.stderr)
+            return 0
+        if not messages:
+            raise RuntimeError("pagination stalled before reaching the newest message")
+        anchor = messages[-1]["id"]
+        time.sleep(2)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        print(f"zulip: {error}", file=sys.stderr)
+        raise SystemExit(125)
