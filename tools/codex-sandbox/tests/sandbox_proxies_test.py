@@ -76,15 +76,6 @@ class ManifestTest(unittest.TestCase):
             f"type=bind,src={self.repo.resolve()},dst=/src/work,readonly,bind-nonrecursive=true",
             mounts,
         )
-        self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git",
-            mounts,
-        )
-        self.assertIn(
-            f"type=bind,src={(self.repo / '.jj/repo').resolve()},dst=/src/work/.jj/repo",
-            mounts,
-        )
-
     def test_linked_worktree_keeps_repository_at_agent_path(self) -> None:
         main = self.repo
         worktree = Path(self.temporary.name + "-worktree")

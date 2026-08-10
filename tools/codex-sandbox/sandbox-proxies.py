@@ -259,6 +259,11 @@ def jj_proxy_metadata_mounts(repo: Path) -> list[tuple[Path, Path]]:
     candidates = sorted({git_dir, common_dir, jj_repo}, key=lambda path: len(path.parts))
     mounts: list[tuple[Path, Path]] = []
     for source in candidates:
+        try:
+            source.relative_to(repo)
+            continue
+        except ValueError:
+            pass
         if any(source.is_relative_to(parent) for parent, _ in mounts):
             continue
         mounts.append((source, jj_container_path(repo, source)))

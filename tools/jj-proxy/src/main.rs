@@ -119,6 +119,18 @@ fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
     Ok(unsafe { OwnedFd::from_raw_fd(current) })
 }
 
+fn jj_command() -> Command {
+    let mut command = Command::new("/trusted/bin/jj");
+    command.args([
+        "--no-pager", "--color=never",
+        "--config", "ui.editor=[\"/trusted/bin/jj-proxy\",\"reject-editor\"]",
+        "--config", "ui.diff-editor=:builtin",
+        "--config", "ui.merge-editor=:builtin",
+        "--config", "signing.behavior=drop",
+    ]);
+    command
+}
+
 fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     file.take((MAX_OUTPUT + 1) as u64).read_to_end(&mut bytes)?;
@@ -143,7 +155,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
     }
 }
 
-fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>) -> Response {
+fn execute(request: &Request, root: RawFd, remotes: &HashSet<String>) -> Response {
     let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
     if request.version != 1 { return failure("unsupported protocol version".into()); }
     let valid_identity = |value: &str, limit: usize| {
@@ -164,15 +176,7 @@ fn execute(request: &Request, root: RawFd, repo: &str, remotes: &HashSet<String>
     if let Err(error) = policy::validate(&request.argv, remotes) { return failure(error.to_string()); }
     let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
 
-    let mut command = Command::new("/trusted/bin/jj");
-    command.args([
-        "--no-pager", "--color=never",
-        "--config", "ui.editor=[\"/trusted/bin/jj-proxy\",\"reject-editor\"]",
-        "--config", "ui.diff-editor=:builtin",
-        "--config", "ui.merge-editor=:builtin",
-        "--config", "signing.behavior=drop",
-        "--repository", repo,
-    ]);
+    let mut command = jj_command();
     if matches!(request.argv.first().map(String::as_str), Some("diff" | "show")) {
         command.args(["--config", "ui.diff-formatter=:git"]);
     }
@@ -242,7 +246,7 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(&request, root.as_raw_fd(), &repo, &remotes),
+            Ok(request) => execute(&request, root.as_raw_fd(), &remotes),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
@@ -327,5 +331,12 @@ mod tests {
         sender.shutdown(Shutdown::Write).unwrap();
         read_frame(&mut receiver, 32).unwrap();
         assert_eq!(io::ErrorKind::InvalidData, require_eof(&mut receiver).unwrap_err().kind());
+    }
+
+    #[test]
+    fn jj_command_discovers_the_workspace_from_its_current_directory() {
+        let command = jj_command();
+        let args: Vec<_> = command.get_args().collect();
+        assert!(!args.iter().any(|arg| *arg == "--repository"));
     }
 }
