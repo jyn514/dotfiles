@@ -298,6 +298,20 @@ class CodexSandboxTest(unittest.TestCase):
         builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
         self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
 
+    def test_enables_trusted_zulip_proxy_when_credentials_exist(self) -> None:
+        zuliprc = self.home / ".zuliprc"
+        zuliprc.write_text("[api]\nkey=secret\n", encoding="utf-8")
+        zuliprc.chmod(0o600)
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        snapshots = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "snapshot"]
+        snapshot = snapshots[0]
+        builder = snapshot[snapshot.index("--zulip-image-command") + 1]
+        self.assertEqual(ROOT / ".agents" / "sandbox" / "zulip-proxy-image", Path(builder).resolve())
+        self.assertEqual(str(zuliprc), snapshot[snapshot.index("--zuliprc") + 1])
+        attaches = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "attach"]
+        self.assertEqual(str(zuliprc), attaches[0][attaches[0].index("--zuliprc") + 1])
+
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")
         (self.repo / ".git").write_text("gitdir: ../main/.git/worktrees/repo\n", encoding="utf-8")

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
+	exec /tools/zulip-proxy/client "$@"
+fi
+
+script=$(realpath -- "$0")
+bin_dir=$(dirname -- "$script")
+root=$(dirname -- "$bin_dir")
+exec "$root/tools/zulip-proxy/client" "$@"

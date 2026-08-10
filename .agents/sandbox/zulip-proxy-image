@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
+cd "$DOTFILES"
+
+cache_key=$(
+	find tools/zulip-proxy -type f -print |
+		LC_ALL=C sort |
+		while IFS= read -r path; do
+			printf '%s %s\n' "$path" "$(git hash-object "$path")"
+		done | git hash-object --stdin
+)
+image="zulip-proxy:$cache_key"
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+	printf 'Building Zulip proxy image %s ...\n' "$image" >&2
+	docker build -f tools/zulip-proxy/Dockerfile --tag "$image" . >&2
+fi
+image_id=$(docker image inspect --format '{{.Id}}' "$image")
+printf 'sha256:%s\n' "${image_id#sha256:}"

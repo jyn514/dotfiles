@@ -92,6 +92,8 @@ python3 -c 'import tomllib; tomllib.load(open("config/mise.toml", "rb")); tomlli
 
 failed=0
 if [ "$run_containers" = 1 ]; then
+	printf 'Running Zulip proxy container integration...\n'
+	python3 tools/zulip-proxy/tests/container_integration.py
 	container_results=$results/containers
 	mkdir "$container_results"
 	export container_results

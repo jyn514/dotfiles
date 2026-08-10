@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -229,6 +230,30 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(7, sandbox_proxies.route_main(args))
         self.assertFalse(stale.exists())
 
+    def test_local_router_accepts_trusted_zulip_without_repository_manifest(self) -> None:
+        self.write()
+        args = type("Args", (), {
+            "repo": str(self.repo), "command": "zulip", "wait": 0.1,
+            "local": ["--", "/bin/sh", "-c", "exit 7"],
+        })
+        self.assertEqual(7, sandbox_proxies.route_main(args))
+
+    def test_local_zulip_falls_back_when_active_session_has_no_proxy(self) -> None:
+        self.write()
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        (runtime / "session.json").write_text(json.dumps({
+            "repository": sandbox_proxies.repository_identity(self.repo),
+            "commands": {}, "state": {"proxies": []},
+            "manifest": {"version": 1, "commands": {}},
+        }), encoding="utf-8")
+        args = type("Args", (), {
+            "repo": str(self.repo), "command": "zulip", "wait": 0.1,
+            "local": ["--", "/bin/sh", "-c", "exit 7"],
+        })
+        with (runtime / "session.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH)
+            self.assertEqual(7, sandbox_proxies.route_main(args))
+
     def test_snapshot_is_independent_of_later_manifest_edits(self) -> None:
         self.write({"example": self.command()})
         snapshot = self.repo / "snapshot"
@@ -252,6 +277,39 @@ class ManifestTest(unittest.TestCase):
         command = sandbox_proxies.load_manifest_file(snapshot)["commands"]["jj"]
         self.assertEqual([str(builder.resolve())], command["image-command"])
         self.assertEqual("read-write", command["mounts"][0]["proxy"])
+
+    def test_snapshot_adds_trusted_zulip_with_secure_credentials(self) -> None:
+        builder = self.repo / "trusted-zulip-image"
+        builder.write_text("#!/bin/sh\n", encoding="utf-8")
+        builder.chmod(0o700)
+        zuliprc = self.repo / "zuliprc"
+        zuliprc.write_text("[api]\nkey=secret\n", encoding="utf-8")
+        zuliprc.chmod(0o600)
+        snapshot = self.repo / "snapshot"
+        args = type("Args", (), {
+            "repo": str(self.repo), "output": str(snapshot), "jj_image_command": None,
+            "zulip_image_command": str(builder.resolve()), "zuliprc": str(zuliprc),
+        })
+        sandbox_proxies.snapshot_main(args)
+        command = sandbox_proxies.load_manifest_file(snapshot)["commands"]["zulip"]
+        self.assertEqual([str(builder.resolve())], command["image-command"])
+        self.assertTrue(command["network"])
+        self.assertEqual([], command["mounts"])
+
+    def test_rejects_insecure_zulip_credentials(self) -> None:
+        zuliprc = self.repo / "zuliprc"
+        zuliprc.write_text("secret", encoding="utf-8")
+        zuliprc.chmod(0o644)
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "mode 0600"):
+            sandbox_proxies.zuliprc_mount_args(zuliprc)
+
+    def test_mounts_zulip_credentials_only_in_proxy(self) -> None:
+        zuliprc = self.repo / "zuliprc"
+        zuliprc.write_text("secret", encoding="utf-8")
+        zuliprc.chmod(0o600)
+        arguments = sandbox_proxies.zuliprc_mount_args(zuliprc)
+        self.assertEqual("--mount", arguments[0])
+        self.assertIn(f"src={zuliprc.resolve()},dst=/run/secrets/zuliprc,readonly", arguments[1])
 
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
         self.sandbox.rmdir()

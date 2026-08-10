@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import stat
 import subprocess
 import sys
 import tempfile
@@ -449,6 +450,25 @@ def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) 
     return arguments
 
 
+def zuliprc_mount_args(path: Path) -> list[str]:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as error:
+        raise ConfigError(f"Zulip credentials are missing: {path}") from error
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise ConfigError(f"Zulip credentials must be an unlinked regular file: {path}")
+    if metadata.st_uid != os.getuid():
+        raise ConfigError(f"Zulip credentials must be owned by uid {os.getuid()}: {path}")
+    if stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise ConfigError(f"Zulip credentials must have mode 0600: {path}")
+    resolved = path.resolve(strict=True)
+    if any(character in str(resolved) for character in (",", "\n", "\r")):
+        raise ConfigError("Zulip credential path contains a container-mount delimiter")
+    return [
+        "--mount", f"type=bind,src={resolved},dst=/run/secrets/zuliprc,readonly",
+    ]
+
+
 def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
@@ -493,6 +513,10 @@ def start_main(args: argparse.Namespace) -> int:
                     "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir)}",
                     "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo)}",
                 ]
+            if name == "zulip":
+                if not args.zuliprc:
+                    raise ConfigError("trusted Zulip proxy requires a credential path")
+                docker_args += zuliprc_mount_args(Path(args.zuliprc))
             checked_repository_path(repo, command["workdir"], f"command {name} workdir")
             docker_args += proxy_repository_mount_args(repo, name, command)
             docker_args += [images[name], *command["argv"][1:]]
@@ -552,7 +576,7 @@ def route_main(args: argparse.Namespace) -> int:
     else:
         try:
             manifest = load_manifest(repo)
-            if args.command not in manifest["commands"]:
+            if args.command not in manifest["commands"] and args.command != "zulip":
                 raise ConfigError(f"unknown proxy command: {args.command}")
             (runtime / "session.json").unlink(missing_ok=True)
             return subprocess.run(local).returncode
@@ -574,7 +598,7 @@ def route_main(args: argparse.Namespace) -> int:
             else:
                 try:
                     manifest = load_manifest(repo)
-                    if args.command not in manifest["commands"]:
+                    if args.command not in manifest["commands"] and args.command != "zulip":
                         raise ConfigError(f"unknown proxy command: {args.command}")
                     metadata_path.unlink(missing_ok=True)
                     return subprocess.run(local).returncode
@@ -588,6 +612,8 @@ def route_main(args: argparse.Namespace) -> int:
         raise ConfigError("sandbox session metadata names another repository")
     proxy = metadata.get("commands", {}).get(args.command)
     if not isinstance(proxy, dict) or set(proxy) != {"container", "image"}:
+        if args.command == "zulip":
+            return subprocess.run(local).returncode
         raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
     inspection = _docker(
         "inspect", "--format",
@@ -662,6 +688,27 @@ def snapshot_main(args: argparse.Namespace) -> int:
             "network": True,
             "mounts": [{"source": ".", "target": ".", "proxy": "read-write"}],
         }
+    zulip_image_command = getattr(args, "zulip_image_command", None)
+    zuliprc = getattr(args, "zuliprc", None)
+    if bool(zulip_image_command) != bool(zuliprc):
+        raise ConfigError("trusted Zulip proxy requires both image command and credentials")
+    if zulip_image_command:
+        builder = Path(zulip_image_command)
+        if not builder.is_absolute():
+            raise ConfigError("trusted Zulip image command must be absolute")
+        _regular_unlinked(builder, "trusted Zulip image command")
+        if not os.access(builder, os.X_OK):
+            raise ConfigError(f"trusted Zulip image command is not executable: {builder}")
+        zuliprc_mount_args(Path(zuliprc))
+        if "zulip" in manifest["commands"]:
+            raise ConfigError("repository manifest may not override trusted command: zulip")
+        manifest["commands"]["zulip"] = {
+            "image-command": [str(builder)],
+            "argv": ["zulip-proxy"],
+            "workdir": ".",
+            "network": True,
+            "mounts": [],
+        }
     write_atomic(Path(args.output), json.dumps(manifest, sort_keys=True))
     return 0
 
@@ -724,6 +771,8 @@ def parse_args() -> argparse.Namespace:
     snapshot.add_argument("--repo", required=True)
     snapshot.add_argument("--output", required=True)
     snapshot.add_argument("--jj-image-command")
+    snapshot.add_argument("--zulip-image-command")
+    snapshot.add_argument("--zuliprc")
     snapshot.set_defaults(function=snapshot_main)
     lock = sub.add_parser("hold-lock")
     lock.add_argument("--repo", required=True)
@@ -740,6 +789,7 @@ def parse_args() -> argparse.Namespace:
     attach.add_argument("--helper-image", required=True)
     attach.add_argument("--network", required=True)
     attach.add_argument("--manifest", required=True)
+    attach.add_argument("--zuliprc")
     attach.set_defaults(function=attach_main)
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)
@@ -759,6 +809,7 @@ def parse_args() -> argparse.Namespace:
     start.add_argument("--helper-image", required=True)
     start.add_argument("--network", required=True)
     start.add_argument("--manifest", required=True)
+    start.add_argument("--zuliprc")
     start.set_defaults(function=start_main)
     stop = sub.add_parser("stop")
     stop.add_argument("--state", required=True)
