@@ -281,6 +281,15 @@ class CodexSandboxTest(unittest.TestCase):
             "dst=/home/codex/.agents/shared.md,readonly",
             run,
         )
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/AGENTS.md'},"
+            f"dst={self.home / '.codex/AGENTS.md'},readonly",
+            run,
+        )
+        self.assertIn(
+            '--config=projects."/src/work".trust_level="trusted"',
+            run,
+        )
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertLess(run.index("resume"), run.index("session-id"))
 
