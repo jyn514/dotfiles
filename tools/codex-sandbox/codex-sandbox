@@ -459,6 +459,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={DOTFILES / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
         "--volume", f"{state.home / '.codex'}:{state.home / '.codex'}",
         "--volume", f"{state.home / '.codex/rules'}:{state.home / '.codex/rules'}:ro",
+        "--mount", f"type=bind,src={DOTFILES / 'config/AGENTS.md'},dst={state.home / '.codex/AGENTS.md'},readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
         *[
@@ -513,7 +514,12 @@ def execute(state: State) -> int:
     ensure_network()
     acquire_lock(state)
     attach_proxies(state)
-    arguments = [state.image, "--dangerously-bypass-approvals-and-sandbox", *state.codex_arguments]
+    arguments = [
+        state.image,
+        "--dangerously-bypass-approvals-and-sandbox",
+        '--config=projects."/src/work".trust_level="trusted"',
+        *state.codex_arguments,
+    ]
     if state.agent_podman is not None:
         arguments = [*start_relay(state), *arguments]
     system = run(["uname", "-s"], capture=True).stdout.strip()
