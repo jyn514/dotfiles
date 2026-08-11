@@ -19,7 +19,7 @@ uv = "latest"
 "cargo:mdbook" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "aqua:Wilfred/difftastic" = "latest"
 "aqua:Byron/dua-cli" = "latest"
-"aqua:jj-vcs/jj" = "latest"
+"cargo:https://github.com/jj-vcs/jj" = { version = "rev:a0e7ebe7b037e822c506fcf6308055f8eecfb48a", crate = "jj-cli", bin = "jj", depends = ["rust"] }
 "aqua:BurntSushi/ripgrep" = "latest"
 "aqua:Myriad-Dreamin/tinymist" = "latest"
 "github:glide-browser/glide" = { version = "latest", os = ["linux"], filter_bins = "glide" }

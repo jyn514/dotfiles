@@ -282,45 +282,6 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.21.1/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/489425215"
 provenance = "github-attestations"
 
-[[tools."aqua:jj-vcs/jj"]]
-version = "0.43.0"
-backend = "aqua:jj-vcs/jj"
-
-[tools."aqua:jj-vcs/jj"."platforms.linux-arm64"]
-checksum = "sha256:289197b6bec60b4e57d47260624b617716f737eb02cdfd9155791b2576aa5862"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463825313"
-
-[tools."aqua:jj-vcs/jj"."platforms.linux-arm64-musl"]
-checksum = "sha256:289197b6bec60b4e57d47260624b617716f737eb02cdfd9155791b2576aa5862"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463825313"
-
-[tools."aqua:jj-vcs/jj"."platforms.linux-x64"]
-checksum = "sha256:59e5588583ac82b623239929368c65b90735931c0f26b5a16c1f04d5bb97643d"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463825498"
-
-[tools."aqua:jj-vcs/jj"."platforms.linux-x64-musl"]
-checksum = "sha256:59e5588583ac82b623239929368c65b90735931c0f26b5a16c1f04d5bb97643d"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463825498"
-
-[tools."aqua:jj-vcs/jj"."platforms.macos-arm64"]
-checksum = "sha256:84336bbe5673a36ccc6395c494021ba632794da078eb8c8c513a60f8e1cc3083"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463826329"
-
-[tools."aqua:jj-vcs/jj"."platforms.macos-x64"]
-checksum = "sha256:f1a7fec046b816132318c07a9c096680f7aae78b008709c7166a57efd9c579ec"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463825063"
-
-[tools."aqua:jj-vcs/jj"."platforms.windows-x64"]
-checksum = "sha256:582f63e55310eaa397782fcb528c3feff5b943a4e2db70666d105972a381f80e"
-url = "https://github.com/jj-vcs/jj/releases/download/v0.43.0/jj-v0.43.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/463827027"
-
 [[tools."aqua:mvdan/sh"]]
 version = "3.13.1"
 backend = "aqua:mvdan/sh"
@@ -390,6 +351,14 @@ backend = "cargo:cargo-sweep"
 [[tools."cargo:counts"]]
 version = "1.0.7"
 backend = "cargo:counts"
+
+[[tools."cargo:https://github.com/jj-vcs/jj"]]
+version = "rev:a0e7ebe7b037e822c506fcf6308055f8eecfb48a"
+backend = "cargo:https://github.com/jj-vcs/jj"
+
+[tools."cargo:https://github.com/jj-vcs/jj".options]
+bin = "jj"
+crate = "jj-cli"
 
 [[tools."cargo:librespot"]]
 version = "0.8.0"
@@ -472,6 +441,7 @@ checksum = "sha256:61524279f6ea323052a400e9e05e8f19bbe5d69e46d1d88d85528585bb0e4
 url = "https://github.com/glide-browser/glide/releases/download/0.1.63a/macos-aarch64.mar"
 url_api = "https://api.github.com/repos/glide-browser/glide/releases/assets/460458226"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools."github:glide-browser/glide"."platforms.macos-x64"]
 checksum = "sha256:a92d88fe3692eca51f0f72e7390b235ed7c4378ce87b63f8768fca9258a75818"
@@ -565,38 +535,31 @@ version = "3.14.6"
 backend = "core:python"
 
 [tools.python."platforms.linux-arm64"]
-checksum = "sha256:44f86d58f3bbc1aa6c95ee90f03226e0fdbd22475a98c4410e5a20042b7f40d3"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-arm64-musl"]
-checksum = "sha256:a5795f2142de95396204f7a43ec7f830cf384ca479a67f6fae820407c432711e"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64"]
-checksum = "sha256:d6254462d5fe066810a472d286861f6a18f66400008bfa9688e202a5672e88cb"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.linux-x64-musl"]
-checksum = "sha256:9d5d3101158b5cb692e8468967a344ae5187c90bd7f3608f71e2708accc3be68"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.macos-arm64"]
-checksum = "sha256:f4b47659e2da4b97f38cefdf5ad19f0042946099d843cde60de308708e5b1ac5"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-aarch64-apple-darwin-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-aarch64-apple-darwin-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.macos-x64"]
-checksum = "sha256:00a22363402a1a15d4fb1327c8259a91118258d5463d10a97d3e56c1f18195f6"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-x86_64-apple-darwin-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-x86_64-apple-darwin-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [tools.python."platforms.windows-x64"]
-checksum = "sha256:19ab713e908d476afbf2b662f72cf6d85c5de6ed44a1b28815ecfbea37b20d54"
-url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.14.6+20260728-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6+20260804-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
 provenance = "github-attestations"
 
 [[tools.rust]]
