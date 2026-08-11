@@ -87,9 +87,18 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
 
 def exchange_in_sandbox(body: bytes, proxy_dir: str) -> bytes:
     path = Path(proxy_dir) / "zulip" / "socket"
+    unavailable = (
+        "sandbox proxy 'zulip' is unavailable in this session; "
+        "restart the sandbox after configuring ~/.zuliprc"
+    )
+    if not path.is_socket():
+        raise RuntimeError(unavailable)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(75)
-        connection.connect(str(path))
+        try:
+            connection.connect(str(path))
+        except (FileNotFoundError, ConnectionRefusedError) as error:
+            raise RuntimeError(unavailable) from error
         connection.sendall(body)
         connection.shutdown(socket.SHUT_WR)
         header = receive_exact(connection, 4)

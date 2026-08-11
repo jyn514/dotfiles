@@ -136,6 +136,7 @@ def main() -> None:
                 "docker", "run", "--detach", "--name", proxy,
                 "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
                 "--user", "65532:65532", "--add-host=host.docker.internal:host-gateway",
+                "--entrypoint", "zulip-proxy",
                 "--env", "SSL_CERT_FILE=/run/secrets/test-ca.pem",
                 "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
                 "--mount", f"type=bind,src={zuliprc},dst=/run/secrets/zuliprc,readonly",
