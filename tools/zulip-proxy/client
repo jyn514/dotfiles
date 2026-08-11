@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -25,11 +25,24 @@ def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="zulip")
     parser.add_argument("channel", help="numeric channel ID or Zulip narrow URL")
     parser.add_argument("--topic", help="limit the transcript to one topic")
+    parser.add_argument("--list-topics", action="store_true", help="list channel topics")
+    parser.add_argument("--after", type=iso_date, help="include messages after YYYY-MM-DD")
+    parser.add_argument("--before", type=iso_date, help="include messages before YYYY-MM-DD")
     parser.add_argument(
         "--format", choices=("markdown", "jsonl"), default="markdown",
         help="output format (default: markdown)",
     )
     return parser.parse_args()
+
+
+def iso_date(value: str) -> str:
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an ISO date (YYYY-MM-DD)") from error
+    if parsed.isoformat() != value:
+        raise argparse.ArgumentTypeError("must be an ISO date (YYYY-MM-DD)")
+    return value
 
 
 def decode_hash_component(value: str) -> str:
@@ -137,14 +150,7 @@ def exchange_on_host(body: bytes) -> bytes:
     return result.stdout
 
 
-def request_page(channel_id: int, topic: str | None, anchor: str | int) -> dict:
-    request = {
-        "version": 1,
-        "channel_id": channel_id,
-        "topic": topic,
-        "anchor": anchor,
-        "include_anchor": anchor == "oldest",
-    }
+def exchange(request: dict) -> dict:
     payload = json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()
     if len(payload) > MAX_REQUEST:
         raise RuntimeError("proxy request is too large")
@@ -164,6 +170,28 @@ def request_page(channel_id: int, topic: str | None, anchor: str | int) -> dict:
         raise RuntimeError("proxy returned a malformed response")
     if "error" in response:
         raise RuntimeError(response["error"])
+    return response
+
+
+def request_page(
+    channel_id: int,
+    topic: str | None,
+    anchor: str | int,
+    after: str | None = None,
+    before: str | None = None,
+) -> dict:
+    request = {
+        "version": 1,
+        "channel_id": channel_id,
+        "topic": topic,
+        "anchor": anchor,
+        "include_anchor": anchor == "oldest",
+    }
+    if after is not None:
+        request["after"] = after
+    if before is not None:
+        request["before"] = before
+    response = exchange(request)
     if set(response) != {"version", "messages", "found_newest", "history_limited"}:
         raise RuntimeError("proxy returned a malformed response")
     if (
@@ -173,6 +201,22 @@ def request_page(channel_id: int, topic: str | None, anchor: str | int) -> dict:
     ):
         raise RuntimeError("proxy returned malformed pagination data")
     return response
+
+
+def request_topics(channel_id: int) -> list[dict]:
+    response = exchange({"version": 1, "operation": "topics", "channel_id": channel_id})
+    if set(response) != {"version", "topics"} or not isinstance(response["topics"], list):
+        raise RuntimeError("proxy returned malformed topic data")
+    for topic in response["topics"]:
+        if (
+            not isinstance(topic, dict)
+            or set(topic) != {"name", "max_id"}
+            or not isinstance(topic["name"], str)
+            or isinstance(topic["max_id"], bool)
+            or not isinstance(topic["max_id"], int)
+        ):
+            raise RuntimeError("proxy returned malformed topic data")
+    return response["topics"]
 
 
 def markdown(message: dict) -> str:
@@ -191,12 +235,26 @@ def markdown(message: dict) -> str:
 def main() -> int:
     args = arguments()
     channel_id, topic = parse_channel(args.channel, args.topic)
+    if args.after and args.before and args.after >= args.before:
+        raise RuntimeError("--after must be earlier than --before")
+    if args.list_topics:
+        if topic is not None or args.after is not None or args.before is not None:
+            raise RuntimeError("--list-topics cannot be combined with topic or date filters")
+        topics = request_topics(channel_id)
+        if args.format == "jsonl":
+            for item in topics:
+                print(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+        else:
+            print(f"# Zulip topics for channel {channel_id}\n")
+            for item in topics:
+                print(f"- {item['name']} (latest message ID: {item['max_id']})")
+        return 0
     if args.format == "markdown":
         print(f"# Zulip transcript for channel {channel_id}\n")
     anchor: str | int = "oldest"
     history_limited = False
     while True:
-        response = request_page(channel_id, topic, anchor)
+        response = request_page(channel_id, topic, anchor, args.after, args.before)
         history_limited = history_limited or response["history_limited"]
         messages = response["messages"]
         for message in messages:
@@ -214,9 +272,19 @@ def main() -> int:
         time.sleep(2)
 
 
-if __name__ == "__main__":
+def entrypoint() -> int:
     try:
-        raise SystemExit(main())
+        return main()
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        except BrokenPipeError:
+            pass
+        return 0
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         print(f"zulip: {error}", file=sys.stderr)
-        raise SystemExit(125)
+        return 125
+
+
+if __name__ == "__main__":
+    raise SystemExit(entrypoint())

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 from importlib.machinery import SourceFileLoader
 import io
@@ -12,6 +13,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -60,6 +62,8 @@ class ServerTest(unittest.TestCase):
             self.request(anchor="newest"),
             self.request(topic="bad\nheader"),
             self.request(include_anchor=1),
+            self.request(after="2026-02-30"),
+            self.request(after="2026-04-01", before="2026-04-01"),
         ]
         for request in invalid:
             with self.subTest(request=request):
@@ -73,6 +77,13 @@ class ServerTest(unittest.TestCase):
                 b'"topic":null,"anchor":"oldest","include_anchor":true}'
             )
 
+    def test_accepts_only_bounded_topic_listing_request(self) -> None:
+        request = {"version": 1, "operation": "topics", "channel_id": 123}
+        self.assertEqual(request, server.parse_request(json.dumps(request).encode()))
+        request["anchor"] = "oldest"
+        with self.assertRaises(server.RequestError):
+            server.parse_request(json.dumps(request).encode())
+
     def test_fetches_only_fixed_get_messages_endpoint(self) -> None:
         observed = {}
 
@@ -85,7 +96,7 @@ class ServerTest(unittest.TestCase):
 
         result = server.fetch_page(
             "https://chat.example.test/api/v1/messages", "credential",
-            self.request(topic="private topic"), opener,
+            self.request(topic="private topic", after="2026-03-01", before="2026-04-01"), opener,
         )
         parsed = urlsplit(observed["url"])
         query = parse_qs(parsed.query)
@@ -94,9 +105,37 @@ class ServerTest(unittest.TestCase):
         self.assertEqual("Basic credential", observed["authorization"])
         self.assertEqual([{"operator": "channel", "operand": 123}, {
             "operator": "topic", "operand": "private topic",
+        }, {
+            "operator": "sent-after", "operand": "2026-03-01",
+        }, {
+            "operator": "sent-before", "operand": "2026-04-01",
         }], json.loads(query["narrow"][0]))
         self.assertEqual(100, int(query["num_after"][0]))
         self.assertTrue(result["found_newest"])
+
+    def test_fetches_only_fixed_get_topics_endpoint(self) -> None:
+        observed = {}
+
+        def opener(request, timeout):
+            observed.update(url=request.full_url, method=request.method,
+                            authorization=request.headers["Authorization"], timeout=timeout)
+            return io.BytesIO(json.dumps({
+                "result": "success",
+                "topics": [{"name": "private topic", "max_id": 42}],
+            }).encode())
+
+        result = server.fetch_topics(
+            "https://chat.example.test/api/v1/messages", "credential",
+            {"version": 1, "operation": "topics", "channel_id": 123}, opener,
+        )
+        self.assertEqual("GET", observed["method"])
+        self.assertEqual(
+            "https://chat.example.test/api/v1/users/me/123/topics", observed["url"],
+        )
+        self.assertEqual("Basic credential", observed["authorization"])
+        self.assertEqual(
+            {"version": 1, "topics": [{"name": "private topic", "max_id": 42}]}, result,
+        )
 
     def test_rejects_non_https_or_credentialed_site(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
@@ -111,6 +150,14 @@ class ServerTest(unittest.TestCase):
 
 
 class ClientTest(unittest.TestCase):
+    def test_treats_closed_output_pipe_as_success(self) -> None:
+        output = mock.Mock()
+        output.close.side_effect = BrokenPipeError
+        with mock.patch.object(client, "main", side_effect=BrokenPipeError), \
+                mock.patch.object(client.sys, "stdout", output):
+            self.assertEqual(0, client.entrypoint())
+        output.close.assert_called_once_with()
+
     def test_parses_numeric_channel_and_narrow_urls(self) -> None:
         self.assertEqual((123, None), client.parse_channel("123", None))
         self.assertEqual(
@@ -121,6 +168,12 @@ class ClientTest(unittest.TestCase):
                 None,
             ),
         )
+
+    def test_validates_iso_dates(self) -> None:
+        self.assertEqual("2026-03-01", client.iso_date("2026-03-01"))
+        for value in ("2026-02-30", "2026-3-1", "tomorrow"):
+            with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
+                client.iso_date(value)
         self.assertEqual(
             (456, None),
             client.parse_channel(
@@ -166,6 +219,42 @@ class ClientTest(unittest.TestCase):
         self.assertIn("proxy 'zulip' is unavailable", result.stderr)
         self.assertIn("restart the sandbox", result.stderr)
 
+    def test_lists_topics_without_exporting_messages(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            proxy_dir = Path(temporary) / "proxies"
+            socket_dir = proxy_dir / "zulip"
+            socket_dir.mkdir(parents=True)
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            listener.bind(str(socket_dir / "socket"))
+            listener.listen(1)
+            requests = []
+
+            def serve() -> None:
+                connection, _ = listener.accept()
+                with connection:
+                    length = struct.unpack(">I", receive_exact(connection, 4))[0]
+                    requests.append(json.loads(receive_exact(connection, length)))
+                    connection.recv(1)
+                    connection.sendall(frame({
+                        "version": 1,
+                        "topics": [{"name": "private topic", "max_id": 42}],
+                    }))
+
+            thread = threading.Thread(target=serve)
+            thread.start()
+            result = subprocess.run(
+                [str(CLIENT), "123", "--list-topics", "--format", "jsonl"],
+                env={**os.environ, "SANDBOX_PROXY_DIR": str(proxy_dir)},
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            thread.join(timeout=2)
+            listener.close()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"name": "private topic", "max_id": 42}, json.loads(result.stdout))
+        self.assertEqual(
+            [{"version": 1, "operation": "topics", "channel_id": 123}], requests,
+        )
+
     def test_paginates_and_writes_json_lines(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             proxy_dir = Path(temporary) / "proxies"
@@ -194,7 +283,10 @@ class ClientTest(unittest.TestCase):
             thread = threading.Thread(target=serve)
             thread.start()
             result = subprocess.run(
-                [str(CLIENT), "123", "--format", "jsonl"],
+                [
+                    str(CLIENT), "123", "--after", "2026-03-01",
+                    "--before", "2026-04-01", "--format", "jsonl",
+                ],
                 env={**os.environ, "SANDBOX_PROXY_DIR": str(proxy_dir)},
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
@@ -205,6 +297,8 @@ class ClientTest(unittest.TestCase):
             self.assertEqual([40, 41], [json.loads(line)["id"] for line in result.stdout.splitlines()])
             self.assertEqual("oldest", requests[0]["anchor"])
             self.assertTrue(requests[0]["include_anchor"])
+            self.assertEqual("2026-03-01", requests[0]["after"])
+            self.assertEqual("2026-04-01", requests[0]["before"])
             self.assertEqual(40, requests[1]["anchor"])
             self.assertFalse(requests[1]["include_anchor"])
 
