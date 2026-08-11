@@ -109,6 +109,10 @@
     (sequential? content) (str/join "\n" (keep content-part-text content))
     :else ""))
 
+(defn- synthetic-codex-user-message? [text]
+  (or (str/starts-with? text "# AGENTS.md instructions for ")
+      (str/starts-with? text "<environment_context>")))
+
 (defn- event-message [event]
   (when (map? event)
     (let [{event-type :type, :keys [payload]} event]
@@ -134,7 +138,9 @@
                  (= "message" (:type payload))
                  (#{"user" "assistant"} (:role payload)))
         (let [text (content-text (:content payload))]
-          (when (seq (str/trim text))
+          (when (and (seq (str/trim text))
+                     (not (and (= "user" (:role payload))
+                               (synthetic-codex-user-message? text))))
             {:role (:role payload)
              :phase (:phase payload)
              :text text}))))))

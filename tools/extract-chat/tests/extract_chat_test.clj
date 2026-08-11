@@ -168,6 +168,25 @@
                   "## Assistant\n\nTea is ready.\n\n")
              (str stdout))))))
 
+(deftest extract-chat-omits-synthetic-codex-user-messages
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-synthetic-codex"})
+        session-file (fs/file root "session.jsonl")
+        message (fn [text]
+                  (json/generate-string
+                   {:type "response_item"
+                    :payload {:type "message" :role "user"
+                              :content [{:type "input_text" :text text}]}}))]
+    (spit session-file
+          (str (str/join "\n" [(message "# AGENTS.md instructions for /src/work\n\nRules")
+                                (message "<environment_context>\n  <cwd>/src/work</cwd>")
+                                (message "Make tea.")])
+               "\n"))
+    (let [stdout (java.io.StringWriter.)]
+      (binding [*out* stdout]
+        (extract-chat/main [(str session-file)]))
+      (is (= (str "# " session-file "\n\n## User\n\nMake tea.\n\n")
+             (str stdout))))))
+
 (let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
   (when (pos? (+ fail error))
     (System/exit 1)))
