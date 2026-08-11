@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import configparser
+from datetime import date
 import json
 import os
 from pathlib import Path
@@ -100,14 +101,37 @@ def parse_request(body: bytes) -> dict[str, Any]:
         request = json.loads(body, object_pairs_hook=unique_object)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RequestError("request is not valid UTF-8 JSON") from error
-    fields = {"version", "channel_id", "topic", "anchor", "include_anchor"}
-    if not isinstance(request, dict) or set(request) != fields:
+    if not isinstance(request, dict):
+        raise RequestError("request has missing or unknown fields")
+    operation = request.get("operation", "messages")
+    fields = {"version", "operation", "channel_id"}
+    message_fields = {"version", "channel_id", "topic", "anchor", "include_anchor"}
+    if operation != "topics":
+        fields = set(request)
+        if not message_fields <= fields or fields - message_fields - {"after", "before"}:
+            raise RequestError("request has missing or unknown fields")
+    if operation == "topics" and set(request) != fields:
         raise RequestError("request has missing or unknown fields")
     if request["version"] != 1:
         raise RequestError("unsupported protocol version")
     channel_id = request["channel_id"]
     if isinstance(channel_id, bool) or not isinstance(channel_id, int) or channel_id <= 0:
         raise RequestError("channel_id must be a positive integer")
+    if operation == "topics":
+        return request
+    for field in ("after", "before"):
+        if field in request:
+            value = request[field]
+            if not isinstance(value, str):
+                raise RequestError(f"{field} must be an ISO date")
+            try:
+                parsed_date = date.fromisoformat(value)
+            except ValueError as error:
+                raise RequestError(f"{field} must be an ISO date") from error
+            if parsed_date.isoformat() != value:
+                raise RequestError(f"{field} must be an ISO date")
+    if request.get("after") and request.get("before") and request["after"] >= request["before"]:
+        raise RequestError("after must be earlier than before")
     topic = request["topic"]
     if topic is not None and (
         not isinstance(topic, str)
@@ -137,6 +161,9 @@ def fetch_page(
     ]
     if request["topic"] is not None:
         narrow.append({"operator": "topic", "operand": request["topic"]})
+    for field in ("after", "before"):
+        if field in request:
+            narrow.append({"operator": f"sent-{field}", "operand": request[field]})
     query = urlencode({
         "anchor": request["anchor"],
         "include_anchor": json.dumps(request["include_anchor"]),
@@ -151,15 +178,7 @@ def fetch_page(
         headers={"Authorization": f"Basic {authorization}"},
         method="GET",
     )
-    while True:
-        try:
-            with opener(http_request, timeout=60) as response:
-                result = json.load(response)
-            break
-        except HTTPError as error:
-            if error.code != 429:
-                raise RequestError(f"Zulip returned HTTP {error.code}") from error
-            time.sleep(min(int(error.headers.get("Retry-After", "10")), 300))
+    result = fetch_json(http_request, opener)
     if result.get("result") != "success" or not isinstance(result.get("messages"), list):
         raise RequestError(result.get("msg", "Zulip returned a malformed response"))
     return {
@@ -170,10 +189,55 @@ def fetch_page(
     }
 
 
+def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
+    while True:
+        try:
+            with opener(http_request, timeout=60) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code != 429:
+                raise RequestError(f"Zulip returned HTTP {error.code}") from error
+            time.sleep(min(int(error.headers.get("Retry-After", "10")), 300))
+
+
+def fetch_topics(
+    endpoint: str,
+    authorization: str,
+    request: dict[str, Any],
+    opener: Callable[..., Any] = URL_OPEN,
+) -> dict[str, Any]:
+    topics_endpoint = endpoint.removesuffix("/messages")
+    http_request = HttpRequest(
+        f"{topics_endpoint}/users/me/{request['channel_id']}/topics",
+        headers={"Authorization": f"Basic {authorization}"},
+        method="GET",
+    )
+    result = fetch_json(http_request, opener)
+    topics = result.get("topics")
+    if result.get("result") != "success" or not isinstance(topics, list):
+        raise RequestError(result.get("msg", "Zulip returned a malformed response"))
+    if any(
+        not isinstance(topic, dict)
+        or not isinstance(topic.get("name"), str)
+        or isinstance(topic.get("max_id"), bool)
+        or not isinstance(topic.get("max_id"), int)
+        for topic in topics
+    ):
+        raise RequestError("Zulip returned malformed topic data")
+    return {
+        "version": 1,
+        "topics": [{"name": topic["name"], "max_id": topic["max_id"]} for topic in topics],
+    }
+
+
 def process_request(body: bytes, endpoint: str, authorization: str) -> bytes:
     try:
         request = parse_request(body)
-        response = fetch_page(endpoint, authorization, request)
+        response = (
+            fetch_topics(endpoint, authorization, request)
+            if request.get("operation") == "topics"
+            else fetch_page(endpoint, authorization, request)
+        )
     except (OSError, RequestError, ValueError, json.JSONDecodeError) as error:
         response = {"version": 1, "error": str(error)}
     body = json.dumps(response, separators=(",", ":")).encode()

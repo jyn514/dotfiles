@@ -43,17 +43,26 @@ class ZulipHandler(BaseHTTPRequestHandler):
             expected_auth = "Basic " + base64.b64encode(
                 b"reader@example.test:test-key"
             ).decode("ascii")
-            assert parsed.path == "/api/v1/messages"
             assert self.headers["Authorization"] == expected_auth
-            assert json.loads(query["narrow"][0]) == [
-                {"operator": "channel", "operand": 456},
-                {"operator": "topic", "operand": "private/topic"},
-            ]
-            response = {
-                "result": "success",
-                "messages": [{"id": 789, "content": "container integration"}],
-                "found_newest": True,
-            }
+            if parsed.path == "/api/v1/messages":
+                assert json.loads(query["narrow"][0]) == [
+                    {"operator": "channel", "operand": 456},
+                    {"operator": "topic", "operand": "private/topic"},
+                    {"operator": "sent-after", "operand": "2026-03-01"},
+                    {"operator": "sent-before", "operand": "2026-04-01"},
+                ]
+                response = {
+                    "result": "success",
+                    "messages": [{"id": 789, "content": "container integration"}],
+                    "found_newest": True,
+                }
+            else:
+                assert parsed.path == "/api/v1/users/me/456/topics"
+                assert not query
+                response = {
+                    "result": "success",
+                    "topics": [{"name": "private/topic", "max_id": 789}],
+                }
             body = json.dumps(response).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -170,10 +179,20 @@ def main() -> None:
                 "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
                 "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxies/zulip,readonly",
                 "--mount", f"type=bind,src={CLIENT},dst=/src/client,readonly",
-                image, narrow, "--format", "jsonl",
+                image, narrow, "--after", "2026-03-01", "--before", "2026-04-01",
+                "--format", "jsonl",
             ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             messages = [json.loads(line) for line in result.stdout.splitlines()]
             assert messages == [{"id": 789, "content": "container integration"}]
+            result = run([
+                "docker", "run", "--rm", "--user", "65532:65532",
+                "--entrypoint", "/src/client",
+                "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
+                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxies/zulip,readonly",
+                "--mount", f"type=bind,src={CLIENT},dst=/src/client,readonly",
+                image, "456", "--list-topics", "--format", "jsonl",
+            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert json.loads(result.stdout) == {"name": "private/topic", "max_id": 789}
             assert ZulipHandler.request_error is None, ZulipHandler.request_error
     finally:
         if server is not None:
