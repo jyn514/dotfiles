@@ -6,11 +6,15 @@ fsmonitor.watchman.register-snapshot-trigger = true
 [ui]
 default-command = "log"
 # diff.tool=["difft", "--color=always", "$left", "$right"]
-diff-formatter=["delta", "$left", "$right"]
+diff-formatter= "delta"
 # delta is annoying: https://github.com/dandavison/delta/issues/1136
 diff-expected-exit-codes = [0, 1]
 diff-editor = ":builtin"
 merge-editor = "diffconflicts"
+
+[merge-tools.moved]
+program = "sh"
+diff-args = ["-c", "git diff --no-index --color=always \"$1\" \"$2\" | delta", "-", "$left", "$right"]
 
 [merge-tools.diffconflicts]
 program = "nvim"
@@ -18,7 +22,6 @@ merge-args = [
     "-c", "let g:jj_diffconflicts_marker_length=$marker_length",
     "-c", "JJDiffConflicts!", "$output", "$base", "$left", "$right",
 ]
-
 merge-tool-edits-conflict-markers = true
 
 [revsets]
