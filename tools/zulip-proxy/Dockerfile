@@ -7,5 +7,7 @@ RUN apk add --no-cache ca-certificates \
 COPY tools/zulip-proxy/server.py /trusted/bin/zulip-proxy
 COPY tools/zulip-proxy/forward.py /trusted/bin/sandbox-proxy-forward
 
+ENV PATH="/trusted/bin:${PATH}"
+
 USER 65532:65532
 ENTRYPOINT ["/trusted/bin/zulip-proxy"]

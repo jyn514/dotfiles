@@ -154,6 +154,18 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("numeric channel ID or Zulip narrow URL", result.stdout)
 
+    def test_reports_when_proxy_is_unavailable_in_active_sandbox(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as proxy_dir:
+            result = subprocess.run(
+                [str(CLIENT), "123", "--format", "jsonl"],
+                env={**os.environ, "SANDBOX_PROXY_DIR": proxy_dir},
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        self.assertEqual(125, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("proxy 'zulip' is unavailable", result.stderr)
+        self.assertIn("restart the sandbox", result.stderr)
+
     def test_paginates_and_writes_json_lines(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
             proxy_dir = Path(temporary) / "proxies"
