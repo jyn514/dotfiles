@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && ln -s podman /opt/agent-tools/bin/docker
 
 FROM node:slim AS codex
-ARG CODEX_VERSION=0.144.4
+ARG CODEX_VERSION=0.147.0
 RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
     && mkdir -p /opt/agent-codex/bin /opt/agent-codex/lib \
     && cp -a /usr/local/lib/node_modules/@openai/codex /opt/agent-codex/lib/codex \
