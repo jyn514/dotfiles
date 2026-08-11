@@ -123,10 +123,6 @@
                   "Tea is ready.\n\n")
              (str stdout))))))
 
-(let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
-  (when (pos? (+ fail error))
-    (System/exit 1)))
-
 (deftest extract-chat-finds-codex-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-codex"})
         session-id "019abcde-1234-7000-8000-0123456789ab"
@@ -146,3 +142,32 @@
                   "## User\n\n"
                   "Make tea.\n\n")
              (str stdout))))))
+
+(deftest extract-chat-handles-current-codex-content-parts
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-current-codex"})
+        session-file (fs/file root "session.jsonl")]
+    (spit session-file
+          (str (json/generate-string
+                {:type "response_item"
+                 :payload {:type "message"
+                           :role "user"
+                           :content [{:type "input_text" :text "Make tea."}]}})
+               "\n"
+               (json/generate-string
+                {:type "response_item"
+                 :payload {:type "message"
+                           :role "assistant"
+                           :phase "final_answer"
+                           :content [{:type "output_text" :text "Tea is ready."}]}})
+               "\n"))
+    (let [stdout (java.io.StringWriter.)]
+      (binding [*out* stdout]
+        (extract-chat/main [(str session-file)]))
+      (is (= (str "# " session-file "\n\n"
+                  "## User\n\nMake tea.\n\n"
+                  "## Assistant\n\nTea is ready.\n\n")
+             (str stdout))))))
+
+(let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
+  (when (pos? (+ fail error))
+    (System/exit 1)))
