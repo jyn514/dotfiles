@@ -75,6 +75,14 @@ def split_line(value: str) -> list[str]:
     return [part for part in parts if part is not None]
 
 
+def split_editor_pathspec(value: str) -> list[str]:
+    if value.endswith(".") and not Path(expand_tilde(value)).exists():
+        undotted = split_line(value[:-1])
+        if Path(undotted[0]).is_file():
+            return undotted
+    return split_line(value)
+
+
 def join_line(parts: list[str]) -> list[str] | str:
     if len(parts) < 2:
         return parts[0]
@@ -302,7 +310,10 @@ def main(argv: list[str]) -> int:
             return 0
         if len(argv) > 1:
             return 2
-        os.execvp(EDITOR, [EDITOR, *editor_exec_args(join_line(split_line(argv[0])))])
+        os.execvp(
+            EDITOR,
+            [EDITOR, *editor_exec_args(join_line(split_editor_pathspec(argv[0])))],
+        )
         return 0
 
     if name == "hx-hax":
