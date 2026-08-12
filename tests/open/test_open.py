@@ -506,6 +506,29 @@ class OpenScriptTest(unittest.TestCase):
             [self.real(target)],
         )
 
+    def test_editor_hax_ignores_sentence_dot_after_pathspec(self) -> None:
+        target = self.root / "note.txt"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(
+            module.split_editor_pathspec(f"{target}:417."),
+            [self.real(target), "417"],
+        )
+
+    def test_editor_hax_preserves_existing_path_ending_in_dot(self) -> None:
+        target = self.root / "note."
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(module.split_editor_pathspec(str(target)), [self.real(target)])
+
+    def test_editor_hax_preserves_dot_when_undotted_file_is_missing(self) -> None:
+        target = self.root / "missing.txt:417."
+        module = self.load_open_module()
+
+        self.assertEqual(module.split_editor_pathspec(str(target)), [self.real(target)])
+
     def test_editor_hax_without_args_execs_editor(self) -> None:
         module = self.load_open_module()
 
