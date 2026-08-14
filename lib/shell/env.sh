@@ -10,7 +10,6 @@ export INPUTRC=$XDG_CONFIG_HOME/readline/inputrc
 export STEEL_LSP_HOME=$HOME/.config/helix/steel-lsp
 # less documents that it searches here by default, but the docs are wrong
 export LESSKEYIN=$HOME/.config/lesskey
-export ZDOTDIR=$HOME/.config/zsh
 export JUPYTER_CONFIG_DIR=$HOME/.config/jupyter
 # otherwise it uses /Library/Application Support on macOS :/
 export BACON_PREFS=$HOME/.config/bacon/prefs.toml

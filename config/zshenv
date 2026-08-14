@@ -1,0 +1,3 @@
+# Keep zsh startup files together. This must be set before zsh chooses where
+# to find .zprofile and .zshrc.
+export ZDOTDIR=$HOME/.config/zsh
