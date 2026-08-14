@@ -76,7 +76,8 @@
       "$HOME/.config/wezterm/wezterm.lua": "config/wezterm.lua",
       "$HOME/.config/youtube-dl/config": "config/youtube-dl",
       "$HOME/.config/fish/completions/__zoxide_z.fish": "config/z.fish",
-      "$HOME/.zprofile": "config/zprofile",
+      "$HOME/.zshenv": "config/zshenv",
+      "$HOME/.config/zsh/.zprofile": "config/zprofile",
       "$HOME/.config/zsh/.zsh_plugins.txt": "config/zsh_plugins.txt",
       "$HOME/.config/zsh/.zshrc": "config/zshrc"
     }

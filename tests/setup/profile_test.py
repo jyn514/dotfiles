@@ -14,6 +14,34 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProfileContractTests(unittest.TestCase):
+    @unittest.skipUnless(Path("/bin/zsh").exists(), "zsh is unavailable")
+    def test_zshenv_selects_tracked_login_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            zsh_config = home / ".config/zsh"
+            zsh_config.mkdir(parents=True)
+            (home / ".zshenv").symlink_to(ROOT / "config/zshenv")
+            (zsh_config / ".zprofile").write_text("export PROFILE_READ=yes\n")
+
+            for environment in (
+                {"HOME": str(home), "PATH": "/usr/bin:/bin"},
+                {
+                    "HOME": str(home),
+                    "PATH": "/usr/bin:/bin",
+                    "ZDOTDIR": str(zsh_config),
+                },
+            ):
+                result = subprocess.run(
+                    ["/bin/zsh", "-l", "-c", 'printf "%s:%s\\n" "$PROFILE_READ" "$ZDOTDIR"'],
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"yes:{zsh_config}\n", result.stdout)
+
     def test_makeflags_has_an_explicit_parallelism_value(self) -> None:
         env = (ROOT / "lib/shell/env.sh").read_text()
 
