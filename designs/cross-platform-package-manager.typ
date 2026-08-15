@@ -12,11 +12,13 @@ Replace package selection and package-manager invocation in
 
 - one Clojure policy at `install/packages.clj`;
 - a small Babashka planner under `tools/package-plan/`; and
-- mise's package-manager backends as the package executor.
+- mise's package-manager backends as the package executor, except for one typed
+  Arch adapter required to preserve full-system upgrades.
 
 The policy keeps all target mappings and omissions visible together. The
-planner validates and expands it before mutation. mise invokes apt, dnf, apk,
-pacman, and Homebrew with explicit package arguments.
+planner validates and expands it before mutation. Mise invokes apt, dnf, apk,
+and Homebrew with explicit package arguments; the typed Arch adapter invokes
+pacman.
 
 This design covers only behavior implemented by `setup.sh` today. It does not
 define a general package-management framework.
@@ -63,14 +65,14 @@ libc, WSL status, installed-command facts needed by current conditions, and the
 installed Git version. Unknown derivatives and Intel macOS fail explicitly.
 Release is data for repository URLs; package targets are not release-qualified.
 
-The planner owns one tested mapping from each target to its native mise manager:
+The planner owns one tested mapping from each target to its native executor:
 
 ```text
-debian, ubuntu  -> apt
-fedora          -> dnf
-arch            -> pacman
-alpine, chimera -> apk
-macos-arm64     -> brew
+debian, ubuntu  -> mise apt
+fedora          -> mise dnf
+arch            -> direct pacman adapter
+alpine, chimera -> mise apk
+macos-arm64     -> mise brew
 ```
 
 === Logical packages and dispositions
@@ -231,29 +233,39 @@ Planning performs no mutation:
 + Return the complete plan, including skipped decisions and reasons.
 
 `apply` displays that plan, asks once unless `--yes` was given, applies typed
-repository operations, and invokes mise with explicit requests:
+repository operations, and invokes the selected executors with explicit
+requests:
 
 ```text
 mise bootstrap packages apply --update --yes apt:bat apt:jq ...
 mise bootstrap packages apply --yes brew:bacon
+sudo pacman --sync --refresh --sysupgrade --needed -- bat jq ...
 ```
 
 `--update` is used only when the current native-manager path requires it.
 Commands are argv vectors: the executor never builds shell text, uses `eval`,
 or splits package names. It stops on the first failed operation. Dry run performs
-all reads and planning but no mutation.
+all reads and planning and may populate the pinned Babashka or mise versioned
+user cache required to run the planner, but performs no package-manager,
+repository, privilege-policy, or other system mutation.
 
-An Arch setup run must retain the current
-`pacman --sync --refresh --sysupgrade --needed` semantics: refresh package
-metadata, perform one full system upgrade, and avoid reinstalling satisfied
-packages. Arch does not switch to the planner unless mise's `--update` path is
-proven to provide all three behaviors.
+Mise 2026.8.0's pacman backend uses `pacman -Sy` followed by
+`pacman -S --needed` for named packages. That is a partial upgrade and does not
+preserve the current setup contract. The Arch adapter therefore emits one typed
+privileged pacman operation. Its non-root argv is
+`sudo pacman --sync --refresh --sysupgrade --needed -- PACKAGES...`; root
+execution omits sudo. It refreshes metadata, performs one full system upgrade,
+avoids reinstalling satisfied packages, and protects package operands with `--`.
+The policy still supplies logical names and mappings; only execution differs.
 
-`setup.sh install-global` calls `package-plan apply`. The planner, not the whole
-setup subprocess, prefixes typed repository operations with the elevation
-command selected by the plan. The pinned mise process remains unprivileged and
-receives the target's `sudo` interface. This keeps user-owned bootstrap files
-out of a root-owned home.
+Both package entrypoints call `package-plan apply` as the invoking user. This
+includes the package-only `setup_install_global_packages` path and the package
+phase of the full `setup_install_global` path. The latter runs the planner before
+it invokes the remaining root-owned setup phases; `setup_sudo.sh main` no longer
+calls `install_features`. The planner, not the whole setup subprocess, prefixes
+typed repository operations with the elevation command selected by the plan.
+The pinned mise process remains unprivileged and receives the target's `sudo`
+interface. This keeps user-owned bootstrap files out of a root-owned home.
 
 == Bootstrap
 
@@ -262,9 +274,31 @@ out of a root-owned home.
 `package-plan` must run before global packages, so it cannot depend on Python,
 Node, Cargo, or a system Babashka package. A small POSIX shell shim downloads a
 pinned standalone Babashka archive for the detected architecture, operating
-system, and libc. It requires only `uname`, `tar`, one TLS downloader, and one
-SHA-256 implementation. A missing prerequisite is an explicit unsupported-host
-error.
+system, and libc. Its declared bootstrap floor is a POSIX shell, `uname`, `tar`,
+either `curl` or `wget` with TLS and certificate validation, and either
+`sha256sum` or `shasum`. The planner does not install this floor. A missing
+command produces a target-specific prerequisite error naming the packages to
+install, without constructing or executing an installation command.
+
+Official minimal container images are not the support boundary. Observed base
+images currently divide as follows:
+
+```text
+debian, ubuntu -> tar and sha256sum; no TLS downloader
+fedora, arch    -> tar, curl, and sha256sum
+alpine          -> tar, wget, and sha256sum
+chimera         -> sha256sum; no tar or TLS downloader
+```
+
+The corresponding tested floor packages are `ca-certificates` and `curl` on
+Debian and Ubuntu, and `curl` plus `libarchive-progs` on Chimera. A TLS failure
+caused by a missing trust store additionally names `ca-certificates`. Fedora,
+Arch, and Alpine require no added floor package in their current official base
+images.
+
+Apple Silicon macOS supplies the bootstrap floor through the base system. These
+facts are test fixtures, not permanent distribution promises; runtime command
+detection remains authoritative.
 
 `install/bootstrap.edn` pins Babashka and mise release URLs and SHA-256 digests
 for every supported binary target. A development generator emits the minimal
@@ -301,6 +335,10 @@ Missing commands are planning errors before confirmation. Authorization is
 checked by the first real privileged operation; failure stops with that exact
 diagnostic rather than trying another tool after possible mutation. The planner
 never invokes `su`, changes sudoers or doas policy, or installs sudo or doas.
+The error names the manual prerequisite for the detected target: the native
+`sudo` package on Debian, Ubuntu, Fedora, and Arch; `sudo` or
+`doas-sudo-shim` on Alpine; `opendoas` on Chimera; or the base-system sudo on
+macOS. These are instructions for the operator, not executable plan operations.
 
 The exact released upstream `doas-sudo-shim` script, its license, version, and
 source digest are committed under `vendor/doas-sudo-shim/`. Chimera executes
@@ -326,13 +364,24 @@ Privilege tests cover root, each target's required command, missing commands,
 authorization failure at the first privileged operation, and exact elevated
 argv. They prove that the planner never invokes `su`, installs an elevation
 package, or changes privilege policy. Golden plans accept real sudo or Alpine's
-packaged shim and reject a non-root host without its required interface.
+packaged shim and reject a non-root host without its required interface, with
+the target-specific manual prerequisite in the diagnostic. Setup integration
+tests exercise both package-only and full setup entrypoints and prove that each
+invokes the planner with the original user identity before any root-only phase.
+They reject any path that calls the planner from `setup_sudo.sh`.
 Chimera tests prove that only package execution receives the vendored shim path,
 that the shim translates the exact sudo argv emitted by the pinned mise release,
 and that the vendored files match their recorded digest. A test against the
 official minimal Chimera image records `sh`, `awk`, and `cat` as stage-zero
-facilities and exercises root-direct planning without assuming doas, sudo, or
-su is installed.
+facilities, records `id` for the vendored shim, and exercises root-direct
+planning without assuming doas, sudo, or su is installed.
+
+Container bootstrap tests record the observed minimal-image matrix above. A
+missing floor command must produce the exact prerequisite diagnostic without
+mutation. After the test fixture installs only the named floor packages, the
+same image must bootstrap the pinned Babashka and mise artifacts successfully.
+Fedora, Arch, and Alpine must succeed without adding floor packages. Equivalent
+Apple Silicon macOS tests use a clean user cache rather than a container.
 
 Golden tests cover the complete matrix and these current host scenarios:
 
@@ -352,6 +401,15 @@ partial failure, retry, and that Brew fallback never installs unrelated Brew
 packages. JSON tests compare parsed values; human matrices use stable target and
 package order for reviewable diffs.
 
+Separate conformance tests run the pinned mise binary, rather than a mock, in
+the disposable platform environments. They record its dry-run manager argv and
+sudo forms. The Arch test bypasses mise and requires the direct adapter's single
+exact `--sync --refresh --sysupgrade --needed --` argv with sudo as non-root and
+without it as root. The Chimera test passes the observed `sudo COMMAND...`,
+`sudo env KEY=VALUE COMMAND...`, and noninteractive `sudo -n true` forms through
+the vendored shim to a recording fake doas. A pinned mise update cannot land
+until these tests pass.
+
 The cross-manifest test continues to reject duplicate ownership between this
 policy, mise `[tools]`, Cargo, pipx, and other package manifests.
 
@@ -359,10 +417,18 @@ policy, mise `[tools]`, Cargo, pipx, and other package manifests.
 
 + Transcribe the current package list, mappings, omissions, platform additions,
   and repository operations, preserving the effective installed package set.
++ Add `install/bootstrap.edn`, pin Babashka and mise artifacts for every supported
+  binary target, and generate the stage-zero shell table.
++ Vendor the reviewed Chimera `doas-sudo-shim` release, license, version, and
+  digest, together with its explicit update command.
 + Add the matrix, host scenarios, adapter tests, and clean-host bootstrap tests.
 + Run the new path behind an explicit opt-in command on every supported target.
-+ Switch `setup.sh install-global` after its plans match the characterized
-  current requests.
++ Split `install_features` out of `setup_sudo.sh main`; make both full setup and
+  package-only setup invoke the planner as the original user before root-owned
+  phases.
++ Switch both setup entrypoints after their plans match the characterized
+  current requests and their integration tests prove the planner is not
+  elevated.
 + Remove `install/packages.txt`, `queue_install`, manager command construction,
   and the duplicate Bacon declaration from `config/mise.toml`.
 
@@ -379,8 +445,9 @@ PowerShell uses Microsoft's Debian repository; and Alpine's unconditional
 
 Nix/Home Manager would replace native package ownership with a separate store.
 Ansible and chezmoi would still require repository-owned name mappings. asdf
-does not install system dependencies. mise executes all required managers but
-does not model logical names, omissions, or native-versus-fallback policy.
+does not install system dependencies. Mise covers the required managers except
+for Arch's full-upgrade contract, but does not model logical names, omissions,
+or native-versus-fallback policy.
 
 Those tools solve broader problems. This design adds only the missing policy
 layer around mise.
