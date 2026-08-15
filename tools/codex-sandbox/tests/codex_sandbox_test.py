@@ -232,7 +232,7 @@ class CodexSandboxTest(unittest.TestCase):
                     ready=$(value_for --ready "$@")
                     coordinated=$(value_for --coordinated "$@")
                     release=$(value_for --release "$@")
-                    : > "$ready"
+                    printf '%s\n' "${FAKE_SESSION:-new}" > "$ready"
                     while [ ! -e "$coordinated" ]; do sleep 0.01; done
                     while [ ! -e "$release" ]; do sleep 0.01; done
                     ;;
@@ -244,7 +244,7 @@ class CodexSandboxTest(unittest.TestCase):
                         printf '%s\n' '{"proxies":[]}' > "$state"
                     fi
                     ;;
-                agent-args)
+                agent-args|finalize)
                     output=$(value_for --output "$@")
                     printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
                     ;;
@@ -381,6 +381,7 @@ class CodexSandboxTest(unittest.TestCase):
         (auth / "auth.json").chmod(0o600)
 
         result = self.run_launcher(
+            FAKE_SESSION="shared",
             FAKE_PROXY_STATE=(
                 '{"proxies":[],"auth":{"container":"shared-auth-proxy",'
                 '"key":"shared-key"}}'

@@ -219,6 +219,17 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("/src/work/secret:ro,noexec", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
 
+    def test_finalize_publishes_before_generating_agent_arguments(self) -> None:
+        args = object()
+        calls = []
+        with mock.patch.object(
+            sandbox_proxies, "publish_main", side_effect=lambda value: calls.append(("publish", value)),
+        ), mock.patch.object(
+            sandbox_proxies, "agent_args_main", side_effect=lambda value: calls.append(("args", value)) or 0,
+        ):
+            self.assertEqual(0, sandbox_proxies.finalize_main(args))
+        self.assertEqual([("publish", args), ("args", args)], calls)
+
     def test_local_router_accepts_option_separator(self) -> None:
         self.write({"example": self.command()})
         stale = sandbox_proxies.runtime_directory(self.repo) / "session.json"

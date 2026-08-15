@@ -660,6 +660,11 @@ def route_main(args: argparse.Namespace) -> int:
     ).returncode
 
 
+def finalize_main(args: argparse.Namespace) -> int:
+    publish_main(args)
+    return agent_args_main(args)
+
+
 def agent_args_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
@@ -832,6 +837,12 @@ def parse_args() -> argparse.Namespace:
     publish.add_argument("--state", required=True)
     publish.add_argument("--manifest", required=True)
     publish.set_defaults(function=publish_main)
+    finalize = sub.add_parser("finalize")
+    finalize.add_argument("--repo", required=True)
+    finalize.add_argument("--state", required=True)
+    finalize.add_argument("--output", required=True)
+    finalize.add_argument("--manifest", required=True)
+    finalize.set_defaults(function=finalize_main)
     agent = sub.add_parser("agent-args")
     agent.add_argument("--repo", required=True)
     agent.add_argument("--state", required=True)
