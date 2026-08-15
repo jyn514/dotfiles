@@ -15,11 +15,16 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const SOCKET: &str = "/run/sandbox-proxy/socket";
+const DEFAULT_SOCKET: &str = "/run/sandbox-proxy/socket";
+
+fn socket_path() -> String {
+    std::env::var("SANDBOX_PROXY_SOCKET").unwrap_or_else(|_| DEFAULT_SOCKET.to_owned())
+}
 const CONFIG_HOME: &str = "/tmp/jj-config";
 const TEMP_HOME: &str = "/run/sandbox-proxy/jj-tmp";
 const MAX_REQUEST: usize = 1 << 20;
@@ -285,9 +290,10 @@ fn serve() -> Result<()> {
         .wrap_err("cannot secure Jujutsu temporary directory")?;
     execution_policy::install(&repo)?;
     prepare_repo_config(&repo)?;
-    let _ = fs::remove_file(SOCKET);
-    let listener = UnixListener::bind(SOCKET).wrap_err("cannot bind proxy socket")?;
-    fs::set_permissions(SOCKET, fs::Permissions::from_mode(0o666)).wrap_err("cannot set proxy socket permissions")?;
+    let socket = socket_path();
+    let _ = fs::remove_file(&socket);
+    let listener = UnixListener::bind(&socket).wrap_err("cannot bind proxy socket")?;
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o666)).wrap_err("cannot set proxy socket permissions")?;
     for connection in listener.incoming() {
         let mut stream = match connection { Ok(stream) => stream, Err(error) => { eprintln!("jj proxy: accept: {error}"); continue; } };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -318,7 +324,13 @@ fn client(args: Vec<String>) -> Result<i32> {
     };
     let body = serde_json::to_vec(&request).wrap_err("cannot encode request")?;
     let proxy_dir = env::var("SANDBOX_PROXY_DIR").wrap_err("sandbox proxy directory is not configured")?;
-    let mut stream = UnixStream::connect(format!("{proxy_dir}/jj/socket")).wrap_err("proxy unavailable")?;
+    let configured_socket = socket_path();
+    let socket = if Path::new(&configured_socket).exists() {
+        configured_socket
+    } else {
+        format!("{proxy_dir}/jj/socket")
+    };
+    let mut stream = UnixStream::connect(socket).wrap_err("proxy unavailable")?;
     stream.set_read_timeout(Some(TIMEOUT + Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
     stream.set_write_timeout(Some(Duration::from_secs(5))).wrap_err("cannot configure proxy socket")?;
     write_frame(&mut stream, &body).wrap_err("cannot send proxy request")?;
@@ -330,7 +342,13 @@ fn client(args: Vec<String>) -> Result<i32> {
 }
 
 fn forward() -> Result<i32> {
-    let mut stream = UnixStream::connect(SOCKET).wrap_err("proxy unavailable")?;
+    let configured_socket = socket_path();
+    let socket = if Path::new(&configured_socket).exists() {
+        configured_socket
+    } else {
+        DEFAULT_SOCKET.to_owned()
+    };
+    let mut stream = UnixStream::connect(socket).wrap_err("proxy unavailable")?;
     let stdin = io::stdin();
     let mut input = stdin.lock();
     io::copy(&mut input, &mut stream).wrap_err("cannot forward proxy request")?;

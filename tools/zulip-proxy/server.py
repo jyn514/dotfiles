@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import build_opener, HTTPRedirectHandler, Request as HttpRequest
 
 
-SOCKET = Path("/run/sandbox-proxy/socket")
+SOCKET = Path(os.environ.get("SANDBOX_PROXY_SOCKET", "/run/sandbox-proxy/socket"))
 CONFIG = Path("/run/secrets/zuliprc")
 MAX_REQUEST = 16 << 10
 MAX_RESPONSE = 16 << 20

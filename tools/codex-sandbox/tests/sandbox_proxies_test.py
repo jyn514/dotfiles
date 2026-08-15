@@ -455,6 +455,7 @@ class ManifestTest(unittest.TestCase):
         }), encoding="utf-8")
         state = self.repo / "attached-state"
         manifest = self.repo / "attached-manifest"
+        manifest.write_text(json.dumps(shared_manifest), encoding="utf-8")
         session = self.repo / "attached-session"
         session.write_text("shared\n", encoding="utf-8")
         args = type("Args", (), {
@@ -462,12 +463,36 @@ class ManifestTest(unittest.TestCase):
             "state": str(state), "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
-                mock.patch.object(sandbox_proxies, "publish_main") as publish:
+                mock.patch.object(sandbox_proxies, "publish_main") as publish, \
+                mock.patch.object(sandbox_proxies, "refresh_shared_proxies") as refresh:
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         start.assert_not_called()
         publish.assert_not_called()
+        refresh.assert_called_once_with(args, self.repo.resolve(), shared_state, shared_manifest)
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
+
+    def test_refresh_atomically_promotes_changed_proxy_images(self) -> None:
+        command = self.command()
+        manifest = {"version": 1, "commands": {"example": command}}
+        old = {
+            "name": "example", "volume": "shared-example", "container": "old-example",
+            "image": "sha256:" + "0" * 64,
+        }
+        replacement = {**old, "container": "new-example", "image": "sha256:" + "1" * 64}
+        state = {"proxies": [old]}
+        args = type("Args", (), {"prefix": "new", "state": str(self.repo / "state")})
+        with mock.patch.object(
+            sandbox_proxies, "resolve_images", return_value={"example": replacement["image"]},
+        ), mock.patch.object(
+            sandbox_proxies, "start_one_proxy", return_value=replacement,
+        ) as start, mock.patch.object(sandbox_proxies, "promote_socket") as promote:
+            sandbox_proxies.refresh_shared_proxies(args, self.repo, state, manifest)
+        self.assertEqual([replacement], state["proxies"])
+        self.assertEqual([old], state["retired-proxies"])
+        self.assertEqual("shared-example", start.call_args.kwargs["volume"])
+        socket_name = start.call_args.kwargs["socket_name"]
+        promote.assert_called_once_with(args, "shared-example", socket_name)
 
     def test_attach_does_not_replace_invalid_active_session(self) -> None:
         self.write()
