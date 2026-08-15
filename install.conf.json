@@ -10,6 +10,9 @@
   {
     "link": {
       "$HOME/.codex/AGENTS.md": "config/AGENTS.md",
+      "$HOME/.pi/agent/AGENTS.md": "config/AGENTS.md",
+      "$HOME/.pi/agent/mcp.json": "config/pi-mcp.json",
+      "$HOME/.pi/agent/settings.json": "config/pi.json",
       "$HOME/.claude/CLAUDE.md": "config/CLAUDE.md",
       "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",
       "$HOME/.XCompose": "config/XCompose",
@@ -67,7 +70,6 @@
       "$HOME/.config/tmux/renumber-sessions.sh": "config/renumber-tmux-sessions.sh",
       "$HOME/.selected_editor": "config/selected_editor",
       "$HOME/.config/tmux/set-env.sh": "config/set-tmux-env.sh",
-      "$HOME/.config/tmux/set-environment": "tools/tmux-admin/set-environment",
       "$HOME/.agents/shared.md": "config/shared-agents.md",
       "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
       "$HOME/.julia/config/startup.jl": "config/startup.jl",
