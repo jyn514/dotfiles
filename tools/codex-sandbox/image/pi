@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+
+if [ -e /etc/alpine-release ]; then
+    if ! command -v node >/dev/null 2>&1; then
+        echo "Pi requires Node >=22.19.0 on Alpine" >&2
+        exit 1
+    fi
+    if ! node -e '
+        const [major, minor] = process.versions.node.split(".").map(Number);
+        process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);
+    '; then
+        echo "Pi requires Node >=22.19.0 on Alpine; found $(node --version)" >&2
+        exit 1
+    fi
+    exec node /opt/agent-pi/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js "$@"
+fi
+
+exec /opt/agent-pi/standalone/pi "$@"

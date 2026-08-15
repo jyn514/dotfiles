@@ -97,6 +97,8 @@ if [ "$run_containers" = 1 ]; then
 	python3 tools/zulip-proxy/tests/container_integration.py
 	printf 'Running package planner bootstrap integration...\n'
 	python3 tools/package-plan/tests/container.py
+	printf 'Running codex sandbox runtime integration...\n'
+	python3 tools/codex-sandbox/tests/image_runtime_integration.py
 	container_results=$results/containers
 	mkdir "$container_results"
 	export container_results
