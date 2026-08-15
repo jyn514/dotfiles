@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+# The dotfiles `paste` command accesses the clipboard. Agents and scripts expect
+# the POSIX text utility instead; both supported sandbox hosts provide it here.
+exec /usr/bin/paste "$@"
