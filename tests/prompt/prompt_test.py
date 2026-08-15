@@ -259,6 +259,33 @@ class PromptJujutsuTests(unittest.TestCase):
             self.assertEqual(b"", result.stdout)
             self.assertIn(b"malformed jj log output", result.stderr)
 
+    def test_jj_workspace_does_not_probe_git_when_query_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            (root / ".jj").mkdir()
+            git_called = root / "git-called"
+            git = binaries / "git"
+            git.write_text(f"#!/bin/sh\ntouch {git_called}\nexit 99\n")
+            git.chmod(0o755)
+            jj = binaries / "jj"
+            jj.write_text("#!/bin/sh\nprintf 'false::parent\\ntrue::working copy\\n'\n")
+            jj.chmod(0o755)
+
+            result = subprocess.run(
+                [str(ROOT / "bin/prompt-command"), "fish-left", "0", "0", "fish"],
+                cwd=root,
+                env=os.environ | {"PATH": f"{binaries}:{os.environ['PATH']}"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("working copy", result.stdout)
+        self.assertFalse(git_called.exists())
+
     def test_failed_jj_query_falls_back_to_git_refs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
