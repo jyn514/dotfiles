@@ -90,8 +90,17 @@ recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--templa
 conflicts = ["log", "--no-graph", "-T", "show_conflicts", "-r", "with_conflicts"]
 
 [templates]
+draft_commit_description = '''
+concat(
+builtin_draft_commit_description,
+"\nJJ: ignore-rest\n\n",
+diff.git(),
+)
+'''
+
 git_push_bookmark = '"jyn/" ++ description.split(regex:"\\s").first().replace(regex:"[^A-Za-z0-9_-]+", "-")'
 workspace_list = 'name ++ " " ++ root++"\n"'
+
 [template-aliases]
 'recent' = 'committer.timestamp().ago() ++ ": " ++ bookmarks ++ " | " ++ description.first_line() ++ "\n"'
 'format_short_signature(signature)' = 'label("username", signature.name())'
