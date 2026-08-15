@@ -701,26 +701,44 @@ def cleanup(state: State) -> None:
     if state.cleaned:
         return
     state.cleaned = True
+    started = time.monotonic()
+    previous = started
+
+    def timing(label: str) -> None:
+        nonlocal previous
+        now = time.monotonic()
+        if os.environ.get("CODEX_SANDBOX_TIMING"):
+            print(f"Sandbox cleanup: {label}={now - previous:.2f}s", file=sys.stderr)
+        previous = now
+    containers = []
     if state.codex_container_created:
-        cleanup_resource(
+        containers.append((
             f"Codex container {state.codex_container}",
             ["docker", "rm", "--force", state.codex_container],
-        )
+        ))
     if state.relay_container_created:
-        cleanup_resource(
+        containers.append((
             f"relay container {state.relay_container}",
             ["docker", "rm", "--force", state.relay_container],
-        )
+        ))
+    with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
+        list(executor.map(lambda item: cleanup_resource(*item), containers))
+    timing("containers")
+
+    networks = []
     if state.relay_link_created:
-        cleanup_resource(
+        networks.append((
             f"relay network {state.relay_link_network}",
             ["docker", "network", "rm", state.relay_link_network],
-        )
+        ))
     if state.relay_egress_created:
-        cleanup_resource(
+        networks.append((
             f"relay network {state.relay_egress_network}",
             ["docker", "network", "rm", state.relay_egress_network],
-        )
+        ))
+    with ThreadPoolExecutor(max_workers=max(1, len(networks))) as executor:
+        list(executor.map(lambda item: cleanup_resource(*item), networks))
+    timing("networks")
     if state.skills_tmp is not None:
         started = time.monotonic()
         try:
@@ -728,20 +746,36 @@ def cleanup(state: State) -> None:
         except OSError:
             elapsed = int(time.monotonic() - started)
             print(f"warning: Cleaning up staged skills {state.skills_tmp} failed after {elapsed}s.", file=sys.stderr)
+    timing("skills")
     if state.lock_coordinated is not None:
         state.lock_coordinated.touch()
     if state.lock_release is not None:
         state.lock_release.touch()
-    if state.lock_process is not None:
-        state.lock_process.wait()
-    if state.monitor_process is not None:
-        state.monitor_process.wait()
+    processes = [
+        (name, process)
+        for name, process in (("proxy lock", state.lock_process), ("proxy monitor", state.monitor_process))
+        if process is not None
+    ]
+
+    def wait_process(item: tuple[str, subprocess.Popen[bytes]]) -> None:
+        name, process = item
+        process_started = time.monotonic()
+        process.wait()
+        if os.environ.get("CODEX_SANDBOX_TIMING"):
+            print(f"Sandbox cleanup: {name}={time.monotonic() - process_started:.2f}s", file=sys.stderr)
+
+    with ThreadPoolExecutor(max_workers=max(1, len(processes))) as executor:
+        list(executor.map(wait_process, processes))
+    timing("proxy processes")
     for path in (
         state.proxy_state, state.proxy_args, state.manifest,
         state.lock_ready, state.lock_coordinated, state.lock_release,
     ):
         if path is not None:
             path.unlink(missing_ok=True)
+    timing("temporary files")
+    if os.environ.get("CODEX_SANDBOX_TIMING"):
+        print(f"Sandbox cleanup total: {time.monotonic() - started:.2f}s", file=sys.stderr)
 
 
 def login_codex_sidecar() -> int:

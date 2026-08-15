@@ -558,16 +558,30 @@ def start_main(args: argparse.Namespace) -> int:
 
 
 def stop_state(state: dict[str, Any]) -> None:
+    started = time.monotonic()
+    containers = []
     auth = state.get("auth")
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
-        subprocess.run(
-            ["docker", "rm", "--force", auth["container"]],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    for proxy in reversed(state.get("proxies", [])):
-        subprocess.run(["docker", "kill", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["docker", "rm", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["docker", "volume", "rm", proxy["volume"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        containers.append(auth["container"])
+    proxies = list(reversed(state.get("proxies", [])))
+    containers.extend(proxy["container"] for proxy in proxies)
+
+    def discard(arguments: list[str]) -> None:
+        subprocess.run(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Podman's forced removal waits for the container stop timeout. Send SIGKILL
+    # explicitly, then remove independent containers concurrently.
+    with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
+        list(executor.map(lambda container: discard(["docker", "kill", container]), containers))
+    with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
+        list(executor.map(lambda container: discard(["docker", "rm", container]), containers))
+    if os.environ.get("CODEX_SANDBOX_TIMING"):
+        print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
+    volumes_started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=max(1, len(proxies))) as executor:
+        list(executor.map(lambda proxy: discard(["docker", "volume", "rm", proxy["volume"]]), proxies))
+    if os.environ.get("CODEX_SANDBOX_TIMING"):
+        print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
 
 
 def stop_main(args: argparse.Namespace) -> int:
