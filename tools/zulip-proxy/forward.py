@@ -12,7 +12,7 @@ def main() -> None:
     configured = Path(os.environ.get("SANDBOX_PROXY_SOCKET", "/run/sandbox-proxy/socket"))
     socket_path = configured if configured.exists() else Path("/run/sandbox-proxy/socket")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.connect(socket_path)
+        connection.connect(str(socket_path))
         shutil.copyfileobj(sys.stdin.buffer, connection.makefile("wb", buffering=0))
         connection.shutdown(socket.SHUT_WR)
         shutil.copyfileobj(connection.makefile("rb", buffering=0), sys.stdout.buffer)
