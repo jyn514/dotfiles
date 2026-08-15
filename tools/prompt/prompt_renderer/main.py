@@ -171,13 +171,14 @@ def jj_description() -> tuple[str, str] | None:
 
 
 def git_repository(cwd: Path) -> Repository | None:
-    in_git = run([b"git", b"rev-parse", b"--git-dir"])
     is_jj = jj_workspace(cwd)
+    if is_jj:
+        jj = jj_description()
+        if jj is not None:
+            return Repository(jj[0], jj_description=jj[1])
+
+    in_git = run([b"git", b"rev-parse", b"--git-dir"])
     if in_git is None or in_git.returncode:
-        if is_jj:
-            jj = jj_description()
-            if jj is not None:
-                return Repository(jj[0], jj_description=jj[1])
         return None
 
     changed = run([
@@ -202,11 +203,6 @@ def git_repository(cwd: Path) -> Repository | None:
     tags = run([b"git", b"tag", b"--points-at", b"HEAD"])
     if tags is not None and tags.returncode == 0 and tags.stdout:
         return Repository(color, os.fsdecode(tags.stdout).replace("\n", ""))
-
-    if is_jj:
-        jj = jj_description()
-        if jj is not None:
-            return Repository(jj[0], jj_description=jj[1])
 
     remotes = run([
         b"git",
