@@ -62,6 +62,22 @@ class ProfileContractTests(unittest.TestCase):
             profile.index('remove_path "$HOME/.local/share/mise/shims"'),
             profile.index("mise_activation=$(mise activate bash) || {"),
         )
+        self.assertGreater(
+            profile.index('add_path "$DOTFILES/bin"', profile.index("if exists mise; then")),
+            profile.index('eval "$mise_activation" || {'),
+        )
+        self.assertLess(
+            profile.index('add_path "$DOTFILES/bin"'),
+            profile.index('case "$-" in'),
+        )
+
+        fish = (ROOT / "config/config.fish").read_text()
+        self.assertIn("source_init mise hook-env --shell fish --force", fish)
+        self.assertNotIn("add_path $DOTFILES/libexec/agent-wrappers", fish)
+        self.assertLess(
+            fish.index("source_init mise hook-env --shell fish --force"),
+            fish.index("if not status --is-interactive"),
+        )
 
     def test_mise_shims_are_added_after_linuxbrew(self) -> None:
         profile = (ROOT / "config/profile").read_text()
@@ -507,8 +523,8 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             paths = result.stdout.strip().split(":")
             expected_prefix = [
-                str(mise_shims),
                 str(ROOT / "bin"),
+                str(mise_shims),
                 str(local_bin),
                 str(cargo_bin),
             ]

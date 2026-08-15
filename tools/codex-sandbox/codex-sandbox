@@ -262,7 +262,7 @@ def image_sources() -> list[Path]:
 def image_cache_key(state: State, base_image: str) -> str:
     lines = [
         f"BASE_IMAGE={base_image}", f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
-        f"CODEX_HOME={state.home / '.codex'}", f"TERM={state.term}",
+        f"TERM={state.term}",
     ]
     for path in image_sources():
         digest = run(["git", "hash-object", str(path)], capture=True, cwd=DOTFILES).stdout.strip()
@@ -284,7 +284,6 @@ def ensure_image(state: State, base_image: str) -> str:
             "docker", "build", "-f", "tools/codex-sandbox/image/Dockerfile",
             "--build-arg", f"AGENT_UID={state.uid}",
             "--build-arg", f"AGENT_GID={state.gid}",
-            "--build-arg", f"CODEX_HOME={state.home / '.codex'}",
             "--build-arg", f"TERM={state.term}", "--iidfile", str(iidfile),
             "--tag", image, "--build-arg", f"BASE_IMAGE={base_image}", ".",
         ], cwd=DOTFILES, stdout_to_stderr=True)
@@ -465,13 +464,14 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "docker", "run", "--name", state.codex_container, "-it",
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
         "--secret", "codex-github-token,type=env,target=GH_TOKEN",
-        "--env", "CODEX_SQLITE_HOME=/codex-sqlite",
-        "--volume", f"codex-sqlite-{state.uid}:/codex-sqlite",
+        "--env", "JJ_AGENT=pi",
+        "--volume", f"pi-agent-{state.uid}:/home/codex/.pi/agent",
         "--mount", f"type=bind,src={state.skills_tmp},dst=/home/codex/.agents/skills",
         "--mount", f"type=bind,src={DOTFILES / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
-        "--volume", f"{state.home / '.codex'}:{state.home / '.codex'}",
-        "--volume", f"{state.home / '.codex/rules'}:{state.home / '.codex/rules'}:ro",
-        "--mount", f"type=bind,src={DOTFILES / 'config/AGENTS.md'},dst={state.home / '.codex/AGENTS.md'},readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-sandbox/image/pi-settings.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
+        "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
         *[
@@ -528,8 +528,6 @@ def execute(state: State) -> int:
     attach_proxies(state)
     arguments = [
         state.image,
-        "--dangerously-bypass-approvals-and-sandbox",
-        '--config=projects."/src/work".trust_level="trusted"',
         *state.codex_arguments,
     ]
     if state.agent_podman is not None:

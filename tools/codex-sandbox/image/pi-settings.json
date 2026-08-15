@@ -1,0 +1,14 @@
+{
+  "lastChangelogVersion": "0.84.2",
+  "defaultThinkingLevel": "low",
+  "tuiMode": "fullscreen",
+  "shellCommandPrefix": "export JJ_AGENT=pi PATH=\"/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:/usr/local/bin:/usr/bin:/bin\"",
+  "defaultProjectTrust": "ask",
+  "enableInstallTelemetry": false,
+  "extensions": [
+    "/opt/agent-pi/lib/node_modules/pi-mcp-adapter/index.ts"
+  ],
+  "skills": [
+    "/opt/agent-pi/lib/node_modules/pi-mcp-adapter/skills"
+  ]
+}

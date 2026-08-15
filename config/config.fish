@@ -95,6 +95,28 @@ if [ -z "$SSH_AUTH_SOCK" ]
 	end
 end
 
+if exists mise
+	set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
+	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
+		set --erase PATH[$shim_index]
+	end
+	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $fish_user_paths)
+		set --erase fish_user_paths[$shim_index]
+	end
+	set --local clean_path
+	for path_entry in $PATH
+		contains -- $path_entry $clean_path; or set --append clean_path $path_entry
+	end
+	set --global --export PATH $clean_path
+	set --erase clean_path path_entry shim_index
+	if status --is-interactive
+		source_init mise activate fish
+	else
+		source_init mise hook-env --shell fish --force
+	end
+	or return
+end
+
 if not status --is-interactive
 	return
 end
@@ -107,15 +129,6 @@ if set -q KITTY_INSTALLATION_DIR
 	if not contains -- $kitty_completions $fish_complete_path
 		set --prepend fish_complete_path $kitty_completions
 	end
-end
-
-if exists mise
-	set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
-	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
-		set --erase PATH[$shim_index]
-	end
-	source_init mise activate fish
-	or return
 end
 
 ## options

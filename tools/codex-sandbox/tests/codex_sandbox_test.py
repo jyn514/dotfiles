@@ -85,7 +85,7 @@ class AgentSandboxImageTest(unittest.TestCase):
             check=True,
         )
         self.assertEqual(
-            "/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:"
+            "/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:"
             "/usr/local/bin:/usr/bin:/bin\n",
             path_result.stdout,
         )
@@ -101,6 +101,9 @@ class AgentSandboxImageTest(unittest.TestCase):
             "./config/inputrc",
         ):
             self.assertIn(source, dockerfile)
+        self.assertIn("npm ci --ignore-scripts --prefix /opt/pi-npm", dockerfile)
+        self.assertIn("./tools/pi-npm/package-lock.json", dockerfile)
+        self.assertIn('ENTRYPOINT ["pi", "--offline", "--approve"]', dockerfile)
 
     def test_sandbox_gitconfig_keeps_diff_semantics_without_identity_or_credentials(self) -> None:
         result = subprocess.run(
@@ -283,13 +286,16 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertIn(
             f"type=bind,src={ROOT / 'config/AGENTS.md'},"
-            f"dst={self.home / '.codex/AGENTS.md'},readonly",
+            "dst=/home/codex/.pi/agent/AGENTS.md,readonly",
             run,
         )
         self.assertIn(
-            '--config=projects."/src/work".trust_level="trusted"',
+            f"type=bind,src={ROOT / 'tools/codex-sandbox/image/pi-settings.json'},"
+            "dst=/home/codex/.pi/agent/settings.json,readonly",
             run,
         )
+        self.assertIn("pi-agent-", " ".join(run))
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertLess(run.index("resume"), run.index("session-id"))
 
