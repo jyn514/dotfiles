@@ -180,7 +180,7 @@ install_features () {
 		queue_install cargo-audit
 		queue_install difftastic
 	fi
-	if [ -n "$IS_ARCH" ] || [ -n "$IS_BREW" ]; then
+	if [ -n "$IS_ARCH" ]; then
 		queue_install bacon
 	fi
 

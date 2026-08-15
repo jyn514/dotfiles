@@ -33,6 +33,9 @@ uv = "latest"
 "pipx:pylint" = { version = "latest", depends = ["uv"] }
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 
+[bootstrap.packages]
+"brew:bacon" = "latest"
+
 [settings]
 lockfile = true
 locked = true

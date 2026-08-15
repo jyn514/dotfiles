@@ -262,7 +262,6 @@ class InstallationTests(unittest.TestCase):
                     "install",
                     "-q",
                     *self.translated(packages, replacements),
-                    "bacon",
                 ],
                 commands,
             )
@@ -277,7 +276,7 @@ class InstallationTests(unittest.TestCase):
         self.assertNotIn("opt/antidote", setup)
         self.assertIn("clone antidote ~/.config/zsh/antidote", setup)
         setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
-        self.assertIn("queue_install bacon", setup_sudo)
+        self.assertIn('if [ -n "$IS_ARCH" ]; then\n\t\tqueue_install bacon', setup_sudo)
         self.assertIn("queue_install cargo-audit", setup_sudo)
         self.assertIn("queue_install difftastic", setup_sudo)
         self.assertFalse((ROOT / "libexec/setup/fx-install.sh").exists())
@@ -471,6 +470,19 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         self.assertIn(["mise", "install", "--yes"], commands)
+        if InstallationTests.platform()["ID"] not in ("alpine", "arch"):
+            self.assertIn(
+                [
+                    "mise",
+                    "bootstrap",
+                    "packages",
+                    "apply",
+                    "--manager",
+                    "brew",
+                    "--yes",
+                ],
+                commands,
+            )
         self.assertFalse(any("binstall" in command for command in commands))
         fish_scripts = [command[2] for command in commands if command[0] == "fish"]
         self.assertTrue(
@@ -845,6 +857,12 @@ class MiseConfigTests(unittest.TestCase):
             ],
             cargo_config["registry"]["global-credential-providers"],
         )
+
+    def test_bacon_uses_mise_homebrew_fallback(self) -> None:
+        with (ROOT / "config/mise.toml").open("rb") as config_file:
+            config = tomllib.load(config_file)
+
+        self.assertEqual({"brew:bacon": "latest"}, config["bootstrap"]["packages"])
 
     def test_lockfile_covers_every_declared_tool(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
