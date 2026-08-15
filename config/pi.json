@@ -17,6 +17,7 @@
   "showCacheMissNotices": true,
   "collapseChangelog": true,
   "quietStartup": true,
+  "outputPadY": 0,
   "doubleEscapeAction": "tree",
   "fullscreenExitOutput": "resume-hint",
   "defaultProvider": "openai-codex",
