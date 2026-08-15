@@ -27,6 +27,7 @@ agent=${agent:-${CODEX_THREAD_ID:+codex}}
 subcommand=${1:-}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
+  pi) JJ_USER='Pi'; JJ_EMAIL='breq@jyn.dev' ;;
   codex)
     model=$(codex_version)
     JJ_EMAIL='breq@jyn.dev'

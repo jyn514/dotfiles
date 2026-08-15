@@ -26,12 +26,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         /opt/agent-tools/bin/ \
     && ln -s podman /opt/agent-tools/bin/docker
 
-FROM node:slim AS codex
-ARG CODEX_VERSION=0.147.0
-RUN npm install --global "@openai/codex@${CODEX_VERSION}" \
-    && mkdir -p /opt/agent-codex/bin /opt/agent-codex/lib \
-    && cp -a /usr/local/lib/node_modules/@openai/codex /opt/agent-codex/lib/codex \
-    && ln -s ../lib/codex/bin/codex.js /opt/agent-codex/bin/codex
+FROM node:slim AS pi
+COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
+RUN npm ci --ignore-scripts --prefix /opt/pi-npm \
+    && mkdir -p /opt/agent-pi/bin /opt/agent-pi/lib \
+    && cp -a /opt/pi-npm/node_modules /opt/agent-pi/lib/node_modules \
+    && ln -s ../lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js /opt/agent-pi/bin/pi
 
 FROM ${BASE_IMAGE}
 COPY ./tools/codex-sandbox/image/install-deps.sh /usr/local/bin/install-agent-deps
@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm /usr/local/bin/install-agent-deps
 
 COPY --link --from=tools /opt/agent-tools /opt/agent-tools
-COPY --link --from=codex /opt/agent-codex /opt/agent-codex
+COPY --link --from=pi /opt/agent-pi /opt/agent-pi
 
 COPY ./tools/codex-sandbox/image/create-user.sh .
 ARG AGENT_UID=1000
@@ -60,12 +60,9 @@ COPY ./tools/codex-sandbox/image/agent-wrappers-path.sh /etc/profile.d/agent-wra
 COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-profile.sh
 
 ENV HOME=/home/codex
-ARG CODEX_HOME
-ENV CODEX_HOME=${CODEX_HOME}
-ENV CODEX_SQLITE_HOME=/codex-sqlite
-RUN mkdir -p ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src/work \
+RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src/work \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
-        ${HOME} ${CODEX_HOME} ${CODEX_SQLITE_HOME} /src
+        ${HOME} /src
 
 # Reuse noninteractive dotfile semantics without personal shell hooks.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/editorconfig ${HOME}/.editorconfig
@@ -81,7 +78,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers /libexec/agent-wrappers
-ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:${PATH}
+ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /src/work
@@ -89,5 +86,4 @@ WORKDIR /src/work
 ENV COLORTERM=truecolor
 ARG TERM=xterm-256color
 ENV TERM=${TERM}
-ENTRYPOINT ["codex", "--config=check_for_update_on_startup=false", \
-  "--config=shell_environment_policy.set.PATH=\"/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-codex/bin:/usr/local/bin:/usr/bin:/bin\""]
+ENTRYPOINT ["pi", "--offline", "--approve"]

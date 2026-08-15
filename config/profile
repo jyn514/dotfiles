@@ -113,6 +113,7 @@ else
 	export JULIA_EDITOR=open
 fi
 export VISUAL=$EDITOR
+add_path "$DOTFILES/bin"
 
 case "$-" in
 	*i*) ;;
@@ -132,6 +133,7 @@ if exists mise; then
 		unset mise_activation
 	fi
 fi
+add_path "$DOTFILES/bin"
 
 if [ -n "$BASH_VERSION" ] && [ -z "$BASH_PROFILE_READ" ]; then
 	. ~/.bashrc || return

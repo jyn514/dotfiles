@@ -1,0 +1,22 @@
+{
+  "lastChangelogVersion": "0.84.2",
+  "defaultThinkingLevel": "low",
+  "tuiMode": "fullscreen",
+  "shellCommandPrefix": "export JJ_AGENT=pi",
+  "defaultProjectTrust": "ask",
+  "enableInstallTelemetry": false,
+  "theme": "light/dark",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "compaction": {
+    "enabled": true
+  },
+  "showCacheMissNotices": true,
+  "collapseChangelog": true,
+  "quietStartup": true,
+  "doubleEscapeAction": "tree",
+  "fullscreenExitOutput": "resume-hint",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-sol"
+}

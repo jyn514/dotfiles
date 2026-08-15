@@ -17,7 +17,7 @@ export VISUAL=$EDITOR
 export PAGER=cat
 export GIT_PAGER=cat
 
-for directory in /opt/agent-codex/bin /opt/agent-tools/bin /libexec/agent-wrappers; do
+for directory in /opt/agent-pi/bin /opt/agent-tools/bin /libexec/agent-wrappers; do
 	case ":$PATH:" in
 		*:$directory:*) ;;
 		*) PATH=$directory:$PATH ;;

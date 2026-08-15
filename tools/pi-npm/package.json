@@ -1,0 +1,8 @@
+{
+  "name": "dotfiles-pi-extensions",
+  "private": true,
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-mcp-adapter": "2.26.0"
+  }
+}
