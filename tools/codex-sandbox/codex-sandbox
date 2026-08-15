@@ -558,7 +558,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp},dst=/home/codex/.agents/skills",
         "--mount", f"type=bind,src={DOTFILES / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-sandbox/image/pi-settings.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
