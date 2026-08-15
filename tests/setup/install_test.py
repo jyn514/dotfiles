@@ -655,7 +655,7 @@ class LocalInstallationTests(unittest.TestCase):
         setup = (ROOT / "setup.sh").read_text()
 
         self.assertIn("if exists apk; then", setup)
-        self.assertIn("MISE_DISABLE_TOOLS='node,python,npm:pnpm", setup)
+        self.assertIn("MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm", setup)
         self.assertIn("aqua:Wilfred/difftastic'", setup)
         self.assertNotIn("MISE_SETUP_CONFIG.alpine", setup)
 
