@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[3]
 SERVER_PATH = ROOT / "tools" / "zulip-proxy" / "server.py"
 CLIENT = ROOT / "tools" / "zulip-proxy" / "client"
+FORWARDER_PATH = ROOT / "tools" / "zulip-proxy" / "forward.py"
 SPEC = importlib.util.spec_from_file_location("zulip_proxy", SERVER_PATH)
 assert SPEC and SPEC.loader
 server = importlib.util.module_from_spec(SPEC)
@@ -29,6 +30,10 @@ CLIENT_SPEC = importlib.util.spec_from_loader("zulip_client", CLIENT_LOADER)
 assert CLIENT_SPEC
 client = importlib.util.module_from_spec(CLIENT_SPEC)
 CLIENT_LOADER.exec_module(client)
+FORWARDER_SPEC = importlib.util.spec_from_file_location("zulip_forward", FORWARDER_PATH)
+assert FORWARDER_SPEC and FORWARDER_SPEC.loader
+forwarder = importlib.util.module_from_spec(FORWARDER_SPEC)
+FORWARDER_SPEC.loader.exec_module(forwarder)
 
 
 def frame(value: dict) -> bytes:
@@ -41,6 +46,22 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
     while len(result) < length:
         result.extend(connection.recv(length - len(result)))
     return bytes(result)
+
+
+class ForwarderTest(unittest.TestCase):
+    def test_connects_with_a_supported_unix_socket_path(self) -> None:
+        connection = mock.MagicMock()
+        socket_context = mock.MagicMock()
+        socket_context.__enter__.return_value = connection
+        with (
+            mock.patch.object(forwarder.socket, "socket", return_value=socket_context),
+            mock.patch.object(forwarder.shutil, "copyfileobj"),
+            mock.patch.object(forwarder.Path, "exists", return_value=True),
+            mock.patch.dict(forwarder.os.environ, {"SANDBOX_PROXY_SOCKET": "/tmp/proxy"}),
+        ):
+            forwarder.main()
+
+        connection.connect.assert_called_once_with("/tmp/proxy")
 
 
 class ServerTest(unittest.TestCase):
