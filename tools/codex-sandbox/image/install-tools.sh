@@ -12,7 +12,7 @@ if command -v apt-get >/dev/null; then
     apt-get update
     apt-get install -y --no-install-recommends ca-certificates curl tar xz-utils
 elif command -v apk >/dev/null; then
-    apk add ca-certificates curl tar xz
+    apk add ca-certificates curl gcompat tar xz
 elif command -v microdnf >/dev/null; then
     microdnf install -y --nobest ca-certificates curl gzip tar xz
 else

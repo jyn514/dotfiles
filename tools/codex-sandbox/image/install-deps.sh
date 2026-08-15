@@ -44,6 +44,7 @@ elif command -v apk >/dev/null; then
         curl \
         fd \
         file \
+        gcompat \
         git \
         iproute2 \
         jq \
