@@ -332,22 +332,35 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
+        pi_agent = self.home / ".pi/agent"
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/shared-agents.md'},"
-            "dst=/home/codex/.agents/shared.md,readonly",
+            f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
             run,
         )
-        self.assertIn(
-            f"type=bind,src={ROOT / 'config/AGENTS.md'},"
-            "dst=/home/codex/.pi/agent/AGENTS.md,readonly",
-            run,
-        )
-        self.assertIn(
-            f"type=bind,src={ROOT / 'config/pi.json'},"
-            "dst=/home/codex/.pi/agent/settings.json,readonly",
-            run,
-        )
-        self.assertIn("pi-agent-", " ".join(run))
+        auth_mounts = [
+            item for item in run
+            if item.endswith("dst=/home/codex/.pi/agent/auth.json,readonly")
+        ]
+        self.assertEqual(1, len(auth_mounts))
+        auth_mask = Path(auth_mounts[0].split(",src=", 1)[1].split(",dst=", 1)[0])
+        self.assertFalse(auth_mask.exists())
+        staged_mounts = [
+            item for item in run
+            if any(item.endswith(f"dst={destination},readonly") for destination in (
+                "/home/codex/.agents/shared.md",
+                "/home/codex/.pi/agent/AGENTS.md",
+                "/home/codex/.pi/agent/settings.json",
+                "/home/codex/.pi/agent/mcp.json",
+            ))
+        ]
+        self.assertEqual(4, len(staged_mounts))
+        staged_sources = [
+            Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
+            for item in staged_mounts
+        ]
+        self.assertEqual(1, len({source.parent for source in staged_sources}))
+        self.assertTrue(all(not source.is_relative_to(ROOT) for source in staged_sources))
+        self.assertNotIn("pi-agent-", " ".join(run))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertLess(run.index("resume"), run.index("session-id"))

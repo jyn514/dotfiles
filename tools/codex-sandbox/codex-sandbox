@@ -76,6 +76,7 @@ class State:
     lock_coordinated: Path | None = None
     lock_release: Path | None = None
     skills_tmp: Path | None = None
+    pi_auth_mask: Path | None = None
     lock_process: subprocess.Popen[bytes] | None = None
     monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
@@ -534,9 +535,13 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
     shutil.copytree(
-        state.home / ".agents/skills", state.skills_tmp,
+        state.home / ".agents/skills", state.skills_tmp / "skills",
         symlinks=False, ignore_dangling_symlinks=True, dirs_exist_ok=True,
     )
+    config = state.skills_tmp / "config"
+    config.mkdir()
+    for name in ("shared-agents.md", "AGENTS.md", "pi.json", "pi-mcp.json"):
+        shutil.copy2(DOTFILES / "config" / name, config / name)
 
 
 def finalize_proxy_session(state: State) -> list[str]:
@@ -604,17 +609,25 @@ def run_agent(state: State, arguments: list[str]) -> int:
                     raise LauncherError("Git metadata worktree alias is too broad")
             if alias != Path("/src/work") and alias not in repository_aliases:
                 repository_aliases.append(alias)
+    pi_agent = state.home / ".pi/agent"
+    if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
+        raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
+    pi_agent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    state.pi_auth_mask = temporary_file()
+    state.pi_auth_mask.write_text("{}\n", encoding="utf-8")
+
     command = [
         "docker", "run", "--name", state.codex_container, "-it",
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
         "--secret", "codex-github-token,type=env,target=GH_TOKEN",
         "--env", "JJ_AGENT=pi",
-        "--volume", f"pi-agent-{state.uid}:/home/codex/.pi/agent",
-        "--mount", f"type=bind,src={state.skills_tmp},dst=/home/codex/.agents/skills",
-        "--mount", f"type=bind,src={DOTFILES / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
+        "--mount", f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
+        "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'skills'},dst=/home/codex/.agents/skills",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
@@ -790,7 +803,7 @@ def cleanup(state: State) -> None:
         list(executor.map(wait_process, processes))
     timing("proxy processes")
     for path in (
-        state.proxy_state, state.proxy_args, state.manifest,
+        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask,
         state.lock_ready, state.lock_coordinated, state.lock_release,
     ):
         if path is not None:
