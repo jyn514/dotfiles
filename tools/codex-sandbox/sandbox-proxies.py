@@ -380,8 +380,10 @@ def attach_main(args: argparse.Namespace) -> int:
         state = metadata.get("state")
         manifest = metadata.get("manifest")
         if isinstance(state, dict) and isinstance(state.get("proxies"), list) and isinstance(manifest, dict):
+            current_manifest = load_manifest_file(Path(args.manifest))
+            refresh_shared_proxies(args, repo, state, current_manifest)
             write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
-            write_atomic(Path(args.manifest), json.dumps(manifest, sort_keys=True))
+            write_atomic(Path(args.manifest), json.dumps(current_manifest, sort_keys=True))
             return 0
     if shared:
         raise ConfigError("shared proxy session metadata is missing or invalid")
@@ -475,13 +477,16 @@ def zuliprc_mount_args(path: Path) -> list[str]:
 def start_one_proxy(
     args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
     state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
-) -> None:
-    volume = f"{args.prefix}-{name}"
-    container = f"{args.prefix}-{name}"
+    *, volume: str | None = None, container: str | None = None,
+    socket_name: str = "socket", record: bool = True,
+) -> dict[str, str]:
+    volume = volume or f"{args.prefix}-{name}"
+    container = container or f"{args.prefix}-{name}"
     proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
-    with state_lock:
-        state["proxies"].append(proxy)
-        write_atomic(Path(args.state), json.dumps(state))
+    if record:
+        with state_lock:
+            state["proxies"].append(proxy)
+            write_atomic(Path(args.state), json.dumps(state))
     _docker(
         "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
     )
@@ -497,6 +502,7 @@ def start_one_proxy(
         "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
         "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
         "--entrypoint", command["argv"][0],
+        "--env", f"SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/{socket_name}",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
     ]
     if name == "jj":
@@ -526,7 +532,7 @@ def start_one_proxy(
         )
         readiness_error = check.stderr.strip()
         if check.returncode == 0:
-            return
+            return proxy
         status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
         if status != "true":
             logs = proxy_logs(container)
@@ -539,6 +545,65 @@ def start_one_proxy(
     ))
     detail = f":\n{diagnostics}" if diagnostics else ""
     raise ConfigError(f"proxy {name} did not become ready{detail}")
+
+
+def promote_socket(args: argparse.Namespace, volume: str, socket_name: str) -> None:
+    _docker(
+        "run", "--rm", "--network", "none", "--entrypoint", "/bin/mv",
+        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+        args.helper_image,
+        f"/run/sandbox-proxy/{socket_name}", "/run/sandbox-proxy/socket",
+    )
+
+
+def refresh_shared_proxies(
+    args: argparse.Namespace, repo: Path, state: dict[str, Any], manifest: dict[str, Any],
+) -> None:
+    images = resolve_images(repo, manifest)
+    identity = repository_identity(repo)
+    state.setdefault("retired-proxies", [])
+    by_name = {proxy["name"]: proxy for proxy in state["proxies"]}
+    removed = set(by_name) - set(manifest["commands"])
+    state["retired-proxies"].extend(by_name[name] for name in removed)
+    state["proxies"] = [proxy for proxy in state["proxies"] if proxy["name"] not in removed]
+    for name, command in manifest["commands"].items():
+        old = by_name.get(name)
+        if old is None:
+            try:
+                added = start_one_proxy(
+                    args, repo, identity, images, state, threading.Lock(), name, command,
+                    record=False,
+                )
+            except Exception:
+                subprocess.run(["docker", "rm", "--force", f"{args.prefix}-{name}"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["docker", "volume", "rm", f"{args.prefix}-{name}"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                raise
+            state["proxies"].append(added)
+            continue
+        if old.get("image") == images[name]:
+            continue
+        socket_name = f"socket-{os.getpid()}-{name}"
+        try:
+            replacement = start_one_proxy(
+                args, repo, identity, images, state, threading.Lock(), name, command,
+                volume=old["volume"], container=f"{args.prefix}-{name}",
+                socket_name=socket_name, record=False,
+            )
+        except Exception:
+            subprocess.run(["docker", "rm", "--force", f"{args.prefix}-{name}"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            raise
+        try:
+            promote_socket(args, old["volume"], socket_name)
+        except Exception:
+            subprocess.run(["docker", "rm", "--force", replacement["container"]],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            raise
+        state["retired-proxies"].append(old)
+        state["proxies"] = [replacement if proxy["name"] == name else proxy
+                            for proxy in state["proxies"]]
 
 
 def start_main(args: argparse.Namespace) -> int:
@@ -571,7 +636,9 @@ def stop_state(state: dict[str, Any]) -> None:
     auth = state.get("auth")
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
         containers.append(auth["container"])
-    proxies = list(reversed(state.get("proxies", [])))
+    proxies = list(reversed([
+        *state.get("proxies", []), *state.get("retired-proxies", []),
+    ]))
     containers.extend(proxy["container"] for proxy in proxies)
 
     def discard(arguments: list[str]) -> None:
@@ -586,8 +653,9 @@ def stop_state(state: dict[str, Any]) -> None:
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
     volumes_started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=max(1, len(proxies))) as executor:
-        list(executor.map(lambda proxy: discard(["docker", "volume", "rm", proxy["volume"]]), proxies))
+    volumes = set(proxy["volume"] for proxy in proxies)
+    with ThreadPoolExecutor(max_workers=max(1, len(volumes))) as executor:
+        list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
 

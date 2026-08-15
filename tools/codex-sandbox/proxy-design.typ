@@ -174,15 +174,18 @@ It prints exactly one resolved image hash on standard output and sends progress 
 The launcher rejects an empty, malformed, or multi-line result and starts the proxy by the returned immutable image hash rather than by a mutable tag.
 An image builder that needs stronger reproducibility may also pin and verify an OCI digest.
 
-A proxy image starts the fixed server named by `argv`, binds `/run/sandbox-proxy/socket` only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
+A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
+The forwarding client uses the configured path while it exists and otherwise falls back to the default path.
 
 The image command and everything it loads from `.agents/sandbox` are trusted manifest support code.
-It completes before the agent starts and never reruns during the session, so agent edits cannot rebuild or replace the resolved image.
-At the start of a later session, the repository and its manifest support code must be accepted as trusted again before the launcher runs them.
+It runs before each agent attaches to the repository session.
+When its immutable image changes, the launcher starts a replacement on a temporary socket in the existing volume, waits for readiness, and atomically renames that socket over the default path.
+Existing connections retain their open socket inode; new connections reach the replacement.
+The old container remains as a retired generation until session cleanup so monitors belonging to existing agents are not broken.
 
 == Socket protocol
 
-Each proxy listens at `/run/sandbox-proxy/socket` in its session-specific volume.
+Each active proxy generation is published at `/run/sandbox-proxy/socket` in its session-specific volume.
 The agent mounts that volume read-only at `/run/sandbox-proxies/<command>/`, which permits connection to the existing socket but prevents replacing it.
 The launcher sets the generic `SANDBOX_PROXY_DIR=/run/sandbox-proxies` environment variable in the agent and derives `<command>` from the manifest key.
 A command-specific shim constructs its socket path from that directory and its known manifest key; the launcher needs no command-specific environment variable or protocol configuration.
