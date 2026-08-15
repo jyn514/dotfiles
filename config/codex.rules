@@ -17,6 +17,7 @@ allow(["jj", "config", ["list", "get"]])
 allow(["jj", "bookmark", "list"])
 allow(["jj", "bookmark", "advance", "--help"])
 allow(["jj", "workspace", "list"])
+allow(["jj", "op", "log"])
 
 # Read-only git commands
 allow(["git", ["ls-remote", "cherry", "cat-file"]])
