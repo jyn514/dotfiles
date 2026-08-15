@@ -108,6 +108,15 @@ install_mise() {
 	fi
 }
 
+install_mise_bootstrap_packages() {
+	# Prefer Arch's native bacon package. Homebrew bottles do not support musl.
+	if exists pacman || exists apk; then
+		return
+	fi
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" \
+		mise bootstrap packages apply --manager brew --yes < /dev/null
+}
+
 setup_mimetypes() {
 	echo "Registering mimetypes"
 	python3 libexec/setup/setup_mimetypes.py
@@ -371,6 +380,7 @@ setup_install_local () {
 	fi
 	mkdir -p ~/.local/bin || return
 	install_mise || return
+	install_mise_bootstrap_packages || return
 	install_platform_bundles || return
 
 	if [ -n "${IS_MACOS:-}" ]; then
