@@ -305,7 +305,8 @@ Each sidecar receives a random session key that Pi sends as its placeholder API 
 The key is readable by the agent and intentionally grants only the model-request authority Pi already has; it is not an upstream credential and stops working when the sidecar exits.
 This prevents unrelated containers on the shared sandbox network from using the sidecar.
 
-The sidecar follows the existing proxy-container lifecycle and hardening: immutable launcher-owned image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the agent session.
+The sidecar follows the existing proxy-container lifecycle and hardening: immutable launcher-owned image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the shared proxy session.
+Concurrent agent containers in that session reuse one sidecar and session key, as they reuse the Jujutsu proxy.
 The Codex authentication directory is its only writable host mount.
 Pi continues to use `openai-codex-responses` with only `baseUrl` and the placeholder API key changed.
 Startup, authentication, or refresh failure fails closed and never falls back to mounting the credential in the agent.
@@ -386,13 +387,13 @@ The launcher performs these steps:
 + Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
 + Atomically publish session metadata for the ready proxies
 + Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
-+ Stop the session's sidecar and proxies, remove session resources, and release the host lock when the agent exits or startup fails
++ Detach the agent, then stop the sidecar and proxies and remove session resources after the last attached agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
-Names include the host UID and launcher PID to prevent collisions.
+Names include the host UID and first launcher PID to prevent collisions.
 
 The launcher may keep a proxy alive for the whole sandbox session.
-One long-lived `bug` proxy can avoid cross-container lock ambiguity and amortize image startup without sharing trusted mutable state between unrelated sandbox sessions.
+Long-lived command and authentication proxies amortize image startup without sharing trusted mutable state between unrelated sandbox sessions.
 
 == Acceptance checks
 
