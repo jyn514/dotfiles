@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 const SOCKET: &str = "/run/sandbox-proxy/socket";
 const CONFIG_HOME: &str = "/tmp/jj-config";
+const TEMP_HOME: &str = "/run/sandbox-proxy/jj-tmp";
 const MAX_REQUEST: usize = 1 << 20;
 const MAX_OUTPUT: usize = 8 << 20;
 const TIMEOUT: Duration = Duration::from_secs(120);
@@ -279,9 +280,8 @@ fn serve() -> Result<()> {
     let remotes = HashSet::from(["origin".to_owned()]);
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
-    let temporary_directory = format!("{repo}/target/jj-split/tmp");
-    fs::create_dir_all(&temporary_directory).wrap_err("cannot create Jujutsu temporary directory")?;
-    fs::set_permissions(&temporary_directory, fs::Permissions::from_mode(0o700))
+    fs::create_dir_all(TEMP_HOME).wrap_err("cannot create Jujutsu temporary directory")?;
+    fs::set_permissions(TEMP_HOME, fs::Permissions::from_mode(0o700))
         .wrap_err("cannot secure Jujutsu temporary directory")?;
     execution_policy::install(&repo)?;
     prepare_repo_config(&repo)?;
@@ -294,7 +294,7 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(&request, root.as_raw_fd(), &remotes, &temporary_directory),
+            Ok(request) => execute(&request, root.as_raw_fd(), &remotes, TEMP_HOME),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
@@ -390,17 +390,11 @@ mod tests {
     }
 
     #[test]
-    fn jj_uses_the_requested_executable_temporary_directory() {
-        let environment: std::collections::HashMap<_, _> = command_environment(
-            "agent",
-            "agent@example.test",
-            "/workspace/target/jj-split/tmp",
-        )
-        .into_iter()
-        .collect();
-        assert_eq!(
-            Some(&"/workspace/target/jj-split/tmp"),
-            environment.get("TMPDIR"),
-        );
+    fn jj_uses_the_private_proxy_volume_for_temporary_files() {
+        let environment: std::collections::HashMap<_, _> =
+            command_environment("agent", "agent@example.test", TEMP_HOME)
+                .into_iter()
+                .collect();
+        assert_eq!(Some(&TEMP_HOME), environment.get("TMPDIR"));
     }
 }
