@@ -34,6 +34,7 @@ allow(["mise", "activate"])
 
 # Read-only network calls
 allow(["gh", "pr", ["diff", "checks", "list", "status", "view"]])
+allow(["gh", "issue", ["list", "view"]])
 
 # macOS read-only diagnostics
 allow([["vm_stat", "iostat", "sw_vers"]])
@@ -72,6 +73,9 @@ allow(["yt-dlp", "--list-subs"])
 allow(["tea", "issue", ["list", "ls", "--help", "-h"]])
 allow(["skopeo", ["inspect", "list-tags"]])
 
+allow(["extract-chat-share"])
+allow(["extract-chat"])
+
 # Watchman read-only commands
 allow(["watchman", [
         "watch-list", "version", "get-config", "subscription-list", "since",
@@ -86,4 +90,3 @@ allow(["tmux", [
 allow(["tmux", "source-file", "-n"])
 
 # Unsorted
-prefix_rule(pattern=["bin/extract-chat-share"], decision="allow")
