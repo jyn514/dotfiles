@@ -68,6 +68,7 @@ fi
 
 bb tools/extract-chat/tests/extract_chat_test.clj
 bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
+bb -cp tools/package-plan/src tools/package-plan/tests/run.clj
 node tools/extract-chat-share/tests/extract_chat_share_test.js
 if [ "$(uname -s)" = Linux ]; then
 	cargo test --manifest-path tools/jj-proxy/Cargo.toml
@@ -94,6 +95,8 @@ failed=0
 if [ "$run_containers" = 1 ]; then
 	printf 'Running Zulip proxy container integration...\n'
 	python3 tools/zulip-proxy/tests/container_integration.py
+	printf 'Running package planner bootstrap integration...\n'
+	python3 tools/package-plan/tests/container.py
 	container_results=$results/containers
 	mkdir "$container_results"
 	export container_results

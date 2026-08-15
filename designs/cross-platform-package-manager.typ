@@ -121,11 +121,10 @@ The planner supports only the prerequisite operations current setup needs:
 - install the Fedora-versioned RPM Fusion release packages, then the current
   codec package set with `--allow-erasing`.
 
-These are typed constructors implemented by the planner, not command strings.
-Each constructor accepts only the fields its adapter needs: validated URLs,
-release interpolation, owned destination paths, package vectors, and pinned
-digests where the upstream supplies a stable artifact. The policy cannot embed
-shell or arbitrary argv.
+These are fixed operations implemented by the planner, not command strings in
+the policy. Their URLs, release interpolation, destination paths, package
+vectors, and stable digests live in trusted planner code. The policy can select
+an operation, but cannot embed shell or arbitrary argv.
 
 Repository operations precede dependent package operations. Retry inspects
 current state and repeats safely. There is no prune operation or transaction
@@ -133,52 +132,34 @@ claim; a successfully installed repository remains if a later package fails.
 
 == Manifest
 
-`install/packages.clj` is one Clojure expression returning a policy value built
-with planner-provided constructors. It may use literals, `let`, collection
-operations, and small local functions to remove repetition. It may not inspect
-the host or perform effects.
+`install/packages.clj` is one Clojure expression returning a policy map. It may
+use literals, `let`, collection operations, and small local functions to remove
+repetition. It may not inspect the host or perform effects.
 
 A representative fragment is:
 
 ```clojure
-(let [linux #{:debian :ubuntu :fedora :arch :alpine :chimera}
-      glibc-linux #{:debian :ubuntu :fedora}]
-  (policy
-    {:schema 1
-     :targets #{:debian :ubuntu :fedora :arch
-                :alpine :chimera :macos-arm64}
-     :common #{:valgrind :python3-pylsp}
-     :additions [(on-target :alpine
-                   #{:bash :less :libgcc :shadow :cargo-audit :difftastic})
-                 (on-targets (conj glibc-linux :arch :macos-arm64) #{:bacon})
-                 (on-wsl #{:keychain})]
-     :resources [(ubuntu-universe)
-                 (powershell-repository :targets #{:debian :ubuntu})
-                 (vscode-deb :targets #{:debian :ubuntu})
-                 (git-ppa :target :ubuntu :below "2.35")
-                 (onepassword-fedora)
-                 (rpmfusion-codecs)]}
-
-    [(package :valgrind
-       (native-same-name (disj linux :chimera))
-       (skip #{:chimera} "Not packaged by the supported repositories")
-       (skip #{:macos-arm64} "Unsupported on current macOS"))
-
-     (package :bacon
-       (native {:arch ["bacon"]})
-       (fallback glibc-linux :brew ["bacon"]
-         :reason "No suitable native package")
-       (native {:macos-arm64 ["bacon"]})
-       (skip #{:alpine :chimera} "Homebrew bottles require glibc"))
-
-     (package :python3-pylsp
-       (native {:debian ["python3-pylsp"]
-                :ubuntu ["python3-pylsp"]
-                :fedora ["python3-lsp-server"]
-                :arch ["python-lsp-server"]
-                :alpine ["py3-python-lsp-server"]
-                :chimera ["python-lsp-server"]
-                :macos-arm64 ["python-lsp-server"]}))]))
+{:schema 1
+ :targets [:debian :ubuntu :fedora :arch :alpine :chimera :macos-arm64]
+ :common [:valgrind :python3-pylsp]
+ :additions {:alpine [:bash :less :libgcc :shadow
+                      :cargo-audit :difftastic]
+             :arch [:bacon]
+             :wsl [:keychain]
+             :brew-fallback [:bacon]}
+ :targets-policy
+ {:debian {:manager :apt}
+  :fedora {:manager :dnf
+           :rename {:python3-pylsp [:python3-lsp-server]}}
+  :arch {:manager :pacman}
+  :alpine {:manager :apk
+           :skip {:python3-pylsp "Unavailable"
+                  :bacon "Homebrew bottles require glibc"}}
+  :chimera {:manager :apk}
+  :macos-arm64 {:manager :brew
+                :skip {:valgrind "Unsupported on current macOS"}}}
+ :resources [:ubuntu-universe :powershell-repository :vscode-deb
+             :git-ppa :onepassword-fedora :rpmfusion-codecs]}
 ```
 
 The real manifest transcribes `install/packages.txt`, every `queue_install`
@@ -188,20 +169,17 @@ expanded result, so concision cannot hide a missing target or omission.
 == Policy evaluation
 
 The Babashka planner is trusted; the policy expression is evaluated in a fresh
-SCI context with an explicit, versioned allowlist. The context contains only:
+SCI context with an explicit allowlist. The context contains only:
 
-- the policy constructors;
 - literals, local bindings, functions, conditionals, and collection operations
   needed by the manifest; and
 - a small explicit subset of `clojure.string` if transcription needs it.
 
 It contains no filesystem, environment, process, network, Java interop,
-namespace loading, clocks, randomness, or host facts. Tests cover every allowed
-constructor and representative denied effects. This boundary prevents
-accidental effects; it is not a sandbox for an untrusted checkout.
-
-Constructors return opaque values. One conversion boundary parses the result
-into the planner's domain model and attaches source locations to diagnostics.
+namespace loading, clocks, randomness, or host facts. Tests cover representative
+allowed expressions and denied effects. The planner validates the returned map
+before using it. This boundary prevents accidental effects; it is not a sandbox
+for an untrusted checkout.
 
 == Planning and execution
 
@@ -232,9 +210,9 @@ Planning performs no mutation:
 + Order repositories before their dependents and group packages by provider.
 + Return the complete plan, including skipped decisions and reasons.
 
-`apply` displays that plan, asks once unless `--yes` was given, applies typed
-repository operations, and invokes the selected executors with explicit
-requests:
+`apply` displays that plan, validates the required elevation interface, asks
+once unless `--yes` was given, applies typed repository operations, and invokes
+the selected executors with explicit requests:
 
 ```text
 mise bootstrap packages apply --update --yes apt:bat apt:jq ...
@@ -280,6 +258,12 @@ either `curl` or `wget` with TLS and certificate validation, and either
 command produces a target-specific prerequisite error naming the packages to
 install, without constructing or executing an installation command.
 
+Linux x64, Linux ARM64, and Apple Silicon macOS are supported binary targets.
+Babashka's official ARM64 Linux artifact requires the glibc loader despite its
+`static` filename, so ARM64 Alpine and Chimera additionally require their native
+`gcompat` package. A missing loader is reported with the other bootstrap-floor
+prerequisites; the planner does not install it.
+
 Official minimal container images are not the support boundary. Observed base
 images currently divide as follows:
 
@@ -291,10 +275,10 @@ chimera         -> sha256sum; no tar or TLS downloader
 ```
 
 The corresponding tested floor packages are `ca-certificates` and `curl` on
-Debian and Ubuntu, and `curl` plus `libarchive-progs` on Chimera. A TLS failure
-caused by a missing trust store additionally names `ca-certificates`. Fedora,
-Arch, and Alpine require no added floor package in their current official base
-images.
+Debian and Ubuntu, and `curl` plus `libarchive-progs` on Chimera. ARM64 Alpine
+and Chimera additionally require `gcompat`. A TLS failure caused by a missing
+trust store additionally names `ca-certificates`. Fedora, Arch, and x64 Alpine
+require no added floor package in their current official base images.
 
 Apple Silicon macOS supplies the bootstrap floor through the base system. These
 facts are test fixtures, not permanent distribution promises; runtime command
@@ -310,9 +294,9 @@ user cache.
 Once running, the planner reads the same EDN file with a strict single-value
 reader, validates its primitive data schema, and installs the pinned standalone
 mise binary in the same manner. Ambient Babashka and mise are ignored during
-bootstrap; all later calls use the pinned absolute paths. Updating either pin is
-an explicit development command that regenerates the shell table and displays
-the complete pin diff.
+bootstrap; all later calls use the pinned absolute paths. After a pin is edited,
+an explicit development command regenerates the shell table; version control
+displays the complete pin diff.
 
 Runtime bootstrap mutates only the invoking user's versioned cache. It does not
 install a system package or request root. The planner can therefore construct
@@ -331,10 +315,12 @@ The planner does not install or configure an elevation tool:
   `doas-sudo-shim` or with real sudo; Chimera satisfies it with the vendored
   shim.
 
-Missing commands are planning errors before confirmation. Authorization is
-checked by the first real privileged operation; failure stops with that exact
-diagnostic rather than trying another tool after possible mutation. The planner
-never invokes `su`, changes sudoers or doas policy, or installs sudo or doas.
+Planning, `show`, and dry run do not require an elevation command. Real apply
+checks for the target's required interface after displaying the complete plan
+but before confirmation or mutation. Authorization is checked by the first real
+privileged operation; failure stops with that exact diagnostic rather than
+trying another tool after possible mutation. The planner never invokes `su`,
+changes sudoers or doas policy, or installs sudo or doas.
 The error names the manual prerequisite for the detected target: the native
 `sudo` package on Debian, Ubuntu, Fedora, and Arch; `sudo` or
 `doas-sudo-shim` on Alpine; `opendoas` on Chimera; or the base-system sudo on
@@ -351,7 +337,7 @@ the complete vendor diff.
 
 Repository tests reject:
 
-- unknown constructors, targets, providers, fields, or disposition kinds;
+- unknown targets, providers, logical packages, resources, or disposition kinds;
 - missing or overlapping package/target dispositions;
 - empty native or fallback package vectors;
 - fallback on a target unsupported by that provider;
@@ -396,10 +382,9 @@ Ubuntu universe state, repository ordering, RPM Fusion's special arguments, the
 Alpine baseline, and Arch's full-upgrade behavior. Debian scenarios prove that
 Ubuntu universe and the Git PPA are not selected and that PowerShell uses
 Microsoft's Debian repository rather than an Ubuntu release path.
-Executor tests record NUL-delimited argv and check provider grouping, dry run,
-partial failure, retry, and that Brew fallback never installs unrelated Brew
-packages. JSON tests compare parsed values; human matrices use stable target and
-package order for reviewable diffs.
+Executor tests record argv and check provider grouping, dry run, partial failure,
+retry, and that Brew fallback never installs unrelated Brew packages. Human
+matrices use stable target and package order for reviewable diffs.
 
 Separate conformance tests run the pinned mise binary, rather than a mock, in
 the disposable platform environments. They record its dry-run manager argv and

@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -eu
+
+version=${1:?usage: dev/update-doas-sudo-shim VERSION}
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/doas-sudo-shim.XXXXXX")
+trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+
+git clone --depth 1 --branch "$version" \
+	https://github.com/jirutka/doas-sudo-shim.git "$temporary/source"
+mkdir "$temporary/vendor"
+cp "$temporary/source/sudo" "$temporary/source/LICENSE" "$temporary/vendor/"
+printf '%s\n' "$version" > "$temporary/vendor/VERSION"
+(
+	cd "$temporary/vendor"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum sudo LICENSE
+	else
+		shasum -a 256 sudo LICENSE
+	fi
+) > "$temporary/vendor/SHA256"
+
+diff -ru "$root/vendor/doas-sudo-shim" "$temporary/vendor" || true
+printf 'Replace the vendored release with this diff? [y/N] '
+read -r answer
+[ "$answer" = y ] || exit 0
+cp "$temporary/vendor/sudo" "$temporary/vendor/LICENSE" \
+	"$temporary/vendor/VERSION" "$temporary/vendor/SHA256" \
+	"$root/vendor/doas-sudo-shim/"

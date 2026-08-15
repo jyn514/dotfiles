@@ -1,0 +1,31 @@
+{:schema 1
+ :babashka
+ {:version "1.13.219"
+  :artifacts
+  {:linux-x64
+   {:url "https://github.com/babashka/babashka/releases/download/v1.13.219/babashka-1.13.219-linux-amd64-static.tar.gz"
+    :sha256 "9ac1fe988d7001625b30ef3e3307e67f8545505a7cb49a4aa179f578115a3e09"}
+   :linux-arm64
+   {:url "https://github.com/babashka/babashka/releases/download/v1.13.219/babashka-1.13.219-linux-aarch64-static.tar.gz"
+    :sha256 "e8d7a9c66c364b80627a43cb6ba5c14fb6ac7e4af114e8e5d80f97551ccdfe11"}
+   :macos-arm64
+   {:url "https://github.com/babashka/babashka/releases/download/v1.13.219/babashka-1.13.219-macos-aarch64.tar.gz"
+    :sha256 "57a45df1cee534081375f35d39a3cb5f334956e6d429e364adbf46e296d52cfb"}}}
+ :mise
+ {:version "2026.8.0"
+  :artifacts
+  {:linux-x64-glibc
+   {:url "https://github.com/jdx/mise/releases/download/v2026.8.0/mise-v2026.8.0-linux-x64.tar.gz"
+    :sha256 "64183603854f319b78658305c545aacae935e0959a3a894b77a0f9416eab047b"}
+   :linux-arm64-glibc
+   {:url "https://github.com/jdx/mise/releases/download/v2026.8.0/mise-v2026.8.0-linux-arm64.tar.gz"
+    :sha256 "6d888ba3d0b5d78f676771a84846885b7f685fb4d1533f2927079eb9b75633a8"}
+   :linux-x64-musl
+   {:url "https://github.com/jdx/mise/releases/download/v2026.8.0/mise-v2026.8.0-linux-x64-musl.tar.gz"
+    :sha256 "7b612c8fd3f60a7349bd1f68ca8c69c8261783cc5204dd4ae43a40a2887b7723"}
+   :linux-arm64-musl
+   {:url "https://github.com/jdx/mise/releases/download/v2026.8.0/mise-v2026.8.0-linux-arm64-musl.tar.gz"
+    :sha256 "f15779c30e9475474a38a71546db098cdeccadb87429a37ef4ab483f42e10507"}
+   :macos-arm64
+   {:url "https://github.com/jdx/mise/releases/download/v2026.8.0/mise-v2026.8.0-macos-arm64.tar.gz"
+    :sha256 "94ee46ec22b05560728b89d22792cb51cdd01c174911c0795989d19e3212311a"}}}}

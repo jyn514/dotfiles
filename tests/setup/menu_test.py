@@ -242,6 +242,15 @@ setup_kde() { record kde; }
             )
             setup_sudo.chmod(0o755)
             command_log = directory / "setup-sudo.log"
+            package_plan_directory = directory / "dev"
+            package_plan_directory.mkdir()
+            package_plan = package_plan_directory / "package-plan"
+            package_plan.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" > "$PACKAGE_PLAN_LOG"\n'
+            )
+            package_plan.chmod(0o755)
+            package_plan_log = directory / "package-plan.log"
             binary_directory = directory / "bin"
             binary_directory.mkdir()
             fake_id = binary_directory / "id"
@@ -251,6 +260,7 @@ setup_kde() { record kde; }
             env.update(
                 HOME=str(directory),
                 PATH=f"{binary_directory}:{env['PATH']}",
+                PACKAGE_PLAN_LOG=str(package_plan_log),
                 SETUP_SUDO_LOG=str(command_log),
             )
 
@@ -263,8 +273,10 @@ setup_kde() { record kde; }
                 check=False,
             )
             setup_sudo_arguments = command_log.read_text()
+            package_plan_arguments = package_plan_log.read_text()
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("apply --yes\n", package_plan_arguments)
         self.assertEqual("main\n", setup_sudo_arguments)
 
     def test_mise_command_does_not_consume_later_menu_choices(self) -> None:
