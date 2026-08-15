@@ -246,16 +246,14 @@ all reads and planning but no mutation.
 An Arch setup run must retain the current
 `pacman --sync --refresh --sysupgrade --needed` semantics: refresh package
 metadata, perform one full system upgrade, and avoid reinstalling satisfied
-packages. If the planned sudo prerequisite performs that upgrade, package
-application omits another update. Otherwise, Arch does not switch to the planner
-unless mise's `--update` path is proven to provide all three behaviors.
+packages. Arch does not switch to the planner unless mise's `--update` path is
+proven to provide all three behaviors.
 
 `setup.sh install-global` calls `package-plan apply`. The planner, not the whole
 setup subprocess, prefixes typed repository operations with the elevation
 command selected by the plan. The pinned mise process remains unprivileged and
-receives the target's `sudo` interface. Only the fixed elevation prerequisite
-may use `su -c`; no policy-derived package or repository operation does. This
-keeps user-owned bootstrap files out of a root-owned home.
+receives the target's `sudo` interface. This keeps user-owned bootstrap files
+out of a root-owned home.
 
 == Bootstrap
 
@@ -284,80 +282,32 @@ the complete pin diff.
 
 Runtime bootstrap mutates only the invoking user's versioned cache. It does not
 install a system package or request root. The planner can therefore construct
-and display the complete system-mutation plan before privilege setup.
+and display the complete system-mutation plan before checking privilege access.
 
-=== Planned privilege setup
+=== Privilege prerequisite
 
-The planner selects elevation while building the plan:
+The planner does not install or configure an elevation tool:
 
 + If setup already runs as UID 0, use direct execution.
-+ On Debian, Ubuntu, Arch, Fedora, and macOS, use an installed real `sudo`.
-  When it is absent on Debian, Ubuntu, or Arch, plan installation and
-  configuration of `sudo`; its fixed helper runs through an installed `doas`,
-  or through `su` if doas is also absent. Fedora and macOS fail planning when
-  sudo is absent.
-+ On Alpine, accept an installed real sudo. Otherwise require the packaged
-  `doas-sudo-shim` sudo interface. When neither is present, plan installation
-  of `doas` and `doas-sudo-shim` plus doas configuration; run the fixed helper
-  through an installed doas, or through `su` if doas is absent.
-+ On Chimera, use an installed doas. If it is absent and `su` is present, plan
-  installation of `opendoas` and doas configuration through the fixed helper;
-  if both are absent, fail planning. Prepend the repository's vendored
-  `doas-sudo-shim` directory only to the pinned mise process's `PATH`; typed
-  repository operations continue to invoke doas directly. Do not install or
-  expose that shim system-wide.
++ On Chimera, require doas in the ambient `PATH`, then prepend the repository's
+  vendored `doas-sudo-shim` directory to the private package-execution `PATH`.
+  Do not install or expose that shim system-wide.
++ On every non-root target, require a `sudo` executable already present in that
+  package-execution `PATH`. Alpine may satisfy this with its packaged
+  `doas-sudo-shim` or with real sudo; Chimera satisfies it with the vendored
+  shim.
 
-Authorization is checked by the first real privileged operation; failure stops
-with that exact diagnostic rather than falling through after possible mutation.
-The plan displays any prerequisite, its fixed package-manager action, the
-resolved configuration destination, and the exact permanent sudoers or doas
-rule before confirmation. If the plan contains that prerequisite, apply invokes
-the checked-in `libexec/setup/bootstrap_elevation.sh` through the selected
-launcher and verifies the resulting interface. Otherwise it does not invoke the
-helper. Apply then continues with the planned elevation behavior.
-
-The only dynamic value placed in the `su -c` command is the invoking numeric
-UID, obtained from `id -u` and accepted only if it contains ASCII digits and is
-not zero. The remainder is a fixed target-specific launcher for the checked-in
-helper. No policy value, package name, URL, repository field, environment
-value, or user-supplied path enters the command string.
-
-The helper redetects the target and maps it to one compiled-in installation:
-
-```text
-debian, ubuntu -> apt-get update; apt-get install -y sudo
-alpine         -> apk add doas doas-sudo-shim
-arch           -> pacman --sync --refresh --sysupgrade --needed sudo
-chimera         -> apk add opendoas
-```
-
-Automatic elevation-package installation is limited to these mappings. Fedora
-and macOS fail planning when sudo is absent rather than gaining a general
-package-install escape hatch. Chimera fails planning when neither doas nor su is
-available.
-
-After installation, the helper resolves the validated UID through the system
-password database and rejects root, no match, multiple matches, or an invalid
-login name. On Debian, Ubuntu, and Arch it adds one marked
-`USER ALL=(ALL:ALL) ALL` rule under `/etc/sudoers.d`, validates the complete
-candidate with `visudo`, and installs it mode 0440. On Alpine and Chimera it adds
-one marked `permit persist USER as root` rule at the target's supported OpenDoas
-location and validates the complete candidate with OpenDoas. Both paths preserve
-existing configuration, refuse an unmanaged conflicting rule, and replace the
-owned file atomically. Failure leaves the previous configuration unchanged.
+Missing commands are planning errors before confirmation. Authorization is
+checked by the first real privileged operation; failure stops with that exact
+diagnostic rather than trying another tool after possible mutation. The planner
+never invokes `su`, changes sudoers or doas policy, or installs sudo or doas.
 
 The exact released upstream `doas-sudo-shim` script, its license, version, and
 source digest are committed under `vendor/doas-sudo-shim/`. Chimera executes
-that file in place through an absolute private `PATH` entry for mise only; the
-runtime bootstrap performs no download. Updating the vendored release is an
-explicit development action that verifies its digest and displays the complete
-vendor diff.
-
-The helper contains no general package or command interface. Changing its
-package names, package-manager argv, supported targets, or privilege rule
-requires a source change and exact-argv test. On Arch its planned operation performs the
-one full system upgrade required by package setup; later package operations omit
-another update in that run.
+that file in place through an absolute private `PATH` entry used for package
+execution; the runtime bootstrap performs no download. Updating the vendored
+release is an explicit development action that verifies its digest and displays
+the complete vendor diff.
 
 == Validation
 
@@ -372,21 +322,17 @@ Repository tests reject:
 - duplicate physical requests with conflicting logical owners; and
 - stale bootstrap data.
 
-Privilege-setup tests cover root, each target's required interface, authorization
-failure at the first privileged operation, absent commands, failed `su`, invalid
-UIDs, password-database mismatches, conflicting sudoers and doas rules, atomic
-replacement, and exact package-manager argv on Debian, Ubuntu, Alpine, Arch, and
-Chimera.
-They prove that manifest strings and environment values cannot reach `su -c` or
-the helper's package selection. Golden plans show the resolved rule and
-destination, accept real sudo on Alpine, invoke the helper only for a planned
-prerequisite, reject automatic installation on Fedora and macOS, and reject a
-Chimera host lacking both doas and su.
-Chimera tests prove that mise alone receives the vendored shim path, that the
-shim translates the exact sudo argv emitted by the pinned mise release, and that
-the vendored files match their recorded digest. A test against the official
-minimal Chimera image records `sh`, `awk`, and `cat` as stage-zero facilities and
-exercises root-direct planning without assuming doas, sudo, or su is installed.
+Privilege tests cover root, each target's required command, missing commands,
+authorization failure at the first privileged operation, and exact elevated
+argv. They prove that the planner never invokes `su`, installs an elevation
+package, or changes privilege policy. Golden plans accept real sudo or Alpine's
+packaged shim and reject a non-root host without its required interface.
+Chimera tests prove that only package execution receives the vendored shim path,
+that the shim translates the exact sudo argv emitted by the pinned mise release,
+and that the vendored files match their recorded digest. A test against the
+official minimal Chimera image records `sh`, `awk`, and `cat` as stage-zero
+facilities and exercises root-direct planning without assuming doas, sudo, or
+su is installed.
 
 Golden tests cover the complete matrix and these current host scenarios:
 
