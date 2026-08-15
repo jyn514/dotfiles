@@ -12,6 +12,7 @@ if command -v apt-get >/dev/null; then
         binutils \
         ca-certificates \
         curl \
+        fd-find \
         file \
         git \
         iproute2 \
@@ -41,6 +42,7 @@ elif command -v apk >/dev/null; then
         binutils \
         ca-certificates \
         curl \
+        fd \
         file \
         git \
         iproute2 \
@@ -61,6 +63,7 @@ elif command -v microdnf >/dev/null; then
         binutils \
         ca-certificates \
         curl \
+        fd-find \
         file \
         git \
         gzip \
@@ -82,6 +85,11 @@ else
     exit 1
 fi
 
+if ! command -v fd >/dev/null && command -v fdfind >/dev/null; then
+    ln -s "$(command -v fdfind)" /usr/local/bin/fd
+fi
+
+fd --version
 jq --version
 shellcheck --version
 socat -V
