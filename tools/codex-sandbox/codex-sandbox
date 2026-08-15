@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
 import shutil
+import secrets
 import signal
 import stat
 import subprocess
@@ -52,6 +55,8 @@ class State:
     relay_container: str
     codex_container: str
     proxy_prefix: str
+    codex_sidecar_container: str
+    codex_auth_directory: Path
     agent_podman_access: Path
     agent_podman_connection: Path
     agent_podman_key: Path
@@ -76,6 +81,8 @@ class State:
     relay_link_created: bool = False
     relay_egress_created: bool = False
     relay_container_created: bool = False
+    codex_sidecar_created: bool = False
+    codex_sidecar_key: str | None = None
     cleaned: bool = False
 
 
@@ -146,6 +153,10 @@ def new_state(codex_arguments: list[str]) -> State:
         relay_container=f"codex-agent-podman-relay-{suffix}",
         codex_container=f"codex-sandbox-{suffix}",
         proxy_prefix=f"codex-command-proxy-{suffix}",
+        codex_sidecar_container=f"codex-auth-proxy-{suffix}",
+        codex_auth_directory=Path(os.environ.get(
+            "CODEX_SANDBOX_AUTH_DIR", home / ".codex-sandbox-auth",
+        )),
         agent_podman_access=access,
         agent_podman_connection=access / "connection.env",
         agent_podman_key=access / "id_ed25519",
@@ -387,6 +398,84 @@ def start_relay(state: State) -> list[str]:
     ]
 
 
+def _secure_codex_auth_directory(state: State) -> Path | None:
+    directory = state.codex_auth_directory
+    auth = directory / "auth.json"
+    if not auth.exists():
+        return None
+    directory_stat = directory.lstat()
+    auth_stat = auth.lstat()
+    if directory.is_symlink() or not directory.is_dir():
+        raise LauncherError(f"Codex sandbox authentication directory is invalid: {directory}")
+    if directory_stat.st_uid != state.uid or stat.S_IMODE(directory_stat.st_mode) != 0o700:
+        raise LauncherError(f"Codex sandbox authentication directory must be owned by uid {state.uid} with mode 0700: {directory}")
+    if auth.is_symlink() or not auth.is_file() or auth_stat.st_nlink != 1:
+        raise LauncherError(f"Codex sandbox authentication must be an unlinked regular file: {auth}")
+    if auth_stat.st_uid != state.uid or stat.S_IMODE(auth_stat.st_mode) != 0o600:
+        raise LauncherError(f"Codex sandbox authentication must be owned by uid {state.uid} with mode 0600: {auth}")
+    if any(character in str(directory.resolve()) for character in (",", "\n", "\r")):
+        raise LauncherError("Codex sandbox authentication path contains a mount delimiter")
+    return directory.resolve()
+
+
+def _sidecar_session_key() -> str:
+    def encoded(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).decode().rstrip("=")
+    header = encoded(b'{"alg":"none","typ":"JWT"}')
+    payload = encoded(json.dumps({
+        "https://api.openai.com/auth": {"chatgpt_account_id": "sandbox"},
+        "sid": secrets.token_hex(16),
+    }, separators=(",", ":")).encode())
+    return f"{header}.{payload}.{encoded(secrets.token_bytes(24))}"
+
+
+def start_codex_sidecar(state: State) -> list[str]:
+    auth_directory = _secure_codex_auth_directory(state)
+    if auth_directory is None:
+        print(
+            "Codex authentication sidecar disabled; run 'codex-sandbox auth login' to enable it.",
+            file=sys.stderr,
+        )
+        return []
+    key = _sidecar_session_key()
+    state.codex_sidecar_key = key
+    run([
+        "docker", "run", "--detach", "--name", state.codex_sidecar_container,
+        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+        "--user", f"{state.uid}:{state.gid}", "--network", SANDBOX_NETWORK,
+        "--http-proxy=false", "--pids-limit", "64", "--memory", "256m",
+        "--cpus", "1", "--ulimit", "nofile=256:256",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m,mode=1777",
+        "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
+        "--env", f"CODEX_SIDECAR_KEY={key}",
+        "--entrypoint", "/trusted/bin/codex-auth-proxy", state.image,
+    ], discard_stdout=True)
+    state.codex_sidecar_created = True
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        result = run([
+            "docker", "run", "--rm", "--network", SANDBOX_NETWORK,
+            "--entrypoint", "/usr/bin/python3", state.image, "-c",
+            "import socket; socket.create_connection(('" + state.codex_sidecar_container + "',8787),1).close()",
+        ], check=False, quiet=True)
+        if result.returncode == 0:
+            break
+        status = run([
+            "docker", "inspect", "--format", "{{.State.Running}}",
+            state.codex_sidecar_container,
+        ], check=False, capture=True, quiet=True)
+        if status.returncode or status.stdout.strip() != "true":
+            raise LauncherError("Codex authentication sidecar exited before becoming ready")
+        time.sleep(0.1)
+    else:
+        raise LauncherError("Codex authentication sidecar did not become ready")
+    return [
+        "--env", f"CODEX_SIDECAR_URL=http://{state.codex_sidecar_container}:8787",
+        "--env", f"CODEX_SIDECAR_KEY={key}",
+        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-auth-proxy/pi-extension'},dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
+    ]
+
+
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
     shutil.copytree(
@@ -541,7 +630,7 @@ def execute(state: State) -> int:
         )
         arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
     stage_skills(state)
-    arguments = [*read_proxy_arguments(state), *arguments]
+    arguments = [*start_codex_sidecar(state), *read_proxy_arguments(state), *arguments]
     return run_agent(state, arguments)
 
 
@@ -566,6 +655,11 @@ def cleanup(state: State) -> None:
         cleanup_resource(
             f"Codex container {state.codex_container}",
             ["docker", "rm", "--force", state.codex_container],
+        )
+    if state.codex_sidecar_created:
+        cleanup_resource(
+            f"Codex authentication sidecar {state.codex_sidecar_container}",
+            ["docker", "rm", "--force", state.codex_sidecar_container],
         )
     if state.relay_container_created:
         cleanup_resource(
@@ -605,7 +699,25 @@ def cleanup(state: State) -> None:
             path.unlink(missing_ok=True)
 
 
+def login_codex_sidecar() -> int:
+    home = Path(os.environ["HOME"])
+    directory = Path(os.environ.get("CODEX_SANDBOX_AUTH_DIR", home / ".codex-sandbox-auth"))
+    if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
+        raise LauncherError(f"Codex sandbox authentication directory is invalid: {directory}")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
+    environment = os.environ.copy()
+    environment["CODEX_HOME"] = str(directory)
+    return subprocess.run(["codex", "login"], env=environment).returncode
+
+
 def main(arguments: list[str]) -> int:
+    if arguments == ["auth", "login"]:
+        try:
+            return login_codex_sidecar()
+        except (LauncherError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     state: State | None = None
     previous_handlers: dict[int, object] = {}
 

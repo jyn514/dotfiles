@@ -1,6 +1,7 @@
 {
   "lastChangelogVersion": "0.84.2",
   "defaultThinkingLevel": "low",
+  "transport": "sse",
   "tuiMode": "fullscreen",
   "shellCommandPrefix": "export JJ_AGENT=pi PATH=\"/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:/usr/local/bin:/usr/bin:/bin\"",
   "defaultProjectTrust": "ask",

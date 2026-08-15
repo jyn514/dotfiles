@@ -55,6 +55,7 @@ class AgentSandboxImageTest(unittest.TestCase):
 
         self.assertIn("./tools/agent-split /tools/agent-split", dockerfile)
         self.assertIn("./lib/shell/lib.sh /lib/shell/lib.sh", dockerfile)
+        self.assertIn("./tools/codex-auth-proxy/server.py /trusted/bin/codex-auth-proxy", dockerfile)
         self.assertEqual(
             "../../tools/agent-split/bb",
             os.readlink(ROOT / "libexec" / "agent-wrappers" / "bb"),
@@ -133,7 +134,12 @@ class CodexSandboxTest(unittest.TestCase):
         self.fake_bin.mkdir()
         self.docker_log = self.root / "docker.log"
         self.python_log = self.root / "python.log"
+        self.codex_log = self.root / "codex.log"
 
+        write_executable(self.fake_bin / "codex", """
+            #!/bin/sh
+            printf '%s\t%s\n' "$CODEX_HOME" "$*" > "$FAKE_CODEX_LOG"
+        """)
         write_executable(self.fake_bin / "jj", """
             #!/bin/sh
             [ "$1" = workspace ] && [ "$2" = root ] || exit 2
@@ -183,7 +189,10 @@ class CodexSandboxTest(unittest.TestCase):
                 exit 0
             fi
             if [ "$1" = inspect ]; then
-                printf '%s\n' "${FAKE_RELAY_IP:-}"
+                case " $* " in
+                    *" {{.State.Running}} "*) printf '%s\n' true ;;
+                    *) printf '%s\n' "${FAKE_RELAY_IP:-}" ;;
+                esac
                 exit 0
             fi
             if [ "$1" = run ]; then
@@ -251,6 +260,7 @@ class CodexSandboxTest(unittest.TestCase):
             "FAKE_REPOSITORY": str(self.repo),
             "FAKE_DOCKER_LOG": str(self.docker_log),
             "FAKE_PYTHON_LOG": str(self.python_log),
+            "FAKE_CODEX_LOG": str(self.codex_log),
             "AGENT_PODMAN_ACCESS_DIR": str(self.root / "no-agent-podman"),
             "FAKE_NETWORK_EXISTS": "1",
             "FAKE_UNAME": "Linux",
@@ -269,6 +279,16 @@ class CodexSandboxTest(unittest.TestCase):
         runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"] and "-it" in call]
         self.assertEqual(1, len(runs))
         return runs[0]
+
+    def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
+        result = self.run_launcher("auth", "login")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            f"{self.home / '.codex-sandbox-auth'}\tlogin\n",
+            self.codex_log.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(0o700, (self.home / ".codex-sandbox-auth").stat().st_mode & 0o777)
+        self.assertEqual([], read_calls(self.docker_log))
 
     def test_constructs_secured_agent_and_trusted_proxy_arguments(self) -> None:
         result = self.run_launcher("resume", "session-id")
@@ -317,6 +337,36 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(str(zuliprc), snapshot[snapshot.index("--zuliprc") + 1])
         attaches = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "attach"]
         self.assertEqual(str(zuliprc), attaches[0][attaches[0].index("--zuliprc") + 1])
+
+    def test_starts_codex_auth_sidecar_without_mounting_auth_in_agent(self) -> None:
+        auth = self.home / ".codex-sandbox-auth"
+        auth.mkdir(mode=0o700)
+        (auth / "auth.json").write_text(
+            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
+        )
+        (auth / "auth.json").chmod(0o600)
+
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = read_calls(self.docker_log)
+        sidecars = [
+            call for call in calls
+            if call[:2] == ["run", "--detach"] and any("codex-auth-proxy-" in item for item in call)
+        ]
+        self.assertEqual(1, len(sidecars))
+        sidecar = sidecars[0]
+        self.assertIn(
+            f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth", sidecar,
+        )
+        self.assertIn("--read-only", sidecar)
+        agent = self.final_run()
+        self.assertFalse(any(str(auth) in item for item in agent))
+        self.assertTrue(any(item.startswith("CODEX_SIDECAR_URL=http://codex-auth-proxy-") for item in agent))
+        self.assertIn(
+            f"type=bind,src={ROOT / 'tools/codex-auth-proxy/pi-extension'},"
+            "dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
+            agent,
+        )
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")
