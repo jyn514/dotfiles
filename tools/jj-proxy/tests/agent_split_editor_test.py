@@ -7,9 +7,18 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 EDITOR = ROOT / "tools" / "jj-proxy" / "agent-split-editor"
+CONFIG = ROOT / "tools" / "jj-proxy" / "jj.toml"
 
 
 class AgentSplitEditorEndToEndTest(unittest.TestCase):
+    def test_config_invokes_editor_through_trusted_shell(self) -> None:
+        config = CONFIG.read_text(encoding="utf-8")
+        self.assertIn('program = "/trusted/bin/sh"', config)
+        self.assertIn(
+            'edit-args = ["/trusted/bin/agent-split-editor", "$left", "$right"]',
+            config,
+        )
+
     def test_replaces_right_tree_with_selected_patch(self) -> None:
         patch = """diff --git a/note.txt b/note.txt
 --- a/note.txt
