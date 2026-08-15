@@ -1,0 +1,12 @@
+#!/trusted/bin/sh
+set -eu
+
+[ "$#" -eq 2 ] || exit 2
+left=$1
+right=$2
+patch=/tmp/jj-config/agent-split.patch
+
+rm -rf -- "$right"
+cp -a -- "$left" "$right"
+git -C "$right" apply --check < "$patch"
+git -C "$right" apply < "$patch"

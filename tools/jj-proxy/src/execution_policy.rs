@@ -33,6 +33,8 @@ pub fn install(repo: &str) -> Result<()> {
         PathFd::new("/run/sandbox-proxy").wrap_err("cannot open proxy socket directory")?;
     let system_config =
         PathFd::new("/etc").wrap_err("cannot open system configuration directory")?;
+    let system_lib = PathFd::new("/lib").wrap_err("cannot open system library directory")?;
+    let user_lib = PathFd::new("/usr/lib").wrap_err("cannot open user library directory")?;
     let null = PathFd::new("/dev/null").wrap_err("cannot open null device")?;
     let read_access = make_bitflags!(AccessFs::{ ReadFile | ReadDir });
     let write_access = make_bitflags!(AccessFs::{
@@ -65,6 +67,10 @@ pub fn install(repo: &str) -> Result<()> {
         .wrap_err("cannot add proxy socket write rule")?
         .add_rule(PathBeneath::new(system_config, read_access))
         .wrap_err("cannot add system configuration read rule")?
+        .add_rule(PathBeneath::new(system_lib, read_access))
+        .wrap_err("cannot add system library read rule")?
+        .add_rule(PathBeneath::new(user_lib, read_access))
+        .wrap_err("cannot add user library read rule")?
         .add_rule(PathBeneath::new(
             null,
             make_bitflags!(AccessFs::{ ReadFile | WriteFile }),

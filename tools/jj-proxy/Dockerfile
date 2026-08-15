@@ -26,9 +26,21 @@ WORKDIR /jj
 RUN cargo build --release --locked --bin jj
 RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
+FROM alpine:3.22 AS editor
+RUN apk add --no-cache git \
+    && mkdir -p /trusted/bin \
+    && cp /bin/busybox /trusted/bin/busybox \
+    && ln -s busybox /trusted/bin/sh \
+    && ln -s busybox /trusted/bin/cp \
+    && ln -s busybox /trusted/bin/rm \
+    && cp /usr/bin/git /trusted/bin/git
+
 FROM scratch
 ENV PATH=/trusted/bin
 ENV RUST_BACKTRACE=1
+COPY --from=editor /trusted/bin /trusted/bin
+COPY --from=editor /lib /lib
+COPY --from=editor /usr/lib /usr/lib
 COPY --from=build /build/target/release/jj-proxy /trusted/bin/jj-proxy
 COPY --from=build /build/target/release/jj-proxy /trusted/bin/sandbox-proxy-forward
 COPY --from=jj /jj/target/release/jj /trusted/bin/jj
@@ -36,5 +48,6 @@ COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates
 COPY --from=jj /image-root/ /
 COPY config/gitignore /trusted/gitignore
 COPY tools/jj-proxy/jj.toml /trusted/jj.toml
+COPY --chmod=0555 tools/jj-proxy/agent-split-editor /trusted/bin/agent-split-editor
 USER 65532:65532
 ENTRYPOINT ["/trusted/bin/jj-proxy", "serve"]
