@@ -30,8 +30,11 @@ Don't summarize your own message; only mention things that haven't come up yet.
 If I tell you "nice job", "good work", or similar,
 and you've behaved in a way during this session that isn't already in your user instructions,
 also suggest improvements to AGENTS.md that would help you keep the good behavior in future sessions.
+The improvements should be general enough to help other agents, not specific to the current task.
 
 ## Commands and permissions
+
+For version-sensitive CLI questions, check the installed command's built-in help before searching online documentation.
 
 Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
@@ -82,6 +85,8 @@ Before running `jj describe`, inspect the complete diff and write the body from 
 
 If you suggest changes to a piece of text, always preserve the tone, structure, and level of detail, unless specifically asked to extend it.
 Only correct the specific inaccuracies or missing information.
+
+When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.”
 
 ## Testing and review approach
 
