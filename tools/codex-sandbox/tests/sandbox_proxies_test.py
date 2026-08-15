@@ -322,6 +322,33 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("--mount", arguments[0])
         self.assertIn(f"src={zuliprc.resolve()},dst=/run/secrets/zuliprc,readonly", arguments[1])
 
+    def test_proxy_readiness_timeout_reports_forwarder_error(self) -> None:
+        state_path = self.repo / "state"
+        args = type("Args", (), {
+            "prefix": "test", "state": str(state_path), "network": "sandbox",
+            "zuliprc": None,
+        })
+        command = self.command()
+        image = "sha256:" + "0" * 64
+        not_ready = subprocess.CompletedProcess(
+            [], 1, stderr="usage: example-proxy serve\n",
+        )
+        running = subprocess.CompletedProcess([], 0, stdout="true\n")
+
+        with mock.patch.object(sandbox_proxies, "_docker", return_value=running), \
+                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=not_ready), \
+                mock.patch.object(sandbox_proxies, "proxy_logs", return_value=""), \
+                mock.patch.object(sandbox_proxies.time, "monotonic", side_effect=[0, 0, 11]), \
+                mock.patch.object(sandbox_proxies.time, "sleep"):
+            with self.assertRaisesRegex(
+                sandbox_proxies.ConfigError,
+                "proxy example did not become ready:\\nusage: example-proxy serve",
+            ):
+                sandbox_proxies.start_one_proxy(
+                    args, self.repo, "identity", {"example": image},
+                    {"proxies": []}, mock.MagicMock(), "example", command,
+                )
+
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
         self.sandbox.rmdir()
         self.sandbox.symlink_to(self.repo / "outside")

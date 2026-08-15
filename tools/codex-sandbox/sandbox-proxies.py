@@ -517,11 +517,14 @@ def start_one_proxy(
     docker_args += [images[name], *command["argv"][1:]]
     _docker(*docker_args)
     deadline = time.monotonic() + 10
+    readiness_error = ""
     while time.monotonic() < deadline:
         check = subprocess.run(
             ["docker", "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, text=True,
         )
+        readiness_error = check.stderr.strip()
         if check.returncode == 0:
             return
         status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
@@ -530,7 +533,12 @@ def start_one_proxy(
             detail = f":\n{logs}" if logs else ""
             raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
         time.sleep(0.1)
-    raise ConfigError(f"proxy {name} did not become ready")
+    logs = proxy_logs(container)
+    diagnostics = "\n".join(dict.fromkeys(
+        output for output in (logs, readiness_error) if output
+    ))
+    detail = f":\n{diagnostics}" if diagnostics else ""
+    raise ConfigError(f"proxy {name} did not become ready{detail}")
 
 
 def start_main(args: argparse.Namespace) -> int:
