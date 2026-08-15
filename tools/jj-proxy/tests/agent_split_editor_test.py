@@ -8,9 +8,15 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 EDITOR = ROOT / "tools" / "jj-proxy" / "agent-split-editor"
 CONFIG = ROOT / "tools" / "jj-proxy" / "jj.toml"
+DOCKERFILE = ROOT / "tools" / "jj-proxy" / "Dockerfile"
 
 
 class AgentSplitEditorEndToEndTest(unittest.TestCase):
+    def test_trusted_shell_is_a_regular_executable(self) -> None:
+        dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+        self.assertIn("cp /bin/busybox /trusted/bin/sh", dockerfile)
+        self.assertNotIn("ln -s busybox /trusted/bin/sh", dockerfile)
+
     def test_config_invokes_editor_through_trusted_shell(self) -> None:
         config = CONFIG.read_text(encoding="utf-8")
         self.assertIn('program = "/trusted/bin/sh"', config)
