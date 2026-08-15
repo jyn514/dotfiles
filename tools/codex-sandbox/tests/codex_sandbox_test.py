@@ -64,7 +64,11 @@ class AgentSandboxImageTest(unittest.TestCase):
             r"(?m)^        gcompat \\$",
         )
         self.assertIn("./lib/shell/lib.sh /lib/shell/lib.sh", dockerfile)
-        self.assertIn("./tools/codex-auth-proxy/server.py /trusted/bin/codex-auth-proxy", dockerfile)
+        self.assertNotIn("tools/codex-auth-proxy/server.py", dockerfile)
+        self.assertIn(
+            "tools/codex-auth-proxy/server.py /trusted/bin/codex-auth-proxy",
+            (ROOT / "tools/codex-auth-proxy/Dockerfile").read_text(encoding="utf-8"),
+        )
         self.assertEqual(
             "../../tools/agent-split/bb",
             os.readlink(ROOT / "libexec" / "agent-wrappers" / "bb"),
@@ -203,6 +207,9 @@ class CodexSandboxTest(unittest.TestCase):
                 exit 44
             fi
             if [ "$1 $2" = "image inspect" ]; then
+                case " $* " in
+                    *" --format "*) printf 'sha256:%064d\n' 0; exit 0 ;;
+                esac
                 [ "${FAKE_IMAGE_EXISTS:-1}" = 1 ]
                 exit
             fi
@@ -405,6 +412,7 @@ class CodexSandboxTest(unittest.TestCase):
             f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth", sidecar,
         )
         self.assertIn("--read-only", sidecar)
+        self.assertEqual("sha256:" + "0" * 64, sidecar[-1])
         agent = self.final_run()
         self.assertFalse(any(str(auth) in item for item in agent))
         self.assertTrue(any(item.startswith("CODEX_SIDECAR_URL=http://codex-auth-proxy-") for item in agent))
@@ -513,7 +521,9 @@ class CodexSandboxTest(unittest.TestCase):
         result = self.run_launcher(FAKE_IMAGE_EXISTS="0")
         self.assertEqual(0, result.returncode, result.stderr)
         builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
-        self.assertEqual(1, len(builds))
+        self.assertEqual(2, len(builds))
+        self.assertTrue(any("tools/codex-auth-proxy/Dockerfile" in call for call in builds))
+        self.assertTrue(any("tools/codex-sandbox/image/Dockerfile" in call for call in builds))
         self.assertIn("sha256:built-image-id", self.final_run())
 
     def test_network_failure_stops_before_lock_and_proxy_start(self) -> None:
@@ -583,6 +593,10 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(relay_runs))
         self.assertIn("--cap-drop=ALL", relay_runs[0])
         self.assertIn("--read-only", relay_runs[0])
+        self.assertEqual(
+            "sha256:" + "0" * 64,
+            relay_runs[0][relay_runs[0].index("/usr/bin/socat") + 1],
+        )
         run = self.final_run()
         self.assertIn("CONTAINER_HOST=ssh://worker@10.0.0.8:2222/run/user/501/podman.sock", run)
         self.assertIn(

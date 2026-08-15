@@ -69,6 +69,7 @@ class State:
     repository: Path | None = None
     zuliprc: Path | None = None
     image: str = ""
+    sidecar_image: str = ""
     manifest: Path | None = None
     proxy_state: Path | None = None
     proxy_args: Path | None = None
@@ -289,6 +290,15 @@ def image_cache_key(state: State, base_image: str) -> str:
     ).stdout.strip()
 
 
+def resolve_sidecar_image() -> str:
+    builder = DOTFILES / "tools/codex-auth-proxy/image"
+    result = run([str(builder)], capture=True, cwd=DOTFILES)
+    output = result.stdout.strip()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", output):
+        raise LauncherError("authentication proxy image command returned an invalid image ID")
+    return output
+
+
 def ensure_image(state: State, base_image: str) -> str:
     image = f"codex-sandbox:{image_cache_key(state, base_image)}"
     if run(["docker", "image", "inspect", image], check=False, quiet=True).returncode == 0:
@@ -355,7 +365,7 @@ def attach_proxies(state: State) -> list[str]:
         arguments = [
             "attach", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
             "--session", str(state.lock_ready),
-            "--state", str(state.proxy_state), "--helper-image", state.image,
+            "--state", str(state.proxy_state), "--helper-image", state.sidecar_image,
             "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
         ]
         if state.zuliprc is not None:
@@ -400,7 +410,7 @@ def start_relay(state: State) -> list[str]:
         "docker", "run", "--detach", "--name", state.relay_container,
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.relay_egress_network, "--http-proxy=false",
-        "--entrypoint", "/usr/bin/socat", state.image, "-d", "-d",
+        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
         f"TCP4-LISTEN:{state.relay_port},fork,reuseaddr",
         f"TCP4:host.docker.internal:{values['AGENT_PODMAN_SSH_PORT']}",
     ], discard_stdout=True)
@@ -484,7 +494,7 @@ def start_codex_sidecar(state: State, auth_directory: Path) -> tuple[dict[str, s
         "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m,mode=1777",
         "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
         "--env", f"CODEX_SIDECAR_KEY={key}",
-        "--entrypoint", "/trusted/bin/codex-auth-proxy", state.image,
+        "--entrypoint", "/trusted/bin/codex-auth-proxy", state.sidecar_image,
     ], discard_stdout=True)
     try:
         deadline = time.monotonic() + 10
@@ -689,7 +699,11 @@ def execute(state: State) -> int:
         base_image = run([str(builder)], capture=True, cwd=state.repository).stdout.strip()
     else:
         base_image = "node:24-alpine3.22"
-    state.image = phase("image resolution", lambda: ensure_image(state, base_image))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        model_image = executor.submit(ensure_image, state, base_image)
+        sidecar_image = executor.submit(resolve_sidecar_image)
+        state.image = phase("model image resolution", model_image.result)
+        state.sidecar_image = phase("sidecar image resolution", sidecar_image.result)
     phase("network setup", ensure_network)
     phase("proxy lock", lambda: acquire_lock(state))
     with ThreadPoolExecutor(max_workers=2) as executor:

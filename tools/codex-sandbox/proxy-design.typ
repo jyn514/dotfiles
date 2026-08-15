@@ -308,7 +308,8 @@ Each sidecar receives a random session key that Pi sends as its placeholder API 
 The key is readable by the agent and intentionally grants only the model-request authority Pi already has; it is not an upstream credential and stops working when the sidecar exits.
 This prevents unrelated containers on the shared sandbox network from using the sidecar.
 
-The sidecar follows the existing proxy-container lifecycle and hardening: immutable launcher-owned image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the shared proxy session.
+The sidecar follows the existing proxy-container lifecycle and hardening: an independently built Alpine-based immutable image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the shared proxy session.
+Its image is also used only as the socket-promotion helper; neither role inherits the customizable model image base.
 Concurrent agent containers in that session reuse one sidecar and session key, as they reuse the Jujutsu proxy.
 The Codex authentication directory is its only writable host mount.
 Pi continues to use `openai-codex-responses` with only `baseUrl` and the placeholder API key changed.
