@@ -32,6 +32,8 @@ struct Request {
     cwd: String,
     argv: Vec<String>,
     #[serde(default)]
+    agent_split: Option<AgentSplit>,
+    #[serde(default)]
     user: Option<String>,
     #[serde(default)]
     email: Option<String>,
@@ -40,6 +42,10 @@ struct Request {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Response { version: u8, exit: i32, stdout: String, stderr: String }
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentSplit { patch: String, message: String, revision: String }
 
 fn read_frame(stream: &mut UnixStream, limit: usize) -> io::Result<Vec<u8>> {
     let mut header = [0; 4];
@@ -170,17 +176,40 @@ fn execute(request: &Request, root: RawFd, remotes: &HashSet<String>) -> Respons
         (None, None) => ("Codex", "breq@jyn.dev"),
         _ => return failure("invalid agent identity".into()),
     };
-    if request.argv.as_slice() == [":ready"] {
+    if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
         return Response { version: 1, exit: 0, stdout: String::new(), stderr: String::new() };
     }
-    if let Err(error) = policy::validate(&request.argv, remotes) { return failure(error.to_string()); }
+    if let Some(split) = &request.agent_split {
+        if !request.argv.is_empty() {
+            return failure("agent split cannot include Jujutsu arguments".into());
+        }
+        if split.patch.is_empty() || split.patch.len() > MAX_REQUEST / 2
+            || split.message.is_empty() || split.message.len() > 4096
+            || split.revision.is_empty() || split.revision.len() > 4096
+            || split.message.contains('\0') || split.revision.contains('\0')
+        {
+            return failure("invalid agent split request".into());
+        }
+        if let Err(error) = fs::write(format!("{CONFIG_HOME}/agent-split.patch"), &split.patch) {
+            return failure(format!("could not stage split patch: {error}"));
+        }
+    } else if let Err(error) = policy::validate(&request.argv, remotes) {
+        return failure(error.to_string());
+    }
     let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
 
     let mut command = jj_command();
     if matches!(request.argv.first().map(String::as_str), Some("diff" | "show")) {
         command.args(["--config", "ui.diff-formatter=:git"]);
     }
-    command.args(&request.argv);
+    if let Some(split) = &request.agent_split {
+        command.args([
+            "split", "--tool", "agent-split", "-m", split.message.as_str(),
+            "-r", split.revision.as_str(),
+        ]);
+    } else {
+        command.args(&request.argv);
+    }
     if request.argv.as_slice().starts_with(&["git".into(), "fetch".into()])
         && !request.argv.iter().any(|arg| arg == "--remote" || arg.starts_with("--remote="))
     {
@@ -264,6 +293,7 @@ fn client(args: Vec<String>) -> Result<i32> {
         version: 1,
         cwd: relative.to_string_lossy().into_owned(),
         argv: args,
+        agent_split: None,
         user: env::var("JJ_USER").ok(),
         email: env::var("JJ_EMAIL").ok(),
     };

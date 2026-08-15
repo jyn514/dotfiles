@@ -11,4 +11,8 @@ merge-editor = ":builtin"
 [signing]
 behavior = "drop"
 
+[merge-tools.agent-split]
+program = "/trusted/bin/agent-split-editor"
+edit-args = ["$left", "$right"]
+
 [aliases]

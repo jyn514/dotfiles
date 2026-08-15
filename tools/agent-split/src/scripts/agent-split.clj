@@ -348,17 +348,21 @@
 (defn- run-split! [patch message revision]
   (let [editor (str (fs/file (script-dir) "agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
-        result (process/shell {:out :string
-                               :err :string
-                               :shutdown nil
-                               :continue true}
-                              "env" (str "JJ_AGENT_SPLIT_PATCH=" patch)
-                              "jj" "split"
-                              "--config" program-config
-                              "--config" args-config
-                              "--tool" "agent-split"
-                              "-m" message
-                              "-r" revision)]
+        command (if (System/getenv "SANDBOX_PROXY_DIR")
+                  ["/libexec/agent-wrappers/jj-proxy-client"
+                   "--agent-split" (str patch) message revision]
+                  ["env" (str "JJ_AGENT_SPLIT_PATCH=" patch)
+                   "jj" "split"
+                   "--config" program-config
+                   "--config" args-config
+                   "--tool" "agent-split"
+                   "-m" message
+                   "-r" revision])
+        result (apply process/shell {:out :string
+                                     :err :string
+                                     :shutdown nil
+                                     :continue true}
+                      command)]
     (when-not (zero? (:exit result))
       (fail! "split" (str "jj split failed\n" (:out result) (:err result))))
     (print (:out result))
@@ -426,7 +430,7 @@
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
                      (fail! "preflight" (str "patch file does not exist: " patch)))
-        repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "root")))
+        repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "workspace" "root")))
         artifact-root (fs/file repo-root "target" "jj-split")
         _ (fs/create-dirs artifact-root)
         helper-root (fs/create-temp-dir {:dir (temp-root)

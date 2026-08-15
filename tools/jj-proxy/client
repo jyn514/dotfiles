@@ -35,7 +35,18 @@ def main() -> int:
         relative = current.relative_to(repository)
     except ValueError as error:
         raise RuntimeError("current directory is outside the protected repository") from error
-    request = {"version": 1, "cwd": str(relative), "argv": sys.argv[1:]}
+    argv = sys.argv[1:]
+    request = {"version": 1, "cwd": str(relative), "argv": argv}
+    if argv[:1] == ["--agent-split"]:
+        if len(argv) != 4:
+            raise RuntimeError("--agent-split requires PATCH MESSAGE REVISION")
+        patch = Path(argv[1]).resolve(strict=True)
+        request["argv"] = []
+        request["agent_split"] = {
+            "patch": patch.read_text(encoding="utf-8"),
+            "message": argv[2],
+            "revision": argv[3],
+        }
     request.update(
         user=os.environ.get("JJ_USER"),
         email=os.environ.get("JJ_EMAIL"),
