@@ -3,6 +3,7 @@
 ;;
 ;; Usage:
 ;;   extract-chat --session 019abcde-1234-7000-8000-0123456789ab
+;;   extract-chat --archived --session 019abcde-1234-7000-8000-0123456789ab
 ;;   extract-chat --final-only ~/.codex/sessions
 ;;   extract-chat --extract-dir out ~/.codex/sessions
 
@@ -12,15 +13,18 @@
             [clojure.string :as str])
   (:import (java.nio.file Files Path)))
 
-(defn default-root [environment]
-  (str (or (get environment "CODEX_HOME")
-           (str (System/getProperty "user.home") "/.codex"))
-       "/sessions"))
+(defn default-root
+  ([environment] (default-root environment false))
+  ([environment archived?]
+   (str (or (get environment "CODEX_HOME")
+            (str (System/getProperty "user.home") "/.codex"))
+        (if archived? "/archived_sessions" "/sessions"))))
 
 (defn- usage []
-  (println "Usage: extract-chat [--final-only] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
+  (println "Usage: extract-chat [--archived] [--final-only] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
   (println)
   (println "With no paths, recursively scans ~/.codex/sessions for .json and .jsonl files.")
+  (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
   (println "With --session, extracts the Codex session whose filename ends in ID.")
   (println "With --extract-dir, writes one markdown file per session instead of printing to stdout."))
 
@@ -54,8 +58,8 @@
     (or (= session stem)
         (str/ends-with? stem (str "-" session)))))
 
-(defn- find-session [session]
-  (let [root (default-root (System/getenv))
+(defn- find-session [session archived?]
+  (let [root (default-root (System/getenv) archived?)
         matches (filter #(session-file-name-matches? session %)
                         (files-under (path root)))]
     (case (count matches)
@@ -253,6 +257,9 @@
           (= "--final-only" arg)
           (recur (assoc opts :final-only? true) (next args))
 
+          (= "--archived" arg)
+          (recur (assoc opts :archived? true) (next args))
+
           (= "-h" arg)
           (recur (assoc opts :help? true) (next args))
 
@@ -279,14 +286,14 @@
           (recur (update opts :paths conj arg) (next args)))))))
 
 (defn main [args]
-  (let [{:keys [final-only? help? paths extract-dir session]} (parse-args args)]
+  (let [{:keys [archived? final-only? help? paths extract-dir session]} (parse-args args)]
     (if help?
       (usage)
       (let [files (if session
-                    [(find-session session)]
+                    [(find-session session archived?)]
                     (let [roots (if (seq paths)
                                   paths
-                                  [(default-root (System/getenv))])]
+                                  [(default-root (System/getenv) archived?)])]
                       (mapcat (comp files-under path) roots)))]
         (when (and
                (not (seq paths))

@@ -10,6 +10,8 @@
 (deftest extract-chat-default-root-prefers-codex-home
   (is (= "/tmp/custom-codex/sessions"
          (extract-chat/default-root {"CODEX_HOME" "/tmp/custom-codex"})))
+  (is (= "/tmp/custom-codex/archived_sessions"
+         (extract-chat/default-root {"CODEX_HOME" "/tmp/custom-codex"} true)))
   (is (= (str (System/getProperty "user.home") "/.codex/sessions")
          (extract-chat/default-root {}))))
 
@@ -121,6 +123,30 @@
                   "Make tea.\n\n"
                   "## Assistant\n\n"
                   "Tea is ready.\n\n")
+             (str stdout))))))
+
+(deftest extract-chat-finds-archived-codex-session-by-id
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-archived-codex"})
+        sessions-root (fs/file root "sessions")
+        archived-root (fs/file root "archived_sessions")
+        session-id "019abcde-1234-7000-8000-0123456789ab"
+        archived-file (fs/file archived-root (str "rollout-2026-07-15-" session-id ".jsonl"))]
+    (fs/create-dirs sessions-root)
+    (fs/create-dirs archived-root)
+    (spit archived-file
+          (str (json/generate-string {:type "event_msg"
+                                      :payload {:type "user_message"
+                                                :message "Recover the tea."}})
+               "\n"))
+    (let [stdout (java.io.StringWriter.)]
+      (with-redefs [extract-chat/default-root
+                    (fn
+                      ([_] (str sessions-root))
+                      ([_ archived?] (str (if archived? archived-root sessions-root))))]
+        (binding [*out* stdout]
+          (extract-chat/main ["--archived" "--session" session-id])))
+      (is (= (str "# " archived-file "\n\n"
+                  "## User\n\nRecover the tea.\n\n")
              (str stdout))))))
 
 (deftest extract-chat-finds-codex-session-by-id
