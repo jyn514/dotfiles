@@ -37,7 +37,7 @@ FROM alpine:3.22 AS editor
 RUN apk add --no-cache git \
     && mkdir -p /trusted/bin \
     && cp /bin/busybox /trusted/bin/busybox \
-    && ln -s busybox /trusted/bin/sh \
+    && cp /bin/busybox /trusted/bin/sh \
     && ln -s busybox /trusted/bin/cp \
     && ln -s busybox /trusted/bin/rm \
     && cp /usr/bin/git /trusted/bin/git
