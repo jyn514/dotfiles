@@ -50,6 +50,39 @@ function source_init
 	or return
 end
 
+function refresh-fish-cache
+	set -l cache_arguments $argv
+	set -l destination
+	set -l dependencies
+	set -l index 1
+	while [ $index -le (count $argv) ]
+		switch $argv[$index]
+			case --destination
+				set destination $argv[(math $index + 1)]
+				set index (math $index + 1)
+			case --dependency
+				set --append dependencies $argv[(math $index + 1)]
+				set index (math $index + 1)
+			case --
+				break
+		end
+		set index (math $index + 1)
+	end
+	if [ -f $destination ]
+		set -l fresh 1
+		for dependency in $dependencies
+			if [ $dependency -nt $destination ]
+				set fresh 0
+				break
+			end
+		end
+		if [ $fresh = 1 ]
+			return 0
+		end
+	end
+	command refresh-fish-cache $cache_arguments
+end
+
 if [ -f ~/.local/profile.fish ]
 	. ~/.local/profile.fish
 	or return
@@ -57,12 +90,6 @@ end
 
 . $DOTFILES/lib/shell/env.sh; or return
 . $DOTFILES/lib/shell/paths.sh; or return
-
-# compat for old `bat` versions
-if exists bat; and string match --quiet --regex "0\.1[0-9]\." (bat --version)
-	echo "ignoring 'rule' for old bat versions"
-	export BAT_STYLE=changes,header
-end
 
 if exists nvim
 	export EDITOR=editor-hax
@@ -76,7 +103,8 @@ else
 end
 export VISUAL=$EDITOR
 
-if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
+set -l kernel (uname); or return
+if [ "$kernel" = Linux ]; and [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 	set -l brew_command /home/linuxbrew/.linuxbrew/bin/brew
 	set -l brew_cache ~/.local/config/brew.fish
 	refresh-fish-cache --destination $brew_cache --dependency $brew_command \
@@ -87,7 +115,6 @@ if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 end
 
 if [ -z "$SSH_AUTH_SOCK" ]
-	set -l kernel (uname); or return
 	if [ "$kernel" = Darwin ]
 		export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 	else
@@ -225,22 +252,6 @@ for alias in $abbreviations
 	or return
 end
 set --erase abbreviations
-
-# load git aliases
-if [ -z "$old_fish" ]
-	set git_aliases (git config --get-regexp 'alias\.')
-	or return
-	for alias in $git_aliases
-		string replace --regex '^alias.' '' -- $alias | read --delimiter ' ' name value
-		if set actual (string match --groups-only --regex '^!(.*)' -- $value)
-			abbr --add --global "g$name" -- "$actual"
-		else
-			abbr --add --global --command git $name -- $value
-		end
-		or return
-	end
-	set --erase git_aliases
-end
 
 abbr --add --global --command git -- -nv --no-verify
 
@@ -439,10 +450,10 @@ function record_duration --on-event fish_postexec
 end
 
 function fish_right_prompt
-	set -l rendered (prompt-command fish-right 0 $duration $prompt_timestamp | string collect)
-	set -l render_statuses $pipestatus
-	if [ $render_statuses[1] -eq 0 ]; and [ $render_statuses[2] -eq 0 ]
-		printf %s $rendered
+	if [ -n "$prompt_timestamp" ]
+		printf '\e[2;37m%s' $prompt_timestamp
+	else if [ $duration -gt 99 ]
+		printf '\e[2;37m+%ss' (math --scale=2 "$duration / 1000")
 	end
 end
 
@@ -455,24 +466,37 @@ function fish_command_not_found
 end
 
 if [ -z "$old_fish" ]
-	if exists atuin
-		source_init atuin init fish --disable-up-arrow
-		or return
+	set -l startup_generator $DOTFILES/bin/generate-fish-startup-cache
+	set -l startup_dependencies $startup_generator $DOTFILES/config/config.fish $DOTFILES/config/gitconfig
+	set -l startup_commands
+	set -l startup_availability
+	for startup_command in bat git atuin zoxide direnv
+		if set -l startup_path (command --search $startup_command)
+			set --append startup_commands $startup_path
+			set --append startup_dependencies $startup_path
+			set --append startup_availability 1
+		else
+			set --append startup_commands -
+			set --append startup_availability 0
+		end
+	end
+	set -l startup_cache ~/.local/config/fish-startup-(string join '' $startup_availability).fish
+	set -l startup_cache_arguments --destination $startup_cache
+	for startup_dependency in $startup_dependencies
+		set --append startup_cache_arguments --dependency $startup_dependency
+	end
+	refresh-fish-cache $startup_cache_arguments -- $startup_generator $startup_commands
+	set -l startup_status $status
+	contains $startup_status 0 75; or return $startup_status
+	. $startup_cache; or return
+	if [ $startup_availability[3] = 1 ]
 		bind -M default / _atuin_search
 	end
-
-	if exists zoxide
-		source_init zoxide init fish
-		or return
+	if [ $startup_availability[4] = 1 ]
 		function cd; z $argv; end
 		complete --erase cd
 		complete cd --wraps __zoxide_z
 	end
-end
-
-if exists direnv
-	source_init direnv hook fish
-	or return
 end
 
 if isatty 0
