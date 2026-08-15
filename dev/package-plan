@@ -1,0 +1,104 @@
+#!/bin/sh
+
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+if [ -n "${PACKAGE_PLAN_BB:-}" ]; then
+	exec "$PACKAGE_PLAN_BB" -cp "$root/tools/package-plan/src" -m package-plan "$@"
+fi
+. "$root/tools/package-plan/bootstrap.generated.sh"
+
+platform=$(uname -s)
+architecture=$(uname -m)
+case "$platform:$architecture" in
+	Linux:x86_64|Linux:amd64) artifact=linux-x64;;
+	Linux:aarch64|Linux:arm64) artifact=linux-arm64;;
+	Darwin:arm64|Darwin:aarch64) artifact=macos-arm64;;
+	Darwin:*) echo "package-plan: Intel macOS is unsupported" >&2; exit 1;;
+	*) echo "package-plan: unsupported bootstrap target: $platform $architecture" >&2; exit 1;;
+esac
+
+needs_gcompat=
+if [ "$artifact" = linux-arm64 ] && [ -r /etc/os-release ]; then
+	. /etc/os-release
+	case "${ID:-}" in
+		alpine|chimera) [ -e /lib/ld-linux-aarch64.so.1 ] || needs_gcompat=1;;
+	esac
+fi
+
+missing=
+[ -z "$needs_gcompat" ] || missing="$missing glibc-compat-loader"
+for command in uname tar; do
+	command -v "$command" >/dev/null 2>&1 || missing="$missing $command"
+done
+if command -v curl >/dev/null 2>&1; then
+	downloader=curl
+elif command -v wget >/dev/null 2>&1; then
+	downloader=wget
+else
+	downloader=
+	missing="$missing curl-or-wget"
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+	hasher=sha256sum
+elif command -v shasum >/dev/null 2>&1; then
+	hasher=shasum
+else
+	hasher=
+	missing="$missing sha256sum-or-shasum"
+fi
+if [ -n "$missing" ]; then
+	case "$artifact" in
+		linux-*)
+			if [ -r /etc/os-release ]; then . /etc/os-release; fi
+			case "${ID:-}" in
+				debian|ubuntu) hint="install ca-certificates and curl";;
+				alpine) hint="install gcompat";;
+				chimera) hint="install curl, libarchive-progs, and gcompat";;
+				*) hint="install the missing bootstrap commands";;
+			esac
+			;;
+		*) hint="install the missing bootstrap commands";;
+	esac
+	echo "package-plan: missing bootstrap commands:$missing; $hint" >&2
+	exit 1
+fi
+
+select_babashka_artifact "$artifact" || {
+	echo "package-plan: no Babashka artifact for $artifact" >&2
+	exit 1
+}
+
+cache_root=${XDG_CACHE_HOME:-"$HOME/.cache"}/dotfiles/package-plan
+destination=$cache_root/babashka/$BABASHKA_VERSION/bb
+if ! [ -x "$destination" ]; then
+	mkdir -p "$(dirname "$destination")"
+	temporary=$destination.tmp.$$
+	archive=$temporary.tar.gz
+	trap 'rm -rf "$temporary" "$archive"' EXIT HUP INT TERM
+	if [ "$downloader" = curl ]; then
+		curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$BABASHKA_URL"
+	else
+		wget --output-document="$archive" "$BABASHKA_URL"
+	fi
+	if [ "$hasher" = sha256sum ]; then
+		actual=$(sha256sum "$archive" | awk '{print $1}')
+	else
+		actual=$(shasum -a 256 "$archive" | awk '{print $1}')
+	fi
+	if [ "$actual" != "$BABASHKA_SHA256" ]; then
+		echo "package-plan: Babashka checksum mismatch" >&2
+		exit 1
+	fi
+	mkdir "$temporary"
+	tar -xzf "$archive" -C "$temporary"
+	test -x "$temporary/bb" || {
+		echo "package-plan: Babashka archive did not contain executable bb" >&2
+		exit 1
+	}
+	mv "$temporary/bb" "$destination"
+	rm -rf "$temporary" "$archive"
+	trap - EXIT HUP INT TERM
+fi
+
+exec "$destination" -cp "$root/tools/package-plan/src" -m package-plan "$@"

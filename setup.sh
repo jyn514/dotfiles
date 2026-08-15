@@ -8,8 +8,6 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 
 install_macos_local() {
-	# note that we don't actually pass sudo here
-	./libexec/setup/setup_sudo.sh install_features || return
 	brew install -q duti || return
 	cmd_alias gdu gdu-go || return
 	if exists cargo; then
@@ -106,15 +104,6 @@ install_mise() {
 	else
 		MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
 	fi
-}
-
-install_mise_bootstrap_packages() {
-	# Prefer Arch's native bacon package. Homebrew bottles do not support musl.
-	if exists pacman || exists apk; then
-		return
-	fi
-	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" \
-		mise bootstrap packages apply --manager brew --yes < /dev/null
 }
 
 setup_mimetypes() {
@@ -345,31 +334,22 @@ setup_backup () {
 
 setup_install_global () {
 	echo Installing global packages
+	./dev/package-plan apply --yes || return
 	if [ "$(id -u)" = 0 ]; then
 		./libexec/setup/setup_sudo.sh main
 	elif exists sudo; then
 		sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh main
 	elif exists doas; then
 		doas ./libexec/setup/setup_sudo.sh main
-	elif exists su; then
-		su root -c './libexec/setup/setup_sudo.sh main'
 	else
-		./libexec/setup/setup_sudo.sh main
+		echo "global setup requires root, sudo, or doas" >&2
+		return 1
 	fi
 }
 
 setup_install_global_packages () {
 	echo Installing global packages
-	if [ "$(id -u)" = 0 ]; then
-		./libexec/setup/setup_sudo.sh install_features
-	elif exists sudo; then
-		sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh install_features
-	elif exists doas; then
-		doas ./libexec/setup/setup_sudo.sh install_features
-	else
-		echo "install-global requires root, sudo, or doas" >&2
-		return 1
-	fi
+	./dev/package-plan apply --yes
 }
 
 setup_install_local () {
@@ -380,7 +360,6 @@ setup_install_local () {
 	fi
 	mkdir -p ~/.local/bin || return
 	install_mise || return
-	install_mise_bootstrap_packages || return
 	install_platform_bundles || return
 
 	if [ -n "${IS_MACOS:-}" ]; then

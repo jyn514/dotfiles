@@ -1,0 +1,3 @@
+{:paths ["src"]
+ :tasks {test {:doc "Run package planner tests"
+               :task (shell "bb tests/run.clj")}}}

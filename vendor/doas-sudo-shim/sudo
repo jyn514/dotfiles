@@ -1,0 +1,143 @@
+#!/bin/sh
+set -u
+
+help() {
+	cat <<-EOF
+	Usage:
+	  sudo (-i | -s) [-k] [-n] [-u <user>] [<command> [--] [<args>...]]
+	  sudo [-ikns] [-u <user>] <command> [--] [<args>...]
+	  sudo -k
+	  sudo [-h]
+
+	Execute a command as another user using doas(1).
+
+	This is not the original sudo, but the doas shim for sudo. It supports only
+	a subset of the sudo options (both short and long) that have an equivalent in
+	doas, plus options -i (--login) and -k (--reset-timestamp). Refer to sudo(1)
+	for more information.
+
+	WARNING:
+	  sudo -k with a command is only approximated. Unlike sudo, OpenDoas cannot
+	  ignore the cached credential for a single invocation while also preventing
+	  the timestamp from being refreshed. This shim calls doas -L before and
+	  after the command instead, which is not atomic and may leave or expose a
+	  refreshed timestamp if interrupted or used concurrently!
+
+	Please report bugs at <https://github.com/jirutka/doas-sudo-shim/issues>.
+	EOF
+}
+
+die() {
+	[ $# -ne 0 ] && echo "sudo: $1" >&2
+	help >&2
+	exit 1
+}
+
+set_user() {
+	case "${2-}" in
+		'' | -- | '#') die "option '$1' requires an argument" ;;
+		*) user=${2#\#} ;;
+	esac
+}
+
+if [ $# -eq 0 ]; then
+	help >&2
+	exit 1
+fi
+
+flag_i=
+flag_k=
+flag_n=
+flag_s=
+user=
+while [ $# -gt 0 ]; do
+	case $1 in
+		-i | --login) flag_i='-i' ;;
+		-k | --reset-timestamp) flag_k='-k' ;;
+		-n | --non-interactive) flag_n='-n' ;;
+		-s | --shell) flag_s='-s' ;;
+		-h | --help) help; exit 0 ;;
+		-u | --user) set_user "$1" "${2-}"; shift ;;
+		--user=*) set_user '--user' "${1#--user=}" ;;
+		--) shift; break ;;
+		--*) die "unrecognized option '$1'" ;;
+		# Parse clustered short options (e.g. -ikns, -uuser).
+		-?*)
+			opts=${1#-}
+			while [ "$opts" ]; do
+				case "$opts" in
+					i*) flag_i='-i' ;;
+					k*) flag_k='-k' ;;
+					n*) flag_n='-n' ;;
+					s*) flag_s='-s' ;;
+					h*) help; exit 0 ;;
+					u*)
+						if [ "$opts" != 'u' ]; then
+							set_user '-u' "${opts#u}"; break
+						else
+							set_user '-u' "${2-}"; shift
+						fi ;;
+					*) die "invalid option -- '${opts%"${opts#?}"}'" ;;
+				esac
+				opts=${opts#?}
+			done ;;
+		*) break ;;
+	esac
+	shift
+done
+
+[ "$flag_i" ] && [ "$flag_s" ] \
+	&& die "you may not specify both the '-i' and '-s' options"
+
+# Without a command, only -i, -s, or plain -k are valid.
+if [ $# -eq 0 ] && ! [ "$flag_i$flag_s" ]; then
+	if [ "$flag_k" ] && ! [ "$flag_n$user" ]; then
+		exec doas -L
+	fi
+	die
+fi
+
+_doas() {
+	if [ "$flag_k" ]; then
+		# With a command, sudo -k ignores the cached credential for this
+		# invocation and doesn't update it afterwards. OpenDoas cannot prevent a
+		# persist rule from refreshing the timestamp, so clear it before and after
+		# the invocation.
+		doas -L || exit
+
+		trap 'doas -L >/dev/null 2>&1' EXIT HUP INT TERM  # cleanup if interrupted before the final timestamp clear
+		doas $flag_n ${user:+-u "$user"} "$@"; rc=$?
+		trap - EXIT HUP INT TERM  # restore default traps
+
+		doas -L || exit
+		exit $rc
+	else
+		exec doas $flag_n ${user:+-u "$user"} "$@"
+	fi
+}
+
+user_shell() {
+	if command -v getent >/dev/null 2>&1; then
+		getent passwd "${user:-root}" | awk -F: 'END {print $NF ? $NF : "sh"}'
+	else
+		awk -F: -v user="${user:-root}" '$1 == user {print $NF; m=1} END {if (!m) print "sh"}' /etc/passwd
+	fi
+}
+
+export SUDO_GID=$(id -g)
+export SUDO_UID=$(id -u)
+export SUDO_USER=$(id -un)
+
+if [ $# -eq 0 ]; then
+	if [ "$flag_i" ]; then
+		_doas -- "$(user_shell)" -c 'cd "$HOME"; exec "$0" -l'
+	else
+		_doas $flag_s
+	fi
+elif [ "$flag_i" ]; then
+	_doas -- "$(user_shell)" -l -c 'cd "$HOME"; "$0" "$@"' "$@"
+elif [ "$flag_s" ]; then
+	_doas -- "${SHELL:-$(user_shell)}" -c '"$0" "$@"' "$@"
+else
+	_doas -- "$@"
+fi

@@ -2,7 +2,7 @@
 
 import json
 import os
-import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,7 +45,7 @@ class InstallationTests(unittest.TestCase):
             "macos": (),
             "ubuntu": ("apt",),
         }[platform["ID"]]
-        for command in (*managers, "brew", "code", "curl", "keymapp", "pwsh"):
+        for command in (*managers, "brew", "code", "curl", "keymapp", "mise", "pwsh"):
             (self.bin / command).symlink_to(recorder)
 
         apt_cache = self.bin / "apt-cache"
@@ -60,12 +60,29 @@ class InstallationTests(unittest.TestCase):
 
     def run_install(self) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
+        real_bb = next(
+            (
+                str(Path(directory) / "bb")
+                for directory in env["PATH"].split(os.pathsep)
+                if "agent-wrappers" not in directory
+                and (Path(directory) / "bb").is_file()
+            ),
+            shutil.which("bb") or "bb",
+        )
         env.update(
             DOAS_USER="",
             INSTALL_COMMAND_LOG=str(self.log),
+            PACKAGE_PLAN_BB=real_bb,
+            PACKAGE_PLAN_MISE=str(self.bin / "mise"),
+            PACKAGE_PLAN_UID="0",
             PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin",
             SUDO_USER="",
         )
+        platform = self.platform()["ID"]
+        env["PACKAGE_PLAN_TARGET"] = (
+            "macos-arm64" if platform == "macos" else platform
+        )
+        env["PACKAGE_PLAN_RELEASE"] = "42" if platform == "fedora" else "test"
         return subprocess.run(
             [
                 "sh",
@@ -105,17 +122,6 @@ class InstallationTests(unittest.TestCase):
                 platform[key] = value.strip('"')
         return platform
 
-    @staticmethod
-    def translated(
-        packages: list[str], replacements: dict[str, str | None]
-    ) -> list[str]:
-        translated = []
-        for package in packages:
-            replacement = replacements.get(package, package)
-            if replacement is not None:
-                translated.extend(shlex.split(replacement))
-        return translated
-
     def test_requests_platform_packages(self) -> None:
         platform = self.platform()
 
@@ -124,161 +130,35 @@ class InstallationTests(unittest.TestCase):
         for result in results:
             self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
-        packages = self.manifest("packages.txt")
-        if platform["ID"] == "alpine":
-            replacements = {
-                "build-essential": "build-base",
-                "clangd": None,
-                "cowsay": None,
-                "fd-find": "fd",
-                "fscrypt": None,
-                "fzy": None,
-                "git-delta": "delta",
-                "glow": None,
-                "ipp-usb": None,
-                "kitty": "kitty kitty-kitten",
-                "libpam-fscrypt": None,
-                "libssl-dev": None,
-                "libterm-readline-gnu-perl": "perl-term-readline-gnu",
-                "liburi-perl": "perl-uri",
-                "libusb-1.0-0-dev": None,
-                "lua-language-server": None,
-                "manpages": "man-pages",
-                "manpages-dev": None,
-                "ninja-build": "ninja-build ninja-is-really-ninja",
-                "nvim": "neovim",
-                "pkg-config": None,
-                "python3-pip": None,
-                "python3-pylsp": None,
-                "signal-desktop": None,
-                "skanpage": None,
-                "xdot": None,
-            }
-            self.assertIn(
-                [
-                    "apk",
-                    "add",
-                    "bash",
-                    "less",
-                    "libgcc",
-                    "py3-pip",
-                    "shadow",
-                    "zsh",
-                    *self.translated(packages, replacements),
-                    "cargo-audit",
-                    "difftastic",
-                ],
-                commands,
-            )
-        elif platform["ID"] == "fedora":
-            replacements = {
-                "build-essential": "@development-tools",
-                "libpam-fscrypt": None,
-                "libssl-dev": "openssl-devel",
-                "libterm-readline-gnu-perl": "perl-Term-ReadLine-Gnu",
-                "liburi-perl": "perl-URI",
-                "libusb-1.0-0-dev": None,
-                "lua-language-server": None,
-                "manpages": "man-pages",
-                "manpages-dev": None,
-                "openjdk21": "java-25-openjdk",
-                "python3-pylsp": "python3-lsp-server",
-            }
-            self.assertIn(
-                [
-                    "dnf",
-                    "install",
-                    "-y",
-                    *self.translated(packages, replacements),
-                    "1password",
-                ],
-                commands,
-            )
-            self.assertTrue(
-                any(
-                    "rpmfusion-free-release-42" in " ".join(command)
-                    for command in commands
-                )
-            )
-        elif platform["ID"] == "arch":
-            replacements = {
-                "build-essential": "base-devel",
-                "clangd": "clang",
-                "fd-find": "fd",
-                "libpam-fscrypt": None,
-                "libssl-dev": "openssl",
-                "libterm-readline-gnu-perl": "perl-term-readline-gnu",
-                "liburi-perl": "perl-uri",
-                "libusb-1.0-0-dev": "libusb",
-                "manpages": "man-pages",
-                "manpages-dev": None,
-                "ninja-build": "ninja",
-                "openjdk21": "jdk21-openjdk",
-                "python3-pip": "python-pip",
-                "python3-pylsp": "python-lsp-server",
-            }
-            self.assertIn(
-                [
-                    "pacman",
-                    "--sync",
-                    "--refresh",
-                    "--sysupgrade",
-                    "--needed",
-                    *self.translated(packages, replacements),
-                    "bacon",
-                ],
-                commands,
-            )
-        elif platform["ID"] in ("debian", "ubuntu"):
-            self.assertIn(["apt", "update"], commands)
-            self.assertIn(["apt", "install", "-y", *packages], commands)
-        elif platform["ID"] == "macos":
-            replacements = {
-                "build-essential": None,
-                "clangd": None,
-                "curl": None,
-                "fd-find": "fd",
-                "fscrypt": None,
-                "libpam-fscrypt": None,
-                "libssl-dev": None,
-                "libterm-readline-gnu-perl": None,
-                "liburi-perl": None,
-                "libusb-1.0-0-dev": None,
-                "manpages": None,
-                "manpages-dev": None,
-                "ninja-build": "ninja",
-                "openjdk21": "openjdk@21",
-                "python3-pip": None,
-                "python3-pylsp": "python-lsp-server",
-                "strace": None,
-                "traceroute": None,
-                "unzip": None,
-                "valgrind": None,
-                "xdg-utils": None,
-            }
-            self.assertIn(
-                [
-                    "brew",
-                    "install",
-                    "-q",
-                    *self.translated(packages, replacements),
-                ],
-                commands,
-            )
+        manager = {"macos": "brew", "debian": "apt", "ubuntu": "apt",
+                   "fedora": "dnf", "alpine": "apk"}.get(platform["ID"])
+        if platform["ID"] == "arch":
+            package_commands = [command for command in commands if command[:2] == ["pacman", "--sync"]]
+            self.assertEqual(2, len(package_commands))
+            self.assertIn("--sysupgrade", package_commands[0])
+            self.assertIn("--", package_commands[0])
         else:
-            self.fail(f"unsupported test platform: {platform['ID']}")
+            package_commands = [
+                command for command in commands
+                if command[:4] == ["mise", "bootstrap", "packages", "apply"]
+                and any(argument.startswith(f"{manager}:") for argument in command)
+            ]
+            self.assertEqual(2, len(package_commands))
+            self.assertTrue(all("--yes" in command for command in package_commands))
 
     def test_system_package_manifest_has_unique_ownership(self) -> None:
-        packages = self.manifest("packages.txt")
         setup = (ROOT / "setup.sh").read_text()
 
-        self.assertEqual(len(packages), len(set(packages)))
+        result = subprocess.run(
+            ["bb", "-cp", "tools/package-plan/src", "-m", "package-plan", "validate"],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn("opt/antidote", setup)
         self.assertIn("clone antidote ~/.config/zsh/antidote", setup)
         setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
-        self.assertIn('if [ -n "$IS_ARCH" ]; then\n\t\tqueue_install bacon', setup_sudo)
-        self.assertIn("queue_install cargo-audit", setup_sudo)
-        self.assertIn("queue_install difftastic", setup_sudo)
+        self.assertNotIn("queue_install", setup_sudo)
+        self.assertNotIn("install_features", setup_sudo)
         self.assertFalse((ROOT / "libexec/setup/fx-install.sh").exists())
 
 
@@ -470,19 +350,9 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
         self.assertIn(["mise", "install", "--yes"], commands)
-        if InstallationTests.platform()["ID"] not in ("alpine", "arch"):
-            self.assertIn(
-                [
-                    "mise",
-                    "bootstrap",
-                    "packages",
-                    "apply",
-                    "--manager",
-                    "brew",
-                    "--yes",
-                ],
-                commands,
-            )
+        self.assertFalse(
+            any(command[:3] == ["mise", "bootstrap", "packages"] for command in commands)
+        )
         self.assertFalse(any("binstall" in command for command in commands))
         fish_scripts = [command[2] for command in commands if command[0] == "fish"]
         self.assertTrue(
@@ -709,9 +579,9 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIn("run setup option 7 or 9 first", setup)
 
     def test_alpine_global_install_explicitly_installs_libgcc(self) -> None:
-        setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
+        policy = (ROOT / "install/packages.clj").read_text()
 
-        self.assertIn("apk add bash less libgcc py3-pip shadow zsh", setup_sudo)
+        self.assertIn(":alpine [:bash :less :libgcc :shadow", policy)
 
     def test_direct_local_and_all_setups_allow_interactive_oauth(self) -> None:
         setup = (ROOT / "setup.sh").read_text()
@@ -858,11 +728,13 @@ class MiseConfigTests(unittest.TestCase):
             cargo_config["registry"]["global-credential-providers"],
         )
 
-    def test_bacon_uses_mise_homebrew_fallback(self) -> None:
+    def test_bacon_uses_package_policy_homebrew_fallback(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
             config = tomllib.load(config_file)
+        policy = (ROOT / "install/packages.clj").read_text()
 
-        self.assertEqual({"brew:bacon": "latest"}, config["bootstrap"]["packages"])
+        self.assertNotIn("bootstrap", config)
+        self.assertIn(":bacon {:targets [:debian :ubuntu :fedora]", policy)
 
     def test_lockfile_covers_every_declared_tool(self) -> None:
         with (ROOT / "config/mise.toml").open("rb") as config_file:
@@ -876,11 +748,11 @@ class MiseConfigTests(unittest.TestCase):
             self.assertTrue(all("version" in resolution for resolution in resolutions), tool)
 
     def test_system_and_mise_package_manifests_do_not_overlap(self) -> None:
-        system_packages = {
-            line
-            for line in (ROOT / "install/packages.txt").read_text().splitlines()
-            if line and not line.lstrip().startswith("#")
-        }
+        matrix = subprocess.run(
+            ["bb", "-cp", "tools/package-plan/src", "-m", "package-plan", "matrix"],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        ).stdout
+        system_packages = {line.partition("\t")[0] for line in matrix.splitlines()}
         with (ROOT / "config/mise.toml").open("rb") as config_file:
             tools = tomllib.load(config_file)["tools"]
 
@@ -890,7 +762,11 @@ class MiseConfigTests(unittest.TestCase):
         aliases = {"fd-find": "fd", "git-delta": "delta"}
         system_commands = {aliases.get(package, package) for package in system_packages}
 
-        self.assertEqual(set(), system_commands & mise_packages)
+        alpine_only = {"cargo-audit", "difftastic"}
+        self.assertEqual(set(), system_commands & mise_packages - alpine_only)
+        setup = (ROOT / "setup.sh").read_text()
+        self.assertIn("aqua:Wilfred/difftastic", setup)
+        self.assertIn("github:rustsec/rustsec", setup)
 
     def test_dotbot_installs_mise_lock_beside_config(self) -> None:
         install = json.loads((ROOT / "install.conf.json").read_text())

@@ -1,0 +1,40 @@
+#!/usr/bin/env bb
+
+(require '[clojure.edn :as edn]
+         '[clojure.java.io :as io]
+         '[clojure.string :as str])
+
+(def root (-> *file* io/file .getParentFile .getParentFile .getCanonicalPath))
+(def manifest-path (str root "/install/bootstrap.edn"))
+(def generated-path (str root "/tools/package-plan/bootstrap.generated.sh"))
+(def manifest (edn/read-string (slurp manifest-path)))
+(def babashka (:babashka manifest))
+
+(defn render-entry [[target {:keys [url sha256]}]]
+  (str "\t\t" (name target) ")\n"
+       "\t\t\tBABASHKA_URL=" url "\n"
+       "\t\t\tBABASHKA_SHA256=" sha256 "\n"
+       "\t\t\t;;\n"))
+
+(def generated
+  (str "# Generated from install/bootstrap.edn by dev/update-package-bootstrap.\n"
+       "BABASHKA_VERSION=" (:version babashka) "\n\n"
+       "select_babashka_artifact() {\n\tcase \"$1\" in\n"
+       (apply str (map render-entry (:artifacts babashka)))
+       "\t\t*) return 1;;\n\tesac\n}\n"))
+
+(when-not (= generated (slurp generated-path))
+  (let [destination (java.nio.file.Path/of generated-path (make-array String 0))
+        temporary (java.nio.file.Files/createTempFile
+                   (.getParent destination) ".bootstrap.generated." ".tmp"
+                   (make-array java.nio.file.attribute.FileAttribute 0))]
+    (try
+      (spit (str temporary) generated)
+      (java.nio.file.Files/move
+       temporary destination
+       (into-array java.nio.file.CopyOption
+                   [java.nio.file.StandardCopyOption/ATOMIC_MOVE
+                    java.nio.file.StandardCopyOption/REPLACE_EXISTING]))
+      (println "updated tools/package-plan/bootstrap.generated.sh")
+      (finally
+        (java.nio.file.Files/deleteIfExists temporary)))))
