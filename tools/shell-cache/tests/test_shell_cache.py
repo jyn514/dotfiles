@@ -23,16 +23,6 @@ class ShellCacheTest(unittest.TestCase):
         self.dependency = self.directory / "brew"
         self.count = self.directory / "count"
         self.dependency.write_text("dependency")
-        fish = self.directory / "fish"
-        fish.write_text(
-            "#!/bin/sh\n"
-            "[ \"$1\" = -n ] || exit 90\n"
-            "while IFS= read -r line; do\n"
-            "    case $line in *INVALID*) exit 42;; esac\n"
-            "done < \"$2\"\n"
-            "exit 0\n"
-        )
-        fish.chmod(0o755)
         producer = self.directory / "producer"
         producer.write_text(
             f"#!{sys.executable}\n"
@@ -114,16 +104,12 @@ class ShellCacheTest(unittest.TestCase):
         self.assertFalse(self.cache.exists())
         self.assertEqual([], self.pending_files())
 
-    def test_invalid_generation_falls_back_only_to_valid_cache(self) -> None:
+    def test_generation_is_not_syntax_checked(self) -> None:
         self.make_stale_cache()
-        fallback = self.run_command({"PRODUCER_OUTPUT": "INVALID\n"})
-        self.assertEqual(75, fallback.returncode)
-        self.assertEqual("set -gx TEA old\n", self.cache.read_text())
+        result = self.run_command({"PRODUCER_OUTPUT": "INVALID\n"})
 
-        self.cache.unlink()
-        failed = self.run_command({"PRODUCER_OUTPUT": "INVALID\n"})
-        self.assertEqual(1, failed.returncode)
-        self.assertFalse(self.cache.exists())
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("INVALID\n", self.cache.read_text())
 
     def test_interrupted_generation_leaves_cache_and_cleans_staging(self) -> None:
         self.make_stale_cache()
@@ -149,9 +135,7 @@ class ShellCacheTest(unittest.TestCase):
             mock.patch.dict(os.environ, {"PRODUCER_COUNT": str(self.count)}),
             mock.patch.object(shell_cache.os, "replace", side_effect=OSError("rename failed")),
         ):
-            status = shell_cache.refresh(
-                self.cache, [self.dependency], [str(self.producer)], str(self.directory / "fish")
-            )
+            status = shell_cache.refresh(self.cache, [self.dependency], [str(self.producer)])
 
         self.assertEqual(75, status)
         self.assertEqual("set -gx TEA old\n", self.cache.read_text())

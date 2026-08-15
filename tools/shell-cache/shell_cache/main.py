@@ -5,7 +5,6 @@ from __future__ import annotations
 import fcntl
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,21 +41,6 @@ def exit_status(returncode: int) -> int:
     return returncode if returncode >= 0 else 128 - returncode
 
 
-def valid(path: Path, fish: str, *, quiet: bool) -> bool:
-    if not path.is_file():
-        return False
-    try:
-        result = subprocess.run(
-            [fish, "-n", str(path)],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL if quiet else None,
-        )
-    except OSError:
-        return False
-    return result.returncode == 0
-
-
 def fresh(destination: Path, dependencies: list[Path]) -> bool:
     try:
         cache_time = destination.stat().st_mtime_ns
@@ -65,9 +49,9 @@ def fresh(destination: Path, dependencies: list[Path]) -> bool:
         return False
 
 
-def fallback(old_valid: bool, message: str, status: int = 1) -> int:
-    if old_valid:
-        print(f"{message}; using previous valid cache", file=sys.stderr)
+def fallback(old_exists: bool, message: str, status: int = 1) -> int:
+    if old_exists:
+        print(f"{message}; using previous cache", file=sys.stderr)
         return STALE_CACHE
     print(message, file=sys.stderr)
     return status
@@ -83,22 +67,22 @@ def clean_abandoned(destination: Path) -> None:
                 pass
 
 
-def refresh(destination: Path, dependencies: list[Path], command: list[str], fish: str) -> int:
-    old_valid = valid(destination, fish, quiet=True)
+def refresh(destination: Path, dependencies: list[Path], command: list[str]) -> int:
+    old_exists = destination.is_file()
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         lock = open(destination.parent / f".{destination.name}.lock", "a+b")
     except OSError as error:
-        return fallback(old_valid, f"could not prepare cache directory: {error}")
+        return fallback(old_exists, f"could not prepare cache directory: {error}")
 
     with lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
         except OSError as error:
-            return fallback(old_valid, f"could not lock cache: {error}")
+            return fallback(old_exists, f"could not lock cache: {error}")
 
-        old_valid = valid(destination, fish, quiet=True)
-        if old_valid and fresh(destination, dependencies):
+        old_exists = destination.is_file()
+        if old_exists and fresh(destination, dependencies):
             return 0
         descriptor = -1
         pending: Path | None = None
@@ -115,9 +99,7 @@ def refresh(destination: Path, dependencies: list[Path], command: list[str], fis
                 os.fsync(output.fileno())
             if result.returncode:
                 status = exit_status(result.returncode)
-                return fallback(old_valid, f"cache producer failed with status {status}", status)
-            if not valid(pending, fish, quiet=False):
-                return fallback(old_valid, "cache producer generated invalid Fish syntax")
+                return fallback(old_exists, f"cache producer failed with status {status}", status)
             try:
                 os.replace(pending, destination)
                 pending = None
@@ -130,10 +112,10 @@ def refresh(destination: Path, dependencies: list[Path], command: list[str], fis
                 if pending is None:
                     print(f"cache replaced but directory sync failed: {error}", file=sys.stderr)
                     return 1
-                return fallback(old_valid, f"could not replace cache: {error}")
+                return fallback(old_exists, f"could not replace cache: {error}")
             return 0
         except OSError as error:
-            return fallback(old_valid, f"could not generate cache: {error}")
+            return fallback(old_exists, f"could not generate cache: {error}")
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
@@ -152,9 +134,5 @@ def main(arguments: list[str]) -> int:
             file=sys.stderr,
         )
         return 2
-    fish = shutil.which("fish")
-    if fish is None:
-        print("fish not found", file=sys.stderr)
-        return 127
     destination, dependencies, command = parsed
-    return refresh(destination, dependencies, command, fish)
+    return refresh(destination, dependencies, command)

@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
 import re
-import shlex
 import socket
 import subprocess
 import sys
@@ -28,21 +25,38 @@ COLORS = {
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
-@dataclass(frozen=True)
 class Repository:
-    color: str
-    label: str = ""
-    jj_description: str | None = None
+    __slots__ = ("color", "label", "jj_description")
+
+    def __init__(
+        self,
+        color: str,
+        label: str = "",
+        jj_description: str | None = None,
+    ) -> None:
+        self.color = color
+        self.label = label
+        self.jj_description = jj_description
 
 
-@dataclass(frozen=True)
 class Facts:
-    label: str
-    host: str
-    path: str
-    repository: Repository | None
-    ssh: bool
-    root: bool
+    __slots__ = ("label", "host", "path", "repository", "ssh", "root")
+
+    def __init__(
+        self,
+        label: str,
+        host: str,
+        path: str,
+        repository: Repository | None,
+        ssh: bool,
+        root: bool,
+    ) -> None:
+        self.label = label
+        self.host = host
+        self.path = path
+        self.repository = repository
+        self.ssh = ssh
+        self.root = root
 
 
 class Style:
@@ -109,6 +123,8 @@ def display_path(cwd: Path, home: Path | None, trim: int = 2) -> str:
 
 
 def os_release_id(path: Path = Path("/etc/os-release")) -> str:
+    import shlex
+
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -358,6 +374,8 @@ def integer(value: str, name: str) -> int:
 def main(arguments: list[str]) -> int:
     try:
         if arguments == ["claude"]:
+            import json
+
             data = json.load(sys.stdin)
             output = render_claude(data)
         elif arguments and arguments[0] in ("bash", "zsh", "fish-left", "fish-right"):
@@ -389,7 +407,7 @@ def main(arguments: list[str]) -> int:
                 "usage: prompt-command claude | prompt-command "
                 "<bash|zsh|fish-left|fish-right> <status> <duration-ms>"
             )
-    except (json.JSONDecodeError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         print(f"prompt-command: {error}", file=sys.stderr)
         return 1
     sys.stdout.write(output)
