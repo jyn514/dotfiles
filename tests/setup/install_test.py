@@ -266,13 +266,11 @@ class InstallationTests(unittest.TestCase):
         else:
             self.fail(f"unsupported test platform: {platform['ID']}")
 
-    def test_migrated_user_tools_are_not_system_packages(self) -> None:
+    def test_system_package_manifest_has_unique_ownership(self) -> None:
         packages = self.manifest("packages.txt")
         setup = (ROOT / "setup.sh").read_text()
 
         self.assertEqual(len(packages), len(set(packages)))
-        self.assertNotIn("antidote", packages)
-        self.assertNotIn("difftastic", packages)
         self.assertNotIn("opt/antidote", setup)
         self.assertIn("clone antidote ~/.config/zsh/antidote", setup)
         setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
@@ -760,13 +758,12 @@ class MiseConfigTests(unittest.TestCase):
             "antonmedv/fx",
             "Wilfred/difftastic",
             "Byron/dua-cli",
-            "jj-vcs/jj",
             "BurntSushi/ripgrep",
             "Myriad-Dreamin/tinymist",
             "mvdan/sh",
+            "pnpm/pnpm",
         }
         npm_tools = {
-            "pnpm",
             "perlnavigator-server",
             "bash-language-server",
             "typescript-language-server",
@@ -782,6 +779,15 @@ class MiseConfigTests(unittest.TestCase):
                 ["rust", "aqua:cargo-bins/cargo-binstall"],
                 tools[f"cargo:{cargo_tool}"]["depends"],
             )
+        self.assertEqual(
+            {
+                "version": "rev:a0e7ebe7b037e822c506fcf6308055f8eecfb48a",
+                "crate": "jj-cli",
+                "bin": "jj",
+                "depends": ["rust"],
+            },
+            tools["cargo:https://github.com/jj-vcs/jj"],
+        )
         self.assertEqual(aqua_tools, self.backend_packages(tools, "aqua"))
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
@@ -795,7 +801,7 @@ class MiseConfigTests(unittest.TestCase):
             {"version": "latest", "os": ["linux"], "filter_bins": "glide"},
             tools["github:glide-browser/glide"],
         )
-        self.assertEqual("npm", config["settings"]["npm"]["package_manager"])
+        self.assertEqual("pnpm", config["settings"]["npm"]["package_manager"])
         self.assertIs(True, config["settings"]["cargo"]["binstall"])
         self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
         self.assertIs(True, config["settings"]["lockfile"])
@@ -835,6 +841,23 @@ class MiseConfigTests(unittest.TestCase):
             self.assertTrue(resolutions, tool)
             self.assertTrue(all("version" in resolution for resolution in resolutions), tool)
 
+    def test_system_and_mise_package_manifests_do_not_overlap(self) -> None:
+        system_packages = {
+            line
+            for line in (ROOT / "install/packages.txt").read_text().splitlines()
+            if line and not line.lstrip().startswith("#")
+        }
+        with (ROOT / "config/mise.toml").open("rb") as config_file:
+            tools = tomllib.load(config_file)["tools"]
+
+        mise_packages = {
+            self.mise_package_name(tool, options) for tool, options in tools.items()
+        }
+        aliases = {"fd-find": "fd", "git-delta": "delta"}
+        system_commands = {aliases.get(package, package) for package in system_packages}
+
+        self.assertEqual(set(), system_commands & mise_packages)
+
     def test_dotbot_installs_mise_lock_beside_config(self) -> None:
         install = json.loads((ROOT / "install.conf.json").read_text())
         links = next(section["link"] for section in install if "link" in section)
@@ -845,7 +868,22 @@ class MiseConfigTests(unittest.TestCase):
     @staticmethod
     def backend_packages(tools: dict[str, object], backend: str) -> set[str]:
         prefix = f"{backend}:"
-        return {name.removeprefix(prefix) for name in tools if name.startswith(prefix)}
+        return {
+            name.removeprefix(prefix)
+            for name in tools
+            if name.startswith(prefix) and "://" not in name
+        }
+
+    @staticmethod
+    def mise_package_name(tool: str, options: object) -> str:
+        if isinstance(options, dict):
+            configured_bin = options.get("bin") or options.get("filter_bins")
+            if isinstance(configured_bin, str):
+                return configured_bin
+
+        package = tool.split(":", 1)[-1].rsplit("/", 1)[-1]
+        aliases = {"dua-cli": "dua", "ripgrep": "rg"}
+        return aliases.get(package, package)
 
     def test_fish_activates_mise_and_no_longer_uses_nvm(self) -> None:
         fish_config = (ROOT / "config/config.fish").read_text()
