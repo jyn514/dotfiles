@@ -310,7 +310,7 @@ class CodexSandboxTest(unittest.TestCase):
             run,
         )
         self.assertIn(
-            f"type=bind,src={ROOT / 'tools/codex-sandbox/image/pi-settings.json'},"
+            f"type=bind,src={ROOT / 'config/pi.json'},"
             "dst=/home/codex/.pi/agent/settings.json,readonly",
             run,
         )
