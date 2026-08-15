@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+sandbox=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+dockerfile="$sandbox/Dockerfile"
+cache_key=$(git hash-object "$dockerfile")
+image="dotfiles-sandbox-base:$cache_key"
+
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+	printf 'Building local sandbox base image %s ...\n' "$image" >&2
+	docker build --file "$dockerfile" --tag "$image" "$sandbox" >&2
+fi
+
+image_id=$(docker image inspect --format '{{.Id}}' "$image")
+printf 'sha256:%s\n' "${image_id#sha256:}"
