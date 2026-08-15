@@ -58,6 +58,7 @@ class AgentSandboxImageTest(unittest.TestCase):
         dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
         self.assertIn("./tools/agent-split /tools/agent-split", dockerfile)
+        self.assertIn("/usr/local/bin/bb", dockerfile)
         self.assertRegex(
             AGENT_SANDBOX_INSTALL_DEPS.read_text(encoding="utf-8"),
             r"(?m)^        gcompat \\$",

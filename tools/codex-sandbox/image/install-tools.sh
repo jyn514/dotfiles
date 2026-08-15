@@ -3,6 +3,7 @@
 set -eux
 
 JJ_VERSION=${JJ_VERSION:-0.42.0}
+BB_VERSION=${BB_VERSION:-1.13.219}
 GH_VERSION=${GH_VERSION:-2.76.1}
 PODMAN_VERSION=${PODMAN_VERSION:-6.0.1}
 TYPST_VERSION=${TYPST_VERSION:-0.15.1}
@@ -22,12 +23,16 @@ fi
 
 case "$(uname -m)" in
     x86_64)
+        bb_arch=amd64
+        bb_sha256=9ac1fe988d7001625b30ef3e3307e67f8545505a7cb49a4aa179f578115a3e09
         gh_arch=amd64
         jj_arch=x86_64
         podman_arch=amd64
         typst_arch=x86_64
         ;;
     aarch64|arm64)
+        bb_arch=aarch64
+        bb_sha256=e8d7a9c66c364b80627a43cb6ba5c14fb6ac7e4af114e8e5d80f97551ccdfe11
         gh_arch=arm64
         jj_arch=aarch64
         podman_arch=arm64
@@ -38,6 +43,16 @@ case "$(uname -m)" in
         exit 1
         ;;
 esac
+
+bb_archive="babashka-${BB_VERSION}-linux-${bb_arch}-static.tar.gz"
+bb_download_dir=$(mktemp -d)
+trap 'rm -rf "$bb_download_dir"' EXIT HUP INT TERM
+curl -fsSL -o "$bb_download_dir/$bb_archive" \
+    "https://github.com/babashka/babashka/releases/download/v${BB_VERSION}/$bb_archive"
+printf '%s  %s\n' "$bb_sha256" "$bb_download_dir/$bb_archive" | sha256sum -c -
+tar -xzf "$bb_download_dir/$bb_archive" -C /usr/local/bin bb
+rm -rf "$bb_download_dir"
+trap - EXIT HUP INT TERM
 
 curl -fsSL \
     "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
@@ -77,6 +92,7 @@ trap - EXIT HUP INT TERM
 
 ln -s /usr/local/bin/podman /usr/local/bin/docker
 docker --version
+bb --version
 gh --version
 jj --version
 podman --version
