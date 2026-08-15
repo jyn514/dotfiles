@@ -28,7 +28,7 @@ queue_install() {
 	elif [ "$IS_RPM" = 1 ]; then
 		case "$pkg" in
 			libusb-1.0-0-dev) return;; # not sure what this was for anyway
-			antidote|lua-language-server) return;;
+			lua-language-server) return;;
 			openjdk21) pkg=java-25-openjdk;;
 			liburi-perl) pkg=perl-URI ;;
 			manpages) pkg=man-pages ;;
@@ -53,7 +53,7 @@ queue_install() {
 		# TODO
 	elif [ -n "$IS_ARCH" ]; then
 		case "$pkg" in
-			antidote|manpages-dev|libpam-fscrypt) return;;
+			manpages-dev|libpam-fscrypt) return;;
 			build-essential) pkg=base-devel;;
 			# NOTE: -dev packages in Debian are just included by default in Arch packages
 			libusb-1.0-0-dev) pkg=libusb;;
@@ -80,12 +80,12 @@ queue_install() {
 			libterm-readline-gnu-perl) pkg=perl-term-readline-gnu ;;
 			manpages) pkg=man-pages ;;
 			build-essential) pkg=build-base;;
-			antidote|bpytop|clangd|cowsay|fscrypt|fzy|glow|ipp-usb|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|skanpage|xdot) return;; # ¯\_(ツ)_/¯
+			bpytop|clangd|cowsay|fscrypt|fzy|glow|ipp-usb|libpam-fscrypt|libssl-dev|libusb-1.0-0-dev|lua-language-server|signal-desktop|manpages-dev|nvim|pkg-config|python3-pip|python3-pylsp|skanpage|xdot) return;; # ¯\_(ツ)_/¯
 			*) ;;
 		esac
 	elif [ "$IS_CHIMERA" = 1 ]; then
 		case "$pkg" in
-			antidote|asciinema|bpytop|build-essential|cowsay|direnv|fscrypt|gdu|gh|git-absorb|libpam-fscrypt|libusb-1.0-0-dev|manpages|manpages-dev|nmap|lua-language-server|libterm-readline-gnu-perl|rclone|shellcheck|tcsh|shfmt) return;;
+			asciinema|bpytop|build-essential|cowsay|direnv|fscrypt|gdu|gh|git-absorb|libpam-fscrypt|libusb-1.0-0-dev|manpages|manpages-dev|nmap|lua-language-server|libterm-readline-gnu-perl|rclone|shellcheck|tcsh|shfmt) return;;
 			clangd) pkg=clang;;
 			liburi-perl) pkg=perl-uri;;
 			pkg-config) pkg=pkgconf;;
@@ -176,6 +176,9 @@ install_features () {
 	for pkg in $(grep -v '^\s*#' install/packages.txt | tr '\n' ' '); do
 		queue_install "$pkg"
 	done
+	if [ -n "$IS_ALPINE" ]; then
+		queue_install difftastic
+	fi
 
 	if is_wsl; then
 		queue_install keychain
