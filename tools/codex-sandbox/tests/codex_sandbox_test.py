@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -20,6 +21,8 @@ AGENT_SANDBOX_INSTALL_DEPS = TOOL / "image" / "install-deps.sh"
 AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
+PI_LAUNCHER = TOOL / "image" / "pi"
+PI_PACKAGE_LOCK = ROOT / "tools" / "pi-npm" / "package-lock.json"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -110,6 +113,26 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertIn("npm ci --ignore-scripts --prefix /opt/pi-npm", dockerfile)
         self.assertIn("./tools/pi-npm/package-lock.json", dockerfile)
         self.assertIn('ENTRYPOINT ["pi", "--offline", "--approve"]', dockerfile)
+
+    def test_pi_runtime_matches_base_libc(self) -> None:
+        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+        launcher = PI_LAUNCHER.read_text(encoding="utf-8")
+        package_lock = json.loads(PI_PACKAGE_LOCK.read_text(encoding="utf-8"))
+        pi_package = package_lock["packages"][
+            "node_modules/@earendil-works/pi-coding-agent"
+        ]
+
+        self.assertIn(f"ARG PI_VERSION={pi_package['version']}", dockerfile)
+        self.assertEqual(">=22.19.0", pi_package["engines"]["node"])
+        self.assertIn("sha256sum -c pi.sha256", dockerfile)
+        self.assertIn("COPY --link --from=pi-bun", dockerfile)
+        self.assertIn("COPY --link --from=pi-node", dockerfile)
+        self.assertIn("rm -rf /opt/agent-pi/standalone", dockerfile)
+        self.assertIn("rm -rf /opt/agent-pi/lib", dockerfile)
+        self.assertIn("if [ -e /etc/alpine-release ]; then", launcher)
+        self.assertIn("major === 22 && minor >= 19", launcher)
+        self.assertIn("exec node /opt/agent-pi/lib/node_modules/", launcher)
+        self.assertIn("exec /opt/agent-pi/standalone/pi", launcher)
 
     def test_sandbox_gitconfig_keeps_diff_semantics_without_identity_or_credentials(self) -> None:
         result = subprocess.run(
