@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from dataclasses import dataclass
@@ -269,13 +271,17 @@ def image_sources() -> list[Path]:
 
 
 def image_cache_key(state: State, base_image: str) -> str:
+    sources = image_sources()
+    digests = run(
+        ["git", "hash-object", *map(str, sources)], capture=True, cwd=DOTFILES,
+    ).stdout.splitlines()
+    if len(digests) != len(sources):
+        raise LauncherError("Git returned an invalid sandbox image source digest list")
     lines = [
         f"BASE_IMAGE={base_image}", f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
         f"TERM={state.term}",
+        *(f"{path.as_posix()} {digest}" for path, digest in zip(sources, digests, strict=True)),
     ]
-    for path in image_sources():
-        digest = run(["git", "hash-object", str(path)], capture=True, cwd=DOTFILES).stdout.strip()
-        lines.append(f"{path.as_posix()} {digest}")
     return run(
         ["git", "hash-object", "--stdin"], capture=True, cwd=DOTFILES,
         input_text="\n".join(lines) + "\n",
@@ -475,9 +481,8 @@ def attach_codex_sidecar(state: State) -> list[str]:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             result = run([
-                "docker", "run", "--rm", "--network", SANDBOX_NETWORK,
-                "--entrypoint", "/usr/bin/python3", state.image, "-c",
-                "import socket; socket.create_connection(('" + container + "',8787),1).close()",
+                "docker", "exec", container, "/usr/bin/python3", "-c",
+                "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
             ], check=False, quiet=True)
             if result.returncode == 0:
                 break
@@ -629,22 +634,36 @@ def run_agent(state: State, arguments: list[str]) -> int:
 
 
 def execute(state: State) -> int:
-    validate_repository(state)
+    started = time.monotonic()
+    timings: list[tuple[str, float]] = []
+
+    def phase(name: str, action: Callable[[], object]) -> object:
+        phase_started = time.monotonic()
+        try:
+            return action()
+        finally:
+            timings.append((name, time.monotonic() - phase_started))
+
+    phase("repository validation", lambda: validate_repository(state))
     builder = state.repository / ".agents/sandbox/base-image"
     if builder.is_file() and os.access(builder, os.X_OK):
         base_image = run([str(builder)], capture=True, cwd=state.repository).stdout.strip()
     else:
         base_image = "node:24-alpine3.22"
-    state.image = ensure_image(state, base_image)
-    ensure_network()
-    acquire_lock(state)
-    sidecar_arguments = attach_proxies(state)
-    arguments = [
-        state.image,
-        *state.codex_arguments,
-    ]
-    if state.agent_podman is not None:
-        arguments = [*start_relay(state), *arguments]
+    state.image = phase("image resolution", lambda: ensure_image(state, base_image))
+    phase("network setup", ensure_network)
+    phase("proxy lock", lambda: acquire_lock(state))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        proxy_future = executor.submit(
+            phase, "proxy startup", lambda: attach_proxies(state),
+        )
+        relay_future = (
+            executor.submit(phase, "Podman relay startup", lambda: start_relay(state))
+            if state.agent_podman is not None else None
+        )
+        sidecar_arguments = proxy_future.result()
+        relay_arguments = relay_future.result() if relay_future else []
+    arguments = [*relay_arguments, state.image, *state.codex_arguments]
     system = run(["uname", "-s"], capture=True).stdout.strip()
     if system == "Linux":
         print(
@@ -653,8 +672,15 @@ def execute(state: State) -> int:
             file=sys.stderr,
         )
         arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
-    stage_skills(state)
-    arguments = [*sidecar_arguments, *read_proxy_arguments(state), *arguments]
+    phase("skill staging", lambda: stage_skills(state))
+    arguments = [
+        *sidecar_arguments,
+        *phase("proxy arguments", lambda: read_proxy_arguments(state)),
+        *arguments,
+    ]
+    if os.environ.get("CODEX_SANDBOX_TIMING"):
+        detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
+        print(f"Sandbox startup: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
     return run_agent(state, arguments)
 
 

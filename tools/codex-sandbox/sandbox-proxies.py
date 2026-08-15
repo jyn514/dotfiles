@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
@@ -15,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -469,6 +471,71 @@ def zuliprc_mount_args(path: Path) -> list[str]:
     ]
 
 
+def start_one_proxy(
+    args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
+    state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
+) -> None:
+    volume = f"{args.prefix}-{name}"
+    container = f"{args.prefix}-{name}"
+    proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
+    with state_lock:
+        state["proxies"].append(proxy)
+        write_atomic(Path(args.state), json.dumps(state))
+    _docker("volume", "create", volume)
+    _docker(
+        "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
+        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+        args.helper_image, "-c",
+        "chmod 1777 /run/sandbox-proxy && : > /run/sandbox-proxy/.initialized",
+    )
+    docker_args = [
+        "run", "--detach", "--name", container, "--cap-drop=ALL",
+        "--label", "dev.codex.sandbox-proxy=true",
+        "--label", f"dev.codex.repository={identity}",
+        "--label", f"dev.codex.command={name}",
+        "--security-opt=no-new-privileges", "--read-only",
+        "--user", f"{os.getuid()}:{os.getgid()}",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
+        "--network", args.network if command["network"] else "none",
+        "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
+        "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
+        "--entrypoint", command["argv"][0],
+        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+    ]
+    if name == "jj":
+        git_dir, common_dir = git_metadata_paths(repo)
+        jj_repo = jj_repository_path(repo)
+        docker_args += [
+            "--env", f"JJ_PROXY_REPO={CONTAINER_REPO}",
+            "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir)}",
+            "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir)}",
+            "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo)}",
+        ]
+    if name == "zulip":
+        if not args.zuliprc:
+            raise ConfigError("trusted Zulip proxy requires a credential path")
+        docker_args += zuliprc_mount_args(Path(args.zuliprc))
+    checked_repository_path(repo, command["workdir"], f"command {name} workdir")
+    docker_args += proxy_repository_mount_args(repo, name, command)
+    docker_args += [images[name], *command["argv"][1:]]
+    _docker(*docker_args)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        check = subprocess.run(
+            ["docker", "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        if check.returncode == 0:
+            return
+        status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
+        if status != "true":
+            logs = proxy_logs(container)
+            detail = f":\n{logs}" if logs else ""
+            raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
+        time.sleep(0.1)
+    raise ConfigError(f"proxy {name} did not become ready")
+
+
 def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
@@ -476,69 +543,17 @@ def start_main(args: argparse.Namespace) -> int:
     state: dict[str, Any] = {"proxies": []}
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
+    state_lock = threading.Lock()
     try:
-        for name, command in manifest["commands"].items():
-            volume = f"{args.prefix}-{name}"
-            container = f"{args.prefix}-{name}"
-            proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
-            state["proxies"].append(proxy)
-            write_atomic(Path(args.state), json.dumps(state))
-            _docker("volume", "create", volume)
-            _docker(
-                "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
-                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-                args.helper_image, "-c",
-                "chmod 1777 /run/sandbox-proxy && : > /run/sandbox-proxy/.initialized",
-            )
-            docker_args = [
-                "run", "--detach", "--name", container, "--cap-drop=ALL",
-                "--label", "dev.codex.sandbox-proxy=true",
-                "--label", f"dev.codex.repository={identity}",
-                "--label", f"dev.codex.command={name}",
-                "--security-opt=no-new-privileges", "--read-only",
-                "--user", f"{os.getuid()}:{os.getgid()}",
-                "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-                "--network", args.network if command["network"] else "none",
-                "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
-                "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
-                "--entrypoint", command["argv"][0],
-                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-            ]
-            if name == "jj":
-                git_dir, common_dir = git_metadata_paths(repo)
-                jj_repo = jj_repository_path(repo)
-                docker_args += [
-                    "--env", f"JJ_PROXY_REPO={CONTAINER_REPO}",
-                    "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir)}",
-                    "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir)}",
-                    "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo)}",
-                ]
-            if name == "zulip":
-                if not args.zuliprc:
-                    raise ConfigError("trusted Zulip proxy requires a credential path")
-                docker_args += zuliprc_mount_args(Path(args.zuliprc))
-            checked_repository_path(repo, command["workdir"], f"command {name} workdir")
-            docker_args += proxy_repository_mount_args(repo, name, command)
-            docker_args += [images[name], *command["argv"][1:]]
-            _docker(*docker_args)
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline:
-                check = subprocess.run(
-                    ["docker", "run", "--rm", "--entrypoint", "/usr/bin/test",
-                     "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy,readonly",
-                     args.helper_image, "-S", "/run/sandbox-proxy/socket"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        with ThreadPoolExecutor(max_workers=max(1, len(manifest["commands"]))) as executor:
+            futures = [
+                executor.submit(
+                    start_one_proxy, args, repo, identity, images, state, state_lock, name, command,
                 )
-                if check.returncode == 0:
-                    break
-                status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
-                if status != "true":
-                    logs = proxy_logs(container)
-                    detail = f":\n{logs}" if logs else ""
-                    raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
-                time.sleep(0.1)
-            else:
-                raise ConfigError(f"proxy {name} did not become ready")
+                for name, command in manifest["commands"].items()
+            ]
+            for future in futures:
+                future.result()
         return 0
     except Exception:
         stop_state(state)
