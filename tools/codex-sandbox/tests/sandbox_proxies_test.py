@@ -444,43 +444,56 @@ class ManifestTest(unittest.TestCase):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
 
-    def test_proxy_monitor_removes_agent_when_proxy_stops(self) -> None:
-        state = self.repo / "state"
-        state.write_text(json.dumps({"proxies": [{
-            "name": "example", "container": "proxy", "volume": "volume", "image": "sha256:" + "0" * 64,
-        }]}), encoding="utf-8")
+    def test_proxy_monitor_removes_agent_when_shared_service_stops(self) -> None:
+        cases = (
+            ({"proxies": [{
+                "name": "example", "container": "proxy", "volume": "volume",
+                "image": "sha256:" + "0" * 64,
+            }]}, "proxy"),
+            ({"proxies": [], "auth": {"container": "auth-proxy", "key": "secret"}}, "auth-proxy"),
+        )
         running = subprocess.CompletedProcess([], 0, stdout="true\n")
+        for contents, stopped in cases:
+            with self.subTest(stopped=stopped):
+                state = self.repo / "state"
+                state.write_text(json.dumps(contents), encoding="utf-8")
 
-        class WaitProcess:
-            def __init__(self, arguments: list[str], **_: object) -> None:
-                read_fd, self.write_fd = os.pipe()
-                self.stdout = os.fdopen(read_fd, "r", encoding="utf-8")
-                if arguments[-1] == "proxy":
-                    os.close(self.write_fd)
-                    self.write_fd = -1
+                class WaitProcess:
+                    def __init__(self, arguments: list[str], **_: object) -> None:
+                        read_fd, self.write_fd = os.pipe()
+                        self.stdout = os.fdopen(read_fd, "r", encoding="utf-8")
+                        if arguments[-1] == stopped:
+                            os.close(self.write_fd)
+                            self.write_fd = -1
 
-            def terminate(self) -> None:
-                if self.write_fd != -1:
-                    os.close(self.write_fd)
-                    self.write_fd = -1
+                    def terminate(self) -> None:
+                        if self.write_fd != -1:
+                            os.close(self.write_fd)
+                            self.write_fd = -1
 
-            def wait(self) -> int:
-                return 0
+                    def wait(self) -> int:
+                        return 0
 
-        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=running) as run, \
-                mock.patch.object(sandbox_proxies.subprocess, "Popen", WaitProcess):
-            args = type("Args", (), {"state": str(state), "agent": "agent"})
-            self.assertEqual(1, sandbox_proxies.monitor_main(args))
-        self.assertEqual(["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0])
+                with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=running) as run, \
+                        mock.patch.object(sandbox_proxies.subprocess, "Popen", WaitProcess):
+                    args = type("Args", (), {"state": str(state), "agent": "agent"})
+                    self.assertEqual(1, sandbox_proxies.monitor_main(args))
+                self.assertEqual(
+                    ["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0],
+                )
 
     def test_proxy_stop_kills_before_removing_container(self) -> None:
-        state = {"proxies": [{
-            "name": "example", "container": "proxy", "volume": "volume",
-            "image": "sha256:" + "0" * 64,
-        }]}
+        state = {
+            "auth": {"container": "auth-proxy", "key": "secret"},
+            "proxies": [{
+                "name": "example", "container": "proxy", "volume": "volume",
+                "image": "sha256:" + "0" * 64,
+            }],
+        }
         with mock.patch.object(sandbox_proxies.subprocess, "run") as run:
             sandbox_proxies.stop_state(state)
         self.assertEqual([
+            ["docker", "rm", "--force", "auth-proxy"],
             ["docker", "kill", "proxy"],
             ["docker", "rm", "proxy"],
             ["docker", "volume", "rm", "volume"],

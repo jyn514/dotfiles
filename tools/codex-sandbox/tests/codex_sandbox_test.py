@@ -238,13 +238,17 @@ class CodexSandboxTest(unittest.TestCase):
                     ;;
                 attach)
                     state=$(value_for --state "$@")
-                    printf '%s\n' '{"proxies":[]}' > "$state"
+                    if [ -n "$FAKE_PROXY_STATE" ]; then
+                        printf '%s\n' "$FAKE_PROXY_STATE" > "$state"
+                    else
+                        printf '%s\n' '{"proxies":[]}' > "$state"
+                    fi
                     ;;
                 agent-args)
                     output=$(value_for --output "$@")
                     printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
                     ;;
-                monitor) ;;
+                publish|monitor) ;;
                 *) exit 91 ;;
             esac
         """)
@@ -367,6 +371,30 @@ class CodexSandboxTest(unittest.TestCase):
             "dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
             agent,
         )
+
+    def test_reuses_auth_sidecar_from_persistent_proxy_session(self) -> None:
+        auth = self.home / ".codex-sandbox-auth"
+        auth.mkdir(mode=0o700)
+        (auth / "auth.json").write_text(
+            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
+        )
+        (auth / "auth.json").chmod(0o600)
+
+        result = self.run_launcher(
+            FAKE_PROXY_STATE=(
+                '{"proxies":[],"auth":{"container":"shared-auth-proxy",'
+                '"key":"shared-key"}}'
+            ),
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = read_calls(self.docker_log)
+        self.assertFalse(any(
+            call[:2] == ["run", "--detach"] and "shared-auth-proxy" in call
+            for call in calls
+        ))
+        agent = self.final_run()
+        self.assertIn("CODEX_SIDECAR_URL=http://shared-auth-proxy:8787", agent)
+        self.assertIn("CODEX_SIDECAR_KEY=shared-key", agent)
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")

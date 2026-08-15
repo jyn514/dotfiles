@@ -546,6 +546,12 @@ def start_main(args: argparse.Namespace) -> int:
 
 
 def stop_state(state: dict[str, Any]) -> None:
+    auth = state.get("auth")
+    if isinstance(auth, dict) and isinstance(auth.get("container"), str):
+        subprocess.run(
+            ["docker", "rm", "--force", auth["container"]],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     for proxy in reversed(state.get("proxies", [])):
         subprocess.run(["docker", "kill", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(["docker", "rm", proxy["container"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -726,7 +732,11 @@ def monitor_main(args: argparse.Namespace) -> int:
         time.sleep(0.05)
     else:
         raise ConfigError("agent container did not start while proxy monitor was waiting")
-    containers = [("agent", args.agent)] + [
+    containers = [("agent", args.agent)]
+    auth = state.get("auth")
+    if isinstance(auth, dict) and isinstance(auth.get("container"), str):
+        containers.append(("auth", auth["container"]))
+    containers += [
         (proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])
     ]
     waits: list[tuple[str, subprocess.Popen[str]]] = []
