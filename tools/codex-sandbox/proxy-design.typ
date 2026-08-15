@@ -21,6 +21,7 @@ The first additional capability is `bug`, which runs Flower's git-bug bridge wit
 The design also supports future fixed commands that need authority unavailable inside the agent container.
 
 This design does not make arbitrary repository commands safe, grant the agent Docker access, or infer trust from a read-only mount.
+It also keeps reusable model-provider credentials outside the agent while granting the agent authority to make model requests through a launcher-owned sidecar.
 Jujutsu retains `jj-proxy`'s command-specific argument policy while using the generic manifest lifecycle.
 
 == Trust model
@@ -36,6 +37,10 @@ The agent must not be able to:
 - redirect a proxy to another repository
 - control the outer container daemon
 - increase its proxy capabilities during a sandbox session
+- read, replace, or export a reusable model-provider access or refresh token
+
+The agent is authorized to submit arbitrary supported model requests and therefore to disclose request content, consume quota, and incur charges within configured limits.
+This authority is intentional and distinct from possession of the reusable upstream credential.
 
 Proxy manifests under `.agents/sandbox/` are trusted repository configuration.
 The launcher accepts their command, image-builder, mount, and environment declarations without a built-in capability allowlist, so the repository and its manifest authors must be trusted before startup.
@@ -96,6 +101,7 @@ outer Docker or Podman daemon
 
 The proxy containers receive no outer daemon socket.
 The agent may receive a separate, isolated inner container service, but that service cannot replace the outer launcher's mounts or proxy containers.
+The model-provider sidecar described below is a launcher-owned sibling container rather than a manifest command because it carries user authority independent of the repository.
 
 Each proxy image is read-only, non-root, capability-free, and uses `no-new-privileges`.
 The launcher supplies explicit container-level PID, memory, CPU, filesystem, and file-descriptor limits.
@@ -283,6 +289,30 @@ For an interpreted repository tool, the immutable image carries the trusted star
 The launcher starts a proxy with its manifest `argv` as the fixed operation.
 It does not expose a general-purpose shell, `docker exec`, alternate entrypoint, or arbitrary command API to the agent.
 
+== Model-provider credential sidecar <model-provider-sidecar>
+
+The launcher starts a trusted sibling container and redirects Pi's existing provider `baseUrl` to it over the sandbox network.
+Only the sidecar mounts a launcher-managed Codex authentication directory, without any ordinary home or configuration directory.
+The trusted `codex-sandbox auth login` command creates that OAuth login rather than copying the human's normal Codex refresh token, so the two clients cannot race token rotation.
+The agent receives no provider access or refresh token through its image, mounts, environment, configuration, responses, or logs.
+The sidecar writes refresh updates transactionally within that directory.
+
+The sidecar is a small streaming reverse proxy.
+It accepts only the required provider request path and method, strips client authorization and forwarding headers, sends the request to one fixed HTTPS origin, injects upstream authorization, and streams the response back.
+It rejects other paths, methods, origins, and oversized requests; it neither interprets prompts nor translates the provider protocol.
+
+Each sidecar receives a random session key that Pi sends as its placeholder API key.
+The key is readable by the agent and intentionally grants only the model-request authority Pi already has; it is not an upstream credential and stops working when the sidecar exits.
+This prevents unrelated containers on the shared sandbox network from using the sidecar.
+
+The sidecar follows the existing proxy-container lifecycle and hardening: immutable launcher-owned image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the agent session.
+The Codex authentication directory is its only writable host mount.
+Pi continues to use `openai-codex-responses` with only `baseUrl` and the placeholder API key changed.
+Startup, authentication, or refresh failure fails closed and never falls back to mounting the credential in the agent.
+
+Passwordless sudo inside the agent does not weaken this boundary: container root has no outer-daemon access and cannot inspect the sibling's filesystem, processes, or mounts.
+It can call the sidecar directly, but that grants only the model-request authority Pi already has.
+
 == Git-bug proxy <git-bug-proxy>
 
 The `bug` proxy runs the existing `bb bug` bridge outside the agent container.
@@ -316,7 +346,8 @@ An invocation that already uses `--body-stdin` forwards bounded standard input u
 A direct socket request that still contains `--body-file` is invalid, so bypassing the shim cannot recover the privileged path-reading behavior.
 
 The protocol rejects `bb bug push` and `bb bug raw` before execution.
-Publishing refs remains a maintainer command outside the sandbox; the proxy receives neither network access nor push credentials, and the agent receives no write-capable Git credentials, writable SSH agent, or provider token that could bypass the proxy through Git or a hosting API.
+Publishing refs remains a maintainer command outside the sandbox; the proxy receives neither network access nor push credentials, and the agent receives no write-capable Git credentials, writable SSH agent, or reusable provider token that could bypass the proxy through Git or a hosting API.
+The model-provider sidecar accepts only model API requests and cannot reach source-hosting APIs, so its bounded request authority does not grant publication authority.
 Deployments that permit broader network credentials must enforce the same restriction at their credential or egress boundary.
 
 During a sandbox session, #link(<host-coordination>)[host coordination] sends agent and human requests to the same long-lived `bug` proxy instead of running the local bridge.
@@ -352,9 +383,10 @@ The launcher performs these steps:
 + Create session-specific socket volumes and container names
 + Start each configured proxy with its declared mounts and limits
 + Wait for each conventional server socket to become ready
++ Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
 + Atomically publish session metadata for the ready proxies
-+ Start the agent with metadata, sandbox configuration, and socket volumes overlaid read-only
-+ Stop proxies, remove session resources, and release the host lock when the agent exits or startup fails
++ Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
++ Stop the session's sidecar and proxies, remove session resources, and release the host lock when the agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
 Names include the host UID and launcher PID to prevent collisions.
@@ -371,6 +403,13 @@ One long-lived `bug` proxy can avoid cross-container lock ambiguity and amortize
 - `--body-file` contents cross the proxy as bounded standard input, and the proxy never opens the supplied path
 - `bb bug push` and `bb bug raw` are rejected by the proxy, and push remains a maintainer-only command
 - The agent cannot publish refs through direct Git, SSH-agent, credential, or provider-API access
+- The agent and agent root cannot read the Codex access token, refresh token, OAuth exchange, or authentication directory through files, environment, process inspection, logs, network responses, or the outer daemon
+- Pi can stream supported model requests through the sidecar without a real credential in agent `auth.json`, and direct supported requests have no more authority than Pi's own requests
+- Unknown methods, paths, origins, oversized bodies, and client authorization headers fail closed
+- Sidecar login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
+- Sidecar unavailability and authentication failure never fall back to direct authenticated provider access or mounting the credential in the agent
+- A session key fails after its sidecar exits and cannot authenticate directly to the upstream provider
+- Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
 - Modified working-tree copies of `bb.edn`, bridge source, git-bug, or proxy scripts do not affect trusted execution
 - An invalid or ambiguous image-command result fails before a proxy starts
