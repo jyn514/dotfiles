@@ -12,7 +12,7 @@ merge-editor = ":builtin"
 behavior = "drop"
 
 [merge-tools.agent-split]
-program = "/trusted/bin/agent-split-editor"
-edit-args = ["$left", "$right"]
+program = "/trusted/bin/sh"
+edit-args = ["/trusted/bin/agent-split-editor", "$left", "$right"]
 
 [aliases]
