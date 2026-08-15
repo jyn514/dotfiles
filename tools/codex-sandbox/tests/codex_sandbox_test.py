@@ -413,6 +413,11 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertIn("--read-only", sidecar)
         self.assertEqual("sha256:" + "0" * 64, sidecar[-1])
+        sidecar_name = sidecar[sidecar.index("--name") + 1]
+        readiness = [call for call in calls if call[:3] == [
+            "exec", sidecar_name, "/usr/local/bin/python3",
+        ]]
+        self.assertEqual(1, len(readiness))
         agent = self.final_run()
         self.assertFalse(any(str(auth) in item for item in agent))
         self.assertTrue(any(item.startswith("CODEX_SIDECAR_URL=http://codex-auth-proxy-") for item in agent))

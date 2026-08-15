@@ -500,7 +500,7 @@ def start_codex_sidecar(state: State, auth_directory: Path) -> tuple[dict[str, s
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             result = run([
-                "docker", "exec", container, "/usr/bin/python3", "-c",
+                "docker", "exec", container, "/usr/local/bin/python3", "-c",
                 "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
             ], check=False, quiet=True)
             if result.returncode == 0:
