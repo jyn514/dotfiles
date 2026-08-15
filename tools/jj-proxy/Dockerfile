@@ -10,11 +10,15 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /build/recipe.json recipe.json
-RUN cargo chef cook --release --all-targets --locked --recipe-path recipe.json
+RUN --mount=type=cache,target=/build/target \
+    cargo chef cook --release --all-targets --locked --recipe-path recipe.json
 COPY tools/jj-proxy/Cargo.toml ./
 COPY tools/jj-proxy/Cargo.lock ./
 COPY tools/jj-proxy/src ./src
-RUN cargo test --release --locked && cargo build --release --locked
+RUN --mount=type=cache,target=/build/target \
+    cargo test --release --locked \
+    && cargo build --release --locked \
+    && cp target/release/jj-proxy /jj-proxy
 
 FROM chef AS jj
 ARG JJ_REVISION=a0e7ebe7b037e822c506fcf6308055f8eecfb48a
@@ -23,7 +27,9 @@ RUN git init /jj \
     && git -C /jj fetch --depth=1 https://github.com/jj-vcs/jj.git "${JJ_REVISION}" \
     && git -C /jj checkout --detach FETCH_HEAD
 WORKDIR /jj
-RUN cargo build --release --locked --bin jj
+RUN --mount=type=cache,target=/jj/target \
+    cargo build --release --locked --bin jj \
+    && cp target/release/jj /jj-bin
 RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
 FROM alpine:3.22 AS editor
@@ -41,9 +47,9 @@ ENV RUST_BACKTRACE=1
 COPY --from=editor /trusted/bin /trusted/bin
 COPY --from=editor /lib /lib
 COPY --from=editor /usr/lib /usr/lib
-COPY --from=build /build/target/release/jj-proxy /trusted/bin/jj-proxy
-COPY --from=build /build/target/release/jj-proxy /trusted/bin/sandbox-proxy-forward
-COPY --from=jj /jj/target/release/jj /trusted/bin/jj
+COPY --from=build /jj-proxy /trusted/bin/jj-proxy
+COPY --from=build /jj-proxy /trusted/bin/sandbox-proxy-forward
+COPY --from=jj /jj-bin /trusted/bin/jj
 COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=jj /image-root/ /
 COPY config/gitignore /trusted/gitignore
