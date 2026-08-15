@@ -387,21 +387,22 @@ def attach_main(args: argparse.Namespace) -> int:
         raise ConfigError("shared proxy session metadata is missing or invalid")
     metadata_path.unlink(missing_ok=True)
     start_main(args)
-    publish_main(args)
     return 0
 
 
 def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
-    images = {}
-    for name, command in manifest["commands"].items():
+    def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
         result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
         if BARE_IMAGE_RE.fullmatch(output):
             output = "sha256:" + output
         if result.returncode or not IMAGE_RE.fullmatch(output) or result.stdout.count("\n") > 1:
             raise ConfigError(f"image-command for {name} did not print exactly one immutable image hash")
-        images[name] = output
-    return images
+        return name, output
+
+    commands = manifest["commands"]
+    with ThreadPoolExecutor(max_workers=max(1, len(commands))) as executor:
+        return dict(executor.map(lambda item: resolve(*item), commands.items()))
 
 
 def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -481,12 +482,8 @@ def start_one_proxy(
     with state_lock:
         state["proxies"].append(proxy)
         write_atomic(Path(args.state), json.dumps(state))
-    _docker("volume", "create", volume)
     _docker(
-        "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
-        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-        args.helper_image, "-c",
-        "chmod 1777 /run/sandbox-proxy && : > /run/sandbox-proxy/.initialized",
+        "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
     )
     docker_args = [
         "run", "--detach", "--name", container, "--cap-drop=ALL",

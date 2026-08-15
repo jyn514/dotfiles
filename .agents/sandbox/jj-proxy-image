@@ -4,15 +4,15 @@ set -eu
 DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
 cd "$DOTFILES"
 
-cache_key=$(
-	{
-		find tools/jj-proxy -type f -print
-		printf '%s\n' config/gitignore
-	} | LC_ALL=C sort |
-		while IFS= read -r path; do
-			printf '%s %s\n' "$path" "$(git hash-object "$path")"
-		done | git hash-object --stdin
-)
+sources=$(mktemp)
+hashes=$(mktemp)
+trap 'rm -f "$sources" "$hashes"' EXIT HUP INT TERM
+{
+	find tools/jj-proxy -type f -print
+	printf '%s\n' config/gitignore
+} | LC_ALL=C sort > "$sources"
+git hash-object --stdin-paths < "$sources" > "$hashes"
+cache_key=$(/usr/bin/paste -d ' ' "$sources" "$hashes" | git hash-object --stdin)
 image="jj-proxy:$cache_key"
 if ! docker image inspect "$image" >/dev/null 2>&1; then
 	printf 'Building Jujutsu proxy image %s ...\n' "$image" >&2
