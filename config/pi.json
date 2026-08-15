@@ -6,9 +6,9 @@
   "defaultProjectTrust": "ask",
   "enableInstallTelemetry": false,
   "theme": "light/dark",
-  "terminal": {
-    "showTerminalProgress": true
-  },
+  "extensions": [
+    "./pi-notify.ts"
+  ],
   "compaction": {
     "enabled": true
   },
