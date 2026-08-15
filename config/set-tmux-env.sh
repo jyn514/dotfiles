@@ -1,19 +1,8 @@
 #!/bin/sh
 set -eu
 
-# A clean Bash login environment remains the source of truth. Once the startup
-# files have run, hand the inherited environment to the Python tmux receiver.
+# A clean Bash login environment remains the source of truth.
 tmux_command=$(command -v tmux) || exit
-python_command=$(command -v python3) || exit
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit
-receiver=$script_dir/set-environment
-if ! [ -x "$receiver" ]; then
-	receiver=$script_dir/../tools/tmux-admin/set-environment
-fi
-if ! [ -x "$receiver" ]; then
-	echo "tmux environment receiver is not installed" >&2
-	exit 127
-fi
 
 set -- env -i HOME="$HOME" TERM="$TERM" PS1='; '
 if [ "${TMUX+x}" ]; then
@@ -26,5 +15,18 @@ fi
 # shellcheck disable=SC2016  # The inner Bash expands these variables.
 exec "$@" bash --noprofile --norc -c '
 	. /etc/profile && . ~/.profile || exit
-	exec "$1" "$2" "$3"
-' set-tmux-env "$python_command" "$receiver" "$tmux_command"
+	set -u
+	tmux=$1
+	set_one() {
+		if [ "$2" ]; then
+			"$tmux" set-environment "$1" "$3"
+		else
+			"$tmux" set-environment -u "$1"
+		fi
+	}
+	set_one EDITOR "${EDITOR+x}" "${EDITOR-}" || exit
+	set_one VISUAL "${VISUAL+x}" "${VISUAL-}" || exit
+	set_one PATH "${PATH+x}" "${PATH-}" || exit
+	set_one CARGO_HOME "${CARGO_HOME+x}" "${CARGO_HOME-}" || exit
+	set_one RUSTUP_HOME "${RUSTUP_HOME+x}" "${RUSTUP_HOME-}"
+' set-tmux-env "$tmux_command"

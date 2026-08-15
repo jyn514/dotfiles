@@ -479,7 +479,7 @@ class CommandTest(unittest.TestCase):
             calls.read_text().splitlines(),
         )
 
-    def test_set_tmux_env_stops_after_receiver_failure(self) -> None:
+    def test_set_tmux_env_stops_after_tmux_failure(self) -> None:
         calls = self.directory / "tmux-calls"
         (self.directory / ".profile").write_text(
             "EDITOR=editor VISUAL=visual PATH=/profile/path\n"
