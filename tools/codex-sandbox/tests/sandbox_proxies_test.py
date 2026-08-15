@@ -482,7 +482,7 @@ class ManifestTest(unittest.TestCase):
                     ["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0],
                 )
 
-    def test_proxy_stop_kills_before_removing_container(self) -> None:
+    def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {
             "auth": {"container": "auth-proxy", "key": "secret"},
             "proxies": [{
@@ -492,12 +492,16 @@ class ManifestTest(unittest.TestCase):
         }
         with mock.patch.object(sandbox_proxies.subprocess, "run") as run:
             sandbox_proxies.stop_state(state)
-        self.assertEqual([
-            ["docker", "rm", "--force", "auth-proxy"],
+        calls = [call.args[0] for call in run.call_args_list]
+        self.assertCountEqual([
+            ["docker", "kill", "auth-proxy"],
             ["docker", "kill", "proxy"],
+        ], calls[:2])
+        self.assertCountEqual([
+            ["docker", "rm", "auth-proxy"],
             ["docker", "rm", "proxy"],
-            ["docker", "volume", "rm", "volume"],
-        ], [call.args[0] for call in run.call_args_list])
+        ], calls[2:4])
+        self.assertEqual([["docker", "volume", "rm", "volume"]], calls[4:])
 
     def test_image_resolution_normalizes_bare_sha256_hash(self) -> None:
         digest = "0" * 64
