@@ -8,6 +8,7 @@
   "theme": "light/dark",
   "extensions": [
     "./pi-notify.ts",
+    "./pi-instruction-includes.ts",
     "./pi-web-search.ts"
   ],
   "compaction": {
