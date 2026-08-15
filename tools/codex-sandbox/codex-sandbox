@@ -359,13 +359,32 @@ def attach_proxies(state: State) -> list[str]:
         ]
         if state.zuliprc is not None:
             arguments += ["--zuliprc", str(state.zuliprc)]
-        helper(*arguments)
-        sidecar_arguments = attach_codex_sidecar(state)
-        helper(
-            "publish", "--repo", str(state.repository), "--state", str(state.proxy_state),
-            "--manifest", str(state.manifest),
-        )
-        return sidecar_arguments
+        auth_directory = _secure_codex_auth_directory(state)
+        new_session = state.lock_ready.read_text(encoding="utf-8").strip() == "new"
+        if new_session and auth_directory is not None:
+            auth_result = None
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                attach_future = executor.submit(helper, *arguments)
+                auth_future = executor.submit(start_codex_sidecar, state, auth_directory)
+                try:
+                    attach_future.result()
+                    auth_result = auth_future.result()
+                except Exception:
+                    try:
+                        auth_result = auth_future.result()
+                    except Exception:
+                        pass
+                    if auth_result is not None:
+                        stop_codex_sidecar(auth_result[0]["container"])
+                    raise
+            proxy_state = json.loads(state.proxy_state.read_text(encoding="utf-8"))
+            proxy_state["auth"] = auth_result[0]
+            state.proxy_state.write_text(json.dumps(proxy_state, sort_keys=True), encoding="utf-8")
+            sidecar_arguments = auth_result[1]
+        else:
+            helper(*arguments)
+            sidecar_arguments = attach_codex_sidecar(state, auth_directory)
+        return [*sidecar_arguments, *finalize_proxy_session(state)]
     finally:
         state.lock_coordinated.touch()
 
@@ -439,8 +458,56 @@ def _sidecar_session_key() -> str:
     return f"{header}.{payload}.{encoded(secrets.token_bytes(24))}"
 
 
-def attach_codex_sidecar(state: State) -> list[str]:
-    auth_directory = _secure_codex_auth_directory(state)
+def codex_sidecar_arguments(container: str, key: str) -> list[str]:
+    return [
+        "--env", f"CODEX_SIDECAR_URL=http://{container}:8787",
+        "--env", f"CODEX_SIDECAR_KEY={key}",
+        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-auth-proxy/pi-extension'},dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
+    ]
+
+
+def stop_codex_sidecar(container: str) -> None:
+    run(["docker", "kill", container], check=False, quiet=True)
+    run(["docker", "rm", container], check=False, quiet=True)
+
+
+def start_codex_sidecar(state: State, auth_directory: Path) -> tuple[dict[str, str], list[str]]:
+    key = _sidecar_session_key()
+    container = state.codex_sidecar_container
+    run([
+        "docker", "run", "--detach", "--name", container,
+        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+        "--user", f"{state.uid}:{state.gid}", "--network", SANDBOX_NETWORK,
+        "--http-proxy=false", "--pids-limit", "64", "--memory", "256m",
+        "--cpus", "1", "--ulimit", "nofile=256:256",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m,mode=1777",
+        "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
+        "--env", f"CODEX_SIDECAR_KEY={key}",
+        "--entrypoint", "/trusted/bin/codex-auth-proxy", state.image,
+    ], discard_stdout=True)
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            result = run([
+                "docker", "exec", container, "/usr/bin/python3", "-c",
+                "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
+            ], check=False, quiet=True)
+            if result.returncode == 0:
+                sidecar = {"container": container, "key": key}
+                return sidecar, codex_sidecar_arguments(container, key)
+            status = run([
+                "docker", "inspect", "--format", "{{.State.Running}}", container,
+            ], check=False, capture=True, quiet=True)
+            if status.returncode or status.stdout.strip() != "true":
+                raise LauncherError("Codex authentication sidecar exited before becoming ready")
+            time.sleep(0.1)
+        raise LauncherError("Codex authentication sidecar did not become ready")
+    except Exception:
+        stop_codex_sidecar(container)
+        raise
+
+
+def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> list[str]:
     proxy_state = json.loads(state.proxy_state.read_text(encoding="utf-8"))
     sidecar = proxy_state.get("auth")
     if auth_directory is None:
@@ -451,58 +518,17 @@ def attach_codex_sidecar(state: State) -> list[str]:
             )
             return []
         raise LauncherError("active sandbox proxy session has authentication enabled")
-    created = False
-    if sidecar is not None:
-        if not isinstance(sidecar, dict) or set(sidecar) != {"container", "key"} or not all(
-            isinstance(sidecar[field], str) and sidecar[field]
-            for field in ("container", "key")
-        ):
-            raise LauncherError("active sandbox proxy session has invalid authentication state")
-        container = sidecar["container"]
-        key = sidecar["key"]
-    else:
-        key = _sidecar_session_key()
-        container = state.codex_sidecar_container
-        run([
-            "docker", "run", "--detach", "--name", container,
-            "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-            "--user", f"{state.uid}:{state.gid}", "--network", SANDBOX_NETWORK,
-            "--http-proxy=false", "--pids-limit", "64", "--memory", "256m",
-            "--cpus", "1", "--ulimit", "nofile=256:256",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m,mode=1777",
-            "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
-            "--env", f"CODEX_SIDECAR_KEY={key}",
-            "--entrypoint", "/trusted/bin/codex-auth-proxy", state.image,
-        ], discard_stdout=True)
-        created = True
-        proxy_state["auth"] = {"container": container, "key": key}
+    if sidecar is None:
+        sidecar, arguments = start_codex_sidecar(state, auth_directory)
+        proxy_state["auth"] = sidecar
         state.proxy_state.write_text(json.dumps(proxy_state, sort_keys=True), encoding="utf-8")
-    try:
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            result = run([
-                "docker", "exec", container, "/usr/bin/python3", "-c",
-                "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
-            ], check=False, quiet=True)
-            if result.returncode == 0:
-                break
-            status = run([
-                "docker", "inspect", "--format", "{{.State.Running}}", container,
-            ], check=False, capture=True, quiet=True)
-            if status.returncode or status.stdout.strip() != "true":
-                raise LauncherError("Codex authentication sidecar exited before becoming ready")
-            time.sleep(0.1)
-        else:
-            raise LauncherError("Codex authentication sidecar did not become ready")
-    except Exception:
-        if created:
-            run(["docker", "rm", "--force", container], check=False, quiet=True)
-        raise
-    return [
-        "--env", f"CODEX_SIDECAR_URL=http://{container}:8787",
-        "--env", f"CODEX_SIDECAR_KEY={key}",
-        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-auth-proxy/pi-extension'},dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
-    ]
+        return arguments
+    if not isinstance(sidecar, dict) or set(sidecar) != {"container", "key"} or not all(
+        isinstance(sidecar[field], str) and sidecar[field]
+        for field in ("container", "key")
+    ):
+        raise LauncherError("active sandbox proxy session has invalid authentication state")
+    return codex_sidecar_arguments(sidecar["container"], sidecar["key"])
 
 
 def stage_skills(state: State) -> None:
@@ -513,10 +539,10 @@ def stage_skills(state: State) -> None:
     )
 
 
-def read_proxy_arguments(state: State) -> list[str]:
+def finalize_proxy_session(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     helper(
-        "agent-args", "--repo", str(state.repository), "--state", str(state.proxy_state),
+        "finalize", "--repo", str(state.repository), "--state", str(state.proxy_state),
         "--output", str(state.proxy_args), "--manifest", str(state.manifest),
     )
     arguments: list[str] = []
@@ -673,11 +699,7 @@ def execute(state: State) -> int:
         )
         arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
     phase("skill staging", lambda: stage_skills(state))
-    arguments = [
-        *sidecar_arguments,
-        *phase("proxy arguments", lambda: read_proxy_arguments(state)),
-        *arguments,
-    ]
+    arguments = [*sidecar_arguments, *arguments]
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
         print(f"Sandbox startup: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
