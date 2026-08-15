@@ -137,6 +137,21 @@ fn jj_command() -> Command {
     command
 }
 
+fn command_environment<'a>(user: &'a str, email: &'a str) -> Vec<(&'a str, &'a str)> {
+    vec![
+        ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
+        ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
+        ("TMPDIR", CONFIG_HOME),
+        ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
+        ("VISUAL", "false"), ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
+        ("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "core.excludesFile"),
+        ("GIT_CONFIG_VALUE_0", "/trusted/gitignore"),
+        ("JJ_USER", user), ("JJ_EMAIL", email),
+        ("RUST_BACKTRACE", "1"),
+    ]
+}
+
 fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     file.take((MAX_OUTPUT + 1) as u64).read_to_end(&mut bytes)?;
@@ -215,17 +230,8 @@ fn execute(request: &Request, root: RawFd, remotes: &HashSet<String>) -> Respons
     {
         for remote in remotes { command.args(["--remote", remote]); }
     }
-    command.env_clear().envs([
-        ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
-        ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
-        ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
-        ("VISUAL", "false"), ("GIT_CONFIG_NOSYSTEM", "1"),
-        ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
-        ("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "core.excludesFile"),
-        ("GIT_CONFIG_VALUE_0", "/trusted/gitignore"),
-        ("JJ_USER", user), ("JJ_EMAIL", email),
-        ("RUST_BACKTRACE", "1"),
-    ]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command.env_clear().envs(command_environment(user, email))
+        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // SAFETY: the callback captures only the copied descriptor number and
     // performs the async-signal-safe `setsid`, `fchdir`, and `setrlimit`
     // syscalls. No proxy reader threads exist while `spawn` forks, and `cwd`
@@ -368,5 +374,12 @@ mod tests {
         let command = jj_command();
         let args: Vec<_> = command.get_args().collect();
         assert!(!args.iter().any(|arg| *arg == "--repository"));
+    }
+
+    #[test]
+    fn jj_uses_the_landlock_writable_config_directory_for_temporary_files() {
+        let environment: std::collections::HashMap<_, _> =
+            command_environment("agent", "agent@example.test").into_iter().collect();
+        assert_eq!(Some(&CONFIG_HOME), environment.get("TMPDIR"));
     }
 }
