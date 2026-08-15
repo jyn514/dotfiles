@@ -48,6 +48,7 @@ class AgentSplitEditorEndToEndTest(unittest.TestCase):
             staged.mkdir()
             (staged / "agent-split.patch").write_text(patch)
 
+            right_inode = right.stat().st_ino
             editor = root / "agent-split-editor"
             editor.write_text(EDITOR.read_text().replace(
                 "/tmp/jj-config/agent-split.patch",
@@ -62,6 +63,7 @@ class AgentSplitEditorEndToEndTest(unittest.TestCase):
             )
 
             self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(right_inode, right.stat().st_ino)
             self.assertEqual("one\nTWO\nthree\n", (right / "note.txt").read_text())
             self.assertFalse((right / "unselected.txt").exists())
 
