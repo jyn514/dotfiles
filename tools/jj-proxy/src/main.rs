@@ -137,11 +137,15 @@ fn jj_command() -> Command {
     command
 }
 
-fn command_environment<'a>(user: &'a str, email: &'a str) -> Vec<(&'a str, &'a str)> {
+fn command_environment<'a>(
+    user: &'a str,
+    email: &'a str,
+    temporary_directory: &'a str,
+) -> Vec<(&'a str, &'a str)> {
     vec![
         ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
         ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
-        ("TMPDIR", CONFIG_HOME),
+        ("TMPDIR", temporary_directory),
         ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
         ("VISUAL", "false"), ("GIT_CONFIG_NOSYSTEM", "1"),
         ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
@@ -176,7 +180,12 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
     }
 }
 
-fn execute(request: &Request, root: RawFd, remotes: &HashSet<String>) -> Response {
+fn execute(
+    request: &Request,
+    root: RawFd,
+    remotes: &HashSet<String>,
+    temporary_directory: &str,
+) -> Response {
     let failure = |message: String| Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: {message}\n") };
     if request.version != 1 { return failure("unsupported protocol version".into()); }
     let valid_identity = |value: &str, limit: usize| {
@@ -230,7 +239,7 @@ fn execute(request: &Request, root: RawFd, remotes: &HashSet<String>) -> Respons
     {
         for remote in remotes { command.args(["--remote", remote]); }
     }
-    command.env_clear().envs(command_environment(user, email))
+    command.env_clear().envs(command_environment(user, email, temporary_directory))
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // SAFETY: the callback captures only the copied descriptor number and
     // performs the async-signal-safe `setsid`, `fchdir`, and `setrlimit`
@@ -270,6 +279,10 @@ fn serve() -> Result<()> {
     let remotes = HashSet::from(["origin".to_owned()]);
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
+    let temporary_directory = format!("{repo}/target/jj-split/tmp");
+    fs::create_dir_all(&temporary_directory).wrap_err("cannot create Jujutsu temporary directory")?;
+    fs::set_permissions(&temporary_directory, fs::Permissions::from_mode(0o700))
+        .wrap_err("cannot secure Jujutsu temporary directory")?;
     execution_policy::install(&repo)?;
     prepare_repo_config(&repo)?;
     let _ = fs::remove_file(SOCKET);
@@ -281,7 +294,7 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(&request, root.as_raw_fd(), &remotes),
+            Ok(request) => execute(&request, root.as_raw_fd(), &remotes, &temporary_directory),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
@@ -377,9 +390,17 @@ mod tests {
     }
 
     #[test]
-    fn jj_uses_the_landlock_writable_config_directory_for_temporary_files() {
-        let environment: std::collections::HashMap<_, _> =
-            command_environment("agent", "agent@example.test").into_iter().collect();
-        assert_eq!(Some(&CONFIG_HOME), environment.get("TMPDIR"));
+    fn jj_uses_the_requested_executable_temporary_directory() {
+        let environment: std::collections::HashMap<_, _> = command_environment(
+            "agent",
+            "agent@example.test",
+            "/workspace/target/jj-split/tmp",
+        )
+        .into_iter()
+        .collect();
+        assert_eq!(
+            Some(&"/workspace/target/jj-split/tmp"),
+            environment.get("TMPDIR"),
+        );
     }
 }
