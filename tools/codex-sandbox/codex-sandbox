@@ -521,7 +521,7 @@ def execute(state: State) -> int:
     if builder.is_file() and os.access(builder, os.X_OK):
         base_image = run([str(builder)], capture=True, cwd=state.repository).stdout.strip()
     else:
-        base_image = "node:slim"
+        base_image = "node:24-alpine3.22"
     state.image = ensure_image(state, base_image)
     ensure_network()
     acquire_lock(state)
