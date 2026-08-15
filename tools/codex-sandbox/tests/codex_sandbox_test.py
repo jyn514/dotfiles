@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TOOL = ROOT / "tools" / "codex-sandbox"
 LAUNCHER = TOOL / "codex-sandbox"
 AGENT_SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
+AGENT_SANDBOX_INSTALL_DEPS = TOOL / "image" / "install-deps.sh"
 AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
@@ -54,6 +55,10 @@ class AgentSandboxImageTest(unittest.TestCase):
         dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
         self.assertIn("./tools/agent-split /tools/agent-split", dockerfile)
+        self.assertRegex(
+            AGENT_SANDBOX_INSTALL_DEPS.read_text(encoding="utf-8"),
+            r"(?m)^        gcompat \\$",
+        )
         self.assertIn("./lib/shell/lib.sh /lib/shell/lib.sh", dockerfile)
         self.assertIn("./tools/codex-auth-proxy/server.py /trusted/bin/codex-auth-proxy", dockerfile)
         self.assertEqual(
