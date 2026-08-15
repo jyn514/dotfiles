@@ -27,6 +27,7 @@ RUN git init /jj \
     && git -C /jj fetch --depth=1 https://github.com/jj-vcs/jj.git "${JJ_REVISION}" \
     && git -C /jj checkout --detach FETCH_HEAD
 WORKDIR /jj
+RUN cargo fetch --locked
 RUN --mount=type=cache,target=/jj/target \
     cargo build --release --locked --bin jj \
     && cp target/release/jj /jj-bin
