@@ -4,6 +4,7 @@ ARG BASE_IMAGE=node:24-alpine3.22
 
 FROM alpine:3.22 AS tools
 COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-tools
+ARG BB_VERSION=1.13.219
 ARG GH_VERSION=2.76.1
 ARG JJ_VERSION=0.42.0
 ARG PODMAN_VERSION=6.0.1
@@ -12,6 +13,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=cache,target=/var/cache/apk,sharing=locked \
     --mount=type=cache,target=/var/cache/yum,sharing=locked \
+    BB_VERSION=${BB_VERSION} \
     GH_VERSION=${GH_VERSION} \
     JJ_VERSION=${JJ_VERSION} \
     PODMAN_VERSION=${PODMAN_VERSION} \
@@ -19,6 +21,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     install-agent-tools \
     && mkdir -p /opt/agent-tools/bin \
     && cp -a \
+        /usr/local/bin/bb \
         /usr/local/bin/gh \
         /usr/local/bin/jj \
         /usr/local/bin/podman \
