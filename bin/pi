@@ -4,7 +4,7 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 PACKAGE_ROOT=${XDG_CACHE_HOME:-"$HOME/.cache"}/dotfiles/pi-npm
 LOCK_HASH=$(git -C "$DOTFILES" hash-object "$DOTFILES/tools/pi-npm/package-lock.json") || exit
 INSTALL_ROOT=$PACKAGE_ROOT/$LOCK_HASH
-if ! [ -f "$INSTALL_ROOT/node_modules/pi-mcp-adapter/index.ts" ]; then
+if ! [ -x "$INSTALL_ROOT/node_modules/.bin/pi" ]; then
 	mkdir -p "$PACKAGE_ROOT" || exit
 	LOCK_DIR=$INSTALL_ROOT.lock
 	if mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -17,7 +17,7 @@ if ! [ -f "$INSTALL_ROOT/node_modules/pi-mcp-adapter/index.ts" ]; then
 		trap - EXIT HUP INT TERM
 	else
 		attempt=0
-		while ! [ -f "$INSTALL_ROOT/node_modules/pi-mcp-adapter/index.ts" ]; do
+		while ! [ -x "$INSTALL_ROOT/node_modules/.bin/pi" ]; do
 			attempt=$((attempt + 1))
 			if [ "$attempt" -ge 30 ]; then
 				echo "pi wrapper: timed out waiting for the locked package install" >&2
@@ -34,7 +34,4 @@ case ${1:-} in
 		exec "$INSTALL_ROOT/node_modules/.bin/pi" "$@"
 		;;
 esac
-exec "$INSTALL_ROOT/node_modules/.bin/pi" \
-	--extension "$INSTALL_ROOT/node_modules/pi-mcp-adapter/index.ts" \
-	--skill "$INSTALL_ROOT/node_modules/pi-mcp-adapter/skills" \
-	"$@"
+exec "$INSTALL_ROOT/node_modules/.bin/pi" "$@"

@@ -23,12 +23,8 @@ class PiWrapperTests(unittest.TestCase):
             stdout=subprocess.PIPE,
         ).stdout.strip()
         install = self.root / "dotfiles/pi-npm" / lock_hash / "node_modules"
-        adapter = install / "pi-mcp-adapter"
-        adapter.mkdir(parents=True)
-        (adapter / "index.ts").touch()
-        (adapter / "skills").mkdir()
         binary = install / ".bin/pi"
-        binary.parent.mkdir()
+        binary.parent.mkdir(parents=True)
         binary.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nprintf "JJ_AGENT=%s\\n" "$JJ_AGENT"\n')
         binary.chmod(0o755)
 
@@ -46,14 +42,8 @@ class PiWrapperTests(unittest.TestCase):
             env=environment,
         ).stdout.splitlines()
 
-    def test_normal_session_loads_locked_adapter(self) -> None:
-        output = self.run_wrapper("prompt")
-
-        self.assertEqual("--extension", output[0])
-        self.assertIn("pi-mcp-adapter/index.ts", output[1])
-        self.assertEqual("--skill", output[2])
-        self.assertIn("pi-mcp-adapter/skills", output[3])
-        self.assertEqual(["prompt", "JJ_AGENT=pi"], output[4:])
+    def test_normal_session_does_not_load_mcp_adapter(self) -> None:
+        self.assertEqual(["prompt", "JJ_AGENT=pi"], self.run_wrapper("prompt"))
 
     def test_one_shot_commands_remain_first_argument(self) -> None:
         for command in ("auth", "config", "install", "list", "remove", "uninstall", "update"):
