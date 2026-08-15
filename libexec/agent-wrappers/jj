@@ -23,11 +23,15 @@ is_jj_write() {
 # Identity by agent, auto-detected from each runner's own env. Resolve it before
 # forwarding sandbox calls so the trusted proxy can stamp the same identity.
 agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
+agent=${agent:-${PI_CODING_AGENT:+pi}}
 agent=${agent:-${CODEX_THREAD_ID:+codex}}
 subcommand=${1:-}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
-  pi) JJ_USER='Pi'; JJ_EMAIL='breq@jyn.dev' ;;
+  pi)
+    JJ_USER="Pi${PI_MODEL:+ $PI_MODEL}"
+    JJ_EMAIL='breq@jyn.dev'
+    ;;
   codex)
     model=$(codex_version)
     JJ_EMAIL='breq@jyn.dev'
