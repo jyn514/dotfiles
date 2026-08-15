@@ -48,6 +48,9 @@ Do not run commands with `2>/dev/null` at the same time as a command that runs o
 Never use `git diff --check`; it's sometimes not installed in your sandbox.
 Use `diff-check` instead.
 
+Don't use `gh api` to view source code.
+If you need access to remote code, use `git clone --depth 1` into a temporary directory.
+
 ### Shell command construction
 
 Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
@@ -59,7 +62,7 @@ Quoting may prevent the sandbox from matching an approved command prefix, even w
 
 ## Commits
 
-Always use `jj`, never `git` directly.
+Use `jj`, not `git` directly.
 `jj` snapshots your changes, supports `jj undo`, and allows editing history without modifying the working tree.
 
 ### Commit messages
