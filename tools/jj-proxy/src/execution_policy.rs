@@ -67,8 +67,11 @@ pub fn install(repo: &str) -> Result<()> {
         .wrap_err("cannot add proxy socket write rule")?
         .add_rule(PathBeneath::new(system_config, read_access))
         .wrap_err("cannot add system configuration read rule")?
-        .add_rule(PathBeneath::new(system_lib, read_access))
-        .wrap_err("cannot add system library read rule")?
+        .add_rule(PathBeneath::new(
+            system_lib,
+            read_access | AccessFs::Execute,
+        ))
+        .wrap_err("cannot add system library runtime rule")?
         .add_rule(PathBeneath::new(user_lib, read_access))
         .wrap_err("cannot add user library read rule")?
         .add_rule(PathBeneath::new(
