@@ -11,9 +11,6 @@ install_macos_local() {
 	# note that we don't actually pass sudo here
 	./libexec/setup/setup_sudo.sh install_features || return
 	brew install -q duti || return
-	brew_prefix=$(brew --prefix) || return
-	ln -fs "$brew_prefix/opt/antidote/share/antidote" ~/.config/zsh/antidote || return
-	unset brew_prefix
 	cmd_alias gdu gdu-go || return
 	if exists cargo; then
 		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision) || return

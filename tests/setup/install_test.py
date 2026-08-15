@@ -127,7 +127,6 @@ class InstallationTests(unittest.TestCase):
         packages = self.manifest("packages.txt")
         if platform["ID"] == "alpine":
             replacements = {
-                "antidote": None,
                 "build-essential": "build-base",
                 "clangd": None,
                 "cowsay": None,
@@ -166,12 +165,12 @@ class InstallationTests(unittest.TestCase):
                     "shadow",
                     "zsh",
                     *self.translated(packages, replacements),
+                    "difftastic",
                 ],
                 commands,
             )
         elif platform["ID"] == "fedora":
             replacements = {
-                "antidote": None,
                 "build-essential": "@development-tools",
                 "libpam-fscrypt": None,
                 "libssl-dev": "openssl-devel",
@@ -202,7 +201,6 @@ class InstallationTests(unittest.TestCase):
             )
         elif platform["ID"] == "arch":
             replacements = {
-                "antidote": None,
                 "build-essential": "base-devel",
                 "clangd": "clang",
                 "fd-find": "fd",
@@ -267,6 +265,19 @@ class InstallationTests(unittest.TestCase):
             )
         else:
             self.fail(f"unsupported test platform: {platform['ID']}")
+
+    def test_migrated_user_tools_are_not_system_packages(self) -> None:
+        packages = self.manifest("packages.txt")
+        setup = (ROOT / "setup.sh").read_text()
+
+        self.assertEqual(len(packages), len(set(packages)))
+        self.assertNotIn("antidote", packages)
+        self.assertNotIn("difftastic", packages)
+        self.assertNotIn("opt/antidote", setup)
+        self.assertIn("clone antidote ~/.config/zsh/antidote", setup)
+        setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
+        self.assertIn("queue_install difftastic", setup_sudo)
+        self.assertFalse((ROOT / "libexec/setup/fx-install.sh").exists())
 
 
 class LocalInstallationTests(unittest.TestCase):
