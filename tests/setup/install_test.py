@@ -165,6 +165,7 @@ class InstallationTests(unittest.TestCase):
                     "shadow",
                     "zsh",
                     *self.translated(packages, replacements),
+                    "cargo-audit",
                     "difftastic",
                 ],
                 commands,
@@ -224,6 +225,7 @@ class InstallationTests(unittest.TestCase):
                     "--sysupgrade",
                     "--needed",
                     *self.translated(packages, replacements),
+                    "bacon",
                 ],
                 commands,
             )
@@ -260,6 +262,7 @@ class InstallationTests(unittest.TestCase):
                     "install",
                     "-q",
                     *self.translated(packages, replacements),
+                    "bacon",
                 ],
                 commands,
             )
@@ -274,6 +277,8 @@ class InstallationTests(unittest.TestCase):
         self.assertNotIn("opt/antidote", setup)
         self.assertIn("clone antidote ~/.config/zsh/antidote", setup)
         setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
+        self.assertIn("queue_install bacon", setup_sudo)
+        self.assertIn("queue_install cargo-audit", setup_sudo)
         self.assertIn("queue_install difftastic", setup_sudo)
         self.assertFalse((ROOT / "libexec/setup/fx-install.sh").exists())
 
@@ -665,7 +670,7 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertIn("if exists apk; then", setup)
         self.assertIn("MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm", setup)
-        self.assertIn("aqua:Wilfred/difftastic'", setup)
+        self.assertIn("aqua:Wilfred/difftastic,github:rustsec/rustsec'", setup)
         self.assertNotIn("MISE_SETUP_CONFIG.alpine", setup)
 
     def test_setup_delegates_cargo_tools_to_mise(self) -> None:
@@ -743,9 +748,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertNotIn("idiomatic_version_file_enable_tools", config.get("settings", {}))
 
         cargo_tools = {
-            "bacon",
             "broot",
-            "cargo-audit",
             "cargo-outdated",
             "cargo-sweep",
             "counts",
@@ -771,7 +774,11 @@ class MiseConfigTests(unittest.TestCase):
             "vscode-langservers-extracted",
         }
         pipx_tools = {"git-revise", "pytest", "pylint", "yt-dlp"}
-        github_tools = {"clojure-lsp/clojure-lsp", "glide-browser/glide"}
+        github_tools = {
+            "clojure-lsp/clojure-lsp",
+            "glide-browser/glide",
+            "rustsec/rustsec",
+        }
         asdf_tools = {"mise-plugins/mise-clojure"}
         self.assertEqual(cargo_tools, self.backend_packages(tools, "cargo"))
         for cargo_tool in cargo_tools:
@@ -800,6 +807,15 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual(
             {"version": "latest", "os": ["linux"], "filter_bins": "glide"},
             tools["github:glide-browser/glide"],
+        )
+        self.assertEqual(
+            {
+                "version": "latest",
+                "version_prefix": "cargo-audit/v",
+                "matching": "cargo-audit-",
+                "filter_bins": "cargo-audit",
+            },
+            tools["github:rustsec/rustsec"],
         )
         self.assertEqual("pnpm", config["settings"]["npm"]["package_manager"])
         self.assertIs(True, config["settings"]["cargo"]["binstall"])

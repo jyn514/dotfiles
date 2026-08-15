@@ -9,9 +9,8 @@ uv = "latest"
 "aqua:antonmedv/fx" = "latest"
 "aqua:LuaLS/lua-language-server" = "latest"
 "aqua:mvdan/sh" = { version = "latest", filter_bins = "shfmt" }
-"cargo:bacon" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:broot" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
-"cargo:cargo-audit" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
+"github:rustsec/rustsec" = { version = "latest", version_prefix = "cargo-audit/v", matching = "cargo-audit-", filter_bins = "cargo-audit" }
 "cargo:cargo-outdated" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:cargo-sweep" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "cargo:counts" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }

@@ -177,7 +177,11 @@ install_features () {
 		queue_install "$pkg"
 	done
 	if [ -n "$IS_ALPINE" ]; then
+		queue_install cargo-audit
 		queue_install difftastic
+	fi
+	if [ -n "$IS_ARCH" ] || [ -n "$IS_BREW" ]; then
+		queue_install bacon
 	fi
 
 	if is_wsl; then

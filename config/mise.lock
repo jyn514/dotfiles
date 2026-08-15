@@ -368,17 +368,9 @@ provenance = "github-attestations"
 version = "1.12.5.1664"
 backend = "asdf:mise-plugins/mise-clojure"
 
-[[tools."cargo:bacon"]]
-version = "3.24.0"
-backend = "cargo:bacon"
-
 [[tools."cargo:broot"]]
 version = "1.58.0"
 backend = "cargo:broot"
-
-[[tools."cargo:cargo-audit"]]
-version = "0.22.2"
-backend = "cargo:cargo-audit"
 
 [[tools."cargo:cargo-outdated"]]
 version = "0.19.0"
@@ -494,6 +486,49 @@ checksum = "sha256:9189ace7bc8079d929752c2e7678fa29cfc1c1a443f5e4051d793fcb34b73
 url = "https://github.com/glide-browser/glide/releases/download/0.1.63a/windows-x86_64.mar"
 url_api = "https://api.github.com/repos/glide-browser/glide/releases/assets/460458354"
 provenance = "github-attestations"
+
+[[tools."github:rustsec/rustsec"]]
+version = "0.22.2"
+backend = "github:rustsec/rustsec"
+
+[tools."github:rustsec/rustsec".options]
+matching = "cargo-audit-"
+version_prefix = "cargo-audit/v"
+
+[tools."github:rustsec/rustsec"."platforms.linux-arm64"]
+checksum = "sha256:c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-unknown-linux-gnu-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292355"
+
+[tools."github:rustsec/rustsec"."platforms.linux-arm64-musl"]
+checksum = "sha256:c6603814ddaa45e51263dafd31c0ac98808f688d26f7395804f9670b0fd599dd"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-unknown-linux-gnu-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292355"
+
+[tools."github:rustsec/rustsec"."platforms.linux-x64"]
+checksum = "sha256:ab28a1bdb54db4d5d8ad5981cf1f959410370b3d28250dbd35f6a44248620e39"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-gnu-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439291614"
+
+[tools."github:rustsec/rustsec"."platforms.linux-x64-musl"]
+checksum = "sha256:7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292222"
+
+[tools."github:rustsec/rustsec"."platforms.macos-arm64"]
+checksum = "sha256:ec7ca4263769593df4d909be85b94a6b79efa2897be5d2bb8ebd516e823175af"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-aarch64-apple-darwin-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439291477"
+
+[tools."github:rustsec/rustsec"."platforms.macos-x64"]
+checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2ab2"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292734"
+
+[tools."github:rustsec/rustsec"."platforms.windows-x64"]
+checksum = "sha256:0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab"
+url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-pc-windows-msvc-v0.22.2.zip"
+url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439294720"
 
 [[tools.node]]
 version = "24.18.1"
