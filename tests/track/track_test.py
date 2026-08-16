@@ -91,6 +91,61 @@ class TrackTests(unittest.TestCase):
             self.links()["$HOME/.config/tool/settings"],
         )
 
+    def test_untracks_home_file_by_restoring_it_and_removing_link_entry(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        self.assertEqual(0, self.run_track(str(source)).returncode)
+
+        result = self.run_track("--untrack", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertFalse((self.fixture / "config/example").exists())
+        self.assertNotIn("$HOME/.example", self.links())
+
+    def test_untracks_home_directory(self) -> None:
+        source = self.home / ".example"
+        source.mkdir()
+        (source / "settings").write_text("configuration\n")
+        self.assertEqual(0, self.run_track(str(source)).returncode)
+
+        result = self.run_track("--untrack", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual("configuration\n", (source / "settings").read_text())
+        self.assertFalse((self.fixture / "config/example").exists())
+
+    def test_untrack_dry_run_does_not_modify_files_or_manifest(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        self.assertEqual(0, self.run_track(str(source)).returncode)
+        original_config = (self.fixture / "install.conf.json").read_text()
+
+        result = self.run_track("--dry-run", "--untrack", str(source))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(source.is_symlink())
+        self.assertEqual(original_config, (self.fixture / "install.conf.json").read_text())
+        self.assertIn("remove $HOME/.example", result.stdout)
+
+    def test_untrack_rejects_a_destination_that_is_not_the_tracked_symlink(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        config = json.loads((self.fixture / "install.conf.json").read_text())
+        links = next(directive["link"] for directive in config if "link" in directive)
+        links["$HOME/.example"] = "config/example"
+        (self.fixture / "install.conf.json").write_text(json.dumps(config, indent=2) + "\n")
+        (self.fixture / "config/example").write_text("tracked configuration\n")
+
+        result = self.run_track("--untrack", str(source))
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("not the expected symlink", result.stderr)
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertEqual("tracked configuration\n", (self.fixture / "config/example").read_text())
+
     def test_tracks_system_file_by_copying_it_and_applying_globals(self) -> None:
         source = Path(self.tempdir.name) / "system.conf"
         source.write_text("system configuration\n")
@@ -174,6 +229,29 @@ class TrackTests(unittest.TestCase):
         self.assertFalse(source.is_symlink())
         self.assertEqual("configuration\n", source.read_text())
         self.assertFalse((self.fixture / "config/example").exists())
+
+    def test_untrack_manifest_failure_restores_symlink_and_tracked_file(self) -> None:
+        source = self.home / ".example"
+        source.write_text("configuration\n")
+        self.assertEqual(0, self.run_track(str(source)).returncode)
+        original_config = (self.fixture / "install.conf.json").read_text()
+        implementation = self.fixture / "libexec/track_file.py"
+        implementation.write_text(
+            implementation.read_text().replace(
+                "        tracked.rename(source)\n        atomic_write(config_path, new_config)\n",
+                "        tracked.rename(source)\n"
+                '        raise OSError("simulated manifest write failure")\n',
+                1,
+            )
+        )
+
+        result = self.run_track("--untrack", str(source))
+
+        self.assertEqual(1, result.returncode)
+        self.assertTrue(source.is_symlink())
+        self.assertEqual("configuration\n", source.read_text())
+        self.assertEqual("configuration\n", (self.fixture / "config/example").read_text())
+        self.assertEqual(original_config, (self.fixture / "install.conf.json").read_text())
 
 
 if __name__ == "__main__":

@@ -37,9 +37,13 @@ def validate_name(name: str) -> str:
     return name
 
 
+def dotbot_links(config: list[object]) -> dict[str, object]:
+    return next(directive["link"] for directive in config if "link" in directive)
+
+
 def updated_dotbot_config(config_path: Path, destination: str, source: str) -> str:
     config = json.loads(config_path.read_text())
-    links = next(directive["link"] for directive in config if "link" in directive)
+    links = dotbot_links(config)
     if destination in links:
         raise ValueError(f"dotfile destination is already tracked: {destination}")
     if any(
@@ -50,6 +54,23 @@ def updated_dotbot_config(config_path: Path, destination: str, source: str) -> s
         raise ValueError(f"dotfile source is already tracked: {source}")
     links[destination] = source
     return json.dumps(config, indent=2) + "\n"
+
+
+def untracked_dotbot_config(config_path: Path, destination: str) -> tuple[str, str]:
+    config = json.loads(config_path.read_text())
+    links = dotbot_links(config)
+    try:
+        specification = links.pop(destination)
+    except KeyError:
+        raise ValueError(f"dotfile destination is not tracked: {destination}") from None
+    source = (
+        specification.get("path")
+        if isinstance(specification, dict)
+        else specification
+    )
+    if not isinstance(source, str):
+        raise ValueError(f"unsupported link specification for {destination}")
+    return json.dumps(config, indent=2) + "\n", source
 
 
 def track_home(source: Path, name: str, root: Path, home: Path, dry_run: bool) -> None:
@@ -77,6 +98,42 @@ def track_home(source: Path, name: str, root: Path, home: Path, dry_run: bool) -
     except BaseException:
         source.unlink(missing_ok=True)
         tracked.rename(source)
+        raise
+
+
+def untrack_home(source: Path, root: Path, home: Path, dry_run: bool) -> None:
+    try:
+        relative = source.relative_to(home.absolute())
+    except ValueError:
+        raise ValueError(f"not beneath home directory: {source}") from None
+    config_path = root / "install.conf.json"
+    old_config = config_path.read_text()
+    destination = f"$HOME/{relative.as_posix()}"
+    new_config, tracked_source = untracked_dotbot_config(config_path, destination)
+    tracked = root / tracked_source
+    try:
+        tracked.relative_to(root / "config")
+    except ValueError:
+        raise ValueError(f"tracked source is outside config/: {tracked_source}") from None
+    if not source.is_symlink() or source.resolve() != tracked.resolve():
+        raise ValueError(f"tracked destination is not the expected symlink: {source}")
+    if not tracked.exists():
+        raise ValueError(f"tracked source does not exist: {tracked}")
+
+    if dry_run:
+        print(f"move {tracked} -> {source}")
+        print(f"remove {destination} from install.conf.json")
+        return
+
+    source.unlink()
+    try:
+        tracked.rename(source)
+        atomic_write(config_path, new_config)
+    except BaseException:
+        if source.exists() and not tracked.exists():
+            source.rename(tracked)
+        source.symlink_to(tracked.resolve())
+        atomic_write(config_path, old_config)
         raise
 
 
@@ -129,6 +186,11 @@ def track_global(source: Path, name: str, root: Path, dry_run: bool) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--untrack",
+        action="store_true",
+        help="stop tracking a home file or directory and restore it from config/",
+    )
     parser.add_argument("source", type=Path)
     parser.add_argument("name", nargs="?")
     arguments = parser.parse_args()
@@ -137,13 +199,18 @@ def main() -> int:
     if not source.exists():
         parser.error(f"source does not exist: {source}")
     try:
-        name = validate_name(arguments.name or source.name.lstrip("."))
         root = Path(__file__).resolve().parent.parent
         home = Path.home()
-        if home_relative(source, home) is not None:
-            track_home(source, name, root, home, arguments.dry_run)
+        if arguments.untrack:
+            if arguments.name is not None:
+                raise ValueError("a tracked name cannot be supplied with --untrack")
+            untrack_home(source, root, home, arguments.dry_run)
         else:
-            track_global(source, name, root, arguments.dry_run)
+            name = validate_name(arguments.name or source.name.lstrip("."))
+            if home_relative(source, home) is not None:
+                track_home(source, name, root, home, arguments.dry_run)
+            else:
+                track_global(source, name, root, arguments.dry_run)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"track: {error}\n")
     return 0
