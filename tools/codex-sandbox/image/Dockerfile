@@ -29,37 +29,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         /opt/agent-tools/bin/ \
     && ln -s podman /opt/agent-tools/bin/docker
 
-FROM node:24-slim AS pi-node
+FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
-RUN npm ci --ignore-scripts --prefix /opt/pi-npm \
-    && mkdir -p /opt/agent-pi/lib \
-    && cp -a /opt/pi-npm/node_modules /opt/agent-pi/lib/node_modules
+RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
-FROM alpine:3.22 AS pi-bun
-ARG PI_VERSION=0.84.2
-ARG TARGETARCH
-RUN case "${TARGETARCH}" in \
-        amd64) pi_arch=x64 ;; \
-        arm64) pi_arch=arm64 ;; \
-        *) echo "Unsupported Pi architecture: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
-    && pi_archive="pi-linux-${pi_arch}.tar.gz" \
-    && wget -q "https://github.com/earendil-works/pi/releases/download/v${PI_VERSION}/${pi_archive}" \
-    && wget -q "https://github.com/earendil-works/pi/releases/download/v${PI_VERSION}/SHA256SUMS" \
-    && grep "  ${pi_archive}$" SHA256SUMS > pi.sha256 \
-    && test -s pi.sha256 \
-    && sha256sum -c pi.sha256 \
-    && mkdir -p /opt/agent-pi/standalone \
-    && tar -xzf "${pi_archive}" --strip-components=1 -C /opt/agent-pi/standalone
+FROM node:24-alpine3.22 AS pi-build
+ARG PI_REVISION=a4a3cfc16b9dec18868c69979c75d88fa922702c
+RUN apk add --no-cache git \
+    && git clone --filter=blob:none https://github.com/jyn514/pi.git /opt/agent-pi/src \
+    && git -C /opt/agent-pi/src checkout --detach "${PI_REVISION}" \
+    && test "$(git -C /opt/agent-pi/src rev-parse HEAD)" = "${PI_REVISION}" \
+    && rm -rf /opt/agent-pi/src/.git \
+    && npm ci --ignore-scripts --prefix /opt/agent-pi/src \
+    && npm run hydrate:model-data --prefix /opt/agent-pi/src \
+    && npm run build:offline --prefix /opt/agent-pi/src \
+    && printf '%s\n' "${PI_REVISION}" > /opt/agent-pi/REVISION
 
 FROM ${BASE_IMAGE} AS pi-runtime
-COPY --link --from=pi-node /opt/agent-pi /opt/agent-pi
-COPY --link --from=pi-bun /opt/agent-pi/standalone /opt/agent-pi/standalone
-RUN if [ -e /etc/alpine-release ]; then \
-        rm -rf /opt/agent-pi/standalone; \
-    else \
-        rm -rf /opt/agent-pi/lib; \
-    fi
+COPY --link --from=pi-build /opt/agent-pi /opt/agent-pi
+COPY --link --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 
 FROM pi-runtime
