@@ -477,6 +477,15 @@ def codex_sidecar_arguments(container: str, key: str) -> list[str]:
     ]
 
 
+def codex_sidecar_has_sandbox_network(container: str) -> bool:
+    result = run([
+        "docker", "inspect", "--format",
+        f'{{{{if index .NetworkSettings.Networks "{SANDBOX_NETWORK}"}}}}true{{{{end}}}}',
+        container,
+    ], check=False, capture=True, quiet=True)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
 def stop_codex_sidecar(container: str) -> None:
     run(["docker", "kill", container], check=False, quiet=True)
     run(["docker", "rm", container], check=False, quiet=True)
@@ -539,6 +548,11 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
         for field in ("container", "key")
     ):
         raise LauncherError("active sandbox proxy session has invalid authentication state")
+    if not codex_sidecar_has_sandbox_network(sidecar["container"]):
+        raise LauncherError(
+            "cached authentication sidecar is absent or belongs to another sandbox "
+            "network; stop the active sandbox session before retrying"
+        )
     return codex_sidecar_arguments(sidecar["container"], sidecar["key"])
 
 
