@@ -491,8 +491,17 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual([replacement], state["proxies"])
         self.assertEqual([old], state["retired-proxies"])
         self.assertEqual("shared-example", start.call_args.kwargs["volume"])
+        self.assertFalse(start.call_args.kwargs["create_volume"])
         socket_name = start.call_args.kwargs["socket_name"]
         promote.assert_called_once_with(args, "shared-example", socket_name)
+
+    def test_socket_promotion_runs_as_volume_owner(self) -> None:
+        args = type("Args", (), {"helper_image": "helper-image"})
+        with mock.patch.object(sandbox_proxies, "_docker") as docker:
+            sandbox_proxies.promote_socket(args, "shared-volume", "replacement-socket")
+        self.assertIn("--user", docker.call_args.args)
+        user = docker.call_args.args[docker.call_args.args.index("--user") + 1]
+        self.assertEqual(f"{os.getuid()}:{os.getgid()}", user)
 
     def test_attach_does_not_replace_invalid_active_session(self) -> None:
         self.write()

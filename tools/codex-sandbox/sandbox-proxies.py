@@ -478,7 +478,7 @@ def start_one_proxy(
     args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
     state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
     *, volume: str | None = None, container: str | None = None,
-    socket_name: str = "socket", record: bool = True,
+    socket_name: str = "socket", record: bool = True, create_volume: bool = True,
 ) -> dict[str, str]:
     volume = volume or f"{args.prefix}-{name}"
     container = container or f"{args.prefix}-{name}"
@@ -487,9 +487,10 @@ def start_one_proxy(
         with state_lock:
             state["proxies"].append(proxy)
             write_atomic(Path(args.state), json.dumps(state))
-    _docker(
-        "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
-    )
+    if create_volume:
+        _docker(
+            "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
+        )
     docker_args = [
         "run", "--detach", "--name", container, "--cap-drop=ALL",
         "--label", "dev.codex.sandbox-proxy=true",
@@ -549,7 +550,8 @@ def start_one_proxy(
 
 def promote_socket(args: argparse.Namespace, volume: str, socket_name: str) -> None:
     _docker(
-        "run", "--rm", "--network", "none", "--entrypoint", "/bin/mv",
+        "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}",
+        "--entrypoint", "/bin/mv",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
         args.helper_image,
         f"/run/sandbox-proxy/{socket_name}", "/run/sandbox-proxy/socket",
@@ -589,7 +591,7 @@ def refresh_shared_proxies(
             replacement = start_one_proxy(
                 args, repo, identity, images, state, threading.Lock(), name, command,
                 volume=old["volume"], container=f"{args.prefix}-{name}",
-                socket_name=socket_name, record=False,
+                socket_name=socket_name, record=False, create_volume=False,
             )
         except Exception:
             subprocess.run(["docker", "rm", "--force", f"{args.prefix}-{name}"],
