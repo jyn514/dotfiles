@@ -12,6 +12,9 @@
     "./pi-instruction-includes.ts",
     "./pi-web-search.ts"
   ],
+  "packages": [
+    "npm:pi-codex-goal@0.2.0"
+  ],
   "compaction": {
     "enabled": true
   },
