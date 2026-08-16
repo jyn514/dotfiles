@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import subprocess
 import uuid
@@ -8,10 +7,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
-PACKAGE_LOCK = ROOT / "tools" / "pi-npm" / "package-lock.json"
-PI_VERSION = json.loads(PACKAGE_LOCK.read_text(encoding="utf-8"))["packages"][
-    "node_modules/@earendil-works/pi-coding-agent"
-]["version"]
+PI_REVISION = "a4a3cfc16b9dec18868c69979c75d88fa922702c"
 
 
 def run(*args: str) -> str:
@@ -39,23 +35,18 @@ def main() -> None:
     alpine = f"codex-sandbox-pi-alpine-test:{suffix}"
     debian = f"codex-sandbox-pi-debian-test:{suffix}"
     try:
-        build(alpine)
-        alpine_output = run(
-            "docker", "run", "--rm", "--entrypoint", "sh", alpine, "-c",
-            "test ! -e /opt/agent-pi/standalone; "
-            "node --version; /opt/agent-pi/bin/pi --version",
-        ).splitlines()
-        if not alpine_output[0].startswith("v24.") or alpine_output[1] != PI_VERSION:
-            raise RuntimeError(f"unexpected Alpine runtimes: {alpine_output!r}")
-
-        build(debian, "node:20-bookworm-slim")
-        debian_output = run(
-            "docker", "run", "--rm", "--entrypoint", "sh", debian, "-c",
-            "test ! -e /opt/agent-pi/lib; "
-            "node --version; /opt/agent-pi/bin/pi --version",
-        ).splitlines()
-        if not debian_output[0].startswith("v20.") or debian_output[1] != PI_VERSION:
-            raise RuntimeError(f"unexpected Debian runtimes: {debian_output!r}")
+        for tag, base_image in (
+            (alpine, None),
+            (debian, "node:24-bookworm-slim"),
+        ):
+            build(tag, base_image)
+            output = run(
+                "docker", "run", "--rm", "--entrypoint", "sh", tag, "-c",
+                "node --version; cat /opt/agent-pi/REVISION; "
+                "/opt/agent-pi/bin/pi --version",
+            ).splitlines()
+            if not output[0].startswith("v24.") or output[1] != PI_REVISION:
+                raise RuntimeError(f"unexpected Pi runtime: {output!r}")
     finally:
         subprocess.run(
             ["docker", "image", "rm", "-f", alpine, debian],
