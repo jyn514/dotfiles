@@ -395,14 +395,10 @@ def cached_session_state(
         return None
     if cached_manifest != serializable_manifest(manifest):
         return None
-    images = resolve_images(repo, manifest)
     proxies = state["proxies"]
-    expected = {
-        proxy["name"]: proxy.get("image")
-        for proxy in proxies
-        if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
-    }
-    if expected != images:
+    if {
+        proxy.get("name") for proxy in proxies if isinstance(proxy, dict)
+    } != set(manifest["commands"]):
         return None
     containers = [proxy.get("container") for proxy in proxies]
     if any(not isinstance(container, str) or not container for container in containers):

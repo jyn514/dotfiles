@@ -483,12 +483,12 @@ class ManifestTest(unittest.TestCase):
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
-                mock.patch.object(sandbox_proxies, "resolve_images", return_value={
-                    "example": "sha256:" + "0" * 64,
-                }), mock.patch.object(sandbox_proxies, "containers_running", return_value=True):
+                mock.patch.object(sandbox_proxies, "resolve_images") as resolve, \
+                mock.patch.object(sandbox_proxies, "containers_running", return_value=True):
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         start.assert_not_called()
         publish.assert_not_called()
+        resolve.assert_not_called()
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
 
