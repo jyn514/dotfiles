@@ -318,14 +318,6 @@ def lock_main(args: argparse.Namespace) -> int:
             fcntl.flock(session, fcntl.LOCK_SH)
         else:
             shared = False
-            metadata_path = runtime / "session.json"
-            try:
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError):
-                metadata = None
-            metadata_path.unlink(missing_ok=True)
-            if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
-                stop_state(metadata["state"])
             fcntl.flock(session, fcntl.LOCK_SH)
         Path(args.ready).write_text("shared\n" if shared else "new\n", encoding="utf-8")
         while not Path(args.coordinated).exists() and os.getppid() == args.parent_pid:
@@ -334,12 +326,19 @@ def lock_main(args: argparse.Namespace) -> int:
         while not Path(args.release).exists() and os.getppid() == args.parent_pid:
             time.sleep(0.1)
         fcntl.flock(session, fcntl.LOCK_UN)
+    return 0
 
+
+def reset_main(args: argparse.Namespace) -> int:
+    runtime = runtime_directory(Path(args.repo))
+    coordination_path = runtime / "coordination.lock"
+    session_path = runtime / "session.lock"
+    with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
         fcntl.flock(coordination, fcntl.LOCK_EX)
         try:
             fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return 0
+        except BlockingIOError as error:
+            raise ConfigError("sandbox sessions are still active") from error
         metadata_path = runtime / "session.json"
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -356,6 +355,7 @@ def publish_main(args: argparse.Namespace) -> int:
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     manifest = load_manifest_file(Path(args.manifest))
     payload = {
+        "version": 1,
         "repository": repository_identity(Path(args.repo)),
         "commands": {},
         "state": state,
@@ -367,6 +367,51 @@ def publish_main(args: argparse.Namespace) -> int:
     return 0
 
 
+def containers_running(containers: list[str]) -> bool:
+    if not containers:
+        return True
+    inspection = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.Running}}", *containers],
+        check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    return inspection.returncode == 0 and inspection.stdout.splitlines() == ["true"] * len(containers)
+
+
+def cached_session_state(
+    args: argparse.Namespace, repo: Path, metadata: Any, manifest: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(metadata, dict) or metadata.get("version") != 1:
+        return None
+    if metadata.get("repository") != repository_identity(repo):
+        return None
+    state = metadata.get("state")
+    cached_manifest = metadata.get("manifest")
+    if not isinstance(state, dict) or not isinstance(state.get("proxies"), list):
+        return None
+    auth = state.get("auth")
+    if bool(auth) != getattr(args, "auth_enabled", False):
+        return None
+    if auth and (not isinstance(auth, dict) or auth.get("image") != args.helper_image):
+        return None
+    if cached_manifest != serializable_manifest(manifest):
+        return None
+    images = resolve_images(repo, manifest)
+    proxies = state["proxies"]
+    expected = {
+        proxy["name"]: proxy.get("image")
+        for proxy in proxies
+        if isinstance(proxy, dict) and isinstance(proxy.get("name"), str)
+    }
+    if expected != images:
+        return None
+    containers = [proxy.get("container") for proxy in proxies]
+    if any(not isinstance(container, str) or not container for container in containers):
+        return None
+    if not containers_running(containers):
+        return None
+    return state
+
+
 def attach_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     runtime = runtime_directory(repo)
@@ -376,17 +421,15 @@ def attach_main(args: argparse.Namespace) -> int:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         metadata = None
-    if isinstance(metadata, dict) and metadata.get("repository") == repository_identity(repo):
-        state = metadata.get("state")
-        manifest = metadata.get("manifest")
-        if isinstance(state, dict) and isinstance(state.get("proxies"), list) and isinstance(manifest, dict):
-            current_manifest = load_manifest_file(Path(args.manifest))
-            refresh_shared_proxies(args, repo, state, current_manifest)
-            write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
-            write_atomic(Path(args.manifest), json.dumps(current_manifest, sort_keys=True))
-            return 0
+    current_manifest = load_manifest_file(Path(args.manifest))
+    state = cached_session_state(args, repo, metadata, current_manifest)
+    if state is not None:
+        write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
+        return 0
     if shared:
-        raise ConfigError("shared proxy session metadata is missing or invalid")
+        raise ConfigError("active proxy session changed or is unavailable; restart after active sandboxes exit")
+    if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
+        stop_state(metadata["state"])
     metadata_path.unlink(missing_ok=True)
     start_main(args)
     return 0
@@ -477,20 +520,16 @@ def zuliprc_mount_args(path: Path) -> list[str]:
 def start_one_proxy(
     args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
     state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
-    *, volume: str | None = None, container: str | None = None,
-    socket_name: str = "socket", record: bool = True, create_volume: bool = True,
 ) -> dict[str, str]:
-    volume = volume or f"{args.prefix}-{name}"
-    container = container or f"{args.prefix}-{name}"
+    volume = f"{args.prefix}-{name}"
+    container = f"{args.prefix}-{name}"
     proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
-    if record:
-        with state_lock:
-            state["proxies"].append(proxy)
-            write_atomic(Path(args.state), json.dumps(state))
-    if create_volume:
-        _docker(
-            "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
-        )
+    with state_lock:
+        state["proxies"].append(proxy)
+        write_atomic(Path(args.state), json.dumps(state))
+    _docker(
+        "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
+    )
     docker_args = [
         "run", "--detach", "--name", container, "--cap-drop=ALL",
         "--label", "dev.codex.sandbox-proxy=true",
@@ -503,7 +542,7 @@ def start_one_proxy(
         "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
         "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
         "--entrypoint", command["argv"][0],
-        "--env", f"SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/{socket_name}",
+        "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
     ]
     if name == "jj":
@@ -546,66 +585,6 @@ def start_one_proxy(
     ))
     detail = f":\n{diagnostics}" if diagnostics else ""
     raise ConfigError(f"proxy {name} did not become ready{detail}")
-
-
-def promote_socket(args: argparse.Namespace, volume: str, socket_name: str) -> None:
-    _docker(
-        "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}",
-        "--entrypoint", "/bin/mv",
-        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-        args.helper_image,
-        f"/run/sandbox-proxy/{socket_name}", "/run/sandbox-proxy/socket",
-    )
-
-
-def refresh_shared_proxies(
-    args: argparse.Namespace, repo: Path, state: dict[str, Any], manifest: dict[str, Any],
-) -> None:
-    images = resolve_images(repo, manifest)
-    identity = repository_identity(repo)
-    state.setdefault("retired-proxies", [])
-    by_name = {proxy["name"]: proxy for proxy in state["proxies"]}
-    removed = set(by_name) - set(manifest["commands"])
-    state["retired-proxies"].extend(by_name[name] for name in removed)
-    state["proxies"] = [proxy for proxy in state["proxies"] if proxy["name"] not in removed]
-    for name, command in manifest["commands"].items():
-        old = by_name.get(name)
-        if old is None:
-            try:
-                added = start_one_proxy(
-                    args, repo, identity, images, state, threading.Lock(), name, command,
-                    record=False,
-                )
-            except Exception:
-                subprocess.run(["docker", "rm", "--force", f"{args.prefix}-{name}"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["docker", "volume", "rm", f"{args.prefix}-{name}"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                raise
-            state["proxies"].append(added)
-            continue
-        if old.get("image") == images[name]:
-            continue
-        socket_name = f"socket-{os.getpid()}-{name}"
-        try:
-            replacement = start_one_proxy(
-                args, repo, identity, images, state, threading.Lock(), name, command,
-                volume=old["volume"], container=f"{args.prefix}-{name}",
-                socket_name=socket_name, record=False, create_volume=False,
-            )
-        except Exception:
-            subprocess.run(["docker", "rm", "--force", f"{args.prefix}-{name}"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            raise
-        try:
-            promote_socket(args, old["volume"], socket_name)
-        except Exception:
-            subprocess.run(["docker", "rm", "--force", replacement["container"]],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            raise
-        state["retired-proxies"].append(old)
-        state["proxies"] = [replacement if proxy["name"] == name else proxy
-                            for proxy in state["proxies"]]
 
 
 def start_main(args: argparse.Namespace) -> int:
@@ -906,10 +885,15 @@ def parse_args() -> argparse.Namespace:
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
     attach.add_argument("--helper-image", required=True)
+    attach.add_argument("--auth-enabled", action="store_true")
     attach.add_argument("--network", required=True)
     attach.add_argument("--manifest", required=True)
     attach.add_argument("--zuliprc")
     attach.set_defaults(function=attach_main)
+    reset = sub.add_parser("reset")
+    reset.add_argument("--repo", required=True)
+    reset.set_defaults(function=reset_main)
+
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)
     publish.add_argument("--state", required=True)

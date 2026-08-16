@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,6 +14,7 @@ import textwrap
 import time
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -356,6 +358,47 @@ class CodexSandboxTest(unittest.TestCase):
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
+    def test_bare_launch_gets_a_resumable_session_id(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        arguments, session_id = launcher["resumable_arguments"]([])
+        self.assertEqual(["--session-id", session_id], arguments)
+        self.assertRegex(session_id, r"^[0-9a-f-]{36}$")
+        self.assertEqual(
+            (["--session", "existing"], "existing"),
+            launcher["resumable_arguments"](["--session", "existing"]),
+        )
+        self.assertEqual(
+            (["--resume"], None),
+            launcher["resumable_arguments"](["--resume"]),
+        )
+
+    def test_restart_all_stops_resets_and_relaunches_registered_panes(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        registrations = [{
+            "version": 1, "pane": "%3", "repository": str(self.repo),
+            "session": "session-id", "token": "token",
+        }]
+        calls = []
+        resets = []
+        function_globals = launcher["restart_all_tmux_sessions"].__globals__
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            function_globals, {
+                "tmux_registrations": mock.Mock(side_effect=[registrations, []]),
+                "run": lambda arguments, **kwargs: calls.append(arguments),
+                "helper": lambda *arguments: resets.append(arguments),
+            },
+        ):
+            self.assertEqual(0, launcher["restart_all_tmux_sessions"]())
+        self.assertEqual([("reset", "--repo", str(self.repo))], resets)
+        self.assertEqual(3, sum(call[-1] == "C-c" for call in calls))
+        literal = next(call for call in calls if "-l" in call)
+        self.assertEqual(
+            f"cd {shlex.quote(str(self.repo))} && pi --session session-id",
+            literal[-1],
+        )
+        self.assertTrue(any(call[-1] == "Enter" for call in calls))
+        self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
+
     def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
         result = self.run_launcher("auth", "login")
         self.assertEqual(0, result.returncode, result.stderr)
@@ -475,7 +518,7 @@ class CodexSandboxTest(unittest.TestCase):
             FAKE_SESSION="shared",
             FAKE_PROXY_STATE=(
                 '{"proxies":[],"auth":{"container":"shared-auth-proxy",'
-                '"key":"shared-key"}}'
+                '"key":"shared-key","image":"sha256:' + '0' * 64 + '"}}'
             ),
         )
         self.assertEqual(0, result.returncode, result.stderr)
@@ -501,7 +544,7 @@ class CodexSandboxTest(unittest.TestCase):
             FAKE_SIDECAR_NETWORK="0",
             FAKE_PROXY_STATE=(
                 '{"proxies":[],"auth":{"container":"stale-auth-proxy",'
-                '"key":"stale-key"}}'
+                '"key":"stale-key","image":"sha256:' + '0' * 64 + '"}}'
             ),
         )
 
@@ -564,7 +607,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(23, result.returncode, result.stderr)
         removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
         self.assertEqual(1, len(removals))
-        self.assertRegex(removals[0][2], r"^codex-sandbox-[0-9]+-[0-9]+$")
+        self.assertRegex(removals[0][2], r"^codex-sandbox-[0-9]+-[0-9a-f]{12}$")
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
