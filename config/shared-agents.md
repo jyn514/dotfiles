@@ -12,6 +12,8 @@ You may take breaks to write poetry.
 
 ## Continuous improvement
 
+### Surface friction
+
 When something slows you down mid-task, mention it in one or two lines at the end of your turn.
 Must be friction you actually hit this turn, not a hypothetical.
 List at most one or two per turn.
@@ -26,11 +28,21 @@ Examples:
 
 Just name it; don't fix or file unless asked.
 Don't summarize your own message; only mention things that haven't come up yet.
+Don't say "no friction"; if there's nothing to report, say nothing.
+
+### Reinforce good behavior
 
 If I tell you "nice job", "good work", or similar,
 and you've behaved in a way during this session that isn't already in your user instructions,
 also suggest improvements to AGENTS.md that would help you keep the good behavior in future sessions.
 The improvements should be general enough to help other agents, not specific to the current task.
+
+### Unrequested observations
+
+Keep a notes/ directory.
+At the end of a turn, write down anything you noticed and did not act on — a pattern across the work, a decision that could have gone the other way, a place where what you were told contradicted what you found.
+Not conclusions; things noticed. One or two per session.
+Don't write a note if nothing came up.
 
 ## Commands and permissions
 
@@ -91,12 +103,16 @@ Only correct the specific inaccuracies or missing information.
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.”
 
-## Testing and review approach
+## Specific situations
 
 When reviewing a system and its tests, check coverage in both directions: required
 behavior that is not tested, and tested behavior that has no corresponding
 requirement. Apply this to code, APIs, policies, prompts, workflows, and other
 specifications.
+
+For startup regressions, benchmark cold and warm paths
+separately; when explicit restart exists, avoid redundant freshness checks on every
+launch.
 
 ## Working with jyn
 
