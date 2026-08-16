@@ -37,7 +37,7 @@ def main() -> None:
     try:
         for tag, base_image in (
             (alpine, None),
-            (debian, "node:24-bookworm-slim"),
+            (debian, "node:20-bookworm-slim"),
         ):
             build(tag, base_image)
             output = run(
@@ -45,7 +45,8 @@ def main() -> None:
                 "node --version; cat /opt/agent-pi/REVISION; "
                 "/opt/agent-pi/bin/pi --version",
             ).splitlines()
-            if not output[0].startswith("v24.") or output[1] != PI_REVISION:
+            expected_node = "v24." if tag == alpine else "v20."
+            if not output[0].startswith(expected_node) or output[1] != PI_REVISION:
                 raise RuntimeError(f"unexpected Pi runtime: {output!r}")
     finally:
         subprocess.run(

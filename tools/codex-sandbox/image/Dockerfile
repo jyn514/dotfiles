@@ -33,20 +33,42 @@ FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
 RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
-FROM node:24-alpine3.22 AS pi-build
+FROM alpine:3.22 AS pi-source
 ARG PI_REVISION=a4a3cfc16b9dec18868c69979c75d88fa922702c
 RUN apk add --no-cache git \
-    && git clone --filter=blob:none https://github.com/jyn514/pi.git /opt/agent-pi/src \
-    && git -C /opt/agent-pi/src checkout --detach "${PI_REVISION}" \
-    && test "$(git -C /opt/agent-pi/src rev-parse HEAD)" = "${PI_REVISION}" \
-    && rm -rf /opt/agent-pi/src/.git \
-    && npm ci --ignore-scripts --prefix /opt/agent-pi/src \
+    && git clone --filter=blob:none https://github.com/jyn514/pi.git /src \
+    && git -C /src checkout --detach "${PI_REVISION}" \
+    && test "$(git -C /src rev-parse HEAD)" = "${PI_REVISION}" \
+    && rm -rf /src/.git \
+    && printf '%s\n' "${PI_REVISION}" > /REVISION
+
+FROM node:24-alpine3.22 AS pi-build
+COPY --link --from=pi-source /src /opt/agent-pi/src
+COPY --link --from=pi-source /REVISION /opt/agent-pi/REVISION
+RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
     && npm run hydrate:model-data --prefix /opt/agent-pi/src \
-    && npm run build:offline --prefix /opt/agent-pi/src \
-    && printf '%s\n' "${PI_REVISION}" > /opt/agent-pi/REVISION
+    && npm run build:offline --prefix /opt/agent-pi/src
+
+FROM oven/bun:1.3.14 AS bun
+
+FROM node:24-bookworm-slim AS pi-binary
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --link --from=pi-source /src /opt/agent-pi/src
+COPY --link --from=pi-build /opt/agent-pi/src/packages/ai/src/providers/data \
+    /opt/agent-pi/src/packages/ai/src/providers/data
+WORKDIR /opt/agent-pi/src
+RUN npm ci --ignore-scripts \
+    && npm run build:offline \
+    && bun build --compile --no-compile-autoload-bunfig \
+        ./packages/coding-agent/dist/bun/cli.js \
+        ./packages/coding-agent/src/utils/image-resize-worker.ts \
+        --outfile packages/coding-agent/dist/pi \
+    && npm --prefix packages/coding-agent run copy-binary-assets \
+    && mv packages/coding-agent/dist /opt/agent-pi/standalone
 
 FROM ${BASE_IMAGE} AS pi-runtime
 COPY --link --from=pi-build /opt/agent-pi /opt/agent-pi
+COPY --link --from=pi-binary /opt/agent-pi/standalone /opt/agent-pi/standalone
 COPY --link --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 
