@@ -544,10 +544,28 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
 
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
+    source = state.home / ".agents/skills"
+    staged = state.skills_tmp / "skills"
+    repository_links: list[tuple[Path, Path]] = []
+    for path in source.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            relative_target = path.resolve(strict=True).relative_to(state.repository)
+        except (OSError, ValueError):
+            continue
+        repository_links.append((path.relative_to(source), relative_target))
     shutil.copytree(
-        state.home / ".agents/skills", state.skills_tmp / "skills",
-        symlinks=False, ignore_dangling_symlinks=True, dirs_exist_ok=True,
+        source, staged, symlinks=False, ignore_dangling_symlinks=True,
+        dirs_exist_ok=True,
     )
+    for relative_path, relative_target in repository_links:
+        destination = staged / relative_path
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        else:
+            destination.unlink(missing_ok=True)
+        destination.symlink_to(Path("/src/work") / relative_target)
     config = state.skills_tmp / "config"
     config.mkdir()
     for name in ("shared-agents.md", "AGENTS.md", "pi.json", "pi-mcp.json"):

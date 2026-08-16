@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import signal
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from types import SimpleNamespace
 import unittest
 
 
@@ -319,6 +321,35 @@ class CodexSandboxTest(unittest.TestCase):
         runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"] and "-it" in call]
         self.assertEqual(1, len(runs))
         return runs[0]
+
+    def test_stages_repository_skill_links_as_container_workspace_links(self) -> None:
+        repository_skill = self.repo / ".agents" / "skills" / "tighten-docs"
+        repository_skill.mkdir(parents=True)
+        (repository_skill / "SKILL.md").write_text("repository skill\n", encoding="utf-8")
+        external_skill = self.root / "external-skill"
+        external_skill.mkdir()
+        (external_skill / "SKILL.md").write_text("external skill\n", encoding="utf-8")
+        skills = self.home / ".agents" / "skills"
+        (skills / "tighten-docs").symlink_to(repository_skill, target_is_directory=True)
+        (skills / "external").symlink_to(external_skill, target_is_directory=True)
+
+        launcher = runpy.run_path(str(LAUNCHER))
+        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        try:
+            launcher["stage_skills"](state)
+            staged = state.skills_tmp / "skills"
+            self.assertEqual(
+                "/src/work/.agents/skills/tighten-docs",
+                os.readlink(staged / "tighten-docs"),
+            )
+            self.assertFalse((staged / "external").is_symlink())
+            self.assertEqual(
+                "external skill\n",
+                (staged / "external" / "SKILL.md").read_text(encoding="utf-8"),
+            )
+        finally:
+            if state.skills_tmp is not None:
+                shutil.rmtree(state.skills_tmp)
 
     def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
         result = self.run_launcher("auth", "login")
