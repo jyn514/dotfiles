@@ -14,9 +14,7 @@ You may take breaks to write poetry.
 
 ### Surface friction
 
-When something slows you down mid-task, mention it in one or two lines at the end of your turn.
-Must be friction you actually hit this turn, not a hypothetical.
-List at most one or two per turn.
+At the end of your turn, name at most two things that actually slowed you down that turn. Don't report hypothetical friction.
 If nothing caused friction, say nothing; don't invent, and don't report "no friction".
 
 Examples:
@@ -26,23 +24,16 @@ Examples:
 - a workaround for a bad API that makes the code worse
 - a step with no shortcuts, done by hand several times
 
-Just name it; don't fix or file unless asked.
-Don't summarize your own message; only mention things that haven't come up yet.
-Don't say "no friction"; if there's nothing to report, say nothing.
+Just name it; don't fix or file unless asked, and don't repeat anything already mentioned.
 
 ### Reinforce good behavior
 
-If I tell you "nice job", "good work", or similar,
-and you've behaved in a way during this session that isn't already in your user instructions,
-also suggest improvements to AGENTS.md that would help you keep the good behavior in future sessions.
-The improvements should be general enough to help other agents, not specific to the current task.
+If I tell you "nice job", "good work", or similar, and the praised behavior isn't already in my instructions, suggest a general AGENTS.md change that would preserve it for other agents and future sessions.
 
 ### Unrequested observations
 
 Keep a notes/ directory.
-At the end of a turn, write down anything you noticed and did not act on — a pattern across the work, a decision that could have gone the other way, a place where what you were told contradicted what you found.
-Not conclusions; things noticed. One or two per session.
-Don't write a note if nothing came up.
+At the end of a turn, record one or two unaddressed observations per session: a pattern across the work, a decision that could have gone another way, or a contradiction between what you were told and what you found. Record observations, not conclusions; write nothing if none arose.
 
 ## Commands and permissions
 
@@ -65,32 +56,31 @@ If you need access to remote code, use `git clone --depth 1` into a temporary di
 
 ### Shell command construction
 
-Quoting may prevent the sandbox from matching an approved command prefix, even when the shell would accept the command.
+Quoting can prevent the sandbox from matching an approved command prefix even when the shell accepts the command.
 
-- Write executable and subcommand tokens literally. Do not generate commands that quote every argument: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
-- Quote only arguments that require shell quoting, such as titles containing spaces.
-- Escape arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
-- If command generation is genuinely necessary, preserve the literal approved prefix and generate only the trailing arguments.
+- Write executable and subcommand tokens literally: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`.
+- Quote only arguments that require it, such as titles containing spaces.
+- Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
+- If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
 
 ## Commits
 
 Use `jj`, not `git` directly.
 `jj` snapshots your changes, supports `jj undo`, and allows editing history without modifying the working tree.
+Use `jj commit` for new commits, not `jj describe`.
 
 ### Commit messages
 
 Write commit messages for the next person debugging or reviewing the change, not merely to label the diff.
 
-Use an imperative subject that names the affected behavior. Keep the subject concise, but add a body whenever the reason, failure mode, constraints, or verification are not obvious from the diff.
+Use a concise imperative subject naming the affected behavior. When the diff doesn't make the reason, failure mode, constraints, or verification obvious, add a body explaining:
 
-The body should explain:
-
-- what user-visible or operational problem existed
+- the user-visible or operational problem
 - why the previous behavior was wrong
 - the important design choice or constraint behind the fix
 - how the change was verified, especially for regressions or security boundaries
 
-Do not narrate file-by-file edits or repeat the subject. Record information that would otherwise require reconstructing the original investigation.
+Don't narrate file-by-file edits or repeat the subject. Record what a reader would otherwise have to reconstruct.
 
 For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe.
 
@@ -129,22 +119,22 @@ operational mechanisms, and human responsibilities from actions you can perform.
 
 ## Design principles
 
-Think of systems in terms of design principles like:
+Think of systems through these design principles:
 
-- langsec, at a broader level than mere serialization/deserialization. This means representing data precisely without overloading representations (except inside an abstraction that contains the unsafety). This means avoiding in-band signalling at a broader level.
-- parse, don't validate: put all the checks in one place and structure your domain model. Stringly typed fields containing structured data are reason for suspicion: if something doesn't fit into the domain model, fix the domain model rather than overloading meanings.
-- make invalid states unrepresentable: use language tools (within reason, singletons is an example of this going a bit far into poor ergonomics) to model unintended states out of internal representations.
-- design for testability: split the system where it allows meaningful amounts of business logic to be tested, in places there would actually be bugs. It's strongly preferable to be able to run most of the system in-memory in test, allowing tests to generate and run through thousands of cases in milliseconds. Yet, the test only has value if it catches actual bugs: if the database is in the trusted computing base due to large amounts of business logic or subtle invariants being upheld by it, then we figure out how to run the database in-memory for tests, if possible, rather than mocking out the database.
-  The plan-execute pattern is often helpful to testability.
+- langsec beyond serialization/deserialization: represent data precisely and avoid overloaded representations or in-band signalling, except inside an abstraction that contains the unsafety.
+- parse, don't validate: centralize checks in a structured domain model. Treat stringly typed fields containing structured data as suspect; if something doesn't fit, fix the model instead of overloading meanings.
+- make invalid states unrepresentable: use language tools to exclude unintended internal states, but not past the point of poor ergonomics—for example, singletons.
+- design for testability: split where meaningful business logic and likely bugs can be tested. Prefer running most of the system in memory, enabling thousands of generated cases in milliseconds. If database logic or subtle invariants put it in the trusted computing base, run the database in memory when possible rather than mocking it.
+  The plan-execute pattern often helps.
 
 ## Testing
 
 Test systems thoroughly but practically:
 
-- property tests: writing a program to generate examples can compress much more testing into much less code, and is less vulnerable to get-there-itis/reward hacking
-- golden tests: writing tests as a thoughtfully-designed fixture that treats tests as data, asserting behaviour at a layer that's meaningful to consumers. For example, rust-analyzer uses markers layered on Rust source code to test its features, with one check(input, updatable_expect) function for dozens of separate tests.
-- courage, not coverage: the purpose of tests is to catch bugs and allow fearless refactoring, not to cover everything possible; the test only has value if it could catch a behavioural divergence a consumer cares about. Don't assert that constants have the same value in the code as the test; mistakes will just hit both.
-- Example tests should be fluid to read and tell a meaningful narrative: what are the edge cases we think are most important? What behaviour would be most troublesome if it broke?
+- property tests: programs that generate examples compress more testing into less code and resist get-there-itis and reward hacking
+- golden tests: use thoughtful fixtures as data and assert behavior at a consumer-meaningful layer. For example, rust-analyzer layers markers on Rust source code and uses one `check(input, updatable_expect)` function for dozens of tests.
+- courage, not coverage: tests should catch consumer-relevant behavioral divergences and enable fearless refactoring, not cover everything possible. Don't mirror code constants in tests; mistakes will hit both.
+- example tests should read fluidly and tell a meaningful narrative: what edge cases matter most, and what behavior would be most troublesome if it broke?
 
 ## Artifacts
 
