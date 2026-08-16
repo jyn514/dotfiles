@@ -253,6 +253,7 @@ class ManifestTest(unittest.TestCase):
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
         (runtime / "session.json").write_text(json.dumps({
+            "version": 1,
             "repository": sandbox_proxies.repository_identity(self.repo),
             "commands": {}, "state": {"proxies": []},
             "manifest": {"version": 1, "commands": {}},
@@ -394,6 +395,22 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertTrue(ready.exists())
 
+    def test_reset_stops_and_forgets_persistent_session(self) -> None:
+        self.write()
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        metadata = runtime / "session.json"
+        state = {"proxies": []}
+        metadata.write_text(json.dumps({
+            "version": 1,
+            "repository": sandbox_proxies.repository_identity(self.repo),
+            "state": state,
+        }), encoding="utf-8")
+        args = type("Args", (), {"repo": str(self.repo)})
+        with mock.patch.object(sandbox_proxies, "stop_state") as stop:
+            self.assertEqual(0, sandbox_proxies.reset_main(args))
+        stop.assert_called_once_with(state)
+        self.assertFalse(metadata.exists())
+
     def test_lock_holders_share_one_repository_session(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
@@ -418,6 +435,7 @@ class ManifestTest(unittest.TestCase):
                 self.assertTrue(ready.exists())
                 if index == 0:
                     metadata.write_text(json.dumps({
+                        "version": 1,
                         "repository": sandbox_proxies.repository_identity(self.repo),
                         "state": {"proxies": []}, "commands": {},
                         "manifest": {"version": 1, "commands": {}},
@@ -429,7 +447,7 @@ class ManifestTest(unittest.TestCase):
             self.assertTrue(metadata.exists())
             controls[1][2].touch()
             self.assertEqual(0, processes[1].wait(timeout=2))
-            self.assertFalse(metadata.exists())
+            self.assertTrue(metadata.exists())
         finally:
             for _, coordinated, release in controls:
                 coordinated.touch()
@@ -450,6 +468,7 @@ class ManifestTest(unittest.TestCase):
             sandbox_proxies.load_manifest(self.repo)
         )
         (runtime / "session.json").write_text(json.dumps({
+            "version": 1,
             "repository": sandbox_proxies.repository_identity(self.repo),
             "commands": {}, "state": shared_state, "manifest": shared_manifest,
         }), encoding="utf-8")
@@ -464,55 +483,73 @@ class ManifestTest(unittest.TestCase):
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
-                mock.patch.object(sandbox_proxies, "refresh_shared_proxies") as refresh:
+                mock.patch.object(sandbox_proxies, "resolve_images", return_value={
+                    "example": "sha256:" + "0" * 64,
+                }), mock.patch.object(sandbox_proxies, "containers_running", return_value=True):
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         start.assert_not_called()
         publish.assert_not_called()
-        refresh.assert_called_once_with(args, self.repo.resolve(), shared_state, shared_manifest)
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
 
-    def test_refresh_atomically_promotes_changed_proxy_images(self) -> None:
-        command = self.command()
-        manifest = {"version": 1, "commands": {"example": command}}
-        old = {
+    def test_exclusive_session_rebuilds_changed_cached_proxies(self) -> None:
+        self.write({"example": self.command()})
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        old_state = {"proxies": [{
             "name": "example", "volume": "shared-example", "container": "old-example",
             "image": "sha256:" + "0" * 64,
-        }
-        replacement = {**old, "container": "new-example", "image": "sha256:" + "1" * 64}
-        state = {"proxies": [old]}
-        args = type("Args", (), {"prefix": "new", "state": str(self.repo / "state")})
-        with mock.patch.object(
-            sandbox_proxies, "resolve_images", return_value={"example": replacement["image"]},
-        ), mock.patch.object(
-            sandbox_proxies, "start_one_proxy", return_value=replacement,
-        ) as start, mock.patch.object(sandbox_proxies, "promote_socket") as promote:
-            sandbox_proxies.refresh_shared_proxies(args, self.repo, state, manifest)
-        self.assertEqual([replacement], state["proxies"])
-        self.assertEqual([old], state["retired-proxies"])
-        self.assertEqual("shared-example", start.call_args.kwargs["volume"])
-        self.assertFalse(start.call_args.kwargs["create_volume"])
-        socket_name = start.call_args.kwargs["socket_name"]
-        promote.assert_called_once_with(args, "shared-example", socket_name)
+        }]}
+        (runtime / "session.json").write_text(json.dumps({
+            "version": 1,
+            "repository": sandbox_proxies.repository_identity(self.repo),
+            "state": old_state, "manifest": {"version": 1, "commands": {}},
+        }), encoding="utf-8")
+        session = self.repo / "session"
+        session.write_text("new\n", encoding="utf-8")
+        args = type("Args", (), {
+            "repo": str(self.repo), "session": str(session),
+            "state": str(self.repo / "state"), "manifest": str(self.repo / "manifest"),
+        })
+        Path(args.manifest).write_text(json.dumps(
+            sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))
+        ), encoding="utf-8")
+        with mock.patch.object(sandbox_proxies, "stop_state") as stop, \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            self.assertEqual(0, sandbox_proxies.attach_main(args))
+        stop.assert_called_once_with(old_state)
+        start.assert_called_once_with(args)
 
-    def test_socket_promotion_runs_as_volume_owner(self) -> None:
-        args = type("Args", (), {"helper_image": "helper-image"})
-        with mock.patch.object(sandbox_proxies, "_docker") as docker:
-            sandbox_proxies.promote_socket(args, "shared-volume", "replacement-socket")
-        self.assertIn("--user", docker.call_args.args)
-        user = docker.call_args.args[docker.call_args.args.index("--user") + 1]
-        self.assertEqual(f"{os.getuid()}:{os.getgid()}", user)
+    def test_shared_session_rejects_changed_cached_proxies(self) -> None:
+        self.write()
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        (runtime / "session.json").write_text(json.dumps({
+            "version": 1,
+            "repository": sandbox_proxies.repository_identity(self.repo),
+            "state": {"proxies": []}, "manifest": {"version": 1, "commands": {"old": {}}},
+        }), encoding="utf-8")
+        session = self.repo / "session"
+        session.write_text("shared\n", encoding="utf-8")
+        manifest = self.repo / "manifest"
+        manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
+        args = type("Args", (), {
+            "repo": str(self.repo), "session": str(session),
+            "state": str(self.repo / "state"), "manifest": str(manifest),
+        })
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "restart after active"):
+            sandbox_proxies.attach_main(args)
 
     def test_attach_does_not_replace_invalid_active_session(self) -> None:
         self.write()
         session = self.repo / "attached-session"
         session.write_text("shared\n", encoding="utf-8")
+        manifest = self.repo / "manifest"
+        manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "session": str(session),
-            "state": str(self.repo / "state"), "manifest": str(self.repo / "manifest"),
+            "state": str(self.repo / "state"), "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start:
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing or invalid"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "changed or is unavailable"):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
 

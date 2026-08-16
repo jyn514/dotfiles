@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import shlex
 import shutil
 import secrets
 import signal
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 
 DOTFILES = Path(__file__).resolve().parents[2]
@@ -86,6 +88,8 @@ class State:
     relay_egress_created: bool = False
     relay_container_created: bool = False
     cleaned: bool = False
+    tmux_pane: str | None = None
+    tmux_registration: str | None = None
 
 
 def run(
@@ -138,10 +142,20 @@ def parse_connection(path: Path) -> dict[str, str]:
     return values
 
 
+def resumable_arguments(arguments: list[str]) -> tuple[list[str], str | None]:
+    if not arguments:
+        session_id = str(uuid.uuid4())
+        return ["--session-id", session_id], session_id
+    if len(arguments) == 2 and arguments[0] in ("--session", "--session-id") and arguments[1]:
+        return arguments, arguments[1]
+    return arguments, None
+
+
 def new_state(codex_arguments: list[str]) -> State:
+    codex_arguments, _ = resumable_arguments(codex_arguments)
     home = Path(os.environ["HOME"])
     uid = os.getuid()
-    suffix = f"{uid}-{os.getpid()}"
+    suffix = f"{uid}-{secrets.token_hex(6)}"
     access = Path(os.environ.get("AGENT_PODMAN_ACCESS_DIR", home / ".agent-podman-access"))
     state = State(
         codex_arguments=codex_arguments,
@@ -187,6 +201,40 @@ def load_agent_podman(state: State) -> None:
         raise LauncherError("Agent Podman connection does not use the expected host endpoint")
     values["SOCKET_PATH"] = host.removeprefix(prefix)
     state.agent_podman = values
+
+
+def register_tmux_pane(state: State) -> None:
+    pane = os.environ.get("TMUX_PANE")
+    _, session_id = resumable_arguments(state.codex_arguments)
+    if pane is None or session_id is None:
+        return
+    registration = base64.urlsafe_b64encode(json.dumps({
+        "version": 1,
+        "pane": pane,
+        "repository": str(state.repository),
+        "session": session_id,
+        "token": secrets.token_hex(16),
+    }, separators=(",", ":"), sort_keys=True).encode()).decode()
+    run([
+        "tmux", "set-option", "-p", "-t", pane,
+        "@codex_sandbox_restart", registration,
+    ], quiet=True)
+    state.tmux_pane = pane
+    state.tmux_registration = registration
+
+
+def unregister_tmux_pane(state: State) -> None:
+    if state.tmux_pane is None or state.tmux_registration is None:
+        return
+    current = run([
+        "tmux", "show-option", "-p", "-v", "-t", state.tmux_pane,
+        "@codex_sandbox_restart",
+    ], check=False, capture=True, quiet=True)
+    if current.returncode == 0 and current.stdout.strip() == state.tmux_registration:
+        run([
+            "tmux", "set-option", "-p", "-u", "-t", state.tmux_pane,
+            "@codex_sandbox_restart",
+        ], check=False, quiet=True)
 
 
 def validate_repository(state: State) -> None:
@@ -371,30 +419,10 @@ def attach_proxies(state: State) -> list[str]:
         if state.zuliprc is not None:
             arguments += ["--zuliprc", str(state.zuliprc)]
         auth_directory = _secure_codex_auth_directory(state)
-        new_session = state.lock_ready.read_text(encoding="utf-8").strip() == "new"
-        if new_session and auth_directory is not None:
-            auth_result = None
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                attach_future = executor.submit(helper, *arguments)
-                auth_future = executor.submit(start_codex_sidecar, state, auth_directory)
-                try:
-                    attach_future.result()
-                    auth_result = auth_future.result()
-                except Exception:
-                    try:
-                        auth_result = auth_future.result()
-                    except Exception:
-                        pass
-                    if auth_result is not None:
-                        stop_codex_sidecar(auth_result[0]["container"])
-                    raise
-            proxy_state = json.loads(state.proxy_state.read_text(encoding="utf-8"))
-            proxy_state["auth"] = auth_result[0]
-            state.proxy_state.write_text(json.dumps(proxy_state, sort_keys=True), encoding="utf-8")
-            sidecar_arguments = auth_result[1]
-        else:
-            helper(*arguments)
-            sidecar_arguments = attach_codex_sidecar(state, auth_directory)
+        if auth_directory is not None:
+            arguments.append("--auth-enabled")
+        helper(*arguments)
+        sidecar_arguments = attach_codex_sidecar(state, auth_directory)
         return [*sidecar_arguments, *finalize_proxy_session(state)]
     finally:
         state.lock_coordinated.touch()
@@ -513,7 +541,7 @@ def start_codex_sidecar(state: State, auth_directory: Path) -> tuple[dict[str, s
                 "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
             ], check=False, quiet=True)
             if result.returncode == 0:
-                sidecar = {"container": container, "key": key}
+                sidecar = {"container": container, "key": key, "image": state.sidecar_image}
                 return sidecar, codex_sidecar_arguments(container, key)
             status = run([
                 "docker", "inspect", "--format", "{{.State.Running}}", container,
@@ -543,10 +571,12 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
         proxy_state["auth"] = sidecar
         state.proxy_state.write_text(json.dumps(proxy_state, sort_keys=True), encoding="utf-8")
         return arguments
-    if not isinstance(sidecar, dict) or set(sidecar) != {"container", "key"} or not all(
+    if not isinstance(sidecar, dict) or set(sidecar) != {"container", "key", "image"} or not all(
         isinstance(sidecar[field], str) and sidecar[field]
-        for field in ("container", "key")
+        for field in ("container", "key", "image")
     ):
+        raise LauncherError("active sandbox proxy session has invalid authentication state")
+    if sidecar["image"] != state.sidecar_image:
         raise LauncherError("active sandbox proxy session has invalid authentication state")
     if not codex_sidecar_has_sandbox_network(sidecar["container"]):
         raise LauncherError(
@@ -726,6 +756,7 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
+    register_tmux_pane(state)
     builder = state.repository / ".agents/sandbox/base-image"
     if builder.is_file() and os.access(builder, os.X_OK):
         base_image = run([str(builder)], capture=True, cwd=state.repository).stdout.strip()
@@ -871,7 +902,77 @@ def login_codex_sidecar() -> int:
     return subprocess.run(["codex", "login"], env=environment).returncode
 
 
+def tmux_registrations() -> list[dict[str, str]]:
+    result = run([
+        "tmux", "list-panes", "-a", "-F", "#{@codex_sandbox_restart}",
+    ], capture=True)
+    registrations = []
+    for encoded in result.stdout.splitlines():
+        if not encoded:
+            continue
+        try:
+            payload = json.loads(base64.urlsafe_b64decode(encoded).decode())
+        except (ValueError, UnicodeError, json.JSONDecodeError) as error:
+            raise LauncherError("tmux contains an invalid sandbox restart registration") from error
+        if not isinstance(payload, dict) or set(payload) != {
+            "version", "pane", "repository", "session", "token",
+        } or payload["version"] != 1 or not all(
+            isinstance(payload[field], str) and payload[field]
+            for field in ("pane", "repository", "session", "token")
+        ):
+            raise LauncherError("tmux contains an invalid sandbox restart registration")
+        registrations.append(payload)
+    return registrations
+
+
+def restart_all_tmux_sessions() -> int:
+    if "TMUX" not in os.environ:
+        raise LauncherError("restart-all must run inside tmux")
+    registrations = tmux_registrations()
+    if not registrations:
+        raise LauncherError("tmux has no registered sandbox sessions")
+    for registration in registrations:
+        for _ in range(3):
+            run(["tmux", "send-keys", "-t", registration["pane"], "C-c"])
+            time.sleep(0.05)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if not tmux_registrations():
+            break
+        time.sleep(0.1)
+    else:
+        raise LauncherError("sandbox panes did not stop within 15 seconds")
+    for repository in sorted({item["repository"] for item in registrations}):
+        helper("reset", "--repo", repository)
+    for registration in registrations:
+        command = (
+            shlex.join(["cd", registration["repository"]])
+            + " && "
+            + shlex.join(["pi", "--session", registration["session"]])
+        )
+        run(["tmux", "send-keys", "-t", registration["pane"], "-l", command])
+        run(["tmux", "send-keys", "-t", registration["pane"], "Enter"])
+    message = f"Restarted {len(registrations)} sandbox session(s)."
+    run(["tmux", "display-message", "-d", "5000", message], check=False, quiet=True)
+    print(message)
+    return 0
+
+
 def main(arguments: list[str]) -> int:
+    if arguments == ["restart-all"]:
+        try:
+            return restart_all_tmux_sessions()
+        except (LauncherError, OSError, subprocess.CalledProcessError) as error:
+            message = f"Sandbox restart failed: {error}"
+            if "TMUX" in os.environ:
+                try:
+                    run([
+                        "tmux", "display-message", "-d", "8000", message,
+                    ], check=False, quiet=True)
+                except OSError:
+                    pass
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     if arguments == ["auth", "login"]:
         try:
             return login_codex_sidecar()
@@ -888,7 +989,8 @@ def main(arguments: list[str]) -> int:
         state = new_state(arguments)
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             previous_handlers[signum] = signal.signal(signum, handle_signal)
-        return execute(state)
+        result = execute(state)
+        return result
     except SignalExit as error:
         return 128 + error.signum
     except LauncherError as error:
@@ -904,6 +1006,7 @@ def main(arguments: list[str]) -> int:
             signal.signal(signum, signal.SIG_IGN)
         if state is not None:
             cleanup(state)
+            unregister_tmux_pane(state)
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
 
