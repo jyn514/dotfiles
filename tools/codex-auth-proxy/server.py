@@ -11,10 +11,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import threading
 import time
 from urllib.parse import urlencode
+import uuid
 
 AUTH = Path("/var/lib/codex-auth/auth.json")
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -33,6 +35,39 @@ FORWARDED_RESPONSE_HEADERS = {
 }
 REFRESH_LOCK = threading.Lock()
 SESSION_KEY = os.environ["CODEX_SIDECAR_KEY"]
+
+
+def connection_diagnostic(connection) -> dict[str, object]:
+    socket = getattr(connection, "sock", None)
+    if socket is None:
+        return {}
+    details: dict[str, object] = {}
+    try:
+        details["tls_version"] = socket.version()
+    except Exception:
+        pass
+    try:
+        cipher = socket.cipher()
+        if cipher:
+            details["tls_cipher"] = cipher[0]
+    except Exception:
+        pass
+    return details
+
+
+def log_failure(request_id: str, phase: str, body_length: int, error: Exception,
+                connection=None) -> None:
+    event: dict[str, object] = {
+        "event": "upstream_failure",
+        "request_id": request_id,
+        "phase": phase,
+        "body_bytes": body_length,
+        "error_type": type(error).__name__,
+        "error": str(error),
+    }
+    if connection is not None:
+        event.update(connection_diagnostic(connection))
+    print(json.dumps(event, separators=(",", ":"), sort_keys=True), file=sys.stderr, flush=True)
 
 
 def jwt_payload(token: str) -> dict:
@@ -166,13 +201,23 @@ class Handler(BaseHTTPRequestHandler):
             self.error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "invalid request size")
             return
         body = self.rfile.read(length)
+        request_id = uuid.uuid4().hex
+        upstream = None
+        phase = "credentials"
         try:
             access, account = credentials()
             headers = upstream_headers(self.headers, access, account, len(body))
             upstream = HTTPSConnection(UPSTREAM_HOST, timeout=300)
+            phase = "tls_connect"
+            upstream.connect()
+            phase = "request_upload"
             upstream.request("POST", UPSTREAM_PATH, body, headers)
+            phase = "response_headers"
             response = upstream.getresponse()
         except Exception as error:
+            log_failure(request_id, phase, len(body), error, upstream)
+            if upstream is not None:
+                upstream.close()
             self.error(HTTPStatus.BAD_GATEWAY, f"Codex sidecar authentication or connection failed: {error}")
             return
         self.send_response(response.status, response.reason)
@@ -191,6 +236,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as error:
+            log_failure(request_id, "response_stream", len(body), error, upstream)
         finally:
             upstream.close()
 

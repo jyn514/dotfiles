@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import ssl
 import tempfile
 import unittest
 from unittest import mock
@@ -49,6 +50,37 @@ class FakeConnection:
 
     def close(self) -> None:
         pass
+
+
+class FakeSocket:
+    def version(self) -> str:
+        return "TLSv1.3"
+
+    def cipher(self) -> tuple[str, str, int]:
+        return ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)
+
+
+class DiagnosticTest(unittest.TestCase):
+    def test_logs_failure_metadata_without_request_content(self) -> None:
+        connection = mock.Mock(sock=FakeSocket())
+        error = ssl.SSLError("bad record mac")
+        with mock.patch.object(proxy.sys, "stderr") as stderr:
+            proxy.log_failure("local-id", "request_upload", 123456, error, connection)
+
+        event = json.loads(stderr.write.call_args_list[0].args[0])
+        self.assertEqual({
+            "event": "upstream_failure",
+            "request_id": "local-id",
+            "phase": "request_upload",
+            "body_bytes": 123456,
+            "error_type": "SSLError",
+            "error": "('bad record mac',)",
+            "tls_version": "TLSv1.3",
+            "tls_cipher": "TLS_AES_256_GCM_SHA384",
+        }, event)
+
+    def test_tolerates_connection_without_tls_socket(self) -> None:
+        self.assertEqual({}, proxy.connection_diagnostic(mock.Mock(sock=None)))
 
 
 class HeaderPolicyTest(unittest.TestCase):
