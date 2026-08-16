@@ -226,6 +226,9 @@ class CodexSandboxTest(unittest.TestCase):
             if [ "$1" = inspect ]; then
                 case " $* " in
                     *" {{.State.Running}} "*) printf '%s\n' true ;;
+                    *"if index"*"NetworkSettings.Networks"*)
+                        [ "${FAKE_SIDECAR_NETWORK:-1}" = 1 ] && printf '%s\n' true
+                        ;;
                     *) printf '%s\n' "${FAKE_RELAY_IP:-}" ;;
                 esac
                 exit 0
@@ -479,6 +482,27 @@ class CodexSandboxTest(unittest.TestCase):
         agent = self.final_run()
         self.assertIn("CODEX_SIDECAR_URL=http://shared-auth-proxy:8787", agent)
         self.assertIn("CODEX_SIDECAR_KEY=shared-key", agent)
+
+    def test_rejects_cached_auth_sidecar_from_another_network(self) -> None:
+        auth = self.home / ".codex-sandbox-auth"
+        auth.mkdir(mode=0o700)
+        (auth / "auth.json").write_text(
+            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
+        )
+        (auth / "auth.json").chmod(0o600)
+
+        result = self.run_launcher(
+            FAKE_SESSION="shared",
+            FAKE_SIDECAR_NETWORK="0",
+            FAKE_PROXY_STATE=(
+                '{"proxies":[],"auth":{"container":"stale-auth-proxy",'
+                '"key":"stale-key"}}'
+            ),
+        )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("belongs to another sandbox network", result.stderr)
+        self.assertFalse(any(call[0] == "run" for call in read_calls(self.docker_log)))
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")

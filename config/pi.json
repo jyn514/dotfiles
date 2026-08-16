@@ -1,6 +1,7 @@
 {
   "lastChangelogVersion": "0.84.2",
   "defaultThinkingLevel": "low",
+  "transport": "sse",
   "tuiMode": "fullscreen",
   "shellCommandPrefix": "export JJ_AGENT=pi",
   "defaultProjectTrust": "ask",
