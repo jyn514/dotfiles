@@ -72,7 +72,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm /usr/local/bin/install-agent-deps
 
 COPY --link --from=tools /opt/agent-tools /opt/agent-tools
-COPY --link --from=pi /opt/agent-pi /opt/agent-pi
 
 COPY ./tools/codex-sandbox/image/create-user.sh .
 ARG AGENT_UID=1000
