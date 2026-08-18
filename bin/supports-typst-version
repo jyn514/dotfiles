@@ -3,11 +3,25 @@
 
 import argparse
 import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import time
 import urllib.error
 import urllib.request
 
 
 INDEX_URL = "https://packages.typst.org/preview/index.json"
+CACHE_TTL = 60 * 60
+
+
+def cache_path() -> Path:
+    if cache_root := os.environ.get("XDG_CACHE_HOME"):
+        return Path(cache_root) / "supports-typst-version" / "index.json"
+    if sys.platform == "darwin":
+        return Path.home() / "Library/Caches/supports-typst-version/index.json"
+    return Path.home() / ".cache/supports-typst-version/index.json"
 
 
 def version(value: str) -> tuple[int, ...]:
@@ -30,9 +44,35 @@ def get(url: str) -> bytes:
         return response.read()
 
 
+def package_index() -> list[dict[str, object]]:
+    path = cache_path()
+    try:
+        if time.time() - path.stat().st_mtime < CACHE_TTL:
+            return json.loads(path.read_bytes())
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    contents = get(INDEX_URL)
+    entries = json.loads(contents)
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as cache:
+            cache.write(contents)
+            temporary = Path(cache.name)
+        os.replace(cache.name, path)
+    except OSError:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return entries
+
+
 def latest_compatible(package: str, compiler: str) -> str:
     target = version(compiler)
-    entries = json.loads(get(INDEX_URL))
+    entries = package_index()
     compatible: list[tuple[int, ...]] = []
 
     for entry in entries:
