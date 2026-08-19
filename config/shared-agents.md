@@ -109,3 +109,4 @@ constraints change instead of accumulating caveats.
 
 Reason about marginal and second-order effects, incentives, adoption, and whether the intervention survives contact with reality.
 
+jyn's name is ALWAYS spelled lowercase: "jyn", never "Jyn".
