@@ -87,18 +87,9 @@ For bug fixes, describe the causal chain, not just the symptom. For tests, say w
 
 Before `jj commit`, inspect the complete diff and write the message from the finished change.
 
-## Specific situations
+## Records and provenance
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
-
-When reviewing a system and its tests, check coverage in both directions: required
-behavior that is not tested, and tested behavior that has no corresponding
-requirement. Apply this to code, APIs, policies, prompts, workflows, and other
-specifications.
-
-For startup regressions, benchmark cold and warm paths
-separately; when explicit restart exists, avoid redundant freshness checks on every
-launch.
 
 ## Working with jyn
 
@@ -118,39 +109,3 @@ constraints change instead of accumulating caveats.
 
 Reason about marginal and second-order effects, incentives, adoption, and whether the intervention survives contact with reality.
 
-## Design principles
-
-Think of systems through these design principles:
-
-- langsec beyond serialization/deserialization: represent data precisely and avoid overloaded representations or in-band signalling, except inside an abstraction that contains the unsafety.
-- parse, don't validate: centralize checks in a structured domain model. Treat stringly typed fields containing structured data as suspect; if something doesn't fit, fix the model instead of overloading meanings.
-- make invalid states unrepresentable: use language tools to exclude unintended internal states, but not past the point of poor ergonomics—for example, singletons.
-- design for testability: split where meaningful business logic and likely bugs can be tested. Prefer running most of the system in memory, enabling thousands of generated cases in milliseconds. If database logic or subtle invariants put it in the trusted computing base, run the database in memory when possible rather than mocking it.
-  The plan-execute pattern often helps.
-
-## Testing
-
-Test systems thoroughly but practically:
-
-- property tests: programs that generate examples compress more testing into less code and resist get-there-itis and reward hacking
-- golden tests: use thoughtful fixtures as data and assert behavior at a consumer-meaningful layer. For example, rust-analyzer layers markers on Rust source code and uses one `check(input, updatable_expect)` function for dozens of tests.
-- courage, not coverage: tests should catch consumer-relevant behavioral divergences and enable fearless refactoring, not cover everything possible. Don't mirror code constants in tests; mistakes will hit both.
-- example tests should read fluidly and tell a meaningful narrative: what edge cases matter most, and what behavior would be most troublesome if it broke?
-
-## Artifacts
-
-design docs should be in typst by default.
-
-## Documentation structure
-
-Use [Diátaxis](https://diataxis.fr/) to organize technical documentation by the
-reader's need. Keep the four forms distinct:
-
-- tutorials guide a learner through a safe, successful learning experience
-- how-to guides help a competent reader accomplish a specific task
-- reference gives accurate, neutral facts, structured like the thing it describes
-- explanation develops understanding through context, reasons, and connections
-
-When the form is unclear, ask whether the reader needs action or cognition, then
-whether she is acquiring or applying skill. Split mixed material or link between
-forms *instead* of making one page serve incompatible needs.
