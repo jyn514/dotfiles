@@ -1,3 +1,4 @@
+/notes
 /bacon.toml
 /.jj
 .ipynb_checkpoints/
@@ -36,8 +37,8 @@ target/
 .DS_Store
 .nvimlog
 .pnpm-store/
+
+AGENTS.local.md
 /.codex/rules/local.rules
-
 **/.claude/settings.local.json
-
 **/.claude/.cc-writes/
