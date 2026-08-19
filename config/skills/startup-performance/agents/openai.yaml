@@ -1,0 +1,3 @@
+interface:
+  display_name: "Startup Performance"
+  short_description: "Diagnose launch and configuration latency"
