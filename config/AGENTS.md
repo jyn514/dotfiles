@@ -93,8 +93,3 @@ When using subagents:
 ## Commands and permissions
 
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
-
-## Performance investigations
-
-Benchmark each process boundary under the user’s actual command resolution. Distinguish the agent’s inherited environment from the user’s interactive shell.
-For runtime configuration regressions, inspect effective state as well as source. Check reload idempotence and hidden callbacks or subprocesses.
