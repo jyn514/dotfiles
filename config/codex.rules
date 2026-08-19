@@ -20,7 +20,7 @@ allow(["jj", "workspace", "list"])
 allow(["jj", "op", "log"])
 
 # Read-only git commands
-allow(["git", ["ls-remote", "cherry", "cat-file"]])
+allow(["git", ["ls-remote", "cherry", "cat-file", "fetch"]])
 allow(["git", "push", "--dry-run"])
 allow(["git", "diff", "--check"])
 
