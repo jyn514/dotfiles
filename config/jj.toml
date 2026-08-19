@@ -14,7 +14,7 @@ merge-editor = "diffconflicts"
 
 [merge-tools.moved]
 program = "sh"
-diff-args = ["-c", "git diff --no-index --color=always \"$1\" \"$2\" | delta", "-", "$left", "$right"]
+diff-args = ["-c", "git diff --ignore-all-space --no-index --color=always \"$1\" \"$2\" | delta", "-", "$left", "$right"]
 
 [merge-tools.diffconflicts]
 program = "nvim"
