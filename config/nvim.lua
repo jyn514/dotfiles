@@ -613,9 +613,9 @@ require('blink.cmp').setup {
 	-- snippets
 	keymap = {
 		['<C-k>'] = false,
-		['<C-f>'] = { 'select_and_accept', 'fallback' },
+		['<Tab>'] = { 'select_and_accept', 'fallback' },
 		['<Enter>'] = { 'snippet_forward', 'fallback' },
-		['<C-e>'] = { 'cancel', 'hide_signature', 'fallback' },
+		['<C-c>'] = { 'cancel', 'hide_signature', 'fallback' },
 		['<C-n>'] = { 'show', 'select_next', 'fallback' },
 	},
 	signature = {
