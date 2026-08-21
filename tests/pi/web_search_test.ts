@@ -1,127 +1,69 @@
 import { describe, expect, test } from "bun:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import webSearch from "../../config/pi-extensions/pi-web-search";
 import {
-  addNativeSearchTool,
+  appendWebSearchSources,
   createMetadataCollector,
-  formatWebSearchResult,
-  runNativeWebSearch,
-  searchFilterInstructions,
+  SUPPORTED_SEARCH_APIS,
 } from "../../config/pi-extensions/pi-web-search-core";
 
-describe("native web search payloads", () => {
-  test("adds each provider's native tool without losing existing tools", () => {
-    expect(addNativeSearchTool(
-      { tools: [{ name: "local", input_schema: {} }] },
-      "anthropic-messages",
-    )).toEqual({
-      tools: [
-        { name: "local", input_schema: {} },
-        { type: "web_search_20250305", name: "web_search" },
-      ],
-    });
+describe("provider web search extension", () => {
+  test("does not break startup on Pi versions without provider tools", () => {
+    expect(() => webSearch({} as ExtensionAPI)).not.toThrow();
+  });
 
-    expect(addNativeSearchTool(
-      { config: { temperature: 0, tools: [{ functionDeclarations: [] }] } },
-      "google-generative-ai",
+  test("registers provider search and persists citations on the same assistant turn", () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const providerTools: unknown[] = [];
+    const pi = {
+      registerProviderTool(tool: unknown) {
+        providerTools.push(tool);
+      },
+      on(event: string, handler: (...args: unknown[]) => unknown) {
+        handlers.set(event, handler);
+      },
+    } as unknown as ExtensionAPI;
+    webSearch(pi);
+
+    expect(providerTools).toEqual([{ type: "web_search", searchContextSize: "medium" }]);
+    expect(handlers.get("before_agent_start")?.(
+      { systemPrompt: "Base instructions." },
+      { model: { api: "openai-responses" } },
     )).toEqual({
-      config: {
-        temperature: 0,
-        tools: [{ functionDeclarations: [] }, { googleSearch: {} }],
+      systemPrompt: expect.stringContaining(
+        "Search results and snippets may lag behind origin sites.",
+      ),
+    });
+    handlers.get("turn_start")?.({});
+    handlers.get("provider_event")?.({
+      event: {
+        payload: { type: "url_citation", url: "https://example.com/a", title: "A" },
       },
     });
+    const result = handlers.get("message_end")?.({
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "The answer." }],
+      },
+    }) as { message: { content: unknown[] } };
 
-    expect(addNativeSearchTool(
-      { tools: [{ type: "function", name: "local" }] },
-      "openai-responses",
-    )).toEqual({
-      tools: [{ type: "function", name: "local" }, { type: "web_search" }],
-    });
-  });
-
-  test("does not add duplicate native tools", () => {
-    const payload = { tools: [{ type: "web_search" }] };
-    expect(addNativeSearchTool(payload, "openai-codex-responses")).toBe(payload);
-  });
-});
-
-describe("structured web search results", () => {
-  test("serializes stable fields for tool consumers", () => {
-    const text = formatWebSearchResult({
-      query: "latest release",
-      answer: "Version 1.2 was released.",
-      retrievedAt: "2026-08-21T20:00:00.000Z",
-      sources: [{ url: "https://example.com/release", title: "Release" }],
-      searches: ["latest release"],
-    });
-
-    expect(JSON.parse(text)).toEqual({
-      query: "latest release",
-      answer: "Version 1.2 was released.",
-      retrievedAt: "2026-08-21T20:00:00.000Z",
-      sources: [{ url: "https://example.com/release", title: "Release" }],
-      searches: ["latest release"],
-    });
-  });
-});
-
-describe("web search filters", () => {
-  test("translates filters into provider-independent search constraints", () => {
-    expect(searchFilterInstructions({
-      domains: ["rust-lang.org", "github.com"],
-      startDate: "2026-08-01",
-      endDate: "2026-08-21",
-      maxResults: 3,
-      primarySourcesOnly: true,
-    })).toEqual([
-      "Only use sources from these domains: rust-lang.org, github.com.",
-      "Only use information published on or after 2026-08-01.",
-      "Only use information published on or before 2026-08-21.",
-      "Use at most 3 distinct sources.",
-      "Use primary sources only.",
+    expect(result.message.content).toEqual([
+      { type: "text", text: "The answer." },
+      { type: "text", text: "Sources:\n- A: https://example.com/a" },
     ]);
   });
+});
 
-  test("limits returned citations and sends constraints to the search model", async () => {
-    const result = await runNativeWebSearch(
-      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 2048 },
-      "releases",
-      undefined,
-      async (context, options) => {
-        expect(context.systemPrompt).toContain("Only use sources from these domains: example.com.");
-        expect(context.systemPrompt).toContain("Use at most 1 distinct sources.");
-        options.onProviderEvent({
-          payload: {
-            type: "web_search_call",
-            action: {
-              query: "releases site:example.com",
-              sources: [
-                { url: "https://example.com/one", title: "One" },
-                { url: "https://other.test/two", title: "Two" },
-              ],
-            },
-          },
-        });
-        return {
-          content: [{ type: "text", text: "One release." }],
-          stopReason: "stop",
-          usage: {},
-        };
-      },
-      { domains: ["example.com"], maxResults: 1 },
-    );
-
-    expect(result.sources).toEqual([{ url: "https://example.com/one", title: "One" }]);
-    expect(result.answer).toContain("https://example.com/one");
-    expect(result.answer).not.toContain("https://other.test/two");
-  });
-
-  test("rejects reversed date ranges", async () => {
-    await expect(runNativeWebSearch(
-      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 2048 },
-      "releases",
-      undefined,
-      async () => { throw new Error("must not search"); },
-      { startDate: "2026-08-21", endDate: "2026-08-01" },
-    )).rejects.toThrow("startDate must not be after endDate");
+describe("provider web search support", () => {
+  test("lists APIs with first-class provider search serialization", () => {
+    expect([...SUPPORTED_SEARCH_APIS]).toEqual([
+      "anthropic-messages",
+      "azure-openai-responses",
+      "google-generative-ai",
+      "google-vertex",
+      "openai-codex-responses",
+      "openai-responses",
+    ]);
   });
 });
 
@@ -171,55 +113,6 @@ describe("native web search metadata", () => {
     });
   });
 
-  test("returns citations and nested usage to the calling tool", async () => {
-    const usage = { input: 4, output: 8 };
-    const result = await runNativeWebSearch(
-      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 2048 },
-      "what happened?",
-      undefined,
-      async (context, options) => {
-        expect(context.messages[0].content[0].text).toBe("what happened?");
-        expect(options.maxTokens).toBe(2048);
-        expect(options.onPayload({ tools: [] })).toEqual({ tools: [{ type: "web_search" }] });
-        options.onProviderEvent({
-          payload: {
-            type: "response.completed",
-            response: {
-              output: [{
-                annotations: [{ type: "url_citation", url: "https://example.com/news", title: "News" }],
-              }],
-            },
-          },
-        });
-        return {
-          content: [{ type: "text", text: "The answer." }],
-          stopReason: "stop",
-          usage,
-        };
-      },
-    );
-
-    expect(result).toEqual({
-      answer: "The answer.\n\nSources:\n- News: https://example.com/news",
-      sources: [{ url: "https://example.com/news", title: "News" }],
-      searches: [],
-      usage,
-    });
-  });
-
-  test("fails clearly when Pi drops provider events", async () => {
-    await expect(runNativeWebSearch(
-      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 8192 },
-      "query",
-      undefined,
-      async () => ({
-        content: [{ type: "text", text: "Uncited answer" }],
-        stopReason: "stop",
-        usage: {},
-      }),
-    )).rejects.toThrow("update Pi");
-  });
-
   test("ignores malformed URLs and handles cycles", () => {
     const payload: Record<string, unknown> = {
       type: "url_citation",
@@ -229,5 +122,28 @@ describe("native web search metadata", () => {
     const collector = createMetadataCollector();
     collector.observe(payload);
     expect(collector.metadata).toEqual({ sources: [], searches: [] });
+  });
+});
+
+describe("web search citations", () => {
+  test("appends missing sources to assistant content", () => {
+    expect(appendWebSearchSources(
+      [{ type: "text", text: "The answer." }],
+      [
+        { url: "https://example.com/a", title: "A" },
+        { url: "https://example.com/b" },
+      ],
+    )).toEqual([
+      { type: "text", text: "The answer." },
+      {
+        type: "text",
+        text: "Sources:\n- A: https://example.com/a\n- https://example.com/b",
+      },
+    ]);
+  });
+
+  test("does not duplicate citations already present in text", () => {
+    const content = [{ type: "text", text: "See https://example.com/a." }];
+    expect(appendWebSearchSources(content, [{ url: "https://example.com/a", title: "A" }])).toBe(content);
   });
 });
