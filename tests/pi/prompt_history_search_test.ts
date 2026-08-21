@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   collectPromptHistory,
+  mergePromptHistories,
   searchPromptHistory,
 } from "../../config/pi-extensions/prompt-history-search-core";
 
@@ -36,6 +37,25 @@ describe("prompt history collection", () => {
       { type: "message", message: { role: "user", content: "  " } },
       { type: "custom", data: {} },
     ])).toEqual([]);
+  });
+});
+
+describe("prompt history merge", () => {
+  test("deduplicates across sessions and keeps the newest occurrence", () => {
+    expect(mergePromptHistories([
+      [
+        { text: "shared", timestamp: 10 },
+        { text: "old", timestamp: 5 },
+      ],
+      [
+        { text: "new", timestamp: 20 },
+        { text: "shared", timestamp: 15 },
+      ],
+    ])).toEqual([
+      { text: "new", timestamp: 20 },
+      { text: "shared", timestamp: 15 },
+      { text: "old", timestamp: 5 },
+    ]);
   });
 });
 

@@ -48,6 +48,25 @@ export function collectPromptHistory(entries: readonly unknown[]): PromptHistory
   return prompts;
 }
 
+export function mergePromptHistories(
+  histories: readonly (readonly PromptHistoryEntry[])[],
+): PromptHistoryEntry[] {
+  const newestByText = new Map<string, PromptHistoryEntry>();
+
+  for (const history of histories) {
+    for (const prompt of history) {
+      const existing = newestByText.get(prompt.text);
+      if (!existing || (prompt.timestamp ?? 0) > (existing.timestamp ?? 0)) {
+        newestByText.set(prompt.text, prompt);
+      }
+    }
+  }
+
+  return [...newestByText.values()].sort(
+    (left, right) => (right.timestamp ?? 0) - (left.timestamp ?? 0),
+  );
+}
+
 export function searchPromptHistory(
   prompts: readonly PromptHistoryEntry[],
   query: string,
