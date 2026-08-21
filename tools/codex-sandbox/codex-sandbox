@@ -612,7 +612,7 @@ def stage_skills(state: State) -> None:
         destination.symlink_to(Path("/src/work") / relative_target)
     config = state.skills_tmp / "config"
     config.mkdir()
-    for name in ("shared-agents.md", "AGENTS.md", "pi.json", "pi-mcp.json"):
+    for name in ("shared-agents.md", "pi-AGENTS.md", "breq.md", "pi.json", "pi-mcp.json"):
         shutil.copy2(DOTFILES / "config" / name, config / name)
     shutil.copytree(DOTFILES / "config/pi-extensions", config / "pi-extensions")
 
@@ -698,7 +698,8 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'skills'},dst=/home/codex/.agents/skills",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-extensions'},dst=/home/codex/.pi/agent/pi-extensions,readonly",

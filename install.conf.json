@@ -10,7 +10,10 @@
   {
     "link": {
       "$HOME/.codex/AGENTS.md": "config/AGENTS.md",
-      "$HOME/.pi/agent/AGENTS.md": "config/AGENTS.md",
+      "$HOME/.codex/breq.md": "config/breq.md",
+      "$HOME/.codex/developer-instructions.md": "config/codex-developer-instructions.md",
+      "$HOME/.pi/agent/AGENTS.md": "config/pi-AGENTS.md",
+      "$HOME/.pi/agent/breq.md": "config/breq.md",
       "$HOME/.pi/agent/mcp.json": "config/pi-mcp.json",
       "$HOME/.pi/agent/settings.json": "config/pi.json",
       "$HOME/.claude/CLAUDE.md": "config/CLAUDE.md",
