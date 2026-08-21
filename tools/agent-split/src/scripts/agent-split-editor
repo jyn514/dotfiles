@@ -71,6 +71,11 @@
             (swap! paths into [left right]))
           (fail! (str "malformed diff header: " line)))
 
+        (some #(str/starts-with? line %)
+              ["rename from " "rename to " "copy from " "copy to "])
+        (let [[_ path] (re-matches #"(?:rename|copy) (?:from|to) (.+)" line)]
+          (swap! paths conj path))
+
         (or (str/starts-with? line "--- ")
             (str/starts-with? line "+++ "))
         (let [path (subs line 4)]

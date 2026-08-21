@@ -172,6 +172,16 @@
               result (run-editor trees patch)]
           (assert-failure result #"unsafe patch path")
           (is (= "right\n" (slurp (str (fs/file right "note.txt"))))))))))
+  (testing "rename metadata traversal"
+    (with-trees*
+      (fn [{:keys [left right] :as trees}]
+        (write-file! (fs/file left "old.txt") "same\n")
+        (write-file! (fs/file right "new.txt") "same\n")
+        (let [patch (str "diff --git a/old.txt b/new.txt\n"
+                         "similarity index 100%\n"
+                         "rename from old.txt\n"
+                         "rename to ../outside.txt\n")]
+          (assert-failure (run-editor trees patch) #"unsafe patch path")))))
 
 (deftest split-editor-dry-run-rejects-patches-that-do-not-apply
   (with-trees*
@@ -213,6 +223,50 @@
                          "@@ -0,0 +1 @@\n"
                          "+selected\n")]
           (assert-failure (run-editor trees patch) #"not contained|outside"))))))
+
+(deftest split-editor-selects-pure-rename
+  (with-trees*
+    (fn [{:keys [left right] :as trees}]
+      (write-file! (fs/file left "old.txt") "same\n")
+      (write-file! (fs/file right "new.txt") "same\n")
+      (let [patch (str "diff --git a/old.txt b/new.txt\n"
+                       "similarity index 100%\n"
+                       "rename from old.txt\n"
+                       "rename to new.txt\n")
+            result (run-editor trees patch)]
+        (assert-success result)
+        (is (not (fs/exists? (fs/file right "old.txt"))))
+        (is (= "same\n" (slurp (str (fs/file right "new.txt")))))))))
+
+(deftest split-editor-selects-rename-with-content-change
+  (with-trees*
+    (fn [{:keys [left right] :as trees}]
+      (write-file! (fs/file left "old.txt") "before\n")
+      (write-file! (fs/file right "new.txt") "after\n")
+      (let [patch (str "diff --git a/old.txt b/new.txt\n"
+                       "similarity index 50%\n"
+                       "rename from old.txt\n"
+                       "rename to new.txt\n"
+                       "--- a/old.txt\n"
+                       "+++ b/new.txt\n"
+                       "@@ -1 +1 @@\n"
+                       "-before\n"
+                       "+after\n")
+            result (run-editor trees patch)]
+        (assert-success result)
+        (is (not (fs/exists? (fs/file right "old.txt"))))
+        (is (= "after\n" (slurp (str (fs/file right "new.txt")))))))))
+
+(deftest split-editor-rejects-stale-rename-destination
+  (with-trees*
+    (fn [{:keys [left right] :as trees}]
+      (write-file! (fs/file left "old.txt") "same\n")
+      (write-file! (fs/file right "new.txt") "different\n")
+      (let [patch (str "diff --git a/old.txt b/new.txt\n"
+                       "similarity index 100%\n"
+                       "rename from old.txt\n"
+                       "rename to new.txt\n")]
+        (assert-failure (run-editor trees patch) #"not contained|stale")))))
 
 (deftest split-editor-preserves-executable-bit-selection
   (with-trees*
