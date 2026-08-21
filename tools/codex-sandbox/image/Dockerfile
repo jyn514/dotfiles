@@ -43,8 +43,8 @@ RUN apk add --no-cache git \
     && printf '%s\n' "${PI_REVISION}" > /REVISION
 
 FROM node:24-alpine3.22 AS pi-build
-COPY --link --from=pi-source /src /opt/agent-pi/src
-COPY --link --from=pi-source /REVISION /opt/agent-pi/REVISION
+COPY --from=pi-source /src /opt/agent-pi/src
+COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
 RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
     && npm run hydrate:model-data --prefix /opt/agent-pi/src \
     && npm run build:offline --prefix /opt/agent-pi/src
@@ -53,8 +53,8 @@ FROM oven/bun:1.3.14 AS bun
 
 FROM node:24-bookworm-slim AS pi-binary
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
-COPY --link --from=pi-source /src /opt/agent-pi/src
-COPY --link --from=pi-build /opt/agent-pi/src/packages/ai/src/providers/data \
+COPY --from=pi-source /src /opt/agent-pi/src
+COPY --from=pi-build /opt/agent-pi/src/packages/ai/src/providers/data \
     /opt/agent-pi/src/packages/ai/src/providers/data
 WORKDIR /opt/agent-pi/src
 RUN npm ci --ignore-scripts \
@@ -67,9 +67,9 @@ RUN npm ci --ignore-scripts \
     && mv packages/coding-agent/dist /opt/agent-pi/standalone
 
 FROM ${BASE_IMAGE} AS pi-runtime
-COPY --link --from=pi-build /opt/agent-pi /opt/agent-pi
-COPY --link --from=pi-binary /opt/agent-pi/standalone /opt/agent-pi/standalone
-COPY --link --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
+COPY --from=pi-build /opt/agent-pi /opt/agent-pi
+COPY --from=pi-binary /opt/agent-pi/standalone /opt/agent-pi/standalone
+COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 
 FROM pi-runtime
@@ -81,7 +81,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     KEEP_PACKAGE_CACHE=1 install-agent-deps \
     && rm /usr/local/bin/install-agent-deps
 
-COPY --link --from=tools /opt/agent-tools /opt/agent-tools
+COPY --from=tools /opt/agent-tools /opt/agent-tools
 
 COPY ./tools/codex-sandbox/image/create-user.sh .
 ARG AGENT_UID=1000
