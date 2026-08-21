@@ -438,16 +438,20 @@ class CodexSandboxTest(unittest.TestCase):
                 "/home/codex/.pi/agent/breq.md",
                 "/home/codex/.pi/agent/settings.json",
                 "/home/codex/.pi/agent/mcp.json",
-                "/home/codex/.pi/agent/pi-extensions",
             ))
         ]
-        self.assertEqual(6, len(staged_mounts))
+        self.assertEqual(5, len(staged_mounts))
         staged_sources = [
             Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
             for item in staged_mounts
         ]
         self.assertEqual(1, len({source.parent for source in staged_sources}))
         self.assertTrue(all(not source.is_relative_to(ROOT) for source in staged_sources))
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/pi-extensions'},"
+            "dst=/home/codex/.pi/agent/pi-extensions,readonly",
+            run,
+        )
         self.assertNotIn("pi-agent-", " ".join(run))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
