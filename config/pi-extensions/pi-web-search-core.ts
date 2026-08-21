@@ -27,6 +27,16 @@ export interface NativeSearchResult<TUsage> extends SearchMetadata {
   usage: TUsage;
 }
 
+export interface StructuredSearchResult extends SearchMetadata {
+  query: string;
+  answer: string;
+  retrievedAt: string;
+}
+
+export function formatWebSearchResult(result: StructuredSearchResult): string {
+  return JSON.stringify(result, null, 2);
+}
+
 export type SearchApi =
   | "anthropic-messages"
   | "azure-openai-responses"

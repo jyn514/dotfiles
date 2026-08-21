@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { runNativeWebSearch } from "./pi-web-search-core";
+import { formatWebSearchResult, runNativeWebSearch } from "./pi-web-search-core";
 
 export default function webSearch(pi: ExtensionAPI) {
   pi.registerTool({
@@ -25,10 +25,21 @@ export default function webSearch(pi: ExtensionAPI) {
         (context, options) => ctx.modelRegistry.complete(model, context, options),
       );
 
+      const retrievedAt = new Date().toISOString();
       return {
-        content: [{ type: "text", text: result.answer }],
+        content: [{
+          type: "text",
+          text: formatWebSearchResult({
+            query: params.query,
+            answer: result.answer,
+            retrievedAt,
+            sources: result.sources,
+            searches: result.searches,
+          }),
+        }],
         details: {
           query: params.query,
+          retrievedAt,
           provider: model.provider,
           model: model.id,
           sources: result.sources,
