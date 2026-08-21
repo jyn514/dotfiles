@@ -1,5 +1,5 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -8,15 +8,6 @@ type CacheEntry = { mtimeMs: number; size: number; content: string };
 
 const cache = new Map<string, CacheEntry>();
 const decoder = new TextDecoder("utf-8", { fatal: true });
-
-function isWithin(path: string, root: string): boolean {
-  const suffix = relative(root, path);
-  return suffix === "" || (!suffix.startsWith("..") && !isAbsolute(suffix));
-}
-
-async function canonicalDirectory(path: string): Promise<string> {
-  return realpath(path);
-}
 
 async function readUtf8(path: string): Promise<string> {
   const metadata = await stat(path);
@@ -57,7 +48,6 @@ function includesIn(content: string): string[] {
 
 async function expandFile(
   path: string,
-  roots: string[],
   stack: string[],
 ): Promise<string> {
   let canonical: string;
@@ -67,9 +57,6 @@ async function expandFile(
     throw new Error(`instruction include does not exist: ${path}`, { cause: error });
   }
 
-  if (!roots.some((root) => isWithin(canonical, root))) {
-    throw new Error(`instruction include escapes allowed roots: ${path}`);
-  }
   const cycleAt = stack.indexOf(canonical);
   if (cycleAt !== -1) {
     throw new Error(`instruction include cycle: ${[...stack.slice(cycleAt), canonical].join(" -> ")}`);
@@ -81,7 +68,7 @@ async function expandFile(
     const target = include.startsWith("~/")
       ? resolve(homedir(), include.slice(2))
       : resolve(dirname(canonical), include);
-    children.push(await expandFile(target, roots, [...stack, canonical]));
+    children.push(await expandFile(target, [...stack, canonical]));
   }
 
   return [`<!-- instruction include: ${canonical} -->`, content, ...children].join("\n\n");
@@ -89,13 +76,8 @@ async function expandFile(
 
 export async function expandInstructionIncludes(
   contextFiles: ContextFile[],
-  cwd: string,
+  _cwd: string,
 ): Promise<string[]> {
-  const cwdRoot = await canonicalDirectory(cwd);
-  const contextRoots = await Promise.all(
-    contextFiles.map(async (file) => canonicalDirectory(dirname(file.path))),
-  );
-  const roots = [...new Set([cwdRoot, ...contextRoots])];
   const expanded: string[] = [];
 
   for (const contextFile of contextFiles) {
@@ -103,7 +85,7 @@ export async function expandInstructionIncludes(
       const target = include.startsWith("~/")
         ? resolve(homedir(), include.slice(2))
         : resolve(dirname(contextFile.path), include);
-      expanded.push(await expandFile(target, roots, []));
+      expanded.push(await expandFile(target, []));
     }
   }
   return expanded;
