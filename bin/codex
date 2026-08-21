@@ -1,10 +1,32 @@
 #!/bin/sh
-# Wrapper: launch Codex with this dir on PATH so its shells and tooling resolve
-# the jj/paste shims (bare `jj` hits the author shim, which detects Codex via
-# CODEX_THREAD_ID). Codex has no system-prompt override — its instruction layer
-# is ~/.codex/AGENTS.md + project AGENTS.md — so this only fixes up PATH.
-DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
+set -eu
+
+# Codex does not expand @ includes. Expand a small include manifest and inject
+# the combined files as developer instructions without generating AGENTS.md.
+DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 REAL=$(shim_resolve "$0" codex)
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
-exec "$REAL" "$@"
+CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
+MANIFEST=${CODEX_DEVELOPER_INSTRUCTIONS_FILE:-"$CODEX_HOME/developer-instructions.md"}
+MANIFEST_DIR=$(dirname -- "$MANIFEST")
+COMBINED=$(tmp_file codex-developer-instructions.XXXXXX)
+trap 'rm -f "$COMBINED"' 0 1 2 15
+while IFS= read -r directive || [ -n "$directive" ]; do
+	case "$directive" in
+		""|'#'*) continue ;;
+		@*) include=${directive#@} ;;
+		*) fail "$MANIFEST: expected @path, comment, or blank line: $directive" ;;
+	esac
+	case "$include" in
+		/*) path=$include ;;
+		\~/*) path=$HOME/${include#\~/} ;;
+		*) path=$MANIFEST_DIR/$include ;;
+	esac
+	cat "$path" >> "$COMBINED"
+	printf '\n' >> "$COMBINED"
+done < "$MANIFEST"
+DEVELOPER_INSTRUCTIONS=$(jq -Rs . < "$COMBINED")
+rm -f "$COMBINED"
+trap - 0 1 2 15
+exec "$REAL" -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
