@@ -146,6 +146,9 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertIn("major === 22 && minor >= 19", launcher)
         self.assertIn("/opt/agent-pi/src/packages/coding-agent/dist/cli.js", launcher)
         self.assertIn("exec /opt/agent-pi/standalone/pi", launcher)
+        self.assertIn(
+            "export PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent", launcher
+        )
 
     def test_base_dependencies_are_cached_independently_of_pi(self) -> None:
         dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
@@ -415,6 +418,37 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertTrue(any(call[-1] == "Enter" for call in calls))
         self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
+
+    def test_tmux_registration_declares_and_clears_pi_command(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        state = SimpleNamespace(
+            codex_arguments=["--session", "session-id"],
+            repository=self.repo,
+            tmux_pane=None,
+            tmux_registration=None,
+        )
+        calls = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            stdout = state.tmux_registration or ""
+            return subprocess.CompletedProcess(arguments, 0, stdout=stdout)
+
+        function_globals = launcher["register_tmux_pane"].__globals__
+        with mock.patch.dict(os.environ, {"TMUX_PANE": "%3"}), mock.patch.dict(
+            function_globals, {"run": fake_run}
+        ):
+            launcher["register_tmux_pane"](state)
+            launcher["unregister_tmux_pane"](state)
+
+        self.assertIn(
+            ["tmux", "set-option", "-p", "-t", "%3", "@codex_sandbox_command", "pi"],
+            calls,
+        )
+        self.assertIn(
+            ["tmux", "set-option", "-p", "-u", "-t", "%3", "@codex_sandbox_command"],
+            calls,
+        )
 
     def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
         result = self.run_launcher("auth", "login")

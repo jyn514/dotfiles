@@ -219,6 +219,10 @@ def register_tmux_pane(state: State) -> None:
         "tmux", "set-option", "-p", "-t", pane,
         "@codex_sandbox_restart", registration,
     ], quiet=True)
+    run([
+        "tmux", "set-option", "-p", "-t", pane,
+        "@codex_sandbox_command", "π",
+    ], quiet=True)
     state.tmux_pane = pane
     state.tmux_registration = registration
 
@@ -234,6 +238,10 @@ def unregister_tmux_pane(state: State) -> None:
         run([
             "tmux", "set-option", "-p", "-u", "-t", state.tmux_pane,
             "@codex_sandbox_restart",
+        ], check=False, quiet=True)
+        run([
+            "tmux", "set-option", "-p", "-u", "-t", state.tmux_pane,
+            "@codex_sandbox_command",
         ], check=False, quiet=True)
 
 

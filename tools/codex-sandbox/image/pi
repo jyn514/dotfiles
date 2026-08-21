@@ -18,4 +18,5 @@ if ! node -e '
     exit 1
 fi
 
+export PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 exec node /opt/agent-pi/src/packages/coding-agent/dist/cli.js "$@"
