@@ -26,7 +26,7 @@ AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
 PI_LAUNCHER = TOOL / "image" / "pi"
-PI_REVISION = "a4a3cfc16b9dec18868c69979c75d88fa922702c"
+PI_REVISION = "b71f69a5dc996fd1d781f69a44add1485a83079e"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -122,8 +122,8 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertIn("https://github.com/jyn514/pi.git", dockerfile)
         self.assertIn(f"ARG PI_REVISION={PI_REVISION}", dockerfile)
         self.assertIn("FROM alpine:3.22 AS pi-source", dockerfile)
-        self.assertIn("FROM node:24-alpine3.22 AS pi-build", dockerfile)
-        self.assertIn("FROM node:24-bookworm-slim AS pi-binary", dockerfile)
+        self.assertIn("FROM node:24-bookworm-slim AS pi-build", dockerfile)
+        self.assertNotIn(" AS pi-binary", dockerfile)
         self.assertIn("npm ci --ignore-scripts --prefix /opt/pi-npm", dockerfile)
         self.assertIn("./tools/pi-npm/package-lock.json", dockerfile)
         self.assertIn("npm ci --ignore-scripts --prefix /opt/agent-pi/src", dockerfile)
@@ -137,13 +137,30 @@ class AgentSandboxImageTest(unittest.TestCase):
 
         self.assertIn(f"ARG PI_REVISION={PI_REVISION}", dockerfile)
         self.assertIn('test "$(git -C /src rev-parse HEAD)" = "${PI_REVISION}"', dockerfile)
-        self.assertIn("COPY --link --from=pi-build /opt/agent-pi", dockerfile)
-        self.assertIn("COPY --link --from=pi-binary /opt/agent-pi/standalone", dockerfile)
+        self.assertEqual(1, dockerfile.count("npm ci --ignore-scripts --prefix /opt/agent-pi/src"))
+        self.assertIn("cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/", dockerfile)
+        self.assertIn("COPY --from=pi-build /opt/agent-pi /opt/agent-pi", dockerfile)
+        self.assertNotIn(" AS pi-binary", dockerfile)
         self.assertNotIn("earendil-works/pi/releases", dockerfile)
         self.assertIn("if [ ! -e /etc/alpine-release ]; then", launcher)
         self.assertIn("major === 22 && minor >= 19", launcher)
         self.assertIn("/opt/agent-pi/src/packages/coding-agent/dist/cli.js", launcher)
         self.assertIn("exec /opt/agent-pi/standalone/pi", launcher)
+
+    def test_base_dependencies_are_cached_independently_of_pi(self) -> None:
+        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn("FROM ${BASE_IMAGE} AS agent-deps", dockerfile)
+        self.assertIn("FROM agent-deps AS pi-runtime", dockerfile)
+        self.assertLess(
+            dockerfile.index("KEEP_PACKAGE_CACHE=1 install-agent-deps"),
+            dockerfile.index("FROM node:24-bookworm-slim AS pi-build"),
+        )
+
+    def test_podman_builds_independent_stages_in_parallel(self) -> None:
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+
+        self.assertIn('"docker", "build", "--jobs", "4"', launcher)
 
     def test_sandbox_gitconfig_keeps_diff_semantics_without_identity_or_credentials(self) -> None:
         result = subprocess.run(

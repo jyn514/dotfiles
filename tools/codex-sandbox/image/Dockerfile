@@ -2,6 +2,15 @@
 
 ARG BASE_IMAGE=node:24-alpine3.22
 
+FROM ${BASE_IMAGE} AS agent-deps
+COPY ./tools/codex-sandbox/image/install-deps.sh /usr/local/bin/install-agent-deps
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,target=/var/cache/apk,sharing=locked \
+    --mount=type=cache,target=/var/cache/yum,sharing=locked \
+    KEEP_PACKAGE_CACHE=1 install-agent-deps \
+    && rm /usr/local/bin/install-agent-deps
+
 FROM alpine:3.22 AS tools
 COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-tools
 ARG BB_VERSION=1.13.219
@@ -42,45 +51,30 @@ RUN apk add --no-cache git \
     && rm -rf /src/.git \
     && printf '%s\n' "${PI_REVISION}" > /REVISION
 
-FROM node:24-alpine3.22 AS pi-build
-COPY --from=pi-source /src /opt/agent-pi/src
-COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
-RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
-    && npm run hydrate:model-data --prefix /opt/agent-pi/src \
-    && npm run build:offline --prefix /opt/agent-pi/src
-
 FROM oven/bun:1.3.14 AS bun
 
-FROM node:24-bookworm-slim AS pi-binary
+FROM node:24-bookworm-slim AS pi-build
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=pi-source /src /opt/agent-pi/src
-COPY --from=pi-build /opt/agent-pi/src/packages/ai/src/providers/data \
-    /opt/agent-pi/src/packages/ai/src/providers/data
+COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
 WORKDIR /opt/agent-pi/src
-RUN npm ci --ignore-scripts \
-    && npm run build:offline \
+RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
+    && npm run hydrate:model-data --prefix /opt/agent-pi/src \
+    && npm run build:offline --prefix /opt/agent-pi/src \
     && bun build --compile --no-compile-autoload-bunfig \
         ./packages/coding-agent/dist/bun/cli.js \
         ./packages/coding-agent/src/utils/image-resize-worker.ts \
         --outfile packages/coding-agent/dist/pi \
     && npm --prefix packages/coding-agent run copy-binary-assets \
-    && mv packages/coding-agent/dist /opt/agent-pi/standalone
+    && mkdir -p /opt/agent-pi/standalone \
+    && cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/
 
-FROM ${BASE_IMAGE} AS pi-runtime
+FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
-COPY --from=pi-binary /opt/agent-pi/standalone /opt/agent-pi/standalone
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 
 FROM pi-runtime
-COPY ./tools/codex-sandbox/image/install-deps.sh /usr/local/bin/install-agent-deps
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=cache,target=/var/cache/apk,sharing=locked \
-    --mount=type=cache,target=/var/cache/yum,sharing=locked \
-    KEEP_PACKAGE_CACHE=1 install-agent-deps \
-    && rm /usr/local/bin/install-agent-deps
-
 COPY --from=tools /opt/agent-tools /opt/agent-tools
 
 COPY ./tools/codex-sandbox/image/create-user.sh .
