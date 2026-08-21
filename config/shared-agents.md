@@ -43,6 +43,8 @@ For version-sensitive CLI questions, check the installed command's built-in help
 Avoid `sed` wherever possible, it's not approved in the sandbox.
 Prefer `rg`/`head`/`tail` and other read-only commands.
 
+When vendoring or duplicating an existing file without modification, use `cp` rather than reconstructing it with `write` or a generated patch. Verify the copy with `cmp` before making any targeted edits.
+
 `jj` must always run outside the sandbox because it snapshots the working directory.
 Run it as a separate command so that other commands don't need approval.
 
