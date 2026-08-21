@@ -8,53 +8,7 @@ export interface SearchMetadata {
   searches: string[];
 }
 
-export interface SearchFilters {
-  domains?: string[];
-  startDate?: string;
-  endDate?: string;
-  maxResults?: number;
-  primarySourcesOnly?: boolean;
-}
-
-interface SearchModel {
-  api: string;
-  provider: string;
-  id: string;
-  maxTokens: number;
-}
-
-interface SearchResponse<TUsage> {
-  content: Array<{ type: string; text?: string }>;
-  stopReason: string;
-  errorMessage?: string;
-  usage: TUsage;
-}
-
-export interface NativeSearchResult<TUsage> extends SearchMetadata {
-  answer: string;
-  usage: TUsage;
-}
-
-export interface StructuredSearchResult extends SearchMetadata {
-  query: string;
-  answer: string;
-  retrievedAt: string;
-  filters?: SearchFilters;
-}
-
-export function formatWebSearchResult(result: StructuredSearchResult): string {
-  return JSON.stringify(result, null, 2);
-}
-
-export type SearchApi =
-  | "anthropic-messages"
-  | "azure-openai-responses"
-  | "google-generative-ai"
-  | "google-vertex"
-  | "openai-codex-responses"
-  | "openai-responses";
-
-const SUPPORTED_APIS = new Set<string>([
+export const SUPPORTED_SEARCH_APIS = new Set([
   "anthropic-messages",
   "azure-openai-responses",
   "google-generative-ai",
@@ -71,42 +25,15 @@ function recordArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-export function isSearchApi(api: string): api is SearchApi {
-  return SUPPORTED_APIS.has(api);
-}
-
-export function addNativeSearchTool(payload: unknown, api: SearchApi): unknown {
-  if (!isRecord(payload)) throw new Error(`Invalid ${api} request payload`);
-
-  if (api === "anthropic-messages") {
-    const tools = recordArray(payload.tools);
-    if (tools.some((tool) => tool.type === "web_search_20250305")) return payload;
-    return { ...payload, tools: [...tools, { type: "web_search_20250305", name: "web_search" }] };
-  }
-
-  if (api === "google-generative-ai" || api === "google-vertex") {
-    const config = isRecord(payload.config) ? payload.config : {};
-    const tools = recordArray(config.tools);
-    if (tools.some((tool) => "googleSearch" in tool)) return payload;
-    return { ...payload, config: { ...config, tools: [...tools, { googleSearch: {} }] } };
-  }
-
-  const tools = recordArray(payload.tools);
-  if (tools.some((tool) => tool.type === "web_search")) return payload;
-  return { ...payload, tools: [...tools, { type: "web_search" }] };
-}
-
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 export function createMetadataCollector(): {
   metadata: SearchMetadata;
-  eventCount: number;
   observe(payload: unknown): void;
 } {
   const sources = new Map<string, WebSource>();
-  let eventCount = 0;
   const searches = new Set<string>();
   const seen = new Set<object>();
 
@@ -165,123 +92,24 @@ export function createMetadataCollector(): {
     get metadata() {
       return { sources: [...sources.values()], searches: [...searches] };
     },
-    get eventCount() {
-      return eventCount;
-    },
-    observe(payload) {
-      eventCount++;
-      visit(payload);
-    },
+    observe: visit,
   };
 }
 
-function textContent(content: Array<{ type: string; text?: string }>): string {
-  return content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text" && typeof block.text === "string")
+export function appendWebSearchSources<T extends { type: string; text?: string }>(
+  content: T[],
+  sources: WebSource[],
+): T[] {
+  const existingText = content
+    .filter((block) => block.type === "text" && typeof block.text === "string")
     .map((block) => block.text)
     .join("\n");
-}
+  const missing = sources.filter((source) => !existingText.includes(source.url)).slice(0, 20);
+  if (missing.length === 0) return content;
 
-export function searchFilterInstructions(filters: SearchFilters): string[] {
-  const instructions: string[] = [];
-  if (filters.domains?.length) instructions.push(`Only use sources from these domains: ${filters.domains.join(", ")}.`);
-  if (filters.startDate) instructions.push(`Only use information published on or after ${filters.startDate}.`);
-  if (filters.endDate) instructions.push(`Only use information published on or before ${filters.endDate}.`);
-  if (filters.maxResults) instructions.push(`Use at most ${filters.maxResults} distinct sources.`);
-  if (filters.primarySourcesOnly) instructions.push("Use primary sources only.");
-  return instructions;
-}
-
-function sourceMatchesDomains(source: WebSource, domains: string[] | undefined): boolean {
-  if (!domains?.length) return true;
-  const hostname = new URL(source.url).hostname.toLowerCase();
-  return domains.some((domain) => hostname === domain.toLowerCase() || hostname.endsWith(`.${domain.toLowerCase()}`));
-}
-
-function appendSources(answer: string, sources: WebSource[]): string {
-  const missing = sources.filter((source) => !answer.includes(source.url)).slice(0, 20);
-  if (missing.length === 0) return answer;
   const lines = missing.map((source) => source.title ? `- ${source.title}: ${source.url}` : `- ${source.url}`);
-  return `${answer}\n\nSources:\n${lines.join("\n")}`;
-}
-
-export async function runNativeWebSearch<TUsage>(
-  model: SearchModel,
-  query: string,
-  signal: AbortSignal | undefined,
-  complete: (
-    context: {
-      systemPrompt: string;
-      messages: Array<{
-        role: "user";
-        content: Array<{ type: "text"; text: string }>;
-        timestamp: number;
-      }>;
-    },
-    options: {
-      signal: AbortSignal | undefined;
-      cacheRetention: "none";
-      maxTokens: number;
-      onPayload(payload: unknown): unknown;
-      onProviderEvent(event: { payload: unknown }): void;
-    },
-  ) => Promise<SearchResponse<TUsage>>,
-  filters: SearchFilters = {},
-): Promise<NativeSearchResult<TUsage>> {
-  if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
-    throw new Error("Web search startDate must not be after endDate");
-  }
-
-  const api = model.api;
-  if (!isSearchApi(api)) {
-    throw new Error(`Native web search is not supported by ${model.provider}/${model.id} (${api})`);
-  }
-
-  const collector = createMetadataCollector();
-  const response = await complete(
-    {
-      systemPrompt: [
-        "Use the provider's native web search tool to answer the question. Be concise and distinguish uncertainty.",
-        ...searchFilterInstructions(filters),
-      ].join("\n"),
-      messages: [
-        {
-          role: "user",
-          content: [{ type: "text", text: query }],
-          timestamp: Date.now(),
-        },
-      ],
-    },
-    {
-      signal,
-      cacheRetention: "none",
-      maxTokens: model.maxTokens > 0 ? Math.min(4096, model.maxTokens) : 4096,
-      onPayload: (payload) => addNativeSearchTool(payload, api),
-      onProviderEvent: (event) => collector.observe(event.payload),
-    },
-  );
-
-  if (response.stopReason === "error" || response.stopReason === "aborted") {
-    throw new Error(response.errorMessage || `Web search ${response.stopReason}`);
-  }
-  if (collector.eventCount === 0) {
-    throw new Error("This Pi build does not expose native provider events; update Pi before using web_search");
-  }
-
-  const answer = textContent(response.content);
-  if (!answer) throw new Error("Web search returned no text");
-  const metadata = collector.metadata;
-  if (metadata.sources.length === 0 && metadata.searches.length === 0) {
-    throw new Error("The provider returned an answer without using native web search");
-  }
-  const maxResults = Math.min(filters.maxResults ?? 20, 20);
-  const sources = metadata.sources
-    .filter((source) => sourceMatchesDomains(source, filters.domains))
-    .slice(0, maxResults);
-  return {
-    answer: appendSources(answer, sources),
-    sources,
-    searches: metadata.searches.slice(0, 20),
-    usage: response.usage,
-  };
+  return [
+    ...content,
+    { type: "text", text: `Sources:\n${lines.join("\n")}` } as T,
+  ];
 }

@@ -1,84 +1,47 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { formatWebSearchResult, runNativeWebSearch } from "./pi-web-search-core";
+import {
+  appendWebSearchSources,
+  createMetadataCollector,
+  SUPPORTED_SEARCH_APIS,
+} from "./pi-web-search-core";
+
+const SEARCH_INSTRUCTIONS = `Web search is available through the active model provider.
+Use it for current facts, recent events, or information requiring external sources.
+Search results and snippets may lag behind origin sites. For claims about what is latest or current, verify against a live first-party page, feed, or source repository instead of relying only on result ordering or snippets.
+Honor any domain, date-range, result-count, or primary-source constraints in the user's request.`;
 
 export default function webSearch(pi: ExtensionAPI) {
-  pi.registerTool({
-    name: "web_search",
-    label: "Web Search",
-    description: "Search the web with the active model's native search API and return structured results with cited sources.",
-    promptSnippet: "Search the web using the active model's native search capability",
-    promptGuidelines: [
-      "Use web_search for current facts, recent events, or information that requires external sources.",
-    ],
-    parameters: Type.Object({
-      query: Type.String({ description: "Question or search query" }),
-      domains: Type.Optional(Type.Array(Type.String({
-        pattern: "^(?:[a-zA-Z0-9-]+\\.)*[a-zA-Z0-9-]+$",
-      }), {
-        description: "Only use sources from these domains",
-        maxItems: 10,
-      })),
-      startDate: Type.Optional(Type.String({
-        description: "Earliest publication date, in YYYY-MM-DD format",
-        pattern: "^\\d{4}-\\d{2}-\\d{2}$",
-      })),
-      endDate: Type.Optional(Type.String({
-        description: "Latest publication date, in YYYY-MM-DD format",
-        pattern: "^\\d{4}-\\d{2}-\\d{2}$",
-      })),
-      maxResults: Type.Optional(Type.Integer({
-        description: "Maximum number of cited sources to return",
-        minimum: 1,
-        maximum: 20,
-      })),
-      primarySourcesOnly: Type.Optional(Type.Boolean({
-        description: "Use only first-party or otherwise primary sources",
-      })),
-    }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const model = ctx.model;
-      if (!model) throw new Error("No active model");
+  if (typeof pi.registerProviderTool !== "function") return;
 
-      const filters = {
-        ...(params.domains ? { domains: params.domains } : {}),
-        ...(params.startDate ? { startDate: params.startDate } : {}),
-        ...(params.endDate ? { endDate: params.endDate } : {}),
-        ...(params.maxResults ? { maxResults: params.maxResults } : {}),
-        ...(params.primarySourcesOnly !== undefined ? { primarySourcesOnly: params.primarySourcesOnly } : {}),
-      };
-      const result = await runNativeWebSearch(
-        model,
-        params.query,
-        signal,
-        (context, options) => ctx.modelRegistry.complete(model, context, options),
-        filters,
-      );
+  let collector = createMetadataCollector();
 
-      const retrievedAt = new Date().toISOString();
-      return {
-        content: [{
-          type: "text",
-          text: formatWebSearchResult({
-            query: params.query,
-            answer: result.answer,
-            retrievedAt,
-            ...(Object.keys(filters).length > 0 ? { filters } : {}),
-            sources: result.sources,
-            searches: result.searches,
-          }),
-        }],
-        details: {
-          query: params.query,
-          retrievedAt,
-          filters,
-          provider: model.provider,
-          model: model.id,
-          sources: result.sources,
-          searches: result.searches,
-        },
-        usage: result.usage,
-      };
-    },
+  pi.registerProviderTool({
+    type: "web_search",
+    searchContextSize: "medium",
+  });
+
+  pi.on("before_agent_start", (event, ctx) => {
+    if (!ctx.model || !SUPPORTED_SEARCH_APIS.has(ctx.model.api)) return;
+    return { systemPrompt: `${event.systemPrompt}\n\n${SEARCH_INSTRUCTIONS}` };
+  });
+
+  pi.on("turn_start", () => {
+    collector = createMetadataCollector();
+  });
+
+  pi.on("provider_event", ({ event }) => {
+    collector.observe(event.payload);
+  });
+
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    const sources = collector.metadata.sources;
+    if (sources.length === 0) return;
+    return {
+      message: {
+        ...event.message,
+        content: appendWebSearchSources(event.message.content, sources),
+      },
+    };
   });
 }
