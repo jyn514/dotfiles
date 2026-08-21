@@ -355,7 +355,8 @@ def ensure_image(state: State, base_image: str) -> str:
     iidfile = temporary_file()
     try:
         run([
-            "docker", "build", "-f", "tools/codex-sandbox/image/Dockerfile",
+            "docker", "build", "--jobs", "4",
+            "-f", "tools/codex-sandbox/image/Dockerfile",
             "--build-arg", f"AGENT_UID={state.uid}",
             "--build-arg", f"AGENT_GID={state.gid}",
             "--build-arg", f"TERM={state.term}", "--iidfile", str(iidfile),
