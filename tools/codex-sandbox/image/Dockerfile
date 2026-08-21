@@ -34,7 +34,7 @@ COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
 RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
-ARG PI_REVISION=a4a3cfc16b9dec18868c69979c75d88fa922702c
+ARG PI_REVISION=b71f69a5dc996fd1d781f69a44add1485a83079e
 RUN apk add --no-cache git \
     && git clone --filter=blob:none https://github.com/jyn514/pi.git /src \
     && git -C /src checkout --detach "${PI_REVISION}" \

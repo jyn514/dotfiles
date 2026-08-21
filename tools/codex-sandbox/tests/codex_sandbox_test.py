@@ -438,9 +438,10 @@ class CodexSandboxTest(unittest.TestCase):
                 "/home/codex/.pi/agent/breq.md",
                 "/home/codex/.pi/agent/settings.json",
                 "/home/codex/.pi/agent/mcp.json",
+                "/home/codex/.pi/agent/keybindings.json",
             ))
         ]
-        self.assertEqual(5, len(staged_mounts))
+        self.assertEqual(6, len(staged_mounts))
         staged_sources = [
             Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
             for item in staged_mounts
