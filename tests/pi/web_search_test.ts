@@ -4,6 +4,7 @@ import {
   createMetadataCollector,
   formatWebSearchResult,
   runNativeWebSearch,
+  searchFilterInstructions,
 } from "../../config/pi-extensions/pi-web-search-core";
 
 describe("native web search payloads", () => {
@@ -59,6 +60,68 @@ describe("structured web search results", () => {
       sources: [{ url: "https://example.com/release", title: "Release" }],
       searches: ["latest release"],
     });
+  });
+});
+
+describe("web search filters", () => {
+  test("translates filters into provider-independent search constraints", () => {
+    expect(searchFilterInstructions({
+      domains: ["rust-lang.org", "github.com"],
+      startDate: "2026-08-01",
+      endDate: "2026-08-21",
+      maxResults: 3,
+      primarySourcesOnly: true,
+    })).toEqual([
+      "Only use sources from these domains: rust-lang.org, github.com.",
+      "Only use information published on or after 2026-08-01.",
+      "Only use information published on or before 2026-08-21.",
+      "Use at most 3 distinct sources.",
+      "Use primary sources only.",
+    ]);
+  });
+
+  test("limits returned citations and sends constraints to the search model", async () => {
+    const result = await runNativeWebSearch(
+      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 2048 },
+      "releases",
+      undefined,
+      async (context, options) => {
+        expect(context.systemPrompt).toContain("Only use sources from these domains: example.com.");
+        expect(context.systemPrompt).toContain("Use at most 1 distinct sources.");
+        options.onProviderEvent({
+          payload: {
+            type: "web_search_call",
+            action: {
+              query: "releases site:example.com",
+              sources: [
+                { url: "https://example.com/one", title: "One" },
+                { url: "https://other.test/two", title: "Two" },
+              ],
+            },
+          },
+        });
+        return {
+          content: [{ type: "text", text: "One release." }],
+          stopReason: "stop",
+          usage: {},
+        };
+      },
+      { domains: ["example.com"], maxResults: 1 },
+    );
+
+    expect(result.sources).toEqual([{ url: "https://example.com/one", title: "One" }]);
+    expect(result.answer).toContain("https://example.com/one");
+    expect(result.answer).not.toContain("https://other.test/two");
+  });
+
+  test("rejects reversed date ranges", async () => {
+    await expect(runNativeWebSearch(
+      { api: "openai-responses", provider: "openai", id: "gpt-test", maxTokens: 2048 },
+      "releases",
+      undefined,
+      async () => { throw new Error("must not search"); },
+      { startDate: "2026-08-21", endDate: "2026-08-01" },
+    )).rejects.toThrow("startDate must not be after endDate");
   });
 });
 
