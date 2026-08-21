@@ -88,6 +88,11 @@
             (swap! paths into [left right]))
           (fail! "preflight" (str "malformed diff header: " line)))
 
+        (some #(str/starts-with? line %)
+              ["rename from " "rename to " "copy from " "copy to "])
+        (let [[_ path] (re-matches #"(?:rename|copy) (?:from|to) (.+)" line)]
+          (swap! paths conj path))
+
         (or (str/starts-with? line "--- ")
             (str/starts-with? line "+++ "))
         (let [path (subs line 4)]
@@ -205,13 +210,6 @@
                        (str/split-lines section))))
        (apply str)))
 
-(defn- delete-selected-symlinks! [tree paths]
-  (doseq [path paths
-          :let [link (fs/file tree path)]]
-    (if (fs/sym-link? link)
-      (fs/delete link)
-      (fail! "preflight" (str "expected deleted symlink at " path)))))
-
 (defn- apply-patch! [tree patch]
   (let [check (process/shell {:dir (str tree)
                               :out :string
@@ -299,24 +297,48 @@
         (fail! "preflight"
                (str "selected change for " file " is not contained in original diff"))))))
 
+(defn- revision-change-index [revision paths helper-root prefix]
+  (let [left-revision (format "(%s)-" revision)
+        left-entries (tree-entry-index left-revision)
+        right-entries (tree-entry-index revision)
+        symlink-paths (->> paths
+                           (filter #(or (= "symlink" (get-in left-entries [% :type]))
+                                        (= "symlink" (get-in right-entries [% :type]))))
+                           set)
+        regular-paths (remove symlink-paths paths)
+        left (fs/file helper-root (str prefix "-left"))
+        right (fs/file helper-root (str prefix "-right"))]
+    (fs/create-dirs left)
+    (fs/create-dirs right)
+    (materialize-patch-paths! left-revision regular-paths left)
+    (materialize-patch-paths! revision regular-paths right)
+    (merge-with set/union
+                (diff-change-index
+                 (normalize-diff-paths (diff-output left right) left right))
+                (select-keys
+                 (diff-change-index
+                  (:out (run "preflight" "jj" "diff" "--git" "-r" revision)))
+                 symlink-paths))))
+
 (defn- preflight! [patch-text revision helper-root]
   (validate-patch-paths! patch-text)
-  (let [paths (patch-file-paths patch-text)
+  (let [patch-paths (patch-file-paths patch-text)
+        original-patch (:out (run "preflight" "jj" "diff" "--git" "-r" revision))
+        original-paths (patch-file-paths original-patch)
         left-revision (format "(%s)-" revision)
         left (fs/file helper-root "left")
         selected (fs/file helper-root "selected")
         remaining-patch (fs/file helper-root "remaining.patch")
-        original (diff-change-index
-                  (:out (run "preflight" "jj" "diff" "--git" "-r" revision)))
-        deleted-symlinks (deleted-symlink-paths patch-text)]
+        original (revision-change-index revision original-paths helper-root "original")
+        deleted-symlinks (deleted-symlink-paths patch-text)
+        materialized-paths (remove (set deleted-symlinks) patch-paths)]
     (validate-contained! original
                          (select-keys (diff-change-index patch-text)
                                       deleted-symlinks))
     (fs/create-dirs left)
     (fs/create-dirs selected)
-    (materialize-patch-paths! left-revision paths left)
-    (materialize-patch-paths! left-revision paths selected)
-    (delete-selected-symlinks! selected deleted-symlinks)
+    (materialize-patch-paths! left-revision materialized-paths left)
+    (materialize-patch-paths! left-revision materialized-paths selected)
     (let [remaining-text (without-deleted-symlink-sections patch-text)]
       (when-not (str/blank? remaining-text)
         (spit (str remaining-patch) remaining-text)
@@ -331,6 +353,7 @@
                                        deleted-symlinks))]
       (validate-contained! original selected-index)
       {:original-index original
+       :original-paths original-paths
        :selected-index selected-index})))
 
 (defn- script-dir []
@@ -392,12 +415,11 @@
                     [file remaining]))))
         left))
 
-(defn- verify! [{:keys [original-index selected-index]} split-revisions]
+(defn- verify! [{:keys [original-index original-paths selected-index]}
+                split-revisions helper-root]
   (let [{:keys [selected remaining]} split-revisions
-        actual-selected (diff-change-index
-                         (:out (run "verify" "jj" "diff" "--git" "-r" selected)))
-        actual-remaining (diff-change-index
-                          (:out (run "verify" "jj" "diff" "--git" "-r" remaining)))
+        actual-selected (revision-change-index selected original-paths helper-root "verify-selected")
+        actual-remaining (revision-change-index remaining original-paths helper-root "verify-remaining")
         expected-remaining (index-difference original-index selected-index)]
     (when-not (= selected-index actual-selected)
       (fail! "verify"
@@ -441,7 +463,7 @@
         (check-snapshot-safety! repo-root artifact-root patch helper-root)
         (->> (run-split! patch message revision)
              split-output-revisions
-             (verify! preflight))
+             (#(verify! preflight % helper-root)))
         (print-summary! patch-text))
       (finally
         (fs/delete-tree helper-root)))))

@@ -69,6 +69,19 @@
                     "nine\n"
                     "TEN\n")))
 
+(defn- init-rename-repo! [repo]
+  (fs/create-dirs repo)
+  (let [init-result (run repo "jj" "git" "init" "--colocate")]
+    (when-not (zero? (:exit init-result))
+      (shell! repo "jj" "git" "init")))
+  (write-file! (fs/file repo ".gitignore") "target/\n")
+  (write-file! (fs/file repo "old.txt") "same\n")
+  (write-file! (fs/file repo "note.txt") "before\n")
+  (run repo "jj" "file" "track" ".gitignore" "old.txt" "note.txt")
+  (shell! repo "jj" "commit" "-m" "base")
+  (fs/move (fs/file repo "old.txt") (fs/file repo "new.txt"))
+  (write-file! (fs/file repo "note.txt") "after\n"))
+
 (defn- init-deleted-symlink-repo! [repo]
   (fs/create-dirs repo)
   (let [init-result (run repo "jj" "git" "init" "--colocate")]
@@ -104,6 +117,16 @@
       (finally
         (fs/delete-tree root)))))
 
+(defn- with-rename-repo* [f]
+  (let [root (temp-root)
+        repo (fs/file root "repo")]
+    (try
+      (init-rename-repo! repo)
+      (f {:root root
+          :repo repo})
+      (finally
+        (fs/delete-tree root)))))
+
 (defn- with-deleted-symlink-repo* [f]
   (let [root (temp-root)
         repo (fs/file root "repo")]
@@ -132,6 +155,20 @@
                                 "+TEN")))
         (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
                            "+TEN"))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-selects-pure-rename
+  (with-rename-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [patch (:out (shell! repo "jj" "diff" "--git" "--" "old.txt" "new.txt"))
+            {:keys [exit out err]} (run-wrapper ctx patch)
+            selected (:out (shell! repo "jj" "diff" "--git" "-r" "@-"))
+            remaining (:out (shell! repo "jj" "diff" "--git" "-r" "@"))]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (str/includes? selected "rename from old.txt"))
+        (is (str/includes? selected "rename to new.txt"))
+        (is (not (str/includes? selected "+after")))
+        (is (str/includes? remaining "+after"))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-selects-deleted-dangling-symlink
   (with-deleted-symlink-repo*
