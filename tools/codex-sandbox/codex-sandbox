@@ -614,7 +614,6 @@ def stage_skills(state: State) -> None:
     config.mkdir()
     for name in ("shared-agents.md", "pi-AGENTS.md", "breq.md", "pi.json", "pi-mcp.json"):
         shutil.copy2(DOTFILES / "config" / name, config / name)
-    shutil.copytree(DOTFILES / "config/pi-extensions", config / "pi-extensions")
 
 
 def finalize_proxy_session(state: State) -> list[str]:
@@ -702,7 +701,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-extensions'},dst=/home/codex/.pi/agent/pi-extensions,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/pi-extensions'},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
