@@ -11,7 +11,8 @@
     "./pi-extensions/index.ts"
   ],
   "packages": [
-    "npm:pi-codex-goal@0.2.0"
+    "npm:pi-codex-goal@0.2.0",
+    "npm:@ogulcancelik/pi-codex-subagents@0.3.3"
   ],
   "compaction": {
     "enabled": true
