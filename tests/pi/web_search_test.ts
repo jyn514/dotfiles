@@ -3,7 +3,7 @@ import {
   addNativeSearchTool,
   createMetadataCollector,
   runNativeWebSearch,
-} from "../../config/pi-web-search-core";
+} from "../../config/pi-extensions/pi-web-search-core";
 
 describe("native web search payloads", () => {
   test("adds each provider's native tool without losing existing tools", () => {
