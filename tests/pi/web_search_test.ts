@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   addNativeSearchTool,
   createMetadataCollector,
+  formatWebSearchResult,
   runNativeWebSearch,
 } from "../../config/pi-extensions/pi-web-search-core";
 
@@ -38,6 +39,26 @@ describe("native web search payloads", () => {
   test("does not add duplicate native tools", () => {
     const payload = { tools: [{ type: "web_search" }] };
     expect(addNativeSearchTool(payload, "openai-codex-responses")).toBe(payload);
+  });
+});
+
+describe("structured web search results", () => {
+  test("serializes stable fields for tool consumers", () => {
+    const text = formatWebSearchResult({
+      query: "latest release",
+      answer: "Version 1.2 was released.",
+      retrievedAt: "2026-08-21T20:00:00.000Z",
+      sources: [{ url: "https://example.com/release", title: "Release" }],
+      searches: ["latest release"],
+    });
+
+    expect(JSON.parse(text)).toEqual({
+      query: "latest release",
+      answer: "Version 1.2 was released.",
+      retrievedAt: "2026-08-21T20:00:00.000Z",
+      sources: [{ url: "https://example.com/release", title: "Release" }],
+      searches: ["latest release"],
+    });
   });
 });
 
