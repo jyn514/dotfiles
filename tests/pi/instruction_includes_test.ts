@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { expandInstructionIncludes } from "../../config/pi-instruction-includes";
+import { expandInstructionIncludes } from "../../config/pi-extensions/pi-instruction-includes";
 
 const temporaryDirectories: string[] = [];
 
