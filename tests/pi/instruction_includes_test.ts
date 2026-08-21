@@ -61,15 +61,35 @@ describe("instruction includes", () => {
     )).rejects.toThrow(/a\.md -> .*b\.md -> .*a\.md/);
   });
 
-  test("rejects traversal and symlink escapes", async () => {
+  test("allows sibling includes through a symlinked context tree", async () => {
+    const visible = await fixture();
+    const source = await fixture();
+    await writeFile(join(source, "AGENTS.md"), "@breq.md\n");
+    await writeFile(join(source, "breq.md"), "Breq\n");
+    await symlink(join(source, "AGENTS.md"), join(visible, "AGENTS.md"));
+    await symlink(join(source, "breq.md"), join(visible, "breq.md"));
+
+    const result = await expandInstructionIncludes(
+      [{ path: join(visible, "AGENTS.md"), content: "@breq.md" }],
+      visible,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("Breq");
+  });
+
+  test("allows includes outside the context tree", async () => {
     const root = await fixture();
     const outside = await fixture();
-    await writeFile(join(outside, "secret.md"), "secret");
-    await symlink(join(outside, "secret.md"), join(root, "escape.md"));
+    await writeFile(join(outside, "shared.md"), "shared");
 
-    await expect(expandInstructionIncludes(
-      [{ path: join(root, "AGENTS.md"), content: "@escape.md" }], root,
-    )).rejects.toThrow("escapes allowed roots");
+    const result = await expandInstructionIncludes(
+      [{ path: join(root, "AGENTS.md"), content: `@${join(outside, "shared.md")}` }],
+      root,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toContain("shared");
   });
 
   test("rejects invalid UTF-8", async () => {
