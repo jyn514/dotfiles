@@ -1,4 +1,9 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type ExtensionContext,
+  SessionManager,
+  type Theme,
+} from "@earendil-works/pi-coding-agent";
 import {
   type Component,
   type Focusable,
@@ -9,6 +14,7 @@ import {
 } from "@earendil-works/pi-tui";
 import {
   collectPromptHistory,
+  mergePromptHistories,
   type PromptHistoryEntry,
   searchPromptHistory,
 } from "./prompt-history-search-core.ts";
@@ -100,10 +106,35 @@ class PromptHistorySearch implements Component, Focusable {
   }
 }
 
+async function loadPromptHistory(ctx: ExtensionContext): Promise<PromptHistoryEntry[]> {
+  const currentSessionFile = ctx.sessionManager.getSessionFile();
+  const histories: PromptHistoryEntry[][] = [
+    collectPromptHistory(ctx.sessionManager.getBranch()),
+  ];
+
+  const sessions = await SessionManager.listAll();
+  for (const session of sessions) {
+    if (session.path === currentSessionFile) continue;
+    try {
+      histories.push(collectPromptHistory(SessionManager.open(session.path).getEntries()));
+    } catch {
+      // Session listing already tolerates damaged files. Skip any that fail on full open too.
+    }
+  }
+
+  return mergePromptHistories(histories);
+}
+
 async function searchHistory(ctx: ExtensionContext): Promise<void> {
-  const prompts = collectPromptHistory(ctx.sessionManager.getBranch());
+  ctx.ui.setStatus("history-search", "loading prompt history…");
+  let prompts: PromptHistoryEntry[];
+  try {
+    prompts = await loadPromptHistory(ctx);
+  } finally {
+    ctx.ui.setStatus("history-search", undefined);
+  }
   if (prompts.length === 0) {
-    ctx.ui.notify("No previous prompts in this session", "info");
+    ctx.ui.notify("No previous prompts found", "info");
     return;
   }
 
@@ -121,7 +152,12 @@ async function searchHistory(ctx: ExtensionContext): Promise<void> {
     };
   });
 
-  if (typeof result === "string") ctx.ui.setEditorText(result);
+  if (typeof result === "string") {
+    ctx.ui.setEditorText(result);
+    // Closing custom UI requests a render before its promise resolves. Request one
+    // afterward so the restored editor text is visible immediately.
+    ctx.ui.setStatus("history-search", undefined);
+  }
 }
 
 export default function promptHistorySearch(pi: ExtensionAPI): void {
