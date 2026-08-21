@@ -16,6 +16,7 @@
       "$HOME/.pi/agent/breq.md": "config/breq.md",
       "$HOME/.pi/agent/mcp.json": "config/pi-mcp.json",
       "$HOME/.pi/agent/settings.json": "config/pi.json",
+      "$HOME/.pi/agent/pi-codex-subagents/config.json": "config/pi-codex-subagents.json",
       "$HOME/.claude/CLAUDE.md": "config/CLAUDE.md",
       "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",
       "$HOME/.XCompose": "config/XCompose",

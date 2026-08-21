@@ -1,0 +1,7 @@
+{
+  "defaults": {
+    "extensions": [
+      "~/.pi/agent/pi-extensions/codex-sidecar.ts"
+    ]
+  }
+}
