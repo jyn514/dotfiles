@@ -8,6 +8,14 @@ export interface SearchMetadata {
   searches: string[];
 }
 
+export interface SearchFilters {
+  domains?: string[];
+  startDate?: string;
+  endDate?: string;
+  maxResults?: number;
+  primarySourcesOnly?: boolean;
+}
+
 interface SearchModel {
   api: string;
   provider: string;
@@ -31,6 +39,7 @@ export interface StructuredSearchResult extends SearchMetadata {
   query: string;
   answer: string;
   retrievedAt: string;
+  filters?: SearchFilters;
 }
 
 export function formatWebSearchResult(result: StructuredSearchResult): string {
@@ -173,6 +182,22 @@ function textContent(content: Array<{ type: string; text?: string }>): string {
     .join("\n");
 }
 
+export function searchFilterInstructions(filters: SearchFilters): string[] {
+  const instructions: string[] = [];
+  if (filters.domains?.length) instructions.push(`Only use sources from these domains: ${filters.domains.join(", ")}.`);
+  if (filters.startDate) instructions.push(`Only use information published on or after ${filters.startDate}.`);
+  if (filters.endDate) instructions.push(`Only use information published on or before ${filters.endDate}.`);
+  if (filters.maxResults) instructions.push(`Use at most ${filters.maxResults} distinct sources.`);
+  if (filters.primarySourcesOnly) instructions.push("Use primary sources only.");
+  return instructions;
+}
+
+function sourceMatchesDomains(source: WebSource, domains: string[] | undefined): boolean {
+  if (!domains?.length) return true;
+  const hostname = new URL(source.url).hostname.toLowerCase();
+  return domains.some((domain) => hostname === domain.toLowerCase() || hostname.endsWith(`.${domain.toLowerCase()}`));
+}
+
 function appendSources(answer: string, sources: WebSource[]): string {
   const missing = sources.filter((source) => !answer.includes(source.url)).slice(0, 20);
   if (missing.length === 0) return answer;
@@ -201,16 +226,24 @@ export async function runNativeWebSearch<TUsage>(
       onProviderEvent(event: { payload: unknown }): void;
     },
   ) => Promise<SearchResponse<TUsage>>,
+  filters: SearchFilters = {},
 ): Promise<NativeSearchResult<TUsage>> {
-  if (!isSearchApi(model.api)) {
-    throw new Error(`Native web search is not supported by ${model.provider}/${model.id} (${model.api})`);
+  if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) {
+    throw new Error("Web search startDate must not be after endDate");
+  }
+
+  const api = model.api;
+  if (!isSearchApi(api)) {
+    throw new Error(`Native web search is not supported by ${model.provider}/${model.id} (${api})`);
   }
 
   const collector = createMetadataCollector();
   const response = await complete(
     {
-      systemPrompt:
+      systemPrompt: [
         "Use the provider's native web search tool to answer the question. Be concise and distinguish uncertainty.",
+        ...searchFilterInstructions(filters),
+      ].join("\n"),
       messages: [
         {
           role: "user",
@@ -223,7 +256,7 @@ export async function runNativeWebSearch<TUsage>(
       signal,
       cacheRetention: "none",
       maxTokens: model.maxTokens > 0 ? Math.min(4096, model.maxTokens) : 4096,
-      onPayload: (payload) => addNativeSearchTool(payload, model.api),
+      onPayload: (payload) => addNativeSearchTool(payload, api),
       onProviderEvent: (event) => collector.observe(event.payload),
     },
   );
@@ -241,9 +274,13 @@ export async function runNativeWebSearch<TUsage>(
   if (metadata.sources.length === 0 && metadata.searches.length === 0) {
     throw new Error("The provider returned an answer without using native web search");
   }
+  const maxResults = Math.min(filters.maxResults ?? 20, 20);
+  const sources = metadata.sources
+    .filter((source) => sourceMatchesDomains(source, filters.domains))
+    .slice(0, maxResults);
   return {
-    answer: appendSources(answer, metadata.sources),
-    sources: metadata.sources.slice(0, 20),
+    answer: appendSources(answer, sources),
+    sources,
     searches: metadata.searches.slice(0, 20),
     usage: response.usage,
   };
