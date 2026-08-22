@@ -75,7 +75,11 @@ class ClipboardTest(unittest.TestCase):
 
     def test_terminal_selection_copy_removes_prompt_time_and_padding(self) -> None:
         clipboard = self.directory / "clipboard"
-        self.executable("copy", f'cat > "{clipboard}"\n')
+        arguments = self.directory / "arguments"
+        self.executable(
+            "tmux",
+            f'printf "%s\\n" "$@" > "{arguments}"\ncat > "{clipboard}"\n',
+        )
         selection = (
             b"; build      \xe2\x8f\xb1 +1.25s\n"
             b"ordinary output 12:34\n"
@@ -84,7 +88,7 @@ class ClipboardTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "bin/copy-terminal-selection")],
+            [str(ROOT / "bin/copy-terminal-selection"), "client-7"],
             check=False,
             input=selection,
             stdout=subprocess.PIPE,
@@ -94,15 +98,19 @@ class ClipboardTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
+            ["load-buffer", "-w", "-t", "client-7", "-"],
+            arguments.read_text().splitlines(),
+        )
+        self.assertEqual(
             b"; build\nordinary output 12:34\nbinary \xff\n; next\r\n",
             clipboard.read_bytes(),
         )
 
-    def test_terminal_selection_copy_propagates_clipboard_failure(self) -> None:
-        self.executable("copy", "cat >/dev/null\nexit 37\n")
+    def test_terminal_selection_copy_propagates_tmux_failure(self) -> None:
+        self.executable("tmux", "cat >/dev/null\nexit 37\n")
 
         result = subprocess.run(
-            [str(ROOT / "bin/copy-terminal-selection")],
+            [str(ROOT / "bin/copy-terminal-selection"), "client-7"],
             check=False,
             input=b"selection",
             stdout=subprocess.PIPE,
