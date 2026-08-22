@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -436,6 +437,53 @@ class CommandTest(unittest.TestCase):
             b"set-environment\0-u\0RUSTUP_HOME\0"
             b"socket value\0/socket directory\0",
             calls.read_bytes(),
+        )
+
+    def test_set_tmux_env_finds_tmux_added_by_profile(self) -> None:
+        calls = self.directory / "tmux-calls"
+        bootstrap_bin = self.directory / "bootstrap-bin"
+        profile_bin = self.directory / "profile-bin"
+        bootstrap_bin.mkdir()
+        profile_bin.mkdir()
+        for command in ("bash", "env"):
+            executable = shutil.which(command)
+            if executable is None:
+                self.skipTest(f"{command} is unavailable")
+            (bootstrap_bin / command).symlink_to(executable)
+        tmux = profile_bin / "tmux"
+        tmux.write_text(
+            "#!/bin/sh\n"
+            f'printf "%s\\n" "$*" >> "{calls}"\n'
+        )
+        tmux.chmod(0o755)
+        (self.directory / ".profile").write_text(
+            f'PATH="{profile_bin}"\n'
+            "export PATH\n"
+            "unset EDITOR VISUAL CARGO_HOME RUSTUP_HOME\n"
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "config/set-tmux-env.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ
+            | {
+                "HOME": str(self.directory),
+                "PATH": str(bootstrap_bin),
+            },
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [
+                "set-environment -u EDITOR",
+                "set-environment -u VISUAL",
+                f"set-environment PATH {profile_bin}",
+                "set-environment -u CARGO_HOME",
+                "set-environment -u RUSTUP_HOME",
+            ],
+            calls.read_text().splitlines(),
         )
 
     def test_set_tmux_env_preserves_unset_and_empty_tmux_context(self) -> None:

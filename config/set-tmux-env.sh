@@ -2,7 +2,7 @@
 set -eu
 
 # A clean Bash login environment remains the source of truth.
-tmux_command=$(command -v tmux) || exit
+tmux_command=$(command -v tmux) || tmux_command=
 
 set -- env -i HOME="$HOME" TERM="$TERM" PS1='; '
 if [ "${TMUX+x}" ]; then
@@ -15,8 +15,11 @@ fi
 # shellcheck disable=SC2016  # The inner Bash expands these variables.
 exec "$@" bash --noprofile --norc -c '
 	. /etc/profile && . ~/.profile || exit
-	set -u
 	tmux=$1
+	if [ -z "$tmux" ]; then
+		tmux=$(command -v tmux) || exit
+	fi
+	set -u
 	set_one() {
 		if [ "$2" ]; then
 			"$tmux" set-environment "$1" "$3"
