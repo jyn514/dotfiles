@@ -111,6 +111,19 @@ class PromptRenderingTests(unittest.TestCase):
             fish,
         )
 
+    def test_fish_header_changes_only_with_visible_context(self) -> None:
+        header = renderer.render_header(self.facts, "fish-left", 80)
+
+        self.assertEqual(
+            header + "\n\x1b[0;32m; \x1b[0;0m",
+            renderer.render_left(self.facts, "fish-left", 0, 80),
+        )
+        self.assertEqual(
+            header + "\n\x1b[0;31m; \x1b[0;0m",
+            renderer.render_left(self.facts, "fish-left", 1, 80),
+        )
+        self.assertNotIn("; ", header)
+
     def test_narrow_terminal_breaks_identity_from_location(self) -> None:
         output = renderer.render_left(self.facts, "fish-left", 0, 10)
 

@@ -402,21 +402,58 @@ else
 	set fish_name fish
 end
 
-function fish_prompt
-	set -l last_status $status
-	set -l prompt_columns 0
-	set -q COLUMNS; and set prompt_columns $COLUMNS
-	set -l rendered (env COLUMNS=$prompt_columns \
-		prompt-command fish-left $last_status $duration $fish_name | string collect)
-	set -l render_statuses $pipestatus
-	if [ $render_statuses[1] -eq 0 ]; and [ $render_statuses[2] -eq 0 ]
-		printf %s $rendered
+set -g fish_transient_prompt 1
+set -e __dotfiles_previous_prompt_header
+set -e __dotfiles_prompt_header
+set -e __dotfiles_prompt_shows_header
+set -e __dotfiles_prompt_status
+set -e __dotfiles_previous_right_prompt
+set -e __dotfiles_right_prompt
+set -e __dotfiles_prompt_shows_right
+
+function __dotfiles_render_prompt
+	if [ "$__dotfiles_prompt_shows_header" = 1 ]
+		printf '%s\n' "$__dotfiles_prompt_header"
+	end
+	if [ $__dotfiles_prompt_status -eq 0 ]
+		printf '\e[0;32m; \e[0;0m'
 	else
-		printf '\n; '
+		printf '\e[0;31m; \e[0;0m'
 	end
 end
 
+function fish_prompt
+	set -l last_status $status
+	if contains -- --final-rendering $argv
+		__dotfiles_render_prompt
+		return
+	end
+
+	set -l prompt_columns 0
+	set -q COLUMNS; and set prompt_columns $COLUMNS
+	set -l header (env COLUMNS=$prompt_columns \
+		prompt-command fish-header $fish_name | string collect)
+	set -l render_statuses $pipestatus
+	if [ $render_statuses[1] -eq 0 ]; and [ $render_statuses[2] -eq 0 ]
+		set -g __dotfiles_prompt_header $header
+		if not set -q __dotfiles_previous_prompt_header; or \
+			[ "$header" != "$__dotfiles_previous_prompt_header" ]
+			set -g __dotfiles_prompt_shows_header 1
+		else
+			set -g __dotfiles_prompt_shows_header 0
+		end
+		set -g __dotfiles_previous_prompt_header $header
+	else
+		set -g __dotfiles_prompt_header ''
+		set -g __dotfiles_prompt_shows_header 0
+		set -e __dotfiles_previous_prompt_header
+	end
+	set -g __dotfiles_prompt_status $last_status
+	__dotfiles_render_prompt
+end
+
 function fish_mode_prompt
+	contains -- --final-rendering $argv; and return
 	if [ "$fish_key_bindings" = fish_vi_key_bindings ]
 		or [ "$fish_key_bindings" = fish_hybrid_key_bindings ]
 
@@ -453,10 +490,30 @@ function record_duration --on-event fish_postexec
 end
 
 function fish_right_prompt
+	if contains -- --final-rendering $argv
+		if [ "$__dotfiles_prompt_shows_right" = 1 ]
+			printf %s "$__dotfiles_right_prompt"
+		end
+		return
+	end
+
+	set -l rendered
 	if [ -n "$prompt_timestamp" ]
-		printf '\e[2;37m%s' $prompt_timestamp
+		set rendered (printf '\e[2;37m%s' $prompt_timestamp)
 	else if [ $duration -gt 99 ]
-		printf '\e[2;37m+%ss' (math --scale=2 "$duration / 1000")
+		set rendered (printf '\e[2;37m+%ss' (math --scale=2 "$duration / 1000"))
+	end
+	set -g __dotfiles_right_prompt $rendered
+	set -g __dotfiles_prompt_shows_right 0
+	if [ -n "$rendered" ]
+		if not set -q __dotfiles_previous_right_prompt; or \
+			[ "$rendered" != "$__dotfiles_previous_right_prompt" ]
+			set -g __dotfiles_prompt_shows_right 1
+		end
+	end
+	set -g __dotfiles_previous_right_prompt $rendered
+	if [ "$__dotfiles_prompt_shows_right" = 1 ]
+		printf %s "$rendered"
 	end
 end
 

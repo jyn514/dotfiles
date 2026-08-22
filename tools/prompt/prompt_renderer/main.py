@@ -280,14 +280,7 @@ def render_repository(repository: Repository | None, style: Style) -> str:
     return f" {color}{terminal_text(repository.label)}"
 
 
-def render_left(
-    facts: Facts,
-    target: str,
-    last_status: int,
-    columns: int,
-    *,
-    vscode: bool = False,
-) -> str:
+def render_header(facts: Facts, target: str, columns: int) -> str:
     style = Style(target)
     faint = style.color("faint-white")
     red = style.color("red")
@@ -310,11 +303,24 @@ def render_left(
     separator = " "
     if columns > 0 and visible_width(identity_plain + " " + location_plain) > columns:
         separator = "\n"
-    header = f"{identity}{separator}{location}\n"
+    return f"{identity}{separator}{location}"
+
+
+def render_left(
+    facts: Facts,
+    target: str,
+    last_status: int,
+    columns: int,
+    *,
+    vscode: bool = False,
+) -> str:
+    style = Style(target)
+    reset = style.color("reset")
+    header = render_header(facts, target, columns)
     if vscode:
-        return header + reset
+        return f"{header}\n{reset}"
     command_color = style.color("green" if last_status == 0 else "red")
-    return f"{header}{command_color}; {reset}"
+    return f"{header}\n{command_color}; {reset}"
 
 
 def duration_seconds(duration_ms: int) -> str:
@@ -378,6 +384,14 @@ def main(arguments: list[str]) -> int:
 
             data = json.load(sys.stdin)
             output = render_claude(data)
+        elif arguments and arguments[0] == "fish-header":
+            if len(arguments) != 2:
+                raise ValueError("fish-header requires a shell label")
+            output = render_header(
+                collect(arguments[1]),
+                "fish-left",
+                int(os.environ.get("COLUMNS", "0")),
+            )
         elif arguments and arguments[0] in ("bash", "zsh", "fish-left", "fish-right"):
             if len(arguments) < 3:
                 raise ValueError("interactive targets require status and duration-ms")
@@ -404,8 +418,8 @@ def main(arguments: list[str]) -> int:
             )
         else:
             raise ValueError(
-                "usage: prompt-command claude | prompt-command "
-                "<bash|zsh|fish-left|fish-right> <status> <duration-ms>"
+                "usage: prompt-command claude | prompt-command fish-header <label> | "
+                "prompt-command <bash|zsh|fish-left|fish-right> <status> <duration-ms>"
             )
     except (OSError, ValueError) as error:
         print(f"prompt-command: {error}", file=sys.stderr)

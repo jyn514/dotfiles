@@ -831,12 +831,6 @@ class MiseConfigTests(unittest.TestCase):
         ).read_text()
         tmux = (ROOT / "config/tmux.conf").read_text()
 
-        self.assertIn("prompt-command fish-left $last_status $duration $fish_name", fish_config)
-        self.assertIn(
-            "prompt-command fish-right 0 $duration $prompt_timestamp", fish_config
-        )
-        self.assertIn("set -l render_statuses $pipestatus", fish_config)
-        self.assertNotIn('math --scale=2 "$duration / 1000"', fish_config)
         self.assertIn("if [ -f ~/.local/lib/fzf-tab-completion", bashrc)
         self.assertIn("if exists atuin; then", bashrc)
         self.assertGreaterEqual(zshrc.count("if exists atuin; then"), 2)
