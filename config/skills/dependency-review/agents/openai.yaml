@@ -1,0 +1,3 @@
+interface:
+  display_name: "Dependency Review"
+  short_description: "Assess and add third-party dependencies safely"
