@@ -73,6 +73,45 @@ class ClipboardTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["--input", "--clipboard"], arguments.read_text().splitlines())
 
+    def test_terminal_selection_copy_removes_prompt_time_and_padding(self) -> None:
+        clipboard = self.directory / "clipboard"
+        self.executable("copy", f'cat > "{clipboard}"\n')
+        selection = (
+            b"; build      \xe2\x8f\xb1 +1.25s\n"
+            b"ordinary output 12:34\n"
+            b"binary \xff\n"
+            b"; next\t\xe2\x8f\xb1 21:45\r\n"
+        )
+
+        result = subprocess.run(
+            [str(ROOT / "bin/copy-terminal-selection")],
+            check=False,
+            input=selection,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self.environment,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            b"; build\nordinary output 12:34\nbinary \xff\n; next\r\n",
+            clipboard.read_bytes(),
+        )
+
+    def test_terminal_selection_copy_propagates_clipboard_failure(self) -> None:
+        self.executable("copy", "cat >/dev/null\nexit 37\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/copy-terminal-selection")],
+            check=False,
+            input=b"selection",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self.environment,
+        )
+
+        self.assertEqual(37, result.returncode)
+
     def test_paste_primary_preserves_both_selections_exactly(self) -> None:
         first_copy = self.directory / "first-copy"
         second_copy = self.directory / "second-copy"
