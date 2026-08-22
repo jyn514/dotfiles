@@ -18,7 +18,8 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Use property tests when generators express the input space better than enumerated examples.
 - Use golden tests with thoughtful fixtures at a consumer-meaningful layer; one shared check function should make cases easy to add and review.
 - Seek courage, not coverage: tests should catch consumer-visible divergences and permit refactoring. Do not mirror implementation constants in tests.
-- Before adding a test, name a realistic regression caused by a likely edit or previously observed failure, and verify the test fails when that behavior is broken. Otherwise, do not add it.
+- Do not mechanically update tests that assert implementation text, constants, or structure. When such a test breaks, identify the consumer-visible regression it prevents; replace it with a behavioral test, or delete it if no practical test protects that behavior. An existing test is not evidence that it is valuable.
+- Before adding or updating a test, name a realistic regression caused by a likely edit or previously observed failure, and verify the test fails when that regression is reintroduced. Otherwise, do not add or update it.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
 
 When reviewing a system and its tests, check both directions: required behavior without a test, and tested behavior without a corresponding requirement. Apply this to code, APIs, policies, prompts, workflows, and specifications.
