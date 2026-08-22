@@ -67,6 +67,8 @@ Before creating or reviewing a commit, use the `commit-quality` skill.
 
 ## Records and provenance
 
+Before changing existing behavior, inspect the relevant file and line history. Use commit messages, diffs, and tests to recover prior constraints; separate observed intent from inference.
+
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
 
 Before adding or reviewing a dependency, use the `dependency-review` skill.
