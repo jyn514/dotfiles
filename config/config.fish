@@ -499,9 +499,9 @@ function fish_right_prompt
 
 	set -l rendered
 	if [ -n "$prompt_timestamp" ]
-		set rendered (printf '\e[2;37m%s' $prompt_timestamp)
+		set rendered (printf '\e[2;37m⏱ %s' $prompt_timestamp)
 	else if [ $duration -gt 99 ]
-		set rendered (printf '\e[2;37m+%ss' (math --scale=2 "$duration / 1000"))
+		set rendered (printf '\e[2;37m⏱ +%ss' (math --scale=2 "$duration / 1000"))
 	end
 	set -g __dotfiles_right_prompt $rendered
 	set -g __dotfiles_prompt_shows_right 0
