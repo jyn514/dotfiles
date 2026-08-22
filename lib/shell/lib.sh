@@ -77,15 +77,16 @@ is_macos() {
 
 # Resolve the real binary behind a PATH-shim wrapper.
 # $1 - the wrapper's own $0; $2 - the real command name.
-# Strips the wrapper's dir from PATH (so the name can't recurse), finds the
-# real binary, then prepends that dir back so sibling shims win in children.
-# Sets SHIM_DIR (the wrapper's dir) and REAL (the resolved binary); exports PATH.
-# Can't just print the resolved binary or PATH wouldn't be preserved.
+# Removes this wrapper's directory from PATH before resolving and executing the
+# next candidate. Duplicate mounted wrappers are therefore visited at most once.
+# Sets SHIM_DIR and REAL and exports the cleaned PATH.
 shim_resolve() {
 	SHIM_DIR=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd -P)
 	_clean=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$SHIM_DIR" | tr '\n' :)
 	_clean=${_clean%:}
-	PATH="$_clean" command -v "$2" || fail "$2 wrapper: real $2 not found on PATH"
+	REAL=$(PATH="$_clean" command -v "$2") || fail "$2 wrapper: real $2 not found on PATH"
+	PATH=$_clean
+	export PATH
 }
 
 if ! exists realpath; then

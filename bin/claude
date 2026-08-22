@@ -4,7 +4,7 @@
 # shims (bare `jj` then hits the author shim, no need to call it by path).
 DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
-REAL=$(shim_resolve "$0" claude)
+shim_resolve "$0" claude
 
 prompt=$("$DOTFILES/libexec/gen-claude-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
 
