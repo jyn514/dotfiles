@@ -181,11 +181,14 @@ end
 fish_hybrid_key_bindings
 
 function get_fzf_selection
-	fzf --expect=tab,ctrl-o,ctrl-y,ctrl-l $argv
+	fzf --expect=tab,ctrl-o,ctrl-y,ctrl-l,alt-enter $argv
 end
 
 function fzf_action
-	get_fzf_selection $argv | read --null --line key selection
+	get_fzf_selection $argv | begin
+		read --null key
+		and read --null selection
+	end
 	set -l statuses $pipestatus
 	switch $statuses[1]
 		case 0
@@ -200,7 +203,7 @@ function fzf_action
 	end
 	set -l escaped_selection (string escape -- $selection)
 	switch $key
-		case enter
+		case Enter
 			commandline -i $escaped_selection
 			commandline -f execute
 		case tab
@@ -211,7 +214,7 @@ function fzf_action
 			commandline -r open
 			commandline -i " $escaped_selection"
 			commandline -f execute
-		case ctrl-l
+		case alt-enter ctrl-l
 			commandline -r $EDITOR
 			commandline -i " $escaped_selection"
 			commandline -f execute
