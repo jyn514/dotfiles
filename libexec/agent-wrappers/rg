@@ -16,7 +16,7 @@ done
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 . "$root/lib/shell/lib.sh"
-REAL=$(shim_resolve "$0" rg)
+shim_resolve "$0" rg
 
 # Ignore RIPGREP_CONFIG_PATH so a configuration file cannot restore --pre.
 exec "$REAL" --no-config "$@"

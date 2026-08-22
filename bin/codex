@@ -5,7 +5,7 @@ set -eu
 # the combined files as developer instructions without generating AGENTS.md.
 DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
-REAL=$(shim_resolve "$0" codex)
+shim_resolve "$0" codex
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
 MANIFEST=${CODEX_DEVELOPER_INSTRUCTIONS_FILE:-"$CODEX_HOME/developer-instructions.md"}
