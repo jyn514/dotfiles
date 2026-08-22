@@ -1,0 +1,3 @@
+interface:
+  display_name: "Commit Quality"
+  short_description: "Write durable, evidence-based commit messages"

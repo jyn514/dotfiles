@@ -63,37 +63,13 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 Use `jj`, not `git`, for change management; it supports undo and history editing
 without modifying the working tree. Create commits with `jj commit`, not `jj describe`.
 
-### Commit messages
-
-Write commit messages for the next person debugging or reviewing the change, not merely
-to label the diff. Use a concise imperative subject naming the affected behavior. When
-the diff doesn't make the reason, failure mode, constraints, or verification obvious,
-add a body explaining:
-
-- the user-visible or operational problem
-- why the previous behavior was wrong
-- the important design choice or constraint behind the fix
-- how the change was verified, especially for regressions or security boundaries
-
-Record what a reader would otherwise have to reconstruct; don't narrate files or repeat the subject.
-
-For bug fixes, describe the causal chain, not just the symptom. For tests, say what regression they would have caught. For security changes, state which authority is granted or restricted and why the boundary remains safe.
-
-Before `jj commit`, inspect the complete diff and write the message from the finished change.
+Before creating or reviewing a commit, use the `commit-quality` skill.
 
 ## Records and provenance
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
 
-## Dependencies
-
-Add dependencies through the owning component’s existing package manager.
-Do not introduce a package manager solely for one dependency; ask first when the project
-has none.
-
-Before adding a dependency, review its source scope, maintenance activity, release
-provenance, and compatibility in proportion to its authority and risk. Pin or lock it
-according to repository conventions.
+Before adding or reviewing a dependency, use the `dependency-review` skill.
 
 ## Working with jyn
 
