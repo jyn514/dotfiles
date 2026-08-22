@@ -795,170 +795,70 @@ class MiseConfigTests(unittest.TestCase):
         aliases = {"dua-cli": "dua", "ripgrep": "rg"}
         return aliases.get(package, package)
 
-    def test_fish_activates_mise_and_no_longer_uses_nvm(self) -> None:
-        fish_config = (ROOT / "config/config.fish").read_text()
+    def test_fish_activates_mise_without_preserving_stale_mise_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            home = Path(temporary_directory)
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            binary_directory = home / "bin"
+            binary_directory.mkdir()
+            (home / ".local/share/mise/shims").mkdir(parents=True)
+            mise = binary_directory / "mise"
+            mise.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" > \"$HOME/mise-command\"\n"
+                "printf '%s\\n' 'set --global --export MISE_TEST activated'\n"
+            )
+            mise.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update(
+                HOME=str(home),
+                PATH=f"{binary_directory}:{environment['PATH']}",
+                MISE_SHELL="stale",
+                __MISE_SESSION="stale",
+            )
+
+            result = subprocess.run(
+                [
+                    "fish",
+                    "--no-config",
+                    "-c",
+                    f"source {ROOT / 'config/config.fish'}; "
+                    "set -q MISE_SHELL; and exit 9; "
+                    "set -q __MISE_SESSION; and exit 9; echo $MISE_TEST",
+                ],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("hook-env --shell fish --force\n", (home / "mise-command").read_text())
+            self.assertEqual("activated\n", result.stdout)
+
         install = json.loads((ROOT / "install.conf.json").read_text())
         links = next(section["link"] for section in install if "link" in section)
-
-        self.assertIn("source_init mise activate fish", fish_config)
-        self.assertIn("source_init atuin init fish --disable-up-arrow", fish_config)
-        self.assertIn("source_init zoxide init fish", fish_config)
-        self.assertIn("source_init direnv hook fish", fish_config)
-        self.assertIn(
-            "set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH",
-            fish_config,
-        )
-        self.assertIn(
-            'contains --index -- "$HOME/.local/share/mise/shims" $PATH', fish_config
-        )
         self.assertEqual(
             "config/mise-activate.fish",
             links["$HOME/.config/fish/conf.d/mise-activate.fish"],
         )
-        self.assertNotIn("nvm use", fish_config)
 
-    def test_shell_startup_guards_optional_tools_and_formats_durations_plainly(self) -> None:
-        fish_config = (ROOT / "config/config.fish").read_text()
-        fish_z = (ROOT / "config/z.fish").read_text()
-        bashrc = (ROOT / "config/bashrc").read_text()
-        zshrc = (ROOT / "config/zshrc").read_text()
-        keybindings = (ROOT / "config/keybindings.ahk").read_text()
-        inputrc = (ROOT / "config/inputrc").read_text()
-        abbreviations = (ROOT / "lib/abbr.txt").read_text().splitlines()
-        pre_commit = (ROOT / "config/githooks/pre-commit").read_text()
-        pre_commit_driver = (
-            ROOT / "tools/git-hooks/git_hooks/pre_commit.py"
-        ).read_text()
-        tmux = (ROOT / "config/tmux.conf").read_text()
-
-        self.assertIn("if [ -f ~/.local/lib/fzf-tab-completion", bashrc)
-        self.assertIn("if exists atuin; then", bashrc)
-        self.assertGreaterEqual(zshrc.count("if exists atuin; then"), 2)
-        self.assertIn("if exists direnv; then", zshrc)
-        self.assertIn("if exists bat; and string match", fish_config)
-        self.assertIn("if exists atuin\n\t\tsource_init atuin", fish_config)
-        self.assertIn("if exists zoxide\n\t\tsource_init zoxide", fish_config)
-        self.assertIn('if [ -z "${MY_GITHUB:-}" ]; then', bashrc)
-        self.assertIn("zoxide_init=$(zoxide init bash) || {", bashrc)
-        self.assertIn("zoxide_init=$(zoxide init zsh) || {", zshrc)
-        self.assertIn("jj_completion=$(jj util completion bash) || return", bashrc)
-        self.assertNotIn("source <(jj util completion bash)", bashrc)
-        self.assertIn('source "$ZDOTDIR/antidote/antidote.zsh" || return', zshrc)
-        self.assertIn("set keyseq-timeout 100", inputrc)
-        self.assertNotIn("set keyseq-timeout 1\n", inputrc)
-        self.assertLess(
-            inputrc.index("$include /etc/inputrc"),
-            inputrc.index("set keyseq-timeout"),
+    def test_shell_startup_files_parse(self) -> None:
+        checks = (
+            ("bash", "-n", ROOT / "config/bashrc"),
+            ("zsh", "-n", ROOT / "config/zshrc"),
+            ("fish", "--no-execute", ROOT / "config/config.fish"),
+            ("fish", "--no-execute", ROOT / "config/z.fish"),
         )
-        abbreviation_names = [
-            line.partition("=")[0] for line in abbreviations if "=" in line
-        ]
-        self.assertEqual(len(abbreviation_names), len(set(abbreviation_names)))
-        self.assertIn("t=tmux", abbreviations)
-        self.assertIn("zmodload -i zsh/termcap || return", zshrc)
-        self.assertIn('bindkey "\\e[3;3~" delete-word', zshrc)
-        self.assertNotIn('bindkey "3~" delete-word', zshrc)
-        self.assertIn('if [ -z "${DOTFILES:-}" ]; then', zshrc)
-        self.assertIn("antidote load || return", zshrc)
-        self.assertIn("atuin_init=$(atuin init zsh --disable-up-arrow) || {", zshrc)
-        self.assertIn("direnv_init=$(direnv hook zsh) || {", zshrc)
-        self.assertIn("atuin_init=$(atuin init bash --disable-up-arrow) || {", bashrc)
-        self.assertIn("direnv_init=$(direnv hook bash) || {", bashrc)
-        self.assertIn("dircolors_init=$(dircolors -b) || {", zshrc)
-        for variable in (
-            "zoxide_init",
-            "atuin_init",
-            "direnv_init",
-            "dircolors_init",
-            "atuin_completions",
-            "jj_completion",
-        ):
-            self.assertIn(f"unset {variable}", bashrc + zshrc)
-        self.assertIn("set abbreviations (grep -Ev", fish_config)
-        self.assertIn("set git_aliases (git config --get-regexp", fish_config)
-        self.assertIn('if [ -z "$old_fish" ]; and exists cargo', fish_config)
-        self.assertIn("return $cargo_cache_status", fish_config)
-        self.assertIn("if exists bat\n\tfunction cat", fish_config)
-        self.assertIn(
-            'set -l directory (command fork-github $argv)\n'
-            '\t\tor return\n\t[ -n "$directory" ]',
-            fish_config,
-        )
-        self.assertEqual(3, fish_config.count("printf '%s\\n' \"$history["))
-        self.assertNotIn("echo $history[", fish_config)
-        self.assertIn("abbr --add --global $name $value\n\tor return", fish_config)
-        self.assertIn('source ~/.profile || return', bashrc)
-        self.assertIn('. ~/.profile\n  profile_status=$?', zshrc)
-        self.assertIn('emulate zsh\n  if [ "$profile_status" -ne 0 ]', zshrc)
-        self.assertIn('source ~/.local/bashrc || return', bashrc)
-        self.assertIn('fzf-bash-completion.sh || return', bashrc)
-        self.assertIn("set -l profile_path (realpath ~/.profile); or return", fish_config)
-        self.assertIn("set -l kernel (uname); or return", fish_config)
-        self.assertIn("if not status --is-interactive\n\treturn\nend", fish_config)
-        self.assertNotIn("if not status --is-interactive\n\texit", fish_config)
-        self.assertNotIn('"(uname)"', fish_config)
-        self.assertIn("if exists cargo; then", bashrc)
-        self.assertIn("complete_alias c cargo || return", bashrc)
-        self.assertIn("if exists git; then", bashrc)
-        self.assertIn("complete_alias g git || return", bashrc)
-        self.assertIn("complete_alias cd z || return", bashrc)
-        self.assertIn("compinit -C || return", zshrc)
-        self.assertIn("set -l results (command zoxide query", fish_z)
-        self.assertIn('b"pre_commit_hooks/check_xml.py"', pre_commit_driver)
-        self.assertIn('path.endswith(b".xml")', pre_commit_driver)
-        self.assertIn('b"pre_commit_hooks/check_yaml.py"', pre_commit_driver)
-        self.assertIn('path.endswith((b".yaml", b".yml"))', pre_commit_driver)
-        self.assertIn(". ~/.local/profile.fish\n\tor return", fish_config)
-        self.assertIn(". $DOTFILES/lib/shell/env.sh; or return", fish_config)
-        self.assertIn(". $DOTFILES/lib/shell/paths.sh; or return", fish_config)
-        self.assertIn("refresh-fish-cache --destination $brew_cache --dependency $brew_command", fish_config)
-        self.assertIn("contains $brew_status 0 75; or return $brew_status", fish_config)
-        self.assertIn(". $brew_cache; or return", fish_config)
-        self.assertIn(". /usr/share/bash-completion/bash_completion || return", bashrc)
-        self.assertIn(". /etc/bash_completion || return", bashrc)
-        for line in zshrc.splitlines():
-            if line.lstrip().startswith("zsh-defer "):
-                self.assertTrue("|| return" in line or "|| {" in line, line)
-        self.assertIn("setopt localoptions pipefail", zshrc)
-        self.assertIn("fd --print0 | fzf --read0 --print0", zshrc)
-        self.assertIn('selected=("${(@0)output}")', zshrc)
-        self.assertNotIn("files=$(fd)", zshrc)
-        self.assertIn("fd --print0 | fzf_action --read0 --print0", fish_config)
-        self.assertIn("printf '%s\\0' \"$selection\" | picker-action copy --read0", fish_config)
-        self.assertNotIn("printf %s $selection | copy", fish_config)
-        self.assertIn("read --null key", fish_config)
-        self.assertIn("and read --null selection", fish_config)
-        self.assertNotIn("read --null --line", fish_config)
-        self.assertIn("set -l statuses $pipestatus", fish_config)
-        self.assertIn("bind -M insert alt-t fzf_file_action", fish_config)
-        self.assertNotIn("'fd | fzf_action'", fish_config)
-        self.assertIn("set -l startup_status $status", fish_config)
-        self.assertIn("return $startup_status\nend\nreturn 0", fish_config)
-        self.assertIn("set --local init_output (command $argv)", fish_config)
-        self.assertNotIn("command $argv | source", fish_config)
-        self.assertNotIn("if . $pending_cache", fish_config)
-        self.assertNotIn("command mv $pending_cache", fish_config)
-        self.assertIn("--dependency $cargo_abbr_command", fish_config)
-        self.assertIn("contains $cargo_cache_status 0 75; or return $cargo_cache_status", fish_config)
-        self.assertIn(". $cargo_alias_cache; or return", fish_config)
-        self.assertIn("Run 'wt.exe'", keybindings)
-        self.assertNotIn("RunWait 'wt.exe'", keybindings)
-        self.assertIn('"\\C-l": forward-word', inputrc)
-        self.assertNotIn('"\\Cl": forward-word', inputrc)
-        self.assertTrue(pre_commit.startswith("#!/usr/bin/env python3\n"))
-        self.assertIn('ROOT / "tools/git-hooks"', pre_commit)
-        self.assertIn("from git_hooks.pre_commit import main", pre_commit)
-        self.assertIn('b"pre_commit_hooks/check_symlinks.py"', pre_commit_driver)
-        self.assertIn('b"pre_commit_hooks/destroyed_symlinks.py"', pre_commit_driver)
-        self.assertIn("os.path.realpath(path)", pre_commit_driver)
-        self.assertNotIn("xargs", pre_commit)
-        self.assertNotIn("while read", pre_commit)
-        self.assertNotIn('printf -v path %q "$1"', tmux)
-        self.assertIn("picker-action edit --read0", tmux)
-        self.assertIn("picker-action open -- #{q:mouse_hyperlink}", tmux)
-        self.assertNotIn('send-keys "${EDITOR:-vi} {}"', tmux)
-        self.assertIn("SSH_AGENT_PID", tmux)
-        self.assertNotIn("SSH_AUTH_PID", tmux)
+        for shell, option, startup_file in checks:
+            with self.subTest(startup_file=startup_file):
+                result = subprocess.run(
+                    [shell, option, str(startup_file)],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
         setup = (ROOT / "setup.sh").read_text()

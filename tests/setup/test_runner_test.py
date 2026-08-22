@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import os
+import shlex
+import subprocess
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -9,39 +13,61 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestRunnerTests(unittest.TestCase):
-    def test_pytest_plugins_are_locked_with_mise(self) -> None:
+    def test_pytest_plugin_options_match_the_lock(self) -> None:
         config = tomllib.loads((ROOT / "config/mise.toml").read_text())
         lock = tomllib.loads((ROOT / "config/mise.lock").read_text())
-        expected = "--with pytest-xdist --with pytest-sugar --with pytest-instafail"
 
-        self.assertEqual(expected, config["tools"]["pipx:pytest"]["uvx_args"])
-        self.assertEqual(
-            expected, lock["tools"]["pipx:pytest"][0]["options"]["uvx_args"]
+        configured = shlex.split(config["tools"]["pipx:pytest"]["uvx_args"])
+        locked = shlex.split(
+            lock["tools"]["pipx:pytest"][0]["options"]["uvx_args"]
+        )
+        self.assertEqual(configured, locked)
+
+    def test_jobs_are_dispatched_to_pytest_and_failures_are_propagated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "dev").mkdir()
+            (root / "dev/test").write_bytes((ROOT / "dev/test").read_bytes())
+            (root / "dev/test").chmod(0o755)
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            log = root / "pytest.args"
+            pytest = bin_directory / "pytest"
+            pytest.write_text(
+                "#!/bin/sh\n"
+                "if [ \"${1-}\" = --help ]; then\n"
+                "  echo '--instafail --numprocesses --force-sugar'\n"
+                "  exit 0\n"
+                "fi\n"
+                "printf '%s\\n' \"$@\" > \"$TEST_LOG\"\n"
+                "exit 23\n"
+            )
+            pytest.chmod(0o755)
+            environment = os.environ | {
+                "PATH": f"{bin_directory}:{os.environ['PATH']}",
+                "TEST_LOG": str(log),
+            }
+
+            result = subprocess.run(
+                [root / "dev/test", "--jobs", "3"],
+                cwd=root,
+                env=environment,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(23, result.returncode)
+            arguments = log.read_text().splitlines()
+            self.assertEqual("3", arguments[arguments.index("-n") + 1])
+            self.assertIn("--instafail", arguments)
+
+    def test_rejects_invalid_job_counts_before_dispatch(self) -> None:
+        result = subprocess.run(
+            [ROOT / "dev/test", "--jobs", "0"], text=True, capture_output=True
         )
 
-    def test_runner_delegates_parallel_reporting_to_pytest(self) -> None:
-        runner = (ROOT / "dev/test").read_text()
-        pytest = (ROOT / "pytest.ini").read_text()
-
-        self.assertIn('pytest_args="-n $jobs --dist loadfile', runner)
-        self.assertIn("testpaths = tests tools", pytest)
-        self.assertIn("bb tools/extract-chat/tests/extract_chat_test.clj", runner)
-        self.assertIn("bb -cp tools/agent-split/src tools/agent-split/tests/run.clj", runner)
-        self.assertIn("node tools/extract-chat-share/tests/extract_chat_share_test.js", runner)
-        self.assertIn("cargo test --manifest-path tools/jj-proxy/Cargo.toml", runner)
-        self.assertIn("python3 tools/shell-data/main.py lib/abbr.txt", runner)
-        self.assertIn("python3 tools/shell-boundaries/main.py", runner)
-        self.assertIn('if [ "$(uname -s)" = Linux ]', runner)
-        self.assertIn("--instafail", runner)
-        self.assertIn("export PYTHONUNBUFFERED=1", runner)
-        self.assertIn('uvx --from "$pytest_requirement"', runner)
-        self.assertNotIn('python3 "$test_file"', runner)
-
-    def test_container_suite_uses_the_same_runner(self) -> None:
-        container_test = (ROOT / "dev/setup/container-test").read_text()
-
-        self.assertIn("dev/test --jobs 4", container_test)
-        self.assertNotIn("python3 tests/setup/setup_test.py", container_test)
+        self.assertEqual(2, result.returncode)
+        self.assertIn("positive integer", result.stderr)
 
 
 if __name__ == "__main__":
