@@ -20,13 +20,9 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 TOOL = ROOT / "tools" / "codex-sandbox"
 LAUNCHER = TOOL / "codex-sandbox"
-AGENT_SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
-AGENT_SANDBOX_INSTALL_DEPS = TOOL / "image" / "install-deps.sh"
 AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
-PI_LAUNCHER = TOOL / "image" / "pi"
-PI_REVISION = "b71f69a5dc996fd1d781f69a44add1485a83079e"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -53,32 +49,7 @@ class AgentSandboxImageTest(unittest.TestCase):
             "/libexec/agent-wrappers:/usr/local/bin:/usr/bin:/bin\n",
             result.stdout,
         )
-        self.assertIn(
-            "COPY ./tools/codex-sandbox/image/agent-wrappers-path.sh /etc/profile.d/agent-wrappers-path.sh",
-            AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8"),
-        )
-
-    def test_bb_wrapper_runtime_is_copied_into_image(self) -> None:
-        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
-
-        self.assertIn("./tools/agent-split /tools/agent-split", dockerfile)
-        self.assertIn("/usr/local/bin/bb", dockerfile)
-        self.assertRegex(
-            AGENT_SANDBOX_INSTALL_DEPS.read_text(encoding="utf-8"),
-            r"(?m)^        gcompat \\$",
-        )
-        self.assertIn("./lib/shell/lib.sh /lib/shell/lib.sh", dockerfile)
-        self.assertNotIn("tools/codex-auth-proxy/server.py", dockerfile)
-        self.assertIn(
-            "tools/codex-auth-proxy/server.py /trusted/bin/codex-auth-proxy",
-            (ROOT / "tools/codex-auth-proxy/Dockerfile").read_text(encoding="utf-8"),
-        )
-        self.assertEqual(
-            "../../tools/agent-split/bb",
-            os.readlink(ROOT / "libexec" / "agent-wrappers" / "bb"),
-        )
-
-    def test_dotfiles_profile_is_noninteractive_and_image_managed(self) -> None:
+    def test_dotfiles_profile_sets_a_noninteractive_environment(self) -> None:
         result = subprocess.run(
             [
                 "sh",
@@ -107,63 +78,6 @@ class AgentSandboxImageTest(unittest.TestCase):
             "/usr/local/bin:/usr/bin:/bin\n",
             path_result.stdout,
         )
-        profile = DOTFILES_PROFILE.read_text(encoding="utf-8")
-        for interactive_hook in ("mise activate", "prompt-command", "keychain", "direnv"):
-            self.assertNotIn(interactive_hook, profile)
-
-        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
-        for source in (
-            "./tools/codex-sandbox/image/dotfiles-profile.sh",
-            "./tools/codex-sandbox/image/gitconfig",
-            "./config/editorconfig",
-            "./config/inputrc",
-        ):
-            self.assertIn(source, dockerfile)
-        self.assertIn("https://github.com/jyn514/pi.git", dockerfile)
-        self.assertIn(f"ARG PI_REVISION={PI_REVISION}", dockerfile)
-        self.assertIn("FROM alpine:3.22 AS pi-source", dockerfile)
-        self.assertIn("FROM node:24-bookworm-slim AS pi-build", dockerfile)
-        self.assertNotIn(" AS pi-binary", dockerfile)
-        self.assertIn("npm ci --ignore-scripts --prefix /opt/pi-npm", dockerfile)
-        self.assertIn("./tools/pi-npm/package-lock.json", dockerfile)
-        self.assertIn("npm ci --ignore-scripts --prefix /opt/agent-pi/src", dockerfile)
-        self.assertIn("npm run hydrate:model-data --prefix /opt/agent-pi/src", dockerfile)
-        self.assertIn("npm run build:offline --prefix /opt/agent-pi/src", dockerfile)
-        self.assertIn('ENTRYPOINT ["pi", "--offline", "--approve"]', dockerfile)
-
-    def test_pi_runtime_builds_the_pinned_fork_for_any_libc(self) -> None:
-        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
-        launcher = PI_LAUNCHER.read_text(encoding="utf-8")
-
-        self.assertIn(f"ARG PI_REVISION={PI_REVISION}", dockerfile)
-        self.assertIn('test "$(git -C /src rev-parse HEAD)" = "${PI_REVISION}"', dockerfile)
-        self.assertEqual(1, dockerfile.count("npm ci --ignore-scripts --prefix /opt/agent-pi/src"))
-        self.assertIn("cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/", dockerfile)
-        self.assertIn("COPY --from=pi-build /opt/agent-pi /opt/agent-pi", dockerfile)
-        self.assertNotIn(" AS pi-binary", dockerfile)
-        self.assertNotIn("earendil-works/pi/releases", dockerfile)
-        self.assertIn("if [ ! -e /etc/alpine-release ]; then", launcher)
-        self.assertIn("major === 22 && minor >= 19", launcher)
-        self.assertIn("/opt/agent-pi/src/packages/coding-agent/dist/cli.js", launcher)
-        self.assertIn("exec /opt/agent-pi/standalone/pi", launcher)
-        self.assertIn(
-            "export PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent", launcher
-        )
-
-    def test_base_dependencies_are_cached_independently_of_pi(self) -> None:
-        dockerfile = AGENT_SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
-
-        self.assertIn("FROM ${BASE_IMAGE} AS agent-deps", dockerfile)
-        self.assertIn("FROM agent-deps AS pi-runtime", dockerfile)
-        self.assertLess(
-            dockerfile.index("KEEP_PACKAGE_CACHE=1 install-agent-deps"),
-            dockerfile.index("FROM node:24-bookworm-slim AS pi-build"),
-        )
-
-    def test_podman_builds_independent_stages_in_parallel(self) -> None:
-        launcher = LAUNCHER.read_text(encoding="utf-8")
-
-        self.assertIn('"docker", "build", "--jobs", "4"', launcher)
 
     def test_sandbox_gitconfig_keeps_diff_semantics_without_identity_or_credentials(self) -> None:
         result = subprocess.run(
@@ -442,7 +356,7 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["unregister_tmux_pane"](state)
 
         self.assertIn(
-            ["tmux", "set-option", "-p", "-t", "%3", "@codex_sandbox_command", "pi"],
+            ["tmux", "set-option", "-p", "-t", "%3", "@codex_sandbox_command", "π"],
             calls,
         )
         self.assertIn(

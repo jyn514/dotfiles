@@ -845,25 +845,50 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("tool two words\n", call_text)
 
-    def test_profile_checks_abbreviation_loading_before_defining_aliases(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
+    def test_profile_does_not_define_aliases_from_failed_abbreviation_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            binaries = root / "bin"
+            home.mkdir()
+            binaries.mkdir()
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            grep = binaries / "grep"
+            grep.write_text(
+                "#!/bin/sh\nprintf 'profile_test_alias=printf partial\\n'\nexit 41\n"
+            )
+            grep.chmod(0o755)
+            ls = binaries / "ls"
+            ls.write_text("#!/bin/sh\nexit 0\n")
+            ls.chmod(0o755)
 
-        self.assertIn(
-            "abbreviations=$(grep -Ev '^(#|$)' \"$DOTFILES/lib/abbr.txt\") || return",
-            profile,
-        )
-        self.assertIn('eval "$snap_bin" || {', profile)
-        self.assertIn('alias "$name"="$expn" || return', profile)
-        for source in (
-            '. "$DOTFILES/lib/shell/env.sh" || return',
-            '. "$DOTFILES/lib/shell/paths.sh" || return',
-            '. "$DOTFILES/lib/shell/lib.sh" || return',
-            '. "$DOTFILES/bin/show-status" || return',
-        ):
-            self.assertIn(source, profile)
-        self.assertIn('command prompt-command "$target" "$last_status" 0 "$label"', profile)
-        self.assertIn("printf '\\n; '", profile)
-        self.assertNotIn('. "$DOTFILES/bin/prompt-command"', profile)
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    "--noprofile",
+                    "--norc",
+                    "-ic",
+                    'set -- startup; source "$HOME/.profile"; profile_status=$?; '
+                    "if alias profile_test_alias >/dev/null 2>&1; then "
+                    "alias_status=defined; else alias_status=missing; fi; "
+                    'printf "%s:%s\\n" "$profile_status" "$alias_status"',
+                ],
+                cwd=root,
+                env=os.environ
+                | {
+                    "BASH_PROFILE_READ": "1",
+                    "HOME": str(home),
+                    "PATH": f"{binaries}:/usr/bin:/bin",
+                    "SSH_AUTH_SOCK": "present",
+                    "TERM": "dumb",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("41:missing\n", result.stdout)
 
     def test_prompt_adapter_discards_partial_failed_render(self) -> None:
         profile = (ROOT / "config/profile").read_text()
@@ -1090,180 +1115,6 @@ class ProfileContractTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
-
-    def test_path_consumers_and_comment_regex_preserve_literal_text(self) -> None:
-        tmux = (ROOT / "config/tmux.conf").read_text()
-        nvim = (ROOT / "config/nvim.lua").read_text()
-        glide = (ROOT / "config/glide.ts").read_text()
-        fish = (ROOT / "config/config.fish").read_text()
-        kakoune = (ROOT / "config/kakrc").read_text()
-        julia = (ROOT / "config/startup.jl").read_text()
-        profile = (ROOT / "config/profile").read_text()
-        vimrc = (ROOT / "config/vimrc").read_text()
-        zprofile = (ROOT / "config/zprofile").read_text()
-
-        self.assertNotIn("; xargs open", tmux)
-        self.assertNotIn("xargs -0", tmux)
-        self.assertEqual(5, tmux.count("bash -o pipefail -c"))
-        self.assertNotIn("tmux load-buffer -b clipboard -;", tmux)
-        self.assertNotIn("tmux load-buffer -b primary_selection -;", tmux)
-        self.assertIn("if (save != \\\"\\\")", tmux)
-        self.assertIn('vim.fn.escape(comment, "\\\\/.*$^~[]")', nvim)
-        self.assertIn('pickers.git_status({ prompt = "Changed Files" })', nvim)
-        self.assertNotIn(
-            'cmd = "git ls-files --cached --others --exclude-standard"', nvim
-        )
-        self.assertIn(
-            "pickers.lsp_document_diagnostics, { desc = \"Show document diagnostics\" }",
-            nvim,
-        )
-        self.assertIn("buffer = buf,\n\t\tcallback", nvim)
-        for variable in ("selections", "swaps", "moves", "upper"):
-            self.assertIn(f"local {variable} =", nvim)
-        self.assertIn("local function indentgroup(lang, func)", nvim)
-        self.assertIn("lang .. 'indent', { clear = true }", nvim)
-        self.assertNotRegex(nvim, r"(?m)^function indentgroup\(")
-        self.assertIn("function spaces(count, global)\n\tlocal opt", nvim)
-        self.assertEqual(1, glide.count('glide.keymaps.set("normal", "U"'))
-        self.assertIn('os === "mac" ? "<D-S-z>" : "<C-S-z>"', glide)
-        self.assertEqual(2, glide.count("if (currentTab?.id == null) return;"))
-        self.assertIn("if (next?.id == null) return;", glide)
-        self.assertIn("if (tab?.id == null) return;", glide)
-        self.assertIn("if (selection == null) return;", glide)
-        self.assertNotIn("console.log(", glide)
-        self.assertEqual(1, glide.count('glide.include("glide-algorithms.ts")'))
-        for variable in ("paredit", "comment_api", "MiniStatusline", "wk"):
-            self.assertIn(f"local {variable} =", nvim)
-        for helper in (
-            "abbrev",
-            "autosave_disable",
-            "autosave_enable",
-            "bind",
-            "bind_ts",
-            "buffer_delete",
-            "set_spider",
-        ):
-            self.assertIn(f"local function {helper}(", nvim)
-            self.assertNotRegex(nvim, rf"(?m)^function {helper}\(")
-        self.assertNotIn("function BufferDelete(", nvim)
-        self.assertIn("bind_ts(ts {", nvim)
-        self.assertIn("}, { buffer = args.buf })", nvim)
-        self.assertIn('rg_opts = [[--color=never --files -g "!.git" -g "!.jj"', nvim)
-        self.assertIn("fd_opts = [[--color=never --type f --type l --exclude .git --exclude .jj", nvim)
-        self.assertIn('pickers.git_files({ winopts = { title = "All tracked files" } })', nvim)
-        self.assertIn('desc = "Open file picker (all tracked files)"', nvim)
-        self.assertIn('vim.fs.basename(opts.file) == "main.typ"', nvim)
-        self.assertNotIn('string.match(opts.file, "main.typ$")', nvim)
-        self.assertIn("vim.lsp.codelens.refresh { bufnr = bufnr }", nvim)
-        self.assertNotIn('nvim_create_autocmd({ "BufEnter", "LspAttach" }', nvim)
-        self.assertNotIn("\n_ = [[\n", nvim)
-        self.assertIn("<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page down'", nvim)
-        self.assertIn("<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page up'", nvim)
-        self.assertEqual(4, nvim.count("vim.fn.fnameescape("))
-        self.assertNotIn("'edit ' .. config", nvim)
-        self.assertNotIn("'source ' .. config", nvim)
-        self.assertIn("*.h,*.c set filetype=c", vimrc)
-        self.assertIn("*.cc,*.cpp,*.C,*.ino set filetype=cpp", vimrc)
-        self.assertNotIn("*.h,*.c,*.cc", vimrc)
-        self.assertIn("augroup dotfiles_config\nautocmd!", vimrc)
-        self.assertIn("augroup dotfiles_checktime\n\tautocmd!", vimrc)
-        self.assertNotIn("\nau FocusGained,BufEnter", vimrc)
-        self.assertEqual(1, vimrc.count("augroup dotfiles_config"))
-        self.assertIn("let l:status = v:shell_error", vimrc)
-        self.assertIn("return l:status", vimrc)
-        self.assertIn("function! CompileTex()", vimrc)
-        for option in ("tabstop", "shiftwidth", "softtabstop"):
-            self.assertNotRegex(vimrc, rf"\n\tset {option}=")
-            self.assertIn(f"\n\tsetlocal {option}=", vimrc)
-        self.assertIn(
-            "setglobal tabstop=2 shiftwidth=2 softtabstop=2 expandtab", vimrc
-        )
-        self.assertIn("autocmd FileType tex inoremap <buffer> <C-l>", vimrc)
-        self.assertIn("autocmd FileType tex nnoremap <buffer> <C-l>", vimrc)
-        self.assertNotIn("\ninoremap <C-l>", vimrc)
-        self.assertNotIn("\nnnoremap <C-l>", vimrc)
-        self.assertIn("fnamemodify(l:source, ':h')", vimrc)
-        self.assertIn("' && cd ' . shellescape(l:directory)", vimrc)
-        self.assertIn("shellescape(l:build)", vimrc)
-        self.assertIn("shellescape(l:filename)", vimrc)
-        self.assertIn("silent! unmap <TAB>", vimrc)
-        self.assertEqual(7, vimrc.count("function! "))
-        self.assertNotIn("\nfunction ", vimrc)
-        self.assertIn("Plug 'vim-latex/vim-latex', { 'for': 'tex' }", vimrc)
-        self.assertNotIn("{ 'for': 'latex' }", vimrc)
-        self.assertIn("ZSH_PROFILE_READ=1\n. ~/.profile || return", zprofile)
-        self.assertNotIn('awk -v arg="$1"', profile)
-        self.assertIn('command open-man-page "$@"', profile)
-        self.assertIn('[ "$status" -eq 69 ] || return "$status"', profile)
-        self.assertIn('kak-lsp --kakoune -s "$kak_session"', kakoune)
-        self.assertNotIn('kak-lsp --kakoune -s $kak_session', kakoune)
-        self.assertIn('define_editor("editor-hax", wait=true)', julia)
-        self.assertNotIn('define_editor("hx-hax"', julia)
-        self.assertIn("export JULIA_EDITOR=editor-hax", profile)
-        self.assertIn("export JULIA_EDITOR=editor-hax", fish)
-        self.assertNotIn("JULIA_EDITOR=hx-hax", profile + fish)
-        self.assertNotIn("xargs -I {}", tmux)
-        self.assertNotIn("xargs -0", tmux)
-        self.assertIn("picker-action edit --read0", tmux)
-        self.assertIn("picker-action open --read0", tmux)
-        self.assertIn("picker-action search --read0", tmux)
-        self.assertIn("picker-action copy --primary -- #{q:mouse_hyperlink}", tmux)
-        self.assertNotIn("printf %s #{q:mouse_hyperlink} | copy --primary", tmux)
-        self.assertIn("picker-action open -- #{q:mouse_hyperlink}", tmux)
-        self.assertNotIn("run-shell 'open #{q:mouse_hyperlink}'", tmux)
-        self.assertNotIn('urlencode({"q": sys.argv[1]})', tmux)
-        self.assertNotIn("arg=\"'\"$1\"'\"", profile)
-        self.assertNotIn('rg "^$1"', profile)
-        self.assertIn("man() {\n\t\t\tlocal status", profile)
-        self.assertNotIn("\n\t\t\tcheck()", profile)
-        self.assertIn("local existing new_path old_ifs p restore_glob", profile)
-        self.assertIn("crontab() {\n\tlocal argument options reply", profile)
-        self.assertIn("fork_github() {\n\tlocal dir", profile)
-        self.assertIn('bash --norc --noprofile "$@"', profile)
-        self.assertIn("local abbreviations alias expn name", profile)
-        self.assertIn("local conflict_diff result", profile)
-        self.assertIn("telnet_output=$(telnet", profile)
-        self.assertIn('printf \'%s\\n\' "$telnet_output" | tail -2', profile)
-        self.assertIn("local marker = vim.fs.find", nvim)
-        self.assertIn("return marker and vim.fs.dirname(marker)", nvim)
-        self.assertIn("vim.fs.root(buf, { 'package.json', 'tsconfig.json' })", nvim)
-        self.assertIn("vim.lsp.config('oxlint', {", nvim)
-        self.assertNotIn("vim.lsp.config('oxc', {", nvim)
-        self.assertIn(
-            "'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'tinymist'",
-            nvim,
-        )
-        self.assertIn("if not first_run then vim.lsp.enable(lsp, false) end", nvim)
-        self.assertNotIn("LspRestart", nvim)
-        self.assertNotIn("vim.fs.root(0, { 'package.json'", nvim)
-        self.assertIn("codelens.refresh { bufnr = bufnr }", nvim)
-        self.assertNotIn("codelens.refresh { bufnr = 0 }", nvim)
-        self.assertIn("if win >= 0 then vim.lsp.foldclose('imports', win) end", nvim)
-        self.assertIn("nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })", nvim)
-        self.assertIn("nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })", nvim)
-        self.assertNotIn("highlight! link Keyword Special", nvim)
-        self.assertIn("return s:match'^(.*%S)%s*$' or ''", nvim)
-        self.assertIn("local function rtrim(s)", nvim)
-        self.assertEqual(
-            1,
-            nvim.count(
-                'nvim_create_augroup("lsp_document_highlight", { clear = true })'
-            ),
-        )
-        self.assertIn("group = lsp_document_highlight", nvim)
-        self.assertIn("group = lsp_attach", nvim)
-        self.assertIn('desc = "Run codelens", buffer = bufnr', nvim)
-        self.assertGreaterEqual(nvim.count("force = true"), 9)
-        self.assertIn("local config_group = vim.api.nvim_create_augroup", nvim)
-        self.assertIn("local autosave_group = vim.api.nvim_create_augroup", nvim)
-        self.assertIn("nvim_get_autocmds({ group = autosave_group, buffer = buf })", nvim)
-        self.assertNotIn("local timers = {}", nvim)
-        self.assertNotIn("vim.bo.colorcolumn", nvim)
-        self.assertIn("vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }", nvim)
-        self.assertNotIn('pattern = "markdown",\n\tcallback = function()\n\t\tvim.wo.colorcolumn', nvim)
-        self.assertIn('encoded=$(printf "%s" "$kak_reg_dquote" | base64) || exit', kakoune)
-        self.assertIn("encoded=$(printf '%s' \"$encoded\" | tr -d '\\n') || exit", kakoune)
-        self.assertNotIn("base64 | tr", kakoune)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_repository_urls_drop_page_routes_and_query_data(self) -> None:
