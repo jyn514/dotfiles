@@ -33,15 +33,17 @@ instructions and findings. Record observations, not conclusions; write nothing i
 
 For version-sensitive CLI questions, check the installed command's built-in help before searching online documentation.
 
-Avoid `sed` wherever possible because it is not approved in the sandbox; prefer `rg`,
-`head`, `tail`, and other read-only commands.
+Avoid `sed` wherever possible because it is not approved in the sandbox;
+prefer `rg`, `head`, `tail`, and other read-only commands.
 
-When vendoring or duplicating an existing file without modification, use `cp` rather than reconstructing it with `write` or a generated patch. Verify the copy with `cmp` before making any targeted edits.
+When vendoring or duplicating an existing file without modification, use `cp` rather than reconstructing it with `write` or a generated patch.
+Verify the copy with `cmp` before making any targeted edits.
 
 Run `jj` outside the sandbox and as a separate command: it snapshots the working
 directory, and combining it makes unrelated commands require approval.
 
-Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead. For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
+Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead.
+For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
 
 Use `diff-check`, never `git diff --check`; the latter may not be installed.
@@ -82,6 +84,16 @@ Before `jj commit`, inspect the complete diff and write the message from the fin
 ## Records and provenance
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
+
+## Dependencies
+
+Add dependencies through the owning component’s existing package manager.
+Do not introduce a package manager solely for one dependency; ask first when the project
+has none.
+
+Before adding a dependency, review its source scope, maintenance activity, release
+provenance, and compatibility in proportion to its authority and risk. Pin or lock it
+according to repository conventions.
 
 ## Working with jyn
 
