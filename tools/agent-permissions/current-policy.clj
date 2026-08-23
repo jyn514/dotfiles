@@ -1,91 +1,110 @@
-(let [codex-only [:codex]
-      claude-only [:claude]]
-  (policy
-    ;; Codex policy. These retain prefix semantics exactly.
-    (deny ["sed"] :reason "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches." :targets codex-only)
+(def targets #{:codex :claude})
+(def option-keys #{:match :reason :targets})
 
-    (allow ["clojure" "-Spath"] :targets codex-only)
-    (allow ["bb" "tasks"] :targets codex-only)
+(defn one-of [& values]
+  {:one-of (vec values)})
 
-    (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")] :targets codex-only)
-    (allow ["jj" "file" (one-of "list" "show")] :targets codex-only)
-    (allow ["jj" "config" (one-of "list" "get")] :targets codex-only)
-    (allow ["jj" "bookmark" "list"] :targets codex-only)
-    (allow ["jj" "bookmark" "advance" "--help"] :targets codex-only)
-    (allow ["jj" "workspace" "list"] :targets codex-only)
-    (allow ["jj" "op" "log"] :targets codex-only)
+(defn rule [decision pattern options]
+  (let [unknown-options (remove option-keys (keys options))]
+    (when (seq unknown-options)
+      (throw (ex-info "unknown policy options" {:options (vec unknown-options)})))
+    {:decision decision
+     :match (or (:match options) :prefix)
+     :pattern pattern
+     :reason (:reason options)
+     :targets (set (or (:targets options) targets))}))
 
-    (allow ["git" (one-of "ls-remote" "cherry" "cat-file" "fetch")] :targets codex-only)
-    (allow ["git" "push" "--dry-run"] :targets codex-only)
-    (allow ["git" "diff" "--check"] :targets codex-only)
+(defn allow [pattern & {:as options}]
+  (rule :allow pattern options))
 
-    (allow [(one-of "true" "cat" "grep" "rg" "jq" "head" "tail" "ps" "echo" "wc" "diff" "ls" "sort" "nl" "sleep" "diff-check" "stat" "file" "df" "du" "lsof" "uname" "id")] :targets codex-only)
-    (allow ["mise" "activate"] :targets codex-only)
+(defn deny [pattern & {:as options}]
+  (rule :deny pattern options))
 
-    (allow ["gh" "pr" (one-of "diff" "checks" "list" "status" "view")] :targets codex-only)
-    (allow ["gh" "issue" (one-of "list" "view")] :targets codex-only)
+(defn policy [& rules]
+  (vec rules))
 
-    (allow [(one-of "vm_stat" "iostat" "sw_vers")] :targets codex-only)
-    (allow ["sysctl" (one-of "-a" "-n")] :targets codex-only)
-    (allow ["launchctl" "print"] :targets codex-only)
-    (allow ["scutil" "--dns"] :targets codex-only)
-    (allow ["log" "show"] :targets codex-only)
-    (allow ["xcrun" "--find"] :targets codex-only)
-    (allow ["xcode-select" "-p"] :targets codex-only)
+(defn deny-codex [pattern reason]
+  (deny pattern :reason reason :targets [:codex]))
 
-    (allow ["git" (one-of "bug" "clone")] :targets codex-only)
-    (allow ["git" "submodule" "update"] :targets codex-only)
-    (allow ["jj" (one-of "commit" "split" "squash" "duplicate")] :targets codex-only)
-    (allow ["jj" "git" (one-of "clone" "export" "fetch" "init")] :targets codex-only)
-    (allow ["jj" "workspace" "add"] :targets codex-only)
-    (allow ["jj" "bookmark" "create"] :targets codex-only)
-    (allow ["bb" "agent-split"] :targets codex-only)
+(defn allow-claude-exact [pattern]
+  (allow pattern :match :exact :targets [:claude]))
 
-    (allow [(one-of "podman" "docker") (one-of "ps" "images" "inspect" "logs" "stats" "version" "info")] :targets codex-only)
-    (allow [(one-of "podman" "docker") "image" "list"] :targets codex-only)
-    (allow [(one-of "podman" "docker") "network" (one-of "ls" "inspect" "list")] :targets codex-only)
-    (allow [(one-of "podman" "docker") "volume" (one-of "ls" "inspect")] :targets codex-only)
-    (allow [(one-of "podman" "docker") "system" "df"] :targets codex-only)
-    (allow [(one-of "podman" "docker") (one-of "port" "top")] :targets codex-only)
-    (allow ["podman" "machine" (one-of "list" "inspect")] :targets codex-only)
+(defn allow-claude-descendants [pattern]
+  (allow pattern :match :descendants :targets [:claude]))
 
-    (allow [(one-of "pgrep" "jcmd" "lpstat" "lpinfo")] :targets codex-only)
-    (allow ["zola" "build"] :targets codex-only)
-    (allow ["gofmt"] :targets codex-only)
-    (allow ["yt-dlp" "--list-subs"] :targets codex-only)
-    (allow ["tea" "issue" (one-of "list" "ls" "--help" "-h")] :targets codex-only)
-    (allow ["skopeo" (one-of "inspect" "list-tags")] :targets codex-only)
-    (allow ["extract-chat-share"] :targets codex-only)
-    (allow ["extract-chat"] :targets codex-only)
-    (allow ["watchman" (one-of "watch-list" "version" "get-config" "subscription-list" "since" "query" "debug-get-subscriptions" "find")] :targets codex-only)
-    (allow ["tmux" (one-of "show-option" "show-hooks" "list-keys" "list-commands" "info" "display-message" "list-panes")] :targets codex-only)
-    (allow ["tmux" "source-file" "-n"] :targets codex-only)
+(policy
+  ;; Codex policy. These retain prefix semantics exactly.
+  (deny-codex ["sed"] "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
 
-    ;; Existing Claude Bash permissions. Exact and descendants matching are
-    ;; represented separately because Codex has only argv-prefix rules.
-    (allow ["bb" "tasks"] :match :descendants :targets claude-only)
-    (allow ["clojure" "-Stree"] :match :exact :targets claude-only)
-    (allow ["clj-kondo"] :match :descendants :targets claude-only)
-    (allow ["jj" "diff"] :match :descendants :targets claude-only)
-    (allow ["jj" "status"] :match :descendants :targets claude-only)
-    (allow ["jj" "log"] :match :descendants :targets claude-only)
-    (allow ["jj" "show"] :match :descendants :targets claude-only)
-    (allow ["jj" "file" "show"] :match :descendants :targets claude-only)
-    (allow ["git" "check-ignore"] :match :descendants :targets claude-only)
-    (allow ["git" "diff"] :match :descendants :targets claude-only)
-    (allow ["git" "show"] :match :descendants :targets claude-only)
-    (allow ["git" "status"] :match :descendants :targets claude-only)
-    (allow ["grep"] :match :descendants :targets claude-only)
-    (allow ["rg"] :match :descendants :targets claude-only)
-    (allow ["find"] :match :descendants :targets claude-only)
-    (allow ["wc"] :match :descendants :targets claude-only)
-    (allow ["head"] :match :descendants :targets claude-only)
-    (allow ["awk"] :match :descendants :targets claude-only)
-    (allow ["sed"] :match :descendants :targets claude-only)
-    (allow ["xxd"] :match :exact :targets claude-only)
-    (allow ["cat"] :match :descendants :targets claude-only)
-    (allow ["ls"] :match :descendants :targets claude-only)
-    (allow ["command" "-v"] :match :descendants :targets claude-only)
-    (allow ["python3" "-m" "json.tool"] :match :exact :targets claude-only)
-    (allow ["typst"] :match :descendants :targets claude-only)
-    (allow ["podman" "images"] :match :descendants :targets claude-only)))
+  (allow ["clojure" "-Spath"])
+  (allow ["bb" "tasks"])
+
+  (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")])
+  (allow ["jj" "file" (one-of "list" "show")])
+  (allow ["jj" "config" (one-of "list" "get")])
+  (allow ["jj" "bookmark" "list"])
+  (allow ["jj" "bookmark" "advance" "--help"])
+  (allow ["jj" "workspace" "list"])
+  (allow ["jj" "op" "log"])
+
+  (allow ["git" (one-of "ls-remote" "cherry" "cat-file" "fetch")])
+  (allow ["git" "push" "--dry-run"])
+  (allow ["git" "diff" "--check"])
+
+  (allow [(one-of "true" "cat" "grep" "rg" "jq" "head" "tail" "ps" "echo" "wc" "diff" "ls" "sort" "nl" "sleep" "diff-check" "stat" "file" "df" "du" "lsof" "uname" "id")])
+  (allow ["mise" "activate"])
+
+  (allow ["gh" "pr" (one-of "diff" "checks" "list" "status" "view")])
+  (allow ["gh" "issue" (one-of "list" "view")])
+
+  (allow [(one-of "vm_stat" "iostat" "sw_vers")])
+  (allow ["sysctl" (one-of "-a" "-n")])
+  (allow ["launchctl" "print"])
+  (allow ["scutil" "--dns"])
+  (allow ["log" "show"])
+  (allow ["xcrun" "--find"])
+  (allow ["xcode-select" "-p"])
+
+  (allow ["git" (one-of "bug" "clone")])
+  (allow ["git" "submodule" "update"])
+  (allow ["jj" (one-of "commit" "split" "squash" "duplicate")])
+  (allow ["jj" "git" (one-of "clone" "export" "fetch" "init")])
+  (allow ["jj" "workspace" "add"])
+  (allow ["jj" "bookmark" "create"])
+  (allow ["bb" "agent-split"])
+
+  (allow [(one-of "podman" "docker") (one-of "ps" "images" "inspect" "logs" "stats" "version" "info")])
+  (allow [(one-of "podman" "docker") "image" "list"])
+  (allow [(one-of "podman" "docker") "network" (one-of "ls" "inspect" "list")])
+  (allow [(one-of "podman" "docker") "volume" (one-of "ls" "inspect")])
+  (allow [(one-of "podman" "docker") "system" "df"])
+  (allow [(one-of "podman" "docker") (one-of "port" "top")])
+  (allow ["podman" "machine" (one-of "list" "inspect")])
+
+  (allow [(one-of "pgrep" "jcmd" "lpstat" "lpinfo")])
+  (allow ["zola" "build"])
+  (allow ["gofmt"])
+  (allow ["yt-dlp" "--list-subs"])
+  (allow ["tea" "issue" (one-of "list" "ls" "--help" "-h")])
+  (allow ["skopeo" (one-of "inspect" "list-tags")])
+  (allow ["extract-chat-share"])
+  (allow ["extract-chat"])
+  (allow ["watchman" (one-of "watch-list" "version" "get-config" "subscription-list" "since" "query" "debug-get-subscriptions" "find")])
+  (allow ["tmux" (one-of "show-option" "show-hooks" "list-keys" "list-commands" "info" "display-message" "list-panes")])
+  (allow ["tmux" "source-file" "-n"])
+
+  ;; Claude-only rules retain the exact or descendants-only behavior of its
+  ;; native permission syntax. General Codex prefixes above are shared.
+  (allow-claude-exact ["clojure" "-Stree"])
+  (allow-claude-descendants ["clj-kondo"])
+  (allow-claude-descendants ["git" "check-ignore"])
+  (allow-claude-descendants ["git" "diff"])
+  (allow-claude-descendants ["git" "show"])
+  (allow-claude-descendants ["git" "status"])
+  (allow-claude-descendants ["find"])
+  (allow-claude-descendants ["awk"])
+  (allow-claude-descendants ["sed"])
+  (allow-claude-exact ["xxd"])
+  (allow-claude-descendants ["command" "-v"])
+  (allow-claude-exact ["python3" "-m" "json.tool"])
+  (allow-claude-descendants ["typst"]))
