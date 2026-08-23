@@ -100,8 +100,8 @@ class AgentPermissionRendererTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            json.loads((FIXTURES / "claude-settings.json").read_text()),
-            json.loads(result.stdout),
+            (FIXTURES / "claude-settings.json").read_text(),
+            result.stdout,
         )
 
     def test_port_preserves_existing_codex_rule_decisions(self) -> None:
