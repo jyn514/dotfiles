@@ -623,7 +623,7 @@ def stage_skills(state: State) -> None:
     config.mkdir()
     for name in (
         "shared-agents.md", "pi-AGENTS.md", "breq.md", "pi.json", "pi-mcp.json",
-        "pi-keybindings.json",
+        "pi-keybindings.json", "pi-codex-subagents.json",
     ):
         shutil.copy2(DOTFILES / "config" / name, config / name)
 
@@ -714,6 +714,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-keybindings.json'},dst=/home/codex/.pi/agent/keybindings.json,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-codex-subagents.json'},dst=/home/codex/.pi/agent/pi-codex-subagents/config.json,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/pi-extensions'},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",

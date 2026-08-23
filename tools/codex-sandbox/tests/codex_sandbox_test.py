@@ -292,6 +292,30 @@ class CodexSandboxTest(unittest.TestCase):
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
+    def test_mounts_subagent_configuration_from_staged_dotfiles(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        try:
+            launcher["stage_skills"](state)
+            staged = state.skills_tmp / "config/pi-codex-subagents.json"
+            self.assertEqual(
+                json.loads((ROOT / "config/pi-codex-subagents.json").read_text(encoding="utf-8")),
+                json.loads(staged.read_text(encoding="utf-8")),
+            )
+        finally:
+            if state.skills_tmp is not None:
+                shutil.rmtree(state.skills_tmp)
+
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(any(
+            item.endswith(
+                "/config/pi-codex-subagents.json,dst=/home/codex/.pi/agent/"
+                "pi-codex-subagents/config.json,readonly"
+            )
+            for item in self.final_run()
+        ))
+
     def test_bare_launch_gets_a_resumable_session_id(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         arguments, session_id = launcher["resumable_arguments"]([])
