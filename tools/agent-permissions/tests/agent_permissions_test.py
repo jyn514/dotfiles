@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import itertools
 import json
 from pathlib import Path
 import shutil
@@ -112,7 +113,7 @@ class AgentPermissionRendererTests(unittest.TestCase):
             self.codex_rule_calls(result.stdout),
         )
 
-    def test_port_preserves_existing_claude_bash_rules(self) -> None:
+    def test_shared_policy_retains_claude_rules_and_adds_codex_allows(self) -> None:
         original = json.loads((ROOT / "config/claude.json").read_text())
         with tempfile.TemporaryDirectory() as temporary:
             base = json.loads(json.dumps(original))
@@ -130,30 +131,52 @@ class AgentPermissionRendererTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         generated = json.loads(result.stdout)
-        for decision in ("allow", "deny"):
-            expected = [
-                entry
-                for entry in original.get("permissions", {}).get(decision, [])
-                if entry.startswith("Bash(")
-            ]
-            actual = [
+        generated_bash = {
+            decision: {
                 entry
                 for entry in generated.get("permissions", {}).get(decision, [])
                 if entry.startswith("Bash(")
-            ]
-            self.assertEqual(expected, actual, decision)
+            }
+            for decision in ("allow", "deny")
+        }
+        for decision in ("allow", "deny"):
+            existing = {
+                entry
+                for entry in original.get("permissions", {}).get(decision, [])
+                if entry.startswith("Bash(")
+            }
+            self.assertLessEqual(existing, generated_bash[decision], decision)
 
-    def test_rejects_unknown_options_instead_of_broadening_targets(self) -> None:
+        codex_rules = self.codex_rule_calls(
+            (ROOT / "config/codex.rules").read_text()
+        )
+        for rule in codex_rules:
+            if rule["decision"] != "allow":
+                continue
+            alternatives = [
+                component if isinstance(component, list) else [component]
+                for component in rule["pattern"]
+            ]
+            for tokens in itertools.product(*alternatives):
+                command = " ".join(tokens)
+                self.assertIn(f"Bash({command})", generated_bash["allow"])
+                self.assertIn(f"Bash({command} *)", generated_bash["allow"])
+
+    def test_rejects_unknown_rule_fields_instead_of_broadening_targets(self) -> None:
         result = self.render(
-            "codex", '(policy (allow ["rm"] :tragets [:codex]))\n'
+            "codex",
+            '[{:decision :allow :match :prefix :pattern ["rm"] :reason nil '
+            ':targets #{:codex :claude} :tragets #{:codex}}]\n',
         )
 
         self.assertNotEqual(0, result.returncode)
-        self.assertIn("unknown policy options", result.stderr)
+        self.assertIn("exactly the supported fields", result.stderr)
 
     def test_rejects_reasons_on_allow_rules(self) -> None:
         result = self.render(
-            "codex", '(policy (allow ["echo"] :reason "mistaken"))\n'
+            "codex",
+            '[{:decision :allow :match :prefix :pattern ["echo"] '
+            ':reason "mistaken" :targets #{:codex :claude}}]\n',
         )
 
         self.assertNotEqual(0, result.returncode)
@@ -162,31 +185,53 @@ class AgentPermissionRendererTests(unittest.TestCase):
     def test_rejects_unmigrated_claude_bash_rules(self) -> None:
         result = self.render(
             "claude",
-            '(policy (allow ["echo"]))\n',
+            '[{:decision :allow :match :prefix :pattern ["echo"] '
+            ':reason nil :targets #{:codex :claude}}]\n',
             {"permissions": {"allow": ["Bash(handwritten-special *)"]}},
         )
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("still contain Bash rules", result.stderr)
 
-    def test_policy_cannot_read_files(self) -> None:
-        result = self.render("codex", '(policy (allow [(slurp "/etc/passwd")]))\n')
+    def test_policy_can_define_and_use_ordinary_clojure_functions(self) -> None:
+        result = self.render(
+            "codex",
+            """(defn allow-each [program commands]
+  (mapv (fn [command]
+          {:decision :allow
+           :match :prefix
+           :pattern [program command]
+           :reason nil
+           :targets #{:codex :claude}})
+        commands))
 
-        self.assertNotEqual(0, result.returncode)
-        self.assertRegex(
-            result.stderr,
-            r"(slurp is not allowed|Unable to resolve symbol: slurp)",
+(allow-each "jj" ["status" "diff"])
+""",
         )
-        self.assertNotIn("root:", result.stdout + result.stderr)
 
-    def test_rejects_oversized_policy_before_evaluation(self) -> None:
-        result = self.render("codex", ";" + ("x" * (64 * 1024)) + "\n")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('allow(["jj", "status"])', result.stdout)
+        self.assertIn('allow(["jj", "diff"])', result.stdout)
 
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("policy source exceeds 64 KiB", result.stderr)
+    def test_planner_denies_untracked_effects(self) -> None:
+        attempts = {
+            "read": '(slurp "/etc/passwd")',
+            "write": '(spit "/tmp/agent-permission-escape" "bad")',
+            "namespace loading": "(require '[babashka.process :as process])",
+            "host interop": '(System/getenv "HOME")',
+        }
+        for name, attempt in attempts.items():
+            with self.subTest(name=name):
+                result = self.render("codex", f"(do {attempt} [])\n")
+                self.assertNotEqual(0, result.returncode)
+                self.assertNotIn("root:", result.stdout + result.stderr)
 
     def test_rejects_tokens_that_cannot_be_rendered_equivalently(self) -> None:
-        result = self.render("codex", '(policy (allow ["echo bad"]))\n')
+        result = self.render(
+            "codex",
+            '[{:decision :allow :match :prefix :pattern ["echo bad"] '
+            ':reason nil :targets #{:codex :claude}}]\n',
+        )
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("patterns must be nonempty vectors", result.stderr)

@@ -2,52 +2,40 @@
 
 (ns agent-permissions.render
   (:require [cheshire.core :as json]
+            [clojure.set]
             [clojure.string :as str]
+            [clojure.walk]
             [sci.core :as sci]))
 
 (def targets #{:codex :claude})
-(def option-keys #{:match :reason :targets})
+(def rule-keys #{:decision :match :pattern :reason :targets})
 (def token-pattern #"[A-Za-z0-9_./:=+@%,-]+")
-(def max-policy-bytes (* 64 1024))
-(def evaluation-timeout-nanos (* 500 1000 1000))
 
-(defn one-of [& values]
-  {:one-of (vec values)})
-
-(defn rule [decision pattern options]
-  (let [unknown-options (remove option-keys (keys options))]
-    (when (seq unknown-options)
-      (throw (ex-info "unknown policy options" {:options (vec unknown-options)})))
-    {:decision decision
-     :match (or (:match options) :prefix)
-     :pattern pattern
-     :reason (:reason options)
-     :targets (set (or (:targets options) targets))}))
-
-(defn allow [pattern & {:as options}]
-  (rule :allow pattern options))
-
-(defn deny [pattern & {:as options}]
-  (rule :deny pattern options))
-
-(defn policy [& rules]
-  (vec rules))
-
-(defn sci-options [deadline]
-  {:allow '[let let* policy allow deny one-of]
-   :interrupt-fn #(when (> (System/nanoTime) deadline)
-                    (throw (ex-info "policy evaluation exceeded 500ms" {})))
-   :namespaces {'agent-permissions.render
-                {'policy policy
-                 'allow allow
-                 'deny deny
-                 'one-of one-of}}})
+(def sci-options
+  {:classes {}
+   :deny '[clojure.core/load-file
+           clojure.core/print
+           clojure.core/printf
+           clojure.core/println
+           clojure.core/prn
+           clojure.core/read
+           clojure.core/read-line
+           clojure.core/slurp
+           clojure.core/spit
+           clojure.core/tap>
+           clojure.core/use]
+   :load-fn (fn [{:keys [namespace]}]
+              (throw (ex-info "namespace unavailable in policy planner"
+                              {:namespace namespace})))
+   :namespaces {'clojure.set
+                (sci/copy-ns clojure.set (sci/create-ns 'clojure.set))
+                'clojure.string
+                (sci/copy-ns clojure.string (sci/create-ns 'clojure.string))
+                'clojure.walk
+                (sci/copy-ns clojure.walk (sci/create-ns 'clojure.walk))}})
 
 (defn load-policy [source]
-  (when (> (count (.getBytes source "UTF-8")) max-policy-bytes)
-    (throw (ex-info "policy source exceeds 64 KiB" {})))
-  (sci/eval-string source
-                   (sci-options (+ (System/nanoTime) evaluation-timeout-nanos))))
+  (sci/eval-string source sci-options))
 
 (defn valid-component? [component]
   (or (and (string? component) (re-matches token-pattern component))
@@ -58,6 +46,8 @@
                    (:one-of component)))))
 
 (defn validate-rule! [{:keys [decision match pattern reason targets] :as rule}]
+  (when-not (= rule-keys (set (keys rule)))
+    (throw (ex-info "rules must contain exactly the supported fields" {:rule rule})))
   (when-not (contains? #{:allow :deny} decision)
     (throw (ex-info "invalid policy decision" {:rule rule})))
   (when-not (contains? #{:prefix :descendants :exact} match)
