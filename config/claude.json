@@ -48,38 +48,7 @@
 
       "Read(~/.claude/**)",
       "Read(~/.codex/**)",
-      "Read(~/src/**)",
-
-      "Bash(bb tasks *)",
-      "Bash(clojure -Stree)",
-      "Bash(clj-kondo *)",
-
-      "Bash(jj diff *)",
-      "Bash(jj status *)",
-      "Bash(jj log *)",
-      "Bash(jj show *)",
-      "Bash(jj file show *)",
-
-      "Bash(git check-ignore *)",
-      "Bash(git diff *)",
-      "Bash(git show *)",
-      "Bash(git status *)",
-
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(find *)",
-      "Bash(wc *)",
-      "Bash(head *)",
-      "Bash(awk *)",
-      "Bash(sed *)",
-      "Bash(xxd)",
-      "Bash(cat *)",
-      "Bash(ls *)",
-      "Bash(command -v *)",
-      "Bash(python3 -m json.tool)",
-
-      "Bash(typst *)",
-      "Bash(podman images *)"
+      "Read(~/src/**)"
     ],
     "defaultMode": "acceptEdits"
   },
