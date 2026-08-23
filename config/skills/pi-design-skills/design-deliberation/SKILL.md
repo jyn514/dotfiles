@@ -28,6 +28,19 @@ Do not run the full deliberation chain merely because the skills exist. The poin
 
 First classify the task.
 
+### Broad project-improvement goal
+
+For goals such as “make this project better”, “find the highest-leverage improvement”, or “what should I work on next?”, start with `opportunity-scan`. Do not begin from recent commits, the current diff, or whatever subsystem dominates the parent conversation. Recent activity is evidence of attention, not evidence of importance.
+
+Use:
+
+1. `opportunity-scan` to map the project and shortlist important opportunities across distinct subsystems;
+2. `pain-axis` only after an opportunity area has been selected, when repository history can test whether the pain is recurring;
+3. `design-space-scout` only if the selected opportunity contains a genuine design fork;
+4. continue with `independent-plan` → `cross-critic` → optional `fusion-candidate` → `council-review` when multiple serious designs remain.
+
+Do not ask `pain-axis` to decide which project area matters most. Its job is to investigate an area, not choose the area.
+
 ### Small or mostly-local change
 
 Use:
@@ -71,9 +84,25 @@ Do not use `council-review` as a substitute for mechanical checks that already e
 
 ## Full deliberation procedure
 
+### 0. For broad goals, choose the problem before designing the solution
+
+If the user supplied a broad project-improvement goal rather than a concrete design question, invoke `opportunity-scan` first.
+
+The opportunity scan must:
+
+- construct a coarse project map before ranking opportunities;
+- sample across subsystems and across time;
+- deliberately consider neglected or low-churn areas;
+- require independent evidence before treating recent work as high leverage;
+- return a small cross-project shortlist before selecting an area.
+
+Only after an opportunity area is selected should `pain-axis` investigate that area in depth. Feed the resulting evidence into later planning as evidence, not as a design mandate.
+
+If the opportunity is already concrete and local, skip the multi-plan workflow unless a genuine design fork remains.
+
 ### 1. Gather evidence without choosing a design
 
-If historical evidence may matter, invoke `pain-axis` first.
+For a concrete selected area, invoke `pain-axis` when historical evidence may matter.
 
 Keep its output factual. Do not allow historical coupling or past architecture to silently become the default solution.
 
@@ -193,6 +222,7 @@ Do not dump every intermediate transcript unless the user asks.
 
 Preserve these properties even if the exact workflow changes:
 
+0. **Problem selection before solution search.** Broad project goals use `opportunity-scan`; recent activity is never treated as importance by default.
 1. **Diversity before elaboration.** Distinct alternatives come from different underlying design decisions, not wording noise.
 2. **Isolation during generation.** Initial planners do not see sibling proposals.
 3. **Evidence before taste.** Repository facts and mechanical checks outrank model preference.
@@ -206,6 +236,7 @@ Preserve these properties even if the exact workflow changes:
 
 Do not:
 
+- start a broad project-improvement goal from recent commits or the current working area; run `opportunity-scan` first;
 - ask three agents the same prompt and call stochastic variation “design diversity”;
 - assign arbitrary personas merely to force disagreement;
 - let a critic rewrite all candidates into its preferred vocabulary;
