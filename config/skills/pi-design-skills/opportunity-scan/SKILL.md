@@ -17,6 +17,8 @@ Recent activity is evidence of attention, not evidence of importance.
 
 Do not begin from the latest commits, current diff, open branch, or the subsystem already occupying the parent conversation. First build a coarse map of the project and deliberately search across it.
 
+Do not treat open issues, TODOs, roadmap items, or recent work as the opportunity set. First identify improvements that are not already explicitly tracked. Afterward, consult tracked work to detect overlap, supporting evidence, or neglected known problems.
+
 ## Inputs
 
 - broad project-improvement goal
