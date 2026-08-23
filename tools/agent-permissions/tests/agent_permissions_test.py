@@ -131,6 +131,14 @@ class AgentPermissionRendererTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         generated = json.loads(result.stdout)
+        self.assertFalse(
+            any(
+                entry.startswith("Bash(")
+                for decision in ("allow", "deny")
+                for entry in original.get("permissions", {}).get(decision, [])
+            ),
+            "base Claude settings must not duplicate generated Bash rules",
+        )
         generated_bash = {
             decision: {
                 entry
@@ -146,6 +154,22 @@ class AgentPermissionRendererTests(unittest.TestCase):
                 if entry.startswith("Bash(")
             }
             self.assertLessEqual(existing, generated_bash[decision], decision)
+
+        for permission in {
+            "Bash(clojure -Stree)",
+            "Bash(clj-kondo *)",
+            "Bash(git check-ignore *)",
+            "Bash(find *)",
+            "Bash(awk *)",
+            "Bash(sed *)",
+            "Bash(xxd)",
+            "Bash(command -v *)",
+            "Bash(python3 -m json.tool)",
+            "Bash(typst *)",
+        }:
+            self.assertIn(permission, generated_bash["allow"])
+        self.assertNotIn("Bash(xxd *)", generated_bash["allow"])
+        self.assertNotIn("Bash(sed)", generated_bash["allow"])
 
         codex_rules = self.codex_rule_calls(
             (ROOT / "config/codex.rules").read_text()
