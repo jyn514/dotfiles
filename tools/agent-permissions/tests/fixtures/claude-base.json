@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/tmp/claude/**)"
+    ],
+    "deny": [
+      "WebFetch"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowRead": [
+        "/tmp"
+      ]
+    }
+  }
+}

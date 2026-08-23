@@ -1,0 +1,8 @@
+def allow(pattern):
+    prefix_rule(pattern=pattern, decision="allow")
+def deny(pattern, reason):
+    prefix_rule(pattern=pattern, decision="forbidden", justification=reason)
+
+allow(["jj", ["status", "diff"]])
+allow(["git", "fetch"])
+deny(["sed"], "use structured tools")
