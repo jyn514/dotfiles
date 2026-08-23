@@ -453,7 +453,9 @@ function fish_prompt
 end
 
 function fish_mode_prompt
-	contains -- --final-rendering $argv; and return
+end
+
+function __dotfiles_render_mode
 	if [ "$fish_key_bindings" = fish_vi_key_bindings ]
 		or [ "$fish_key_bindings" = fish_hybrid_key_bindings ]
 
@@ -471,7 +473,6 @@ function fish_mode_prompt
 				printf '[V]'
 		end
 		set_color normal
-		printf ' '
 	end
 end
 
@@ -503,6 +504,12 @@ function fish_right_prompt
 	else if [ $duration -gt 99 ]
 		set rendered (printf '\e[2;37m⏱ +%ss' (math --scale=2 "$duration / 1000"))
 	end
+	set -l mode (__dotfiles_render_mode | string collect)
+	if [ -n "$mode" ]
+		[ -n "$rendered" ]; and set --append rendered ' '
+		set --append rendered $mode
+	end
+	set rendered (string join '' $rendered)
 	set -g __dotfiles_right_prompt $rendered
 	set -g __dotfiles_prompt_shows_right 0
 	if [ -n "$rendered" ]
