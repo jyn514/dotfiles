@@ -1,13 +1,27 @@
 {
-  "permissions" : {
-    "allow" : [ "Read(/tmp/claude/**)", "Bash(jj status)", "Bash(jj status *)", "Bash(jj diff)", "Bash(jj diff *)", "Bash(command -v)", "Bash(command -v *)" ],
-    "deny" : [ "WebFetch", "Bash(sed)", "Bash(sed *)" ],
-    "defaultMode" : "acceptEdits"
+  "permissions": {
+    "allow": [
+      "Read(/tmp/claude/**)",
+      "Bash(jj status)",
+      "Bash(jj status *)",
+      "Bash(jj diff)",
+      "Bash(jj diff *)",
+      "Bash(command -v)",
+      "Bash(command -v *)"
+    ],
+    "deny": [
+      "WebFetch",
+      "Bash(sed)",
+      "Bash(sed *)"
+    ],
+    "defaultMode": "acceptEdits"
   },
-  "sandbox" : {
-    "enabled" : true,
-    "filesystem" : {
-      "allowRead" : [ "/tmp" ]
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowRead": [
+        "/tmp"
+      ]
     }
   }
 }

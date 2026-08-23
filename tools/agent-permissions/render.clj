@@ -139,6 +139,14 @@
       (update-in ["permissions" "deny"] append-rules
                  (bash-rules rules :deny))))
 
+(defn generate-pretty-json [value]
+  (json/generate-string
+    value
+    {:pretty (json/create-pretty-printer
+               {:indentation "  "
+                :indent-arrays? true
+                :object-field-value-separator ": "})}))
+
 (defn read-policy [path]
   (-> path slurp load-policy validate-policy!))
 
@@ -154,9 +162,8 @@
 
     ["claude" 3]
     (let [base (json/parse-string (slurp (nth args 2)))]
-      (println (json/generate-string
-                (merge-claude-settings base (read-policy (second args)))
-                {:pretty true})))
+      (println (generate-pretty-json
+                 (merge-claude-settings base (read-policy (second args))))))
 
     (usage!)))
 
