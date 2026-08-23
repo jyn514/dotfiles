@@ -43,13 +43,11 @@ COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
 RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
-ARG PI_REVISION=b71f69a5dc996fd1d781f69a44add1485a83079e
-RUN apk add --no-cache git \
-    && git clone --filter=blob:none https://github.com/jyn514/pi.git /src \
-    && git -C /src checkout --detach "${PI_REVISION}" \
-    && test "$(git -C /src rev-parse HEAD)" = "${PI_REVISION}" \
-    && rm -rf /src/.git \
-    && printf '%s\n' "${PI_REVISION}" > /REVISION
+RUN apk add --no-cache curl libarchive-tools
+ARG PI_REVISION=8b6c6cc1da606fb41b93aa29639f01e38c6bcd25
+RUN printf '%s\n' "${PI_REVISION}" > /REVISION
+RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
+RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
 
 FROM oven/bun:1.3.14 AS bun
 
