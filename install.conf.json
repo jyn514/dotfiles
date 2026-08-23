@@ -75,6 +75,7 @@
       "$HOME/.agents/skills/commit-quality": "config/skills/commit-quality",
       "$HOME/.agents/skills/dependency-review": "config/skills/dependency-review",
       "$HOME/.agents/skills/design-for-change": "config/skills/design-for-change",
+      "$HOME/.agents/skills/pi-design-skills": "config/skills/pi-design-skills",
       "$HOME/.agents/skills/startup-performance": "config/skills/startup-performance",
       "$HOME/.agents/skills/technical-docs": "config/skills/technical-docs",
       "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
