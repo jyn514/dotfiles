@@ -5,6 +5,7 @@ fsmonitor.watchman.register-snapshot-trigger = true
 
 [ui]
 default-command = "log"
+pager.command = ["less"]
 # diff.tool=["difft", "--color=always", "$left", "$right"]
 diff-formatter= "delta"
 # delta is annoying: https://github.com/dandavison/delta/issues/1136
