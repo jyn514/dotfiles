@@ -13,8 +13,6 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class DotfileSetupTests(unittest.TestCase):
     def setUp(self) -> None:
-        # codex.rules is deliberately hard-linked, so keep the fake home on the
-        # repository filesystem.
         self.tempdir = tempfile.TemporaryDirectory(dir=ROOT)
         self.home = Path(self.tempdir.name) / "home"
         self.home.mkdir()
@@ -74,12 +72,8 @@ class DotfileSetupTests(unittest.TestCase):
                 continue
             destination = self.destination_for(source)
             self.assertTrue(destination.exists(), destination)
-            if source.name == "codex.rules":
-                self.assertFalse(destination.is_symlink())
-                self.assertTrue(os.path.samefile(source, destination))
-            else:
-                self.assertTrue(destination.is_symlink(), destination)
-                self.assertEqual(source.resolve(), destination.resolve())
+            self.assertTrue(destination.is_symlink(), destination)
+            self.assertEqual(source.resolve(), destination.resolve())
 
     def test_installs_every_config_entry_in_an_empty_home(self) -> None:
         result = self.run_setup()
@@ -143,19 +137,6 @@ class DotfileSetupTests(unittest.TestCase):
         self.assertEqual("current machine customization\n", backup.read_text())
         self.assertTrue(destination.is_symlink())
         self.assertEqual((ROOT / "config/inputrc").resolve(), destination.resolve())
-
-    def test_codex_rules_is_hard_linked_and_idempotent(self) -> None:
-        first = self.run_setup()
-        destination = self.destination_for(ROOT / "config/codex.rules")
-
-        self.assertEqual(0, first.returncode, first.stderr)
-        self.assertFalse(destination.is_symlink())
-        self.assertTrue(os.path.samefile(ROOT / "config/codex.rules", destination))
-
-        second = self.run_setup()
-
-        self.assertEqual(0, second.returncode, second.stderr)
-        self.assertTrue(os.path.samefile(ROOT / "config/codex.rules", destination))
 
     def test_jj_uses_reported_user_config_path_and_backs_up_collision(self) -> None:
         destination = self.home / ".config/jj/custom.toml"

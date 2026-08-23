@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
+. "$DOTFILES/lib/shell/lib.sh"
+
+case ${1:-}:$# in
+	codex:2) target=codex ;;
+	claude:3) target=claude ;;
+	*) fail "usage: generate-agent-permissions {codex OUTPUT | claude OUTPUT BASE-SETTINGS}" ;;
+esac
+output=$2
+output_directory=$(dirname -- "$output")
+mkdir -p "$output_directory" || fail "cannot create permission output directory"
+temporary=$(mktemp "$output_directory/generated-permissions.XXXXXX") || \
+	fail "cannot create temporary permission file"
+trap 'rm -f "$temporary"' EXIT HUP INT TERM
+
+case $target in
+	codex)
+		bb --config /dev/null "$DOTFILES/tools/agent-permissions/render.clj" \
+			codex "$DOTFILES/tools/agent-permissions/current-policy.clj" > "$temporary"
+		;;
+	claude)
+		bb --config /dev/null "$DOTFILES/tools/agent-permissions/render.clj" \
+			claude "$DOTFILES/tools/agent-permissions/current-policy.clj" "$3" > "$temporary"
+		;;
+esac
+chmod 600 "$temporary" || fail "cannot secure generated permissions"
+mv "$temporary" "$output" || fail "cannot publish generated permissions"
+trap - EXIT HUP INT TERM

@@ -104,13 +104,25 @@ class AgentPermissionRendererTests(unittest.TestCase):
             result.stdout,
         )
 
-    def test_port_preserves_existing_codex_rule_decisions(self) -> None:
+    def test_current_policy_renders_codex_allow_and_deny_rules(self) -> None:
         result = self.render_paths("codex", TOOL / "current-policy.clj")
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            self.codex_rule_calls((ROOT / "config/codex.rules").read_text()),
-            self.codex_rule_calls(result.stdout),
+        rules = self.codex_rule_calls(result.stdout)
+        self.assertIn(
+            {
+                "pattern": ["sed"],
+                "decision": "forbidden",
+                "justification": "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.",
+            },
+            rules,
+        )
+        self.assertTrue(
+            any(
+                rule["decision"] == "allow"
+                and rule["pattern"] == ["jj", ["commit", "split", "squash", "duplicate"]]
+                for rule in rules
+            )
         )
 
     def test_shared_policy_retains_claude_rules_and_adds_codex_allows(self) -> None:
@@ -171,9 +183,9 @@ class AgentPermissionRendererTests(unittest.TestCase):
         self.assertNotIn("Bash(xxd *)", generated_bash["allow"])
         self.assertNotIn("Bash(sed)", generated_bash["allow"])
 
-        codex_rules = self.codex_rule_calls(
-            (ROOT / "config/codex.rules").read_text()
-        )
+        codex_result = self.render_paths("codex", TOOL / "current-policy.clj")
+        self.assertEqual(0, codex_result.returncode, codex_result.stderr)
+        codex_rules = self.codex_rule_calls(codex_result.stdout)
         for rule in codex_rules:
             if rule["decision"] != "allow":
                 continue
