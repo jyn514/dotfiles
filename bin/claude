@@ -16,20 +16,9 @@ if [ -L "$legacy_settings" ] && [ "$legacy_settings" -ef "$base_settings" ]; the
 	rm "$legacy_settings"
 fi
 
-settings_directory=${XDG_CACHE_HOME:-$HOME/.cache}/claude
-settings=$settings_directory/generated-settings.json
-mkdir -p "$settings_directory" || fail "claude wrapper: cannot create settings cache"
-temporary_settings=$(mktemp "$settings_directory/generated-settings.XXXXXX") || \
-	fail "claude wrapper: cannot create temporary settings"
-trap 'rm -f "$temporary_settings"' EXIT HUP INT TERM
-if ! bb --config /dev/null "$DOTFILES/tools/agent-permissions/render.clj" \
-	claude "$DOTFILES/tools/agent-permissions/current-policy.clj" \
-	"$base_settings" > "$temporary_settings"; then
+settings=${XDG_CACHE_HOME:-$HOME/.cache}/claude/generated-settings.json
+"$DOTFILES/libexec/generate-agent-permissions" claude "$settings" "$base_settings" || \
 	fail "claude wrapper: cannot generate settings"
-fi
-chmod 600 "$temporary_settings" || fail "claude wrapper: cannot secure generated settings"
-mv "$temporary_settings" "$settings" || fail "claude wrapper: cannot publish generated settings"
-trap - EXIT HUP INT TERM
 
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 exec "$REAL" --settings "$settings" --setting-sources project,local \

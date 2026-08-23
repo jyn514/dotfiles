@@ -23,6 +23,11 @@ class CodexWrapperTests(unittest.TestCase):
             codex.chmod(0o755)
             codex_home = root / ".codex"
             codex_home.mkdir()
+            rules_directory = codex_home / "rules"
+            rules_directory.mkdir()
+            legacy_source = root / "tracked-codex.rules"
+            legacy_source.write_text("legacy rules\n")
+            os.link(legacy_source, rules_directory / "default.rules")
             first = codex_home / "first.md"
             second = codex_home / "second file.md"
             first.write_text("first instructions\n", encoding="utf-8")
@@ -42,6 +47,11 @@ class CodexWrapperTests(unittest.TestCase):
                 text=True,
                 stdout=subprocess.PIPE,
             ).stdout.splitlines()
+            rules = codex_home / "rules/default.rules"
+            rendered_rules = rules.read_text()
+            rules_mode = rules.stat().st_mode & 0o777
+            legacy_rules = legacy_source.read_text()
+            replaced_legacy_link = not os.path.samefile(legacy_source, rules)
 
         self.assertEqual("-c", output[0])
         key, encoded = output[1].split("=", 1)
@@ -49,6 +59,48 @@ class CodexWrapperTests(unittest.TestCase):
         self.assertEqual("first instructions\n\nsecond instructions\n", json.loads(encoded))
         self.assertEqual("prompt", output[2])
         self.assertIn(str(ROOT / "libexec/agent-wrappers"), output[3])
+        self.assertIn('deny(["sed"]', rendered_rules)
+        self.assertIn('allow(["jj", ["status", "diff"', rendered_rules)
+        self.assertEqual(0o600, rules_mode)
+        self.assertEqual("legacy rules\n", legacy_rules)
+        self.assertTrue(replaced_legacy_link)
+
+    def test_failed_generation_preserves_rules_and_does_not_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            marker = root / "codex-ran"
+            codex = fake_bin / "codex"
+            codex.write_text(f"#!/bin/sh\ntouch {marker}\n")
+            codex.chmod(0o755)
+            bb = fake_bin / "bb"
+            bb.write_text("#!/bin/sh\nprintf partial\nexit 7\n")
+            bb.chmod(0o755)
+            codex_home = root / ".codex"
+            rules_directory = codex_home / "rules"
+            rules_directory.mkdir(parents=True)
+            published = rules_directory / "default.rules"
+            published.write_text("previous rules\n")
+            environment = os.environ | {
+                "HOME": str(root),
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            environment.pop("CODEX_HOME", None)
+
+            result = subprocess.run(
+                [str(WRAPPER)],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("cannot generate rules", result.stderr)
+            self.assertEqual("previous rules\n", published.read_text())
+            self.assertFalse(marker.exists())
+            self.assertEqual([published], list(rules_directory.iterdir()))
 
 
 if __name__ == "__main__":
