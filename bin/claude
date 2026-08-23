@@ -7,6 +7,15 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 shim_resolve "$0" claude
 
 prompt=$("$DOTFILES/libexec/gen-claude-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
+settings=$HOME/.config/claude/settings.json
+if ! [ -e "$settings" ]; then
+	settings=$DOTFILES/config/claude.json
+fi
+legacy_settings=$HOME/.claude/settings.json
+if [ -L "$legacy_settings" ] && [ "$legacy_settings" -ef "$settings" ]; then
+	rm "$legacy_settings"
+fi
 
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
-exec "$REAL" --system-prompt "$prompt" "$@"
+exec "$REAL" --settings "$settings" --setting-sources project,local \
+	--system-prompt "$prompt" "$@"

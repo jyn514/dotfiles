@@ -33,7 +33,7 @@
       "$HOME/.config/bat/config": "config/batconfig",
       "$HOME/.local/lib/cargo/config.toml": "config/cargo.toml",
       "$HOME/.claude/statusline-command.sh": "config/claude-statusline.sh",
-      "$HOME/.claude/settings.json": "config/claude.json",
+      "$HOME/.config/claude/settings.json": "config/claude.json",
       "$HOME/.codex/rules/default.rules": {
         "path": "config/codex.rules",
         "type": "hardlink"
