@@ -12,7 +12,8 @@
   ],
   "packages": [
     "npm:pi-codex-goal@0.2.0",
-    "npm:@ogulcancelik/pi-codex-subagents@0.3.3"
+    "npm:@ogulcancelik/pi-codex-subagents@0.3.3",
+    "git:github.com/adobe/pi-session-search@0.1.0"
   ],
   "compaction": {
     "enabled": true
