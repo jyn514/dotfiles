@@ -351,20 +351,36 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
   pi.registerTool({
     name: "list_agents",
     label: "List Agents",
-    description: "List agents owned by the current parent session. Set include_all only for an explicit read-only historical listing across parent sessions.",
+    description: "List compact agent names and statuses for the current parent session, newest first with active agents prioritized. Returns 10 by default; use offset for another page or path_prefix to narrow the result. Set include_all only for an explicit read-only historical listing across parent sessions.",
     parameters: Type.Object({
       path_prefix: Type.Optional(Type.String({ description: "Task-path prefix filter without a trailing slash." })),
       include_all: Type.Optional(Type.Boolean({ description: "Include agents from all parent sessions and show parent_session_id. Default false." })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "Maximum agents to return. Default 10; maximum 100." })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, description: "Zero-based offset into the compact ordered result. Default 0." })),
     }),
     async execute(_id: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      const agents = manager.listAgents(params.path_prefix, parentSessionId(ctx), params.include_all === true);
-      return boundedTextResult(JSON.stringify({ agents }, null, 2), { agents });
+      const listed = manager.listAgents(params.path_prefix, parentSessionId(ctx), params.include_all === true);
+      const ordered = [
+        ...listed.filter((agent) => agent.agent_status === "starting" || agent.agent_status === "running"),
+        ...listed.filter((agent) => agent.agent_status !== "starting" && agent.agent_status !== "running"),
+      ];
+      const limit = Number.isInteger(params.limit) ? Math.max(1, Math.min(100, params.limit)) : 10;
+      const offset = Number.isInteger(params.offset) ? Math.max(0, params.offset) : 0;
+      const agents = ordered.slice(offset, offset + limit).map(({ agent_name, agent_status, parent_session_id }) => ({
+        agent_name,
+        agent_status,
+        ...(parent_session_id ? { parent_session_id } : {}),
+      }));
+      const nextOffset = offset + agents.length < ordered.length ? offset + agents.length : null;
+      const result = { total: ordered.length, returned: agents.length, offset, limit, next_offset: nextOffset, agents };
+      return textResult(JSON.stringify(result, null, 2), result);
     },
     renderCall(_args: any, theme: Theme) { return new Text(theme.fg("toolTitle", theme.bold("list_agents")), 0, 0); },
     renderResult(result: any, options: any, theme: Theme) {
       const agents = result.details?.agents || [];
-      if (!options.expanded) return new Text(theme.fg("success", `✓ ${agents.length} agent${agents.length === 1 ? "" : "s"}`), 0, 0);
-      return new Text(result.content?.[0]?.text || JSON.stringify({ agents }, null, 2), 0, 0);
+      const total = result.details?.total ?? agents.length;
+      if (!options.expanded) return new Text(theme.fg("success", `✓ ${agents.length} of ${total} agents`), 0, 0);
+      return new Text(result.content?.[0]?.text || JSON.stringify(result.details, null, 2), 0, 0);
     },
   });
 

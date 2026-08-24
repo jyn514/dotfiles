@@ -19,6 +19,7 @@ const {
   AgentManager,
   RpcJsonlDecoder,
   consumeFirstMatchingMailboxEvent,
+  formatAgentError,
   getAgent,
   getRunsDir,
   getSocketPath,
@@ -28,6 +29,13 @@ const {
 } = await import("./core.js");
 
 describe("RPC framing", () => {
+  test("explains quota errors that Node leaves unnamed", () => {
+    const error = Object.assign(new Error(`Unknown system error -${os.constants.errno.EDQUOT}, write`), {
+      errno: -os.constants.errno.EDQUOT,
+    });
+    expect(formatAgentError(error)).toContain("Disk quota exceeded (EDQUOT).");
+  });
+
   test("splits only on LF and preserves Unicode line separators", () => {
     const decoder = new RpcJsonlDecoder();
     const payload = JSON.stringify({ text: "before\u2028after" });
@@ -300,6 +308,84 @@ describe("child process lifecycle", () => {
       await manager.shutdown();
       fs.rmSync(path.join(getRunsDir(), parentScopeKey(parentSessionId)), { recursive: true, force: true });
       delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test("records startup failure causes instead of leaving agents starting", async () => {
+    process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+    const parentSessionId = "lifecycle-startup-failure";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    const socketDir = path.dirname(getSocketPath("11111111-1111-4111-8111-111111111111"));
+    fs.rmSync(scope, { recursive: true, force: true });
+    const manager = new AgentManager();
+    await manager.ready();
+    fs.rmSync(socketDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(socketDir), { recursive: true });
+    fs.writeFileSync(socketDir, "block startup marker creation");
+    try {
+      let returnedError = "";
+      try {
+        await manager.spawnAgent(spawnParams(parentSessionId, "worker", "first"));
+      } catch (error) {
+        returnedError = error instanceof Error ? error.message : String(error);
+      }
+      expect(returnedError).toContain("EEXIST");
+      const failed = manager.getAgentInfo("worker", parentSessionId);
+      expect(failed.status).toBe("failed");
+      expect(failed.error).toBe(returnedError);
+      expect(failed.childProcess).toBeUndefined();
+      expect((await manager.waitAllAgents(parentSessionId, ["worker"])).responses).toEqual([
+        expect.objectContaining({ agent_name: "/worker", status: "failed", error: failed.error }),
+      ]);
+
+      fs.rmSync(socketDir, { force: true });
+      fs.mkdirSync(socketDir, { recursive: true });
+      expect(await manager.sendMessage(parentSessionId, "worker", "retry")).toEqual({ delivery: "prompt" });
+      await waitUntil(() => manager.getAgentInfo("worker", parentSessionId).status === "completed");
+    } finally {
+      fs.rmSync(socketDir, { recursive: true, force: true });
+      fs.mkdirSync(socketDir, { recursive: true });
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
+      delete process.env.PI_SUBAGENT_PI_BIN;
+    }
+  });
+
+  test("reconciles persisted startup records that never acquired a child", async () => {
+    const parentSessionId = "lifecycle-reconcile-no-child";
+    const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
+    const id = "33333333-3333-4333-8333-333333333333";
+    const infoFile = path.join(scope, `${id}.info.json`);
+    fs.rmSync(scope, { recursive: true, force: true });
+    fs.mkdirSync(scope, { recursive: true });
+    fs.writeFileSync(infoFile, JSON.stringify({
+      id,
+      taskName: "orphan",
+      canonicalName: "/orphan",
+      parentSessionId,
+      provider: "test",
+      modelId: "fake",
+      model: "test:fake",
+      cwd: TEST_AGENT_DIR,
+      sessionFile: path.join(scope, `${id}.jsonl`),
+      infoFile,
+      logFile: path.join(scope, `${id}.log`),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastActivity: Date.now(),
+      messageCount: 0,
+      status: "starting",
+    }));
+    const manager = new AgentManager();
+    try {
+      await manager.ready();
+      expect(manager.getAgentInfo("orphan", parentSessionId)).toMatchObject({
+        status: "failed",
+        error: "Agent startup did not complete before its owning extension stopped.",
+      });
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(scope, { recursive: true, force: true });
     }
   });
 
@@ -632,6 +718,28 @@ describe("extension completion delivery and TUI", () => {
       expect(commands.has("subagent")).toBe(true);
       expect(commands.has("subagents")).toBe(true);
       expect(renderers.has("pi-codex-subagent-completion")).toBe(true);
+
+      fs.mkdirSync(scope, { recursive: true });
+      for (let index = 0; index < 12; index++) {
+        const id = `44444444-4444-4444-8444-${String(index).padStart(12, "0")}`;
+        fs.writeFileSync(path.join(scope, `${id}.info.json`), JSON.stringify({
+          id,
+          taskName: `history/${index}`,
+          canonicalName: `/history/${index}`,
+          parentSessionId,
+          status: index === 0 ? "running" : "completed",
+          lastTaskMessage: `private task context ${index}`,
+          createdAt: Date.now() + index,
+          updatedAt: Date.now() + index,
+        }));
+      }
+      const firstAgentPage = await tools.get("list_agents").execute("list-1", {}, undefined, undefined, ctx);
+      const firstAgentPayload = JSON.parse(firstAgentPage.content[0].text);
+      expect(firstAgentPayload).toMatchObject({ total: 12, returned: 10, offset: 0, limit: 10, next_offset: 10 });
+      expect(firstAgentPayload.agents[0]).toEqual({ agent_name: "/history/0", agent_status: "running" });
+      expect(firstAgentPage.content[0].text).not.toContain("private task context");
+      const secondAgentPage = await tools.get("list_agents").execute("list-2", { offset: 10 }, undefined, undefined, ctx);
+      expect(JSON.parse(secondAgentPage.content[0].text)).toMatchObject({ total: 12, returned: 2, offset: 10, next_offset: null });
 
       await tools.get("spawn_agent").execute("spawn-1", {
         task_name: "x".repeat(200),

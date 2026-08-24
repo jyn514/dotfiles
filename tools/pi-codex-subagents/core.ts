@@ -178,6 +178,18 @@ interface Waiter {
   resolve: (event: AgentCompletionEvent) => void;
 }
 
+export function formatAgentError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const errno = error && typeof error === "object" ? (error as { errno?: unknown }).errno : undefined;
+  const edquot = os.constants.errno.EDQUOT;
+  const quotaExceeded = (typeof edquot === "number" && (errno === edquot || errno === -edquot || message.includes(`system error -${edquot}`)))
+    || (error && typeof error === "object" && (error as { code?: unknown }).code === "EDQUOT")
+    || /\bEDQUOT\b/.test(message);
+  return quotaExceeded && !/disk quota exceeded/i.test(message)
+    ? `${message}\nCause: Disk quota exceeded (EDQUOT).`
+    : message;
+}
+
 function abortError(signal?: AbortSignal): Error {
   return signal?.reason instanceof Error ? signal.reason : new Error("Wait canceled.");
 }
@@ -661,7 +673,9 @@ function isActive(agentId: string, kind: "active" | "peek"): boolean {
     const marker = JSON.parse(fs.readFileSync(file, "utf8")) as PeekMarker;
     if (processAlive(marker.pid)) return true;
     clearActive(agentId, kind, marker);
-  } catch {}
+  } catch {
+    clearActive(agentId, kind);
+  }
   return false;
 }
 
@@ -678,7 +692,13 @@ class SessionLogger {
   constructor(private readonly file: string) {}
   write(level: string, category: string, message: string, data?: any): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    if (!this.stream) this.stream = fs.createWriteStream(this.file, { flags: "a" });
+    if (!this.stream) {
+      const stream = fs.createWriteStream(this.file, { flags: "a" });
+      stream.on("error", () => {
+        if (this.stream === stream) this.stream = null;
+      });
+      this.stream = stream;
+    }
     this.stream.write(JSON.stringify({ ts: new Date().toISOString(), level, category, message, ...(data !== undefined ? { data } : {}) }) + "\n");
     if (process.env.PI_SUBAGENT_DEBUG) console.error(`[${level}] ${category}: ${message}`, data ?? "");
   }
@@ -700,8 +720,13 @@ class EventBroadcaster {
   constructor(private readonly agentId: string) {}
 
   start(): void {
-    ensurePrivateDir(SOCKET_DIR, true);
-    markActive(this.agentId, "active", this.marker);
+    try {
+      ensurePrivateDir(SOCKET_DIR, true);
+      markActive(this.agentId, "active", this.marker);
+    } catch (error) {
+      clearActive(this.agentId, "active");
+      throw error;
+    }
     const socketPath = getSocketPath(this.agentId);
     if (process.platform !== "win32") {
       try { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); } catch {}
@@ -903,6 +928,20 @@ export class AgentManager {
     if (info.childProcess?.token === expectedToken) delete info.childProcess;
   }
 
+  private markPersistedStartupFailed(info: AgentInfo, error: unknown): void {
+    const persisted = readInfoFile(info.infoFile) ?? info;
+    if (FINAL_STATUSES.has(persisted.status)) return;
+    persisted.status = "failed";
+    persisted.error = formatAgentError(error);
+    delete persisted.finalResponse;
+    delete persisted.childProcess;
+    persisted.completedAt = Date.now();
+    persisted.lastActivity = Date.now();
+    saveInfo(persisted);
+    Object.assign(info, persisted);
+    this.notifyStatusChange(persisted);
+  }
+
   private async waitForOwnedExit(ownership: ChildProcessOwnership, timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -950,7 +989,14 @@ export class AgentManager {
   private async reconcilePersistedChildren(): Promise<void> {
     for (const info of readAllInfos()) {
       const ownership = info.childProcess;
-      if (!ownership) continue;
+      if (!ownership) {
+        if ((info.status === "starting" || info.status === "running") && !isRunActive(info.id)) {
+          try {
+            this.markPersistedStartupFailed(info, "Agent startup did not complete before its owning extension stopped.");
+          } catch {}
+        }
+        continue;
+      }
       try {
         if (!ownershipMatches(ownership)) {
           if (info.status === "starting" || info.status === "running") {
@@ -1048,7 +1094,14 @@ export class AgentManager {
       targets.add(info.canonicalName);
       this.defaultWaitAllTargets.set(params.parentSessionId, targets);
       const prompt = [definition?.prompt, params.message].filter(Boolean).join("\n\n");
-      await this.startLiveAgent(info, prompt, params.message);
+      try {
+        await this.startLiveAgent(info, prompt, params.message);
+      } catch (error) {
+        const message = formatAgentError(error);
+        try { this.markPersistedStartupFailed(info, message); } catch {}
+        if (error instanceof Error && error.message === message) throw error;
+        throw new Error(message, { cause: error });
+      }
       return { task_name: info.canonicalName, nickname: null };
     } finally {
       if (lock !== undefined) {
@@ -1088,13 +1141,20 @@ export class AgentManager {
     for (const extensionPath of info.extensionPaths ?? []) args.push("--extension", extensionPath);
     for (const skillPath of info.skillPaths ?? []) args.push("--skill", skillPath);
     const childToken = randomUUID();
-    logger.info("spawn", "starting child pi", { command: launch.command, args, cwd: info.cwd });
-    const proc = spawn(launch.command, args, {
-      cwd: info.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken },
-      detached: process.platform !== "win32",
-    });
+    let proc: ChildProcessWithoutNullStreams;
+    try {
+      logger.info("spawn", "starting child pi", { command: launch.command, args, cwd: info.cwd });
+      proc = spawn(launch.command, args, {
+        cwd: info.cwd,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, PI_SUBAGENT_OWNER_TOKEN: childToken },
+        detached: process.platform !== "win32",
+      });
+    } catch (error) {
+      broadcaster.stop();
+      logger.close();
+      throw error;
+    }
     let resolveExit!: () => void;
     const exitPromise = new Promise<void>((resolve) => { resolveExit = resolve; });
     const live: LiveAgent = {
@@ -1355,7 +1415,7 @@ export class AgentManager {
     if (live.finalizedRun) return;
     live.finalizedRun = true;
     live.info.status = "failed";
-    live.info.error = error;
+    live.info.error = formatAgentError(error);
     delete live.info.finalResponse;
     live.info.completedAt = Date.now();
     live.info.lastActivity = Date.now();
