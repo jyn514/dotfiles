@@ -22,9 +22,9 @@ exec "$@" bash --noprofile --norc -c '
 	set -u
 	set_one() {
 		if [ "$2" ]; then
-			"$tmux" set-environment "$1" "$3"
+			"$tmux" set-environment -g "$1" "$3"
 		else
-			"$tmux" set-environment -u "$1"
+			"$tmux" set-environment -gu "$1"
 		fi
 	}
 	set_one EDITOR "${EDITOR+x}" "${EDITOR-}" || exit
