@@ -407,8 +407,8 @@ class CommandTest(unittest.TestCase):
         )
         self.executable(
             "tmux",
-            'printf "%s\\0%s\\0%s\\0%s\\0%s\\0" '
-            f'"$1" "$2" "$3" "$TMUX" "$TMUX_TMPDIR" >> "{calls}"\n',
+            'printf "%s\\0%s\\0%s\\0%s\\0%s\\0%s\\0" '
+            f'"$1" "$2" "$3" "${{4-}}" "$TMUX" "$TMUX_TMPDIR" >> "{calls}"\n',
         )
 
         result = subprocess.run(
@@ -426,15 +426,15 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            b"set-environment\0EDITOR\0editor\n--wait\0"
+            b"set-environment\0-g\0EDITOR\0editor\n--wait\0"
             b"socket value\0/socket directory\0"
-            b"set-environment\0VISUAL\0\0"
+            b"set-environment\0-g\0VISUAL\0\0"
             b"socket value\0/socket directory\0"
-            b"set-environment\0PATH\0/one path:/two=parts\0"
+            b"set-environment\0-g\0PATH\0/one path:/two=parts\0"
             b"socket value\0/socket directory\0"
-            b"set-environment\0-u\0CARGO_HOME\0"
+            b"set-environment\0-gu\0CARGO_HOME\0\0"
             b"socket value\0/socket directory\0"
-            b"set-environment\0-u\0RUSTUP_HOME\0"
+            b"set-environment\0-gu\0RUSTUP_HOME\0\0"
             b"socket value\0/socket directory\0",
             calls.read_bytes(),
         )
@@ -477,11 +477,11 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             [
-                "set-environment -u EDITOR",
-                "set-environment -u VISUAL",
-                f"set-environment PATH {profile_bin}",
-                "set-environment -u CARGO_HOME",
-                "set-environment -u RUSTUP_HOME",
+                "set-environment -gu EDITOR",
+                "set-environment -gu VISUAL",
+                f"set-environment -g PATH {profile_bin}",
+                "set-environment -gu CARGO_HOME",
+                "set-environment -gu RUSTUP_HOME",
             ],
             calls.read_text().splitlines(),
         )
@@ -537,7 +537,7 @@ class CommandTest(unittest.TestCase):
         self.executable(
             "tmux",
             f'printf "%s\\n" "$*" >> "{calls}"\n'
-            '[ "$2" = VISUAL ] && exit 29\n'
+            '[ "$3" = VISUAL ] && exit 29\n'
             'exit 0\n',
         )
 
@@ -555,7 +555,7 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(29, result.returncode)
         self.assertEqual(
-            ["set-environment EDITOR editor", "set-environment VISUAL visual"],
+            ["set-environment -g EDITOR editor", "set-environment -g VISUAL visual"],
             calls.read_text().splitlines(),
         )
 
