@@ -3,8 +3,10 @@
 #include <string.h>
 
 #define LW_MODEL_HEADER_SIZE 36u
-#define LW_MODEL_VERSION 2u
-#define LW_EXCEPTION_RECORD_SIZE 6u
+#define LW_MODEL_VERSION 3u
+#define LW_EXCEPTION_RECORD_SIZE 5u
+#define LW_EXCEPTION_HASH_MASK 0x1fffffffu
+#define LW_EXCEPTION_ID_MASK 0x7ffu
 #define LW_DAWG_LEAF_OFFSET 0x1fffu
 static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz'-";
 
@@ -18,6 +20,24 @@ static uint32_t read_u24(const uint8_t *data) {
 
 static uint32_t read_u32(const uint8_t *data) {
     return read_u24(data) | ((uint32_t)data[3] << 24);
+}
+
+static uint32_t edge_count(const lw_model_t *model);
+
+static uint64_t read_u40(const uint8_t *data) {
+    return (uint64_t)read_u32(data) | ((uint64_t)data[4] << 32);
+}
+
+static uint32_t read_edge(const lw_model_t *model, uint32_t index) {
+    const uint8_t *data = model->data + LW_MODEL_HEADER_SIZE;
+    uint32_t bit_offset = index * 20u;
+    uint32_t byte_offset = bit_offset / 8u;
+    uint8_t shift = bit_offset % 8u;
+    uint32_t available = (edge_count(model) * 20u + 7u) / 8u;
+    uint32_t value = 0;
+    for (uint8_t byte = 0; byte < 4u && byte_offset + byte < available; ++byte)
+        value |= (uint32_t)data[byte_offset + byte] << (byte * 8u);
+    return (value >> shift) & 0xfffffu;
 }
 
 static uint32_t hash32(const char *text) {
@@ -63,7 +83,9 @@ bool lw_model_valid(const lw_model_t *model) {
     uint32_t block_start = blocks_offset(model);
     uint32_t block_count = block_words ? (words + block_words - 1u) / block_words : 0;
     if (!block_words || !read_u32(model->data + 8) || !edges) return false;
-    if (root >= edges || exception_start != LW_MODEL_HEADER_SIZE + edges * 3u) return false;
+    if (root >= edges
+        || exception_start != LW_MODEL_HEADER_SIZE + (edges * 20u + 7u) / 8u)
+        return false;
     if (block_start != exception_start + exceptions * LW_EXCEPTION_RECORD_SIZE) return false;
     if ((size_t)block_start + block_count * 2u > model->size) return false;
     return true;
@@ -78,14 +100,13 @@ bool lw_model_contains(const lw_model_t *model, const char *word) {
     if (!lw_model_valid(model) || !word || !word[0]) return false;
     uint32_t state = root_offset(model);
     bool terminal = false;
-    const uint8_t *edges = model->data + LW_MODEL_HEADER_SIZE;
     while (*word) {
         int wanted = alphabet_index(*word++);
         if (wanted < 0 || state == LW_DAWG_LEAF_OFFSET || state >= edge_count(model))
             return false;
         bool matched = false;
         for (uint32_t index = state; index < edge_count(model); ++index) {
-            uint32_t edge = read_u24(edges + index * 3u);
+            uint32_t edge = read_edge(model, index);
             if ((int)(edge & 0x1fu) == wanted) {
                 state = (edge >> 5) & LW_DAWG_LEAF_OFFSET;
                 terminal = (edge & (1u << 18)) != 0;
@@ -139,20 +160,22 @@ static bool decode_word(const lw_model_t *model, uint16_t id,
 bool lw_model_exception(const lw_model_t *model, const char *outline,
                         char output[LW_MAX_WORD + 1]) {
     if (!lw_model_valid(model) || !outline || !outline[0]) return false;
-    uint32_t wanted = hash32(outline);
+    uint32_t wanted = hash32(outline) & LW_EXCEPTION_HASH_MASK;
     uint32_t low = 0;
     uint32_t high = exception_count(model);
     const uint8_t *records = model->data + exceptions_offset(model);
     while (low < high) {
         uint32_t middle = low + (high - low) / 2u;
-        uint32_t found = read_u32(records + middle * LW_EXCEPTION_RECORD_SIZE);
+        uint64_t packed = read_u40(records + middle * LW_EXCEPTION_RECORD_SIZE);
+        uint32_t found = (uint32_t)(packed >> 11);
         if (found < wanted) low = middle + 1u;
         else high = middle;
     }
     if (low >= exception_count(model)) return false;
     const uint8_t *record = records + low * LW_EXCEPTION_RECORD_SIZE;
-    if (read_u32(record) != wanted) return false;
-    return decode_word(model, read_u16(record + 4), output);
+    uint64_t packed = read_u40(record);
+    if ((uint32_t)(packed >> 11) != wanted) return false;
+    return decode_word(model, (uint16_t)(packed & LW_EXCEPTION_ID_MASK), output);
 }
 
 static bool accept_model_word(void *context, const char *word) {
