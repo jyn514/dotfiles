@@ -121,14 +121,14 @@ The selected 6,230-word model is:
 
 | Data | Bytes |
 |---|---:|
-| Generated C rule representation | 4,428 |
-| Binary vocabulary and exceptions | 36,532 |
+| Generated C rule representation | 4,181 |
+| Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,448-byte exact vocabulary graph and 1,687 exception
+The binary contains a 20,448-byte exact vocabulary graph and 1,713 exception
 outlines. Productive morphology, standalone affixes, and algorithmic
 fingerspelling supply additional outlines without consuming model records. On
-the 20,000-token benchmark it estimates **92.12%** frequency-
+the 20,000-token benchmark it estimates **92.17%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
@@ -176,7 +176,7 @@ acceptance callback.
 The current port includes canonical-stroke parsing, ordered onset/coda
 segmentation, whole strokes, prefixes and suffixes, starred alternatives,
 silent-e variants, folded endings, English affix joins, bounded candidate
-storage, and deduplication. Its generated C representation occupies 4,428 bytes
+storage, and deduplication. Its packed generated C representation occupies 4,181 bytes
 before linker optimization. Host golden tests recover representative words such
 as “snake”, “python”, “preview”, “zapping”, “interstate”, “microphone”, and
 “helpful”. Across 20,000 dictionary outlines, its 64-candidate output exactly
@@ -196,8 +196,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 105,296 B | **25,776 B** | 17,612 B | 9,404 B |
-| `revb` | 107,544 B | **23,528 B** | comparable | comparable |
+| `reva` | 105,328 B | **25,744 B** | 17,612 B | 9,404 B |
+| `revb` | 107,568 B | **23,504 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.
