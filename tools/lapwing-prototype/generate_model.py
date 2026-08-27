@@ -256,7 +256,7 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
     for _ in range(2):
         changed = False
         for word in words:
-            if word in outlines_by_word or not word.isalpha():
+            if not word.isalpha():
                 continue
             for split in range(2, len(word) - 1):
                 left = outlines_by_word.get(word[:split], ())
@@ -267,8 +267,6 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
                         if candidate.count("/") < 8:
                             outlines_by_word.setdefault(word, []).append(candidate)
                             changed = True
-                if word in outlines_by_word:
-                    break
         if not changed:
             break
 

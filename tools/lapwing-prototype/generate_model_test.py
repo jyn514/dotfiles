@@ -18,11 +18,14 @@ class GenerateModelTest(unittest.TestCase):
             "success": ["SUK/SES"],
             "account": ["K-T"],
             "accountability": ["BAD"],
+            "battle": ["PWAT/-L"],
+            "field": ["TPAO*ELD"],
+            "battlefield": ["OTHER"],
         }
         generate_model.add_productive_outlines(
             outlines,
             ["days", "world's", "anti", "non", "im",
-             "successful", "successfully", "accountability"],
+             "successful", "successfully", "accountability", "battlefield"],
         )
         self.assertIn("TKAEU/-Z", outlines["days"])
         self.assertIn("WORLD/AES", outlines["world's"])
@@ -32,6 +35,7 @@ class GenerateModelTest(unittest.TestCase):
         self.assertIn("SUK/SES/-FL", outlines["successful"])
         self.assertIn("SUK/SES/-FL/HREU", outlines["successfully"])
         self.assertIn("K-T/-BLT", outlines["accountability"])
+        self.assertIn("PWAT/-L/TPAO*ELD", outlines["battlefield"])
 
     def test_model_is_deterministic_and_within_requested_shape(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]

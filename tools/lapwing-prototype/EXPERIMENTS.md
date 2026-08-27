@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **93.26%**. Authoritative
+The current conventional-coverage baseline is **93.37%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -61,6 +61,9 @@ letter-by-letter fallback is reported separately and is not counted here.
   already supplies an outline. This gives unresolved spellings a structured
   root-plus-affix fallback, raising corrected US-stack coverage from 92.95% to
   93.26% without changing the 40,960-byte data budget.
+- Exact compound alternatives are now appended even when a source outline
+  exists. This recovers words such as `battlefield` through known component
+  outlines and raises coverage from 93.26% to 93.37% at the same budget.
 
 ## Productive directions not yet exhausted
 
