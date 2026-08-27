@@ -416,8 +416,13 @@ static void decode_outline_internal(const char *outline,
     while (*start && stroke_count < LW_MAX_STROKES) {
         const char *slash = strchr(start, '/');
         size_t length = slash ? (size_t)(slash - start) : strlen(start);
+        const char *stroke_start = start;
+        if (stroke_count == 0u && length > 0u && *stroke_start == '#') {
+            ++stroke_start;
+            --length;
+        }
         if (!length || length >= sizeof(strokes[0])) return;
-        memcpy(strokes[stroke_count], start, length);
+        memcpy(strokes[stroke_count], stroke_start, length);
         strokes[stroke_count++][length] = '\0';
         if (!slash) break;
         start = slash + 1;

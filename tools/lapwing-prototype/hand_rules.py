@@ -368,6 +368,8 @@ def generate_outline(outline: str, beam: int,
                      prefixes: set[str] | None = None,
                      prune_final: bool = True) -> list[str]:
     strokes = outline.split("/")
+    if strokes and strokes[0].startswith("#"):
+        strokes[0] = strokes[0][1:]
     if strokes and all(stroke in FINGER_SPELLING_LETTERS for stroke in strokes):
         # Explicit fingerspelling is authoritative and may intentionally produce
         # a word absent from the compact vocabulary.

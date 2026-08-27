@@ -340,7 +340,12 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
 size_t lw_model_translate(const lw_model_t *model, const char *outline,
                           char output[][LW_MAX_WORD + 1], size_t output_capacity) {
     if (!output_capacity) return 0;
-    if (lw_model_exception(model, outline, output[0])) return 1;
+    bool proper_noun = outline && outline[0] == '#';
+    if (lw_model_exception(model, outline, output[0])) {
+        if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
+            output[0][0] = (char)(output[0][0] - 'a' + 'A');
+        return 1;
+    }
     lw_candidates_t candidates;
     lw_decode_outline_pruned(outline, accept_model_prefix, (void *)model, &candidates);
     size_t count = 0;
@@ -348,11 +353,22 @@ size_t lw_model_translate(const lw_model_t *model, const char *outline,
         if (lw_model_contains(model, candidates.words[index]))
             strcpy(output[count++], candidates.words[index]);
     }
-    if (count) return count;
+    if (count) {
+        if (proper_noun) {
+            for (size_t index = 0; index < count; ++index)
+                if (output[index][0] >= 'a' && output[index][0] <= 'z')
+                    output[index][0] = (char)(output[index][0] - 'a' + 'A');
+        }
+        return count;
+    }
     lw_decode_outline_final_unpruned(outline, accept_model_prefix,
                                      (void *)model, &candidates);
     for (uint16_t index = 0; index < candidates.count; ++index) {
-        if (repair_candidate(model, candidates.words[index], output[0])) return 1;
+        if (repair_candidate(model, candidates.words[index], output[0])) {
+            if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
+                output[0][0] = (char)(output[0][0] - 'a' + 'A');
+            return 1;
+        }
     }
     return 0;
 }

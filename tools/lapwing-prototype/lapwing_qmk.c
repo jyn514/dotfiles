@@ -60,6 +60,13 @@ static void chord_to_stroke(const uint8_t chord[MAX_STROKE_SIZE], char stroke[20
         strcpy(stroke, "PWR");
         return;
     }
+    bool number = chord_has(chord, STN_N1) || chord_has(chord, STN_N2)
+               || chord_has(chord, STN_N3) || chord_has(chord, STN_N4)
+               || chord_has(chord, STN_N5) || chord_has(chord, STN_N6)
+               || chord_has(chord, STN_N7) || chord_has(chord, STN_N8)
+               || chord_has(chord, STN_N9) || chord_has(chord, STN_NA)
+               || chord_has(chord, STN_NB) || chord_has(chord, STN_NC);
+    if (number) append_key(stroke, &length, '#');
     if (left_s) append_key(stroke, &length, 'S');
     if (chord_has(chord, STN_TL)) append_key(stroke, &length, 'T');
     if (chord_has(chord, STN_KL)) append_key(stroke, &length, 'K');

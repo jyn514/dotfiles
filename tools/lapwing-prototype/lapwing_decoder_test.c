@@ -31,6 +31,7 @@ int main(void) {
         {"EURPBT/STAEUT", "interstate"},
         {"PHAOEURBG/TPO*EPB", "microphone"},
         {"HEL/-P/-FL", "helpful"},
+        {"#SKWRO*PB", "jon"},
     };
     int failed = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
