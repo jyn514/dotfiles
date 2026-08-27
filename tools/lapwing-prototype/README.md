@@ -121,7 +121,7 @@ Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
 front-coded, five-bit-letter output pool with restart points every 128 words.
 
 The selected model starts from a 6,275-word ranked frontier and rebalances it
-to 6,215 exact vocabulary words:
+to 6,222 exact vocabulary words:
 
 | Data | Bytes |
 |---|---:|
@@ -129,11 +129,11 @@ to 6,215 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,510-byte exact vocabulary graph and 1,700 exception
+The binary contains a 20,538-byte exact vocabulary graph and 1,697 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.41%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.43%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
@@ -151,8 +151,10 @@ python3 generate_model.py \
   --vocabulary 6275 --beam 64 --report lapwing_model_report.json
 ```
 
-Model selection probes the next 200 outlined words against a temporary exact
-prefix set and admits the first 20 that resolve without exceptions. It then
+Model selection removes up to 100 low-ranked frontier tokens without
+conventional outlines, probes the next 200 outlined words against a temporary
+exact prefix set, and admits the first 40 that resolve without exceptions. The
+reference model has 93 removable tokens. It then
 builds the final vocabulary graph once and uses a size-only exception path while
 searching the budget. On the reference inputs this reduced a
 6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
@@ -165,7 +167,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact rebalanced 6,215-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact rebalanced 6,222-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.

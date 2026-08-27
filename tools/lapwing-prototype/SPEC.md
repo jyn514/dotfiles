@@ -190,17 +190,18 @@ The implemented linguistic data occupies 40,960 bytes:
 | Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
-6,275-word ranked frontier is rebalanced to a 6,215-word exact minimized acyclic
-word graph. Eighty low-ranked tokens without conventional outlines are removed.
-The next 200 outlined words are probed against a temporary exact prefix set, and
-the first twenty that resolve conventionally are admitted. Each graph edge
+6,275-word ranked frontier is rebalanced to a 6,222-word exact minimized acyclic
+word graph. Up to 100 low-ranked tokens without conventional outlines are
+removed; the reference frontier contains 93. The next 200 outlined words are
+probed against a temporary exact prefix set, and the first forty that resolve
+conventionally are admitted. Each graph edge
 uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-20,510 bytes and cannot produce membership false positives.
+20,538 bytes and cannot produce membership false positives.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,700 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,697 output words are lexically front-coded in 128-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -232,7 +233,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.41% at the exact 40,960-byte budget. This metric
+and rule outlines cover 92.43% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
