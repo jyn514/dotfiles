@@ -9,6 +9,9 @@ chunks with strokes, holds out complete words, and tests whether learned stroke
 chunks can reconstruct those unseen words. The complete vocabulary is then
 used as an oracle to reject generated non-words.
 
+See `SPEC.md` for the implemented firmware design and `EXPERIMENTS.md` for
+rejected, superseded, and still-promising optimization directions.
+
 ## Data
 
 Clone the official dictionary separately; it is deliberately not vendored.
