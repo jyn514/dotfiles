@@ -272,6 +272,14 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
             if (accept_repair(model, repaired, output)) return true;
         }
     }
+    const char *celebr = strstr(word, "selbr");
+    if (celebr && length < LW_MAX_WORD) {
+        size_t prefix = (size_t)(celebr - word);
+        memcpy(repaired, word, prefix);
+        memcpy(repaired + prefix, "celebr", 6u);
+        strcpy(repaired + prefix + 6u, celebr + 5u);
+        if (accept_repair(model, repaired, output)) return true;
+    }
     return false;
 }
 

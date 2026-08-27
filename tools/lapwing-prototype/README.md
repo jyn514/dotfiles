@@ -207,8 +207,9 @@ DAWG-prefix pruning prevents impossible partial spellings from consuming the
 64-candidate inter-stroke frontier. If no exact final candidate survives, the
 model retries the final stroke without prefix pruning and tests bounded
 consonant-doubling, insertion, deletion, transposition, vowel-change, and
-steno-confusion repairs against exact
-DAWG membership. `lapwing_engine.c` adds delayed multi-stroke
+steno-confusion repairs against exact DAWG membership. A narrow `selbr` to
+`celebr` repair covers Lapwing's compressed celebration family without enabling
+general two-edit search. `lapwing_engine.c` adds delayed multi-stroke
 commit, automatic spacing and sentence capitalization, punctuation strokes,
 explicit commit, cancellation, and eight-entry undo history.
 `lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
@@ -219,8 +220,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 106,356 B | **24,716 B** | 17,772 B | 9,244 B |
-| `revb` | 108,604 B | **22,468 B** | comparable | comparable |
+| `reva` | 106,516 B | **24,556 B** | 17,772 B | 9,244 B |
+| `revb` | 108,756 B | **22,316 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.

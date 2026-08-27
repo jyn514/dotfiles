@@ -223,11 +223,11 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 106,356 | 24,716 | 17,772 | 9,244 |
-| revB | 108,604 | 22,468 | comparable | comparable |
+| revA | 106,516 | 24,556 | 17,772 | 9,244 |
+| revB | 108,756 | 22,316 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 48,448 bytes of linked flash, including all 40,960
+translator therefore adds 48,608 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
@@ -243,8 +243,8 @@ coverage to 99.99%. It bypasses vocabulary membership only for these
 explicit spelling paths. Phonetic paths use exact DAWG membership and prefix
 pruning between strokes. When no exact final candidate survives, a second final-
 stroke pass tests bounded insertion, deletion, transposition, vowel change,
-consonant doubling, and common steno letter substitutions; repaired candidates
-must still be exact DAWG words. The
+consonant doubling, common steno letter substitutions, and a narrow `selbr` to
+`celebr` family rewrite; repaired candidates must still be exact DAWG words. The
 conventional figure is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 
