@@ -241,8 +241,6 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
     for _ in range(4):
         changed = False
         for word in words:
-            if word in outlines_by_word:
-                continue
             for root, suffix in derivations_for_word(word):
                 for outline in outlines_by_word.get(root, ())[:4]:
                     candidate = outline + "/" + suffix
@@ -250,8 +248,6 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
                     if candidate not in values:
                         values.append(candidate)
                         changed = True
-            if word in outlines_by_word:
-                continue
         if not changed:
             break
 

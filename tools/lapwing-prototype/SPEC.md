@@ -203,11 +203,11 @@ probed against a temporary exact prefix set, and the first forty that resolve
 conventionally are admitted. Each graph edge
 uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-20,513 bytes and cannot produce membership false positives.
+20,518 bytes and cannot produce membership false positives.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,706 output words are lexically front-coded in 384-word blocks,
+outlines. The 1,713 output words are lexically front-coded in 384-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 384 words from the selected
 restart point.
@@ -239,7 +239,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.95% at the exact 40,960-byte budget. This metric
+and rule outlines cover 93.26% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
