@@ -25,6 +25,7 @@ letter-by-letter fallback is reported separately and is not counted here.
 | Use hash-order exception outputs to eliminate output IDs | For 1,701 exceptions, random hash order needed about 11,079 output bytes plus 6,804 four-byte records, versus about 7,698 output bytes plus 8,505 five-byte records in lexical order. | Lost front-coding locality made the representation about 1.7 KiB larger. |
 | Use a first-character-partitioned or larger vocabulary solely to admit more rule words | Larger graphs displaced high-value exceptions before they recovered equivalent frequency mass. | Vocabulary and exceptions must be optimized together, not by vocabulary count alone. |
 | Promote 30 high-frequency one-stroke briefs to whole-stroke rules | Rule data grew from 4,181 to 4,629 bytes, exceptions fell from 1,701 to 1,647, and corrected conventional coverage decreased from 92.3610% to 92.3538%. | Generated rule records and unshared output strings cost more than the lexically compressed exceptions they replaced. Revisit only with a denser whole-stroke representation or shared output storage. |
+| Enumerate apostrophe insertion plus one extra `e/i/d/t` insertion | Coverage decreased slightly from 92.3630% to 92.3621%, and generation rose to about 33 seconds. | The expanded repair ordering found competing exact words before intended contractions, while the combinatorial search cost was high. Revisit only with outline-specific contraction semantics or ranking evidence. |
 
 ## Superseded estimates
 
