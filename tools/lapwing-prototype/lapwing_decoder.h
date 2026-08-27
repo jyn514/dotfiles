@@ -8,7 +8,7 @@
 #define LW_MAX_WORD 32
 #endif
 #ifndef LW_MAX_CANDIDATES
-#define LW_MAX_CANDIDATES 48
+#define LW_MAX_CANDIDATES 64
 #endif
 #ifndef LW_MAX_STROKES
 #define LW_MAX_STROKES 8

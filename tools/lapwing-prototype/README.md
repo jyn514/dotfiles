@@ -123,12 +123,12 @@ The selected 6,150-word model is:
 |---|---:|
 | Generated C rule representation | 4,428 |
 | Binary vocabulary and exceptions | 36,531 |
-| **Total linguistic data** | **40,960** |
+| **Total linguistic data** | **40,959** |
 
-The binary contains a 20,208-byte exact vocabulary graph and 1,703 exception
+The binary contains a 20,208-byte exact vocabulary graph and 1,704 exception
 outlines. Productive morphology, standalone affixes, and algorithmic
 fingerspelling supply additional outlines without consuming model records. On
-the 20,000-token benchmark it estimates **92.02%** frequency-
+the 20,000-token benchmark it estimates **92.08%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
@@ -138,7 +138,7 @@ Generate the model with:
 ```sh
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 6150 --beam 48 --report lapwing_model_report.json
+  --vocabulary 6150 --beam 64 --report lapwing_model_report.json
 ```
 
 Model selection builds the vocabulary graph once and uses a size-only exception
@@ -179,13 +179,13 @@ silent-e variants, folded endings, English affix joins, bounded candidate
 storage, and deduplication. Its generated C representation occupies 4,428 bytes
 before linker optimization. Host golden tests recover representative words such
 as “snake”, “python”, “preview”, “zapping”, “interstate”, “microphone”, and
-“helpful”. Across 20,000 dictionary outlines, its 48-candidate output exactly
+“helpful”. Across 20,000 dictionary outlines, its 64-candidate output exactly
 matched the Python reference.
 
 `lapwing_model.c` provides exact vocabulary membership, prefix lookup,
 exception lookup, and front-coded output recovery. During rule generation,
 DAWG-prefix pruning prevents impossible partial spellings from consuming the
-48-candidate frontier. `lapwing_engine.c` adds delayed multi-stroke
+64-candidate frontier. `lapwing_engine.c` adds delayed multi-stroke
 commit, automatic spacing and sentence capitalization, punctuation strokes,
 explicit commit, cancellation, and eight-entry undo history.
 `lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
@@ -196,7 +196,7 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 105,296 B | **25,776 B** | 14,972 B | 12,044 B |
+| `reva` | 105,296 B | **25,776 B** | 17,612 B | 9,404 B |
 | `revb` | 107,544 B | **23,528 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
@@ -207,14 +207,14 @@ Regenerate and test it with:
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
 python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
-  --vocabulary 6150 --beam 48
+  --vocabulary 6150 --beam 64
 python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
   lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
 ```
 
 `LW_MAX_CANDIDATES` is compile-time bounded. The host golden test uses 128 to
-exercise rule ordering; firmware uses 48 and relies on exact exceptions before
+exercise rule ordering; firmware uses 64 and relies on exact exceptions before
 rule generation for common irregular outlines.
 
 ## Tests
