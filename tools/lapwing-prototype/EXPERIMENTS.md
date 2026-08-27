@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **92.51%**. Authoritative
+The current conventional-coverage baseline is **92.95%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -29,6 +29,17 @@ letter-by-letter fallback is reported separately and is not counted here.
 | Remove two additional outlined frontier words to admit a forty-first probed tail word | The graph fit at 20,545 bytes, but conventional coverage decreased from 92.4324% to 92.4298%. Removing only one extra word did not fit the 13-bit target limit. | The displaced ranked words were worth more than the next tail addition. Further swaps need exact value-and-size scoring rather than extending the fixed counts. |
 
 ## Superseded estimates
+
+- Coverage runs before the default-stack correction used only
+  `lapwing-base.json`. Lapwing stores proper nouns separately, and proper-noun
+  strokes carry a `#` number-bar marker. The corrected US benchmark includes
+  the proper-noun dictionary but intentionally excludes UK additions.
+  Those runs understated conventional coverage and incorrectly classified names
+  such as `John`, `London`, and `Massachusetts` as having no outlines. The
+  corrected 40 KiB baseline merges the default JSON stack and preserves `#`.
+- The earlier 60,960-byte projections and their example miss lists were also
+  based on the incomplete base-only input. They are not evidence for the
+  corrected stack and must be rerun before use.
 
 - The original 96.74% MPHF estimate omitted exception output text.
 - The corrected hypothetical MPHF estimate was 94.97%, but assumed an

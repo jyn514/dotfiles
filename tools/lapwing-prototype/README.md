@@ -17,15 +17,23 @@ rejected, superseded, and still-promising optimization directions.
 Clone the official dictionary separately; it is deliberately not vendored.
 The measurements below used commit
 `4ac5d53cf039a2b1f4c484456663c85e7df4e859` of
-`aerickt/plover-lapwing-aio` and its `lapwing-base.json`:
+`aerickt/plover-lapwing-aio`. Build the US-English JSON benchmark stack in
+Plover lookup-priority order. It includes commands, numbers, proper nouns, and
+the base dictionary; UK additions are intentionally excluded:
 
 ```sh
 git clone https://github.com/aerickt/plover-lapwing-aio.git /tmp/plover-lapwing-aio
-DICTIONARY=/tmp/plover-lapwing-aio/plover_lapwing/dictionaries/lapwing-base.json
+git -C /tmp/plover-lapwing-aio checkout 4ac5d53cf039a2b1f4c484456663c85e7df4e859
+ROOT=/tmp/plover-lapwing-aio/plover_lapwing/dictionaries
+python3 merge_dictionaries.py /tmp/lapwing-default-stack.json \
+  "$ROOT/lapwing-commands.json" "$ROOT/lapwing-numbers.json" \
+  "$ROOT/lapwing-proper-nouns.json" "$ROOT/lapwing-base.json"
+DICTIONARY=/tmp/lapwing-default-stack.json
 ```
 
-The inspected dictionary contains 114,885 entries and 45,161 unique plain-word
-translations. The repository has an MIT `LICENSE`, although its package
+The merged stack contains 130,933 outlines and 51,910 unique plain-word
+translations. Dynamic Python dictionaries remain runtime facilities rather than
+model-generation inputs. The repository has an MIT `LICENSE`, although its package
 metadata still names GPLv2-or-later; verify that inconsistency before
 redistributing dictionary data.
 
@@ -118,10 +126,10 @@ not demonstrated.
 uses an exact minimized acyclic word graph rather than the earlier proposed
 MPHF. This avoids vocabulary false positives and requires no rank payload.
 Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
-front-coded, five-bit-letter output pool with restart points every 128 words.
+front-coded, five-bit-letter output pool with restart points every 384 words.
 
 The selected model starts from a 6,275-word ranked frontier and rebalances it
-to 6,222 exact vocabulary words:
+to 6,215 exact vocabulary words:
 
 | Data | Bytes |
 |---|---:|
@@ -129,11 +137,11 @@ to 6,222 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,538-byte exact vocabulary graph and 1,700 exception
+The binary contains a 20,513-byte exact vocabulary graph and 1,706 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.51%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.95%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
@@ -154,7 +162,7 @@ python3 generate_model.py \
 Model selection removes up to 100 low-ranked frontier tokens without
 conventional outlines, probes the next 200 outlined words against a temporary
 exact prefix set, and admits the first 40 that resolve without exceptions. The
-reference model has 93 removable tokens. It then
+reference model uses all 100 permitted removals. It then
 builds the final vocabulary graph once and uses a size-only exception path while
 searching the budget. On the reference inputs this reduced a
 6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
@@ -167,7 +175,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact rebalanced 6,222-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact rebalanced 6,215-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -225,8 +233,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 107,044 B | **24,028 B** | 17,772 B | 9,244 B |
-| `revb` | 109,284 B | **21,788 B** | comparable | comparable |
+| `reva` | 107,212 B | **23,860 B** | 17,772 B | 9,244 B |
+| `revb` | 109,452 B | **21,620 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.
