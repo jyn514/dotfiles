@@ -305,6 +305,17 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
     if (replace_fragment(model, word, "hr", "l", output)) return true;
     if (replace_fragment(model, word, "u", "l", output)) return true;
     if (replace_fragment(model, word, "hr", "oll", output)) return true;
+    if (length && word[length - 1u] == 'f' && length < LW_MAX_WORD) {
+        memcpy(repaired, word, length - 1u);
+        strcpy(repaired + length - 1u, "ve");
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    if (length && word[length - 1u] == 'z' && length < LW_MAX_WORD) {
+        memcpy(repaired, word, length - 1u);
+        strcpy(repaired + length - 1u, "es");
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    if (replace_fragment(model, word, "f", "ce", output)) return true;
     return false;
 }
 
