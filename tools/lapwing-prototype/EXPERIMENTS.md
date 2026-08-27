@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **93.37%**. Authoritative
+The current conventional-coverage baseline is **93.63%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -97,6 +97,16 @@ letter-by-letter fallback is reported separately and is not counted here.
   `battlefield`, `butterfly`, `underwater`, and `offshore` were outside the
   rule-capable certificate candidate set. The 0.04-point gain does not justify
   adding split decoding and a new packed record format.
+
+## Adopted grouped morphology
+
+- A packed version-5 morphology section groups exact root-to-output tail
+  transformations. Seventy-seven groups license 957 transformed words in 2,450
+  bytes using unique primary-DAWG terminal-edge/length identities and sorted
+  delta-varint root IDs. The complete US model retains 1,443 exceptions and
+  raises conventional coverage from 93.37% to 93.6264% at exactly 40,960 bytes.
+  Python/C tests reject ambiguous roots, unlicensed transformed words, malformed
+  groups, and wrong model versions.
 
 ## Planned representation experiments
 

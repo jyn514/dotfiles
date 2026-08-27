@@ -41,6 +41,13 @@ int main(int argc, char **argv) {
     bool found = false;
     for (size_t i = 0; i < count; ++i) found |= strcmp(output[i], "cat") == 0;
     if (!found) result |= fail("rule vocabulary translation failed");
+    if (lw_model_translate(&model, "KAT/-Z", output, 4) != 1
+        || strcmp(output[0], "cats") != 0)
+        result |= fail("licensed grouped morphology failed");
+    count = lw_model_translate(&model, "TKOG/-Z", output, 4);
+    for (size_t i = 0; i < count; ++i)
+        if (strcmp(output[i], "dogs") == 0)
+            result |= fail("unlicensed morphology/nonword accepted");
     if (lw_model_translate(&model, "TRAPBS/PHEUGS", output, 4) != 1
         || strcmp(output[0], "transmission") != 0)
         result |= fail("orthographic repair failed");
@@ -82,6 +89,16 @@ int main(int argc, char **argv) {
         result |= fail("folded-ing repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
+    uint32_t morph_offset = (uint32_t)data[32] | ((uint32_t)data[33] << 8)
+        | ((uint32_t)data[34] << 16) | ((uint32_t)data[35] << 24);
+    uint8_t saved = data[morph_offset];
+    data[morph_offset] = 32u;
+    if (lw_model_valid(&model)) result |= fail("corrupt morphology accepted");
+    data[morph_offset] = saved;
+    saved = data[4];
+    data[4] = 4u;
+    if (lw_model_valid(&model)) result |= fail("wrong model version accepted");
+    data[4] = saved;
     free(data);
     return result;
 }
