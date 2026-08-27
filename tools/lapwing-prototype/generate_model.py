@@ -22,6 +22,8 @@ EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
 EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
 BLOCK_WORDS = 128
+VOCABULARY_REBALANCE_REMOVALS = 80
+VOCABULARY_REBALANCE_ADDITIONS = 20
 RULE_BYTES = 4181
 DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
@@ -349,13 +351,7 @@ def improve_exception_selection(
 def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]],
                  vocabulary_size: int, beam: int,
                  binary_budget: int) -> tuple[list[str], list[ExceptionEntry], dict[str, float | int]]:
-    vocabulary = [word for word, _ in frequencies[:vocabulary_size]]
-    vocabulary_set = set(vocabulary)
-    vocabulary_prefixes = {
-        word[:length]
-        for word in vocabulary
-        for length in range(1, len(word) + 1)
-    }
+    ranked_vocabulary = [word for word, _ in frequencies[:vocabulary_size]]
     max_zipf = frequencies[0][1]
     weights = {word: 10 ** (zipf - max_zipf) for word, zipf in frequencies}
     total_weight = sum(weights.values())
@@ -365,6 +361,27 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         if word in weights and WORD_RE.fullmatch(translation):
             outlines_by_word[word].append(outline)
     add_productive_outlines(outlines_by_word, list(weights))
+
+    # Reclaim graph capacity from low-ranked tokens that have no conventional
+    # outline, then spend part of it on the next rule-capable words. Keeping
+    # more removals than additions accounts for the longer tail-word paths.
+    removable = [
+        word for word in reversed(ranked_vocabulary)
+        if not outlines_by_word.get(word)
+    ][:VOCABULARY_REBALANCE_REMOVALS]
+    additions = [
+        word for word, _ in frequencies[vocabulary_size:]
+        if outlines_by_word.get(word)
+    ][:VOCABULARY_REBALANCE_ADDITIONS]
+    removed = set(removable)
+    vocabulary = [word for word in ranked_vocabulary if word not in removed]
+    vocabulary.extend(additions)
+    vocabulary_set = set(vocabulary)
+    vocabulary_prefixes = {
+        word[:length]
+        for word in vocabulary
+        for length in range(1, len(word) + 1)
+    }
 
     # Explicit starred-letter spelling is authoritative and does not require
     # vocabulary membership. Keep it separate from ordinary rule success so
@@ -445,6 +462,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "rule_bytes": RULE_BYTES,
         "total_data_bytes": len(model) + RULE_BYTES,
         "vocabulary_words": len(vocabulary),
+        "vocabulary_rebalance_removals": len(removable),
+        "vocabulary_rebalance_additions": len(additions),
         "vocabulary_dawg_bytes": len(dawg_info[0]),
         "rule_resolved_words": len(successful),
         "fingerspelled_words": len(fingerspelled),
