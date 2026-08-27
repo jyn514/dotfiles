@@ -221,7 +221,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
-estimates 92.01% frequency-weighted coverage. Productive morphology,
+estimates 92.02% frequency-weighted coverage. Productive morphology,
 standalone affix outlines, and algorithmic fingerspelling contribute without
 additional exception records. Exact DAWG-prefix pruning keeps impossible
 partial spellings out of the bounded frontier. This is lower than the discarded
