@@ -205,8 +205,8 @@ uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 20,518 bytes and cannot produce membership false positives.
 
-Grouped morphology stores 77 exact spelling recipes and 957 licensed roots in
-2,450 bytes. Each recipe contains literal root/output tails followed by sorted,
+Grouped morphology stores 98 exact spelling recipes and 1,566 licensed roots in
+3,824 bytes. Each recipe contains literal root/output tails followed by sorted,
 delta-varint-coded primary-root IDs. An ID is the root's terminal DAWG edge and
 length and is admitted only when that pair identifies exactly one primary word.
 The C decoder reverses the recipe, verifies that exact root identity, and never
@@ -214,7 +214,7 @@ admits an unlicensed transformed spelling.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,443 output words are lexically front-coded in 384-word blocks,
+outlines. The 1,298 output words are lexically front-coded in 384-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 384 words from the selected
 restart point.
@@ -246,7 +246,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 93.6264% at the exact 40,960-byte budget. This metric
+and rule outlines cover 93.8974% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without

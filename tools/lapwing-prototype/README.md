@@ -137,12 +137,12 @@ to 6,215 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,518-byte exact vocabulary graph, 2,450 bytes of
-grouped exact morphology (77 recipes licensing 957 transformed words), and
-1,443 exception outlines. Productive morphology, closed-compound composition, standalone
+The binary contains a 20,518-byte exact vocabulary graph, 3,824 bytes of
+grouped exact morphology (98 recipes licensing 1,566 transformed words), and
+1,298 exception outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **93.63%** of the 20,000-token
+Conventional dictionary and rule outlines cover **93.90%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
