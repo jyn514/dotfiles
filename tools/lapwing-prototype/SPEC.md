@@ -201,7 +201,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,700 output words are lexically front-coded in 384-word blocks,
+outlines. The 1,698 output words are lexically front-coded in 384-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -223,17 +223,17 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 106,516 | 24,556 | 17,772 | 9,244 |
-| revB | 108,756 | 22,316 | comparable | comparable |
+| revA | 106,748 | 24,324 | 17,772 | 9,244 |
+| revB | 108,996 | 22,076 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 48,608 bytes of linked flash, including all 40,960
+translator therefore adds 48,840 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.44% at the exact 40,960-byte budget. This metric
+and rule outlines cover 92.48% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
@@ -243,8 +243,9 @@ coverage to 99.99%. It bypasses vocabulary membership only for these
 explicit spelling paths. Phonetic paths use exact DAWG membership and prefix
 pruning between strokes. When no exact final candidate survives, a second final-
 stroke pass tests bounded insertion, deletion, transposition, vowel change,
-consonant doubling, common steno letter substitutions, and a narrow `selbr` to
-`celebr` family rewrite; repaired candidates must still be exact DAWG words. The
+consonant doubling, common steno letter substitutions, a narrow `selbr` to
+`celebr` family rewrite, and exact folded-liquid and broad-vowel expansions;
+repaired candidates must still be exact DAWG words. The
 conventional figure is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 

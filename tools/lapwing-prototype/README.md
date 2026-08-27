@@ -129,11 +129,11 @@ to 6,222 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,538-byte exact vocabulary graph and 1,700 exception
+The binary contains a 20,538-byte exact vocabulary graph and 1,698 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.44%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.48%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
@@ -209,7 +209,9 @@ model retries the final stroke without prefix pruning and tests bounded
 consonant-doubling, insertion, deletion, transposition, vowel-change, and
 steno-confusion repairs against exact DAWG membership. A narrow `selbr` to
 `celebr` repair covers Lapwing's compressed celebration family without enabling
-general two-edit search. `lapwing_engine.c` adds delayed multi-stroke
+general two-edit search. Exact folded-liquid and broad-vowel rewrites recover
+families such as `clean`, `college`, `talk`, and `called`. `lapwing_engine.c`
+adds delayed multi-stroke
 commit, automatic spacing and sentence capitalization, punctuation strokes,
 explicit commit, cancellation, and eight-entry undo history.
 `lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
@@ -220,8 +222,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 106,516 B | **24,556 B** | 17,772 B | 9,244 B |
-| `revb` | 108,756 B | **22,316 B** | comparable | comparable |
+| `reva` | 106,748 B | **24,324 B** | 17,772 B | 9,244 B |
+| `revb` | 108,996 B | **22,076 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.

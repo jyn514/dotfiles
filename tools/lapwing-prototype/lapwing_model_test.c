@@ -47,6 +47,18 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "SEL/PWRAEUGS", output, 4) != 1
         || strcmp(output[0], "celebration") != 0)
         result |= fail("celebration-family repair failed");
+    if (lw_model_translate(&model, "KAUL/-D", output, 4) != 1
+        || strcmp(output[0], "called") != 0)
+        result |= fail("broad-vowel repair failed");
+    if (lw_model_translate(&model, "KHRAOEPB", output, 4) != 1
+        || strcmp(output[0], "clean") != 0)
+        result |= fail("folded-l repair failed");
+    if (lw_model_translate(&model, "KO/HREPBLG", output, 4) != 1
+        || strcmp(output[0], "college") != 0)
+        result |= fail("folded-coll repair failed");
+    if (lw_model_translate(&model, "TAUBG", output, 4) != 1
+        || strcmp(output[0], "talk") != 0)
+        result |= fail("broad-vowel l repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     free(data);
