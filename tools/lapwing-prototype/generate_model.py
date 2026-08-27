@@ -257,11 +257,33 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
         if not changed:
             break
 
+    # Compose known roots for closed compounds such as health + care and
+    # out + standing. Keep only combinations the firmware can retain.
+    for _ in range(2):
+        changed = False
+        for word in words:
+            if word in outlines_by_word or not word.isalpha():
+                continue
+            for split in range(2, len(word) - 1):
+                left = outlines_by_word.get(word[:split], ())
+                right = outlines_by_word.get(word[split:], ())
+                for left_outline in left[:2]:
+                    for right_outline in right[:2]:
+                        candidate = left_outline + "/" + right_outline
+                        if candidate.count("/") < 8:
+                            outlines_by_word.setdefault(word, []).append(candidate)
+                            changed = True
+                if word in outlines_by_word:
+                    break
+        if not changed:
+            break
+
     for word in words:
-        if word not in outlines_by_word and word.isalpha() and len(word) <= 8:
-            outlines_by_word.setdefault(word, []).append(
-                "/".join(LETTER_OUTLINES[character] for character in word)
-            )
+        if word.isalpha() and len(word) <= 8:
+            fingerspelled = "/".join(LETTER_OUTLINES[character] for character in word)
+            values = outlines_by_word.setdefault(word, [])
+            if fingerspelled not in values:
+                values.append(fingerspelled)
 
 
 def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
