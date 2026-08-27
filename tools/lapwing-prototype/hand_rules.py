@@ -311,8 +311,29 @@ def decode_stroke_analyses(stroke: str, final_position: bool) -> list[str]:
     return unique(analyses)
 
 
+def orthographic_repairs(word: str) -> list[str]:
+    """Return bounded one-edit repairs for common steno spelling omissions."""
+    repairs: list[str] = []
+    consonants = set("bcdfghjklmnpqrstvwxyz")
+    for index, character in enumerate(word):
+        if character in consonants:
+            repairs.append(word[:index] + character + word[index:])
+    for index in range(1, len(word)):
+        for vowel in "aeiou":
+            repairs.append(word[:index] + vowel + word[index:])
+    substitutions = {
+        "c": "ks", "k": "c", "s": "c", "g": "j", "j": "g",
+        "f": "v", "v": "f",
+    }
+    for index, character in enumerate(word):
+        for replacement in substitutions.get(character, ""):
+            repairs.append(word[:index] + replacement + word[index + 1:])
+    return unique(repairs)
+
+
 def generate_outline(outline: str, beam: int,
-                     prefixes: set[str] | None = None) -> list[str]:
+                     prefixes: set[str] | None = None,
+                     prune_final: bool = True) -> list[str]:
     strokes = outline.split("/")
     if strokes and all(stroke in FINGER_SPELLING_LETTERS for stroke in strokes):
         # Explicit fingerspelling is authoritative and may intentionally produce
@@ -337,7 +358,10 @@ def generate_outline(outline: str, beam: int,
             for value, affix in analyses:
                 joined = [value] if not state else joins(state, value, affix)
                 next_states.extend(candidate for candidate in joined
-                                   if prefixes is None or candidate in prefixes)
+                                   if (prefixes is None
+                                       or (not prune_final
+                                           and index + 1 == len(strokes))
+                                       or candidate in prefixes))
                 if len(next_states) >= beam * 2:
                     break
             if len(next_states) >= beam * 2:

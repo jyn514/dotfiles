@@ -380,6 +380,14 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         for outline in sorted(outlines_by_word.get(word, ()), key=lambda value: (value.count("/"), len(value), value)):
             generated = hand_rules.generate_outline(outline, beam, vocabulary_prefixes)
             accepted = next((candidate for candidate in generated if candidate in vocabulary_set), None)
+            if accepted is None:
+                final_candidates = hand_rules.generate_outline(
+                    outline, beam, vocabulary_prefixes, prune_final=False,
+                )
+                accepted = next((repair
+                                 for candidate in final_candidates
+                                 for repair in hand_rules.orthographic_repairs(candidate)
+                                 if repair in vocabulary_set), None)
             if accepted == word:
                 successful.add(word)
                 break

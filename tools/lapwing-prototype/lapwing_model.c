@@ -204,6 +204,60 @@ static bool accept_model_prefix(void *context, const char *prefix) {
     return lw_model_has_prefix(context, prefix);
 }
 
+static bool is_repair_consonant(char character) {
+    return character >= 'a' && character <= 'z'
+        && strchr("aeiou", character) == NULL;
+}
+
+static bool accept_repair(const lw_model_t *model, const char *candidate,
+                          char output[LW_MAX_WORD + 1]) {
+    if (!lw_model_contains(model, candidate)) return false;
+    strcpy(output, candidate);
+    return true;
+}
+
+static bool repair_candidate(const lw_model_t *model, const char *word,
+                             char output[LW_MAX_WORD + 1]) {
+    size_t length = strlen(word);
+    char repaired[LW_MAX_WORD + 1];
+    if (length < LW_MAX_WORD) {
+        for (size_t index = 0; index < length; ++index) {
+            if (!is_repair_consonant(word[index])) continue;
+            memcpy(repaired, word, index);
+            repaired[index] = word[index];
+            strcpy(repaired + index + 1u, word + index);
+            if (accept_repair(model, repaired, output)) return true;
+        }
+        for (size_t index = 1; index < length; ++index) {
+            for (const char *vowel = "aeiou"; *vowel; ++vowel) {
+                memcpy(repaired, word, index);
+                repaired[index] = *vowel;
+                strcpy(repaired + index + 1u, word + index);
+                if (accept_repair(model, repaired, output)) return true;
+            }
+        }
+    }
+    for (size_t index = 0; index < length; ++index) {
+        const char *replacements = "";
+        switch (word[index]) {
+            case 'c': replacements = "ks"; break;
+            case 'k': replacements = "c"; break;
+            case 's': replacements = "c"; break;
+            case 'g': replacements = "j"; break;
+            case 'j': replacements = "g"; break;
+            case 'f': replacements = "v"; break;
+            case 'v': replacements = "f"; break;
+            default: break;
+        }
+        for (; *replacements; ++replacements) {
+            strcpy(repaired, word);
+            repaired[index] = *replacements;
+            if (accept_repair(model, repaired, output)) return true;
+        }
+    }
+    return false;
+}
+
 size_t lw_model_translate(const lw_model_t *model, const char *outline,
                           char output[][LW_MAX_WORD + 1], size_t output_capacity) {
     if (!output_capacity) return 0;
@@ -215,5 +269,11 @@ size_t lw_model_translate(const lw_model_t *model, const char *outline,
         if (lw_model_contains(model, candidates.words[index]))
             strcpy(output[count++], candidates.words[index]);
     }
-    return count;
+    if (count) return count;
+    lw_decode_outline_final_unpruned(outline, accept_model_prefix,
+                                     (void *)model, &candidates);
+    for (uint16_t index = 0; index < candidates.count; ++index) {
+        if (repair_candidate(model, candidates.words[index], output[0])) return 1;
+    }
+    return 0;
 }
