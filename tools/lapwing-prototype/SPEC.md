@@ -189,7 +189,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,679 output words are lexically front-coded in 32-word blocks,
+outlines. The 1,687 output words are lexically front-coded in 64-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -221,7 +221,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
-estimates 92.10% frequency-weighted coverage. Productive morphology,
+estimates 92.12% frequency-weighted coverage. Productive morphology,
 standalone affix outlines, and algorithmic fingerspelling contribute without
 additional exception records. Exact DAWG-prefix pruning keeps impossible
 partial spellings out of the bounded frontier. This is lower than the discarded
