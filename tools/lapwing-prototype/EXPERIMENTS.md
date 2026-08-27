@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **92.95%**. Authoritative
+The current conventional-coverage baseline is **93.26%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -54,6 +54,13 @@ letter-by-letter fallback is reported separately and is not counted here.
   candidates. The accepted two-pass design reached 92.78% before expanded
   repairs and 92.82% afterward without that regression under the pre-audit
   one-letter metric.
+
+## Adopted experiments
+
+- Productive derivations are now appended even when the source dictionary
+  already supplies an outline. This gives unresolved spellings a structured
+  root-plus-affix fallback, raising corrected US-stack coverage from 92.95% to
+  93.26% without changing the 40,960-byte data budget.
 
 ## Productive directions not yet exhausted
 
