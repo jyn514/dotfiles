@@ -11,6 +11,18 @@ ROOT = Path(__file__).parent
 
 
 class GenerateModelTest(unittest.TestCase):
+    def test_productive_outlines_include_inflections_possessives_and_fragments(self) -> None:
+        outlines = {"day": ["TKAEU"], "world": ["WORLD"]}
+        generate_model.add_productive_outlines(
+            outlines, ["days", "world's", "anti", "non", "im", "usa"]
+        )
+        self.assertIn("TKAEU/-Z", outlines["days"])
+        self.assertIn("WORLD/AES", outlines["world's"])
+        self.assertEqual(outlines["anti"], ["APB/TEU"])
+        self.assertEqual(outlines["non"], ["TPHOPB"])
+        self.assertEqual(outlines["im"], ["EUPL"])
+        self.assertEqual(outlines["usa"], ["U*/S*/A*"])
+
     def test_model_is_deterministic_and_within_requested_shape(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
         exceptions = [generate_model.ExceptionEntry("P", "people")]

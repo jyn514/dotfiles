@@ -73,7 +73,7 @@ Current compile-time limits are:
 |---|---:|
 | Maximum word length | 32 characters |
 | Maximum outline length | 8 strokes |
-| Candidate frontier | 24 words |
+| Candidate frontier | 48 words |
 | Onset or coda segmentations | 48 |
 
 The host golden test raises the candidate frontier to 128. Firmware is expected
@@ -110,7 +110,7 @@ typedef struct {
 ```
 
 The naturally aligned ARM representation occupies six bytes per entry. The
-complete generated C rule representation currently occupies 4,413 bytes before
+complete generated C rule representation currently occupies 4,428 bytes before
 linker optimization. This supersedes the earlier 2,555-byte estimate based only
 on NUL-terminated keys and values, which did not include lookup metadata.
 
@@ -165,25 +165,26 @@ and capitalization state.
 
 ## Model format
 
-The implemented linguistic data occupies 40,959 bytes:
+The implemented linguistic data occupies 40,960 bytes:
 
 | Component | Bytes |
 |---|---:|
-| Generated C rules | 4,413 |
-| Binary vocabulary and exceptions | 36,546 |
-| Total | 40,959 |
+| Generated C rules | 4,428 |
+| Binary vocabulary and exceptions | 36,531 |
+| Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
-4,500-word vocabulary is an exact minimized acyclic word graph. Each graph edge
-uses three bytes containing a five-bit alphabet symbol, a 13-bit target edge
+6,150-word vocabulary is an exact minimized acyclic word graph. Each graph edge
+uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-18,489 bytes and cannot produce membership false positives.
+20,208 bytes and cannot produce membership false positives.
 
-Exception records are sorted pairs of a 32-bit outline hash and a 16-bit output
-word ID. Generation rejects hash collisions between distinct selected outlines.
-The 1,572 output words are lexically front-coded in 32-word blocks with 16-bit
-restart offsets. Runtime lookup binary-searches the records and decodes at most
-32 words from the selected restart point.
+Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
+five bytes. Generation rejects hash collisions between distinct selected
+outlines. The 1,694 output words are lexically front-coded in 32-word blocks,
+use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
+binary-searches the records and decodes at most 32 words from the selected
+restart point.
 
 Exact exceptions are checked before rule generation. The model is immutable,
 self-contained, heap-free, and validated for magic, version, offsets, counts,
@@ -202,20 +203,22 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,088 | 25,984 | 10,996 | 16,020 |
-| revB | 107,328 | 23,744 | comparable | comparable |
+| revA | 105,220 | 25,852 | 14,956 | 12,060 |
+| revB | 107,464 | 23,608 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,180 bytes of linked flash, including all 40,959
+translator therefore adds 47,312 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
-Using the 20,000 highest-frequency benchmark tokens, the exact 40,959-byte model
-estimates 88.58% frequency-weighted coverage. This is lower than the discarded
+Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
+estimates 91.03% frequency-weighted coverage. Productive morphology,
+standalone affix outlines, and algorithmic fingerspelling contribute without
+additional exception records. This is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 
-The C decoder's ordered 24-candidate output exactly matched the Python reference
+The C decoder's ordered 48-candidate output exactly matched the Python reference
 for the first 20,000 dictionary outlines tested.
 
 ## Verification
