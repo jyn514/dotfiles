@@ -302,7 +302,8 @@ def decode_stroke_analyses(stroke: str, final_position: bool) -> list[str]:
     return unique(analyses)
 
 
-def generate_outline(outline: str, beam: int) -> list[str]:
+def generate_outline(outline: str, beam: int,
+                     prefixes: set[str] | None = None) -> list[str]:
     strokes = outline.split("/")
     states = [""]
     for index, stroke in enumerate(strokes):
@@ -314,14 +315,13 @@ def generate_outline(outline: str, beam: int) -> list[str]:
         analyses.extend((value, False) for value in decode_stroke_analyses(
             stroke, final_position=index == len(strokes) - 1
         ))
-        analyses = list(dict.fromkeys(analyses))
+        analyses = list(dict.fromkeys(analyses))[:beam]
         next_states: list[str] = []
         for state in states:
             for value, affix in analyses:
-                if not state:
-                    next_states.append(value)
-                else:
-                    next_states.extend(joins(state, value, affix))
+                joined = [value] if not state else joins(state, value, affix)
+                next_states.extend(candidate for candidate in joined
+                                   if prefixes is None or candidate in prefixes)
                 if len(next_states) >= beam * 2:
                     break
             if len(next_states) >= beam * 2:

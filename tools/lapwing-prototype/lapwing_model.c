@@ -114,7 +114,7 @@ static int alphabet_index(char character) {
     return found ? (int)(found - alphabet) : -1;
 }
 
-bool lw_model_contains(const lw_model_t *model, const char *word) {
+static bool walk_word(const lw_model_t *model, const char *word, bool require_terminal) {
     if (!lw_model_valid(model) || !word || !word[0]) return false;
     uint32_t state = root_offset(model);
     bool terminal = false;
@@ -135,7 +135,15 @@ bool lw_model_contains(const lw_model_t *model, const char *word) {
         }
         if (!matched) return false;
     }
-    return terminal;
+    return !require_terminal || terminal;
+}
+
+bool lw_model_contains(const lw_model_t *model, const char *word) {
+    return walk_word(model, word, true);
+}
+
+bool lw_model_has_prefix(const lw_model_t *model, const char *prefix) {
+    return walk_word(model, prefix, false);
 }
 
 static bool decode_word(const lw_model_t *model, uint16_t id,
@@ -192,14 +200,20 @@ bool lw_model_exception(const lw_model_t *model, const char *outline,
     return decode_word(model, (uint16_t)(packed & LW_EXCEPTION_ID_MASK), output);
 }
 
-static bool accept_model_word(void *context, const char *word) {
-    return lw_model_contains(context, word);
+static bool accept_model_prefix(void *context, const char *prefix) {
+    return lw_model_has_prefix(context, prefix);
 }
 
 size_t lw_model_translate(const lw_model_t *model, const char *outline,
                           char output[][LW_MAX_WORD + 1], size_t output_capacity) {
     if (!output_capacity) return 0;
     if (lw_model_exception(model, outline, output[0])) return 1;
-    return lw_translate_outline(outline, accept_model_word, (void *)model,
-                                output, output_capacity);
+    lw_candidates_t candidates;
+    lw_decode_outline_pruned(outline, accept_model_prefix, (void *)model, &candidates);
+    size_t count = 0;
+    for (uint16_t index = 0; index < candidates.count && count < output_capacity; ++index) {
+        if (lw_model_contains(model, candidates.words[index]))
+            strcpy(output[count++], candidates.words[index]);
+    }
+    return count;
 }

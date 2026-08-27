@@ -279,6 +279,11 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
                  binary_budget: int) -> tuple[list[str], list[ExceptionEntry], dict[str, float | int]]:
     vocabulary = [word for word, _ in frequencies[:vocabulary_size]]
     vocabulary_set = set(vocabulary)
+    vocabulary_prefixes = {
+        word[:length]
+        for word in vocabulary
+        for length in range(1, len(word) + 1)
+    }
     max_zipf = frequencies[0][1]
     weights = {word: 10 ** (zipf - max_zipf) for word, zipf in frequencies}
     total_weight = sum(weights.values())
@@ -293,7 +298,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     preferred_outline: dict[str, str] = {}
     for word in vocabulary:
         for outline in sorted(outlines_by_word.get(word, ()), key=lambda value: (value.count("/"), len(value), value)):
-            generated = hand_rules.generate_outline(outline, beam)
+            generated = hand_rules.generate_outline(outline, beam, vocabulary_prefixes)
             accepted = next((candidate for candidate in generated if candidate in vocabulary_set), None)
             if accepted == word:
                 successful.add(word)
