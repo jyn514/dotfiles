@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **92.36%**. Authoritative
+The current conventional-coverage baseline is **92.41%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -45,8 +45,8 @@ letter-by-letter fallback is reported separately and is not counted here.
 
 ## Productive directions not yet exhausted
 
-- Size-aware vocabulary swaps that evaluate the complete graph, exception set,
-  and conventional coverage together rather than filtering by outline presence.
+- Extend the accepted bounded vocabulary rebalance beyond its current 80 removals
+  and 20 additions using exact graph-size deltas and complete model scoring.
 - DAWG-guided bounded edit search that can support carefully constrained
   two-edit repairs without enumerating the whole vocabulary or exploding the
   candidate frontier.

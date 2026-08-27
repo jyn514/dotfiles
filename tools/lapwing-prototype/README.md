@@ -120,7 +120,8 @@ MPHF. This avoids vocabulary false positives and requires no rank payload.
 Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
 front-coded, five-bit-letter output pool with restart points every 128 words.
 
-The selected 6,275-word model is:
+The selected model starts from a 6,275-word ranked frontier and rebalances it
+to 6,215 exact vocabulary words:
 
 | Data | Bytes |
 |---|---:|
@@ -128,11 +129,11 @@ The selected 6,275-word model is:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,540-byte exact vocabulary graph and 1,701 exception
+The binary contains a 20,500-byte exact vocabulary graph and 1,702 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.36%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.41%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
@@ -152,7 +153,7 @@ python3 generate_model.py \
 
 Model selection builds the vocabulary graph once and uses a size-only exception
 path while searching the budget. On the reference inputs this reduced a
-6,275-word generation run from about 50 seconds to about 14 seconds while
+6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
 producing a byte-identical model.
 
 ## Interpretation
@@ -162,7 +163,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact 6,275-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact rebalanced 6,215-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -214,8 +215,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 106,348 B | **24,724 B** | 17,772 B | 9,244 B |
-| `revb` | 108,588 B | **22,484 B** | comparable | comparable |
+| `reva` | 106,356 B | **24,716 B** | 17,772 B | 9,244 B |
+| `revb` | 108,604 B | **22,468 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.

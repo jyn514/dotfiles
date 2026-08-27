@@ -190,14 +190,16 @@ The implemented linguistic data occupies 40,960 bytes:
 | Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
-6,275-word vocabulary is an exact minimized acyclic word graph. Each graph edge
+6,275-word ranked frontier is rebalanced to a 6,215-word exact minimized acyclic
+word graph. Eighty low-ranked tokens without conventional outlines are removed
+and the next twenty rule-capable words are admitted. Each graph edge
 uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-20,540 bytes and cannot produce membership false positives.
+20,500 bytes and cannot produce membership false positives.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,701 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,702 output words are lexically front-coded in 128-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -219,17 +221,17 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 106,348 | 24,724 | 17,772 | 9,244 |
-| revB | 108,588 | 22,484 | comparable | comparable |
+| revA | 106,356 | 24,716 | 17,772 | 9,244 |
+| revB | 108,604 | 22,468 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 48,440 bytes of linked flash, including all 40,960
+translator therefore adds 48,448 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.36% at the exact 40,960-byte budget. This metric
+and rule outlines cover 92.41% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without

@@ -100,6 +100,16 @@ class GenerateModelTest(unittest.TestCase):
             generate_model.build_dawg = original
         self.assertEqual(calls, 1)
 
+    def test_vocabulary_rebalance_replaces_outline_less_tail_token(self) -> None:
+        vocabulary, _, report = generate_model.choose_model(
+            {"KAT": "cat", "PWEURD": "bird"},
+            [("cat", 7.0), ("xx", 6.0), ("bird", 5.0)],
+            2, 24, 4096,
+        )
+        self.assertEqual(vocabulary, ["cat", "bird"])
+        self.assertEqual(report["vocabulary_rebalance_removals"], 1)
+        self.assertEqual(report["vocabulary_rebalance_additions"], 1)
+
     def test_rejects_one_exception_outline_with_multiple_outputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "multiple outputs"):
             generate_model.pack_model(
