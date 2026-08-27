@@ -68,6 +68,12 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "PHRAEUFD", output, 4) != 1
         || strcmp(output[0], "placed") != 0)
         result |= fail("soft-c spelling repair failed");
+    if (lw_model_translate(&model, "HRAOEUT", output, 4) != 1
+        || strcmp(output[0], "light") != 0)
+        result |= fail("silent-gh repair failed");
+    if (lw_model_translate(&model, "TKO*G", output, 4) != 1
+        || strcmp(output[0], "doing") != 0)
+        result |= fail("folded-ing repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     free(data);

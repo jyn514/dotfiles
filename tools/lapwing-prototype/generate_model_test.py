@@ -53,7 +53,7 @@ class GenerateModelTest(unittest.TestCase):
         )
 
     def test_c_model_lookup_and_rule_fallback(self) -> None:
-        vocabulary = ["called", "cat", "celebration", "clean", "college", "don't", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "watch"]
+        vocabulary = ["called", "cat", "celebration", "clean", "college", "doing", "don't", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "watch"]
         exceptions = [generate_model.ExceptionEntry("P", "people")]
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
