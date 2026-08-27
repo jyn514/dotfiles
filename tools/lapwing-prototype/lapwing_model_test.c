@@ -25,6 +25,8 @@ int main(int argc, char **argv) {
     if (!lw_model_valid(&model)) result |= fail("model rejected");
     if (!lw_model_contains(&model, "cat")) result |= fail("cat absent");
     if (!lw_model_contains(&model, "python")) result |= fail("python absent");
+    if (!lw_model_has_prefix(&model, "py")) result |= fail("python prefix absent");
+    if (lw_model_has_prefix(&model, "zz")) result |= fail("non-prefix accepted");
     if (lw_model_exception(&model, "P", output[0]) == false
         || strcmp(output[0], "people") != 0) result |= fail("exception lookup failed");
     if (lw_model_translate(&model, "P", output, 4) != 1

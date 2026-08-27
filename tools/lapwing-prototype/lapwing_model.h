@@ -13,6 +13,7 @@ typedef struct {
 
 bool lw_model_valid(const lw_model_t *model);
 bool lw_model_contains(const lw_model_t *model, const char *word);
+bool lw_model_has_prefix(const lw_model_t *model, const char *prefix);
 bool lw_model_exception(const lw_model_t *model, const char *outline,
                         char output[LW_MAX_WORD + 1]);
 

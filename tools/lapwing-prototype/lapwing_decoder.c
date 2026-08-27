@@ -32,6 +32,8 @@ typedef struct {
  * main processing thread is the sole caller; large bounded buffers live in BSS
  * rather than consuming the firmware's small call stack. */
 static lw_workspace_t workspace;
+static lw_prefix_accept_fn active_prefix;
+static void *active_prefix_context;
 
 static bool copy_word(char output[LW_MAX_WORD + 1], const char *input) {
     size_t length = strlen(input);
@@ -50,6 +52,7 @@ static bool append_word(char output[LW_MAX_WORD + 1], const char *addition) {
 
 static bool add_unique(lw_candidates_t *result, const char *word) {
     if (!word[0] || strlen(word) > LW_MAX_WORD) return false;
+    if (active_prefix && !active_prefix(active_prefix_context, word)) return true;
     for (uint16_t i = 0; i < result->count; ++i) {
         if (strcmp(result->words[i], word) == 0) return true;
     }
@@ -390,7 +393,8 @@ static void decode_stroke(const char *stroke_text, bool final_position,
     }
 }
 
-void lw_decode_outline(const char *outline, lw_candidates_t *result) {
+void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_prefix,
+                              void *context, lw_candidates_t *result) {
     result->count = 0;
     if (!outline || !outline[0]) return;
     char strokes[LW_MAX_STROKES][20];
@@ -430,6 +434,8 @@ void lw_decode_outline(const char *outline, lw_candidates_t *result) {
             add_unique(analyses, decoded->words[i]);
 
         next->count = 0;
+        active_prefix = accept_prefix;
+        active_prefix_context = context;
         for (uint16_t state = 0; state < states->count; ++state) {
             for (uint16_t analysis = 0; analysis < analyses->count; ++analysis) {
                 if (!states->words[state][0]) add_unique(next, analyses->words[analysis]);
@@ -437,12 +443,20 @@ void lw_decode_outline(const char *outline, lw_candidates_t *result) {
                                analysis < affix_count);
             }
         }
+        active_prefix = NULL;
+        active_prefix_context = NULL;
         lw_candidates_t *swap = states;
         states = next;
         next = swap;
         if (!states->count) break;
     }
+    active_prefix = NULL;
+    active_prefix_context = NULL;
     *result = *states;
+}
+
+void lw_decode_outline(const char *outline, lw_candidates_t *result) {
+    lw_decode_outline_pruned(outline, NULL, NULL, result);
 }
 
 size_t lw_translate_outline(const char *outline, lw_word_accept_fn accept,

@@ -53,6 +53,12 @@ The decoder exposes two operations in `lapwing_decoder.h`:
 
 ```c
 void lw_decode_outline(const char *outline, lw_candidates_t *result);
+void lw_decode_outline_pruned(
+    const char *outline,
+    lw_prefix_accept_fn accept_prefix,
+    void *context,
+    lw_candidates_t *result
+);
 
 size_t lw_translate_outline(
     const char *outline,
@@ -64,7 +70,9 @@ size_t lw_translate_outline(
 ```
 
 `lw_decode_outline` returns generated spellings in deterministic rule order.
-`lw_translate_outline` additionally applies a caller-provided membership test.
+`lw_decode_outline_pruned` rejects combined partial spellings that cannot prefix
+an exact vocabulary word. `lw_translate_outline` additionally applies a
+caller-provided membership test.
 A null acceptance callback accepts every generated spelling.
 
 Current compile-time limits are:
@@ -181,7 +189,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,694 output words are lexically front-coded in 32-word blocks,
+outlines. The 1,703 output words are lexically front-coded in 32-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -203,19 +211,20 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,220 | 25,852 | 14,956 | 12,060 |
-| revB | 107,464 | 23,608 | comparable | comparable |
+| revA | 105,296 | 25,776 | 14,972 | 12,044 |
+| revB | 107,544 | 23,528 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,312 bytes of linked flash, including all 40,960
+translator therefore adds 47,388 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
-estimates 91.03% frequency-weighted coverage. Productive morphology,
+estimates 92.01% frequency-weighted coverage. Productive morphology,
 standalone affix outlines, and algorithmic fingerspelling contribute without
-additional exception records. This is lower than the discarded
+additional exception records. Exact DAWG-prefix pruning keeps impossible
+partial spellings out of the bounded frontier. This is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 
 The C decoder's ordered 48-candidate output exactly matched the Python reference
