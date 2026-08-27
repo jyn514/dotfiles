@@ -490,10 +490,15 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     for word in weights:
         if word in successful or word not in preferred_outline:
             continue
-        generated = hand_rules.generate_outline(
-            preferred_outline[word], beam, vocabulary_prefixes, prune_final=False,
-        )
-        if word not in generated:
+        if not any(
+            word in hand_rules.generate_outline(
+                outline, beam, vocabulary_prefixes, prune_final=False,
+            )
+            for outline in sorted(
+                outlines_by_word.get(word, ()),
+                key=lambda value: (value.count("/"), len(value), value),
+            )
+        ):
             continue
         recipes = []
         for root, _ in derivations_for_word(word):

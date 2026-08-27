@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **93.63%**. Authoritative
+The current conventional-coverage baseline is **93.90%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -106,7 +106,15 @@ letter-by-letter fallback is reported separately and is not counted here.
   delta-varint root IDs. The complete US model retains 1,443 exceptions and
   raises conventional coverage from 93.37% to 93.6264% at exactly 40,960 bytes.
   Python/C tests reject ambiguous roots, unlicensed transformed words, malformed
-  groups, and wrong model versions.
+  groups, and wrong model versions. Evaluating every available outline rather
+  than only the preferred shortest outline subsequently expanded the same exact
+  representation to 98 groups and 1,566 words in 3,824 bytes, raising coverage
+  again from 93.6264% to 93.8974%.
+
+- Adding the root's first letter to its terminal-edge/length identity admitted
+  1,097 morphology words but consumed 3,370 bytes and reduced coverage to
+  93.59%. The wider delta IDs displaced too many exceptions; richer root
+  discriminators must be adaptive rather than charged to every member.
 
 ## Planned representation experiments
 
