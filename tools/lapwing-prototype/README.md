@@ -137,11 +137,12 @@ to 6,215 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,518-byte exact vocabulary graph and 1,704 exception
-outlines. Productive morphology, closed-compound composition, standalone
+The binary contains a 20,518-byte exact vocabulary graph, 2,450 bytes of
+grouped exact morphology (77 recipes licensing 957 transformed words), and
+1,443 exception outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **93.37%** of the 20,000-token
+Conventional dictionary and rule outlines cover **93.63%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline, including one-stroke letter fallbacks absent from the
 plain-word dictionary. Authoritative spelling, including a final `AES`
@@ -233,8 +234,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 107,212 B | **23,860 B** | 17,772 B | 9,244 B |
-| `revb` | 109,452 B | **21,620 B** | comparable | comparable |
+| `reva` | 107,872 B | **23,200 B** | 17,772 B | 9,244 B |
+| `revb` | 110,116 B | **20,956 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.

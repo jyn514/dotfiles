@@ -2,8 +2,8 @@
 
 #include <string.h>
 
-#define LW_MODEL_HEADER_SIZE 36u
-#define LW_MODEL_VERSION 4u
+#define LW_MODEL_HEADER_SIZE 44u
+#define LW_MODEL_VERSION 5u
 #define LW_EXCEPTION_RECORD_SIZE 5u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
 #define LW_EXCEPTION_ID_MASK 0x7ffu
@@ -81,12 +81,28 @@ static uint16_t read_varint(const uint8_t **cursor, const uint8_t *end,
     return 0;
 }
 
+static uint32_t read_varint32(const uint8_t **cursor, const uint8_t *end,
+                              bool *valid) {
+    uint32_t value = 0;
+    uint8_t shift = 0;
+    while (*cursor < end && shift < 32u) {
+        uint8_t byte = *(*cursor)++;
+        value |= (uint32_t)(byte & 0x7fu) << shift;
+        if (!(byte & 0x80u)) return value;
+        shift += 7u;
+    }
+    *valid = false;
+    return 0;
+}
+
 static uint32_t edge_count(const lw_model_t *model) { return read_u32(model->data + 12); }
 static uint32_t root_offset(const lw_model_t *model) { return read_u32(model->data + 16); }
 static uint32_t exception_count(const lw_model_t *model) { return read_u32(model->data + 20); }
 static uint32_t word_count(const lw_model_t *model) { return read_u32(model->data + 24); }
-static uint32_t exceptions_offset(const lw_model_t *model) { return read_u32(model->data + 28); }
-static uint32_t blocks_offset(const lw_model_t *model) { return read_u32(model->data + 32); }
+static uint32_t morphology_count(const lw_model_t *model) { return read_u32(model->data + 28); }
+static uint32_t morphology_offset(const lw_model_t *model) { return read_u32(model->data + 32); }
+static uint32_t exceptions_offset(const lw_model_t *model) { return read_u32(model->data + 36); }
+static uint32_t blocks_offset(const lw_model_t *model) { return read_u32(model->data + 40); }
 
 bool lw_model_valid(const lw_model_t *model) {
     if (!model || !model->data || model->size < LW_MODEL_HEADER_SIZE) return false;
@@ -97,16 +113,37 @@ bool lw_model_valid(const lw_model_t *model) {
     uint32_t root = root_offset(model);
     uint32_t exceptions = exception_count(model);
     uint32_t words = word_count(model);
+    uint32_t morph_start = morphology_offset(model);
     uint32_t exception_start = exceptions_offset(model);
     uint32_t block_start = blocks_offset(model);
     uint32_t block_count = block_words ? (words + block_words - 1u) / block_words : 0;
     if (!block_words || !read_u32(model->data + 8) || !edges) return false;
     if (root >= edges
-        || exception_start != LW_MODEL_HEADER_SIZE + (edges * 20u + 7u) / 8u)
+        || morph_start != LW_MODEL_HEADER_SIZE + (edges * 20u + 7u) / 8u
+        || exception_start < morph_start || exception_start > model->size)
         return false;
     if (block_start != exception_start + exceptions * LW_EXCEPTION_RECORD_SIZE) return false;
     if ((size_t)block_start + block_count * 2u > model->size) return false;
-    return true;
+    const uint8_t *cursor = model->data + morph_start;
+    const uint8_t *morph_end = model->data + exception_start;
+    for (uint32_t group = 0; group < morphology_count(model); ++group) {
+        if ((size_t)(morph_end - cursor) < 2u) return false;
+        uint8_t root_length = *cursor++, output_length = *cursor++;
+        char ignored[32];
+        if (root_length > 31u || output_length > 31u
+            || !decode_letters(&cursor, morph_end, ignored, root_length)
+            || !decode_letters(&cursor, morph_end, ignored, output_length)) return false;
+        bool valid = true;
+        uint32_t count = read_varint32(&cursor, morph_end, &valid), id = 0;
+        if (!valid || !count) return false;
+        for (uint32_t index = 0; index < count; ++index) {
+            uint32_t delta = read_varint32(&cursor, morph_end, &valid);
+            if (!valid || !delta || UINT32_MAX - id < delta) return false;
+            id += delta;
+            if ((id >> 5) >= edges || (id & 31u) == 0u) return false;
+        }
+    }
+    return cursor == morph_end;
 }
 
 static int alphabet_index(char character) {
@@ -140,6 +177,65 @@ static bool walk_word(const lw_model_t *model, const char *word, bool require_te
 
 bool lw_model_contains(const lw_model_t *model, const char *word) {
     return walk_word(model, word, true);
+}
+
+static bool primary_identity(const lw_model_t *model, const char *word,
+                             uint32_t *identity) {
+    uint32_t state = root_offset(model), final_edge = 0;
+    size_t length = 0;
+    while (word[length]) {
+        int wanted = alphabet_index(word[length]);
+        if (wanted < 0 || state == LW_DAWG_LEAF_OFFSET || state >= edge_count(model))
+            return false;
+        bool matched = false;
+        for (uint32_t index = state; index < edge_count(model); ++index) {
+            uint32_t edge = read_edge(model, index);
+            if ((int)(edge & 31u) == wanted) {
+                final_edge = index;
+                state = (edge >> 5) & LW_DAWG_LEAF_OFFSET;
+                if (!word[++length] && !(edge & (1u << 18))) return false;
+                matched = true;
+                break;
+            }
+            if (edge & (1u << 19)) break;
+        }
+        if (!matched) return false;
+    }
+    *identity = (final_edge << 5) | (uint32_t)length;
+    return length > 0 && length <= 31u;
+}
+
+static bool morphology_accepts(const lw_model_t *model, const char *word) {
+    const uint8_t *cursor = model->data + morphology_offset(model);
+    const uint8_t *end = model->data + exceptions_offset(model);
+    size_t word_length = strlen(word);
+    for (uint32_t group = 0; group < morphology_count(model); ++group) {
+        if ((size_t)(end - cursor) < 2u) return false;
+        uint8_t root_length = *cursor++, output_length = *cursor++;
+        char root_tail[32], output_tail[32], root[LW_MAX_WORD + 1];
+        if (!decode_letters(&cursor, end, root_tail, root_length)
+            || !decode_letters(&cursor, end, output_tail, output_length)) return false;
+        root_tail[root_length] = output_tail[output_length] = '\0';
+        bool valid = true;
+        uint16_t count = read_varint(&cursor, end, &valid);
+        uint32_t wanted_id = UINT32_MAX;
+        if (valid && word_length >= output_length
+            && memcmp(word + word_length - output_length, output_tail, output_length) == 0
+            && word_length - output_length + root_length <= LW_MAX_WORD) {
+            size_t prefix = word_length - output_length;
+            memcpy(root, word, prefix);
+            memcpy(root + prefix, root_tail, root_length + 1u);
+            (void)primary_identity(model, root, &wanted_id);
+        }
+        uint32_t id = 0;
+        for (uint16_t index = 0; index < count; ++index) {
+            uint32_t delta = read_varint32(&cursor, end, &valid);
+            if (!valid || UINT32_MAX - id < delta) return false;
+            id += delta;
+            if (id == wanted_id) return true;
+        }
+    }
+    return false;
 }
 
 bool lw_model_has_prefix(const lw_model_t *model, const char *prefix) {
@@ -364,6 +460,12 @@ size_t lw_model_translate(const lw_model_t *model, const char *outline,
     lw_decode_outline_final_unpruned(outline, accept_model_prefix,
                                      (void *)model, &candidates);
     for (uint16_t index = 0; index < candidates.count; ++index) {
+        if (morphology_accepts(model, candidates.words[index])) {
+            strcpy(output[0], candidates.words[index]);
+            if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
+                output[0][0] = (char)(output[0][0] - 'a' + 'A');
+            return 1;
+        }
         if (repair_candidate(model, candidates.words[index], output[0])) {
             if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
                 output[0][0] = (char)(output[0][0] - 'a' + 'A');

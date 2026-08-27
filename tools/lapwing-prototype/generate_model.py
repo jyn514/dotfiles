@@ -16,8 +16,8 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 4
-HEADER = struct.Struct("<4sBBHIIIIIII")
+VERSION = 5
+HEADER = struct.Struct("<4sBBHIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
 EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
@@ -191,6 +191,57 @@ class ExceptionEntry:
     word: str
 
 
+@dataclass(frozen=True)
+class MorphologyGroup:
+    """An exact spelling transformation licensed for primary-root IDs."""
+    root_tail: str
+    output_tail: str
+    root_ids: tuple[int, ...]
+
+
+def primary_root_ids(vocabulary: list[str], dawg_info: tuple[bytes, int, int]) -> dict[str, int]:
+    """Return only (terminal edge, length) identities unique in the primary DAWG."""
+    dawg, root, edges = dawg_info
+
+    def read_edge(index: int) -> int:
+        bit = index * 20
+        value = int.from_bytes(dawg[bit // 8:bit // 8 + 4], "little")
+        return (value >> (bit % 8)) & 0xfffff
+
+    identities: dict[int, list[str]] = defaultdict(list)
+    for word in vocabulary:
+        state = root
+        final_edge = -1
+        for character in word:
+            wanted = ALPHABET.index(character)
+            for index in range(state, edges):
+                edge = read_edge(index)
+                if edge & 31 == wanted:
+                    final_edge = index
+                    state = (edge >> 5) & LEAF_OFFSET
+                    break
+                if edge & (1 << 19):
+                    raise AssertionError(word)
+        identity = (final_edge << 5) | len(word)
+        identities[identity].append(word)
+    return {words[0]: identity for identity, words in identities.items() if len(words) == 1}
+
+
+def encode_morphology(groups: list[MorphologyGroup]) -> bytes:
+    encoded = bytearray()
+    for group in sorted(groups, key=lambda item: (item.output_tail, item.root_tail)):
+        if not group.root_ids or len(group.root_tail) > 31 or len(group.output_tail) > 31:
+            raise ValueError("invalid morphology group")
+        encoded += bytes((len(group.root_tail), len(group.output_tail)))
+        encoded += pack_letters(group.root_tail) + pack_letters(group.output_tail)
+        encoded += encode_varint(len(group.root_ids))
+        previous = 0
+        for root_id in sorted(group.root_ids):
+            encoded += encode_varint(root_id - previous)
+            previous = root_id
+    return bytes(encoded)
+
+
 def derivations_for_word(word: str) -> list[tuple[str, str]]:
     derivations: list[tuple[str, str]] = []
     if word.endswith("'s"):
@@ -273,7 +324,8 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
 
 
 def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
-               dawg_info: tuple[bytes, int, int] | None = None) -> bytes:
+               dawg_info: tuple[bytes, int, int] | None = None,
+               morphology: list[MorphologyGroup] | None = None) -> bytes:
     dawg, root_offset, edge_count = dawg_info or build_dawg(vocabulary)
     outputs_by_outline: dict[str, str] = {}
     for entry in exceptions:
@@ -297,14 +349,18 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
         for fingerprint, word_id, _ in records
     )
     block_offsets, word_data = encode_word_blocks(output_words)
-    exceptions_offset = HEADER.size + len(dawg)
+    morphology = morphology or []
+    morph_bytes = encode_morphology(morphology)
+    morphology_offset = HEADER.size + len(dawg)
+    exceptions_offset = morphology_offset + len(morph_bytes)
     block_offsets_offset = exceptions_offset + len(record_bytes)
     header = HEADER.pack(
         MAGIC, VERSION, 0, BLOCK_WORDS,
         len(vocabulary), edge_count, root_offset,
-        len(exceptions), len(output_words), exceptions_offset, block_offsets_offset,
+        len(exceptions), len(output_words), len(morphology),
+        morphology_offset, exceptions_offset, block_offsets_offset,
     )
-    return header + dawg + record_bytes + block_offsets + word_data
+    return header + dawg + morph_bytes + record_bytes + block_offsets + word_data
 
 
 def improve_exception_selection(
@@ -426,13 +482,61 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
             preferred_outline[word] = min(outlines_by_word[word], key=lambda value: (value.count("/"), len(value), value))
 
     dawg_info = build_dawg(vocabulary)
+
+    # License grouped spelling transformations by an exact, delta-coded identity
+    # of a primary root.  A recipe never licenses a spelling by itself.
+    root_ids = primary_root_ids(vocabulary, dawg_info)
+    morph_candidates: list[tuple[float, str, tuple[str, str], int]] = []
+    for word in weights:
+        if word in successful or word not in preferred_outline:
+            continue
+        generated = hand_rules.generate_outline(
+            preferred_outline[word], beam, vocabulary_prefixes, prune_final=False,
+        )
+        if word not in generated:
+            continue
+        recipes = []
+        for root, _ in derivations_for_word(word):
+            if root not in root_ids:
+                continue
+            prefix = common_prefix_length(root, word)
+            recipes.append((root[prefix:], word[prefix:], root_ids[root]))
+        if recipes:
+            root_tail, output_tail, root_id = min(
+                recipes, key=lambda item: (len(item[0]) + len(item[1]), item)
+            )
+            # The denominator approximates a delta varint; group overhead is
+            # charged when the first member is selected below.
+            morph_candidates.append((weights[word], word,
+                                     (root_tail, output_tail), root_id))
+
+    morph_members: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
+    morph_words: set[str] = set()
+    # Keep morphology bounded so exact licenses do not blindly displace more
+    # valuable irregular exceptions.  Serialized size, not record count, is
+    # the controlling quantity.
+    for _, word, recipe, root_id in sorted(
+            morph_candidates, key=lambda item: (-item[0], item[1])):
+        proposed = {key: list(value) for key, value in morph_members.items()}
+        proposed.setdefault(recipe, []).append((root_id, word))
+        proposed_groups = [MorphologyGroup(key[0], key[1],
+                           tuple(sorted({entry[0] for entry in values})))
+                           for key, values in proposed.items()]
+        if len(encode_morphology(proposed_groups)) <= 3824:
+            morph_members = proposed
+            morph_words.add(word)
+    morphology = [MorphologyGroup(key[0], key[1],
+                  tuple(sorted({entry[0] for entry in values})))
+                  for key, values in morph_members.items()]
+
     candidates = [word for word in weights
-                  if word not in successful and word in preferred_outline]
+                  if word not in successful and word not in morph_words
+                  and word in preferred_outline]
     candidates.sort(key=lambda word: weights[word] / (6 + max(1, len(word) // 2)), reverse=True)
     selected: list[ExceptionEntry] = []
     selected_outlines: set[str] = set()
     selected_fingerprints: dict[int, str] = {}
-    model_base_size = HEADER.size + len(dawg_info[0])
+    model_base_size = HEADER.size + len(dawg_info[0]) + len(encode_morphology(morphology))
     current_size = model_base_size
     for word in candidates:
         if len(selected) >= (1 << EXCEPTION_ID_BITS) - 1:
@@ -466,8 +570,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     selected = improve_exception_selection(
         selected, all_exception_candidates, weights, model_base_size, binary_budget,
     )
-    model = pack_model(vocabulary, selected, dawg_info)
-    conventional = successful | {entry.word for entry in selected}
+    model = pack_model(vocabulary, selected, dawg_info, morphology)
+    conventional = successful | morph_words | {entry.word for entry in selected}
     covered = fingerspelled | conventional
     report = {
         "model_bytes": len(model),
@@ -480,12 +584,16 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "rule_resolved_words": len(successful),
         "fingerspelled_words": len(fingerspelled),
         "exception_outlines": len(selected),
+        "morphology_groups": len(morphology),
+        "morphology_words": len(morph_words),
+        "morphology_bytes": len(encode_morphology(morphology)),
         "coverage_of_frequency_list": sum(weights.get(word, 0) for word in covered) / total_weight,
         "conventional_coverage_of_frequency_list": (
             sum(weights.get(word, 0) for word in conventional) / total_weight
         ),
         "probabilistic_membership": False,
     }
+    report["morphology"] = morphology
     return vocabulary, selected, report
 
 
@@ -507,7 +615,8 @@ def main() -> None:
     vocabulary, exceptions, report = choose_model(
         dictionary, frequencies, args.vocabulary, args.beam, binary_budget,
     )
-    model = pack_model(vocabulary, exceptions)
+    morphology = report.pop("morphology")
+    model = pack_model(vocabulary, exceptions, morphology=morphology)
     args.output.write_bytes(model)
     if args.report:
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

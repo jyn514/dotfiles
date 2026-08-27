@@ -74,7 +74,12 @@ class GenerateModelTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             model = directory / "model.bin"
-            model.write_bytes(generate_model.pack_model(vocabulary, exceptions))
+            dawg = generate_model.build_dawg(vocabulary)
+            cat_id = generate_model.primary_root_ids(vocabulary, dawg)["cat"]
+            morphology = [generate_model.MorphologyGroup("", "s", (cat_id,))]
+            model.write_bytes(generate_model.pack_model(
+                vocabulary, exceptions, dawg, morphology,
+            ))
             executable = directory / "lapwing_model_test"
             subprocess.run(
                 [
@@ -88,6 +93,18 @@ class GenerateModelTest(unittest.TestCase):
                 check=True,
             )
             subprocess.run([str(executable), str(model)], check=True)
+
+    def test_grouped_morphology_is_exact_and_delta_coded(self) -> None:
+        vocabulary = ["cat", "dog"]
+        dawg = generate_model.build_dawg(vocabulary)
+        ids = generate_model.primary_root_ids(vocabulary, dawg)
+        group = generate_model.MorphologyGroup("", "s", tuple(sorted(ids.values())))
+        encoded = generate_model.encode_morphology([group])
+        self.assertLess(len(encoded), 2 * 5)  # cheaper than two exception records
+        self.assertEqual(
+            generate_model.pack_model(vocabulary, [], dawg, [group]),
+            generate_model.pack_model(vocabulary, [], dawg, [group]),
+        )
 
     def test_exception_local_search_replaces_lower_weight_word(self) -> None:
         low = generate_model.ExceptionEntry("HROE", "low")
