@@ -315,8 +315,12 @@ def generate_outline(outline: str, beam: int,
                      prefixes: set[str] | None = None) -> list[str]:
     strokes = outline.split("/")
     if strokes and all(stroke in FINGER_SPELLING_LETTERS for stroke in strokes):
-        word = "".join(FINGER_SPELLING_LETTERS[stroke] for stroke in strokes)
-        return [word] if prefixes is None or word in prefixes else []
+        # Explicit fingerspelling is authoritative and may intentionally produce
+        # a word absent from the compact vocabulary.
+        return ["".join(FINGER_SPELLING_LETTERS[stroke] for stroke in strokes)]
+    if (len(strokes) > 1 and strokes[-1] == "AES"
+            and all(stroke in FINGER_SPELLING_LETTERS for stroke in strokes[:-1])):
+        return ["".join(FINGER_SPELLING_LETTERS[stroke] for stroke in strokes[:-1]) + "'s"]
     states = [""]
     for index, stroke in enumerate(strokes):
         analyses: list[tuple[str, bool]] = []

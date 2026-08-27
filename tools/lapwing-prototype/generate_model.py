@@ -371,6 +371,14 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
             outlines_by_word[word].append(outline)
     add_productive_outlines(outlines_by_word, list(weights))
 
+    # Explicit starred-letter spelling is authoritative and does not require
+    # vocabulary membership. Keep it separate from ordinary rule success so
+    # spare model bytes can still preserve convenient dictionary outlines.
+    fingerspelled = {
+        word for word in weights
+        if (word.isalpha() and len(word) <= 16)
+        or (word.endswith("'s") and word[:-2].isalpha() and len(word[:-2]) <= 15)
+    }
     successful: set[str] = {word for word in vocabulary if len(word) == 1}
     preferred_outline: dict[str, str] = {}
     for word in vocabulary:
@@ -427,7 +435,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         selected, all_exception_candidates, weights, model_base_size, binary_budget,
     )
     model = pack_model(vocabulary, selected, dawg_info)
-    covered = successful | {entry.word for entry in selected}
+    covered = fingerspelled | successful | {entry.word for entry in selected}
     report = {
         "model_bytes": len(model),
         "rule_bytes": RULE_BYTES,
@@ -435,6 +443,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "vocabulary_words": len(vocabulary),
         "vocabulary_dawg_bytes": len(dawg_info[0]),
         "rule_resolved_words": len(successful),
+        "fingerspelled_words": len(fingerspelled),
         "exception_outlines": len(selected),
         "coverage_of_frequency_list": sum(weights.get(word, 0) for word in covered) / total_weight,
         "probabilistic_membership": False,

@@ -434,9 +434,27 @@ void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_pr
     }
     if (all_fingerspelled) {
         fingerspelled[stroke_count] = '\0';
-        if (!accept_prefix || accept_prefix(context, fingerspelled))
-            add_unique(result, fingerspelled);
+        add_unique(result, fingerspelled);
         return;
+    }
+    if (stroke_count > 1u && strcmp(strokes[stroke_count - 1u], "AES") == 0) {
+        bool possessive = true;
+        for (uint8_t index = 0; index + 1u < stroke_count; ++index) {
+            char letter = fingerspelling_letter(strokes[index]);
+            if (!letter) {
+                possessive = false;
+                break;
+            }
+            fingerspelled[index] = letter;
+        }
+        if (possessive) {
+            uint8_t length = stroke_count - 1u;
+            fingerspelled[length++] = '\'';
+            fingerspelled[length++] = 's';
+            fingerspelled[length] = '\0';
+            add_unique(result, fingerspelled);
+            return;
+        }
     }
 
     lw_candidates_t *states = &workspace.states;
