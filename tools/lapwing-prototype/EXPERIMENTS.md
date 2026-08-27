@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **93.90%**. Authoritative
+The current conventional-coverage baseline is **93.91%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -109,8 +109,17 @@ letter-by-letter fallback is reported separately and is not counted here.
   groups, and wrong model versions. Evaluating every available outline rather
   than only the preferred shortest outline subsequently expanded the same exact
   representation to 98 groups and 1,566 words in 3,824 bytes, raising coverage
-  again from 93.6264% to 93.8974%.
+  again from 93.6264% to 93.8974%. Selecting complete recipe families by
+  covered frequency per serialized byte then reduced the section from 98 to 69
+  groups while licensing 1,685 words in the same 3,824 bytes. Coverage reached
+  93.9145% because common derivational and nominalization families amortize
+  their tails better than isolated high-frequency words.
 
+- Bounded recursive ancestry produced 194 morphology groups but only 1,177
+  licensed words and reduced coverage to 93.83%; long root-to-output tails did
+  not amortize. Generic `-ate → -ation` and `-e → -ity` inverse proposals also
+  failed to improve the model. Multi-step derivation should use explicit shared
+  operations rather than flattened ancestor-to-word recipes.
 - Adding the root's first letter to its terminal-edge/length identity admitted
   1,097 morphology words but consumed 3,370 bytes and reduced coverage to
   93.59%. The wider delta IDs displaced too many exceptions; richer root

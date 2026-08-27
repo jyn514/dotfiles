@@ -515,21 +515,39 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
             morph_candidates.append((weights[word], word,
                                      (root_tail, output_tail), root_id))
 
-    morph_members: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
+    candidate_groups: dict[
+        tuple[str, str], list[tuple[int, str, float]]
+    ] = defaultdict(list)
+    for weight, word, recipe, root_id in morph_candidates:
+        candidate_groups[recipe].append((root_id, word, weight))
+    ranked_groups = []
+    for recipe, values in candidate_groups.items():
+        group = MorphologyGroup(
+            recipe[0], recipe[1],
+            tuple(sorted({value[0] for value in values})),
+        )
+        size = len(encode_morphology([group]))
+        ranked_groups.append(
+            (sum(value[2] for value in values) / size, recipe, values)
+        )
+
+    morph_members: dict[tuple[str, str], list[tuple[int, str]]] = {}
     morph_words: set[str] = set()
-    # Keep morphology bounded so exact licenses do not blindly displace more
-    # valuable irregular exceptions.  Serialized size, not record count, is
-    # the controlling quantity.
-    for _, word, recipe, root_id in sorted(
-            morph_candidates, key=lambda item: (-item[0], item[1])):
-        proposed = {key: list(value) for key, value in morph_members.items()}
-        proposed.setdefault(recipe, []).append((root_id, word))
-        proposed_groups = [MorphologyGroup(key[0], key[1],
-                           tuple(sorted({entry[0] for entry in values})))
-                           for key, values in proposed.items()]
+    # Whole recipe groups compete by covered frequency per exact serialized
+    # byte, so common derivational families amortize their shared tails.
+    for _, recipe, values in sorted(
+            ranked_groups, key=lambda item: (-item[0], item[1])):
+        proposed = dict(morph_members)
+        proposed[recipe] = [
+            (root_id, word) for root_id, word, _ in values
+        ]
+        proposed_groups = [MorphologyGroup(
+            key[0], key[1],
+            tuple(sorted({entry[0] for entry in members})),
+        ) for key, members in proposed.items()]
         if len(encode_morphology(proposed_groups)) <= 3824:
             morph_members = proposed
-            morph_words.add(word)
+            morph_words.update(word for _, word, _ in values)
     morphology = [MorphologyGroup(key[0], key[1],
                   tuple(sorted({entry[0] for entry in values})))
                   for key, values in morph_members.items()]
