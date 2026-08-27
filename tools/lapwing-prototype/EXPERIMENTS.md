@@ -80,7 +80,13 @@ letter-by-letter fallback is reported separately and is not counted here.
   justify a format and decoder implementation: the gain is 0.23 percentage
   points and common compounds such as `smartphone` still fail before final
   certificate validation because composition is not represented in decoder
-  state.
+  state. A subsequent complete format-v5 implementation added packed records,
+  shared front-coded root-to-output recipes, heap-free C validation, and 33
+  passing tests. On the real US-stack model it stored 834 certificates in 3,831
+  bytes, retained 1,304 exceptions, and reached only 93.34%. This failed the
+  93.55% adoption threshold, so the implementation was reverted. The earlier
+  estimate understated the value of exceptions displaced by certificates and
+  overestimated the usable high-ranked certificate set.
 - Structured compound decoding was then modeled by splitting each outline at
   every stroke boundary, decoding both halves independently as exact primary
   words, and approving only a stored pair of unique terminal-edge identities.
