@@ -8,7 +8,7 @@ import evaluate_coverage
 class EvaluateCoverageTest(unittest.TestCase):
     def test_tokenize_normalizes_words_and_preserves_internal_apostrophes(self) -> None:
         self.assertEqual(
-            evaluate_coverage.tokenize("Cats, DON'T stop—re-enter 42."),
+            evaluate_coverage.tokenize("Cats, DON’T stop—re-enter 42."),
             ["cats", "don't", "stop", "re-enter"],
         )
 

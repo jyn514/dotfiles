@@ -130,11 +130,11 @@ letter-by-letter fallback is reported separately and is not counted here.
 
 ## Held-out validation
 
-- The frozen 93.9145% model was evaluated without retuning on 797,151 tokens
+- The frozen 93.9145% model was evaluated without retuning on 793,338 tokens
   from *Pride and Prejudice*, *Moby-Dick*, *Frankenstein*, *The Adventures of
-  Sherlock Holmes*, *The Federalist Papers*, and RFC 9110. Aggregate
-  conventional token coverage was 87.13%, with individual results from 82.40%
-  to 90.88%. The discrepancy confirms that the weighted 20,000-type score was
+  Sherlock Holmes*, *The Federalist Papers*, and RFC 9110 after normalizing
+  straight and curly apostrophes. Aggregate conventional token coverage was
+  87.39%, with individual results from 83.01% to 91.22%. The discrepancy confirms that the weighted 20,000-type score was
   optimistic as a prose-coverage claim.
 - Extending only the denominator of the frozen frequency-list evaluation gives
   99.37% at 5,000 types, 97.07% at 10,000, 93.91% at 20,000, and 91.51% across

@@ -181,11 +181,12 @@ Adventures of Sherlock Holmes*, and *The Federalist Papers*—plus RFC 9110.
 These are deliberately not model-selection inputs, but they are still a narrow,
 mostly historical English sample and include source boilerplate.
 
-Across 797,151 tokens, conventional token coverage was **87.13%**. Individual
-results ranged from **82.40%** for *Moby-Dick* and **83.42%** for RFC 9110 to
-**90.88%** for *Sherlock Holmes*. Alphabetic words of at most sixteen letters,
-and therefore directly reachable by authoritative fingerspelling, accounted
-for **99.25%** of aggregate tokens.
+After normalizing straight and curly apostrophes, the corpus contains 793,338
+tokens and conventional token coverage is **87.39%**. Individual results range
+from **83.01%** for *Moby-Dick* and **83.42%** for RFC 9110 to **91.22%** for
+*Sherlock Holmes*. Alphabetic words of at most sixteen letters, and therefore
+directly reachable by authoritative fingerspelling, account for **98.78%** of
+aggregate tokens.
 
 The frozen model's Zipf-weighted conventional coverage is **99.37%** over the
 first 5,000 frequency types, **97.07%** over 10,000, **93.91%** over 20,000, and
