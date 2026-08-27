@@ -216,6 +216,27 @@ static bool accept_repair(const lw_model_t *model, const char *candidate,
     return true;
 }
 
+static bool replace_fragment(const lw_model_t *model, const char *word,
+                             const char *from, const char *to,
+                             char output[LW_MAX_WORD + 1]) {
+    size_t word_length = strlen(word);
+    size_t from_length = strlen(from);
+    size_t to_length = strlen(to);
+    if (word_length - from_length + to_length > LW_MAX_WORD) return false;
+    const char *search = word;
+    const char *match;
+    char repaired[LW_MAX_WORD + 1];
+    while ((match = strstr(search, from)) != NULL) {
+        size_t prefix = (size_t)(match - word);
+        memcpy(repaired, word, prefix);
+        memcpy(repaired + prefix, to, to_length);
+        strcpy(repaired + prefix + to_length, match + from_length);
+        if (accept_repair(model, repaired, output)) return true;
+        search = match + 1u;
+    }
+    return false;
+}
+
 static bool repair_candidate(const lw_model_t *model, const char *word,
                              char output[LW_MAX_WORD + 1]) {
     size_t length = strlen(word);
@@ -280,6 +301,10 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
         strcpy(repaired + prefix + 6u, celebr + 5u);
         if (accept_repair(model, repaired, output)) return true;
     }
+    if (replace_fragment(model, word, "o", "al", output)) return true;
+    if (replace_fragment(model, word, "hr", "l", output)) return true;
+    if (replace_fragment(model, word, "u", "l", output)) return true;
+    if (replace_fragment(model, word, "hr", "oll", output)) return true;
     return false;
 }
 

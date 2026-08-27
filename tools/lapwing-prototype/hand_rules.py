@@ -339,6 +339,18 @@ def orthographic_repairs(word: str) -> list[str]:
     # voices the initial consonant of "celebr-".
     if "selbr" in word:
         repairs.append(word.replace("selbr", "celebr", 1))
+    # Folded liquid and broad-vowel strokes regularly collapse these spelling
+    # sequences. Exact vocabulary membership decides which expansion is valid.
+    repairs.extend(word[:index] + "al" + word[index + 1:]
+                   for index, character in enumerate(word) if character == "o")
+    repairs.extend(word[:index] + "l" + word[index + 2:]
+                   for index in range(len(word) - 1)
+                   if word[index:index + 2] == "hr")
+    repairs.extend(word[:index] + "l" + word[index + 1:]
+                   for index, character in enumerate(word) if character == "u")
+    repairs.extend(word[:index] + "oll" + word[index + 2:]
+                   for index in range(len(word) - 1)
+                   if word[index:index + 2] == "hr")
     return unique(repairs)
 
 
