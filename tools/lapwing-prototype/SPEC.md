@@ -1,6 +1,6 @@
 # Lapwing embedded translator specification
 
-Status: prototype implementation, August 27, 2026
+Status: software-complete, hardware-unverified, August 27, 2026
 
 ## Purpose
 
@@ -40,8 +40,11 @@ caused by explicit firmware bounds are permitted when documented and tested.
 - Callers own input outline strings and returned result storage.
 - Vocabulary acceptance is supplied through `lw_word_accept_fn`; the rule core
   does not know the vocabulary representation.
-- QMK chord capture, translation history, spacing, capitalization, commands,
-  and HID output belong in a separate adapter.
+- `lapwing_model.c` is the sole reader of the immutable generated model image.
+- `lapwing_engine.c` owns pending outlines, commit timing, spacing,
+  capitalization, and bounded undo history.
+- `lapwing_qmk.c` is the only layer permitted to inspect QMK chord packets or
+  emit HID key events.
 - Python generators are the only writers of generated rule and model data.
 
 ## Public C interface
@@ -88,9 +91,8 @@ The implemented API currently accepts canonical steno strings, for example
 - star presence.
 
 A dash explicitly separates left and right consonants when no vowel is present.
-Otherwise, the first and last vowel keys delimit the vowel region. The QMK
-adapter may later parse a packed chord mask directly, but that representation
-must remain behind the adapter boundary.
+Otherwise, the first and last vowel keys delimit the vowel region. The QMK adapter converts Gemini packet bits into this representation and keeps
+that packed protocol behind the adapter boundary.
 
 Malformed, empty, oversized, or overlong outlines produce no candidates.
 
@@ -145,65 +147,76 @@ considered before ordinary stroke decoding. Joining implements:
 All candidate collections preserve first occurrence and discard duplicates.
 Overflow truncates later candidates rather than allocating memory.
 
-## Planned model format
+## Translation-state behavior
 
-The 40,960-byte application model is currently specified as:
+The engine waits 240 milliseconds after the latest stroke before committing a
+pending translation. Additional strokes within that window extend the outline.
+If an extension cannot translate while the previous outline could, the previous
+word commits and the new stroke starts another outline. `PWR` commits
+immediately; a star-only stroke cancels pending input or undoes the latest
+committed item.
+
+Words receive one leading space after existing text. The first alphabetic word
+and the first word after `.`, `?`, or `!` are capitalized. Punctuation strokes
+are `TP-PL` for period, `KW-BG` for comma, `STPH-FPLT` for question mark, and
+`SKWR-RBGS` for exclamation mark. Punctuation is attached without a leading
+space. Undo history retains eight emitted items and restores the prior spacing
+and capitalization state.
+
+## Model format
+
+The implemented linguistic data occupies 40,959 bytes:
 
 | Component | Bytes |
 |---|---:|
-| Hand-written rules | 2,555 estimate used by coverage model |
-| 14,000-word membership/rank index | 17,500 |
-| 1,853 exception records and output words | 20,905 |
-| Total | 40,960 |
+| Generated C rules | 4,413 |
+| Binary vocabulary and exceptions | 36,546 |
+| Total | 40,959 |
 
-The rule estimate and compiled rule representation currently differ by 1,858
-bytes. The final generator must account for the actual compiled representation
-or recover those bytes elsewhere; the firmware linker measurement includes the
-larger real representation.
+The binary model begins with a versioned 36-byte little-endian header. Its
+4,500-word vocabulary is an exact minimized acyclic word graph. Each graph edge
+uses three bytes containing a five-bit alphabet symbol, a 13-bit target edge
+offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
+18,489 bytes and cannot produce membership false positives.
 
-The vocabulary index is intended to use an immutable minimal perfect hash with
-an 8-bit membership fingerprint. Its resulting ID is the frequency rank.
+Exception records are sorted pairs of a 32-bit outline hash and a 16-bit output
+word ID. Generation rejects hash collisions between distinct selected outlines.
+The 1,572 output words are lexically front-coded in 32-word blocks with 16-bit
+restart offsets. Runtime lookup binary-searches the records and decodes at most
+32 words from the selected restart point.
 
-Each exception record budgets six bytes for MPHF metadata, a 24-bit fingerprint,
-and a 16-bit output-word ID. Exception output words are lexically front-coded in
-32-word blocks with 16-bit restart offsets. Lookup must verify the fingerprint
-before returning text. No probabilistic match may bypass that verification.
-
-The MPHF structures have not yet been implemented. Their generator must emit a
-self-contained binary and prove its exact byte count rather than relying on the
-current estimate.
+Exact exceptions are checked before rule generation. The model is immutable,
+self-contained, heap-free, and validated for magic, version, offsets, counts,
+and bounds before use.
 
 ## Measured resource use
 
 Measurements used ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`, the complete `KW9E9` Oryx keymap,
-and target `zsa/moonlander/reva`.
+and both `zsa/moonlander/reva` and `zsa/moonlander/revb`.
 
-### Decoder sizing build
+### Complete firmware build
 
-A real C decoder build with the complete generated rule tables and a 40,960-byte
-model placeholder produced:
+The build includes the exact generated model, rule decoder, translation engine,
+QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
-| Measurement | Bytes |
-|---|---:|
-| Existing ZSA firmware and layout | 57,908 flash |
-| Firmware with decoder and model | 107,160 flash |
-| Model placeholder | 40,960 flash |
-| Linked decoder and rule delta | 8,292 flash |
-| Remaining application flash | 23,912 |
-| Decoder workspace increase | 7,144 BSS |
-| Remaining linker heap | 16,268 |
+| Target | Firmware flash | Remaining flash | BSS | Linker heap |
+|---|---:|---:|---:|---:|
+| revA | 105,088 | 25,984 | 10,996 | 16,020 |
+| revB | 107,328 | 23,744 | comparable | comparable |
 
-The result demonstrates that the current decoder architecture links on revA.
-It does not establish revB feasibility or reserve space for every remaining
-adapter and model operation.
+The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
+translator therefore adds 47,180 bytes of linked flash, including all 40,959
+bytes of linguistic data.
 
-### Coverage model
+### Coverage and equivalence
 
-Using the 20,000 highest-frequency benchmark tokens, the corrected 40,960-byte
-model estimates 94.97% frequency-weighted coverage. This includes storage for
-exception output words. It is not an end-to-end firmware measurement and still
-assumes the proposed MPHF footprint.
+Using the 20,000 highest-frequency benchmark tokens, the exact 40,959-byte model
+estimates 88.58% frequency-weighted coverage. This is lower than the discarded
+94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
+
+The C decoder's ordered 24-candidate output exactly matched the Python reference
+for the first 20,000 dictionary outlines tested.
 
 ## Verification
 
@@ -229,19 +242,19 @@ freshness, strict C compilation, and representative C translations including:
 
 The C test is compiled with `-Wall -Wextra -Werror -pedantic`.
 
-## Remaining work
+## Remaining deployment checks
 
-1. Generate and verify the immutable vocabulary MPHF and fingerprints.
-2. Generate exception outline lookup and front-coded output recovery.
-3. Make exact exception lookup precede bounded rule generation.
-4. Add packed QMK steno-chord parsing and outline-boundary handling.
-5. Add HID text publication, spacing, capitalization, punctuation, replacement,
-   history, and undo according to an explicit translation-state specification.
-6. Compare C and Python outputs over a broad corpus and quantify losses from the
-   24-candidate firmware bound.
-7. Rebuild the actual model into the complete revA firmware and remeasure flash,
-   BSS, stack use, and false-positive behavior.
-8. Confirm the physical keyboard revision before producing flashable firmware.
+The software implementation and complete revA/revB links are finished. Hardware
+deployment still requires information or actions that cannot be established by
+the repository alone:
 
-No firmware should be flashed until exception lookup, translation-state tests,
-and complete-link measurements pass.
+1. Confirm whether the physical Moonlander flasher selects the `reva` or `revb`
+   image.
+2. Flash the matching image through the normal ZSA/QMK DFU workflow.
+3. Exercise real chord rollover, the 240 ms commit delay, host keyboard layout,
+   punctuation, and undo on the target computer.
+4. Retain the stock Oryx firmware image so the keyboard can be restored if the
+   hardware test exposes an adapter or timing defect.
+
+The generated firmware must not be presented as hardware-verified until those
+checks have been performed on the user's keyboard.

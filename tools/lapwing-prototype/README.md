@@ -109,68 +109,54 @@ and theory families not yet encoded. Expanding general rules by several
 kilobytes is therefore plausible; reaching dictionary-equivalent behavior is
 not demonstrated.
 
-## Frequency-weighted 40 KiB experiment
+## Flash-resident model
 
-`common_text_budget.py` evaluates a hybrid intended for ordinary text rather
-than dictionary reproduction. It combines hand-written rules, a ranked common
-vocabulary, algorithmic inflections and fingerspelling, and exact exceptions
-selected by token frequency.
+`generate_model.py` builds the model actually consumed by the C firmware. It
+uses an exact minimized acyclic word graph rather than the earlier proposed
+MPHF. This avoids vocabulary false positives and requires no rank payload.
+Exception outlines use sorted 32-bit hashes and 16-bit IDs into a lexically
+front-coded output pool with restart points every 32 words.
 
-The benchmark used the 20,000 highest-frequency English tokens from `wordfreq`
-and the base, proper-noun, and UK Lapwing dictionaries. Its best estimated
-40 KiB layout was:
+The selected 4,500-word model is:
 
 | Data | Bytes |
 |---|---:|
-| Hand-written rules | 2,555 |
-| 14,000-word membership/rank index | 17,500 |
-| 1,853 exact exceptions, including output words | 20,905 |
-| **Total** | **40,960** |
+| Generated C rule representation | 4,413 |
+| Binary vocabulary and exceptions | 36,546 |
+| **Total linguistic data** | **40,959** |
 
-Estimated frequency-weighted coverage was **94.97%**. The added rules cover
-long-vowel silent-e spellings, broader vowel graphemes, the complete documented
-onset/coda tables, starred alternatives, and productive folded affix families.
+The binary contains a 18,489-byte exact vocabulary graph and 1,572 exception
+outlines. On the 20,000-token benchmark it estimates **88.58%** frequency-
+weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
+assumed an order-preserving hash representation that was never implemented and
+would not have provided exact membership within the claimed size.
 
-The exception budget includes a lexically front-coded output-word pool with a
-restart every 32 words. This corrects an earlier 96.74% estimate that counted
-exception IDs but omitted the storage needed to recover their output text.
+Generate the model with:
 
-This remains a storage-model result. It assumes an immutable minimal-perfect-
-hash vocabulary using about 10 bits per word and a six-byte exception record
-containing MPHF overhead, a 24-bit fingerprint, and a 16-bit output-pool ID. It
-still excludes a real MPHF generator, false-positive measurements, commands,
-and complete translator behavior.
-
-A representative QMK sizing build used the official ZSA `firmware25` tree at
-commit `c9fe0e2960cd96db31c627ab7215d93436305fed`, the complete `KW9E9` Oryx
-keymap, a 40,953-byte structured model image, bounded 24-candidate decoding,
-morphology, lookup, front-coded exception recovery, and `send_string()` output.
-For `zsa/moonlander/reva`, the baseline occupied 57,908 bytes of flash; the
-probe occupied 99,984 bytes, a 42,076-byte increase. Of that increase, 40,953
-bytes were model data and 1,123 bytes were linked code. The probe also added
-920 bytes of static RAM, leaving a 22,492-byte linker heap and 31,088 bytes of
-application flash. This establishes credible size headroom, but the probe is
-not yet a behaviorally equivalent Lapwing decoder.
+```sh
+python3 generate_model.py \
+  "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
+  --vocabulary 4500 --beam 24 --report lapwing_model_report.json
+```
 
 ## Interpretation
 
-A rules-plus-vocabulary translator is feasible for common text, but not as a
-complete replacement for Lapwing on the stock Moonlander:
+The implemented rules-plus-vocabulary translator is useful for common text,
+but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- A 5,000-10,000-word probabilistic vocabulary costs roughly 4-12 KiB, before
-  ranking data.
+- The exact 4,500-word vocabulary graph costs about 18 KiB and cannot admit
+  generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
 - The useful 40-75 KiB rule models measured here leave little room for QMK,
   Javelin, ranking, and exceptions, while delivering only 34-45% overall top-1.
 
-The next credible design is a small exact dictionary for frequent words and
-briefs, a hand-coded Lapwing phonology/morphology fallback, and host-assisted or
-external-flash storage for the remaining vocabulary. A stock-Moonlander-only
-implementation should first establish an actual firmware byte budget; without
-that measurement, selecting a linguistic representation is premature.
+The current design therefore keeps a small exact common vocabulary and briefs,
+then applies hand-coded Lapwing phonology and morphology. External flash or a
+host translator remains the appropriate route to dictionary-equivalent
+coverage.
 
 ## C decoder
 
@@ -186,22 +172,35 @@ silent-e variants, folded endings, English affix joins, bounded candidate
 storage, and deduplication. Its generated C representation occupies 4,413 bytes
 before linker optimization. Host golden tests recover representative words such
 as “snake”, “python”, “preview”, “zapping”, “interstate”, “microphone”, and
-“helpful”. It does not yet include the generated MPHF model, QMK chord capture,
-translation history, spacing, capitalization, punctuation, or undo.
+“helpful”. Across 20,000 dictionary outlines, its 24-candidate output exactly
+matched the Python reference.
 
-The decoder also compiles in the real Moonlander revA firmware. With the full
-40,960-byte model placeholder linked, the complete image occupies 107,160 bytes
-of flash, leaving **23,912 bytes**. Relative to the 57,908-byte baseline, the
-model plus C decoder costs 49,252 bytes: 40,960 bytes of model and 8,292 bytes
-of linked decoder/rule code and data. The bounded workspace adds 7,144 bytes of
-BSS and leaves a 16,268-byte linker heap. This is the current implementation
-baseline; MPHF lookup and the QMK adapter must remain within the residual flash
-and RAM budgets.
+`lapwing_model.c` provides exact vocabulary membership, exception lookup, and
+front-coded output recovery. `lapwing_engine.c` adds delayed multi-stroke
+commit, automatic spacing and sentence capitalization, punctuation strokes,
+explicit commit, cancellation, and eight-entry undo history.
+`lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
+to canonical strokes, suppresses serial steno output, and publishes translated
+text through normal keyboard HID reports.
+
+The complete generated model and adapter compile in both Moonlander targets:
+
+| Target | Firmware | Flash remaining | BSS | Linker heap |
+|---|---:|---:|---:|---:|
+| `reva` | 105,088 B | **25,984 B** | 10,996 B | 16,020 B |
+| `revb` | 107,328 B | **23,744 B** | comparable | comparable |
+
+These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
+`c9fe0e2960cd96db31c627ab7215d93436305fed`.
 
 Regenerate and test it with:
 
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
+python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
+  --vocabulary 4500 --beam 24
+python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
+  lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
 ```
 
