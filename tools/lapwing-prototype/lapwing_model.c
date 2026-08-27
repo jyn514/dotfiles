@@ -92,7 +92,7 @@ bool lw_model_valid(const lw_model_t *model) {
     if (!model || !model->data || model->size < LW_MODEL_HEADER_SIZE) return false;
     if (memcmp(model->data, "LWMD", 4) != 0 || model->data[4] != LW_MODEL_VERSION)
         return false;
-    uint8_t block_words = model->data[6];
+    uint16_t block_words = read_u16(model->data + 6);
     uint32_t edges = edge_count(model);
     uint32_t root = root_offset(model);
     uint32_t exceptions = exception_count(model);
@@ -149,7 +149,7 @@ bool lw_model_has_prefix(const lw_model_t *model, const char *prefix) {
 static bool decode_word(const lw_model_t *model, uint16_t id,
                         char output[LW_MAX_WORD + 1]) {
     uint32_t words = word_count(model);
-    uint8_t block_words = model->data[6];
+    uint16_t block_words = read_u16(model->data + 6);
     if (id >= words) return false;
     uint32_t block = id / block_words;
     uint32_t first_id = block * block_words;

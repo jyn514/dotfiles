@@ -58,6 +58,12 @@ class GenerateModelTest(unittest.TestCase):
             generate_model.ExceptionEntry("#SKWRO*PB", "john"),
             generate_model.ExceptionEntry("P", "people"),
         ]
+        for number in range(400):
+            quotient, last = divmod(number, 26)
+            first, middle = divmod(quotient, 26)
+            word = "q" + chr(97 + first) + chr(97 + middle) + chr(97 + last)
+            vocabulary.append(word)
+            exceptions.append(generate_model.ExceptionEntry(f"DUMMY{number}", word))
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             model = directory / "model.bin"
