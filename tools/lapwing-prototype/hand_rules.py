@@ -112,6 +112,7 @@ PREFIXES = {
 }
 
 SUFFIXES = {
+    "AES": ("'s",),
     "A*R": ("ar",), "O*R": ("or",), "*ER": ("er",),
     "-FL": ("ful",), "-PBS": ("ness",), "-PLT": ("ment",),
     "-BLT": ("ability", "ibility"), "-BL": ("able", "ible"),

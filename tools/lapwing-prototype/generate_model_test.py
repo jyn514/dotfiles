@@ -20,6 +20,19 @@ class GenerateModelTest(unittest.TestCase):
         self.assertEqual(first[:4], generate_model.MAGIC)
         self.assertEqual(first[4], generate_model.VERSION)
 
+    def test_fast_exception_sizing_matches_serialization(self) -> None:
+        vocabulary = ["cat", "python", "people", "preview"]
+        exceptions = [
+            generate_model.ExceptionEntry("P", "people"),
+            generate_model.ExceptionEntry("PRAOE/SRAOU", "preview"),
+        ]
+        dawg = generate_model.build_dawg(vocabulary)
+        model = generate_model.pack_model(vocabulary, exceptions, dawg)
+        self.assertEqual(
+            len(model) - generate_model.HEADER.size - len(dawg[0]),
+            generate_model.exception_storage_size(exceptions),
+        )
+
     def test_c_model_lookup_and_rule_fallback(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
         exceptions = [generate_model.ExceptionEntry("P", "people")]
@@ -40,6 +53,24 @@ class GenerateModelTest(unittest.TestCase):
                 check=True,
             )
             subprocess.run([str(executable), str(model)], check=True)
+
+    def test_model_selection_builds_vocabulary_graph_once(self) -> None:
+        dictionary = {"KAT": "cat", "TKOG": "dog"}
+        frequencies = [("cat", 7.0), ("dog", 6.0)]
+        original = generate_model.build_dawg
+        calls = 0
+
+        def counted(words):
+            nonlocal calls
+            calls += 1
+            return original(words)
+
+        try:
+            generate_model.build_dawg = counted
+            generate_model.choose_model(dictionary, frequencies, 2, 24, 4096)
+        finally:
+            generate_model.build_dawg = original
+        self.assertEqual(calls, 1)
 
     def test_rejects_one_exception_outline_with_multiple_outputs(self) -> None:
         with self.assertRaisesRegex(ValueError, "multiple outputs"):

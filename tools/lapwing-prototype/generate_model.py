@@ -16,11 +16,13 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 2
+VERSION = 3
 HEADER = struct.Struct("<4sBBHIIIIIII")
-EXCEPTION = struct.Struct("<IH")
+EXCEPTION_HASH_BITS = 29
+EXCEPTION_ID_BITS = 11
+EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
 BLOCK_WORDS = 32
-RULE_BYTES = 4413
+RULE_BYTES = 4428
 DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
@@ -43,7 +45,7 @@ class DawgState:
     edges: tuple[tuple[str, int], ...]
 
 
-def build_dawg(words: list[str]) -> tuple[bytes, int]:
+def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
     root: dict[str, dict] = {}
     terminal = ""
     for word in words:
@@ -76,7 +78,7 @@ def build_dawg(words: list[str]) -> tuple[bytes, int]:
     if edge_count >= LEAF_OFFSET:
         raise ValueError("vocabulary DAWG exceeds 13-bit edge offsets")
 
-    encoded = bytearray()
+    values = []
     for state in states:
         for index, (character, target_id) in enumerate(state.edges):
             target = states[target_id]
@@ -84,8 +86,45 @@ def build_dawg(words: list[str]) -> tuple[bytes, int]:
             value |= offsets[target_id] << 5
             value |= int(target.terminal) << 18
             value |= int(index + 1 == len(state.edges)) << 19
-            encoded += value.to_bytes(3, "little")
-    return bytes(encoded), offsets[root_id]
+            values.append(value)
+    encoded = bytearray((len(values) * 20 + 7) // 8)
+    accumulator = 0
+    bits = 0
+    output = 0
+    for value in values:
+        accumulator |= value << bits
+        bits += 20
+        while bits >= 8:
+            encoded[output] = accumulator & 0xff
+            output += 1
+            accumulator >>= 8
+            bits -= 8
+    if bits:
+        encoded[output] = accumulator & 0xff
+    return bytes(encoded), offsets[root_id], edge_count
+
+
+def varint_size(value: int) -> int:
+    size = 1
+    while value >= 0x80:
+        value >>= 7
+        size += 1
+    return size
+
+
+def exception_storage_size(exceptions: list[ExceptionEntry]) -> int:
+    words = sorted(entry.word for entry in exceptions)
+    size = len(exceptions) * 5 + 2 * ((len(words) + BLOCK_WORDS - 1) // BLOCK_WORDS)
+    previous = ""
+    for index, word in enumerate(words):
+        if index % BLOCK_WORDS == 0:
+            size += varint_size(len(word)) + len(word)
+        else:
+            prefix = common_prefix_length(previous, word)
+            suffix = len(word) - prefix
+            size += varint_size(prefix) + varint_size(suffix) + suffix
+        previous = word
+    return size
 
 
 def encode_word_blocks(words: list[str]) -> tuple[bytes, bytes]:
@@ -114,8 +153,43 @@ class ExceptionEntry:
     word: str
 
 
-def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry]) -> bytes:
-    dawg, root_offset = build_dawg(vocabulary)
+def add_productive_outlines(outlines_by_word: dict[str, list[str]],
+                            words: list[str]) -> None:
+    """Add documented Lapwing affix outlines absent from the base dictionary."""
+    for word in words:
+        if word in outlines_by_word:
+            continue
+        derivations: list[tuple[str, str]] = []
+        if word.endswith("'s"):
+            derivations.append((word[:-2], "AES"))
+        if word.endswith("ies"):
+            derivations.append((word[:-3] + "y", "-Z"))
+        if word.endswith("es"):
+            derivations.extend(((word[:-2], "-Z"), (word[:-1], "-Z")))
+        if word.endswith("s"):
+            derivations.append((word[:-1], "-Z"))
+        if word.endswith("ied"):
+            derivations.append((word[:-3] + "y", "-D"))
+        if word.endswith("ed"):
+            stem = word[:-2]
+            derivations.extend(((stem, "-D"), (stem + "e", "-D")))
+            if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
+                derivations.append((stem[:-1], "-D"))
+        if word.endswith("ing"):
+            stem = word[:-3]
+            derivations.extend(((stem, "-G"), (stem + "e", "-G")))
+            if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
+                derivations.append((stem[:-1], "-G"))
+        if word.endswith("ly"):
+            derivations.append((word[:-2], "HREU"))
+        for root, suffix in derivations:
+            for outline in outlines_by_word.get(root, ())[:4]:
+                outlines_by_word[word].append(outline + "/" + suffix)
+
+
+def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
+               dawg_info: tuple[bytes, int, int] | None = None) -> bytes:
+    dawg, root_offset, edge_count = dawg_info or build_dawg(vocabulary)
     outputs_by_outline: dict[str, str] = {}
     for entry in exceptions:
         previous = outputs_by_outline.setdefault(entry.outline, entry.word)
@@ -125,19 +199,24 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry]) -> bytes
             )
     output_words = sorted({entry.word for entry in exceptions})
     word_ids = {word: index for index, word in enumerate(output_words)}
-    records = sorted((hash32(entry.outline.encode("ascii")), word_ids[entry.word], entry.outline)
+    if len(output_words) >= 1 << EXCEPTION_ID_BITS:
+        raise ValueError("exception output count exceeds packed IDs")
+    records = sorted((hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK,
+                      word_ids[entry.word], entry.outline)
                      for entry in exceptions)
     for left, right in zip(records, records[1:]):
         if left[0] == right[0] and left[2] != right[2]:
             raise ValueError(f"exception hash collision: {left[2]} and {right[2]}")
-    record_bytes = b"".join(EXCEPTION.pack(fingerprint, word_id)
-                            for fingerprint, word_id, _ in records)
+    record_bytes = b"".join(
+        ((fingerprint << EXCEPTION_ID_BITS) | word_id).to_bytes(5, "little")
+        for fingerprint, word_id, _ in records
+    )
     block_offsets, word_data = encode_word_blocks(output_words)
     exceptions_offset = HEADER.size + len(dawg)
     block_offsets_offset = exceptions_offset + len(record_bytes)
     header = HEADER.pack(
         MAGIC, VERSION, 0, BLOCK_WORDS,
-        len(vocabulary), len(dawg) // 3, root_offset,
+        len(vocabulary), edge_count, root_offset,
         len(exceptions), len(output_words), exceptions_offset, block_offsets_offset,
     )
     return header + dawg + record_bytes + block_offsets + word_data
@@ -156,6 +235,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         word = translation.lower()
         if word in weights and WORD_RE.fullmatch(translation):
             outlines_by_word[word].append(outline)
+    add_productive_outlines(outlines_by_word, list(weights))
 
     successful: set[str] = {word for word in vocabulary if len(word) == 1}
     preferred_outline: dict[str, str] = {}
@@ -171,32 +251,42 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         if word not in preferred_outline and outlines_by_word.get(word):
             preferred_outline[word] = min(outlines_by_word[word], key=lambda value: (value.count("/"), len(value), value))
 
+    dawg_info = build_dawg(vocabulary)
     candidates = [word for word in weights
                   if word not in successful and word in preferred_outline]
     candidates.sort(key=lambda word: weights[word] / (6 + max(1, len(word) // 2)), reverse=True)
     selected: list[ExceptionEntry] = []
     selected_outlines: set[str] = set()
+    selected_fingerprints: dict[int, str] = {}
+    model_base_size = HEADER.size + len(dawg_info[0])
+    current_size = model_base_size
     for word in candidates:
+        # Keep considering later candidates even when the model appears full:
+        # inserting a lexical neighbor can shorten another front-coded suffix,
+        # so the marginal size is not strictly positive.
         outline = preferred_outline[word]
         if outline in selected_outlines:
             continue
         proposed = selected + [ExceptionEntry(outline, word)]
-        try:
-            size = len(pack_model(vocabulary, proposed))
-        except ValueError:
+        fingerprint = hash32(outline.encode("ascii")) & EXCEPTION_HASH_MASK
+        collision = selected_fingerprints.get(fingerprint)
+        if collision is not None and collision != outline:
             continue
+        size = model_base_size + exception_storage_size(proposed)
         if size <= binary_budget:
             selected = proposed
             selected_outlines.add(outline)
+            selected_fingerprints[fingerprint] = outline
+            current_size = size
 
-    model = pack_model(vocabulary, selected)
+    model = pack_model(vocabulary, selected, dawg_info)
     covered = successful | {entry.word for entry in selected}
     report = {
         "model_bytes": len(model),
         "rule_bytes": RULE_BYTES,
         "total_data_bytes": len(model) + RULE_BYTES,
         "vocabulary_words": len(vocabulary),
-        "vocabulary_dawg_bytes": len(build_dawg(vocabulary)[0]),
+        "vocabulary_dawg_bytes": len(dawg_info[0]),
         "rule_resolved_words": len(successful),
         "exception_outlines": len(selected),
         "coverage_of_frequency_list": sum(weights.get(word, 0) for word in covered) / total_weight,

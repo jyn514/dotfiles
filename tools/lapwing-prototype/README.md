@@ -136,8 +136,13 @@ Generate the model with:
 ```sh
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 4500 --beam 24 --report lapwing_model_report.json
+  --vocabulary 5500 --beam 24 --report lapwing_model_report.json
 ```
+
+Model selection builds the vocabulary graph once and uses a size-only exception
+path while searching the budget. On the reference inputs this reduced a
+5,500-word generation run from about 50 seconds to about 12 seconds while
+producing a byte-identical model.
 
 ## Interpretation
 
