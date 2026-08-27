@@ -16,7 +16,7 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 3
+VERSION = 4
 HEADER = struct.Struct("<4sBBHIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
@@ -27,6 +27,24 @@ DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 LEAF_OFFSET = 0x1FFF
+LETTER_OUTLINES = dict(zip(
+    "abcdefghijklmnopqrstuvwxyz",
+    ("A*", "PW*", "KR*", "TK*", "E*", "TP*", "TKPW*", "H*", "EU*",
+     "SKWR*", "K*", "HR*", "PH*", "TPH*", "O*", "P*", "KW*", "R*",
+     "S*", "T*", "U*", "SR*", "W*", "KP*", "KWH*", "STKPW*"),
+))
+STANDALONE_OUTLINES = {
+    "co": "KOE",
+    "non": "TPHOPB",
+    "anti": "APB/TEU",
+    "un": "UPB",
+    "im": "EUPL",
+    "em": "EPL",
+    "en": "EPB",
+    "ii": "EU/EU",
+    "iii": "EU/EU/EU",
+    "ll": "HR/HR",
+}
 
 
 def hash32(data: bytes, seed: int = 2166136261) -> int:
@@ -112,17 +130,39 @@ def varint_size(value: int) -> int:
     return size
 
 
+def packed_letters_size(length: int) -> int:
+    return (length * 5 + 7) // 8
+
+
+def pack_letters(text: str) -> bytes:
+    output = bytearray(packed_letters_size(len(text)))
+    accumulator = 0
+    bits = 0
+    index = 0
+    for character in text:
+        accumulator |= ALPHABET.index(character) << bits
+        bits += 5
+        while bits >= 8:
+            output[index] = accumulator & 0xff
+            index += 1
+            accumulator >>= 8
+            bits -= 8
+    if bits:
+        output[index] = accumulator & 0xff
+    return bytes(output)
+
+
 def exception_storage_size(exceptions: list[ExceptionEntry]) -> int:
     words = sorted(entry.word for entry in exceptions)
     size = len(exceptions) * 5 + 2 * ((len(words) + BLOCK_WORDS - 1) // BLOCK_WORDS)
     previous = ""
     for index, word in enumerate(words):
         if index % BLOCK_WORDS == 0:
-            size += varint_size(len(word)) + len(word)
+            size += varint_size(len(word)) + packed_letters_size(len(word))
         else:
             prefix = common_prefix_length(previous, word)
             suffix = len(word) - prefix
-            size += varint_size(prefix) + varint_size(suffix) + suffix
+            size += varint_size(prefix) + varint_size(suffix) + packed_letters_size(suffix)
         previous = word
     return size
 
@@ -138,11 +178,11 @@ def encode_word_blocks(words: list[str]) -> tuple[bytes, bytes]:
         for index, word in enumerate(words[block_start:block_start + BLOCK_WORDS]):
             raw = word.encode("ascii")
             if index == 0:
-                encoded += encode_varint(len(raw)) + raw
+                encoded += encode_varint(len(raw)) + pack_letters(word)
             else:
                 prefix = common_prefix_length(previous, word)
-                suffix = raw[prefix:]
-                encoded += encode_varint(prefix) + encode_varint(len(suffix)) + suffix
+                suffix = word[prefix:]
+                encoded += encode_varint(prefix) + encode_varint(len(suffix)) + pack_letters(suffix)
             previous = word
     return bytes(offsets), bytes(encoded)
 
@@ -157,6 +197,14 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
                             words: list[str]) -> None:
     """Add documented Lapwing affix outlines absent from the base dictionary."""
     for word in words:
+        if word in outlines_by_word:
+            continue
+        if word in STANDALONE_OUTLINES:
+            outlines_by_word.setdefault(word, []).append(STANDALONE_OUTLINES[word])
+            continue
+        for outline, values in hand_rules.PREFIXES.items():
+            if word in values:
+                outlines_by_word.setdefault(word, []).append(outline)
         if word in outlines_by_word:
             continue
         derivations: list[tuple[str, str]] = []
@@ -184,7 +232,11 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
             derivations.append((word[:-2], "HREU"))
         for root, suffix in derivations:
             for outline in outlines_by_word.get(root, ())[:4]:
-                outlines_by_word[word].append(outline + "/" + suffix)
+                outlines_by_word.setdefault(word, []).append(outline + "/" + suffix)
+        if word not in outlines_by_word and word.isalpha() and len(word) <= 4:
+            outlines_by_word.setdefault(word, []).append(
+                "/".join(LETTER_OUTLINES[character] for character in word)
+            )
 
 
 def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
@@ -261,6 +313,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     model_base_size = HEADER.size + len(dawg_info[0])
     current_size = model_base_size
     for word in candidates:
+        if len(selected) >= (1 << EXCEPTION_ID_BITS) - 1:
+            break
         # Keep considering later candidates even when the model appears full:
         # inserting a lexical neighbor can shorten another front-coded suffix,
         # so the marginal size is not strictly positive.
@@ -302,7 +356,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=5000)
+    parser.add_argument("--vocabulary", type=int, default=6150)
     parser.add_argument("--beam", type=int, default=24)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()

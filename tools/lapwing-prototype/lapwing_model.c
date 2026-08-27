@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define LW_MODEL_HEADER_SIZE 36u
-#define LW_MODEL_VERSION 3u
+#define LW_MODEL_VERSION 4u
 #define LW_EXCEPTION_RECORD_SIZE 5u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
 #define LW_EXCEPTION_ID_MASK 0x7ffu
@@ -47,6 +47,24 @@ static uint32_t hash32(const char *text) {
     value *= 0x7feb352du;
     value ^= value >> 15;
     return value;
+}
+
+static bool decode_letters(const uint8_t **cursor, const uint8_t *end,
+                           char *output, uint16_t length) {
+    uint16_t byte_count = (length * 5u + 7u) / 8u;
+    if ((size_t)(end - *cursor) < byte_count) return false;
+    const uint8_t *start = *cursor;
+    for (uint16_t index = 0; index < length; ++index) {
+        uint16_t bit = index * 5u;
+        uint16_t byte = bit / 8u;
+        uint16_t value = start[byte];
+        if (byte + 1u < byte_count) value |= (uint16_t)start[byte + 1u] << 8;
+        uint8_t letter = (value >> (bit % 8u)) & 0x1fu;
+        if (letter >= sizeof(alphabet) - 1u) return false;
+        output[index] = alphabet[letter];
+    }
+    *cursor += byte_count;
+    return true;
 }
 
 static uint16_t read_varint(const uint8_t **cursor, const uint8_t *end,
@@ -139,17 +157,13 @@ static bool decode_word(const lw_model_t *model, uint16_t id,
     for (uint32_t current = first_id; current <= id && valid; ++current) {
         if (current == first_id) {
             length = read_varint(&cursor, end, &valid);
-            if (!valid || length > LW_MAX_WORD || (size_t)(end - cursor) < length)
-                return false;
-            memcpy(output, cursor, length);
-            cursor += length;
+            if (!valid || length > LW_MAX_WORD
+                || !decode_letters(&cursor, end, output, length)) return false;
         } else {
             uint16_t prefix = read_varint(&cursor, end, &valid);
             uint16_t suffix = read_varint(&cursor, end, &valid);
             if (!valid || prefix > length || prefix + suffix > LW_MAX_WORD
-                || (size_t)(end - cursor) < suffix) return false;
-            memcpy(output + prefix, cursor, suffix);
-            cursor += suffix;
+                || !decode_letters(&cursor, end, output + prefix, suffix)) return false;
             length = prefix + suffix;
         }
         output[length] = '\0';

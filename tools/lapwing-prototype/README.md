@@ -114,19 +114,21 @@ not demonstrated.
 `generate_model.py` builds the model actually consumed by the C firmware. It
 uses an exact minimized acyclic word graph rather than the earlier proposed
 MPHF. This avoids vocabulary false positives and requires no rank payload.
-Exception outlines use sorted 32-bit hashes and 16-bit IDs into a lexically
-front-coded output pool with restart points every 32 words.
+Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
+front-coded, five-bit-letter output pool with restart points every 32 words.
 
-The selected 4,500-word model is:
+The selected 6,150-word model is:
 
 | Data | Bytes |
 |---|---:|
-| Generated C rule representation | 4,413 |
-| Binary vocabulary and exceptions | 36,546 |
-| **Total linguistic data** | **40,959** |
+| Generated C rule representation | 4,428 |
+| Binary vocabulary and exceptions | 36,531 |
+| **Total linguistic data** | **40,960** |
 
-The binary contains a 18,489-byte exact vocabulary graph and 1,572 exception
-outlines. On the 20,000-token benchmark it estimates **88.58%** frequency-
+The binary contains a 20,208-byte exact vocabulary graph and 1,694 exception
+outlines. Productive morphology, standalone affixes, and algorithmic
+fingerspelling supply additional outlines without consuming model records. On
+the 20,000-token benchmark it estimates **91.03%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
@@ -136,12 +138,12 @@ Generate the model with:
 ```sh
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 5500 --beam 24 --report lapwing_model_report.json
+  --vocabulary 6150 --beam 48 --report lapwing_model_report.json
 ```
 
 Model selection builds the vocabulary graph once and uses a size-only exception
 path while searching the budget. On the reference inputs this reduced a
-5,500-word generation run from about 50 seconds to about 12 seconds while
+6,150-word generation run from about 50 seconds to about 14 seconds while
 producing a byte-identical model.
 
 ## Interpretation
@@ -151,7 +153,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact 4,500-word vocabulary graph costs about 18 KiB and cannot admit
+- The exact 6,150-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -174,10 +176,10 @@ acceptance callback.
 The current port includes canonical-stroke parsing, ordered onset/coda
 segmentation, whole strokes, prefixes and suffixes, starred alternatives,
 silent-e variants, folded endings, English affix joins, bounded candidate
-storage, and deduplication. Its generated C representation occupies 4,413 bytes
+storage, and deduplication. Its generated C representation occupies 4,428 bytes
 before linker optimization. Host golden tests recover representative words such
 as “snake”, “python”, “preview”, “zapping”, “interstate”, “microphone”, and
-“helpful”. Across 20,000 dictionary outlines, its 24-candidate output exactly
+“helpful”. Across 20,000 dictionary outlines, its 48-candidate output exactly
 matched the Python reference.
 
 `lapwing_model.c` provides exact vocabulary membership, exception lookup, and
@@ -192,8 +194,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 105,088 B | **25,984 B** | 10,996 B | 16,020 B |
-| `revb` | 107,328 B | **23,744 B** | comparable | comparable |
+| `reva` | 105,220 B | **25,852 B** | 14,956 B | 12,060 B |
+| `revb` | 107,464 B | **23,608 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.
@@ -203,15 +205,15 @@ Regenerate and test it with:
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
 python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
-  --vocabulary 4500 --beam 24
+  --vocabulary 6150 --beam 48
 python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
   lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
 ```
 
 `LW_MAX_CANDIDATES` is compile-time bounded. The host golden test uses 128 to
-exercise rule ordering; firmware builds should start at 24 and rely on exact
-exceptions before rule generation for common irregular outlines.
+exercise rule ordering; firmware uses 48 and relies on exact exceptions before
+rule generation for common irregular outlines.
 
 ## Tests
 
