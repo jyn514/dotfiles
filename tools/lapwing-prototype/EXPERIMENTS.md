@@ -67,6 +67,17 @@ letter-by-letter fallback is reported separately and is not counted here.
   exists. This recovers words such as `battlefield` through known component
   outlines and raises coverage from 93.26% to 93.37% at the same budget.
 
+## Promising experiments not yet adopted
+
+- Component certificates using a primary-DAWG terminal-edge identity avoid a
+  second word graph. Restricting components to words uniquely identified by
+  their final edge index and length preserves exactness. An estimated
+  1,000-certificate model used about 4,263 bytes, retained roughly 1,261
+  exceptions, and reached 93.61% conventional coverage, versus 93.37% for the
+  current model. A less restrictive two-edge identity retained more components
+  but its wider records peaked near 93.46%. These estimates use target-specific
+  prefix pruning; adoption requires a real packed format and C decoder test.
+
 ## Productive directions not yet exhausted
 
 - Replace the accepted bounded vocabulary rebalance heuristic with exact
