@@ -12,9 +12,15 @@ ROOT = Path(__file__).parent
 
 class GenerateModelTest(unittest.TestCase):
     def test_productive_outlines_include_inflections_possessives_and_fragments(self) -> None:
-        outlines = {"day": ["TKAEU"], "world": ["WORLD"]}
+        outlines = {
+            "day": ["TKAEU"],
+            "world": ["WORLD"],
+            "success": ["SUK/SES"],
+        }
         generate_model.add_productive_outlines(
-            outlines, ["days", "world's", "anti", "non", "im", "usa"]
+            outlines,
+            ["days", "world's", "anti", "non", "im", "usa",
+             "successful", "successfully"],
         )
         self.assertIn("TKAEU/-Z", outlines["days"])
         self.assertIn("WORLD/AES", outlines["world's"])
@@ -22,6 +28,8 @@ class GenerateModelTest(unittest.TestCase):
         self.assertEqual(outlines["non"], ["TPHOPB"])
         self.assertEqual(outlines["im"], ["EUPL"])
         self.assertEqual(outlines["usa"], ["U*/S*/A*"])
+        self.assertIn("SUK/SES/-FL", outlines["successful"])
+        self.assertIn("SUK/SES/-FL/HREU", outlines["successfully"])
 
     def test_model_is_deterministic_and_within_requested_shape(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
