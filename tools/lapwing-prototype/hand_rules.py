@@ -357,6 +357,10 @@ def orthographic_repairs(word: str) -> list[str]:
         repairs.append(word[:-1] + "es")
     repairs.extend(word[:index] + "ce" + word[index + 1:]
                    for index, character in enumerate(word) if character == "f")
+    repairs.extend(word[:index] + "gh" + word[index:]
+                   for index in range(1, len(word)))
+    repairs.extend(word[:index] + "in" + word[index:]
+                   for index in range(1, len(word)))
     return unique(repairs)
 
 

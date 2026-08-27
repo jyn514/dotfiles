@@ -237,6 +237,22 @@ static bool replace_fragment(const lw_model_t *model, const char *word,
     return false;
 }
 
+static bool insert_fragment(const lw_model_t *model, const char *word,
+                            const char *fragment,
+                            char output[LW_MAX_WORD + 1]) {
+    size_t word_length = strlen(word);
+    size_t fragment_length = strlen(fragment);
+    if (word_length + fragment_length > LW_MAX_WORD) return false;
+    char repaired[LW_MAX_WORD + 1];
+    for (size_t index = 1; index < word_length; ++index) {
+        memcpy(repaired, word, index);
+        memcpy(repaired + index, fragment, fragment_length);
+        strcpy(repaired + index + fragment_length, word + index);
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    return false;
+}
+
 static bool repair_candidate(const lw_model_t *model, const char *word,
                              char output[LW_MAX_WORD + 1]) {
     size_t length = strlen(word);
@@ -316,6 +332,8 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
         if (accept_repair(model, repaired, output)) return true;
     }
     if (replace_fragment(model, word, "f", "ce", output)) return true;
+    if (insert_fragment(model, word, "gh", output)) return true;
+    if (insert_fragment(model, word, "in", output)) return true;
     return false;
 }
 
