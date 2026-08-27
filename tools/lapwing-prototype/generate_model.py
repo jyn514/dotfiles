@@ -279,7 +279,7 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
             break
 
     for word in words:
-        if word.isalpha() and len(word) <= 8:
+        if word.isalpha() and len(word) <= 16:
             fingerspelled = "/".join(LETTER_OUTLINES[character] for character in word)
             values = outlines_by_word.setdefault(word, [])
             if fingerspelled not in values:

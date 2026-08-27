@@ -80,7 +80,7 @@ Current compile-time limits are:
 | Limit | Firmware default |
 |---|---:|
 | Maximum word length | 32 characters |
-| Maximum outline length | 8 strokes |
+| Maximum outline length | 16 strokes |
 | Candidate frontier | 64 words |
 | Onset or coda segmentations | 48 |
 
@@ -173,13 +173,13 @@ and capitalization state.
 
 ## Model format
 
-The implemented linguistic data occupies 40,959 bytes:
+The implemented linguistic data occupies 40,960 bytes:
 
 | Component | Bytes |
 |---|---:|
 | Generated C rules | 4,181 |
-| Binary vocabulary and exceptions | 36,778 |
-| Total | 40,959 |
+| Binary vocabulary and exceptions | 36,779 |
+| Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
 6,230-word vocabulary is an exact minimized acyclic word graph. Each graph edge
@@ -189,7 +189,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,648 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,692 output words are lexically front-coded in 128-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -211,7 +211,7 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,328 | 25,744 | 17,612 | 9,404 |
+| revA | 105,324 | 25,748 | 17,772 | 9,244 |
 | revB | 107,568 | 23,504 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
@@ -220,10 +220,10 @@ bytes of linguistic data.
 
 ### Coverage and equivalence
 
-Using the 20,000 highest-frequency benchmark tokens, the exact 40,959-byte model
-estimates 94.17% frequency-weighted coverage. Productive morphology, closed-
+Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
+estimates 94.66% frequency-weighted coverage. Productive morphology, closed-
 compound composition, standalone affix outlines, and algorithmic fingerspelling
-of every word through eight letters contribute without additional exception
+of every word through sixteen letters contribute without additional exception
 records. Exact DAWG-prefix pruning keeps impossible
 partial spellings out of the bounded frontier. This is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
