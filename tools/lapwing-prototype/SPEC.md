@@ -173,23 +173,23 @@ and capitalization state.
 
 ## Model format
 
-The implemented linguistic data occupies 40,959 bytes:
+The implemented linguistic data occupies 40,960 bytes:
 
 | Component | Bytes |
 |---|---:|
 | Generated C rules | 4,428 |
-| Binary vocabulary and exceptions | 36,531 |
-| Total | 40,959 |
+| Binary vocabulary and exceptions | 36,532 |
+| Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
-6,150-word vocabulary is an exact minimized acyclic word graph. Each graph edge
+6,230-word vocabulary is an exact minimized acyclic word graph. Each graph edge
 uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-20,208 bytes and cannot produce membership false positives.
+20,448 bytes and cannot produce membership false positives.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,704 output words are lexically front-coded in 32-word blocks,
+outlines. The 1,679 output words are lexically front-coded in 32-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -215,13 +215,13 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 | revB | 107,544 | 23,528 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,388 bytes of linked flash, including all 40,959
+translator therefore adds 47,388 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
-Using the 20,000 highest-frequency benchmark tokens, the exact 40,959-byte model
-estimates 92.08% frequency-weighted coverage. Productive morphology,
+Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
+estimates 92.10% frequency-weighted coverage. Productive morphology,
 standalone affix outlines, and algorithmic fingerspelling contribute without
 additional exception records. Exact DAWG-prefix pruning keeps impossible
 partial spellings out of the bounded frontier. This is lower than the discarded
