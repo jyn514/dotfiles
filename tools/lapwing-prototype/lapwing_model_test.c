@@ -59,6 +59,15 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "TAUBG", output, 4) != 1
         || strcmp(output[0], "talk") != 0)
         result |= fail("broad-vowel l repair failed");
+    if (lw_model_translate(&model, "HROF", output, 4) != 1
+        || strcmp(output[0], "love") != 0)
+        result |= fail("voiced silent-e repair failed");
+    if (lw_model_translate(&model, "PHAEUBGZ", output, 4) != 1
+        || strcmp(output[0], "makes") != 0)
+        result |= fail("plural spelling repair failed");
+    if (lw_model_translate(&model, "PHRAEUFD", output, 4) != 1
+        || strcmp(output[0], "placed") != 0)
+        result |= fail("soft-c spelling repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     free(data);
