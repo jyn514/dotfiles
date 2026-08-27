@@ -335,6 +335,10 @@ def orthographic_repairs(word: str) -> list[str]:
     for index, character in enumerate(word):
         for replacement in substitutions.get(character, ""):
             repairs.append(word[:index] + replacement + word[index + 1:])
+    # Lapwing's compressed SEL/PWRAEUGS family omits the unstressed vowel and
+    # voices the initial consonant of "celebr-".
+    if "selbr" in word:
+        repairs.append(word.replace("selbr", "celebr", 1))
     return unique(repairs)
 
 
