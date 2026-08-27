@@ -98,6 +98,26 @@ letter-by-letter fallback is reported separately and is not counted here.
   rule-capable certificate candidate set. The 0.04-point gain does not justify
   adding split decoding and a new packed record format.
 
+## Planned representation experiments
+
+Investigate these against the corrected US stack, using exact serialized bytes
+and the same frequency-weighted conventional-coverage metric:
+
+1. Direct blocked front-coded outline-to-output records.
+2. Exact minimal-perfect-hash-style indexing with stored-key verification.
+3. A path-compressed or succinct radix trie over canonical stroke masks.
+4. A minimized deterministic subsequential transducer with output pushing.
+5. Per-first-stroke portfolio selection among the preceding codecs.
+6. Grouped morphological proof classes with delta-coded exact roots.
+7. A factored relation over reusable outline fragments, roots, affixes, and
+   licensed joins.
+
+Every speculative serializer belongs in an isolated temporary checkout until it
+beats the 93.37% baseline at exactly 40,960 linguistic-data bytes. Approximate
+record counts are screening evidence only; adoption requires a byte-identical
+Python/C artifact, absent-key rejection, complete-model exception displacement,
+and revA/revB builds.
+
 ## Productive directions not yet exhausted
 
 - Replace the accepted bounded vocabulary rebalance heuristic with exact
