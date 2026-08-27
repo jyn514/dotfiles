@@ -41,6 +41,9 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "WAUFP", output, 4) != 1
         || strcmp(output[0], "watch") != 0)
         result |= fail("orthographic deletion repair failed");
+    if (lw_model_translate(&model, "TKO*EPBT", output, 4) != 1
+        || strcmp(output[0], "don't") != 0)
+        result |= fail("apostrophe insertion repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     free(data);

@@ -229,9 +229,9 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
             if (accept_repair(model, repaired, output)) return true;
         }
         for (size_t index = 1; index < length; ++index) {
-            for (const char *vowel = "aeiou"; *vowel; ++vowel) {
+            for (const char *insertion = "aeiou'"; *insertion; ++insertion) {
                 memcpy(repaired, word, index);
-                repaired[index] = *vowel;
+                repaired[index] = *insertion;
                 strcpy(repaired + index + 1u, word + index);
                 if (accept_repair(model, repaired, output)) return true;
             }

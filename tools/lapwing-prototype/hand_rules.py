@@ -319,8 +319,8 @@ def orthographic_repairs(word: str) -> list[str]:
         if character in consonants:
             repairs.append(word[:index] + character + word[index:])
     for index in range(1, len(word)):
-        for vowel in "aeiou":
-            repairs.append(word[:index] + vowel + word[index:])
+        for insertion in "aeiou'":
+            repairs.append(word[:index] + insertion + word[index:])
     for index in range(len(word)):
         repairs.append(word[:index] + word[index + 1:])
     for index in range(len(word) - 1):
