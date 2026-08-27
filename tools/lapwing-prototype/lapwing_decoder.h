@@ -11,7 +11,7 @@
 #define LW_MAX_CANDIDATES 64
 #endif
 #ifndef LW_MAX_STROKES
-#define LW_MAX_STROKES 8
+#define LW_MAX_STROKES 16
 #endif
 
 typedef bool (*lw_word_accept_fn)(void *context, const char *word);

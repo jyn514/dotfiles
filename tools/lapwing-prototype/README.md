@@ -122,14 +122,14 @@ The selected 6,230-word model is:
 | Data | Bytes |
 |---|---:|
 | Generated C rule representation | 4,181 |
-| Binary vocabulary and exceptions | 36,778 |
-| **Total linguistic data** | **40,959** |
+| Binary vocabulary and exceptions | 36,779 |
+| **Total linguistic data** | **40,960** |
 
-The binary contains a 20,448-byte exact vocabulary graph and 1,648 exception
+The binary contains a 20,448-byte exact vocabulary graph and 1,692 exception
 outlines. Productive morphology, closed-compound composition, standalone
-affixes, and algorithmic fingerspelling of every word through the eight-stroke
+affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records. On
-the 20,000-token benchmark it estimates **94.17%** frequency-
+the 20,000-token benchmark it estimates **94.66%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
@@ -197,7 +197,7 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 105,328 B | **25,744 B** | 17,612 B | 9,404 B |
+| `reva` | 105,324 B | **25,748 B** | 17,772 B | 9,244 B |
 | `revb` | 107,568 B | **23,504 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
