@@ -205,7 +205,7 @@ uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 20,518 bytes and cannot produce membership false positives.
 
-Grouped morphology stores 98 exact spelling recipes and 1,566 licensed roots in
+Grouped morphology stores 69 exact spelling recipes and 1,685 licensed roots in
 3,824 bytes. Each recipe contains literal root/output tails followed by sorted,
 delta-varint-coded primary-root IDs. An ID is the root's terminal DAWG edge and
 length and is admitted only when that pair identifies exactly one primary word.
@@ -246,7 +246,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 93.8974% at the exact 40,960-byte budget. This metric
+and rule outlines cover 93.9145% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
