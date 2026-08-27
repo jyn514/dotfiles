@@ -115,20 +115,21 @@ not demonstrated.
 uses an exact minimized acyclic word graph rather than the earlier proposed
 MPHF. This avoids vocabulary false positives and requires no rank payload.
 Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
-front-coded, five-bit-letter output pool with restart points every 64 words.
+front-coded, five-bit-letter output pool with restart points every 128 words.
 
 The selected 6,230-word model is:
 
 | Data | Bytes |
 |---|---:|
 | Generated C rule representation | 4,181 |
-| Binary vocabulary and exceptions | 36,779 |
-| **Total linguistic data** | **40,960** |
+| Binary vocabulary and exceptions | 36,778 |
+| **Total linguistic data** | **40,959** |
 
-The binary contains a 20,448-byte exact vocabulary graph and 1,713 exception
+The binary contains a 20,448-byte exact vocabulary graph and 1,717 exception
 outlines. Productive morphology, standalone affixes, and algorithmic
-fingerspelling supply additional outlines without consuming model records. On
-the 20,000-token benchmark it estimates **92.17%** frequency-
+fingerspelling of words up to the eight-stroke outline limit supply additional
+outlines without consuming model records. On the 20,000-token benchmark it
+estimates **92.19%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
