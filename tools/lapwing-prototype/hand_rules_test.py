@@ -18,6 +18,16 @@ class HandRulesTest(unittest.TestCase):
         self.assertIn("hitch", hand_rules.decode_outline("HEUFP", vocabulary, 1000, 10))
         self.assertIn("path", hand_rules.decode_outline("PA*T", vocabulary, 1000, 10))
 
+    def test_non_affix_strokes_can_form_exact_hyphenated_words(self) -> None:
+        self.assertIn("content-type", hand_rules.joins("content", "type", False))
+        self.assertNotIn("content-type", hand_rules.joins("content", "type", True))
+
+    def test_regular_british_spelling_repairs(self) -> None:
+        self.assertIn("honour", hand_rules.orthographic_repairs("honor"))
+        self.assertIn("recognise", hand_rules.orthographic_repairs("recognize"))
+        self.assertIn("centre", hand_rules.orthographic_repairs("center"))
+        self.assertIn("travelled", hand_rules.orthographic_repairs("traveled"))
+
     def test_syllables_and_affixes(self) -> None:
         vocabulary = {"python", "preview", "helpful", "treatment", "crazy"}
         cases = {

@@ -275,21 +275,10 @@ def derivations_for_word(word: str) -> list[tuple[str, str]]:
     return list(dict.fromkeys(derivations))
 
 
-def add_productive_outlines(outlines_by_word: dict[str, list[str]],
-                            words: list[str]) -> None:
-    """Add standalone, fingerspelling, and recursively productive outlines."""
-    for word in words:
-        if word in outlines_by_word:
-            continue
-        if word in STANDALONE_OUTLINES:
-            outlines_by_word.setdefault(word, []).append(STANDALONE_OUTLINES[word])
-            continue
-        for outline, values in hand_rules.PREFIXES.items():
-            if word in values:
-                outlines_by_word.setdefault(word, []).append(outline)
-
-    # Multiple rounds permit chains such as success -> successful -> successfully.
-    for _ in range(4):
+def add_derivative_outlines(outlines_by_word: dict[str, list[str]],
+                            words: list[str], rounds: int = 4) -> None:
+    """Apply productive morphology to every currently known root outline."""
+    for _ in range(rounds):
         changed = False
         for word in words:
             for root, suffix in derivations_for_word(word):
@@ -302,8 +291,10 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
         if not changed:
             break
 
-    # Compose known roots for closed compounds such as health + care and
-    # out + standing. Keep only combinations the firmware can retain.
+
+def add_closed_compound_outlines(outlines_by_word: dict[str, list[str]],
+                                 words: list[str]) -> None:
+    """Compose unhyphenated words from known roots at stroke boundaries."""
     for _ in range(2):
         changed = False
         for word in words:
@@ -315,11 +306,122 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
                 for left_outline in left[:2]:
                     for right_outline in right[:2]:
                         candidate = left_outline + "/" + right_outline
-                        if candidate.count("/") < 8:
-                            outlines_by_word.setdefault(word, []).append(candidate)
+                        if candidate.count("/") >= 8:
+                            continue
+                        values = outlines_by_word.setdefault(word, [])
+                        if candidate not in values:
+                            values.append(candidate)
                             changed = True
         if not changed:
             break
+
+
+def add_hyphenated_outlines(outlines_by_word: dict[str, list[str]],
+                            words: list[str]) -> None:
+    """Compose exact hyphenated vocabulary from independently known parts."""
+    for word in words:
+        parts = word.split("-")
+        if len(parts) < 2 or any(not part for part in parts):
+            continue
+        choices = [outlines_by_word.get(part, ())[:2] for part in parts]
+        if any(not choice for choice in choices):
+            continue
+        candidate = "/".join(choice[0] for choice in choices)
+        if candidate.count("/") >= 16:
+            continue
+        values = outlines_by_word.setdefault(word, [])
+        if candidate not in values:
+            values.append(candidate)
+
+
+def add_write_out_outlines(outlines_by_word: dict[str, list[str]],
+                           words: list[str], beam: int = 64) -> None:
+    """Synthesize regular write-out outlines from observed Lapwing strokes.
+
+    Each spelling chunk must contain at least two letters. This admits ordinary
+    phonetic write-out while preventing the optimization from relabeling
+    letter-by-letter fingerspelling as conventional translation.
+    """
+    observed_strokes = {
+        stroke
+        for outlines in outlines_by_word.values()
+        for outline in outlines
+        for stroke in outline.split("/")
+        if "*" not in stroke and not stroke.startswith("#")
+    }
+    chunks: dict[str, list[str]] = defaultdict(list)
+    for stroke in sorted(observed_strokes, key=lambda value: (len(value), value)):
+        for final_position in (False, True):
+            for spelling in hand_rules.decode_stroke_analyses(stroke, final_position):
+                if not spelling.isalpha() or not 2 <= len(spelling) <= 8:
+                    continue
+                values = chunks[spelling]
+                if stroke not in values and len(values) < 3:
+                    values.append(stroke)
+
+    for word in words:
+        if outlines_by_word.get(word) or not word.isalpha() or len(word) < 4:
+            continue
+        best: list[list[str] | None] = [None] * (len(word) + 1)
+        best[0] = []
+        for end in range(2, len(word) + 1):
+            for start in range(max(0, end - 8), end - 1):
+                if best[start] is None or word[start:end] not in chunks:
+                    continue
+                candidate = best[start] + [chunks[word[start:end]][0]]
+                if len(candidate) <= 8 and (
+                    best[end] is None or len(candidate) < len(best[end])
+                ):
+                    best[end] = candidate
+        if best[-1] is None:
+            continue
+        outline = "/".join(best[-1])
+        prefixes = {word[:length] for length in range(1, len(word) + 1)}
+        if word in hand_rules.generate_outline(outline, beam, prefixes):
+            outlines_by_word.setdefault(word, []).append(outline)
+
+
+def regular_spelling_roots(word: str) -> list[str]:
+    """Return common US spellings for an exact British-spelling target."""
+    roots = []
+    if "our" in word:
+        roots.append(word.replace("our", "or"))
+    if "is" in word:
+        roots.append(word.replace("is", "iz"))
+    if word.endswith("re"):
+        roots.append(word[:-2] + "er")
+    if word.endswith(("lled", "lling")):
+        roots.append(word.replace("ll", "l", 1))
+    return list(dict.fromkeys(roots))
+
+
+def add_productive_outlines(outlines_by_word: dict[str, list[str]],
+                            words: list[str]) -> None:
+    """Add outlines implied by general spelling and composition rules."""
+    for word in words:
+        if word in outlines_by_word:
+            continue
+        spelling_outlines = [
+            outline
+            for root in regular_spelling_roots(word)
+            for outline in outlines_by_word.get(root, ())[:4]
+        ]
+        if spelling_outlines:
+            outlines_by_word.setdefault(word, []).extend(spelling_outlines)
+            continue
+        if word in STANDALONE_OUTLINES:
+            outlines_by_word.setdefault(word, []).append(STANDALONE_OUTLINES[word])
+            continue
+        for outline, values in hand_rules.PREFIXES.items():
+            if word in values:
+                outlines_by_word.setdefault(word, []).append(outline)
+
+    add_derivative_outlines(outlines_by_word, words)
+    add_closed_compound_outlines(outlines_by_word, words)
+    add_write_out_outlines(outlines_by_word, words)
+    add_hyphenated_outlines(outlines_by_word, words)
+    # Synthesized words become roots for possessives and ordinary inflections.
+    add_derivative_outlines(outlines_by_word, words, rounds=3)
 
 
 
@@ -628,7 +730,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=6275)
+    parser.add_argument("--vocabulary", type=int, default=6200)
     parser.add_argument("--beam", type=int, default=24)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()

@@ -24,7 +24,7 @@ class GenerateModelTest(unittest.TestCase):
         }
         generate_model.add_productive_outlines(
             outlines,
-            ["days", "world's", "anti", "non", "im",
+            ["days", "world's", "anti", "non", "im", "mis",
              "successful", "successfully", "accountability", "battlefield"],
         )
         self.assertIn("TKAEU/-Z", outlines["days"])
@@ -32,10 +32,59 @@ class GenerateModelTest(unittest.TestCase):
         self.assertIn("APB/TEU", outlines["anti"])
         self.assertIn("TPHOPB", outlines["non"])
         self.assertIn("EUPL", outlines["im"])
+        self.assertIn("PHEUS", outlines["mis"])
         self.assertIn("SUK/SES/-FL", outlines["successful"])
         self.assertIn("SUK/SES/-FL/HREU", outlines["successfully"])
         self.assertIn("K-T/-BLT", outlines["accountability"])
         self.assertIn("PWAT/-L/TPAO*ELD", outlines["battlefield"])
+
+    def test_productive_outlines_compose_multiple_hyphenated_components(self) -> None:
+        outlines = {
+            "if": ["EUF"],
+            "none": ["TPHAUPB"],
+            "match": ["PHAFP"],
+        }
+        generate_model.add_productive_outlines(outlines, ["if-none-match"])
+        self.assertIn("EUF/TPHAUPB/PHAFP", outlines["if-none-match"])
+
+    def test_regular_spelling_variants_reuse_source_outlines(self) -> None:
+        outlines = {
+            "honor": ["HO/TPHOR"],
+            "recognize": ["REZ"],
+            "center": ["SEPB/TER"],
+            "traveled": ["TRAFLD"],
+        }
+        generate_model.add_productive_outlines(
+            outlines, ["honour", "recognise", "centre", "travelled"]
+        )
+        self.assertIn("HO/TPHOR", outlines["honour"])
+        self.assertIn("REZ", outlines["recognise"])
+        self.assertIn("SEPB/TER", outlines["centre"])
+        self.assertIn("TRAFLD", outlines["travelled"])
+
+    def test_write_out_synthesis_uses_observed_non_fingerspelling_strokes(self) -> None:
+        outlines = {
+            "first chunk": ["PAOEU"],
+            "second chunk": ["THOPB"],
+        }
+        generate_model.add_productive_outlines(outlines, ["python"])
+        self.assertIn("PAOEU/THOPB", outlines["python"])
+
+    def test_write_out_synthesis_does_not_relabel_fingerspelling(self) -> None:
+        outlines = {
+            "letter a": ["A*"],
+            "letter b": ["PW*"],
+        }
+        generate_model.add_productive_outlines(outlines, ["abab"])
+        self.assertNotIn("abab", outlines)
+
+    def test_synthesized_roots_receive_productive_morphology(self) -> None:
+        outlines = {
+            "first chunk": ["PAOEU"],
+            "second chunk": ["THOPB"],
+        }
+        generate_model.add_productive_outlines(outlines, ["python", "pythons"])
+        self.assertIn("PAOEU/THOPB/-Z", outlines["pythons"])
 
     def test_model_is_deterministic_and_within_requested_shape(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
@@ -60,7 +109,7 @@ class GenerateModelTest(unittest.TestCase):
         )
 
     def test_c_model_lookup_and_rule_fallback(self) -> None:
-        vocabulary = ["called", "cat", "celebration", "clean", "college", "doing", "don't", "john", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "watch"]
+        vocabulary = ["called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "honour", "john", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]
         exceptions = [
             generate_model.ExceptionEntry("#SKWRO*PB", "john"),
             generate_model.ExceptionEntry("P", "people"),

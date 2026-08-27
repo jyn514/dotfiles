@@ -250,6 +250,8 @@ def rebuild_stroke(left: str, vowel: str, right: str, star: bool) -> str:
 
 def joins(root: str, addition: str, affix: bool) -> list[str]:
     values = [root + addition]
+    if root and addition and not affix:
+        values.append(root + "-" + addition)
     if root and addition and root[-1] == addition[0]:
         values.append(root + addition[1:])
     if not affix and addition == "l":
@@ -361,6 +363,19 @@ def orthographic_repairs(word: str) -> list[str]:
                    for index in range(1, len(word)))
     repairs.extend(word[:index] + "in" + word[index:]
                    for index in range(1, len(word)))
+    # Regular spelling variants remain exact-vocabulary gated at runtime.
+    repairs.extend(word[:index] + "our" + word[index + 2:]
+                   for index in range(len(word) - 1)
+                   if word[index:index + 2] == "or")
+    repairs.extend(word[:index] + "is" + word[index + 2:]
+                   for index in range(len(word) - 1)
+                   if word[index:index + 2] == "iz")
+    if word.endswith("er"):
+        repairs.append(word[:-2] + "re")
+    repairs.extend(word[:index] + "ll" + word[index + 1:]
+                   for index in range(len(word) - 2)
+                   if word[index] == "l"
+                   and word[index + 1:].startswith(("ed", "ing")))
     return unique(repairs)
 
 
