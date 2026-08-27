@@ -117,7 +117,7 @@ MPHF. This avoids vocabulary false positives and requires no rank payload.
 Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
 front-coded, five-bit-letter output pool with restart points every 128 words.
 
-The selected 6,230-word model is:
+The selected 6,275-word model is:
 
 | Data | Bytes |
 |---|---:|
@@ -125,11 +125,11 @@ The selected 6,230-word model is:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,448-byte exact vocabulary graph and 1,692 exception
+The binary contains a 20,540-byte exact vocabulary graph and 1,681 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **94.67%** of the 20,000-token
+Conventional dictionary and rule outlines cover **94.70%** of the 20,000-token
 frequency benchmark. Authoritative spelling, including a final `AES` possessive
 stroke, raises reachable coverage to **99.99%** without admitting phonetic
 nonwords. The conventional figure is lower than the earlier 94.97% MPHF
@@ -142,12 +142,12 @@ Generate the model with:
 ```sh
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 6230 --beam 64 --report lapwing_model_report.json
+  --vocabulary 6275 --beam 64 --report lapwing_model_report.json
 ```
 
 Model selection builds the vocabulary graph once and uses a size-only exception
 path while searching the budget. On the reference inputs this reduced a
-6,230-word generation run from about 50 seconds to about 14 seconds while
+6,275-word generation run from about 50 seconds to about 14 seconds while
 producing a byte-identical model.
 
 ## Interpretation
@@ -157,7 +157,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact 6,230-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact 6,275-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -216,7 +216,7 @@ Regenerate and test it with:
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
 python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
-  --vocabulary 6230 --beam 64
+  --vocabulary 6275 --beam 64
 python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
   lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
