@@ -24,6 +24,7 @@ letter-by-letter fallback is reported separately and is not counted here.
 | Broaden exception local search from 512 candidates/32 victims to 1,024/64 | 92.817391%, versus 92.817075% at the default, while generation rose to about 36 seconds. A 2,048/128 trial took about 44 seconds for similarly negligible gain. | The improvement was too small for the repeated generation cost. |
 | Use hash-order exception outputs to eliminate output IDs | For 1,701 exceptions, random hash order needed about 11,079 output bytes plus 6,804 four-byte records, versus about 7,698 output bytes plus 8,505 five-byte records in lexical order. | Lost front-coding locality made the representation about 1.7 KiB larger. |
 | Use a first-character-partitioned or larger vocabulary solely to admit more rule words | Larger graphs displaced high-value exceptions before they recovered equivalent frequency mass. | Vocabulary and exceptions must be optimized together, not by vocabulary count alone. |
+| Promote 30 high-frequency one-stroke briefs to whole-stroke rules | Rule data grew from 4,181 to 4,629 bytes, exceptions fell from 1,701 to 1,647, and corrected conventional coverage decreased from 92.3610% to 92.3538%. | Generated rule records and unshared output strings cost more than the lexically compressed exceptions they replaced. Revisit only with a denser whole-stroke representation or shared output storage. |
 
 ## Superseded estimates
 
