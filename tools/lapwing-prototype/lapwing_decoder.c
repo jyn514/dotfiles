@@ -404,8 +404,10 @@ static void decode_stroke(const char *stroke_text, bool final_position,
     }
 }
 
-void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_prefix,
-                              void *context, lw_candidates_t *result) {
+static void decode_outline_internal(const char *outline,
+                                    lw_prefix_accept_fn accept_prefix,
+                                    void *context, bool prune_final,
+                                    lw_candidates_t *result) {
     result->count = 0;
     if (!outline || !outline[0]) return;
     char strokes[LW_MAX_STROKES][20];
@@ -480,7 +482,8 @@ void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_pr
             add_unique(analyses, decoded->words[i]);
 
         next->count = 0;
-        active_prefix = accept_prefix;
+        active_prefix = (!prune_final && stroke + 1u == stroke_count)
+                      ? NULL : accept_prefix;
         active_prefix_context = context;
         for (uint16_t state = 0; state < states->count; ++state) {
             for (uint16_t analysis = 0; analysis < analyses->count; ++analysis) {
@@ -501,8 +504,19 @@ void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_pr
     *result = *states;
 }
 
+void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_prefix,
+                              void *context, lw_candidates_t *result) {
+    decode_outline_internal(outline, accept_prefix, context, true, result);
+}
+
+void lw_decode_outline_final_unpruned(const char *outline,
+                                      lw_prefix_accept_fn accept_prefix,
+                                      void *context, lw_candidates_t *result) {
+    decode_outline_internal(outline, accept_prefix, context, false, result);
+}
+
 void lw_decode_outline(const char *outline, lw_candidates_t *result) {
-    lw_decode_outline_pruned(outline, NULL, NULL, result);
+    decode_outline_internal(outline, NULL, NULL, false, result);
 }
 
 size_t lw_translate_outline(const char *outline, lw_word_accept_fn accept,

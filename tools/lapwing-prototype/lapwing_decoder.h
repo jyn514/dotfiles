@@ -26,6 +26,9 @@ typedef struct {
 void lw_decode_outline(const char *outline, lw_candidates_t *result);
 void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_prefix,
                               void *context, lw_candidates_t *result);
+void lw_decode_outline_final_unpruned(const char *outline,
+                                      lw_prefix_accept_fn accept_prefix,
+                                      void *context, lw_candidates_t *result);
 
 /* Return accepted candidates in generation order, up to output capacity. */
 size_t lw_translate_outline(const char *outline, lw_word_accept_fn accept,

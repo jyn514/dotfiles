@@ -125,14 +125,14 @@ The selected 6,275-word model is:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,540-byte exact vocabulary graph and 1,706 exception
+The binary contains a 20,540-byte exact vocabulary graph and 1,697 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.06%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.78%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
 letter-by-letter outline. Authoritative spelling, including a final `AES`
-possessive stroke, raises reachable coverage to **99.98%** without admitting phonetic
+possessive stroke, raises reachable coverage to **99.99%** without admitting phonetic
 nonwords. The conventional figure is lower than the earlier 94.97% MPHF
 estimate, which
 assumed an order-preserving hash representation that was never implemented and
@@ -195,7 +195,10 @@ remain subject to exact vocabulary membership.
 `lapwing_model.c` provides exact vocabulary membership, prefix lookup,
 exception lookup, and front-coded output recovery. During rule generation,
 DAWG-prefix pruning prevents impossible partial spellings from consuming the
-64-candidate frontier. `lapwing_engine.c` adds delayed multi-stroke
+64-candidate inter-stroke frontier. If no exact final candidate survives, the
+model retries the final stroke without prefix pruning and tests bounded
+consonant-doubling, vowel-insertion, and steno-confusion repairs against exact
+DAWG membership. `lapwing_engine.c` adds delayed multi-stroke
 commit, automatic spacing and sentence capitalization, punctuation strokes,
 explicit commit, cancellation, and eight-entry undo history.
 `lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
@@ -206,8 +209,8 @@ The complete generated model and adapter compile in both Moonlander targets:
 
 | Target | Firmware | Flash remaining | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| `reva` | 105,692 B | **25,380 B** | 17,772 B | 9,244 B |
-| `revb` | 107,936 B | **23,136 B** | comparable | comparable |
+| `reva` | 106,140 B | **24,932 B** | 17,772 B | 9,244 B |
+| `revb` | 108,384 B | **22,688 B** | comparable | comparable |
 
 These builds use the complete `KW9E9` Oryx keymap and ZSA `firmware25` commit
 `c9fe0e2960cd96db31c627ab7215d93436305fed`.

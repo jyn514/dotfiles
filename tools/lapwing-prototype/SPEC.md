@@ -49,11 +49,17 @@ caused by explicit firmware bounds are permitted when documented and tested.
 
 ## Public C interface
 
-The decoder exposes two operations in `lapwing_decoder.h`:
+The decoder exposes these operations in `lapwing_decoder.h`:
 
 ```c
 void lw_decode_outline(const char *outline, lw_candidates_t *result);
 void lw_decode_outline_pruned(
+    const char *outline,
+    lw_prefix_accept_fn accept_prefix,
+    void *context,
+    lw_candidates_t *result
+);
+void lw_decode_outline_final_unpruned(
     const char *outline,
     lw_prefix_accept_fn accept_prefix,
     void *context,
@@ -70,8 +76,10 @@ size_t lw_translate_outline(
 ```
 
 `lw_decode_outline` returns generated spellings in deterministic rule order.
-`lw_decode_outline_pruned` rejects combined partial spellings that cannot prefix
-an exact vocabulary word. `lw_translate_outline` additionally applies a
+`lw_decode_outline_pruned` rejects combined spellings that cannot prefix an
+exact vocabulary word, including on the final stroke. The model-only
+`lw_decode_outline_final_unpruned` preserves inter-stroke pruning but retains raw
+final analyses for exact orthographic repair. `lw_translate_outline` additionally applies a
 caller-provided membership test.
 A null acceptance callback accepts every generated spelling.
 
@@ -189,7 +197,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,706 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,697 output words are lexically front-coded in 128-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -211,24 +219,27 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,692 | 25,380 | 17,772 | 9,244 |
-| revB | 107,936 | 23,136 | comparable | comparable |
+| revA | 106,140 | 24,932 | 17,772 | 9,244 |
+| revB | 108,384 | 22,688 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,784 bytes of linked flash, including all 40,960
+translator therefore adds 48,232 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.06% at the exact 40,960-byte budget. This metric
+and rule outlines cover 92.78% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
 additional exception records. Authoritative starred-letter spelling of words
 through sixteen letters, plus a final `AES` possessive stroke, raises reachable
-coverage to 99.98%. It bypasses vocabulary membership only for these
-explicit spelling paths; exact DAWG membership and prefix pruning still govern
-phonetic paths. The conventional figure is lower than the discarded
+coverage to 99.99%. It bypasses vocabulary membership only for these
+explicit spelling paths. Phonetic paths use exact DAWG membership and prefix
+pruning between strokes. When no exact final candidate survives, a second final-
+stroke pass tests bounded consonant doubling, vowel insertion, and common steno
+letter substitutions; repaired candidates must still be exact DAWG words. The
+conventional figure is lower than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 
 With identical vocabulary-prefix pruning, the C decoder's ordered 64-candidate

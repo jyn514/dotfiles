@@ -35,6 +35,9 @@ int main(int argc, char **argv) {
     bool found = false;
     for (size_t i = 0; i < count; ++i) found |= strcmp(output[i], "cat") == 0;
     if (!found) result |= fail("rule vocabulary translation failed");
+    if (lw_model_translate(&model, "TRAPBS/PHEUGS", output, 4) != 1
+        || strcmp(output[0], "transmission") != 0)
+        result |= fail("orthographic repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     free(data);
