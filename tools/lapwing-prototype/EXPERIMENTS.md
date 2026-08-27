@@ -81,6 +81,16 @@ letter-by-letter fallback is reported separately and is not counted here.
   points and common compounds such as `smartphone` still fail before final
   certificate validation because composition is not represented in decoder
   state.
+- Structured compound decoding was then modeled by splitting each outline at
+  every stroke boundary, decoding both halves independently as exact primary
+  words, and approving only a stored pair of unique terminal-edge identities.
+  It found 674 valid compounds, but the best allocation used only 250 records:
+  1,258 bytes, roughly 1,576 retained exceptions, and 93.41% conventional
+  coverage. Larger sets fell below the current baseline. `smartphone` could not
+  participate because at least one component lacked a unique one-edge identity;
+  `battlefield`, `butterfly`, `underwater`, and `offshore` were outside the
+  rule-capable certificate candidate set. The 0.04-point gain does not justify
+  adding split decoding and a new packed record format.
 
 ## Productive directions not yet exhausted
 
