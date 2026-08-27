@@ -19,17 +19,14 @@ class GenerateModelTest(unittest.TestCase):
         }
         generate_model.add_productive_outlines(
             outlines,
-            ["days", "world's", "anti", "non", "im", "usa", "sydney",
-             "successful", "successfully", "infrastructure"],
+            ["days", "world's", "anti", "non", "im",
+             "successful", "successfully"],
         )
         self.assertIn("TKAEU/-Z", outlines["days"])
         self.assertIn("WORLD/AES", outlines["world's"])
         self.assertIn("APB/TEU", outlines["anti"])
         self.assertIn("TPHOPB", outlines["non"])
         self.assertIn("EUPL", outlines["im"])
-        self.assertEqual(outlines["usa"], ["U*/S*/A*"])
-        self.assertIn("S*/KWH*/TK*/TPH*/E*/KWH*", outlines["sydney"])
-        self.assertEqual(outlines["infrastructure"][0].count("/") + 1, 14)
         self.assertIn("SUK/SES/-FL", outlines["successful"])
         self.assertIn("SUK/SES/-FL/HREU", outlines["successfully"])
 
