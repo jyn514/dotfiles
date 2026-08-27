@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **92.43%**. Authoritative
+The current conventional-coverage baseline is **92.44%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments

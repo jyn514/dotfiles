@@ -201,7 +201,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,697 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,700 output words are lexically front-coded in 384-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -233,7 +233,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.43% at the exact 40,960-byte budget. This metric
+and rule outlines cover 92.44% at the exact 40,960-byte budget. This metric
 excludes every synthesized letter-by-letter outline, including one-stroke
 letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
