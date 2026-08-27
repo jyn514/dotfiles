@@ -182,14 +182,14 @@ The implemented linguistic data occupies 40,960 bytes:
 | Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
-6,230-word vocabulary is an exact minimized acyclic word graph. Each graph edge
+6,275-word vocabulary is an exact minimized acyclic word graph. Each graph edge
 uses 20 packed bits containing a five-bit alphabet symbol, a 13-bit target edge
 offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
-20,448 bytes and cannot produce membership false positives.
+20,540 bytes and cannot produce membership false positives.
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,692 output words are lexically front-coded in 128-word blocks,
+outlines. The 1,681 output words are lexically front-coded in 128-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -221,7 +221,7 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 94.67% at the exact 40,960-byte budget. Productive
+and rule outlines cover 94.70% at the exact 40,960-byte budget. Productive
 morphology, closed-compound composition, and standalone affixes contribute
 without additional exception records. Authoritative starred-letter spelling of
 words through sixteen letters, plus a final `AES` possessive stroke, raises

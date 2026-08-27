@@ -88,8 +88,10 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
         if state.edges:
             offsets[state_id] = edge_count
             edge_count += len(state.edges)
-    if edge_count >= LEAF_OFFSET:
-        raise ValueError("vocabulary DAWG exceeds 13-bit edge offsets")
+    target_ids = {target_id for state in states for _, target_id in state.edges}
+    if any(states[target_id].edges and offsets[target_id] >= LEAF_OFFSET
+           for target_id in target_ids):
+        raise ValueError("vocabulary DAWG exceeds 13-bit target offsets")
 
     values = []
     for state in states:
@@ -435,7 +437,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         selected, all_exception_candidates, weights, model_base_size, binary_budget,
     )
     model = pack_model(vocabulary, selected, dawg_info)
-    covered = fingerspelled | successful | {entry.word for entry in selected}
+    conventional = successful | {entry.word for entry in selected}
+    covered = fingerspelled | conventional
     report = {
         "model_bytes": len(model),
         "rule_bytes": RULE_BYTES,
@@ -446,6 +449,9 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "fingerspelled_words": len(fingerspelled),
         "exception_outlines": len(selected),
         "coverage_of_frequency_list": sum(weights.get(word, 0) for word in covered) / total_weight,
+        "conventional_coverage_of_frequency_list": (
+            sum(weights.get(word, 0) for word in conventional) / total_weight
+        ),
         "probabilistic_membership": False,
     }
     return vocabulary, selected, report
@@ -458,7 +464,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=6230)
+    parser.add_argument("--vocabulary", type=int, default=6275)
     parser.add_argument("--beam", type=int, default=24)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()
