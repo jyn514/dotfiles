@@ -118,7 +118,7 @@ typedef struct {
 ```
 
 The naturally aligned ARM representation occupies six bytes per entry. The
-complete generated C rule representation currently occupies 4,428 bytes before
+complete packed generated C rule representation currently occupies 4,181 bytes before
 linker optimization. This supersedes the earlier 2,555-byte estimate based only
 on NUL-terminated keys and values, which did not include lookup metadata.
 
@@ -177,8 +177,8 @@ The implemented linguistic data occupies 40,960 bytes:
 
 | Component | Bytes |
 |---|---:|
-| Generated C rules | 4,428 |
-| Binary vocabulary and exceptions | 36,532 |
+| Generated C rules | 4,181 |
+| Binary vocabulary and exceptions | 36,779 |
 | Total | 40,960 |
 
 The binary model begins with a versioned 36-byte little-endian header. Its
@@ -189,7 +189,7 @@ offset, a target-terminal bit, and an end-of-edge-list bit. The graph occupies
 
 Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
 five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 1,687 output words are lexically front-coded in 64-word blocks,
+outlines. The 1,713 output words are lexically front-coded in 64-word blocks,
 use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
 binary-searches the records and decodes at most 32 words from the selected
 restart point.
@@ -211,17 +211,17 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,296 | 25,776 | 17,612 | 9,404 |
-| revB | 107,544 | 23,528 | comparable | comparable |
+| revA | 105,328 | 25,744 | 17,612 | 9,404 |
+| revB | 107,568 | 23,504 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,388 bytes of linked flash, including all 40,960
+translator therefore adds 47,420 bytes of linked flash, including all 40,960
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
-estimates 92.12% frequency-weighted coverage. Productive morphology,
+estimates 92.17% frequency-weighted coverage. Productive morphology,
 standalone affix outlines, and algorithmic fingerspelling contribute without
 additional exception records. Exact DAWG-prefix pruning keeps impossible
 partial spellings out of the bounded frontier. This is lower than the discarded
