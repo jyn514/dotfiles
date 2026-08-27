@@ -128,7 +128,7 @@ The selected 6,150-word model is:
 The binary contains a 20,208-byte exact vocabulary graph and 1,703 exception
 outlines. Productive morphology, standalone affixes, and algorithmic
 fingerspelling supply additional outlines without consuming model records. On
-the 20,000-token benchmark it estimates **92.01%** frequency-
+the 20,000-token benchmark it estimates **92.02%** frequency-
 weighted coverage. This is lower than the earlier 94.97% MPHF estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.

@@ -74,6 +74,15 @@ class GenerateModelTest(unittest.TestCase):
             )
             subprocess.run([str(executable), str(model)], check=True)
 
+    def test_exception_local_search_replaces_lower_weight_word(self) -> None:
+        low = generate_model.ExceptionEntry("HROE", "low")
+        high = generate_model.ExceptionEntry("TOP", "top")
+        budget = generate_model.exception_storage_size([low])
+        improved = generate_model.improve_exception_selection(
+            [low], [low, high], {"low": 1.0, "top": 2.0}, 0, budget
+        )
+        self.assertEqual(improved, [high])
+
     def test_model_selection_builds_vocabulary_graph_once(self) -> None:
         dictionary = {"KAT": "cat", "TKOG": "dog"}
         frequencies = [("cat", 7.0), ("dog", 6.0)]

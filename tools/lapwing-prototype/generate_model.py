@@ -299,6 +299,41 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
     return header + dawg + record_bytes + block_offsets + word_data
 
 
+def improve_exception_selection(
+    selected: list[ExceptionEntry], candidates: list[ExceptionEntry],
+    weights: dict[str, float], model_base_size: int, binary_budget: int,
+    attempts: int = 512,
+) -> list[ExceptionEntry]:
+    """Replace low-value records when a higher-value record fits exactly."""
+    selected_words = {entry.word for entry in selected}
+    unselected = sorted(
+        (entry for entry in candidates if entry.word not in selected_words),
+        key=lambda entry: (-weights[entry.word], entry.word, entry.outline),
+    )[:attempts]
+    for candidate in unselected:
+        victims = sorted(selected, key=lambda entry: (weights[entry.word], entry.word))[:32]
+        for victim in victims:
+            if weights[candidate.word] <= weights[victim.word]:
+                break
+            proposed = [entry for entry in selected if entry != victim] + [candidate]
+            try:
+                size = model_base_size + exception_storage_size(proposed)
+                # pack_model will enforce hashes, but checking them here avoids
+                # accepting a swap that cannot be serialized.
+                fingerprints: dict[int, str] = {}
+                for entry in proposed:
+                    fingerprint = hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK
+                    previous = fingerprints.setdefault(fingerprint, entry.outline)
+                    if previous != entry.outline:
+                        raise ValueError("hash collision")
+            except ValueError:
+                continue
+            if size <= binary_budget:
+                selected = proposed
+                break
+    return selected
+
+
 def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]],
                  vocabulary_size: int, beam: int,
                  binary_budget: int) -> tuple[list[str], list[ExceptionEntry], dict[str, float | int]]:
@@ -363,6 +398,17 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
             selected_fingerprints[fingerprint] = outline
             current_size = size
 
+    used_outlines = {entry.outline for entry in selected}
+    selected_words = {entry.word for entry in selected}
+    all_exception_candidates = [
+        ExceptionEntry(preferred_outline[word], word)
+        for word in candidates
+        if word in selected_words
+        or preferred_outline[word] not in used_outlines
+    ]
+    selected = improve_exception_selection(
+        selected, all_exception_candidates, weights, model_base_size, binary_budget,
+    )
     model = pack_model(vocabulary, selected, dawg_info)
     covered = successful | {entry.word for entry in selected}
     report = {
