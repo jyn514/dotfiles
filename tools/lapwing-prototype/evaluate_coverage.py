@@ -16,7 +16,8 @@ TOKEN_RE = re.compile(r"[A-Za-z]+(?:[-'][A-Za-z]+)*")
 
 
 def tokenize(text: str) -> list[str]:
-    return [match.group(0).lower() for match in TOKEN_RE.finditer(text)]
+    normalized = text.replace("\u2018", "'").replace("\u2019", "'")
+    return [match.group(0).lower() for match in TOKEN_RE.finditer(normalized)]
 
 
 def frequency_report(

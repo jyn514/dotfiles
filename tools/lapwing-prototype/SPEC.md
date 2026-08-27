@@ -266,9 +266,9 @@ terminal voiced-silent-e, soft-c, and plural rewrites, plus bounded `gh` and
 must still be exact DAWG words. The conventional figure is lower than the discarded 94.97% MPHF estimate but
 has exact vocabulary membership and recoverable output.
 
-A frozen-model evaluation over 797,151 tokens from five Project Gutenberg works
-and RFC 9110 measured 87.13% conventional token coverage, ranging from 82.40%
-to 90.88% by corpus. The same frozen model scores 99.37%, 97.07%, 93.91%, and
+A frozen-model evaluation over 793,338 tokens from five Project Gutenberg works
+and RFC 9110 measured 87.39% conventional token coverage after apostrophe
+normalization, ranging from 83.01% to 91.22% by corpus. The same frozen model scores 99.37%, 97.07%, 93.91%, and
 91.51% when the frequency-list denominator is extended to its first 5,000,
 10,000, 20,000, and all 49,253 valid types. Corpus token coverage and weighted
 frequency-list coverage are separate measurements.
