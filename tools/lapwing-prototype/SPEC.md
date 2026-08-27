@@ -211,21 +211,23 @@ QMK chord adapter, delayed commit, punctuation, capitalization, and undo.
 
 | Target | Firmware flash | Remaining flash | BSS | Linker heap |
 |---|---:|---:|---:|---:|
-| revA | 105,324 | 25,748 | 17,772 | 9,244 |
-| revB | 107,568 | 23,504 | comparable | comparable |
+| revA | 105,592 | 25,480 | 17,772 | 9,244 |
+| revB | 107,836 | 23,236 | comparable | comparable |
 
 The revA baseline without Lapwing occupies 57,908 bytes. The complete revA
-translator therefore adds 47,420 bytes of linked flash, including all 40,959
+translator therefore adds 47,684 bytes of linked flash, including all 40,959
 bytes of linguistic data.
 
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, the exact 40,960-byte model
-estimates 94.66% frequency-weighted coverage. Productive morphology, closed-
+estimates 94.67% frequency-weighted coverage. Productive morphology, closed-
 compound composition, standalone affix outlines, and algorithmic fingerspelling
 of every word through sixteen letters contribute without additional exception
 records. Exact DAWG-prefix pruning keeps impossible
-partial spellings out of the bounded frontier. This is lower than the discarded
+partial spellings out of the bounded frontier, while direct starred-letter
+recognition bypasses phonetic ambiguity for fingerspelled words. This is lower
+than the discarded
 94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
 
 With identical vocabulary-prefix pruning, the C decoder's ordered 64-candidate

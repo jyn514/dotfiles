@@ -29,5 +29,11 @@ int main(void) {
     int failed = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
         failed += check_contains(cases[i].outline, cases[i].word);
+    lw_candidates_t fingerspelled;
+    lw_decode_outline("U*/S*/A*", &fingerspelled);
+    if (fingerspelled.count != 1 || strcmp(fingerspelled.words[0], "usa") != 0) {
+        fprintf(stderr, "direct fingerspelling did not produce only usa\n");
+        ++failed;
+    }
     return failed != 0;
 }
