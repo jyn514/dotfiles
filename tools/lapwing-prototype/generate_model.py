@@ -193,9 +193,42 @@ class ExceptionEntry:
     word: str
 
 
+def derivations_for_word(word: str) -> list[tuple[str, str]]:
+    derivations: list[tuple[str, str]] = []
+    if word.endswith("'s"):
+        derivations.append((word[:-2], "AES"))
+    if word.endswith("ies"):
+        derivations.append((word[:-3] + "y", "-Z"))
+    if word.endswith("es"):
+        derivations.extend(((word[:-2], "-Z"), (word[:-1], "-Z")))
+    if word.endswith("s"):
+        derivations.append((word[:-1], "-Z"))
+    if word.endswith("ied"):
+        derivations.append((word[:-3] + "y", "-D"))
+    if word.endswith("ed"):
+        stem = word[:-2]
+        derivations.extend(((stem, "-D"), (stem + "e", "-D")))
+        if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
+            derivations.append((stem[:-1], "-D"))
+    if word.endswith("ing"):
+        stem = word[:-3]
+        derivations.extend(((stem, "-G"), (stem + "e", "-G")))
+        if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
+            derivations.append((stem[:-1], "-G"))
+    if word.endswith("ly"):
+        derivations.append((word[:-2], "HREU"))
+    for outline, additions in hand_rules.SUFFIXES.items():
+        for addition in additions:
+            if addition in {"s", "ed", "ing", "ly", "'s"}:
+                continue
+            if word.endswith(addition) and len(word) > len(addition):
+                derivations.append((word[:-len(addition)], outline))
+    return list(dict.fromkeys(derivations))
+
+
 def add_productive_outlines(outlines_by_word: dict[str, list[str]],
                             words: list[str]) -> None:
-    """Add documented Lapwing affix outlines absent from the base dictionary."""
+    """Add standalone, fingerspelling, and recursively productive outlines."""
     for word in words:
         if word in outlines_by_word:
             continue
@@ -205,34 +238,26 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
         for outline, values in hand_rules.PREFIXES.items():
             if word in values:
                 outlines_by_word.setdefault(word, []).append(outline)
-        if word in outlines_by_word:
-            continue
-        derivations: list[tuple[str, str]] = []
-        if word.endswith("'s"):
-            derivations.append((word[:-2], "AES"))
-        if word.endswith("ies"):
-            derivations.append((word[:-3] + "y", "-Z"))
-        if word.endswith("es"):
-            derivations.extend(((word[:-2], "-Z"), (word[:-1], "-Z")))
-        if word.endswith("s"):
-            derivations.append((word[:-1], "-Z"))
-        if word.endswith("ied"):
-            derivations.append((word[:-3] + "y", "-D"))
-        if word.endswith("ed"):
-            stem = word[:-2]
-            derivations.extend(((stem, "-D"), (stem + "e", "-D")))
-            if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
-                derivations.append((stem[:-1], "-D"))
-        if word.endswith("ing"):
-            stem = word[:-3]
-            derivations.extend(((stem, "-G"), (stem + "e", "-G")))
-            if len(stem) > 2 and stem[-1:] == stem[-2:-1]:
-                derivations.append((stem[:-1], "-G"))
-        if word.endswith("ly"):
-            derivations.append((word[:-2], "HREU"))
-        for root, suffix in derivations:
-            for outline in outlines_by_word.get(root, ())[:4]:
-                outlines_by_word.setdefault(word, []).append(outline + "/" + suffix)
+
+    # Multiple rounds permit chains such as success -> successful -> successfully.
+    for _ in range(4):
+        changed = False
+        for word in words:
+            if word in outlines_by_word:
+                continue
+            for root, suffix in derivations_for_word(word):
+                for outline in outlines_by_word.get(root, ())[:4]:
+                    candidate = outline + "/" + suffix
+                    values = outlines_by_word.setdefault(word, [])
+                    if candidate not in values:
+                        values.append(candidate)
+                        changed = True
+            if word in outlines_by_word:
+                continue
+        if not changed:
+            break
+
+    for word in words:
         if word not in outlines_by_word and word.isalpha() and len(word) <= 4:
             outlines_by_word.setdefault(word, []).append(
                 "/".join(LETTER_OUTLINES[character] for character in word)
