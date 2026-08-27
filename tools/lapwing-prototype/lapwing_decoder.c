@@ -228,6 +228,9 @@ static void join_into(lw_candidates_t *result, const char *root,
                       const char *addition, bool affix) {
     char word[LW_MAX_WORD + 1];
     if (copy_word(word, root) && append_word(word, addition)) add_unique(result, word);
+    if (!affix && root[0] && addition[0] && copy_word(word, root)
+        && append_word(word, "-") && append_word(word, addition))
+        add_unique(result, word);
 
     size_t root_length = strlen(root);
     if (root_length && addition[0] && root[root_length - 1] == addition[0]) {

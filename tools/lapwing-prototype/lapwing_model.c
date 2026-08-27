@@ -430,6 +430,25 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
     if (replace_fragment(model, word, "f", "ce", output)) return true;
     if (insert_fragment(model, word, "gh", output)) return true;
     if (insert_fragment(model, word, "in", output)) return true;
+    if (replace_fragment(model, word, "or", "our", output)) return true;
+    if (replace_fragment(model, word, "iz", "is", output)) return true;
+    if (length >= 2u && strcmp(word + length - 2u, "er") == 0) {
+        memcpy(repaired, word, length - 2u);
+        strcpy(repaired + length - 2u, "re");
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    if (length < LW_MAX_WORD) {
+        for (size_t index = 1; index + 2u < length; ++index) {
+            if (word[index] != 'l'
+                || (strcmp(word + index + 1u, "ed") != 0
+                    && strcmp(word + index + 1u, "ing") != 0))
+                continue;
+            memcpy(repaired, word, index);
+            repaired[index] = 'l';
+            strcpy(repaired + index + 1u, word + index);
+            if (accept_repair(model, repaired, output)) return true;
+        }
+    }
     return false;
 }
 
