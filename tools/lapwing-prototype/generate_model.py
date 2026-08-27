@@ -369,13 +369,31 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         word for word in reversed(ranked_vocabulary)
         if not outlines_by_word.get(word)
     ][:VOCABULARY_REBALANCE_REMOVALS]
-    additions = [
+    removed = set(removable)
+    retained = [word for word in ranked_vocabulary if word not in removed]
+    addition_pool = [
         word for word, _ in frequencies[vocabulary_size:]
         if outlines_by_word.get(word)
-    ][:VOCABULARY_REBALANCE_ADDITIONS]
-    removed = set(removable)
-    vocabulary = [word for word in ranked_vocabulary if word not in removed]
-    vocabulary.extend(additions)
+    ][:200]
+    probe_words = set(retained + addition_pool)
+    probe_prefixes = {
+        word[:length]
+        for word in probe_words
+        for length in range(1, len(word) + 1)
+    }
+    additions = []
+    for word in addition_pool:
+        for outline in sorted(outlines_by_word[word],
+                              key=lambda value: (value.count("/"), len(value), value)):
+            generated = hand_rules.generate_outline(outline, beam, probe_prefixes)
+            accepted = next((candidate for candidate in generated
+                             if candidate in probe_words), None)
+            if accepted == word:
+                additions.append(word)
+                break
+        if len(additions) == VOCABULARY_REBALANCE_ADDITIONS:
+            break
+    vocabulary = retained + additions
     vocabulary_set = set(vocabulary)
     vocabulary_prefixes = {
         word[:length]

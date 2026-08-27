@@ -129,7 +129,7 @@ to 6,215 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,500-byte exact vocabulary graph and 1,702 exception
+The binary contains a 20,510-byte exact vocabulary graph and 1,700 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
@@ -151,8 +151,10 @@ python3 generate_model.py \
   --vocabulary 6275 --beam 64 --report lapwing_model_report.json
 ```
 
-Model selection builds the vocabulary graph once and uses a size-only exception
-path while searching the budget. On the reference inputs this reduced a
+Model selection probes the next 200 outlined words against a temporary exact
+prefix set and admits the first 20 that resolve without exceptions. It then
+builds the final vocabulary graph once and uses a size-only exception path while
+searching the budget. On the reference inputs this reduced a
 6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
 producing a byte-identical model.
 
