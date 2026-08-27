@@ -125,13 +125,14 @@ The selected 6,275-word model is:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,540-byte exact vocabulary graph and 1,681 exception
+The binary contains a 20,540-byte exact vocabulary graph and 1,706 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **94.70%** of the 20,000-token
-frequency benchmark. Authoritative spelling, including a final `AES` possessive
-stroke, raises reachable coverage to **99.99%** without admitting phonetic
+Conventional dictionary and rule outlines cover **92.06%** of the 20,000-token
+frequency benchmark. This metric deliberately excludes every synthesized
+letter-by-letter outline. Authoritative spelling, including a final `AES`
+possessive stroke, raises reachable coverage to **99.98%** without admitting phonetic
 nonwords. The conventional figure is lower than the earlier 94.97% MPHF
 estimate, which
 assumed an order-preserving hash representation that was never implemented and

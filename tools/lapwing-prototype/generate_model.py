@@ -27,7 +27,6 @@ DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 LEAF_OFFSET = 0x1FFF
-LETTER_OUTLINES = hand_rules.FINGER_SPELLING_OUTLINES
 STANDALONE_OUTLINES = {
     "co": "KOE",
     "non": "TPHOPB",
@@ -275,12 +274,6 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
         if not changed:
             break
 
-    for word in words:
-        if word.isalpha() and len(word) <= 16:
-            fingerspelled = "/".join(LETTER_OUTLINES[character] for character in word)
-            values = outlines_by_word.setdefault(word, [])
-            if fingerspelled not in values:
-                values.append(fingerspelled)
 
 
 def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
