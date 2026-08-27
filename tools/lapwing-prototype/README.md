@@ -132,9 +132,10 @@ The binary contains a 20,540-byte exact vocabulary graph and 1,701 exception
 outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **92.82%** of the 20,000-token
+Conventional dictionary and rule outlines cover **92.36%** of the 20,000-token
 frequency benchmark. This metric deliberately excludes every synthesized
-letter-by-letter outline. Authoritative spelling, including a final `AES`
+letter-by-letter outline, including one-stroke letter fallbacks absent from the
+plain-word dictionary. Authoritative spelling, including a final `AES`
 possessive stroke, raises reachable coverage to **99.99%** without admitting phonetic
 nonwords. The conventional figure is lower than the earlier 94.97% MPHF
 estimate, which

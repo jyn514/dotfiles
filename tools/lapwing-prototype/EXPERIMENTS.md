@@ -7,7 +7,7 @@ repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the 20,000-token reference list. Unless noted, trials
 used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
-The current conventional-coverage baseline is **92.82%**. Authoritative
+The current conventional-coverage baseline is **92.36%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -19,7 +19,7 @@ letter-by-letter fallback is reported separately and is not counted here.
 | Encode DAWG edges with 14-bit targets | 6,400 words: 92.04%; 6,600: 92.09%; 7,000: 92.09%; 8,000: 91.83%; 9,000: 91.01% on the then-current metric. | Expanding every edge from 20 to 21 bits consumed more exception space than the larger vocabulary recovered. |
 | Path-compress single-child DAWG chains | Rough estimate for 6,230 words: 6,014 radix arcs and 12,897 label characters; even three-byte arc records totaled about 26,103 bytes, versus about 20,448 bytes for packed DAWG edges. | Label storage and arc metadata outweighed removed states. |
 | Split the DAWG by first letter | 6,230 words required about 26,775 bytes; 8,000 required about 33,094 bytes. | Lost cross-initial suffix sharing made the graph much larger. |
-| Select only words that already have dictionary or productive outlines | Best tested point: 6,200 selected words, 92.41% conventional coverage and a 20,498-byte graph, versus 92.82% for the ranked-prefix vocabulary. | Lower-ranked rule-resolvable words displaced more valuable high-frequency vocabulary and exception interactions. |
+| Select only words that already have dictionary or productive outlines | Best tested point: 6,200 selected words, 92.41% under the then-current metric and a 20,498-byte graph, versus 92.82% for the ranked-prefix vocabulary under that same metric. | Lower-ranked rule-resolvable words displaced more valuable high-frequency vocabulary and exception interactions. Both figures predate the one-letter fallback correction. |
 | Disable final-stroke prefix pruning without a separate exact pass | Conventional coverage fell from 92.06% to 91.95%. | Raw final alternatives displaced exact candidates in the 64-entry result buffer. The accepted design preserves the exact pass and retries unpruned final analyses only after it fails. |
 | Broaden exception local search from 512 candidates/32 victims to 1,024/64 | 92.817391%, versus 92.817075% at the default, while generation rose to about 36 seconds. A 2,048/128 trial took about 44 seconds for similarly negligible gain. | The improvement was too small for the repeated generation cost. |
 | Use hash-order exception outputs to eliminate output IDs | For 1,701 exceptions, random hash order needed about 11,079 output bytes plus 6,804 four-byte records, versus about 7,698 output bytes plus 8,505 five-byte records in lexical order. | Lost front-coding locality made the representation about 1.7 KiB larger. |
@@ -31,12 +31,15 @@ letter-by-letter fallback is reported separately and is not counted here.
 - The corrected hypothetical MPHF estimate was 94.97%, but assumed an
   order-preserving representation that was not implemented and was not exact.
 - Conventional coverage figures above 94% produced during the fingerspelling
-  work counted synthesized letter-by-letter outlines. The metric was corrected
-  in commit `68c9db28`; fallback spelling is now reported separately.
+  work counted synthesized letter-by-letter outlines. The metric was first
+  separated in commit `68c9db28`; a later audit also removed assumed one-letter
+  fallbacks absent from the plain-word dictionary, establishing the 92.36%
+  baseline. Fallback spelling is now reported separately.
 - A plain unpruned final-stroke implementation briefly measured 92.75% only
   when paired with orthographic repair, but it could lose existing exact
   candidates. The accepted two-pass design reached 92.78% before expanded
-  repairs and 92.82% afterward without that regression.
+  repairs and 92.82% afterward without that regression under the pre-audit
+  one-letter metric.
 
 ## Productive directions not yet exhausted
 

@@ -229,8 +229,9 @@ bytes of linguistic data.
 ### Coverage and equivalence
 
 Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 92.82% at the exact 40,960-byte budget. This metric
-excludes every synthesized letter-by-letter outline. Productive morphology,
+and rule outlines cover 92.36% at the exact 40,960-byte budget. This metric
+excludes every synthesized letter-by-letter outline, including one-stroke
+letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
 additional exception records. Authoritative starred-letter spelling of words
 through sixteen letters, plus a final `AES` possessive stroke, raises reachable
