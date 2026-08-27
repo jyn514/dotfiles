@@ -321,7 +321,14 @@ def orthographic_repairs(word: str) -> list[str]:
     for index in range(1, len(word)):
         for vowel in "aeiou":
             repairs.append(word[:index] + vowel + word[index:])
+    for index in range(len(word)):
+        repairs.append(word[:index] + word[index + 1:])
+    for index in range(len(word) - 1):
+        if word[index] != word[index + 1]:
+            repairs.append(word[:index] + word[index + 1] + word[index]
+                           + word[index + 2:])
     substitutions = {
+        "a": "eiou", "e": "aiou", "i": "aeou", "o": "aeiu", "u": "aeio",
         "c": "ks", "k": "c", "s": "c", "g": "j", "j": "g",
         "f": "v", "v": "f",
     }

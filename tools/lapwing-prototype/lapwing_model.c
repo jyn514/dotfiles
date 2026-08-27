@@ -238,8 +238,25 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
         }
     }
     for (size_t index = 0; index < length; ++index) {
+        memcpy(repaired, word, index);
+        strcpy(repaired + index, word + index + 1u);
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    for (size_t index = 0; index + 1u < length; ++index) {
+        if (word[index] == word[index + 1u]) continue;
+        strcpy(repaired, word);
+        repaired[index] = word[index + 1u];
+        repaired[index + 1u] = word[index];
+        if (accept_repair(model, repaired, output)) return true;
+    }
+    for (size_t index = 0; index < length; ++index) {
         const char *replacements = "";
         switch (word[index]) {
+            case 'a': replacements = "eiou"; break;
+            case 'e': replacements = "aiou"; break;
+            case 'i': replacements = "aeou"; break;
+            case 'o': replacements = "aeiu"; break;
+            case 'u': replacements = "aeio"; break;
             case 'c': replacements = "ks"; break;
             case 'k': replacements = "c"; break;
             case 's': replacements = "c"; break;
