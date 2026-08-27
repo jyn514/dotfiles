@@ -87,6 +87,17 @@ static const lw_rule_entry_t *find_rule(const lw_rule_entry_t *rules,
     return NULL;
 }
 
+static char fingerspelling_letter(const char *stroke) {
+    static const char *const outlines[] = {
+        "A*", "PW*", "KR*", "TK*", "E*", "TP*", "TKPW*", "H*", "EU*",
+        "SKWR*", "K*", "HR*", "PH*", "TPH*", "O*", "P*", "KW*", "R*",
+        "S*", "T*", "U*", "SR*", "W*", "KP*", "KWH*", "STKPW*",
+    };
+    for (uint8_t index = 0; index < 26u; ++index)
+        if (strcmp(stroke, outlines[index]) == 0) return (char)('a' + index);
+    return '\0';
+}
+
 static bool is_vowel_key(char key) {
     return key == 'A' || key == 'O' || key == 'E' || key == 'U';
 }
@@ -410,6 +421,23 @@ void lw_decode_outline_pruned(const char *outline, lw_prefix_accept_fn accept_pr
         start = slash + 1;
     }
     if (*start && stroke_count == LW_MAX_STROKES && strchr(start, '/')) return;
+
+    char fingerspelled[LW_MAX_WORD + 1];
+    bool all_fingerspelled = stroke_count > 0;
+    for (uint8_t index = 0; index < stroke_count; ++index) {
+        char letter = fingerspelling_letter(strokes[index]);
+        if (!letter) {
+            all_fingerspelled = false;
+            break;
+        }
+        fingerspelled[index] = letter;
+    }
+    if (all_fingerspelled) {
+        fingerspelled[stroke_count] = '\0';
+        if (!accept_prefix || accept_prefix(context, fingerspelled))
+            add_unique(result, fingerspelled);
+        return;
+    }
 
     lw_candidates_t *states = &workspace.states;
     lw_candidates_t *next = &workspace.next;

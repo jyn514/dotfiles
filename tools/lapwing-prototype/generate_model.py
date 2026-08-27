@@ -27,12 +27,7 @@ DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 LEAF_OFFSET = 0x1FFF
-LETTER_OUTLINES = dict(zip(
-    "abcdefghijklmnopqrstuvwxyz",
-    ("A*", "PW*", "KR*", "TK*", "E*", "TP*", "TKPW*", "H*", "EU*",
-     "SKWR*", "K*", "HR*", "PH*", "TPH*", "O*", "P*", "KW*", "R*",
-     "S*", "T*", "U*", "SR*", "W*", "KP*", "KWH*", "STKPW*"),
-))
+LETTER_OUTLINES = hand_rules.FINGER_SPELLING_OUTLINES
 STANDALONE_OUTLINES = {
     "co": "KOE",
     "non": "TPHOPB",

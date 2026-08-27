@@ -15,6 +15,15 @@ from pathlib import Path
 
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 VOWEL_KEYS = set("AOEU")
+FINGER_SPELLING_OUTLINES = dict(zip(
+    "abcdefghijklmnopqrstuvwxyz",
+    ("A*", "PW*", "KR*", "TK*", "E*", "TP*", "TKPW*", "H*", "EU*",
+     "SKWR*", "K*", "HR*", "PH*", "TPH*", "O*", "P*", "KW*", "R*",
+     "S*", "T*", "U*", "SR*", "W*", "KP*", "KWH*", "STKPW*"),
+))
+FINGER_SPELLING_LETTERS = {
+    outline: letter for letter, outline in FINGER_SPELLING_OUTLINES.items()
+}
 
 INITIAL_TOKENS = {
     "TKPWHR": ("gl",), "STKPW": ("z",), "TKPWR": ("gr",),
@@ -305,6 +314,9 @@ def decode_stroke_analyses(stroke: str, final_position: bool) -> list[str]:
 def generate_outline(outline: str, beam: int,
                      prefixes: set[str] | None = None) -> list[str]:
     strokes = outline.split("/")
+    if strokes and all(stroke in FINGER_SPELLING_LETTERS for stroke in strokes):
+        word = "".join(FINGER_SPELLING_LETTERS[stroke] for stroke in strokes)
+        return [word] if prefixes is None or word in prefixes else []
     states = [""]
     for index, stroke in enumerate(strokes):
         analyses: list[tuple[str, bool]] = []
