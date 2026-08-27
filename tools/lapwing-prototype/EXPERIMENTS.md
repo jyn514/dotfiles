@@ -71,12 +71,16 @@ letter-by-letter fallback is reported separately and is not counted here.
 
 - Component certificates using a primary-DAWG terminal-edge identity avoid a
   second word graph. Restricting components to words uniquely identified by
-  their final edge index and length preserves exactness. An estimated
-  1,000-certificate model used about 4,263 bytes, retained roughly 1,261
-  exceptions, and reached 93.61% conventional coverage, versus 93.37% for the
-  current model. A less restrictive two-edge identity retained more components
-  but its wider records peaked near 93.46%. These estimates use target-specific
-  prefix pruning; adoption requires a real packed format and C decoder test.
+  their final edge index and length preserves exactness. The initial optimistic
+  1,000-certificate estimate reached 93.61%. Re-evaluation using the firmware's
+  actual primary-prefix pruning and final-stroke-unpruned behavior peaked at
+  93.60% with 900 certificates (about 3,823 bytes and roughly 1,306 retained
+  exceptions), versus 93.37% for the current model. A two-edge identity retained
+  more components but its wider records peaked near 93.46%. This does not yet
+  justify a format and decoder implementation: the gain is 0.23 percentage
+  points and common compounds such as `smartphone` still fail before final
+  certificate validation because composition is not represented in decoder
+  state.
 
 ## Productive directions not yet exhausted
 
