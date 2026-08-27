@@ -21,7 +21,7 @@ HEADER = struct.Struct("<4sBBHIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
 EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
-BLOCK_WORDS = 64
+BLOCK_WORDS = 128
 RULE_BYTES = 4181
 DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
@@ -258,7 +258,7 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
             break
 
     for word in words:
-        if word not in outlines_by_word and word.isalpha() and len(word) <= 4:
+        if word not in outlines_by_word and word.isalpha() and len(word) <= 8:
             outlines_by_word.setdefault(word, []).append(
                 "/".join(LETTER_OUTLINES[character] for character in word)
             )
