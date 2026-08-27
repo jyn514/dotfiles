@@ -81,7 +81,7 @@ class ClipboardTest(unittest.TestCase):
             f'printf "%s\\n" "$@" > "{arguments}"\ncat > "{clipboard}"\n',
         )
         selection = (
-            b"; build      \xe2\x8f\xb1 +1.25s\n"
+            b"; build      \xe2\x8f\xb1 +1.25s [I]\n"
             b"ordinary output 12:34\n"
             b"binary \xff\n"
             b"; next\t\xe2\x8f\xb1 21:45\r\n"
