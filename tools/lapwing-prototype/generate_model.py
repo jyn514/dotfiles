@@ -374,7 +374,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         if (word.isalpha() and len(word) <= 16)
         or (word.endswith("'s") and word[:-2].isalpha() and len(word[:-2]) <= 15)
     }
-    successful: set[str] = {word for word in vocabulary if len(word) == 1}
+    successful: set[str] = set()
     preferred_outline: dict[str, str] = {}
     for word in vocabulary:
         for outline in sorted(outlines_by_word.get(word, ()), key=lambda value: (value.count("/"), len(value), value)):
