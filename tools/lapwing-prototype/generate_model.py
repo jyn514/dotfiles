@@ -617,6 +617,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "probabilistic_membership": False,
     }
     report["morphology"] = morphology
+    report["conventional_words"] = conventional
     return vocabulary, selected, report
 
 
@@ -639,6 +640,7 @@ def main() -> None:
         dictionary, frequencies, args.vocabulary, args.beam, binary_budget,
     )
     morphology = report.pop("morphology")
+    report.pop("conventional_words")
     model = pack_model(vocabulary, exceptions, morphology=morphology)
     args.output.write_bytes(model)
     if args.report:
