@@ -4,8 +4,11 @@ Last updated: 2026-08-27.
 
 This log records rejected and superseded experiments so future work does not
 repeat them without a materially different premise. Coverage figures are
-frequency-weighted over the 20,000-token reference list. Unless noted, trials
-used the exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
+frequency-weighted over the first 20,000 valid word types in the reference
+list. This is an in-sample optimization score, not a 20,000-token corpus: the
+cutoff is arbitrary, the model was tuned against it, and the temporary TSV's
+provenance is not yet reproducibly documented. Unless noted, trials used the
+exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
 
 The current conventional-coverage baseline is **93.91%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
@@ -124,6 +127,18 @@ letter-by-letter fallback is reported separately and is not counted here.
   1,097 morphology words but consumed 3,370 bytes and reduced coverage to
   93.59%. The wider delta IDs displaced too many exceptions; richer root
   discriminators must be adaptive rather than charged to every member.
+
+## Held-out validation
+
+- The frozen 93.9145% model was evaluated without retuning on 797,151 tokens
+  from *Pride and Prejudice*, *Moby-Dick*, *Frankenstein*, *The Adventures of
+  Sherlock Holmes*, *The Federalist Papers*, and RFC 9110. Aggregate
+  conventional token coverage was 87.13%, with individual results from 82.40%
+  to 90.88%. The discrepancy confirms that the weighted 20,000-type score was
+  optimistic as a prose-coverage claim.
+- Extending only the denominator of the frozen frequency-list evaluation gives
+  99.37% at 5,000 types, 97.07% at 10,000, 93.91% at 20,000, and 91.51% across
+  all 49,253 valid entries. These are not independently sampled corpora.
 
 ## Planned representation experiments
 

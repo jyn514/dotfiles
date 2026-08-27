@@ -142,12 +142,15 @@ grouped exact morphology (69 recipes licensing 1,685 transformed words), and
 1,298 exception outlines. Productive morphology, closed-compound composition, standalone
 affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
 outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **93.91%** of the 20,000-token
-frequency benchmark. This metric deliberately excludes every synthesized
-letter-by-letter outline, including one-stroke letter fallbacks absent from the
-plain-word dictionary. Authoritative spelling, including a final `AES`
-possessive stroke, raises reachable coverage to **99.99%** without admitting phonetic
-nonwords. The conventional figure is lower than the earlier 94.97% MPHF
+Conventional dictionary and rule outlines cover **93.91%** of the first 20,000
+word types in the reference frequency list after Zipf weighting. This is an
+in-sample optimization score, not an estimate of prose token coverage: the
+20,000-type cutoff is arbitrary, the model was repeatedly tuned against it, and
+the temporary TSV's provenance is not yet reproducibly documented. The metric
+deliberately excludes every synthesized letter-by-letter outline, including
+one-stroke letter fallbacks absent from the plain-word dictionary. Authoritative
+spelling, including a final `AES` possessive stroke, raises reachable weighted
+coverage to **99.99%** without admitting phonetic nonwords. The conventional figure is lower than the earlier 94.97% MPHF
 estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
@@ -168,6 +171,39 @@ builds the final vocabulary graph once and uses a size-only exception path while
 searching the budget. On the reference inputs this reduced a
 6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
 producing a byte-identical model.
+
+## Held-out corpus evaluation
+
+`evaluate_coverage.py` freezes the 20,000-type model selection and measures
+actual tokens in independent text files. A first evaluation used five Project
+Gutenberg works—*Pride and Prejudice*, *Moby-Dick*, *Frankenstein*, *The
+Adventures of Sherlock Holmes*, and *The Federalist Papers*—plus RFC 9110.
+These are deliberately not model-selection inputs, but they are still a narrow,
+mostly historical English sample and include source boilerplate.
+
+Across 797,151 tokens, conventional token coverage was **87.13%**. Individual
+results ranged from **82.40%** for *Moby-Dick* and **83.42%** for RFC 9110 to
+**90.88%** for *Sherlock Holmes*. Alphabetic words of at most sixteen letters,
+and therefore directly reachable by authoritative fingerspelling, accounted
+for **99.25%** of aggregate tokens.
+
+The frozen model's Zipf-weighted conventional coverage is **99.37%** over the
+first 5,000 frequency types, **97.07%** over 10,000, **93.91%** over 20,000, and
+**91.51%** over all 49,253 valid types available in the current TSV. These
+cutoff results do not retrain or resize the model. Treat corpus and frequency
+results as separate measurements.
+
+Reproduce the fixed corpus and evaluation with:
+
+```sh
+python3 fetch_heldout_corpora.py /tmp/lapwing-heldout
+python3 evaluate_coverage.py \
+  "$DICTIONARY" /tmp/wordfreq-en-50000.tsv /tmp/lapwing-heldout/*.txt \
+  --report held-out-coverage.json
+```
+
+`heldout_corpora.json` pins source URLs and SHA-256 digests. Upstream text
+changes fail closed rather than silently changing the benchmark.
 
 ## Interpretation
 

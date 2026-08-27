@@ -245,10 +245,13 @@ bytes of linguistic data.
 
 ### Coverage and equivalence
 
-Using the 20,000 highest-frequency benchmark tokens, conventional dictionary
-and rule outlines cover 93.9145% at the exact 40,960-byte budget. This metric
-excludes every synthesized letter-by-letter outline, including one-stroke
-letter fallbacks absent from the plain-word dictionary. Productive morphology,
+Using the first 20,000 valid word types from the reference frequency list,
+conventional dictionary and rule outlines cover 93.9145% after Zipf weighting
+at the exact 40,960-byte budget. This is an in-sample optimization metric: the
+cutoff is arbitrary, the model was tuned against the same list, and the current
+TSV's provenance is not reproducibly documented. It is not a 20,000-token text
+sample. This metric excludes every synthesized letter-by-letter outline,
+including one-stroke letter fallbacks absent from the plain-word dictionary. Productive morphology,
 closed-compound composition, and standalone affixes contribute without
 additional exception records. Authoritative starred-letter spelling of words
 through sixteen letters, plus a final `AES` possessive stroke, raises reachable
@@ -260,9 +263,15 @@ consonant doubling, common steno letter substitutions, a narrow `selbr` to
 `celebr` family rewrite, exact folded-liquid and broad-vowel expansions, and
 terminal voiced-silent-e, soft-c, and plural rewrites, plus bounded `gh` and
 `in` insertion for silent-letter and folded-`ing` families; repaired candidates
-must still be exact DAWG words. The
-conventional figure is lower than the discarded
-94.97% MPHF estimate but has exact vocabulary membership and recoverable output.
+must still be exact DAWG words. The conventional figure is lower than the discarded 94.97% MPHF estimate but
+has exact vocabulary membership and recoverable output.
+
+A frozen-model evaluation over 797,151 tokens from five Project Gutenberg works
+and RFC 9110 measured 87.13% conventional token coverage, ranging from 82.40%
+to 90.88% by corpus. The same frozen model scores 99.37%, 97.07%, 93.91%, and
+91.51% when the frequency-list denominator is extended to its first 5,000,
+10,000, 20,000, and all 49,253 valid types. Corpus token coverage and weighted
+frequency-list coverage are separate measurements.
 
 With identical vocabulary-prefix pruning, the C decoder's ordered 64-candidate
 output exactly matched the Python reference for the first 20,000 dictionary
