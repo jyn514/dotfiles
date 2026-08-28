@@ -17,6 +17,8 @@ import flash_moonlander  # noqa: E402
 
 def keymap_source():
     return (
+        "#include QMK_KEYBOARD_H\n"
+        "void keyboard_post_init_user(void) {}\n"
         "SEND_STRING(SS_LCTL(SS_LSFT(SS_TAP(X_U))) "
         "SS_TAP(X_A) SS_TAP(X_E) SS_TAP(X_ENTER)); KC_F13\n"
         "bool process_record_user(uint16_t keycode, keyrecord_t *record) {\n"
@@ -90,6 +92,7 @@ class FlashTests(unittest.TestCase):
             keymaps.mkdir(parents=True)
             destination = keymaps / "layout-revision"
             destination.mkdir()
+            (qmk_home / "zsa_moonlander_layout-revision.bin").write_bytes(b"stale")
             (destination / "old").write_text("preserve until install")
             archive = home / "source.zip"
             archive.write_bytes(archive_bytes())
@@ -125,6 +128,45 @@ class FlashTests(unittest.TestCase):
             self.assertIn("UC_NEXT", (destination / "keymap.c").read_text())
             self.assertIn("UNICODE_COMMON = yes", (destination / "rules.mk").read_text())
             self.assertIn("UNICODE_SELECTED_MODES", (destination / "config.h").read_text())
+            self.assertIn("lapwing_qmk_init();", (destination / "keymap.c").read_text())
+            self.assertIn("lapwing_qmk_task();", (destination / "keymap.c").read_text())
+            self.assertIn("lapwing_model_data.S", (destination / "rules.mk").read_text())
+            self.assertEqual(
+                (destination / "lapwing_model.bin").read_bytes(),
+                flash_moonlander.LAPWING_MODEL.read_bytes(),
+            )
+            self.assertEqual(list(keymaps.glob(".layout-revision.*")), [])
+
+    def test_compile_failure_restores_existing_keymap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            qmk_home = home / "qmk"
+            keymaps = qmk_home / "keyboards/zsa/moonlander/keymaps"
+            destination = keymaps / "layout-revision"
+            destination.mkdir(parents=True)
+            marker = destination / "old"
+            marker.write_text("still here")
+            archive = home / "source.zip"
+            archive.write_bytes(archive_bytes())
+            statuses = iter((0, 9))
+
+            with mock.patch.dict(
+                os.environ,
+                {"HOME": str(home), "QMK_HOME": str(qmk_home)},
+                clear=True,
+            ), mock.patch.object(
+                flash_moonlander, "latest_revision", return_value=("layout", "revision")
+            ), mock.patch.object(
+                flash_moonlander, "ensure_archive", return_value=archive
+            ), mock.patch.object(
+                flash_moonlander, "qmk_prefix", return_value=["qmk"]
+            ), mock.patch.object(
+                flash_moonlander, "run", side_effect=lambda *args, **kwargs: next(statuses)
+            ):
+                with self.assertRaises(flash_moonlander.CommandFailure):
+                    flash_moonlander.flash([])
+
+            self.assertEqual(marker.read_text(), "still here")
             self.assertEqual(list(keymaps.glob(".layout-revision.*")), [])
 
     def test_patch_failure_preserves_existing_keymap(self):
