@@ -128,13 +128,9 @@ class FlashTests(unittest.TestCase):
             self.assertIn("UC_NEXT", (destination / "keymap.c").read_text())
             self.assertIn("UNICODE_COMMON = yes", (destination / "rules.mk").read_text())
             self.assertIn("UNICODE_SELECTED_MODES", (destination / "config.h").read_text())
-            self.assertIn("lapwing_qmk_init();", (destination / "keymap.c").read_text())
-            self.assertIn("lapwing_qmk_task();", (destination / "keymap.c").read_text())
-            self.assertIn("lapwing_model_data.S", (destination / "rules.mk").read_text())
-            self.assertEqual(
-                (destination / "lapwing_model.bin").read_bytes(),
-                flash_moonlander.LAPWING_MODEL.read_bytes(),
-            )
+            self.assertNotIn("lapwing_qmk", (destination / "keymap.c").read_text())
+            self.assertNotIn("lapwing_model_data.S", (destination / "rules.mk").read_text())
+            self.assertFalse((destination / "lapwing_model.bin").exists())
             self.assertEqual(list(keymaps.glob(".layout-revision.*")), [])
 
     def test_compile_failure_restores_existing_keymap(self):

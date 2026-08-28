@@ -273,7 +273,8 @@ Lapwing images were compiled from identical downloaded source for both
 Flash figures are linked `text + data`. RevA has a 131,072-byte application
 region. RevB's linker region is smaller; the 50,959-byte linguistic tier does
 not fit it. The embedded format-v10 binary occupies 46,731 bytes and generated
-rules add 4,228 bytes. The repository flashing workflow targets revA.
+rules add 4,228 bytes. These are prototype measurements; the repository's
+normal Moonlander flashing workflow does not install the translator.
 
 ### Coverage and equivalence
 
