@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,49 @@ WRAPPER = ROOT / "libexec/agent-wrappers/jj"
 
 
 class JjWrapperTest(unittest.TestCase):
+    def test_discovers_mounted_proxy_when_environment_was_stripped(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            proxy = root / "proxy"
+            (proxy / "jj").mkdir(parents=True)
+            listener = socket.socket(socket.AF_UNIX)
+            listener.bind(str(proxy / "jj/socket"))
+            self.addCleanup(listener.close)
+            result_file = root / "proxy-dir"
+            client = root / "client"
+            client.write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$SANDBOX_PROXY_DIR" > "$RESULT_FILE"\n'
+            )
+            client.chmod(0o755)
+            wrapper = root / "jj"
+            wrapper.write_text(
+                WRAPPER.read_text().replace(
+                    "/libexec/agent-wrappers/jj-proxy-client", str(client)
+                )
+            )
+            wrapper.chmod(0o755)
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key != "SANDBOX_PROXY_DIR"
+            }
+            env.update({
+                "RESULT_FILE": str(result_file),
+                "SANDBOX_PROXY_DEFAULT_DIR": str(proxy),
+            })
+
+            result = subprocess.run(
+                [str(wrapper), "status"],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(str(proxy), result_file.read_text().strip())
+
     def test_forwards_pi_model_identity_to_sandbox_client(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

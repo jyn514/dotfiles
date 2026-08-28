@@ -368,11 +368,20 @@
   [(str "merge-tools.agent-split.program=\"" editor "\"")
    "merge-tools.agent-split.edit-args=[\"$left\",\"$right\"]"])
 
+(defn- sandbox-proxy-dir []
+  (or (System/getenv "SANDBOX_PROXY_DIR")
+      (let [directory (or (System/getenv "SANDBOX_PROXY_DEFAULT_DIR")
+                          "/run/sandbox-proxies")]
+        (when (fs/exists? (fs/file directory "jj" "socket"))
+          directory))))
+
 (defn- run-split! [patch message revision]
   (let [editor (str (fs/file (script-dir) "agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
-        command (if (System/getenv "SANDBOX_PROXY_DIR")
-                  ["/libexec/agent-wrappers/jj-proxy-client"
+        proxy-dir (sandbox-proxy-dir)
+        command (if proxy-dir
+                  ["env" (str "SANDBOX_PROXY_DIR=" proxy-dir)
+                   "/libexec/agent-wrappers/jj-proxy-client"
                    "--agent-split" (str patch) message revision]
                   ["env" (str "JJ_AGENT_SPLIT_PATCH=" patch)
                    "jj" "split"
