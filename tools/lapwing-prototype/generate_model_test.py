@@ -124,6 +124,20 @@ class GenerateModelTest(unittest.TestCase):
                     generate_model.exception_storage_size(proposed),
                     (count, insertion),
                 )
+            for removal in {0, count // 2, count - 1} if count else ():
+                reduced_size, reduced_words = (
+                    generate_model.exception_storage_size_after_remove(
+                        words, current_size, removal,
+                    )
+                )
+                self.assertEqual(reduced_words, words[:removal] + words[removal + 1:])
+                self.assertEqual(
+                    reduced_size,
+                    generate_model.exception_storage_size(
+                        entries[:removal] + entries[removal + 1:]
+                    ),
+                    (count, removal),
+                )
 
     def test_fast_exception_sizing_matches_serialization(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
@@ -163,17 +177,12 @@ class GenerateModelTest(unittest.TestCase):
             directory = Path(directory)
             model = directory / "model.bin"
             dawg = generate_model.build_dawg(vocabulary)
-            packed_edge_bytes = (dawg[2] * 20 + 7) // 8
-            self.assertGreater(len(dawg[0]), packed_edge_bytes)
-            overflow_count = sum(
-                1 for index in range(dawg[2])
-                if ((int.from_bytes(
-                    dawg[0][index * 20 // 8:index * 20 // 8 + 4], "little"
-                ) >> (index * 20 % 8 + 5)) & generate_model.LEAF_OFFSET)
-                == generate_model.OVERFLOW_OFFSET
+            old_packed_edge_bytes = (dawg[2] * 20 + 7) // 8
+            self.assertLess(len(dawg[0]), old_packed_edge_bytes)
+            labels, topology, terminals, checkpoints = generate_model.louds_sections(
+                dawg[0], dawg[2],
             )
-            self.assertGreater(overflow_count, generate_model.OVERFLOW_BLOCK_RECORDS)
-            self.assertLess(len(dawg[0]) - packed_edge_bytes, overflow_count * 4)
+            self.assertTrue(labels and topology and terminals and checkpoints)
             cat_id = generate_model.primary_root_ids(vocabulary, dawg)["cat"]
             morphology = [generate_model.MorphologyGroup("", "s", (cat_id,))]
             model.write_bytes(generate_model.pack_model(
