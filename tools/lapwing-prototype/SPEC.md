@@ -174,6 +174,13 @@ word commits and the new stroke starts another outline. `PWR` commits
 immediately; a star-only stroke cancels pending input or undoes the latest
 committed item.
 
+Emily modifier strokes ending in `LGTS` are handled before lexical translation.
+They compositionally cover letters, digits, function keys, common US-keyboard
+symbols, navigation, media keys, and any nonempty combination of Shift, Control,
+Alt, and Super. Modifier actions commit pending text, attach on both sides, and
+form an undo barrier because arbitrary host key actions cannot be reversed by
+translator backspaces. Non-US symbolic variants and `F0` are rejected.
+
 Words receive one leading space after existing text. The first alphabetic word
 and the first word after `.`, `?`, or `!` are capitalized. Punctuation strokes
 are `TP-PL` for period, `KW-BG` for comma, `STPH-FPLT` for question mark, and

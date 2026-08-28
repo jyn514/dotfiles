@@ -10,7 +10,7 @@ from pathlib import Path
 SOURCES = (
     "lapwing_decoder.c", "lapwing_decoder.h", "lapwing_rules.generated.h",
     "lapwing_model.c", "lapwing_model.h", "lapwing_engine.c", "lapwing_engine.h",
-    "lapwing_qmk.c", "lapwing_qmk.h",
+    "lapwing_features.h", "lapwing_modifiers.c", "lapwing_qmk.c", "lapwing_qmk.h",
 )
 
 
@@ -30,7 +30,7 @@ def install(keymap: Path, model: Path) -> None:
 
     rules = keymap / "rules.mk"
     text = rules.read_text()
-    source_line = "SRC += lapwing_decoder.c lapwing_model.c lapwing_engine.c lapwing_qmk.c lapwing_model_data.S"
+    source_line = "SRC += lapwing_decoder.c lapwing_model.c lapwing_modifiers.c lapwing_engine.c lapwing_qmk.c lapwing_model_data.S"
     if source_line not in text:
         rules.write_text(text.rstrip() + "\n\n" + source_line + "\n")
 

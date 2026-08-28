@@ -24,11 +24,13 @@ static bool translate(lw_engine_t *engine, const char *outline,
 }
 
 void lw_engine_init(lw_engine_t *engine, const lw_model_t *model,
-                    lw_emit_fn emit, lw_backspace_fn backspace, void *context) {
+                    lw_emit_fn emit, lw_backspace_fn backspace, lw_key_fn key,
+                    void *context) {
     memset(engine, 0, sizeof(*engine));
     engine->model = model;
     engine->emit = emit;
     engine->backspace = backspace;
+    engine->key = key;
     engine->io_context = context;
     engine->capitalize_next = true;
 }
@@ -92,6 +94,17 @@ void lw_engine_stroke(lw_engine_t *engine, const char *stroke, uint32_t now) {
     }
     if (strcmp(stroke, "*") == 0) {
         lw_engine_undo(engine);
+        return;
+    }
+
+    lw_key_mod_result_t modified;
+    if (lw_emily_modifier_lookup(stroke, &modified)) {
+        lw_engine_commit(engine);
+        engine->history_count = 0;
+        engine->has_text = false;
+        engine->capitalize_next = false;
+        if (engine->key)
+            engine->key(engine->io_context, modified.key, modified.modifiers);
         return;
     }
 

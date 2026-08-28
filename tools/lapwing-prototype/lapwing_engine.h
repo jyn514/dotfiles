@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "lapwing_features.h"
 #include "lapwing_model.h"
 
 #ifndef LW_COMMIT_DELAY_MS
@@ -14,6 +15,7 @@
 
 typedef void (*lw_emit_fn)(void *context, const char *text);
 typedef void (*lw_backspace_fn)(void *context, uint8_t count);
+typedef void (*lw_key_fn)(void *context, lw_key_t key, uint8_t modifiers);
 
 typedef struct {
     uint8_t emitted;
@@ -25,6 +27,7 @@ typedef struct {
     const lw_model_t *model;
     lw_emit_fn emit;
     lw_backspace_fn backspace;
+    lw_key_fn key;
     void *io_context;
     char outline[LW_MAX_STROKES * 20];
     char pending[LW_MAX_WORD + 1];
@@ -36,7 +39,8 @@ typedef struct {
 } lw_engine_t;
 
 void lw_engine_init(lw_engine_t *engine, const lw_model_t *model,
-                    lw_emit_fn emit, lw_backspace_fn backspace, void *context);
+                    lw_emit_fn emit, lw_backspace_fn backspace, lw_key_fn key,
+                    void *context);
 void lw_engine_stroke(lw_engine_t *engine, const char *stroke, uint32_t now);
 void lw_engine_tick(lw_engine_t *engine, uint32_t now);
 void lw_engine_commit(lw_engine_t *engine);
