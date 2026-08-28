@@ -27,7 +27,8 @@ FINGER_SPELLING_LETTERS = {
 }
 
 INITIAL_TOKENS = {
-    "TKPWHR": ("gl",), "STKPW": ("z",), "TKPWR": ("gr",),
+    "TKPWHR": ("gl",), "TPHR": ("fl",), "KHR": ("cl",),
+    "PHR": ("pl",), "STKPW": ("z",), "TKPWR": ("gr",),
     "TKPW": ("g", "gh"), "PWHR": ("bl",),
     "SKWR": ("j", "g"),
     "SPW": ("ent", "int"), "KPH": ("com",), "KPR": ("compr",),
@@ -44,7 +45,7 @@ INITIAL_TOKENS = {
     "WR": ("wr", "r"), "WH": ("wh", "w"),
     "ST": ("st",), "SK": ("sk", "sc"), "SP": ("sp",),
     "TR": ("tr",), "PR": ("pr",),
-    "S": ("s", "c"), "T": ("t",), "K": ("k", "c", "ch"),
+    "S": ("s", "c", "ss"), "T": ("t",), "K": ("k", "c", "ch"),
     "P": ("p",), "W": ("w",), "H": ("h",), "R": ("r",),
 }
 
@@ -93,7 +94,7 @@ FINAL_TOKENS = {
     "F": ("f", "v", "s", "ph", "gh"), "R": ("r",),
     "P": ("p",),
     "B": ("b",), "L": ("l",), "G": ("g",), "T": ("t",),
-    "S": ("s", "se", "ce"), "D": ("d",),
+    "S": ("s", "se", "ce", "ss"), "D": ("d",),
     "Z": ("z", "s", "se"),
 }
 

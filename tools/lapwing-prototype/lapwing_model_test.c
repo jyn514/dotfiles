@@ -48,6 +48,12 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "KAT/-Z", output, 4) != 1
         || strcmp(output[0], "cats") != 0)
         result |= fail("licensed grouped morphology failed");
+    if (lw_model_translate(&model, "TPHRAEUPL", output, 4) != 1
+        || strcmp(output[0], "flame") != 0)
+        result |= fail("atomic initial cluster failed");
+    if (lw_model_translate(&model, "PO/SES", output, 4) != 1
+        || strcmp(output[0], "possess") != 0)
+        result |= fail("doubled-s spelling failed");
     count = lw_model_translate(&model, "TKOG/-Z", output, 4);
     for (size_t i = 0; i < count; ++i)
         if (strcmp(output[i], "dogs") == 0)
