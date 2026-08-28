@@ -37,6 +37,8 @@ int main(int argc, char **argv) {
         || strcmp(output[0], "people") != 0) result |= fail("exception priority failed");
     if (lw_model_translate(&model, "#SKWRO*PB", output, 4) != 1
         || strcmp(output[0], "John") != 0) result |= fail("proper noun capitalization failed");
+    if (lw_model_translate(&model, "#/SKWRO*PB", output, 4) != 1
+        || strcmp(output[0], "John") != 0) result |= fail("prefixed proper noun failed");
     if (!lw_model_exception(&model, "DUMMY399", output[0])
         || strcmp(output[0], "qapj") != 0) result |= fail("large restart block lookup failed");
     if (lw_model_translate(&model, "#KAT", output, 4) != 1

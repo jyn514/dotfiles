@@ -621,6 +621,14 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
 size_t lw_model_translate(const lw_model_t *model, const char *outline,
                           char output[][LW_MAX_WORD + 1], size_t output_capacity) {
     if (!output_capacity || !lw_model_valid(model)) return 0;
+    char normalized[LW_MAX_STROKES * 20];
+    if (outline && outline[0] == '#' && outline[1] == '/') {
+        size_t length = strlen(outline);
+        if (length >= sizeof(normalized)) return 0;
+        normalized[0] = '#';
+        memcpy(normalized + 1, outline + 2, length - 1u);
+        outline = normalized;
+    }
     bool proper_noun = outline && outline[0] == '#';
     if (lw_model_exception(model, outline, output[0])) {
         if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
