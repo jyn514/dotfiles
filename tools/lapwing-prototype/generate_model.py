@@ -16,8 +16,8 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 5
-HEADER = struct.Struct("<4sBBHIIIIIIIII")
+VERSION = 6
+HEADER = struct.Struct("<4sBBHIIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
 EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
@@ -29,6 +29,7 @@ DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 LEAF_OFFSET = 0x1FFF
+OVERFLOW_OFFSET = 0x1FFE
 STANDALONE_OUTLINES = {
     "co": "KOE",
     "non": "TPHOPB",
@@ -90,19 +91,26 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
             offsets[state_id] = edge_count
             edge_count += len(state.edges)
     target_ids = {target_id for state in states for _, target_id in state.edges}
-    if any(states[target_id].edges and offsets[target_id] >= LEAF_OFFSET
+    if any(states[target_id].edges and offsets[target_id] > 0xFFFF
            for target_id in target_ids):
-        raise ValueError("vocabulary DAWG exceeds 13-bit target offsets")
+        raise ValueError("vocabulary DAWG exceeds 16-bit overflow targets")
 
     values = []
+    overflows = []
+    edge_index = 0
     for state in states:
         for index, (character, target_id) in enumerate(state.edges):
             target = states[target_id]
+            target_offset = offsets[target_id]
+            if target.edges and target_offset >= OVERFLOW_OFFSET:
+                overflows.append((edge_index, target_offset))
+                target_offset = OVERFLOW_OFFSET
             value = ALPHABET.index(character)
-            value |= offsets[target_id] << 5
+            value |= target_offset << 5
             value |= int(target.terminal) << 18
             value |= int(index + 1 == len(state.edges)) << 19
             values.append(value)
+            edge_index += 1
     encoded = bytearray((len(values) * 20 + 7) // 8)
     accumulator = 0
     bits = 0
@@ -117,6 +125,8 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
             bits -= 8
     if bits:
         encoded[output] = accumulator & 0xff
+    for edge_index, target_offset in overflows:
+        encoded += struct.pack("<HH", edge_index, target_offset)
     return bytes(encoded), offsets[root_id], edge_count
 
 
@@ -203,10 +213,20 @@ def primary_root_ids(vocabulary: list[str], dawg_info: tuple[bytes, int, int]) -
     """Return only (terminal edge, length) identities unique in the primary DAWG."""
     dawg, root, edges = dawg_info
 
-    def read_edge(index: int) -> int:
+    base_size = (edges * 20 + 7) // 8
+    overflow_records = {
+        edge_index: target
+        for edge_index, target in struct.iter_unpack("<HH", dawg[base_size:])
+    }
+
+    def read_edge(index: int) -> tuple[int, int, bool]:
         bit = index * 20
         value = int.from_bytes(dawg[bit // 8:bit // 8 + 4], "little")
-        return (value >> (bit % 8)) & 0xfffff
+        edge = (value >> (bit % 8)) & 0xfffff
+        target = (edge >> 5) & LEAF_OFFSET
+        if target == OVERFLOW_OFFSET:
+            target = overflow_records[index]
+        return edge & 31, target, bool(edge & (1 << 19))
 
     identities: dict[int, list[str]] = defaultdict(list)
     for word in vocabulary:
@@ -215,12 +235,12 @@ def primary_root_ids(vocabulary: list[str], dawg_info: tuple[bytes, int, int]) -
         for character in word:
             wanted = ALPHABET.index(character)
             for index in range(state, edges):
-                edge = read_edge(index)
-                if edge & 31 == wanted:
+                letter, target, last = read_edge(index)
+                if letter == wanted:
                     final_edge = index
-                    state = (edge >> 5) & LEAF_OFFSET
+                    state = target
                     break
-                if edge & (1 << 19):
+                if last:
                     raise AssertionError(word)
         identity = (final_edge << 5) | len(word)
         identities[identity].append(word)
@@ -451,6 +471,11 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
         for fingerprint, word_id, _ in records
     )
     block_offsets, word_data = encode_word_blocks(output_words)
+    base_edge_bytes = (edge_count * 20 + 7) // 8
+    overflow_bytes = len(dawg) - base_edge_bytes
+    if overflow_bytes < 0 or overflow_bytes % 4:
+        raise ValueError("invalid DAWG overflow table")
+    overflow_count = overflow_bytes // 4
     morphology = morphology or []
     morph_bytes = encode_morphology(morphology)
     morphology_offset = HEADER.size + len(dawg)
@@ -459,7 +484,7 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
     header = HEADER.pack(
         MAGIC, VERSION, 0, BLOCK_WORDS,
         len(vocabulary), edge_count, root_offset,
-        len(exceptions), len(output_words), len(morphology),
+        len(exceptions), len(output_words), overflow_count, len(morphology),
         morphology_offset, exceptions_offset, block_offsets_offset,
     )
     return header + dawg + morph_bytes + record_bytes + block_offsets + word_data
@@ -730,8 +755,8 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=6200)
-    parser.add_argument("--beam", type=int, default=24)
+    parser.add_argument("--vocabulary", type=int, default=7250)
+    parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()
 
