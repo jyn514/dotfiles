@@ -10,7 +10,6 @@ import re
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
-from functools import cmp_to_key
 from pathlib import Path
 
 import hand_rules
@@ -18,7 +17,7 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 8
+VERSION = 9
 HEADER = struct.Struct("<4sBBHIIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
@@ -30,10 +29,6 @@ RULE_BYTES = 4228
 DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
-LEAF_OFFSET = 0x1FFF
-OVERFLOW_OFFSET = 0x1FFE
-OVERFLOW_BLOCK_RECORDS = 32
-OVERFLOW_CHECKPOINT = struct.Struct("<HHH")
 STANDALONE_OUTLINES = {
     "co": "KOE",
     "non": "TPHOPB",
@@ -58,15 +53,29 @@ def hash32(data: bytes, seed: int = 2166136261) -> int:
     return value
 
 
-@dataclass(frozen=True)
-class DawgState:
-    terminal: bool
-    edges: tuple[tuple[str, int], ...]
+LOUDS_CHECKPOINT_STRIDE = 64
+
+
+def pack_bit_values(values: list[int], width: int) -> bytes:
+    encoded = bytearray((len(values) * width + 7) // 8)
+    for index, value in enumerate(values):
+        bit = index * width
+        encoded[bit // 8] |= value << (bit % 8) & 0xff
+        if bit % 8 + width > 8:
+            encoded[bit // 8 + 1] |= value >> (8 - bit % 8)
+    return bytes(encoded)
+
+
+def read_bit_value(data: bytes, index: int, width: int) -> int:
+    bit = index * width
+    value = int.from_bytes(data[bit // 8:bit // 8 + 2], "little")
+    return value >> (bit % 8) & ((1 << width) - 1)
 
 
 def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
-    root: dict[str, dict] = {}
+    """Build the exact breadth-first LOUDS vocabulary trie."""
     terminal = ""
+    root: dict[str, dict] = {}
     for word in words:
         node = root
         for character in word:
@@ -75,120 +84,71 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
             node = node.setdefault(character, {})
         node[terminal] = {}
 
-    registry: dict[tuple[bool, tuple[tuple[str, int], ...]], int] = {}
-    states: list[DawgState] = []
+    nodes = [root]
+    labels: list[int] = []
+    topology: list[int] = []
+    terminals: list[int] = []
+    for node in nodes:
+        children = sorted((character, child)
+                          for character, child in node.items() if character)
+        terminals.append(int(terminal in node))
+        topology.extend([1] * len(children))
+        topology.append(0)
+        for character, child in children:
+            labels.append(ALPHABET.index(character))
+            nodes.append(child)
+    if len(nodes) > 0xffff:
+        raise ValueError("vocabulary LOUDS trie exceeds 16-bit node indexes")
 
-    def intern(node: dict[str, dict]) -> int:
-        edges = tuple(sorted((character, intern(child))
-                             for character, child in node.items() if character))
-        signature = (terminal in node, edges)
-        if signature not in registry:
-            registry[signature] = len(states)
-            states.append(DawgState(*signature))
-        return registry[signature]
-
-    root_id = intern(root)
-    incoming = [0] * len(states)
-    for state in states:
-        for _, target_id in state.edges:
-            incoming[target_id] += 1
-    nonleaf_ids = [state_id for state_id, state in enumerate(states) if state.edges]
-    def compare_density(left: int, right: int) -> int:
-        left_score = incoming[left] * len(states[right].edges)
-        right_score = incoming[right] * len(states[left].edges)
-        if left_score != right_score:
-            return -1 if left_score > right_score else 1
-        if incoming[left] != incoming[right]:
-            return -1 if incoming[left] > incoming[right] else 1
-        return left - right
-
-    density_order = sorted(nonleaf_ids, key=cmp_to_key(compare_density))
-    inline_ids = []
-    inline_edges = 0
-    for state_id in density_order:
-        state_edges = len(states[state_id].edges)
-        if inline_edges + state_edges <= OVERFLOW_OFFSET:
-            inline_ids.append(state_id)
-            inline_edges += state_edges
-    inline_set = set(inline_ids)
-    ordered_ids = inline_ids + [
-        state_id for state_id in nonleaf_ids if state_id not in inline_set
-    ]
-    offsets: list[int] = [LEAF_OFFSET] * len(states)
-    edge_count = 0
-    for state_id in ordered_ids:
-        offsets[state_id] = edge_count
-        edge_count += len(states[state_id].edges)
-    if edge_count > 0xFFFF:
-        raise ValueError("vocabulary DAWG exceeds 16-bit edge indexes")
-    target_ids = {target_id for state in states for _, target_id in state.edges}
-    if any(states[target_id].edges and offsets[target_id] > 0xFFFF
-           for target_id in target_ids):
-        raise ValueError("vocabulary DAWG exceeds 16-bit overflow targets")
-
-    values = []
-    overflows = []
-    edge_index = 0
-    for state_id in ordered_ids:
-        state = states[state_id]
-        for index, (character, target_id) in enumerate(state.edges):
-            target = states[target_id]
-            target_offset = offsets[target_id]
-            if target.edges and target_offset >= OVERFLOW_OFFSET:
-                overflows.append((edge_index, target_offset))
-                target_offset = OVERFLOW_OFFSET
-            value = ALPHABET.index(character)
-            value |= target_offset << 5
-            value |= int(target.terminal) << 18
-            value |= int(index + 1 == len(state.edges)) << 19
-            values.append(value)
-            edge_index += 1
-    encoded = bytearray((len(values) * 20 + 7) // 8)
-    accumulator = 0
-    bits = 0
-    output = 0
-    for value in values:
-        accumulator |= value << bits
-        bits += 20
-        while bits >= 8:
-            encoded[output] = accumulator & 0xff
-            output += 1
-            accumulator >>= 8
-            bits -= 8
-    if bits:
-        encoded[output] = accumulator & 0xff
-    checkpoints = bytearray()
-    overflow_stream = bytearray()
-    for block_start in range(0, len(overflows), OVERFLOW_BLOCK_RECORDS):
-        block = overflows[block_start:block_start + OVERFLOW_BLOCK_RECORDS]
-        first_edge, first_target = block[0]
-        if len(overflow_stream) > 0xFFFF:
-            raise ValueError("DAWG overflow stream exceeds 16-bit offsets")
-        checkpoints += OVERFLOW_CHECKPOINT.pack(
-            len(overflow_stream), first_edge, first_target - OVERFLOW_OFFSET,
-        )
-        previous_edge, previous_target = first_edge, first_target
-        for edge_index, target_offset in block[1:]:
-            overflow_stream += encode_varint(edge_index - previous_edge)
-            target_delta = target_offset - previous_target
-            zigzag_delta = target_delta * 2 if target_delta >= 0 else -target_delta * 2 - 1
-            overflow_stream += encode_varint(zigzag_delta)
-            previous_edge, previous_target = edge_index, target_offset
-    encoded += checkpoints + overflow_stream
-    return bytes(encoded), offsets[root_id], edge_count
+    zero_positions = [index for index, value in enumerate(topology) if not value]
+    checkpoint_positions = zero_positions[::LOUDS_CHECKPOINT_STRIDE]
+    if checkpoint_positions and checkpoint_positions[-1] > 0xffff:
+        raise ValueError("vocabulary LOUDS checkpoints exceed 16-bit positions")
+    checkpoints = b"".join(
+        struct.pack("<H", position) for position in checkpoint_positions
+    )
+    encoded = (
+        pack_bit_values(labels, 5)
+        + pack_bit_values(topology, 1)
+        + pack_bit_values(terminals, 1)
+        + checkpoints
+    )
+    return encoded, 0, len(labels)
 
 
-def decode_varint_bytes(data: bytes | memoryview, offset: int) -> tuple[int, int]:
-    value = 0
-    shift = 0
-    while offset < len(data) and shift < 32:
-        byte = data[offset]
-        offset += 1
-        value |= (byte & 0x7F) << shift
-        if not byte & 0x80:
-            return value, offset
-        shift += 7
-    raise ValueError("invalid overflow varint")
+def louds_sections(data: bytes, edges: int) -> tuple[bytes, bytes, bytes, bytes]:
+    nodes = edges + 1
+    label_bytes = (edges * 5 + 7) // 8
+    topology_bytes = (2 * nodes - 1 + 7) // 8
+    terminal_bytes = (nodes + 7) // 8
+    checkpoint_bytes = 2 * ((nodes + LOUDS_CHECKPOINT_STRIDE - 1)
+                            // LOUDS_CHECKPOINT_STRIDE)
+    expected = label_bytes + topology_bytes + terminal_bytes + checkpoint_bytes
+    if len(data) != expected:
+        raise ValueError("invalid LOUDS vocabulary size")
+    topology_start = label_bytes
+    terminal_start = topology_start + topology_bytes
+    checkpoint_start = terminal_start + terminal_bytes
+    return (data[:topology_start], data[topology_start:terminal_start],
+            data[terminal_start:checkpoint_start], data[checkpoint_start:])
+
+
+def louds_select_zero(topology: bytes, checkpoints: bytes, node: int) -> int:
+    block, remaining = divmod(node, LOUDS_CHECKPOINT_STRIDE)
+    position = struct.unpack_from("<H", checkpoints, block * 2)[0]
+    while remaining:
+        position += 1
+        if not read_bit_value(topology, position, 1):
+            remaining -= 1
+    return position
+
+
+def louds_child_interval(topology: bytes, checkpoints: bytes,
+                         node: int) -> tuple[int, int]:
+    end_zero = louds_select_zero(topology, checkpoints, node)
+    start = 0 if node == 0 else louds_select_zero(topology, checkpoints, node - 1) + 1
+    first = start - node
+    return first, first + end_zero - start
 
 
 def varint_size(value: int) -> int:
@@ -291,6 +251,16 @@ def exception_storage_size_after_insert(
     return size
 
 
+def exception_storage_size_after_remove(
+    words: list[str], current_size: int, position: int,
+) -> tuple[int, list[str]]:
+    """Return exact storage and sorted words after removing one position."""
+    reduced = words.copy()
+    word = reduced.pop(position)
+    insertion_cost = exception_storage_size_after_insert(reduced, 0, word)
+    return current_size - insertion_cost, reduced
+
+
 def encode_word_blocks(words: list[str]) -> tuple[bytes, bytes]:
     offsets = bytearray()
     encoded = bytearray()
@@ -326,65 +296,25 @@ class MorphologyGroup:
 
 
 def primary_root_ids(vocabulary: list[str], dawg_info: tuple[bytes, int, int]) -> dict[str, int]:
-    """Return only (terminal edge, length) identities unique in the primary DAWG."""
-    dawg, root, edges = dawg_info
-
-    base_size = (edges * 20 + 7) // 8
-    overflow_count = sum(
-        1 for index in range(edges)
-        if ((int.from_bytes(dawg[index * 20 // 8:index * 20 // 8 + 4], "little")
-             >> (index * 20 % 8 + 5)) & LEAF_OFFSET) == OVERFLOW_OFFSET
-    )
-    checkpoint_count = (overflow_count + OVERFLOW_BLOCK_RECORDS - 1) // OVERFLOW_BLOCK_RECORDS
-    checkpoint_start = base_size
-    stream = memoryview(dawg)[checkpoint_start + checkpoint_count * OVERFLOW_CHECKPOINT.size:]
-    overflow_records: dict[int, int] = {}
-    for checkpoint_index in range(checkpoint_count):
-        stream_offset, edge_index, target_residual = OVERFLOW_CHECKPOINT.unpack_from(
-            dawg, checkpoint_start + checkpoint_index * OVERFLOW_CHECKPOINT.size,
-        )
-        cursor = stream_offset
-        target = OVERFLOW_OFFSET + target_residual
-        overflow_records[edge_index] = target
-        block_records = min(
-            OVERFLOW_BLOCK_RECORDS,
-            overflow_count - checkpoint_index * OVERFLOW_BLOCK_RECORDS,
-        )
-        for _ in range(1, block_records):
-            edge_delta, cursor = decode_varint_bytes(stream, cursor)
-            target_delta, cursor = decode_varint_bytes(stream, cursor)
-            edge_index += edge_delta
-            signed_target_delta = -(target_delta // 2) - 1 if target_delta & 1 else target_delta // 2
-            target += signed_target_delta
-            overflow_records[edge_index] = target
-
-    def read_edge(index: int) -> tuple[int, int, bool]:
-        bit = index * 20
-        value = int.from_bytes(dawg[bit // 8:bit // 8 + 4], "little")
-        edge = (value >> (bit % 8)) & 0xfffff
-        target = (edge >> 5) & LEAF_OFFSET
-        if target == OVERFLOW_OFFSET:
-            target = overflow_records[index]
-        return edge & 31, target, bool(edge & (1 << 19))
-
-    identities: dict[int, list[str]] = defaultdict(list)
+    """Return exact (terminal trie node, length) primary-word identities."""
+    trie, root, edges = dawg_info
+    labels, topology, terminals, checkpoints = louds_sections(trie, edges)
+    identities: dict[str, int] = {}
     for word in vocabulary:
-        state = root
-        final_edge = -1
+        node = root
         for character in word:
             wanted = ALPHABET.index(character)
-            for index in range(state, edges):
-                letter, target, last = read_edge(index)
-                if letter == wanted:
-                    final_edge = index
-                    state = target
-                    break
-                if last:
-                    raise AssertionError(word)
-        identity = (final_edge << 5) | len(word)
-        identities[identity].append(word)
-    return {words[0]: identity for identity, words in identities.items() if len(words) == 1}
-
+            first, end = louds_child_interval(topology, checkpoints, node)
+            child = next((edge + 1 for edge in range(first, end)
+                          if read_bit_value(labels, edge, 5) == wanted), None)
+            if child is None:
+                raise AssertionError(word)
+            node = child
+        if not read_bit_value(terminals, node, 1):
+            raise AssertionError(word)
+        if len(word) <= 31:
+            identities[word] = (node << 5) | len(word)
+    return identities
 
 def encode_morphology(groups: list[MorphologyGroup]) -> bytes:
     encoded = bytearray()
@@ -610,12 +540,7 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
         for fingerprint, word_id, _ in records
     )
     block_offsets, word_data = encode_word_blocks(output_words)
-    base_edge_bytes = (edge_count * 20 + 7) // 8
-    overflow_count = sum(
-        1 for index in range(edge_count)
-        if ((int.from_bytes(dawg[index * 20 // 8:index * 20 // 8 + 4], "little")
-             >> (index * 20 % 8 + 5)) & LEAF_OFFSET) == OVERFLOW_OFFSET
-    )
+    louds_sections(dawg, edge_count)
     morphology = morphology or []
     morph_bytes = encode_morphology(morphology)
     morphology_offset = HEADER.size + len(dawg)
@@ -624,7 +549,7 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
     header = HEADER.pack(
         MAGIC, VERSION, 0, BLOCK_WORDS,
         len(vocabulary), edge_count, root_offset,
-        len(exceptions), len(output_words), overflow_count, len(morphology),
+        len(exceptions), len(output_words), 0, len(morphology),
         morphology_offset, exceptions_offset, block_offsets_offset,
     )
     return header + dawg + morph_bytes + record_bytes + block_offsets + word_data
@@ -637,30 +562,43 @@ def improve_exception_selection(
 ) -> list[ExceptionEntry]:
     """Replace low-value records when a higher-value record fits exactly."""
     selected_words = {entry.word for entry in selected}
+    sorted_words = sorted(selected_words)
+    storage_size = exception_storage_size(selected)
+    fingerprints = {
+        hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK: entry.outline
+        for entry in selected
+    }
     unselected = sorted(
         (entry for entry in candidates if entry.word not in selected_words),
         key=lambda entry: (-weights[entry.word], entry.word, entry.outline),
     )[:attempts]
     for candidate in unselected:
         victims = sorted(selected, key=lambda entry: (weights[entry.word], entry.word))[:32]
+        candidate_fingerprint = hash32(candidate.outline.encode("ascii")) & EXCEPTION_HASH_MASK
         for victim in victims:
             if weights[candidate.word] <= weights[victim.word]:
                 break
-            proposed = [entry for entry in selected if entry != victim] + [candidate]
-            try:
-                size = model_base_size + exception_storage_size(proposed)
-                # pack_model will enforce hashes, but checking them here avoids
-                # accepting a swap that cannot be serialized.
-                fingerprints: dict[int, str] = {}
-                for entry in proposed:
-                    fingerprint = hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK
-                    previous = fingerprints.setdefault(fingerprint, entry.outline)
-                    if previous != entry.outline:
-                        raise ValueError("hash collision")
-            except ValueError:
+            collision = fingerprints.get(candidate_fingerprint)
+            if collision not in (None, candidate.outline, victim.outline):
                 continue
-            if size <= binary_budget:
-                selected = proposed
+            victim_position = bisect.bisect_left(sorted_words, victim.word)
+            reduced_size, reduced_words = exception_storage_size_after_remove(
+                sorted_words, storage_size, victim_position,
+            )
+            proposed_size = exception_storage_size_after_insert(
+                reduced_words, reduced_size, candidate.word,
+            )
+            if model_base_size + proposed_size <= binary_budget:
+                selected[selected.index(victim)] = candidate
+                bisect.insort(reduced_words, candidate.word)
+                sorted_words = reduced_words
+                storage_size = proposed_size
+                victim_fingerprint = (
+                    hash32(victim.outline.encode("ascii")) & EXCEPTION_HASH_MASK
+                )
+                if fingerprints.get(victim_fingerprint) == victim.outline:
+                    del fingerprints[victim_fingerprint]
+                fingerprints[candidate_fingerprint] = candidate.outline
                 break
     return selected
 
@@ -740,7 +678,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     for word in vocabulary:
         for outline in sorted(outlines_by_word.get(word, ()), key=lambda value: (value.count("/"), len(value), value)):
             generated = generate_for_vocabulary(outline)
-            accepted = next((candidate for candidate in generated if candidate in vocabulary_set), None)
+            accepted = next((candidate for candidate in generated
+                             if candidate in vocabulary_set), None)
             if accepted is None:
                 final_candidates = generate_for_vocabulary(outline, prune_final=False)
                 accepted = next((repair
@@ -874,7 +813,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "vocabulary_words": len(vocabulary),
         "vocabulary_rebalance_removals": len(removable),
         "vocabulary_rebalance_additions": len(additions),
-        "vocabulary_dawg_bytes": len(dawg_info[0]),
+        "vocabulary_trie_bytes": len(dawg_info[0]),
         "rule_resolved_words": len(successful),
         "fingerspelled_words": len(fingerspelled),
         "exception_outlines": len(selected),
@@ -899,7 +838,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=8250)
+    parser.add_argument("--vocabulary", type=int, default=10400)
     parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()
