@@ -316,7 +316,8 @@ def decode_stroke_analyses(stroke: str, final_position: bool) -> tuple[str, ...]
     return tuple(unique(analyses))
 
 
-def orthographic_repairs(word: str) -> list[str]:
+@lru_cache(maxsize=2048)
+def orthographic_repairs(word: str) -> tuple[str, ...]:
     """Return bounded one-edit repairs for common steno spelling omissions."""
     repairs: list[str] = []
     consonants = set("bcdfghjklmnpqrstvwxyz")
@@ -379,7 +380,7 @@ def orthographic_repairs(word: str) -> list[str]:
                    for index in range(len(word) - 2)
                    if word[index] == "l"
                    and word[index + 1:].startswith(("ed", "ing")))
-    return unique(repairs)
+    return tuple(unique(repairs))
 
 
 def generate_outline(outline: str, beam: int,
