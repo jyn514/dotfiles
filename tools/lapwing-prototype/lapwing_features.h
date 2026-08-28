@@ -41,6 +41,9 @@ enum {
 typedef struct {
     lw_key_t key; /* LW_KEY_NONE means tap the modifiers by themselves. */
     uint8_t modifiers;
+    uint8_t repeat;
 } lw_key_mod_result_t;
 
 bool lw_emily_modifier_lookup(const char *stroke, lw_key_mod_result_t *result);
+bool lw_movement_lookup(const char *stroke, bool continuation,
+                        lw_key_mod_result_t *result);

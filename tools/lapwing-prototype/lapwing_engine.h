@@ -35,6 +35,7 @@ typedef struct {
     uint8_t history_count;
     bool has_text;
     bool capitalize_next;
+    bool movement_mode;
     lw_history_entry_t history[LW_HISTORY_SIZE];
 } lw_engine_t;
 

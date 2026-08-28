@@ -86,8 +86,28 @@ void lw_engine_undo(lw_engine_t *engine) {
     engine->capitalize_next = entry.capitalize;
 }
 
+static void emit_key_action(lw_engine_t *engine,
+                            const lw_key_mod_result_t *action) {
+    lw_engine_commit(engine);
+    engine->history_count = 0;
+    engine->has_text = false;
+    engine->capitalize_next = false;
+    if (engine->key)
+        for (uint8_t repeat = 0; repeat < action->repeat; ++repeat)
+            engine->key(engine->io_context, action->key, action->modifiers);
+}
+
 void lw_engine_stroke(lw_engine_t *engine, const char *stroke, uint32_t now) {
     if (!stroke || !stroke[0]) return;
+    lw_key_mod_result_t action;
+    if (engine->movement_mode) {
+        if (lw_movement_lookup(stroke, true, &action)) {
+            emit_key_action(engine, &action);
+            engine->movement_mode = true;
+            return;
+        }
+        engine->movement_mode = false;
+    }
     if (strcmp(stroke, "PWR") == 0) {
         lw_engine_commit(engine);
         return;
@@ -97,14 +117,13 @@ void lw_engine_stroke(lw_engine_t *engine, const char *stroke, uint32_t now) {
         return;
     }
 
-    lw_key_mod_result_t modified;
-    if (lw_emily_modifier_lookup(stroke, &modified)) {
-        lw_engine_commit(engine);
-        engine->history_count = 0;
-        engine->has_text = false;
-        engine->capitalize_next = false;
-        if (engine->key)
-            engine->key(engine->io_context, modified.key, modified.modifiers);
+    if (lw_emily_modifier_lookup(stroke, &action)) {
+        emit_key_action(engine, &action);
+        return;
+    }
+    if (lw_movement_lookup(stroke, false, &action)) {
+        emit_key_action(engine, &action);
+        engine->movement_mode = true;
         return;
     }
 

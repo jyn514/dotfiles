@@ -181,6 +181,12 @@ Alt, and Super. Modifier actions commit pending text, attach on both sides, and
 form an undo barrier because arbitrary host key actions cannot be reversed by
 translator backspaces. Non-US symbolic variants and `F0` are rejected.
 
+The `STPH` and `#TPH` movement families implement the forty actions from
+`lapwing-movement.modal`. A matching entry stroke executes its action and opens
+a modal continuation; matching suffix strokes repeat movement without the
+prefix, while the first mismatch closes the mode and is retried normally.
+Movement actions share the modifier action's pending-text and undo boundary.
+
 Words receive one leading space after existing text. The first alphabetic word
 and the first word after `.`, `?`, or `!` are capitalized. Punctuation strokes
 are `TP-PL` for period, `KW-BG` for comma, `STPH-FPLT` for question mark, and

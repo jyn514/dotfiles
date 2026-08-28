@@ -10,7 +10,11 @@ ROOT = Path(__file__).parent
 
 
 class Result(ctypes.Structure):
-    _fields_ = [("key", ctypes.c_int), ("modifiers", ctypes.c_uint8)]
+    _fields_ = [
+        ("key", ctypes.c_int),
+        ("modifiers", ctypes.c_uint8),
+        ("repeat", ctypes.c_uint8),
+    ]
 
 
 class EmilyModifiersTest(unittest.TestCase):
