@@ -9,6 +9,7 @@ import re
 import struct
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import cmp_to_key
 from pathlib import Path
 
 import hand_rules
@@ -16,7 +17,7 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 7
+VERSION = 8
 HEADER = struct.Struct("<4sBBHIIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
@@ -86,12 +87,37 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
         return registry[signature]
 
     root_id = intern(root)
+    incoming = [0] * len(states)
+    for state in states:
+        for _, target_id in state.edges:
+            incoming[target_id] += 1
+    nonleaf_ids = [state_id for state_id, state in enumerate(states) if state.edges]
+    def compare_density(left: int, right: int) -> int:
+        left_score = incoming[left] * len(states[right].edges)
+        right_score = incoming[right] * len(states[left].edges)
+        if left_score != right_score:
+            return -1 if left_score > right_score else 1
+        if incoming[left] != incoming[right]:
+            return -1 if incoming[left] > incoming[right] else 1
+        return left - right
+
+    density_order = sorted(nonleaf_ids, key=cmp_to_key(compare_density))
+    inline_ids = []
+    inline_edges = 0
+    for state_id in density_order:
+        state_edges = len(states[state_id].edges)
+        if inline_edges + state_edges <= OVERFLOW_OFFSET:
+            inline_ids.append(state_id)
+            inline_edges += state_edges
+    inline_set = set(inline_ids)
+    ordered_ids = inline_ids + [
+        state_id for state_id in nonleaf_ids if state_id not in inline_set
+    ]
     offsets: list[int] = [LEAF_OFFSET] * len(states)
     edge_count = 0
-    for state_id, state in enumerate(states):
-        if state.edges:
-            offsets[state_id] = edge_count
-            edge_count += len(state.edges)
+    for state_id in ordered_ids:
+        offsets[state_id] = edge_count
+        edge_count += len(states[state_id].edges)
     if edge_count > 0xFFFF:
         raise ValueError("vocabulary DAWG exceeds 16-bit edge indexes")
     target_ids = {target_id for state in states for _, target_id in state.edges}
@@ -102,7 +128,8 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
     values = []
     overflows = []
     edge_index = 0
-    for state in states:
+    for state_id in ordered_ids:
+        state = states[state_id]
         for index, (character, target_id) in enumerate(state.edges):
             target = states[target_id]
             target_offset = offsets[target_id]
@@ -193,6 +220,18 @@ def pack_letters(text: str) -> bytes:
     return bytes(output)
 
 
+def word_delta_size(prefix: int, suffix: int) -> int:
+    if prefix < 15 and suffix < 15:
+        return 1
+    return 1 + varint_size(prefix) + varint_size(suffix)
+
+
+def encode_word_delta(prefix: int, suffix: int) -> bytes:
+    if prefix < 15 and suffix < 15:
+        return bytes((prefix << 4 | suffix,))
+    return b"\xff" + encode_varint(prefix) + encode_varint(suffix)
+
+
 def exception_storage_size(exceptions: list[ExceptionEntry]) -> int:
     words = sorted(entry.word for entry in exceptions)
     size = len(exceptions) * 5 + 2 * ((len(words) + BLOCK_WORDS - 1) // BLOCK_WORDS)
@@ -203,7 +242,7 @@ def exception_storage_size(exceptions: list[ExceptionEntry]) -> int:
         else:
             prefix = common_prefix_length(previous, word)
             suffix = len(word) - prefix
-            size += varint_size(prefix) + varint_size(suffix) + packed_letters_size(suffix)
+            size += word_delta_size(prefix, suffix) + packed_letters_size(suffix)
         previous = word
     return size
 
@@ -223,7 +262,7 @@ def encode_word_blocks(words: list[str]) -> tuple[bytes, bytes]:
             else:
                 prefix = common_prefix_length(previous, word)
                 suffix = word[prefix:]
-                encoded += encode_varint(prefix) + encode_varint(len(suffix)) + pack_letters(suffix)
+                encoded += encode_word_delta(prefix, len(suffix)) + pack_letters(suffix)
             previous = word
     return bytes(offsets), bytes(encoded)
 
@@ -813,7 +852,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=7600)
+    parser.add_argument("--vocabulary", type=int, default=8250)
     parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()

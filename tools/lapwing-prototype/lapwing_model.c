@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define LW_MODEL_HEADER_SIZE 48u
-#define LW_MODEL_VERSION 7u
+#define LW_MODEL_VERSION 8u
 #define LW_EXCEPTION_RECORD_SIZE 5u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
 #define LW_EXCEPTION_ID_MASK 0x7ffu
@@ -408,8 +408,16 @@ static bool decode_word(const lw_model_t *model, uint16_t id,
             if (!valid || length > LW_MAX_WORD
                 || !decode_letters(&cursor, end, output, length)) return false;
         } else {
-            uint16_t prefix = read_varint(&cursor, end, &valid);
-            uint16_t suffix = read_varint(&cursor, end, &valid);
+            if (cursor >= end) return false;
+            uint8_t delta = *cursor++;
+            uint16_t prefix, suffix;
+            if (delta == 0xffu) {
+                prefix = read_varint(&cursor, end, &valid);
+                suffix = read_varint(&cursor, end, &valid);
+            } else {
+                prefix = delta >> 4;
+                suffix = delta & 0x0fu;
+            }
             if (!valid || prefix > length || prefix + suffix > LW_MAX_WORD
                 || !decode_letters(&cursor, end, output + prefix, suffix)) return false;
             length = prefix + suffix;
