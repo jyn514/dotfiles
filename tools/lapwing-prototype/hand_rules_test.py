@@ -40,6 +40,13 @@ class HandRulesTest(unittest.TestCase):
         self.assertIn("content-type", hand_rules.joins("content", "type", False))
         self.assertNotIn("content-type", hand_rules.joins("content", "type", True))
 
+    def test_orthographic_repairs_are_cached(self) -> None:
+        hand_rules.orthographic_repairs.cache_clear()
+        first = hand_rules.orthographic_repairs("honor")
+        second = hand_rules.orthographic_repairs("honor")
+        self.assertIs(first, second)
+        self.assertEqual(hand_rules.orthographic_repairs.cache_info().hits, 1)
+
     def test_regular_british_spelling_repairs(self) -> None:
         self.assertIn("honour", hand_rules.orthographic_repairs("honor"))
         self.assertIn("recognise", hand_rules.orthographic_repairs("recognize"))
