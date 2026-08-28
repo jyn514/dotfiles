@@ -96,6 +96,9 @@ int main(int argc, char **argv) {
         return 1;
     lw_engine_stroke(&engine, "PWR", 1720);
     if (engine.movement_mode) return 1;
+    lw_engine_stroke(&engine, "-P", 1730);
+    if (engine.movement_mode || output.key_count != 5 || output.key != LW_KEY_UP)
+        return 1;
 
     free(data);
     return 0;

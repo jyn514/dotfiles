@@ -126,6 +126,10 @@ void lw_engine_stroke(lw_engine_t *engine, const char *stroke, uint32_t now) {
         engine->movement_mode = true;
         return;
     }
+    if (lw_movement_lookup(stroke, true, &action)) {
+        emit_key_action(engine, &action);
+        return;
+    }
 
     char proposed[sizeof(engine->outline)];
     size_t current = strlen(engine->outline);
