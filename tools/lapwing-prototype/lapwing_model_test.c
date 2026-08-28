@@ -108,14 +108,20 @@ int main(int argc, char **argv) {
         | ((uint32_t)data[30] << 16) | ((uint32_t)data[31] << 24);
     if (!overflows) result |= fail("overflow table absent");
     uint32_t overflow_offset = 48u + (edges * 20u + 7u) / 8u;
-    uint8_t saved_target[2] = {data[overflow_offset + 2u], data[overflow_offset + 3u]};
-    data[overflow_offset + 2u] = data[overflow_offset + 3u] = 0u;
+    uint8_t saved_target[2] = {data[overflow_offset + 4u], data[overflow_offset + 5u]};
+    data[overflow_offset + 4u] = data[overflow_offset + 5u] = 0xffu;
     if (lw_model_valid(&model)) result |= fail("invalid overflow target accepted");
-    data[overflow_offset + 2u] = saved_target[0];
-    data[overflow_offset + 3u] = saved_target[1];
+    data[overflow_offset + 4u] = saved_target[0];
+    data[overflow_offset + 5u] = saved_target[1];
+    uint32_t checkpoint_count = (overflows + 31u) / 32u;
+    uint32_t overflow_stream = overflow_offset + checkpoint_count * 6u;
+    uint8_t saved = data[overflow_stream];
+    data[overflow_stream] = 0u;
+    if (lw_model_valid(&model)) result |= fail("zero overflow edge delta accepted");
+    data[overflow_stream] = saved;
     uint32_t morph_offset = (uint32_t)data[36] | ((uint32_t)data[37] << 8)
         | ((uint32_t)data[38] << 16) | ((uint32_t)data[39] << 24);
-    uint8_t saved = data[morph_offset];
+    saved = data[morph_offset];
     data[morph_offset] = 32u;
     if (lw_model_valid(&model)) result |= fail("corrupt morphology accepted");
     data[morph_offset] = saved;
