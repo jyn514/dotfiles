@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import fcntl
+from importlib.util import module_from_spec
+from importlib.util import spec_from_file_location
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -29,8 +32,11 @@ import patch_keymap
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = Path(__file__).resolve().parent
+LAPWING_DIR = ROOT / "tools/lapwing-prototype"
+
 SNAPSHOT = ROOT / "lib/moonlander-layout.json"
 ADDITIONS = ROOT / "lib/keymap-additions.c"
+LAPWING_MODEL = LAPWING_DIR / "lapwing_model.bin"
 KEYBOARD = "zsa/moonlander/reva"
 QMK_BRANCH = "firmware25"
 
@@ -215,7 +221,22 @@ def patch_source(source: Path) -> None:
         raise FlashError(f"could not patch Oryx source: {error}") from error
 
 
-def install_source(staged: Path, destination: Path) -> None:
+def install_lapwing(keymap: Path) -> None:
+    try:
+        spec = spec_from_file_location(
+            "moonlander_lapwing_install_qmk", LAPWING_DIR / "install_qmk.py"
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError("could not load install_qmk.py")
+        module = module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.install(keymap, LAPWING_MODEL)
+    except Exception as error:
+        raise FlashError(f"could not integrate Lapwing: {error}") from error
+
+
+@contextmanager
+def installed_source(staged: Path, destination: Path):
     backup = destination.with_name(
         f".{destination.name}.backup-{os.getpid()}-{secrets.token_hex(6)}"
     )
@@ -224,15 +245,19 @@ def install_source(staged: Path, destination: Path) -> None:
         if previous:
             destination.rename(backup)
         staged.rename(destination)
-    except OSError as error:
-        if previous and backup.exists() and not destination.exists():
+        yield
+    except BaseException:
+        if destination.exists():
+            shutil.rmtree(destination)
+        if previous and backup.exists():
             backup.rename(destination)
-        raise FlashError(f"could not install patched keymap: {error}") from error
-    if backup.exists():
-        try:
-            shutil.rmtree(backup)
-        except OSError as error:
-            raise FlashError(f"could not remove replaced keymap: {error}") from error
+        raise
+    else:
+        if backup.exists():
+            try:
+                shutil.rmtree(backup)
+            except OSError as error:
+                raise FlashError(f"could not remove replaced keymap: {error}") from error
 
 
 def qmk_prefix() -> list[str]:
@@ -272,17 +297,17 @@ def flash(arguments: list[str], client: oryx_sync.GraphQLClient | None = None) -
     with tempfile.TemporaryDirectory(prefix=f".{revision_name}.", dir=keymaps) as temporary:
         staged = extract_archive(archive, Path(temporary))
         patch_source(staged)
-        install_source(staged, destination)
-
-    binary = qmk_home / f"zsa_moonlander_{revision_name}.bin"
-    if not binary.exists():
-        require_success(
-            run(
-                [*qmk, "compile", "-kb", KEYBOARD, "-km", revision_name],
-                cwd=qmk_home,
-            ),
-            "QMK compilation",
-        )
+        integrated = Path(temporary) / revision_name
+        staged.rename(integrated)
+        install_lapwing(integrated)
+        with installed_source(integrated, destination):
+            require_success(
+                run(
+                    [*qmk, "compile", "-kb", KEYBOARD, "-km", revision_name],
+                    cwd=qmk_home,
+                ),
+                "QMK compilation",
+            )
     if os.environ.get("COMPILE_ONLY") == "1":
         return 0
     environment = os.environ.copy()
