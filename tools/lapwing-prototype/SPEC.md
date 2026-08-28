@@ -107,8 +107,11 @@ The implemented API currently accepts canonical steno strings, for example
 - star presence.
 
 A dash explicitly separates left and right consonants when no vowel is present.
-Otherwise, the first and last vowel keys delimit the vowel region. The QMK adapter converts Gemini packet bits into this representation and keeps
-that packed protocol behind the adapter boundary.
+Otherwise, the first and last vowel keys delimit the vowel region. A standalone
+initial number-bar stroke is normalized into the following stroke, so
+`#/SKWRO*PB` and `#SKWRO*PB` perform the same proper-noun lookup. The QMK
+adapter converts Gemini packet bits into this representation and keeps that
+packed protocol behind the adapter boundary.
 
 Malformed, empty, oversized, or overlong outlines produce no candidates.
 

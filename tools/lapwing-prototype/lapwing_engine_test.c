@@ -61,6 +61,11 @@ int main(int argc, char **argv) {
     lw_engine_stroke(&engine, "*", 1400);
     if (expect(&output, "Cat python.")) return 1;
 
+    lw_engine_stroke(&engine, "#", 1500);
+    lw_engine_stroke(&engine, "SKWRO*PB", 1510);
+    lw_engine_commit(&engine);
+    if (expect(&output, "Cat python. John")) return 1;
+
     free(data);
     return 0;
 }

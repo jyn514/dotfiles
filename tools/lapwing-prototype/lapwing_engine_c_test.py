@@ -16,7 +16,8 @@ class LapwingEngineCTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             model = directory / "model.bin"
-            model.write_bytes(generate_model.pack_model(vocabulary, []))
+            exceptions = [generate_model.ExceptionEntry("#SKWRO*PB", "john")]
+            model.write_bytes(generate_model.pack_model(vocabulary + ["john"], exceptions))
             executable = directory / "lapwing_engine_test"
             subprocess.run(
                 [
