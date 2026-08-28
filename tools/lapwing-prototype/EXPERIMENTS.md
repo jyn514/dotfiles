@@ -6,10 +6,9 @@ This log records rejected and superseded experiments so future work does not
 repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the first 20,000 valid word types in the reference
 list. This is an in-sample optimization score, not a 20,000-token corpus: the
-cutoff is arbitrary and the model was tuned against it. The pinned input is
-reproduced by `generate_wordfreq.py` from `wordfreq==3.1.1`; its SHA-256 is
-`831507abd1bf89dce3d60bd19a23629eeb7fc5f926a4d108ba1e8448fafcb4a4`.
-Unless noted, trials used the exact 40,960-byte linguistic-data budget and a
+cutoff is arbitrary and the model was tuned against it. Use the pinned input
+prepared in `README.md`. Unless noted, trials used the exact 40,960-byte
+linguistic-data budget and a
 64-candidate frontier.
 
 The current conventional-coverage baseline is **94.1539%**. Authoritative
@@ -62,17 +61,7 @@ letter-by-letter fallback is reported separately and is not counted here.
   repairs and 92.82% afterward without that regression under the pre-audit
   one-letter metric.
 
-## Adopted experiments
-
-- Productive derivations are now appended even when the source dictionary
-  already supplies an outline. This gives unresolved spellings a structured
-  root-plus-affix fallback, raising corrected US-stack coverage from 92.95% to
-  93.26% without changing the 40,960-byte data budget.
-- Exact compound alternatives are now appended even when a source outline
-  exists. This recovers words such as `battlefield` through known component
-  outlines and raises coverage from 93.26% to 93.37% at the same budget.
-
-## Promising experiments not yet adopted
+## Certificate and structured-compound experiments
 
 - Component certificates using a primary-DAWG terminal-edge identity avoid a
   second word graph. Restricting components to words uniquely identified by
@@ -132,39 +121,21 @@ letter-by-letter fallback is reported separately and is not counted here.
 
 ## Held-out validation
 
-- The frozen 93.9145% model was evaluated without retuning on 793,338 tokens
-  from *Pride and Prejudice*, *Moby-Dick*, *Frankenstein*, *The Adventures of
-  Sherlock Holmes*, *The Federalist Papers*, and RFC 9110 after normalizing
-  straight and curly apostrophes. Aggregate conventional token coverage was
-  87.39%, with individual results from 83.01% to 91.22%. The discrepancy confirms that the weighted 20,000-type score was
-  optimistic as a prose-coverage claim.
+- The frozen 93.9145% model was evaluated without retuning on the normalized
+  corpus pinned by `heldout_corpora.json`. Aggregate conventional coverage was
+  87.39%, with individual results from 83.01% to 91.22%. The discrepancy
+  confirms that the weighted 20,000-type score was optimistic as a prose claim.
 - Extending only the denominator of the frozen frequency-list evaluation gives
   99.37% at 5,000 types, 97.07% at 10,000, 93.91% at 20,000, and 91.51% across
   all 49,253 valid entries. These are not independently sampled corpora.
 
-## Planned representation experiments
+## Adopted compositional rules and sparse targets
 
-Investigate these against the corrected US stack, using exact serialized bytes
-and the same frequency-weighted conventional-coverage metric:
-
-1. Direct blocked front-coded outline-to-output records.
-2. Exact minimal-perfect-hash-style indexing with stored-key verification.
-3. A path-compressed or succinct radix trie over canonical stroke masks.
-4. A minimized deterministic subsequential transducer with output pushing.
-5. Per-first-stroke portfolio selection among the preceding codecs.
-6. Grouped morphological proof classes with delta-coded exact roots.
-7. A factored relation over reusable outline fragments, roots, affixes, and
-   licensed joins.
-
-Every speculative serializer belongs in an isolated temporary checkout until it
-beats the 93.37% baseline at exactly 40,960 linguistic-data bytes. Approximate
-record counts are screening evidence only; adoption requires a byte-identical
-Python/C artifact, absent-key rejection, complete-model exception displacement,
-and revA/revB builds.
-
-## Adopted compositional rules
-
-- Model generation now composes exact hyphenated vocabulary from known
+- Productive derivations are appended even when the source dictionary already
+  supplies an outline, giving unresolved spellings a structured root-plus-affix
+  fallback. This raised coverage from 92.95% to 93.26% without changing the
+  data budget.
+- Model generation composes exact hyphenated vocabulary from known
   components. The decoder emits hyphenated alternatives only at non-affix
   stroke boundaries, and DAWG prefix membership rejects unlicensed joins.
 - Otherwise uncovered words may receive regular write-out outlines assembled
@@ -172,14 +143,17 @@ and revA/revB builds.
   letters long, the bounded decoder must reconstruct the exact target, and
   synthesized roots subsequently receive productive morphology. This excludes
   letter-by-letter fingerspelling from the conventional metric.
-- Regular `-or/-our`, `-ize/-ise`, `-er/-re`, and doubled-`l` spelling variants
-  share source outlines and are admitted only through exact vocabulary
-  membership. Python and C tests cover the representation boundary.
+- The spelling variants specified in `SPEC.md` share source outlines and remain
+  exact-vocabulary gated. Python and C tests cover the boundary.
 
-These rules were adopted on August 28, 2026. Before sparse DAWG targets were
-added, regeneration from the pinned independent frequency input produced
-87.22% conventional token coverage over 793,338 held-out tokens, versus the
-earlier 87.39% model.
+These rules were adopted on August 28, 2026. Before sparse DAWG targets,
+regeneration produced 87.22% conventional coverage on the pinned held-out
+corpus, versus 87.39% for the preceding model.
+
+Model format v6 then widened only out-of-range DAWG targets through sparse
+overflow records. Weighted conventional coverage rose from 93.8978% to
+**94.1539%**, and held-out coverage to **87.45%**. `SPEC.md` owns the current
+format, size, and validation rules.
 
 ## Re-evaluation of the rejected second DAWG
 
@@ -190,40 +164,29 @@ coverage and 88.08% held-out coverage while reducing retained exceptions from
 1,310 to 725. Prefix-union simulation retained 1,023 selected words at the
 64-candidate bound.
 
-This screening result does **not** overturn the earlier rejection. The previous
-certificate work already demonstrated that estimated gains can disappear after
-implementing the real format, decoder, prefix behavior, and exact exception
-displacement: its complete format-v5 implementation fell below its adoption
-threshold and was reverted. The new density ranking is a changed premise, but
-it has not yet passed that same implementation-grade test. Do not revisit a
-second DAWG again unless an isolated complete implementation beats the current
-model at exact serialized bytes and preserves Python/C parity; another size-only
-projection is insufficient evidence.
+This screening does **not** overturn the earlier rejection. As the certificate
+results above show, projected gains may disappear after implementing the real
+format, decoder, prefix behavior, and exception displacement. Do not revisit a
+second DAWG unless an isolated complete implementation beats the current model
+at exact serialized bytes and preserves Python/C parity; another size-only
+projection is insufficient.
 
-## Adopted sparse DAWG targets
+## Productive directions
 
-Model format v6 reserves target `0x1ffe` as an overflow escape while retaining
-20-bit ordinary edges. Sorted four-byte `(edge index, 16-bit target)` records
-extend only the out-of-range edges; model validation rejects missing, duplicate,
-unsorted, out-of-range, and truncated records. The 7,190-word graph occupies
-25,273 bytes, including 537 overflow records, and the complete model retains 787
-exceptions at 40,959 total linguistic-data bytes.
+Investigate these against the corrected US stack and the baseline above:
 
-Against the pinned independent frequency input, weighted conventional coverage
-rises from 93.8978% to **94.1539%**. Held-out coverage rises from 87.22% to
-**87.45%**. Python generation, C lookup, overflow corruption checks, and a
-synthetic graph crossing the old 13-bit boundary are covered by host tests.
+1. Exact per-swap graph-size deltas and complete model scoring.
+2. DAWG-guided, constrained two-edit repair.
+3. Denser exact exception indexing that preserves lexical output order.
+4. A minimized subsequential transducer with output pushing.
+5. Per-first-stroke portfolio selection among viable codecs.
+6. A factored relation over outline fragments, roots, affixes, and licensed
+   joins.
+7. Additional Lapwing joins and orthographic transformations derived from
+   high-frequency unresolved outlines.
 
-## Productive directions not yet exhausted
-
-- Replace the accepted bounded vocabulary rebalance heuristic with exact
-  per-swap graph-size deltas and complete model scoring.
-- DAWG-guided bounded edit search that can support carefully constrained
-  two-edit repairs without enumerating the whole vocabulary or exploding the
-  candidate frontier.
-- More compact exact exception indexing that retains lexical output ordering.
-- Additional hand-written Lapwing joins and orthographic transformations derived
-  from high-frequency unresolved outlines.
-
-When revisiting a rejected experiment, record the changed assumption, new
-measurement, and reason the earlier result no longer applies.
+Test speculative serializers in isolated temporary checkouts. Adoption requires
+exact serialized bytes within the 40,960-byte budget, a byte-identical Python/C
+artifact, absent-key rejection, complete-model exception displacement, and
+revA/revB builds. When revisiting a rejection, record the changed assumption,
+new measurement, and reason the earlier result no longer applies.
