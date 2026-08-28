@@ -25,8 +25,9 @@ int main(int argc, char **argv) {
     if (!lw_model_valid(&model)) result |= fail("model rejected");
     if (!lw_model_contains(&model, "cat")) result |= fail("cat absent");
     if (!lw_model_contains(&model, "python")) result |= fail("python absent");
+    if (!lw_model_contains(&model, "zzzppzxw")) result |= fail("overflow word absent");
     if (!lw_model_has_prefix(&model, "py")) result |= fail("python prefix absent");
-    if (lw_model_has_prefix(&model, "zz")) result |= fail("non-prefix accepted");
+    if (lw_model_has_prefix(&model, "$")) result |= fail("non-prefix accepted");
     if (lw_model_exception(&model, "P", output[0]) == false
         || strcmp(output[0], "people") != 0) result |= fail("exception lookup failed");
     if (lw_model_translate(&model, "P", output, 4) != 1
@@ -101,8 +102,19 @@ int main(int argc, char **argv) {
         result |= fail("british doubled-l repair failed");
     lw_model_t truncated = {data, 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
-    uint32_t morph_offset = (uint32_t)data[32] | ((uint32_t)data[33] << 8)
-        | ((uint32_t)data[34] << 16) | ((uint32_t)data[35] << 24);
+    uint32_t edges = (uint32_t)data[12] | ((uint32_t)data[13] << 8)
+        | ((uint32_t)data[14] << 16) | ((uint32_t)data[15] << 24);
+    uint32_t overflows = (uint32_t)data[28] | ((uint32_t)data[29] << 8)
+        | ((uint32_t)data[30] << 16) | ((uint32_t)data[31] << 24);
+    if (!overflows) result |= fail("overflow table absent");
+    uint32_t overflow_offset = 48u + (edges * 20u + 7u) / 8u;
+    uint8_t saved_target[2] = {data[overflow_offset + 2u], data[overflow_offset + 3u]};
+    data[overflow_offset + 2u] = data[overflow_offset + 3u] = 0u;
+    if (lw_model_valid(&model)) result |= fail("invalid overflow target accepted");
+    data[overflow_offset + 2u] = saved_target[0];
+    data[overflow_offset + 3u] = saved_target[1];
+    uint32_t morph_offset = (uint32_t)data[36] | ((uint32_t)data[37] << 8)
+        | ((uint32_t)data[38] << 16) | ((uint32_t)data[39] << 24);
     uint8_t saved = data[morph_offset];
     data[morph_offset] = 32u;
     if (lw_model_valid(&model)) result |= fail("corrupt morphology accepted");

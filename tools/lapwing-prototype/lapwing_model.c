@@ -2,12 +2,14 @@
 
 #include <string.h>
 
-#define LW_MODEL_HEADER_SIZE 44u
-#define LW_MODEL_VERSION 5u
+#define LW_MODEL_HEADER_SIZE 48u
+#define LW_MODEL_VERSION 6u
 #define LW_EXCEPTION_RECORD_SIZE 5u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
 #define LW_EXCEPTION_ID_MASK 0x7ffu
 #define LW_DAWG_LEAF_OFFSET 0x1fffu
+#define LW_DAWG_OVERFLOW_OFFSET 0x1ffeu
+#define LW_DAWG_OVERFLOW_RECORD_SIZE 4u
 static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz'-";
 
 static uint16_t read_u16(const uint8_t *data) {
@@ -23,12 +25,35 @@ static uint32_t read_u32(const uint8_t *data) {
 }
 
 static uint32_t edge_count(const lw_model_t *model);
+static uint32_t overflow_count(const lw_model_t *model);
+
+typedef struct {
+    uint8_t letter;
+    uint32_t target;
+    bool terminal;
+    bool last;
+} lw_dawg_edge_t;
 
 static uint64_t read_u40(const uint8_t *data) {
     return (uint64_t)read_u32(data) | ((uint64_t)data[4] << 32);
 }
 
-static uint32_t read_edge(const lw_model_t *model, uint32_t index) {
+static uint32_t overflow_target(const lw_model_t *model, uint32_t edge_index) {
+    uint32_t packed_bytes = (edge_count(model) * 20u + 7u) / 8u;
+    const uint8_t *records = model->data + LW_MODEL_HEADER_SIZE + packed_bytes;
+    uint32_t low = 0, high = overflow_count(model);
+    while (low < high) {
+        uint32_t middle = low + (high - low) / 2u;
+        uint16_t found = read_u16(records + middle * LW_DAWG_OVERFLOW_RECORD_SIZE);
+        if (found < edge_index) low = middle + 1u;
+        else high = middle;
+    }
+    if (low >= overflow_count(model)) return UINT32_MAX;
+    const uint8_t *record = records + low * LW_DAWG_OVERFLOW_RECORD_SIZE;
+    return read_u16(record) == edge_index ? read_u16(record + 2u) : UINT32_MAX;
+}
+
+static lw_dawg_edge_t read_edge(const lw_model_t *model, uint32_t index) {
     const uint8_t *data = model->data + LW_MODEL_HEADER_SIZE;
     uint32_t bit_offset = index * 20u;
     uint32_t byte_offset = bit_offset / 8u;
@@ -37,7 +62,16 @@ static uint32_t read_edge(const lw_model_t *model, uint32_t index) {
     uint32_t value = 0;
     for (uint8_t byte = 0; byte < 4u && byte_offset + byte < available; ++byte)
         value |= (uint32_t)data[byte_offset + byte] << (byte * 8u);
-    return (value >> shift) & 0xfffffu;
+    value = (value >> shift) & 0xfffffu;
+    uint32_t target = (value >> 5) & LW_DAWG_LEAF_OFFSET;
+    if (target == LW_DAWG_OVERFLOW_OFFSET)
+        target = overflow_target(model, index);
+    return (lw_dawg_edge_t) {
+        .letter = (uint8_t)(value & 0x1fu),
+        .target = target,
+        .terminal = (value & (1u << 18)) != 0,
+        .last = (value & (1u << 19)) != 0,
+    };
 }
 
 static uint32_t hash32(const char *text) {
@@ -99,10 +133,11 @@ static uint32_t edge_count(const lw_model_t *model) { return read_u32(model->dat
 static uint32_t root_offset(const lw_model_t *model) { return read_u32(model->data + 16); }
 static uint32_t exception_count(const lw_model_t *model) { return read_u32(model->data + 20); }
 static uint32_t word_count(const lw_model_t *model) { return read_u32(model->data + 24); }
-static uint32_t morphology_count(const lw_model_t *model) { return read_u32(model->data + 28); }
-static uint32_t morphology_offset(const lw_model_t *model) { return read_u32(model->data + 32); }
-static uint32_t exceptions_offset(const lw_model_t *model) { return read_u32(model->data + 36); }
-static uint32_t blocks_offset(const lw_model_t *model) { return read_u32(model->data + 40); }
+static uint32_t overflow_count(const lw_model_t *model) { return read_u32(model->data + 28); }
+static uint32_t morphology_count(const lw_model_t *model) { return read_u32(model->data + 32); }
+static uint32_t morphology_offset(const lw_model_t *model) { return read_u32(model->data + 36); }
+static uint32_t exceptions_offset(const lw_model_t *model) { return read_u32(model->data + 40); }
+static uint32_t blocks_offset(const lw_model_t *model) { return read_u32(model->data + 44); }
 
 bool lw_model_valid(const lw_model_t *model) {
     if (!model || !model->data || model->size < LW_MODEL_HEADER_SIZE) return false;
@@ -113,15 +148,45 @@ bool lw_model_valid(const lw_model_t *model) {
     uint32_t root = root_offset(model);
     uint32_t exceptions = exception_count(model);
     uint32_t words = word_count(model);
+    uint32_t overflows = overflow_count(model);
+    uint32_t packed_bytes = (edges * 20u + 7u) / 8u;
+    uint32_t overflow_start = LW_MODEL_HEADER_SIZE + packed_bytes;
+    size_t expected_morph_start = (size_t)overflow_start
+        + (size_t)overflows * LW_DAWG_OVERFLOW_RECORD_SIZE;
     uint32_t morph_start = morphology_offset(model);
     uint32_t exception_start = exceptions_offset(model);
     uint32_t block_start = blocks_offset(model);
     uint32_t block_count = block_words ? (words + block_words - 1u) / block_words : 0;
     if (!block_words || !read_u32(model->data + 8) || !edges) return false;
-    if (root >= edges
-        || morph_start != LW_MODEL_HEADER_SIZE + (edges * 20u + 7u) / 8u
+    if (root >= edges || expected_morph_start > model->size
+        || morph_start != expected_morph_start
         || exception_start < morph_start || exception_start > model->size)
         return false;
+    const uint8_t *overflow_records = model->data + overflow_start;
+    uint32_t previous_edge = UINT32_MAX;
+    for (uint32_t index = 0; index < overflows; ++index) {
+        uint16_t edge = read_u16(overflow_records + index * 4u);
+        uint16_t target = read_u16(overflow_records + index * 4u + 2u);
+        if (edge >= edges || target < LW_DAWG_OVERFLOW_OFFSET || target >= edges
+            || (index && edge <= previous_edge)) return false;
+        previous_edge = edge;
+    }
+    uint32_t found_overflows = 0;
+    for (uint32_t index = 0; index < edges; ++index) {
+        lw_dawg_edge_t edge = read_edge(model, index);
+        if (edge.target == UINT32_MAX) return false;
+        uint32_t bit = index * 20u;
+        uint32_t byte = bit / 8u;
+        uint8_t shift = bit % 8u;
+        uint32_t packed = 0;
+        for (uint8_t part = 0; part < 4u && byte + part < packed_bytes; ++part)
+            packed |= (uint32_t)model->data[LW_MODEL_HEADER_SIZE + byte + part]
+                   << (part * 8u);
+        if ((((packed >> shift) & 0xfffffu) >> 5 & LW_DAWG_LEAF_OFFSET)
+            == LW_DAWG_OVERFLOW_OFFSET)
+            ++found_overflows;
+    }
+    if (found_overflows != overflows) return false;
     if (block_start != exception_start + exceptions * LW_EXCEPTION_RECORD_SIZE) return false;
     if ((size_t)block_start + block_count * 2u > model->size) return false;
     const uint8_t *cursor = model->data + morph_start;
@@ -161,14 +226,14 @@ static bool walk_word(const lw_model_t *model, const char *word, bool require_te
             return false;
         bool matched = false;
         for (uint32_t index = state; index < edge_count(model); ++index) {
-            uint32_t edge = read_edge(model, index);
-            if ((int)(edge & 0x1fu) == wanted) {
-                state = (edge >> 5) & LW_DAWG_LEAF_OFFSET;
-                terminal = (edge & (1u << 18)) != 0;
+            lw_dawg_edge_t edge = read_edge(model, index);
+            if ((int)edge.letter == wanted) {
+                state = edge.target;
+                terminal = edge.terminal;
                 matched = true;
                 break;
             }
-            if (edge & (1u << 19)) break;
+            if (edge.last) break;
         }
         if (!matched) return false;
     }
@@ -189,15 +254,15 @@ static bool primary_identity(const lw_model_t *model, const char *word,
             return false;
         bool matched = false;
         for (uint32_t index = state; index < edge_count(model); ++index) {
-            uint32_t edge = read_edge(model, index);
-            if ((int)(edge & 31u) == wanted) {
+            lw_dawg_edge_t edge = read_edge(model, index);
+            if ((int)edge.letter == wanted) {
                 final_edge = index;
-                state = (edge >> 5) & LW_DAWG_LEAF_OFFSET;
-                if (!word[++length] && !(edge & (1u << 18))) return false;
+                state = edge.target;
+                if (!word[++length] && !edge.terminal) return false;
                 matched = true;
                 break;
             }
-            if (edge & (1u << 19)) break;
+            if (edge.last) break;
         }
         if (!matched) return false;
     }

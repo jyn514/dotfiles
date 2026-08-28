@@ -12,7 +12,7 @@ reproduced by `generate_wordfreq.py` from `wordfreq==3.1.1`; its SHA-256 is
 Unless noted, trials used the exact 40,960-byte linguistic-data budget and a
 64-candidate frontier.
 
-The current conventional-coverage baseline is **93.8978%**. Authoritative
+The current conventional-coverage baseline is **94.1539%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -176,17 +176,48 @@ and revA/revB builds.
   share source outlines and are admitted only through exact vocabulary
   membership. Python and C tests cover the representation boundary.
 
-These rules were adopted on August 28, 2026. Regeneration from the pinned
-independent frequency input produced **87.22%** conventional token coverage over
-793,338 held-out tokens, versus the earlier 87.39% model. The new rules recover
-additional compositional words, but their changed vocabulary rebalance requires
-a 6,200-word frontier and gives up slightly more corpus frequency elsewhere.
+These rules were adopted on August 28, 2026. Before sparse DAWG targets were
+added, regeneration from the pinned independent frequency input produced
+87.22% conventional token coverage over 793,338 held-out tokens, versus the
+earlier 87.39% model.
+
+## Re-evaluation of the rejected second DAWG
+
+The rejected second-DAWG design was screened again after the compositional-rule
+changes, this time ranking candidate words by independent frequency weight per
+spelling byte. A 5,412-byte graph for 1,025 words projected 94.0413% weighted
+coverage and 88.08% held-out coverage while reducing retained exceptions from
+1,310 to 725. Prefix-union simulation retained 1,023 selected words at the
+64-candidate bound.
+
+This screening result does **not** overturn the earlier rejection. The previous
+certificate work already demonstrated that estimated gains can disappear after
+implementing the real format, decoder, prefix behavior, and exact exception
+displacement: its complete format-v5 implementation fell below its adoption
+threshold and was reverted. The new density ranking is a changed premise, but
+it has not yet passed that same implementation-grade test. Do not revisit a
+second DAWG again unless an isolated complete implementation beats the current
+model at exact serialized bytes and preserves Python/C parity; another size-only
+projection is insufficient evidence.
+
+## Adopted sparse DAWG targets
+
+Model format v6 reserves target `0x1ffe` as an overflow escape while retaining
+20-bit ordinary edges. Sorted four-byte `(edge index, 16-bit target)` records
+extend only the out-of-range edges; model validation rejects missing, duplicate,
+unsorted, out-of-range, and truncated records. The 7,190-word graph occupies
+25,273 bytes, including 537 overflow records, and the complete model retains 787
+exceptions at 40,959 total linguistic-data bytes.
+
+Against the pinned independent frequency input, weighted conventional coverage
+rises from 93.8978% to **94.1539%**. Held-out coverage rises from 87.22% to
+**87.45%**. Python generation, C lookup, overflow corruption checks, and a
+synthetic graph crossing the old 13-bit boundary are covered by host tests.
 
 ## Productive directions not yet exhausted
 
 - Replace the accepted bounded vocabulary rebalance heuristic with exact
-  per-swap graph-size deltas and complete model scoring. Forty additions are the
-  maximum tested before the current 13-bit target-offset limit fails.
+  per-swap graph-size deltas and complete model scoring.
 - DAWG-guided bounded edit search that can support carefully constrained
   two-edit repairs without enumerating the whole vocabulary or exploding the
   candidate frontier.

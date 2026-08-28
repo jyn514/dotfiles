@@ -122,32 +122,25 @@ not demonstrated.
 
 ## Flash-resident model
 
-`generate_model.py` builds the model actually consumed by the C firmware. It
-uses an exact minimized acyclic word graph rather than the earlier proposed
-MPHF. This avoids vocabulary false positives and requires no rank payload.
-Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
-front-coded, five-bit-letter output pool with restart points every 384 words.
+`generate_model.py` builds the model consumed by the C firmware. It uses an
+exact minimized acyclic word graph rather than the earlier proposed MPHF, so
+vocabulary lookup has no false positives. `SPEC.md` defines the binary format.
 
-The selected model starts from a 6,200-word ranked frontier and rebalances it
-to 6,151 exact vocabulary words:
+The selected model starts from a 7,250-word ranked frontier and rebalances it
+to 7,190 exact vocabulary words:
 
 | Data | Bytes |
 |---|---:|
 | Generated C rule representation | 4,181 |
-| Binary vocabulary and exceptions | 36,779 |
-| **Total linguistic data** | **40,960** |
+| Binary vocabulary and exceptions | 36,778 |
+| **Total linguistic data** | **40,959** |
 
-The binary contains a 20,403-byte exact vocabulary graph, 3,824 bytes of
-grouped exact morphology (67 recipes licensing 1,698 transformed words), and
-1,310 exception outlines. Productive morphology, closed and hyphenated compound
-composition, standalone affixes, and algorithmic fingerspelling of every word
-through the sixteen-stroke outline limit supply additional outlines without
-consuming model records. Model generation also searches for regular write-out
-outlines assembled from non-starred Lapwing strokes already observed in the
-source dictionaries. Each spelling chunk contains at least two letters, so this
-path is not letter-by-letter fingerspelling. Synthesized roots receive the same
-productive inflection and possessive rules as dictionary roots.
-Conventional dictionary and rule outlines cover **93.90%** of the first 20,000
+The binary contains a 25,273-byte exact vocabulary graph, 3,817 bytes of
+grouped exact morphology (62 recipes licensing 1,709 transformed words), and
+787 exception outlines. Productive morphology, compound composition,
+standalone affixes, and spelling paths add coverage without model records;
+`SPEC.md` defines their acceptance constraints.
+Conventional dictionary and rule outlines cover **94.15%** of the first 20,000
 word types in the reference frequency list after Zipf weighting. This is an
 in-sample optimization score, not an estimate of prose token coverage: the
 20,000-type cutoff is arbitrary and the model was repeatedly tuned against it. The metric
@@ -167,19 +160,16 @@ PYTHONPATH=/tmp/lapwing-wordfreq \
   python3 generate_wordfreq.py /tmp/wordfreq-en-50000.tsv
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 6200 --beam 64 --report lapwing_model_report.json
+  --vocabulary 7250 --beam 64 --report lapwing_model_report.json
 ```
 
 The 50,000-row TSV has SHA-256
 `831507abd1bf89dce3d60bd19a23629eeb7fc5f926a4d108ba1e8448fafcb4a4` and
 contains 49,253 entries after the model's lexical filter.
 
-Model selection removes up to 100 low-ranked frontier tokens without
-conventional outlines, probes the next 200 outlined words against a temporary
-exact prefix set, and admits the first 40 that resolve without exceptions. The
-reference model uses 89 of the 100 permitted removals. It then builds the final
-vocabulary graph once and uses a size-only exception path while searching the
-budget.
+Model selection rebalances the ranked frontier toward words that resolve
+without exceptions. `SPEC.md` defines the selection bounds and exact model
+representation.
 
 ## Held-out corpus evaluation
 
@@ -191,20 +181,20 @@ These are deliberately not model-selection inputs, but they are still a narrow,
 mostly historical English sample and include source boilerplate.
 
 After normalizing straight and curly apostrophes, the corpus contains 793,338
-tokens and conventional token coverage is **87.22%**. Individual results range
-from **82.49%** for *Moby-Dick* and **83.49%** for RFC 9110 to **91.19%** for
+tokens and conventional token coverage is **87.45%**. Individual results range
+from **82.67%** for *Moby-Dick* and **83.96%** for RFC 9110 to **91.30%** for
 *Sherlock Holmes*. Alphabetic words of at most sixteen letters, and therefore
 directly reachable by authoritative fingerspelling, account for **98.78%** of
-aggregate tokens. Among the 101,367 uncovered tokens, 40,879 are top-20,000
+aggregate tokens. Among the 99,558 uncovered tokens, 39,397 are top-20,000
 Lapwing words unresolved or omitted by the fixed model, 28,286 rank below the
 20,000-word selection cutoff, 25,589 are absent from the 50,000-word frequency
-source, and 6,613 are frequency-ranked words absent from the benchmark Lapwing
+source, and 6,286 are frequency-ranked words absent from the benchmark Lapwing
 stack. `evaluate_coverage.py` records these categories and the most frequent
 missing words in its JSON report.
 
 The frozen model's Zipf-weighted conventional coverage is **99.39%** over the
-first 5,000 frequency types, **97.05%** over 10,000, **93.90%** over 20,000, and
-**91.50%** over all 49,253 valid types available in the pinned TSV. These cutoff
+first 5,000 frequency types, **97.25%** over 10,000, **94.15%** over 20,000, and
+**91.74%** over all 49,253 valid types available in the pinned TSV. These cutoff
 results do not retrain or resize the model. Treat corpus and frequency results
 as separate measurements.
 
@@ -227,7 +217,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact rebalanced 6,151-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact rebalanced 7,190-word vocabulary graph costs about 25 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -241,45 +231,16 @@ coverage.
 
 ## C decoder
 
-`lapwing_decoder.c` is the first heap-free C port of the hand-written rule
-engine. `hand_rules.py` remains the authoritative editable rule source;
-`generate_c_rules.py` produces `lapwing_rules.generated.h`. The C core has no
-QMK or HID side effects: callers supply outlines and optionally a vocabulary
-acceptance callback.
+`lapwing_decoder.c` is the heap-free C port of the hand-written rule engine.
+`hand_rules.py` remains the authoritative editable source, and
+`generate_c_rules.py` produces `lapwing_rules.generated.h`. The decoder, model,
+translation engine, and QMK adapter have separate ownership and side-effect
+boundaries defined in `SPEC.md`.
 
-The current port includes canonical-stroke parsing, ordered onset/coda
-segmentation, whole strokes, prefixes and suffixes, starred alternatives,
-silent-e variants, folded endings, English affix joins, bounded candidate
-storage, and deduplication. Its packed generated C representation occupies 4,181 bytes
-before linker optimization. Host golden tests recover representative words such
-as “snake”, “python”, “preview”, “zapping”, “interstate”, “microphone”, and
-“helpful”. Across 20,000 dictionary outlines, its 64-candidate output exactly
-matched the Python reference.
-
-The decoder recognizes all-starred letter sequences directly, bypassing
-phonetic ambiguity, frontier ordering, and vocabulary membership for explicitly
-spelled words. A final `AES` produces possessive `'s`; ordinary phonetic paths
-remain subject to exact vocabulary membership.
-
-`lapwing_model.c` provides exact vocabulary membership, prefix lookup,
-exception lookup, and front-coded output recovery. During rule generation,
-DAWG-prefix pruning prevents impossible partial spellings from consuming the
-64-candidate inter-stroke frontier. If no exact final candidate survives, the
-model retries the final stroke without prefix pruning and tests bounded
-consonant-doubling, insertion, deletion, transposition, vowel-change, and
-steno-confusion repairs against exact DAWG membership. A narrow `selbr` to
-`celebr` repair covers Lapwing's compressed celebration family without enabling
-general two-edit search. Exact folded-liquid and broad-vowel rewrites recover
-families such as `clean`, `college`, `talk`, and `called`. Exact terminal
-rewrites recover voiced silent-e, soft-c, and plural spellings such as `love`,
-`placed`, and `makes`. Bounded `gh` and `in` insertion recovers silent-letter
-and folded-`ing` families such as `light` and `doing`. `lapwing_engine.c`
-adds delayed multi-stroke
-commit, automatic spacing and sentence capitalization, punctuation strokes,
-explicit commit, cancellation, and eight-entry undo history.
-`lapwing_qmk.c` intercepts completed QMK steno chords, converts Gemini chord bits
-to canonical strokes, suppresses serial steno output, and publishes translated
-text through normal keyboard HID reports.
+The packed generated rules occupy 4,181 bytes before linker optimization.
+Across 20,000 dictionary outlines, the 64-candidate C output exactly matched
+the Python reference. Host tests also cover representative phonetic,
+morphological, repair, and explicit-spelling paths.
 
 The complete generated model and adapter compile in both Moonlander targets:
 
@@ -296,18 +257,13 @@ Regenerate and test it with:
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
 python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
-  --vocabulary 6200 --beam 64
+  --vocabulary 7250 --beam 64
 python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
   lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
 ```
 
 `LW_MAX_CANDIDATES` is compile-time bounded. The host golden test uses 128 to
-exercise rule ordering; firmware uses 64 and relies on exact exceptions before
-rule generation for common irregular outlines.
-
-## Tests
-
-```sh
-python3 -m unittest discover -p '*_test.py'
-```
+exercise rule ordering; firmware uses 64 and checks exact exceptions before
+rule generation. See `SPEC.md` for the full interface, behavior, and
+verification contract.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -120,10 +121,19 @@ class GenerateModelTest(unittest.TestCase):
             word = "q" + chr(97 + first) + chr(97 + middle) + chr(97 + last)
             vocabulary.append(word)
             exceptions.append(generate_model.ExceptionEntry(f"DUMMY{number}", word))
+        overflow_words = sorted({
+            "z" + "".join(chr(97 + byte % 26) for byte in hashlib.sha256(
+                str(number).encode()
+            ).digest()[:7])
+            for number in range(3000)
+        })
+        vocabulary.extend(overflow_words)
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             model = directory / "model.bin"
             dawg = generate_model.build_dawg(vocabulary)
+            packed_edge_bytes = (dawg[2] * 20 + 7) // 8
+            self.assertGreater(len(dawg[0]), packed_edge_bytes)
             cat_id = generate_model.primary_root_ids(vocabulary, dawg)["cat"]
             morphology = [generate_model.MorphologyGroup("", "s", (cat_id,))]
             model.write_bytes(generate_model.pack_model(
