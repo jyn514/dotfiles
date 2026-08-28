@@ -158,5 +158,6 @@ bool lw_emily_modifier_lookup(const char *stroke, lw_key_mod_result_t *result) {
     if (strchr(modifier_keys, 'P')) modifiers |= LW_MOD_SUPER;
     result->key = key;
     result->modifiers = modifiers;
+    result->repeat = 1;
     return true;
 }

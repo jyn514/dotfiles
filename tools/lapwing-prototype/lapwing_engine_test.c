@@ -88,6 +88,15 @@ int main(int argc, char **argv) {
     lw_engine_stroke(&engine, "*", 1610);
     if (expect(&output, "Cat python. John")) return 1;
 
+    lw_engine_stroke(&engine, "STPH-R", 1700);
+    if (!engine.movement_mode || output.key_count != 2 || output.key != LW_KEY_LEFT)
+        return 1;
+    lw_engine_stroke(&engine, "-GS", 1710);
+    if (!engine.movement_mode || output.key_count != 4 || output.key != LW_KEY_RIGHT)
+        return 1;
+    lw_engine_stroke(&engine, "PWR", 1720);
+    if (engine.movement_mode) return 1;
+
     free(data);
     return 0;
 }

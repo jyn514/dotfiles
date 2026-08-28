@@ -31,8 +31,10 @@ class InstallQmkTest(unittest.TestCase):
             rules = (keymap / "rules.mk").read_text()
             self.assertEqual(rules.count("lapwing_decoder.c"), 1)
             self.assertIn("lapwing_modifiers.c", rules)
+            self.assertIn("lapwing_movement.c", rules)
             self.assertTrue((keymap / "lapwing_features.h").is_file())
             self.assertTrue((keymap / "lapwing_modifiers.c").is_file())
+            self.assertTrue((keymap / "lapwing_movement.c").is_file())
             self.assertEqual((keymap / "lapwing_model.bin").read_bytes(), model.read_bytes())
 
 
