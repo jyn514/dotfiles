@@ -1,16 +1,18 @@
 # Lapwing optimization experiments
 
-Last updated: 2026-08-27.
+Last updated: 2026-08-28.
 
 This log records rejected and superseded experiments so future work does not
 repeat them without a materially different premise. Coverage figures are
 frequency-weighted over the first 20,000 valid word types in the reference
 list. This is an in-sample optimization score, not a 20,000-token corpus: the
-cutoff is arbitrary, the model was tuned against it, and the temporary TSV's
-provenance is not yet reproducibly documented. Unless noted, trials used the
-exact 40,960-byte linguistic-data budget and a 64-candidate frontier.
+cutoff is arbitrary and the model was tuned against it. The pinned input is
+reproduced by `generate_wordfreq.py` from `wordfreq==3.1.1`; its SHA-256 is
+`831507abd1bf89dce3d60bd19a23629eeb7fc5f926a4d108ba1e8448fafcb4a4`.
+Unless noted, trials used the exact 40,960-byte linguistic-data budget and a
+64-candidate frontier.
 
-The current conventional-coverage baseline is **93.91%**. Authoritative
+The current conventional-coverage baseline is **93.8978%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -159,6 +161,26 @@ beats the 93.37% baseline at exactly 40,960 linguistic-data bytes. Approximate
 record counts are screening evidence only; adoption requires a byte-identical
 Python/C artifact, absent-key rejection, complete-model exception displacement,
 and revA/revB builds.
+
+## Adopted compositional rules
+
+- Model generation now composes exact hyphenated vocabulary from known
+  components. The decoder emits hyphenated alternatives only at non-affix
+  stroke boundaries, and DAWG prefix membership rejects unlicensed joins.
+- Otherwise uncovered words may receive regular write-out outlines assembled
+  from non-starred strokes already observed in Lapwing. Chunks are at least two
+  letters long, the bounded decoder must reconstruct the exact target, and
+  synthesized roots subsequently receive productive morphology. This excludes
+  letter-by-letter fingerspelling from the conventional metric.
+- Regular `-or/-our`, `-ize/-ise`, `-er/-re`, and doubled-`l` spelling variants
+  share source outlines and are admitted only through exact vocabulary
+  membership. Python and C tests cover the representation boundary.
+
+These rules were adopted on August 28, 2026. Regeneration from the pinned
+independent frequency input produced **87.22%** conventional token coverage over
+793,338 held-out tokens, versus the earlier 87.39% model. The new rules recover
+additional compositional words, but their changed vocabulary rebalance requires
+a 6,200-word frontier and gives up slightly more corpus frequency elsewhere.
 
 ## Productive directions not yet exhausted
 

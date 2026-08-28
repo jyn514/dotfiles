@@ -35,6 +35,35 @@ def frequency_report(
     }
 
 
+def missing_word_report(
+    tokens: list[str], conventional: set[str], frequency_words: list[str],
+    selection_words: int, dictionary_words: set[str], limit: int = 100,
+) -> dict[str, object]:
+    counts = Counter(word for word in tokens if word not in conventional)
+    ranks = {word: index for index, word in enumerate(frequency_words)}
+    categories: dict[str, dict[str, int]] = {}
+    for word, count in counts.items():
+        rank = ranks.get(word)
+        if rank is None:
+            category = "absent_from_frequency_source"
+        elif rank >= selection_words:
+            category = "below_selection_cutoff"
+        elif word not in dictionary_words:
+            category = "absent_from_lapwing_stack"
+        else:
+            category = "unresolved_or_omitted"
+        totals = categories.setdefault(category, {"tokens": 0, "word_types": 0})
+        totals["tokens"] += count
+        totals["word_types"] += 1
+    return {
+        "categories": categories,
+        "top_words": [
+            {"word": word, "tokens": count}
+            for word, count in counts.most_common(limit)
+        ],
+    }
+
+
 def corpus_report(tokens: list[str], conventional: set[str]) -> dict[str, int | float]:
     counts = Counter(tokens)
     conventional_tokens = sum(count for word, count in counts.items() if word in conventional)
@@ -59,7 +88,7 @@ def main() -> None:
     parser.add_argument("frequencies", type=Path)
     parser.add_argument("corpora", type=Path, nargs="+")
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=6275)
+    parser.add_argument("--vocabulary", type=int, default=6200)
     parser.add_argument("--evaluation-words", type=int, default=50000)
     parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=40960)
@@ -81,6 +110,11 @@ def main() -> None:
         tokens = tokenize(corpus.read_text(errors="replace"))
         reports[corpus.name] = corpus_report(tokens, conventional)
         aggregate.extend(tokens)
+    dictionary_words = {
+        translation.lower()
+        for translation in dictionary.values()
+        if isinstance(translation, str) and generate_model.WORD_RE.fullmatch(translation)
+    }
     result = {
         "model_selection_words": args.words,
         "model_conventional_word_types": len(conventional),
@@ -90,6 +124,10 @@ def main() -> None:
         },
         "corpora": reports,
         "aggregate": corpus_report(aggregate, conventional),
+        "missing": missing_word_report(
+            aggregate, conventional, [word for word, _ in frequencies],
+            args.words, dictionary_words,
+        ),
     }
     text = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.report:
