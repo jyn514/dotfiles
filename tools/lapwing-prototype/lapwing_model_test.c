@@ -30,6 +30,9 @@ int main(int argc, char **argv) {
     if (lw_model_has_prefix(&model, "$")) result |= fail("non-prefix accepted");
     if (lw_model_exception(&model, "P", output[0]) == false
         || strcmp(output[0], "people") != 0) result |= fail("exception lookup failed");
+    if (!lw_model_exception(&model, "LONG2", output[0])
+        || strcmp(output[0], "abcdefghijklmnopqr") != 0)
+        result |= fail("long exception delta escape failed");
     if (lw_model_translate(&model, "P", output, 4) != 1
         || strcmp(output[0], "people") != 0) result |= fail("exception priority failed");
     if (lw_model_translate(&model, "#SKWRO*PB", output, 4) != 1

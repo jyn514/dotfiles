@@ -96,6 +96,11 @@ class GenerateModelTest(unittest.TestCase):
         self.assertEqual(first[:4], generate_model.MAGIC)
         self.assertEqual(first[4], generate_model.VERSION)
 
+    def test_word_delta_uses_nibbles_and_escapes_long_lengths(self) -> None:
+        self.assertEqual(generate_model.encode_word_delta(14, 14), b"\xee")
+        self.assertEqual(generate_model.encode_word_delta(15, 1), b"\xff\x0f\x01")
+        self.assertEqual(generate_model.word_delta_size(15, 1), 3)
+
     def test_fast_exception_sizing_matches_serialization(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
         exceptions = [
@@ -110,9 +115,11 @@ class GenerateModelTest(unittest.TestCase):
         )
 
     def test_c_model_lookup_and_rule_fallback(self) -> None:
-        vocabulary = ["called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "honour", "john", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]
+        vocabulary = ["abcdefghijklmnopq", "abcdefghijklmnopqr", "called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "honour", "john", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]
         exceptions = [
             generate_model.ExceptionEntry("#SKWRO*PB", "john"),
+            generate_model.ExceptionEntry("LONG1", "abcdefghijklmnopq"),
+            generate_model.ExceptionEntry("LONG2", "abcdefghijklmnopqr"),
             generate_model.ExceptionEntry("P", "people"),
         ]
         for number in range(400):
