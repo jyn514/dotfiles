@@ -101,6 +101,30 @@ class GenerateModelTest(unittest.TestCase):
         self.assertEqual(generate_model.encode_word_delta(15, 1), b"\xff\x0f\x01")
         self.assertEqual(generate_model.word_delta_size(15, 1), 3)
 
+    def test_incremental_exception_sizing_matches_full_calculation(self) -> None:
+        def word(number: int) -> str:
+            letters = []
+            for _ in range(4):
+                number, remainder = divmod(number, 26)
+                letters.append(chr(97 + remainder))
+            return "w" + "".join(reversed(letters))
+
+        for count in (0, 1, 31, 383, 384, 385, 767):
+            words = [word(index * 2) for index in range(count)]
+            entries = [generate_model.ExceptionEntry(f"O{index}", value)
+                       for index, value in enumerate(words)]
+            current_size = generate_model.exception_storage_size(entries)
+            for insertion in (0, count // 2, count):
+                candidate = word(insertion * 2 + 1)
+                proposed = entries + [generate_model.ExceptionEntry("NEW", candidate)]
+                self.assertEqual(
+                    generate_model.exception_storage_size_after_insert(
+                        words, current_size, candidate,
+                    ),
+                    generate_model.exception_storage_size(proposed),
+                    (count, insertion),
+                )
+
     def test_fast_exception_sizing_matches_serialization(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
         exceptions = [
