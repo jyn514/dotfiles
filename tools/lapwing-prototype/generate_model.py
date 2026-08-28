@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import re
 import struct
@@ -232,18 +233,61 @@ def encode_word_delta(prefix: int, suffix: int) -> bytes:
     return b"\xff" + encode_varint(prefix) + encode_varint(suffix)
 
 
+def full_word_size(word: str) -> int:
+    return varint_size(len(word)) + packed_letters_size(len(word))
+
+
+def delta_word_size(previous: str, word: str) -> int:
+    prefix = common_prefix_length(previous, word)
+    suffix = len(word) - prefix
+    return word_delta_size(prefix, suffix) + packed_letters_size(suffix)
+
+
 def exception_storage_size(exceptions: list[ExceptionEntry]) -> int:
     words = sorted(entry.word for entry in exceptions)
     size = len(exceptions) * 5 + 2 * ((len(words) + BLOCK_WORDS - 1) // BLOCK_WORDS)
-    previous = ""
     for index, word in enumerate(words):
-        if index % BLOCK_WORDS == 0:
-            size += varint_size(len(word)) + packed_letters_size(len(word))
+        size += (full_word_size(word) if index % BLOCK_WORDS == 0
+                 else delta_word_size(words[index - 1], word))
+    return size
+
+
+def exception_storage_size_after_insert(
+    words: list[str], current_size: int, word: str,
+) -> int:
+    """Return exact storage after inserting one word into a sorted pool."""
+    position = bisect.bisect_left(words, word)
+    old_count = len(words)
+    new_count = old_count + 1
+    size = current_size + 5
+    size += 2 * (
+        (new_count + BLOCK_WORDS - 1) // BLOCK_WORDS
+        - (old_count + BLOCK_WORDS - 1) // BLOCK_WORDS
+    )
+
+    if position % BLOCK_WORDS == 0:
+        size += full_word_size(word)
+    else:
+        size += delta_word_size(words[position - 1], word)
+
+    affected = {position}
+    first_boundary = ((position + BLOCK_WORDS - 1) // BLOCK_WORDS) * BLOCK_WORDS
+    for boundary in range(first_boundary, old_count + 1, BLOCK_WORDS):
+        affected.add(boundary)
+        if boundary:
+            affected.add(boundary - 1)
+    for index in affected:
+        if not position <= index < old_count:
+            continue
+        old_size = (full_word_size(words[index]) if index % BLOCK_WORDS == 0
+                    else delta_word_size(words[index - 1], words[index]))
+        new_index = index + 1
+        if new_index % BLOCK_WORDS == 0:
+            new_size = full_word_size(words[index])
         else:
-            prefix = common_prefix_length(previous, word)
-            suffix = len(word) - prefix
-            size += word_delta_size(prefix, suffix) + packed_letters_size(suffix)
-        previous = word
+            previous = word if index == position else words[index - 1]
+            new_size = delta_word_size(previous, words[index])
+        size += new_size - old_size
     return size
 
 
@@ -781,10 +825,11 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
                   and word in preferred_outline]
     candidates.sort(key=lambda word: weights[word] / (6 + max(1, len(word) // 2)), reverse=True)
     selected: list[ExceptionEntry] = []
+    selected_words_sorted: list[str] = []
     selected_outlines: set[str] = set()
     selected_fingerprints: dict[int, str] = {}
     model_base_size = HEADER.size + len(dawg_info[0]) + len(encode_morphology(morphology))
-    current_size = model_base_size
+    exception_size = 0
     for word in candidates:
         if len(selected) >= (1 << EXCEPTION_ID_BITS) - 1:
             break
@@ -794,17 +839,19 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         outline = preferred_outline[word]
         if outline in selected_outlines:
             continue
-        proposed = selected + [ExceptionEntry(outline, word)]
         fingerprint = hash32(outline.encode("ascii")) & EXCEPTION_HASH_MASK
         collision = selected_fingerprints.get(fingerprint)
         if collision is not None and collision != outline:
             continue
-        size = model_base_size + exception_storage_size(proposed)
-        if size <= binary_budget:
-            selected = proposed
+        proposed_exception_size = exception_storage_size_after_insert(
+            selected_words_sorted, exception_size, word,
+        )
+        if model_base_size + proposed_exception_size <= binary_budget:
+            selected.append(ExceptionEntry(outline, word))
+            bisect.insort(selected_words_sorted, word)
             selected_outlines.add(outline)
             selected_fingerprints[fingerprint] = outline
-            current_size = size
+            exception_size = proposed_exception_size
 
     used_outlines = {entry.outline for entry in selected}
     selected_words = {entry.word for entry in selected}
