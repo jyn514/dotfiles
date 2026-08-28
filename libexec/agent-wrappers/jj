@@ -50,6 +50,14 @@ case "$agent" in
     esac
 esac
 
+if [ -z "${SANDBOX_PROXY_DIR:-}" ]; then
+  sandbox_proxy_default=${SANDBOX_PROXY_DEFAULT_DIR:-/run/sandbox-proxies}
+  if [ -S "$sandbox_proxy_default/jj/socket" ]; then
+    SANDBOX_PROXY_DIR=$sandbox_proxy_default
+    export SANDBOX_PROXY_DIR
+  fi
+fi
+
 if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
   export JJ_USER JJ_EMAIL
   exec /libexec/agent-wrappers/jj-proxy-client "$@"
