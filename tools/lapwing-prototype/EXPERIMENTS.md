@@ -11,7 +11,7 @@ prepared in `README.md`. Unless noted, trials used the exact 40,960-byte
 linguistic-data budget and a
 64-candidate frontier.
 
-The current conventional-coverage baseline is **94.1539%**. Authoritative
+The current revA conventional-coverage baseline is **97.9571%**. Authoritative
 letter-by-letter fallback is reported separately and is not counted here.
 
 ## Rejected experiments
@@ -151,9 +151,58 @@ regeneration produced 87.22% conventional coverage on the pinned held-out
 corpus, versus 87.39% for the preceding model.
 
 Model format v6 then widened only out-of-range DAWG targets through sparse
-overflow records. Weighted conventional coverage rose from 93.8978% to
-**94.1539%**, and held-out coverage to **87.45%**. `SPEC.md` owns the current
-format, size, and validation rules.
+four-byte records. Weighted conventional coverage rose from 93.8978% to
+94.1539%, and held-out coverage to 87.45%.
+
+Format v7 exploits the overflow lower bound and locality. Blocks of 32 store a
+six-byte checkpoint followed by positive edge-index deltas and zigzag target
+deltas; lookup scans at most 31 records. At its selected 7,600-word frontier,
+740 targets occupy 1,641 bytes instead of 2,960 fixed-record bytes. The complete
+model reached 94.3383% weighted and 87.76% held-out coverage.
+
+Format v8 orders state blocks below the inline-target boundary by incoming-edge
+density and packs ordinary exception prefix/suffix lengths into one byte. Its
+initial 8,250-word allocation reached 94.7352% weighted and 88.15% held-out
+coverage in 40,959 bytes.
+
+A parity audit considered counting every exact candidate returned by the
+low-level model API. This was rejected because the firmware engine requests one
+result; operational coverage therefore remains first-candidate coverage.
+Atomic `fl/cl/pl` initial clusters and doubled initial/final `s` spellings did
+survive complete-model screening, while `AOE → ei`, silent-`b`, and `xious`
+alternatives did not. The current 40,960-byte model reaches **94.8314%** weighted
+and 88.25% held-out coverage.
+
+Format v9 replaces the minimized DAWG with an exact breadth-first LOUDS trie.
+Five-bit labels, unary degree topology, terminal bits, and 16-bit `select0`
+checkpoints every 64 nodes reduce the selected 10,340-word vocabulary graph to
+25,831 bytes. The complete 40,960-byte model reaches **96.1258%** weighted and
+**89.67%** held-out coverage. Python and C validation reject malformed labels,
+topology checkpoints, section bounds, and morphology node identities.
+`SPEC.md` owns the current format, size, and validation rules.
+
+## High-frequency exception representation
+
+A first screening treated another 10,000 bytes as an ordinary exception
+overlay. It projected 1,129 added mappings, +0.781 weighted percentage points,
+and 6,466 held-out tokens. That estimate duplicated output spelling bytes and
+was not the best complete allocation.
+
+Format v10 instead uses one exception representation for the whole model.
+Sorted 29-bit fingerprints are Elias–Fano encoded and reference terminal LOUDS
+nodes; the decoder reconstructs spelling from the authoritative trie. This
+removes the front-coded exception output pool and permits the larger primary
+vocabulary to serve both membership and exception output.
+
+A complete frontier sweep selected 14,140 vocabulary words and 1,633 exceptions
+in 50,959 bytes. Weighted conventional coverage reaches **97.9571%**, and the
+frozen held-out corpus reaches **91.61%**. This exceeds the original overlay
+projection because the additional budget is jointly allocated between trie,
+morphology, and exceptions rather than appended to format v9.
+
+The revA firmware links at 127,340 bytes with 3,732 bytes free. RevB does not
+support this tier: its smaller linker region overflows by 6,692 bytes. Format v9
+remains the last measured tier that fits both revisions.
 
 ## Re-evaluation of the rejected second DAWG
 
