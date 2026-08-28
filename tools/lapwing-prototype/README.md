@@ -120,7 +120,7 @@ not demonstrated.
 ## Flash-resident model
 
 `generate_model.py` builds the model consumed by the C firmware. It uses an
-exact minimized acyclic word graph rather than the earlier proposed MPHF, so
+exact succinct LOUDS trie rather than the earlier proposed MPHF, so
 vocabulary lookup has no false positives. `SPEC.md` owns the selected format,
 acceptance constraints, resource use, and coverage measurements.
 
@@ -132,7 +132,7 @@ PYTHONPATH=/tmp/lapwing-wordfreq \
   python3 generate_wordfreq.py /tmp/wordfreq-en-50000.tsv
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 7250 --beam 64 --report lapwing_model_report.json
+  --vocabulary 14200 --beam 64 --report lapwing_model_report.json
 ```
 
 The 50,000-row TSV has SHA-256
@@ -170,7 +170,10 @@ coverage still requires external flash or a host translator.
 ## Build and test
 
 The heap-free implementation and deployment checks are specified in `SPEC.md`.
-The generated rules and model are checked in; regenerate and test them with:
+The generated rules and model are checked in. The repository's
+`tools/moonlander/flash-moonlander` command installs them into the downloaded
+Oryx source transactionally before compilation; it does not modify the Oryx
+layout itself. Regenerate, install manually, and test them with:
 
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h

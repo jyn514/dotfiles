@@ -9,7 +9,7 @@ Moonlander Mark 1. It replaces most dictionary entries with explicit Lapwing
 spelling rules, then uses a compact ranked vocabulary and exact exceptions to
 resolve ambiguity and irregular outlines.
 
-The intended application-data budget is 40,960 bytes. The translator must fit
+The revA application-data budget is 50,960 bytes. The translator must fit
 beside the complete eight-layer `KW9E9` Oryx layout and its existing ZSA/QMK
 features on `zsa/moonlander/reva`.
 
@@ -198,14 +198,13 @@ and capitalization state.
 
 ## Model format
 
-The implemented linguistic data occupies 40,959 bytes of the 40,960-byte
-budget:
+The implemented linguistic data occupies 50,959 bytes of the 50,960-byte tier:
 
 | Component | Bytes |
 |---|---:|
-| Generated C rules | 4,181 |
-| Binary vocabulary and exceptions | 36,778 |
-| Total | 40,959 |
+| Generated C rules | 4,228 |
+| Binary vocabulary and exceptions | 46,731 |
+| Total | 50,959 |
 
 Model generation uses the US-English benchmark stack prepared in `README.md`.
 The number bar is retained as `#` for exact lookup, omitted from phonetic
@@ -213,21 +212,23 @@ segmentation, and used to capitalize accepted proper-noun output. Dynamic
 Python dictionaries remain runtime facilities and are not serialized.
 
 The binary model begins with a versioned 48-byte little-endian header. Its
-7,250-word ranked frontier is rebalanced to a 7,190-word exact minimized acyclic
-word graph. Up to 100 low-ranked tokens without conventional outlines are
-removed; the reference frontier uses all 100 removals. The next 200 outlined words are
+14,200-word ranked frontier is rebalanced to a 14,140-word exact succinct LOUDS
+trie. Up to 100 low-ranked tokens without conventional outlines are removed;
+the reference frontier uses all 100 removals. The next 200 outlined words are
 probed against a temporary exact prefix set, and the first forty that resolve
-conventionally are admitted. Each graph edge uses 20 packed bits containing a five-bit alphabet symbol, a
-13-bit target edge offset, a target-terminal bit, and an end-of-edge-list bit.
-Target value `0x1ffe` escapes to a sorted table of four-byte `(edge index,
-16-bit target)` records; `0x1fff` remains the leaf sentinel. Only out-of-range
-targets pay for widening. The graph occupies 25,273 bytes, including 537
-overflow records, and cannot produce membership false positives.
+conventionally are admitted.
 
-Grouped morphology stores 62 exact spelling recipes and 1,709 licensed roots in
-3,817 bytes. Each recipe contains literal root/output tails followed by sorted,
-delta-varint-coded primary-root IDs. An ID is the root's terminal DAWG edge and
-length and is admitted only when that pair identifies exactly one primary word.
+Trie nodes use breadth-first numbering. Three packed streams store five-bit
+edge labels, LOUDS topology (`degree` one-bits followed by a zero per node), and
+one terminal bit per node. Twenty-four-bit `select0` checkpoints every 64 nodes
+bound topology scans; a child node is its incoming edge ordinal plus one. The
+trie occupies 35,394 bytes for 33,806 nodes and 33,805 edges and cannot produce
+membership false positives.
+
+Grouped morphology stores 33 exact spelling recipes and 1,716 licensed roots in
+3,823 bytes. Each recipe contains literal root/output tails followed by sorted,
+delta-varint-coded primary-root IDs. An ID is the root's terminal trie node and
+length; trie nodes are unique word-path identities.
 The C decoder reverses the recipe, verifies that exact root identity, and never
 admits an unlicensed transformed spelling.
 
@@ -239,13 +240,17 @@ the target under the bounded decoder with exact target-prefix pruning. Newly
 synthesized roots then participate in ordinary inflection and possessive rules.
 Regular `-or/-our`, `-ize/-ise`, `-er/-re`, and doubled-`l` spelling variants
 reuse source outlines and remain exact-vocabulary gated in both Python and C.
+Atomic `fl`, `cl`, and `pl` initial clusters and doubled initial/final `s`
+spellings cover ordinary cluster and `-ss-` families under the same exact gate.
 
-Exception records pack a 29-bit outline hash and an 11-bit output-word ID into
-five bytes. Generation rejects hash collisions between distinct selected
-outlines. The 787 output words are lexically front-coded in 384-word blocks,
-use a five-bit letter alphabet, and have 16-bit restart offsets. Runtime lookup
-binary-searches the records and decodes at most 384 words from the selected
-restart point.
+The 1,633 exception fingerprints are strictly sorted and Elias–Fano encoded in
+7,466 bytes. Eighteen low bits are packed directly; quotient buckets use a unary
+high stream with 16-bit `select0` checkpoints every 64 buckets. Each matching
+fingerprint references a 16-bit-width terminal LOUDS node, so exception output
+spelling is reconstructed from the authoritative primary trie rather than
+stored again. Generation rejects fingerprints that collide across any known
+candidate outline. Lookup scans at most 63 quotient terminators before a bounded
+binary search within one bucket.
 
 The model is immutable, self-contained, heap-free, and validated for magic,
 version, offsets, counts, and bounds before use.
@@ -253,24 +258,27 @@ version, offsets, counts, and bounds before use.
 ## Measured resource use
 
 Measurements used ZSA `firmware25` commit
-`c9fe0e2960cd96db31c627ab7215d93436305fed`, the complete `KW9E9` Oryx keymap,
-and both `zsa/moonlander/reva` and `zsa/moonlander/revb`.
+`c9fe0e2960cd96db31c627ab7215d93436305fed`, Oryx revision `XbQoDo` of the
+complete eight-layer `KW9E9` layout, and Arm GNU Toolchain 13.2.1. Baseline and
+Lapwing images were compiled from identical downloaded source for both
+`zsa/moonlander/reva` and `zsa/moonlander/revb`.
 
 ### Complete firmware build
 
-| Target | Firmware flash | Remaining flash | BSS | Linker heap |
-|---|---:|---:|---:|---:|
-| revA | 107,872 | 23,200 | 17,772 | 9,244 |
-| revB | 110,116 | 20,956 | comparable | comparable |
+| Target | Baseline flash | Lapwing flash | Lapwing cost | Result | BSS | Linker heap |
+|---|---:|---:|---:|---:|---:|---:|
+| revA | 60,016 | 127,340 | 67,324 | 3,732 bytes free | 17,828 | 9,180 |
+| revB | 62,216 | — | — | linker overflow by 6,692 bytes | — | — |
 
-The official revA image without Lapwing occupies 57,956 bytes. The complete revA
-translator therefore adds 49,916 bytes of linked flash, including all 40,959
-bytes of linguistic data.
+Flash figures are linked `text + data`. RevA has a 131,072-byte application
+region. RevB's linker region is smaller; the 50,959-byte linguistic tier does
+not fit it. The embedded format-v10 binary occupies 46,731 bytes and generated
+rules add 4,228 bytes. The repository flashing workflow targets revA.
 
 ### Coverage and equivalence
 
 Using the pinned frequency input prepared in `README.md`, conventional
-dictionary and rule outlines cover 94.1539% after Zipf weighting over the first
+dictionary and rule outlines cover 97.9571% after Zipf weighting over the first
 20,000 valid types. This is an in-sample metric: the cutoff is arbitrary, the
 model was tuned against the same list, and the entries are types rather than
 prose tokens.
@@ -281,16 +289,16 @@ additional exception records. Authoritative starred-letter spelling through
 sixteen letters, plus a final `AES` possessive stroke, raises reachable coverage
 to 99.99% and bypasses membership only for explicit spelling paths.
 
-Phonetic paths use exact DAWG membership and inter-stroke prefix pruning. If no
+Phonetic paths use exact LOUDS-trie membership and inter-stroke prefix pruning. If no
 exact final candidate survives, a second final-stroke pass applies bounded
 orthographic and steno-specific repairs; every result must still be an exact
-DAWG word. This exact design replaces the discarded 94.97% MPHF estimate, which
+trie word. This exact design replaces the discarded 94.97% MPHF estimate, which
 could not provide exact membership within its claimed representation.
 
 A frozen-model evaluation over 793,338 normalized tokens from five Project
-Gutenberg works and RFC 9110 measured 87.45% conventional coverage, ranging
-from 82.67% to 91.30% by corpus. The same model scores 99.39%, 97.25%, 94.15%,
-and 91.74% over the first 5,000, 10,000, 20,000, and all 49,253 valid frequency
+Gutenberg works and RFC 9110 measured 91.61% conventional coverage, ranging
+from 87.75% to 94.43% by corpus. The same model scores 99.39%, 99.26%, 97.96%,
+and 95.45% over the first 5,000, 10,000, 20,000, and all 49,253 valid frequency
 entries. Corpus token coverage and weighted frequency-list coverage are
 separate measurements.
 
