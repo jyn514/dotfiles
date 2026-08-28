@@ -170,10 +170,10 @@ coverage still requires external flash or a host translator.
 ## Build and test
 
 The heap-free implementation and deployment checks are specified in `SPEC.md`.
-The generated rules and model are checked in. The repository's
-`tools/moonlander/flash-moonlander` command installs them into the downloaded
-Oryx source transactionally before compilation; it does not modify the Oryx
-layout itself. Regenerate, install manually, and test them with:
+The generated rules and model are checked in as prototype artifacts. The normal
+`tools/moonlander/flash-moonlander` workflow does not install them. To evaluate
+the prototype, regenerate it and install it manually into a disposable exported
+Oryx keymap:
 
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h

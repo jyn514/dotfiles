@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import fcntl
-from importlib.util import module_from_spec
-from importlib.util import spec_from_file_location
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -32,11 +30,9 @@ import patch_keymap
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = Path(__file__).resolve().parent
-LAPWING_DIR = ROOT / "tools/lapwing-prototype"
 
 SNAPSHOT = ROOT / "lib/moonlander-layout.json"
 ADDITIONS = ROOT / "lib/keymap-additions.c"
-LAPWING_MODEL = LAPWING_DIR / "lapwing_model.bin"
 KEYBOARD = "zsa/moonlander/reva"
 QMK_BRANCH = "firmware25"
 
@@ -221,20 +217,6 @@ def patch_source(source: Path) -> None:
         raise FlashError(f"could not patch Oryx source: {error}") from error
 
 
-def install_lapwing(keymap: Path) -> None:
-    try:
-        spec = spec_from_file_location(
-            "moonlander_lapwing_install_qmk", LAPWING_DIR / "install_qmk.py"
-        )
-        if spec is None or spec.loader is None:
-            raise ImportError("could not load install_qmk.py")
-        module = module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.install(keymap, LAPWING_MODEL)
-    except Exception as error:
-        raise FlashError(f"could not integrate Lapwing: {error}") from error
-
-
 @contextmanager
 def installed_source(staged: Path, destination: Path):
     backup = destination.with_name(
@@ -299,7 +281,6 @@ def flash(arguments: list[str], client: oryx_sync.GraphQLClient | None = None) -
         patch_source(staged)
         integrated = Path(temporary) / revision_name
         staged.rename(integrated)
-        install_lapwing(integrated)
         with installed_source(integrated, destination):
             require_success(
                 run(
