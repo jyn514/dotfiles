@@ -83,6 +83,46 @@ class DiagnosticTest(unittest.TestCase):
         self.assertEqual({}, proxy.connection_diagnostic(mock.Mock(sock=None)))
 
 
+class UpstreamRetryTest(unittest.TestCase):
+    def test_retries_bad_record_mac_with_a_fresh_connection(self) -> None:
+        failure = ssl.SSLError("ssl/tls alert bad record mac")
+        first = mock.Mock()
+        first.request.side_effect = failure
+        second = mock.Mock()
+        response = mock.sentinel.response
+        second.getresponse.return_value = response
+
+        with mock.patch.object(proxy, "HTTPSConnection", side_effect=[first, second]), \
+                mock.patch.object(proxy, "log_failure") as log_failure, \
+                mock.patch.object(proxy.time, "sleep") as sleep:
+            connection, actual_response = proxy.request_upstream(
+                b"request", {"Content-Type": "application/json"}, "local-id",
+            )
+
+        self.assertIs(second, connection)
+        self.assertIs(response, actual_response)
+        first.close.assert_called_once_with()
+        sleep.assert_called_once_with(proxy.RETRY_DELAYS[0])
+        log_failure.assert_called_once_with(
+            "local-id", "request_upload", 7, failure, first,
+        )
+
+    def test_does_not_retry_unrelated_tls_failure(self) -> None:
+        failure = ssl.SSLError("certificate verify failed")
+        connection = mock.Mock()
+        connection.connect.side_effect = failure
+
+        with mock.patch.object(proxy, "HTTPSConnection", return_value=connection), \
+                mock.patch.object(proxy, "log_failure"), \
+                mock.patch.object(proxy.time, "sleep") as sleep:
+            with self.assertRaises(proxy.UpstreamRequestError) as raised:
+                proxy.request_upstream(b"request", {}, "local-id")
+
+        self.assertIs(failure, raised.exception.error)
+        connection.close.assert_called_once_with()
+        sleep.assert_not_called()
+
+
 class HeaderPolicyTest(unittest.TestCase):
     def test_replaces_authority_and_drops_forwarding_headers(self) -> None:
         headers = proxy.upstream_headers({

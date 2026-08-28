@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import ssl
 import sys
 import tempfile
 import threading
@@ -34,6 +35,7 @@ FORWARDED_RESPONSE_HEADERS = {
     "retry-after", "retry-after-ms", "x-request-id",
 }
 REFRESH_LOCK = threading.Lock()
+RETRY_DELAYS = (0.25, 1.0)
 SESSION_KEY = os.environ["CODEX_SIDECAR_KEY"]
 
 
@@ -68,6 +70,35 @@ def log_failure(request_id: str, phase: str, body_length: int, error: Exception,
     if connection is not None:
         event.update(connection_diagnostic(connection))
     print(json.dumps(event, separators=(",", ":"), sort_keys=True), file=sys.stderr, flush=True)
+
+
+def retryable_tls_failure(error: Exception) -> bool:
+    return isinstance(error, ssl.SSLError) and "bad record mac" in str(error).lower()
+
+
+class UpstreamRequestError(Exception):
+    def __init__(self, error: Exception) -> None:
+        super().__init__(str(error))
+        self.error = error
+
+
+def request_upstream(body: bytes, headers: dict[str, str], request_id: str):
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        upstream = HTTPSConnection(UPSTREAM_HOST, timeout=300)
+        phase = "tls_connect"
+        try:
+            upstream.connect()
+            phase = "request_upload"
+            upstream.request("POST", UPSTREAM_PATH, body, headers)
+            phase = "response_headers"
+            return upstream, upstream.getresponse()
+        except Exception as error:
+            log_failure(request_id, phase, len(body), error, upstream)
+            upstream.close()
+            if not retryable_tls_failure(error) or attempt == len(RETRY_DELAYS):
+                raise UpstreamRequestError(error) from error
+            time.sleep(RETRY_DELAYS[attempt])
+    raise AssertionError("unreachable")
 
 
 def jwt_payload(token: str) -> dict:
@@ -202,23 +233,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self.rfile.read(length)
         request_id = uuid.uuid4().hex
-        upstream = None
-        phase = "credentials"
         try:
             access, account = credentials()
             headers = upstream_headers(self.headers, access, account, len(body))
-            upstream = HTTPSConnection(UPSTREAM_HOST, timeout=300)
-            phase = "tls_connect"
-            upstream.connect()
-            phase = "request_upload"
-            upstream.request("POST", UPSTREAM_PATH, body, headers)
-            phase = "response_headers"
-            response = upstream.getresponse()
         except Exception as error:
-            log_failure(request_id, phase, len(body), error, upstream)
-            if upstream is not None:
-                upstream.close()
+            log_failure(request_id, "credentials", len(body), error)
             self.error(HTTPStatus.BAD_GATEWAY, f"Codex sidecar authentication or connection failed: {error}")
+            return
+        try:
+            upstream, response = request_upstream(body, headers, request_id)
+        except UpstreamRequestError as failure:
+            self.error(
+                HTTPStatus.BAD_GATEWAY,
+                f"Codex sidecar authentication or connection failed: {failure.error}",
+            )
             return
         self.send_response(response.status, response.reason)
         for key, value in response.getheaders():
