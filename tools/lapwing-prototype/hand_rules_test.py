@@ -27,6 +27,15 @@ class HandRulesTest(unittest.TestCase):
         self.assertIn("hitch", hand_rules.decode_outline("HEUFP", vocabulary, 1000, 10))
         self.assertIn("path", hand_rules.decode_outline("PA*T", vocabulary, 1000, 10))
 
+    def test_atomic_initial_clusters_and_doubled_s(self) -> None:
+        vocabulary = {"flame", "possess"}
+        self.assertIn("flame", hand_rules.decode_outline(
+            "TPHRAEUPL", vocabulary, 64, 10,
+        ))
+        self.assertIn("possess", hand_rules.decode_outline(
+            "PO/SES", vocabulary, 64, 10,
+        ))
+
     def test_non_affix_strokes_can_form_exact_hyphenated_words(self) -> None:
         self.assertIn("content-type", hand_rules.joins("content", "type", False))
         self.assertNotIn("content-type", hand_rules.joins("content", "type", True))

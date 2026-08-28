@@ -115,7 +115,7 @@ class GenerateModelTest(unittest.TestCase):
         )
 
     def test_c_model_lookup_and_rule_fallback(self) -> None:
-        vocabulary = ["abcdefghijklmnopq", "abcdefghijklmnopqr", "called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "honour", "john", "light", "love", "makes", "placed", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]
+        vocabulary = ["abcdefghijklmnopq", "abcdefghijklmnopqr", "called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "flame", "honour", "john", "light", "love", "makes", "placed", "possess", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]
         exceptions = [
             generate_model.ExceptionEntry("#SKWRO*PB", "john"),
             generate_model.ExceptionEntry("LONG1", "abcdefghijklmnopq"),
