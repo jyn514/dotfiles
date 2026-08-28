@@ -20,6 +20,21 @@ class EvaluateCoverageTest(unittest.TestCase):
         self.assertEqual(report["conventional_word_types"], 1)
         self.assertAlmostEqual(report["conventional_frequency_coverage"], 1 / 1.1)
 
+    def test_missing_report_separates_source_and_rule_gaps(self) -> None:
+        report = evaluate_coverage.missing_word_report(
+            ["known", "tail", "missing", "absent", "absent"],
+            {"known"}, ["known", "missing", "tail"], 2, {"known", "tail"},
+        )
+        self.assertEqual(
+            report["categories"],
+            {
+                "below_selection_cutoff": {"tokens": 1, "word_types": 1},
+                "absent_from_lapwing_stack": {"tokens": 1, "word_types": 1},
+                "absent_from_frequency_source": {"tokens": 2, "word_types": 1},
+            },
+        )
+        self.assertEqual(report["top_words"][0], {"word": "absent", "tokens": 2})
+
     def test_corpus_report_counts_tokens_not_only_types(self) -> None:
         report = evaluate_coverage.corpus_report(
             ["common", "common", "missing"], {"common"}

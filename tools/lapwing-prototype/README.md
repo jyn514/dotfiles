@@ -128,8 +128,8 @@ MPHF. This avoids vocabulary false positives and requires no rank payload.
 Exception outlines use packed 29-bit hashes and 11-bit IDs into a lexically
 front-coded, five-bit-letter output pool with restart points every 384 words.
 
-The selected model starts from a 6,275-word ranked frontier and rebalances it
-to 6,215 exact vocabulary words:
+The selected model starts from a 6,200-word ranked frontier and rebalances it
+to 6,151 exact vocabulary words:
 
 | Data | Bytes |
 |---|---:|
@@ -137,16 +137,20 @@ to 6,215 exact vocabulary words:
 | Binary vocabulary and exceptions | 36,779 |
 | **Total linguistic data** | **40,960** |
 
-The binary contains a 20,518-byte exact vocabulary graph, 3,824 bytes of
-grouped exact morphology (69 recipes licensing 1,685 transformed words), and
-1,298 exception outlines. Productive morphology, closed-compound composition, standalone
-affixes, and algorithmic fingerspelling of every word through the sixteen-stroke
-outline limit supply additional outlines without consuming model records.
-Conventional dictionary and rule outlines cover **93.91%** of the first 20,000
+The binary contains a 20,403-byte exact vocabulary graph, 3,824 bytes of
+grouped exact morphology (67 recipes licensing 1,698 transformed words), and
+1,310 exception outlines. Productive morphology, closed and hyphenated compound
+composition, standalone affixes, and algorithmic fingerspelling of every word
+through the sixteen-stroke outline limit supply additional outlines without
+consuming model records. Model generation also searches for regular write-out
+outlines assembled from non-starred Lapwing strokes already observed in the
+source dictionaries. Each spelling chunk contains at least two letters, so this
+path is not letter-by-letter fingerspelling. Synthesized roots receive the same
+productive inflection and possessive rules as dictionary roots.
+Conventional dictionary and rule outlines cover **93.90%** of the first 20,000
 word types in the reference frequency list after Zipf weighting. This is an
 in-sample optimization score, not an estimate of prose token coverage: the
-20,000-type cutoff is arbitrary, the model was repeatedly tuned against it, and
-the temporary TSV's provenance is not yet reproducibly documented. The metric
+20,000-type cutoff is arbitrary and the model was repeatedly tuned against it. The metric
 deliberately excludes every synthesized letter-by-letter outline, including
 one-stroke letter fallbacks absent from the plain-word dictionary. Authoritative
 spelling, including a final `AES` possessive stroke, raises reachable weighted
@@ -155,22 +159,27 @@ estimate, which
 assumed an order-preserving hash representation that was never implemented and
 would not have provided exact membership within the claimed size.
 
-Generate the model with:
+Generate the pinned independent frequency input and model with:
 
 ```sh
+python3 -m pip install --target /tmp/lapwing-wordfreq wordfreq==3.1.1
+PYTHONPATH=/tmp/lapwing-wordfreq \
+  python3 generate_wordfreq.py /tmp/wordfreq-en-50000.tsv
 python3 generate_model.py \
   "$DICTIONARY" /tmp/wordfreq-en-50000.tsv lapwing_model.bin \
-  --vocabulary 6275 --beam 64 --report lapwing_model_report.json
+  --vocabulary 6200 --beam 64 --report lapwing_model_report.json
 ```
+
+The 50,000-row TSV has SHA-256
+`831507abd1bf89dce3d60bd19a23629eeb7fc5f926a4d108ba1e8448fafcb4a4` and
+contains 49,253 entries after the model's lexical filter.
 
 Model selection removes up to 100 low-ranked frontier tokens without
 conventional outlines, probes the next 200 outlined words against a temporary
 exact prefix set, and admits the first 40 that resolve without exceptions. The
-reference model uses all 100 permitted removals. It then
-builds the final vocabulary graph once and uses a size-only exception path while
-searching the budget. On the reference inputs this reduced a
-6,275-word-frontier generation run from about 50 seconds to about 14 seconds while
-producing a byte-identical model.
+reference model uses 89 of the 100 permitted removals. It then builds the final
+vocabulary graph once and uses a size-only exception path while searching the
+budget.
 
 ## Held-out corpus evaluation
 
@@ -182,17 +191,22 @@ These are deliberately not model-selection inputs, but they are still a narrow,
 mostly historical English sample and include source boilerplate.
 
 After normalizing straight and curly apostrophes, the corpus contains 793,338
-tokens and conventional token coverage is **87.39%**. Individual results range
-from **83.01%** for *Moby-Dick* and **83.42%** for RFC 9110 to **91.22%** for
+tokens and conventional token coverage is **87.22%**. Individual results range
+from **82.49%** for *Moby-Dick* and **83.49%** for RFC 9110 to **91.19%** for
 *Sherlock Holmes*. Alphabetic words of at most sixteen letters, and therefore
 directly reachable by authoritative fingerspelling, account for **98.78%** of
-aggregate tokens.
+aggregate tokens. Among the 101,367 uncovered tokens, 40,879 are top-20,000
+Lapwing words unresolved or omitted by the fixed model, 28,286 rank below the
+20,000-word selection cutoff, 25,589 are absent from the 50,000-word frequency
+source, and 6,613 are frequency-ranked words absent from the benchmark Lapwing
+stack. `evaluate_coverage.py` records these categories and the most frequent
+missing words in its JSON report.
 
-The frozen model's Zipf-weighted conventional coverage is **99.37%** over the
-first 5,000 frequency types, **97.07%** over 10,000, **93.91%** over 20,000, and
-**91.51%** over all 49,253 valid types available in the current TSV. These
-cutoff results do not retrain or resize the model. Treat corpus and frequency
-results as separate measurements.
+The frozen model's Zipf-weighted conventional coverage is **99.39%** over the
+first 5,000 frequency types, **97.05%** over 10,000, **93.90%** over 20,000, and
+**91.50%** over all 49,253 valid types available in the pinned TSV. These cutoff
+results do not retrain or resize the model. Treat corpus and frequency results
+as separate measurements.
 
 Reproduce the fixed corpus and evaluation with:
 
@@ -213,7 +227,7 @@ but is not a complete replacement for desktop Lapwing:
 
 - A hand-written Lapwing grammar should be smaller and better than this learned
   table for regular phonetic outlines.
-- The exact rebalanced 6,215-word vocabulary graph costs about 20 KiB and cannot admit
+- The exact rebalanced 6,151-word vocabulary graph costs about 20 KiB and cannot admit
   generated nonwords.
 - Briefs, collisions, irregular spelling, commands, and rare stroke forms still
   require exact exceptions.
@@ -282,7 +296,7 @@ Regenerate and test it with:
 ```sh
 python3 generate_c_rules.py lapwing_rules.generated.h
 python3 generate_model.py "$DICTIONARY" frequencies.tsv lapwing_model.bin \
-  --vocabulary 6275 --beam 64
+  --vocabulary 6200 --beam 64
 python3 install_qmk.py /path/to/qmk/keyboards/zsa/moonlander/keymaps/KW9E9 \
   lapwing_model.bin
 python3 -m unittest discover -p '*_test.py'
