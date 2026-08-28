@@ -11,6 +11,15 @@ class HandRulesTest(unittest.TestCase):
         self.assertEqual(hand_rules.parse_stroke("-PLT"), ("", "", "PLT", False))
         self.assertEqual(hand_rules.parse_stroke("PA*T"), ("P", "A", "T", True))
 
+    def test_stroke_analyses_are_cached_by_position(self) -> None:
+        hand_rules.decode_stroke_analyses.cache_clear()
+        first = hand_rules.decode_stroke_analyses("KAT", False)
+        second = hand_rules.decode_stroke_analyses("KAT", False)
+        final = hand_rules.decode_stroke_analyses("KAT", True)
+        self.assertIs(first, second)
+        self.assertIsNot(first, final)
+        self.assertEqual(hand_rules.decode_stroke_analyses.cache_info().hits, 1)
+
     def test_regular_single_stroke_words(self) -> None:
         vocabulary = {"cat", "motion", "hitch", "path"}
         self.assertEqual(hand_rules.decode_outline("KAT", vocabulary, 1000, 10)[0], "cat")

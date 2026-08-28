@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from functools import lru_cache
 from itertools import product
 from pathlib import Path
 
@@ -279,7 +280,8 @@ def joins(root: str, addition: str, affix: bool) -> list[str]:
     return unique(values)
 
 
-def decode_stroke_analyses(stroke: str, final_position: bool) -> list[str]:
+@lru_cache(maxsize=512)
+def decode_stroke_analyses(stroke: str, final_position: bool) -> tuple[str, ...]:
     analyses = decode_stroke(stroke)
     left, vowel, right, star = parse_stroke(stroke)
     folded_suffixes = {"G": "ing", "D": "ed", "Z": "s", "S": "s"}
@@ -310,7 +312,7 @@ def decode_stroke_analyses(stroke: str, final_position: bool) -> list[str]:
         base_stroke = rebuild_stroke(left, base_vowel, right, star)
         for root in decode_stroke(base_stroke, limit=256):
             analyses.extend(joins(root, "y", True))
-    return unique(analyses)
+    return tuple(unique(analyses))
 
 
 def orthographic_repairs(word: str) -> list[str]:
