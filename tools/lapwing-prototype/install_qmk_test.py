@@ -28,7 +28,11 @@ class InstallQmkTest(unittest.TestCase):
             self.assertIn("lapwing_qmk_init();\n    existing();", first)
             self.assertEqual(first.count("lapwing_qmk_task();"), 1)
             self.assertIn("lapwing_qmk_task();\n    scan_existing();", first)
-            self.assertEqual((keymap / "rules.mk").read_text().count("lapwing_decoder.c"), 1)
+            rules = (keymap / "rules.mk").read_text()
+            self.assertEqual(rules.count("lapwing_decoder.c"), 1)
+            self.assertIn("lapwing_modifiers.c", rules)
+            self.assertTrue((keymap / "lapwing_features.h").is_file())
+            self.assertTrue((keymap / "lapwing_modifiers.c").is_file())
             self.assertEqual((keymap / "lapwing_model.bin").read_bytes(), model.read_bytes())
 
 

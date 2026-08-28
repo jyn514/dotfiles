@@ -22,10 +22,99 @@ static void emit_backspaces(void *context, uint8_t count) {
     while (count--) tap_code(KC_BSPC);
 }
 
+static uint16_t qmk_keycode(lw_key_t key, uint8_t *implicit_modifiers) {
+    if (key >= LW_KEY_A && key <= LW_KEY_Z)
+        return (uint16_t)(KC_A + key - LW_KEY_A);
+    if (key >= LW_KEY_F1 && key <= LW_KEY_F12)
+        return (uint16_t)(KC_F1 + key - LW_KEY_F1);
+    switch (key) {
+        case LW_KEY_NONE: return KC_NO;
+        case LW_KEY_0: return KC_0;
+        case LW_KEY_1: return KC_1;
+        case LW_KEY_2: return KC_2;
+        case LW_KEY_3: return KC_3;
+        case LW_KEY_4: return KC_4;
+        case LW_KEY_5: return KC_5;
+        case LW_KEY_6: return KC_6;
+        case LW_KEY_7: return KC_7;
+        case LW_KEY_8: return KC_8;
+        case LW_KEY_9: return KC_9;
+        case LW_KEY_TAB: return KC_TAB;
+        case LW_KEY_BACKSPACE: return KC_BSPC;
+        case LW_KEY_DELETE: return KC_DEL;
+        case LW_KEY_ESCAPE: return KC_ESC;
+        case LW_KEY_UP: return KC_UP;
+        case LW_KEY_LEFT: return KC_LEFT;
+        case LW_KEY_RIGHT: return KC_RGHT;
+        case LW_KEY_DOWN: return KC_DOWN;
+        case LW_KEY_PAGE_UP: return KC_PGUP;
+        case LW_KEY_HOME: return KC_HOME;
+        case LW_KEY_END: return KC_END;
+        case LW_KEY_PAGE_DOWN: return KC_PGDN;
+        case LW_KEY_AUDIO_PLAY: return KC_MPLY;
+        case LW_KEY_AUDIO_PREV: return KC_MPRV;
+        case LW_KEY_AUDIO_NEXT: return KC_MNXT;
+        case LW_KEY_AUDIO_STOP: return KC_MSTP;
+        case LW_KEY_AUDIO_MUTE: return KC_MUTE;
+        case LW_KEY_AUDIO_DOWN: return KC_VOLD;
+        case LW_KEY_AUDIO_UP: return KC_VOLU;
+        case LW_KEY_ENTER: return KC_ENT;
+        case LW_KEY_SPACE: return KC_SPC;
+        case LW_KEY_APOSTROPHE: return KC_QUOT;
+        case LW_KEY_COMMA: return KC_COMM;
+        case LW_KEY_MINUS: return KC_MINS;
+        case LW_KEY_PERIOD: return KC_DOT;
+        case LW_KEY_SLASH: return KC_SLSH;
+        case LW_KEY_SEMICOLON: return KC_SCLN;
+        case LW_KEY_EQUAL: return KC_EQL;
+        case LW_KEY_BACKSLASH: return KC_BSLS;
+        case LW_KEY_BRACKET_LEFT: return KC_LBRC;
+        case LW_KEY_BRACKET_RIGHT: return KC_RBRC;
+        case LW_KEY_GRAVE: return KC_GRV;
+        case LW_KEY_EXCLAM: *implicit_modifiers |= LW_MOD_SHIFT; return KC_1;
+        case LW_KEY_QUOTEDBL: *implicit_modifiers |= LW_MOD_SHIFT; return KC_QUOT;
+        case LW_KEY_HASH: *implicit_modifiers |= LW_MOD_SHIFT; return KC_3;
+        case LW_KEY_DOLLAR: *implicit_modifiers |= LW_MOD_SHIFT; return KC_4;
+        case LW_KEY_PERCENT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_5;
+        case LW_KEY_AMPERSAND: *implicit_modifiers |= LW_MOD_SHIFT; return KC_7;
+        case LW_KEY_PAREN_LEFT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_9;
+        case LW_KEY_LESS: *implicit_modifiers |= LW_MOD_SHIFT; return KC_COMM;
+        case LW_KEY_BRACE_LEFT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_LBRC;
+        case LW_KEY_PAREN_RIGHT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_0;
+        case LW_KEY_GREATER: *implicit_modifiers |= LW_MOD_SHIFT; return KC_DOT;
+        case LW_KEY_BRACE_RIGHT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_RBRC;
+        case LW_KEY_ASTERISK: *implicit_modifiers |= LW_MOD_SHIFT; return KC_8;
+        case LW_KEY_PLUS: *implicit_modifiers |= LW_MOD_SHIFT; return KC_EQL;
+        case LW_KEY_COLON: *implicit_modifiers |= LW_MOD_SHIFT; return KC_SCLN;
+        case LW_KEY_QUESTION: *implicit_modifiers |= LW_MOD_SHIFT; return KC_SLSH;
+        case LW_KEY_AT: *implicit_modifiers |= LW_MOD_SHIFT; return KC_2;
+        case LW_KEY_CARET: *implicit_modifiers |= LW_MOD_SHIFT; return KC_6;
+        case LW_KEY_UNDERSCORE: *implicit_modifiers |= LW_MOD_SHIFT; return KC_MINS;
+        case LW_KEY_PIPE: *implicit_modifiers |= LW_MOD_SHIFT; return KC_BSLS;
+        case LW_KEY_TILDE: *implicit_modifiers |= LW_MOD_SHIFT; return KC_GRV;
+        case LW_KEY_F0: return KC_NO;
+    }
+    return KC_NO;
+}
+
+static void emit_key(void *context, lw_key_t key, uint8_t modifiers) {
+    (void)context;
+    uint16_t keycode = qmk_keycode(key, &modifiers);
+    uint8_t qmk_modifiers = 0;
+    if (modifiers & LW_MOD_SHIFT) qmk_modifiers |= MOD_BIT(KC_LSFT);
+    if (modifiers & LW_MOD_CONTROL) qmk_modifiers |= MOD_BIT(KC_LCTL);
+    if (modifiers & LW_MOD_ALT) qmk_modifiers |= MOD_BIT(KC_LALT);
+    if (modifiers & LW_MOD_SUPER) qmk_modifiers |= MOD_BIT(KC_LGUI);
+    uint8_t added_modifiers = qmk_modifiers & (uint8_t)~get_mods();
+    register_mods(added_modifiers);
+    if (keycode != KC_NO) tap_code16(keycode);
+    unregister_mods(added_modifiers);
+}
+
 void lapwing_qmk_init(void) {
     model.data = lapwing_model_start;
     model.size = (size_t)(lapwing_model_end - lapwing_model_start);
-    lw_engine_init(&engine, &model, emit_text, emit_backspaces, NULL);
+    lw_engine_init(&engine, &model, emit_text, emit_backspaces, emit_key, NULL);
 }
 
 void lapwing_qmk_task(void) {

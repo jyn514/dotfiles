@@ -4,7 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct { char text[256]; size_t length; } output_t;
+typedef struct {
+    char text[256];
+    size_t length;
+    lw_key_t key;
+    uint8_t modifiers;
+    uint8_t key_count;
+} output_t;
 
 static void emit(void *context, const char *text) {
     output_t *output = context;
@@ -18,6 +24,13 @@ static void backspace(void *context, uint8_t count) {
     if (count > output->length) count = output->length;
     output->length -= count;
     output->text[output->length] = '\0';
+}
+
+static void key(void *context, lw_key_t emitted, uint8_t modifiers) {
+    output_t *output = context;
+    output->key = emitted;
+    output->modifiers = modifiers;
+    ++output->key_count;
 }
 
 static int expect(output_t *output, const char *expected) {
@@ -36,9 +49,9 @@ int main(int argc, char **argv) {
     fread(data, 1, size, file);
     fclose(file);
     lw_model_t model = {data, size};
-    output_t output = {{0}, 0};
+    output_t output = {0};
     lw_engine_t engine;
-    lw_engine_init(&engine, &model, emit, backspace, &output);
+    lw_engine_init(&engine, &model, emit, backspace, key, &output);
 
     lw_engine_stroke(&engine, "KAT", 0);
     lw_engine_tick(&engine, LW_COMMIT_DELAY_MS - 1);
@@ -64,6 +77,15 @@ int main(int argc, char **argv) {
     lw_engine_stroke(&engine, "#", 1500);
     lw_engine_stroke(&engine, "SKWRO*PB", 1510);
     lw_engine_commit(&engine);
+    if (expect(&output, "Cat python. John")) return 1;
+
+    lw_engine_stroke(&engine, "AFLGTS", 1600);
+    if (output.key_count != 1 || output.key != LW_KEY_A
+        || output.modifiers != LW_MOD_CONTROL) {
+        fprintf(stderr, "Emily modifier action failed\n");
+        return 1;
+    }
+    lw_engine_stroke(&engine, "*", 1610);
     if (expect(&output, "Cat python. John")) return 1;
 
     free(data);
