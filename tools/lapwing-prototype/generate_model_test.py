@@ -139,7 +139,7 @@ class GenerateModelTest(unittest.TestCase):
                     (count, removal),
                 )
 
-    def test_fast_exception_sizing_matches_serialization(self) -> None:
+    def test_node_exception_sizing_matches_serialization(self) -> None:
         vocabulary = ["cat", "python", "people", "preview"]
         exceptions = [
             generate_model.ExceptionEntry("P", "people"),
@@ -149,8 +149,17 @@ class GenerateModelTest(unittest.TestCase):
         model = generate_model.pack_model(vocabulary, exceptions, dawg)
         self.assertEqual(
             len(model) - generate_model.HEADER.size - len(dawg[0]),
-            generate_model.exception_storage_size(exceptions),
+            generate_model.node_exception_storage_size(
+                len(exceptions), dawg[2] + 1,
+            ),
         )
+
+    def test_node_exception_requires_primary_output(self) -> None:
+        vocabulary = ["cat"]
+        with self.assertRaisesRegex(ValueError, "not a primary trie word"):
+            generate_model.pack_model(
+                vocabulary, [generate_model.ExceptionEntry("TKOG", "dog")]
+            )
 
     def test_c_model_lookup_and_rule_fallback(self) -> None:
         vocabulary = ["abcdefghijklmnopq", "abcdefghijklmnopqr", "called", "cat", "cat-fish", "celebration", "centre", "clean", "college", "doing", "don't", "flame", "honour", "john", "light", "love", "makes", "placed", "possess", "python", "people", "preview", "talk", "transmission", "travelled", "watch"]

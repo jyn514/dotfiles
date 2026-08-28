@@ -48,10 +48,14 @@ int main(int argc, char **argv) {
     uint8_t *data = malloc(size);
     fread(data, 1, size, file);
     fclose(file);
-    lw_model_t model = {data, size};
+    const lw_model_t *model = lw_model_load(data, size);
+    if (!model) {
+        free(data);
+        return 1;
+    }
     output_t output = {0};
     lw_engine_t engine;
-    lw_engine_init(&engine, &model, emit, backspace, key, &output);
+    lw_engine_init(&engine, model, emit, backspace, key, &output);
 
     lw_engine_stroke(&engine, "KAT", 0);
     lw_engine_tick(&engine, LW_COMMIT_DELAY_MS - 1);

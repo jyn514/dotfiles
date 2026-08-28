@@ -3,12 +3,14 @@
 #include <string.h>
 
 #define LW_MODEL_HEADER_SIZE 48u
-#define LW_MODEL_VERSION 9u
-#define LW_EXCEPTION_RECORD_SIZE 5u
+#define LW_MODEL_VERSION 10u
+#define LW_EXCEPTION_HASH_BITS 29u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
-#define LW_EXCEPTION_ID_MASK 0x7ffu
+#define LW_EXCEPTION_CHECKPOINT_STRIDE 64u
 #define LW_LOUDS_CHECKPOINT_STRIDE 64u
 static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz'-";
+static lw_model_t loaded_model;
+static bool loaded_model_valid;
 
 static uint16_t read_u16(const uint8_t *data) {
     return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
@@ -79,7 +81,7 @@ static bool louds_select_zero(const lw_model_t *model, uint32_t node,
     if (node >= louds_node_count(model)) return false;
     uint32_t block = node / LW_LOUDS_CHECKPOINT_STRIDE;
     uint32_t remaining = node % LW_LOUDS_CHECKPOINT_STRIDE;
-    uint32_t found = read_u16(louds_checkpoints(model) + block * 2u);
+    uint32_t found = read_u24(louds_checkpoints(model) + block * 3u);
     while (remaining) {
         if (++found >= louds_topology_bits(model)) return false;
         if (!packed_bits(louds_topology(model), found, 1u)) --remaining;
@@ -127,10 +129,6 @@ static uint8_t louds_label(const lw_model_t *model, uint32_t edge) {
 
 static bool louds_terminal(const lw_model_t *model, uint32_t node) {
     return packed_bits(louds_terminals(model), node, 1u) != 0u;
-}
-
-static uint64_t read_u40(const uint8_t *data) {
-    return (uint64_t)read_u32(data) | ((uint64_t)data[4] << 32);
 }
 
 static uint32_t hash32(const char *text) {
@@ -191,12 +189,12 @@ static uint32_t read_varint32(const uint8_t **cursor, const uint8_t *end,
 static uint32_t edge_count(const lw_model_t *model) { return read_u32(model->data + 12); }
 static uint32_t root_offset(const lw_model_t *model) { return read_u32(model->data + 16); }
 static uint32_t exception_count(const lw_model_t *model) { return read_u32(model->data + 20); }
-static uint32_t word_count(const lw_model_t *model) { return read_u32(model->data + 24); }
-static uint32_t reserved_count(const lw_model_t *model) { return read_u32(model->data + 28); }
+static uint32_t exception_low_bits(const lw_model_t *model) { return read_u32(model->data + 24); }
+static uint32_t exception_node_bits(const lw_model_t *model) { return read_u32(model->data + 28); }
 static uint32_t morphology_count(const lw_model_t *model) { return read_u32(model->data + 32); }
 static uint32_t morphology_offset(const lw_model_t *model) { return read_u32(model->data + 36); }
 static uint32_t exceptions_offset(const lw_model_t *model) { return read_u32(model->data + 40); }
-static uint32_t blocks_offset(const lw_model_t *model) { return read_u32(model->data + 44); }
+static uint32_t encoded_model_size(const lw_model_t *model) { return read_u32(model->data + 44); }
 
 static bool padding_zero(const uint8_t *data, uint32_t bits) {
     uint8_t remainder = bits % 8u;
@@ -214,18 +212,17 @@ bool lw_model_valid(const lw_model_t *model) {
     if (!edges || edges >= UINT16_MAX) return false;
     uint32_t nodes = louds_node_count(model);
     uint32_t exceptions = exception_count(model);
-    uint32_t words = word_count(model);
+    uint32_t low_bits = exception_low_bits(model);
+    uint32_t node_bits = exception_node_bits(model);
     uint32_t morph_start = morphology_offset(model);
     uint32_t exception_start = exceptions_offset(model);
-    uint32_t block_start = blocks_offset(model);
-    uint32_t block_count = block_words ? (words + block_words - 1u) / block_words : 0;
     size_t expected_morph_start = LW_MODEL_HEADER_SIZE
         + (size_t)louds_label_bytes(model)
         + louds_topology_bytes(model)
         + louds_terminal_bytes(model)
-        + (size_t)louds_checkpoint_count(model) * 2u;
-    if (!block_words || !vocabulary
-        || root_offset(model) != 0u || reserved_count(model) != 0u
+        + (size_t)louds_checkpoint_count(model) * 3u;
+    if (block_words != LW_EXCEPTION_CHECKPOINT_STRIDE || !vocabulary
+        || root_offset(model) != 0u || encoded_model_size(model) != model->size
         || expected_morph_start > model->size || morph_start != expected_morph_start
         || exception_start < morph_start || exception_start > model->size)
         return false;
@@ -239,7 +236,7 @@ bool lw_model_valid(const lw_model_t *model) {
         } else {
             if (zeros % LW_LOUDS_CHECKPOINT_STRIDE == 0u) {
                 if (checkpoint >= louds_checkpoint_count(model)
-                    || read_u16(louds_checkpoints(model) + checkpoint * 2u) != position)
+                    || read_u24(louds_checkpoints(model) + checkpoint * 3u) != position)
                     return false;
                 ++checkpoint;
             }
@@ -259,20 +256,65 @@ bool lw_model_valid(const lw_model_t *model) {
     if (terminal_count != vocabulary || louds_terminal(model, 0u)
         || !padding_zero(louds_labels(model), edges * 5u)) return false;
 
-    size_t records_end = (size_t)exception_start
-        + (size_t)exceptions * LW_EXCEPTION_RECORD_SIZE;
-    if (words >= 1u << 11 || records_end != block_start
-        || records_end > model->size
-        || (size_t)block_start + (size_t)block_count * 2u > model->size)
-        return false;
-    const uint8_t *records = model->data + exception_start;
-    uint32_t previous_fingerprint = 0;
-    for (uint32_t index = 0; index < exceptions; ++index) {
-        uint64_t record = read_u40(records + index * LW_EXCEPTION_RECORD_SIZE);
-        uint32_t fingerprint = (uint32_t)(record >> 11);
-        if ((index && fingerprint < previous_fingerprint)
-            || (record & LW_EXCEPTION_ID_MASK) >= words) return false;
-        previous_fingerprint = fingerprint;
+    if (exceptions >= UINT16_MAX) return false;
+    if (!exceptions) {
+        if (low_bits || node_bits || exception_start != model->size) return false;
+    } else {
+        uint32_t expected_low_bits = 0;
+        for (uint32_t ratio = (1u << LW_EXCEPTION_HASH_BITS) / exceptions;
+             ratio > 1u; ratio >>= 1u) ++expected_low_bits;
+        uint32_t expected_node_bits = 0;
+        for (uint32_t value = nodes - 1u; value; value >>= 1u)
+            ++expected_node_bits;
+        if (low_bits != expected_low_bits || node_bits != expected_node_bits
+            || !node_bits || node_bits > 16u) return false;
+        uint32_t buckets = 1u << (LW_EXCEPTION_HASH_BITS - low_bits);
+        size_t low_bytes = ((size_t)exceptions * low_bits + 7u) / 8u;
+        uint32_t high_bits = exceptions + buckets;
+        size_t high_bytes = ((size_t)high_bits + 7u) / 8u;
+        uint32_t checkpoint_count = (buckets + LW_EXCEPTION_CHECKPOINT_STRIDE - 1u)
+            / LW_EXCEPTION_CHECKPOINT_STRIDE;
+        size_t checkpoint_bytes = (size_t)checkpoint_count * 2u;
+        size_t reference_bytes = ((size_t)exceptions * node_bits + 7u) / 8u;
+        size_t expected_end = (size_t)exception_start + low_bytes + high_bytes
+            + checkpoint_bytes + reference_bytes;
+        if (expected_end != model->size) return false;
+        const uint8_t *lows = model->data + exception_start;
+        const uint8_t *highs = lows + low_bytes;
+        const uint8_t *checkpoints = highs + high_bytes;
+        const uint8_t *references = checkpoints + checkpoint_bytes;
+        uint32_t ones_seen = 0, zeros_seen = 0, checkpoint_index = 0;
+        uint32_t previous_fingerprint = 0;
+        for (uint32_t position = 0; position < high_bits; ++position) {
+            if (packed_bits(highs, position, 1u)) {
+                if (ones_seen >= exceptions) return false;
+                uint32_t fingerprint = (zeros_seen << low_bits)
+                    | packed_bits(lows, ones_seen * low_bits, (uint8_t)low_bits);
+                if (ones_seen && fingerprint <= previous_fingerprint) return false;
+                previous_fingerprint = fingerprint;
+                uint32_t node = packed_bits(
+                    references, ones_seen * node_bits, (uint8_t)node_bits
+                );
+                uint8_t depth;
+                if (!node || node >= nodes || !louds_terminal(model, node)
+                    || !louds_node_depth(model, node, &depth)
+                    || !depth || depth > LW_MAX_WORD) return false;
+                ++ones_seen;
+            } else {
+                if (zeros_seen % LW_EXCEPTION_CHECKPOINT_STRIDE == 0u) {
+                    if (checkpoint_index >= checkpoint_count
+                        || read_u16(checkpoints + checkpoint_index * 2u) != position)
+                        return false;
+                    ++checkpoint_index;
+                }
+                ++zeros_seen;
+            }
+        }
+        if (ones_seen != exceptions || zeros_seen != buckets
+            || checkpoint_index != checkpoint_count
+            || !padding_zero(lows, exceptions * low_bits)
+            || !padding_zero(highs, high_bits)
+            || !padding_zero(references, exceptions * node_bits)) return false;
     }
     const uint8_t *cursor = model->data + morph_start;
     const uint8_t *morph_end = model->data + exception_start;
@@ -299,6 +341,22 @@ bool lw_model_valid(const lw_model_t *model) {
         }
     }
     return cursor == morph_end;
+}
+
+const lw_model_t *lw_model_load(const uint8_t *data, size_t size) {
+    if (loaded_model_valid)
+        return loaded_model.data == data && loaded_model.size == size
+            ? &loaded_model : NULL;
+    lw_model_t candidate = {.data = data, .size = size};
+    if (!lw_model_valid(&candidate)) return NULL;
+    loaded_model = candidate;
+    loaded_model_valid = true;
+    return &loaded_model;
+}
+
+static bool model_ready(const lw_model_t *model) {
+    return model && ((model == &loaded_model && loaded_model_valid)
+                     || lw_model_valid(model));
 }
 
 static int alphabet_index(char character) {
@@ -330,8 +388,7 @@ static bool walk_word_unchecked(const lw_model_t *model, const char *word,
 
 static bool walk_word(const lw_model_t *model, const char *word,
                       bool require_terminal) {
-    return lw_model_valid(model)
-        && walk_word_unchecked(model, word, require_terminal);
+    return model_ready(model) && walk_word_unchecked(model, word, require_terminal);
 }
 
 bool lw_model_contains(const lw_model_t *model, const char *word) {
@@ -400,66 +457,108 @@ bool lw_model_has_prefix(const lw_model_t *model, const char *prefix) {
     return walk_word(model, prefix, false);
 }
 
-static bool decode_word(const lw_model_t *model, uint16_t id,
-                        char output[LW_MAX_WORD + 1]) {
-    uint32_t words = word_count(model);
-    uint16_t block_words = read_u16(model->data + 6);
-    if (id >= words) return false;
-    uint32_t block = id / block_words;
-    uint32_t first_id = block * block_words;
-    const uint8_t *blocks = model->data + blocks_offset(model);
-    uint32_t block_count = (words + block_words - 1u) / block_words;
-    uint32_t words_start = blocks_offset(model) + block_count * 2u;
-    uint32_t offset = read_u16(blocks + block * 2u);
-    if ((size_t)words_start + offset >= model->size) return false;
-    const uint8_t *cursor = model->data + words_start + offset;
-    const uint8_t *end = model->data + model->size;
-    uint16_t length = 0;
-    bool valid = true;
-    for (uint32_t current = first_id; current <= id && valid; ++current) {
-        if (current == first_id) {
-            length = read_varint(&cursor, end, &valid);
-            if (!valid || length > LW_MAX_WORD
-                || !decode_letters(&cursor, end, output, length)) return false;
-        } else {
-            if (cursor >= end) return false;
-            uint8_t delta = *cursor++;
-            uint16_t prefix, suffix;
-            if (delta == 0xffu) {
-                prefix = read_varint(&cursor, end, &valid);
-                suffix = read_varint(&cursor, end, &valid);
-            } else {
-                prefix = delta >> 4;
-                suffix = delta & 0x0fu;
-            }
-            if (!valid || prefix > length || prefix + suffix > LW_MAX_WORD
-                || !decode_letters(&cursor, end, output + prefix, suffix)) return false;
-            length = prefix + suffix;
-        }
-        output[length] = '\0';
+static bool louds_parent(const lw_model_t *model, uint32_t child,
+                         uint32_t *parent) {
+    if (!child || child >= louds_node_count(model)) return false;
+    uint32_t wanted_edge = child - 1u;
+    uint32_t low = 0, high = child;
+    while (low < high) {
+        uint32_t middle = low + (high - low) / 2u;
+        uint32_t first, end;
+        if (!louds_child_interval(model, middle, &first, &end)) return false;
+        if (end <= wanted_edge) low = middle + 1u;
+        else high = middle;
     }
-    return valid;
+    uint32_t first, end;
+    if (low >= child || !louds_child_interval(model, low, &first, &end)
+        || wanted_edge < first || wanted_edge >= end) return false;
+    *parent = low;
+    return true;
+}
+
+static bool decode_trie_node(const lw_model_t *model, uint32_t node,
+                             char output[LW_MAX_WORD + 1]) {
+    if (!node || node >= louds_node_count(model) || !louds_terminal(model, node))
+        return false;
+    size_t length = 0;
+    while (node) {
+        if (length >= LW_MAX_WORD) return false;
+        uint8_t label = louds_label(model, node - 1u);
+        if (label >= sizeof(alphabet) - 1u) return false;
+        output[length++] = alphabet[label];
+        if (!louds_parent(model, node, &node)) return false;
+    }
+    for (size_t left = 0, right = length - 1u; left < right; ++left, --right) {
+        char saved = output[left];
+        output[left] = output[right];
+        output[right] = saved;
+    }
+    output[length] = '\0';
+    return true;
+}
+
+static bool exception_select_zero(const uint8_t *highs, uint32_t high_bits,
+                                  const uint8_t *checkpoints, uint32_t quotient,
+                                  uint32_t *position) {
+    uint32_t block = quotient / LW_EXCEPTION_CHECKPOINT_STRIDE;
+    uint32_t remaining = quotient % LW_EXCEPTION_CHECKPOINT_STRIDE;
+    uint32_t found = read_u16(checkpoints + block * 2u);
+    while (remaining) {
+        if (++found >= high_bits) return false;
+        if (!packed_bits(highs, found, 1u)) --remaining;
+    }
+    *position = found;
+    return true;
+}
+
+static bool model_exception_unchecked(const lw_model_t *model, const char *outline,
+                                      char output[LW_MAX_WORD + 1]) {
+    if (!outline || !outline[0] || !exception_count(model)) return false;
+    uint32_t count = exception_count(model);
+    uint32_t low_width = exception_low_bits(model);
+    uint32_t node_width = exception_node_bits(model);
+    uint32_t buckets = 1u << (LW_EXCEPTION_HASH_BITS - low_width);
+    size_t low_bytes = ((size_t)count * low_width + 7u) / 8u;
+    uint32_t high_bits = count + buckets;
+    size_t high_bytes = ((size_t)high_bits + 7u) / 8u;
+    uint32_t checkpoint_count = (buckets + LW_EXCEPTION_CHECKPOINT_STRIDE - 1u)
+        / LW_EXCEPTION_CHECKPOINT_STRIDE;
+    const uint8_t *lows = model->data + exceptions_offset(model);
+    const uint8_t *highs = lows + low_bytes;
+    const uint8_t *checkpoints = highs + high_bytes;
+    const uint8_t *references = checkpoints + checkpoint_count * 2u;
+
+    uint32_t wanted = hash32(outline) & LW_EXCEPTION_HASH_MASK;
+    uint32_t quotient = wanted >> low_width;
+    uint32_t remainder = wanted & ((1u << low_width) - 1u);
+    uint32_t zero, previous_zero;
+    if (!exception_select_zero(highs, high_bits, checkpoints, quotient, &zero))
+        return false;
+    uint32_t end = zero - quotient;
+    uint32_t start = 0;
+    if (quotient) {
+        if (!exception_select_zero(
+                highs, high_bits, checkpoints, quotient - 1u, &previous_zero))
+            return false;
+        start = previous_zero - (quotient - 1u);
+    }
+    uint32_t low = start, high = end;
+    while (low < high) {
+        uint32_t middle = low + (high - low) / 2u;
+        uint32_t found = packed_bits(lows, middle * low_width, (uint8_t)low_width);
+        if (found < remainder) low = middle + 1u;
+        else high = middle;
+    }
+    if (low >= end
+        || packed_bits(lows, low * low_width, (uint8_t)low_width) != remainder)
+        return false;
+    uint32_t node = packed_bits(references, low * node_width, (uint8_t)node_width);
+    return decode_trie_node(model, node, output);
 }
 
 bool lw_model_exception(const lw_model_t *model, const char *outline,
                         char output[LW_MAX_WORD + 1]) {
-    if (!lw_model_valid(model) || !outline || !outline[0]) return false;
-    uint32_t wanted = hash32(outline) & LW_EXCEPTION_HASH_MASK;
-    uint32_t low = 0;
-    uint32_t high = exception_count(model);
-    const uint8_t *records = model->data + exceptions_offset(model);
-    while (low < high) {
-        uint32_t middle = low + (high - low) / 2u;
-        uint64_t packed = read_u40(records + middle * LW_EXCEPTION_RECORD_SIZE);
-        uint32_t found = (uint32_t)(packed >> 11);
-        if (found < wanted) low = middle + 1u;
-        else high = middle;
-    }
-    if (low >= exception_count(model)) return false;
-    const uint8_t *record = records + low * LW_EXCEPTION_RECORD_SIZE;
-    uint64_t packed = read_u40(record);
-    if ((uint32_t)(packed >> 11) != wanted) return false;
-    return decode_word(model, (uint16_t)(packed & LW_EXCEPTION_ID_MASK), output);
+    return model_ready(model) && model_exception_unchecked(model, outline, output);
 }
 
 static bool accept_model_prefix(void *context, const char *prefix) {
@@ -620,7 +719,7 @@ static bool repair_candidate(const lw_model_t *model, const char *word,
 
 size_t lw_model_translate(const lw_model_t *model, const char *outline,
                           char output[][LW_MAX_WORD + 1], size_t output_capacity) {
-    if (!output_capacity || !lw_model_valid(model)) return 0;
+    if (!output_capacity || !model_ready(model)) return 0;
     char normalized[LW_MAX_STROKES * 20];
     if (outline && outline[0] == '#' && outline[1] == '/') {
         size_t length = strlen(outline);
@@ -630,7 +729,7 @@ size_t lw_model_translate(const lw_model_t *model, const char *outline,
         outline = normalized;
     }
     bool proper_noun = outline && outline[0] == '#';
-    if (lw_model_exception(model, outline, output[0])) {
+    if (model_exception_unchecked(model, outline, output[0])) {
         if (proper_noun && output[0][0] >= 'a' && output[0][0] <= 'z')
             output[0][0] = (char)(output[0][0] - 'a' + 'A');
         return 1;
@@ -639,7 +738,7 @@ size_t lw_model_translate(const lw_model_t *model, const char *outline,
     lw_decode_outline_pruned(outline, accept_model_prefix, (void *)model, &candidates);
     size_t count = 0;
     for (uint16_t index = 0; index < candidates.count && count < output_capacity; ++index) {
-        if (lw_model_contains(model, candidates.words[index]))
+        if (walk_word_unchecked(model, candidates.words[index], true))
             strcpy(output[count++], candidates.words[index]);
     }
     if (count) {

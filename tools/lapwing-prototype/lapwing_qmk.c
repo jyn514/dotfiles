@@ -9,7 +9,7 @@
 extern const uint8_t lapwing_model_start[];
 extern const uint8_t lapwing_model_end[];
 
-static lw_model_t model;
+static const lw_model_t *model;
 static lw_engine_t engine;
 
 static void emit_text(void *context, const char *text) {
@@ -93,8 +93,8 @@ static uint16_t qmk_keycode(lw_key_t key, uint8_t *implicit_modifiers) {
         case LW_KEY_PIPE: *implicit_modifiers |= LW_MOD_SHIFT; return KC_BSLS;
         case LW_KEY_TILDE: *implicit_modifiers |= LW_MOD_SHIFT; return KC_GRV;
         case LW_KEY_F0: return KC_NO;
+        default: return KC_NO;
     }
-    return KC_NO;
 }
 
 static void emit_key(void *context, lw_key_t key, uint8_t modifiers) {
@@ -112,9 +112,11 @@ static void emit_key(void *context, lw_key_t key, uint8_t modifiers) {
 }
 
 void lapwing_qmk_init(void) {
-    model.data = lapwing_model_start;
-    model.size = (size_t)(lapwing_model_end - lapwing_model_start);
-    lw_engine_init(&engine, &model, emit_text, emit_backspaces, emit_key, NULL);
+    model = lw_model_load(
+        lapwing_model_start,
+        (size_t)(lapwing_model_end - lapwing_model_start)
+    );
+    lw_engine_init(&engine, model, emit_text, emit_backspaces, emit_key, NULL);
 }
 
 void lapwing_qmk_task(void) {
