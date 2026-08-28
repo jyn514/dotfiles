@@ -3,13 +3,14 @@
 #include <string.h>
 
 #define LW_MODEL_HEADER_SIZE 48u
-#define LW_MODEL_VERSION 6u
+#define LW_MODEL_VERSION 7u
 #define LW_EXCEPTION_RECORD_SIZE 5u
 #define LW_EXCEPTION_HASH_MASK 0x1fffffffu
 #define LW_EXCEPTION_ID_MASK 0x7ffu
 #define LW_DAWG_LEAF_OFFSET 0x1fffu
 #define LW_DAWG_OVERFLOW_OFFSET 0x1ffeu
-#define LW_DAWG_OVERFLOW_RECORD_SIZE 4u
+#define LW_DAWG_OVERFLOW_BLOCK_RECORDS 32u
+#define LW_DAWG_OVERFLOW_CHECKPOINT_SIZE 6u
 static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz'-";
 
 static uint16_t read_u16(const uint8_t *data) {
@@ -26,6 +27,9 @@ static uint32_t read_u32(const uint8_t *data) {
 
 static uint32_t edge_count(const lw_model_t *model);
 static uint32_t overflow_count(const lw_model_t *model);
+static uint32_t morphology_offset(const lw_model_t *model);
+static uint32_t read_varint32(const uint8_t **cursor, const uint8_t *end,
+                              bool *valid);
 
 typedef struct {
     uint8_t letter;
@@ -39,18 +43,46 @@ static uint64_t read_u40(const uint8_t *data) {
 }
 
 static uint32_t overflow_target(const lw_model_t *model, uint32_t edge_index) {
+    uint32_t count = overflow_count(model);
+    if (!count) return UINT32_MAX;
     uint32_t packed_bytes = (edge_count(model) * 20u + 7u) / 8u;
-    const uint8_t *records = model->data + LW_MODEL_HEADER_SIZE + packed_bytes;
-    uint32_t low = 0, high = overflow_count(model);
+    const uint8_t *checkpoints = model->data + LW_MODEL_HEADER_SIZE + packed_bytes;
+    uint32_t checkpoint_count = count / LW_DAWG_OVERFLOW_BLOCK_RECORDS
+        + (count % LW_DAWG_OVERFLOW_BLOCK_RECORDS != 0u);
+    const uint8_t *stream = checkpoints
+        + checkpoint_count * LW_DAWG_OVERFLOW_CHECKPOINT_SIZE;
+    const uint8_t *end = model->data + morphology_offset(model);
+    uint32_t low = 0, high = checkpoint_count;
     while (low < high) {
         uint32_t middle = low + (high - low) / 2u;
-        uint16_t found = read_u16(records + middle * LW_DAWG_OVERFLOW_RECORD_SIZE);
-        if (found < edge_index) low = middle + 1u;
+        uint16_t first_edge = read_u16(
+            checkpoints + middle * LW_DAWG_OVERFLOW_CHECKPOINT_SIZE + 2u);
+        if (first_edge <= edge_index) low = middle + 1u;
         else high = middle;
     }
-    if (low >= overflow_count(model)) return UINT32_MAX;
-    const uint8_t *record = records + low * LW_DAWG_OVERFLOW_RECORD_SIZE;
-    return read_u16(record) == edge_index ? read_u16(record + 2u) : UINT32_MAX;
+    if (!low) return UINT32_MAX;
+    uint32_t block = low - 1u;
+    const uint8_t *checkpoint = checkpoints
+        + block * LW_DAWG_OVERFLOW_CHECKPOINT_SIZE;
+    const uint8_t *cursor = stream + read_u16(checkpoint);
+    uint32_t edge = read_u16(checkpoint + 2u);
+    int32_t target = (int32_t)LW_DAWG_OVERFLOW_OFFSET + read_u16(checkpoint + 4u);
+    if (edge == edge_index) return (uint32_t)target;
+    uint32_t records = count - block * LW_DAWG_OVERFLOW_BLOCK_RECORDS;
+    if (records > LW_DAWG_OVERFLOW_BLOCK_RECORDS)
+        records = LW_DAWG_OVERFLOW_BLOCK_RECORDS;
+    bool valid = true;
+    for (uint32_t record = 1; record < records && edge < edge_index; ++record) {
+        uint32_t edge_delta = read_varint32(&cursor, end, &valid);
+        uint32_t target_delta = read_varint32(&cursor, end, &valid);
+        if (!valid || UINT32_MAX - edge < edge_delta) return UINT32_MAX;
+        edge += edge_delta;
+        int32_t signed_delta = (target_delta & 1u)
+            ? -(int32_t)(target_delta / 2u) - 1
+            : (int32_t)(target_delta / 2u);
+        target += signed_delta;
+    }
+    return edge == edge_index ? (uint32_t)target : UINT32_MAX;
 }
 
 static lw_dawg_edge_t read_edge(const lw_model_t *model, uint32_t index) {
@@ -129,6 +161,27 @@ static uint32_t read_varint32(const uint8_t **cursor, const uint8_t *end,
     return 0;
 }
 
+static uint8_t varint_size32(uint32_t value) {
+    uint8_t size = 1u;
+    while (value >= 0x80u) {
+        value >>= 7u;
+        ++size;
+    }
+    return size;
+}
+
+static uint32_t packed_edge_target(const lw_model_t *model, uint32_t index) {
+    uint32_t packed_bytes = (edge_count(model) * 20u + 7u) / 8u;
+    uint32_t bit = index * 20u;
+    uint32_t byte = bit / 8u;
+    uint8_t shift = bit % 8u;
+    uint32_t packed = 0;
+    for (uint8_t part = 0; part < 4u && byte + part < packed_bytes; ++part)
+        packed |= (uint32_t)model->data[LW_MODEL_HEADER_SIZE + byte + part]
+               << (part * 8u);
+    return ((packed >> shift) & 0xfffffu) >> 5 & LW_DAWG_LEAF_OFFSET;
+}
+
 static uint32_t edge_count(const lw_model_t *model) { return read_u32(model->data + 12); }
 static uint32_t root_offset(const lw_model_t *model) { return read_u32(model->data + 16); }
 static uint32_t exception_count(const lw_model_t *model) { return read_u32(model->data + 20); }
@@ -149,47 +202,73 @@ bool lw_model_valid(const lw_model_t *model) {
     uint32_t exceptions = exception_count(model);
     uint32_t words = word_count(model);
     uint32_t overflows = overflow_count(model);
+    if (edges > UINT16_MAX || overflows > edges) return false;
     uint32_t packed_bytes = (edges * 20u + 7u) / 8u;
     uint32_t overflow_start = LW_MODEL_HEADER_SIZE + packed_bytes;
-    size_t expected_morph_start = (size_t)overflow_start
-        + (size_t)overflows * LW_DAWG_OVERFLOW_RECORD_SIZE;
+    uint32_t checkpoint_count = overflows / LW_DAWG_OVERFLOW_BLOCK_RECORDS
+        + (overflows % LW_DAWG_OVERFLOW_BLOCK_RECORDS != 0u);
+    size_t stream_start_offset = (size_t)overflow_start
+        + (size_t)checkpoint_count * LW_DAWG_OVERFLOW_CHECKPOINT_SIZE;
     uint32_t morph_start = morphology_offset(model);
     uint32_t exception_start = exceptions_offset(model);
     uint32_t block_start = blocks_offset(model);
     uint32_t block_count = block_words ? (words + block_words - 1u) / block_words : 0;
     if (!block_words || !read_u32(model->data + 8) || !edges) return false;
-    if (root >= edges || expected_morph_start > model->size
-        || morph_start != expected_morph_start
+    if (root >= edges || stream_start_offset > model->size
+        || morph_start < stream_start_offset || morph_start > model->size
         || exception_start < morph_start || exception_start > model->size)
         return false;
-    const uint8_t *overflow_records = model->data + overflow_start;
+    const uint8_t *checkpoints = model->data + overflow_start;
+    const uint8_t *stream = model->data + stream_start_offset;
+    const uint8_t *overflow_end = model->data + morph_start;
+    const uint8_t *cursor = stream;
     uint32_t previous_edge = UINT32_MAX;
-    for (uint32_t index = 0; index < overflows; ++index) {
-        uint16_t edge = read_u16(overflow_records + index * 4u);
-        uint16_t target = read_u16(overflow_records + index * 4u + 2u);
-        if (edge >= edges || target < LW_DAWG_OVERFLOW_OFFSET || target >= edges
-            || (index && edge <= previous_edge)) return false;
+    for (uint32_t block = 0; block < checkpoint_count; ++block) {
+        const uint8_t *checkpoint = checkpoints
+            + block * LW_DAWG_OVERFLOW_CHECKPOINT_SIZE;
+        uint16_t stream_offset = read_u16(checkpoint);
+        uint32_t edge = read_u16(checkpoint + 2u);
+        int32_t target = (int32_t)LW_DAWG_OVERFLOW_OFFSET + read_u16(checkpoint + 4u);
+        if (stream_offset != (size_t)(cursor - stream)
+            || edge >= edges || target < (int32_t)LW_DAWG_OVERFLOW_OFFSET
+            || target >= (int32_t)edges || (block && edge <= previous_edge)
+            || packed_edge_target(model, edge) != LW_DAWG_OVERFLOW_OFFSET)
+            return false;
         previous_edge = edge;
+        uint32_t records = overflows - block * LW_DAWG_OVERFLOW_BLOCK_RECORDS;
+        if (records > LW_DAWG_OVERFLOW_BLOCK_RECORDS)
+            records = LW_DAWG_OVERFLOW_BLOCK_RECORDS;
+        for (uint32_t record = 1; record < records; ++record) {
+            bool valid = true;
+            const uint8_t *before = cursor;
+            uint32_t edge_delta = read_varint32(&cursor, overflow_end, &valid);
+            if (!valid || !edge_delta || cursor - before != varint_size32(edge_delta)
+                || UINT32_MAX - edge < edge_delta) return false;
+            edge += edge_delta;
+            before = cursor;
+            uint32_t target_delta = read_varint32(&cursor, overflow_end, &valid);
+            if (!valid || cursor - before != varint_size32(target_delta)) return false;
+            int32_t signed_delta = (target_delta & 1u)
+                ? -(int32_t)(target_delta / 2u) - 1
+                : (int32_t)(target_delta / 2u);
+            int64_t next_target = (int64_t)target + signed_delta;
+            if (edge >= edges || next_target < LW_DAWG_OVERFLOW_OFFSET
+                || next_target >= edges || edge <= previous_edge
+                || packed_edge_target(model, edge) != LW_DAWG_OVERFLOW_OFFSET)
+                return false;
+            target = (int32_t)next_target;
+            previous_edge = edge;
+        }
     }
+    if (cursor != overflow_end) return false;
     uint32_t found_overflows = 0;
-    for (uint32_t index = 0; index < edges; ++index) {
-        lw_dawg_edge_t edge = read_edge(model, index);
-        if (edge.target == UINT32_MAX) return false;
-        uint32_t bit = index * 20u;
-        uint32_t byte = bit / 8u;
-        uint8_t shift = bit % 8u;
-        uint32_t packed = 0;
-        for (uint8_t part = 0; part < 4u && byte + part < packed_bytes; ++part)
-            packed |= (uint32_t)model->data[LW_MODEL_HEADER_SIZE + byte + part]
-                   << (part * 8u);
-        if ((((packed >> shift) & 0xfffffu) >> 5 & LW_DAWG_LEAF_OFFSET)
-            == LW_DAWG_OVERFLOW_OFFSET)
+    for (uint32_t index = 0; index < edges; ++index)
+        if (packed_edge_target(model, index) == LW_DAWG_OVERFLOW_OFFSET)
             ++found_overflows;
-    }
     if (found_overflows != overflows) return false;
     if (block_start != exception_start + exceptions * LW_EXCEPTION_RECORD_SIZE) return false;
     if ((size_t)block_start + block_count * 2u > model->size) return false;
-    const uint8_t *cursor = model->data + morph_start;
+    cursor = model->data + morph_start;
     const uint8_t *morph_end = model->data + exception_start;
     for (uint32_t group = 0; group < morphology_count(model); ++group) {
         if ((size_t)(morph_end - cursor) < 2u) return false;

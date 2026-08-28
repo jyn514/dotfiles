@@ -16,7 +16,7 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 6
+VERSION = 7
 HEADER = struct.Struct("<4sBBHIIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
@@ -30,6 +30,8 @@ WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 LEAF_OFFSET = 0x1FFF
 OVERFLOW_OFFSET = 0x1FFE
+OVERFLOW_BLOCK_RECORDS = 32
+OVERFLOW_CHECKPOINT = struct.Struct("<HHH")
 STANDALONE_OUTLINES = {
     "co": "KOE",
     "non": "TPHOPB",
@@ -90,6 +92,8 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
         if state.edges:
             offsets[state_id] = edge_count
             edge_count += len(state.edges)
+    if edge_count > 0xFFFF:
+        raise ValueError("vocabulary DAWG exceeds 16-bit edge indexes")
     target_ids = {target_id for state in states for _, target_id in state.edges}
     if any(states[target_id].edges and offsets[target_id] > 0xFFFF
            for target_id in target_ids):
@@ -125,9 +129,38 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
             bits -= 8
     if bits:
         encoded[output] = accumulator & 0xff
-    for edge_index, target_offset in overflows:
-        encoded += struct.pack("<HH", edge_index, target_offset)
+    checkpoints = bytearray()
+    overflow_stream = bytearray()
+    for block_start in range(0, len(overflows), OVERFLOW_BLOCK_RECORDS):
+        block = overflows[block_start:block_start + OVERFLOW_BLOCK_RECORDS]
+        first_edge, first_target = block[0]
+        if len(overflow_stream) > 0xFFFF:
+            raise ValueError("DAWG overflow stream exceeds 16-bit offsets")
+        checkpoints += OVERFLOW_CHECKPOINT.pack(
+            len(overflow_stream), first_edge, first_target - OVERFLOW_OFFSET,
+        )
+        previous_edge, previous_target = first_edge, first_target
+        for edge_index, target_offset in block[1:]:
+            overflow_stream += encode_varint(edge_index - previous_edge)
+            target_delta = target_offset - previous_target
+            zigzag_delta = target_delta * 2 if target_delta >= 0 else -target_delta * 2 - 1
+            overflow_stream += encode_varint(zigzag_delta)
+            previous_edge, previous_target = edge_index, target_offset
+    encoded += checkpoints + overflow_stream
     return bytes(encoded), offsets[root_id], edge_count
+
+
+def decode_varint_bytes(data: bytes | memoryview, offset: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    while offset < len(data) and shift < 32:
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, offset
+        shift += 7
+    raise ValueError("invalid overflow varint")
 
 
 def varint_size(value: int) -> int:
@@ -214,10 +247,33 @@ def primary_root_ids(vocabulary: list[str], dawg_info: tuple[bytes, int, int]) -
     dawg, root, edges = dawg_info
 
     base_size = (edges * 20 + 7) // 8
-    overflow_records = {
-        edge_index: target
-        for edge_index, target in struct.iter_unpack("<HH", dawg[base_size:])
-    }
+    overflow_count = sum(
+        1 for index in range(edges)
+        if ((int.from_bytes(dawg[index * 20 // 8:index * 20 // 8 + 4], "little")
+             >> (index * 20 % 8 + 5)) & LEAF_OFFSET) == OVERFLOW_OFFSET
+    )
+    checkpoint_count = (overflow_count + OVERFLOW_BLOCK_RECORDS - 1) // OVERFLOW_BLOCK_RECORDS
+    checkpoint_start = base_size
+    stream = memoryview(dawg)[checkpoint_start + checkpoint_count * OVERFLOW_CHECKPOINT.size:]
+    overflow_records: dict[int, int] = {}
+    for checkpoint_index in range(checkpoint_count):
+        stream_offset, edge_index, target_residual = OVERFLOW_CHECKPOINT.unpack_from(
+            dawg, checkpoint_start + checkpoint_index * OVERFLOW_CHECKPOINT.size,
+        )
+        cursor = stream_offset
+        target = OVERFLOW_OFFSET + target_residual
+        overflow_records[edge_index] = target
+        block_records = min(
+            OVERFLOW_BLOCK_RECORDS,
+            overflow_count - checkpoint_index * OVERFLOW_BLOCK_RECORDS,
+        )
+        for _ in range(1, block_records):
+            edge_delta, cursor = decode_varint_bytes(stream, cursor)
+            target_delta, cursor = decode_varint_bytes(stream, cursor)
+            edge_index += edge_delta
+            signed_target_delta = -(target_delta // 2) - 1 if target_delta & 1 else target_delta // 2
+            target += signed_target_delta
+            overflow_records[edge_index] = target
 
     def read_edge(index: int) -> tuple[int, int, bool]:
         bit = index * 20
@@ -472,10 +528,11 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
     )
     block_offsets, word_data = encode_word_blocks(output_words)
     base_edge_bytes = (edge_count * 20 + 7) // 8
-    overflow_bytes = len(dawg) - base_edge_bytes
-    if overflow_bytes < 0 or overflow_bytes % 4:
-        raise ValueError("invalid DAWG overflow table")
-    overflow_count = overflow_bytes // 4
+    overflow_count = sum(
+        1 for index in range(edge_count)
+        if ((int.from_bytes(dawg[index * 20 // 8:index * 20 // 8 + 4], "little")
+             >> (index * 20 % 8 + 5)) & LEAF_OFFSET) == OVERFLOW_OFFSET
+    )
     morphology = morphology or []
     morph_bytes = encode_morphology(morphology)
     morphology_offset = HEADER.size + len(dawg)
@@ -577,6 +634,15 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         for word in vocabulary
         for length in range(1, len(word) + 1)
     }
+    generated_outlines: dict[tuple[str, bool], list[str]] = {}
+
+    def generate_for_vocabulary(outline: str, prune_final: bool = True) -> list[str]:
+        key = (outline, prune_final)
+        if key not in generated_outlines:
+            generated_outlines[key] = hand_rules.generate_outline(
+                outline, beam, vocabulary_prefixes, prune_final=prune_final,
+            )
+        return generated_outlines[key]
 
     # Explicit starred-letter spelling is authoritative and does not require
     # vocabulary membership. Keep it separate from ordinary rule success so
@@ -590,12 +656,10 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
     preferred_outline: dict[str, str] = {}
     for word in vocabulary:
         for outline in sorted(outlines_by_word.get(word, ()), key=lambda value: (value.count("/"), len(value), value)):
-            generated = hand_rules.generate_outline(outline, beam, vocabulary_prefixes)
+            generated = generate_for_vocabulary(outline)
             accepted = next((candidate for candidate in generated if candidate in vocabulary_set), None)
             if accepted is None:
-                final_candidates = hand_rules.generate_outline(
-                    outline, beam, vocabulary_prefixes, prune_final=False,
-                )
+                final_candidates = generate_for_vocabulary(outline, prune_final=False)
                 accepted = next((repair
                                  for candidate in final_candidates
                                  for repair in hand_rules.orthographic_repairs(candidate)
@@ -618,9 +682,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         if word in successful or word not in preferred_outline:
             continue
         if not any(
-            word in hand_rules.generate_outline(
-                outline, beam, vocabulary_prefixes, prune_final=False,
-            )
+            word in generate_for_vocabulary(outline, prune_final=False)
             for outline in sorted(
                 outlines_by_word.get(word, ()),
                 key=lambda value: (value.count("/"), len(value), value),
@@ -655,26 +717,22 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         )
         size = len(encode_morphology([group]))
         ranked_groups.append(
-            (sum(value[2] for value in values) / size, recipe, values)
+            (sum(value[2] for value in values) / size, recipe, values, size)
         )
 
     morph_members: dict[tuple[str, str], list[tuple[int, str]]] = {}
     morph_words: set[str] = set()
+    morphology_size = 0
     # Whole recipe groups compete by covered frequency per exact serialized
     # byte, so common derivational families amortize their shared tails.
-    for _, recipe, values in sorted(
+    for _, recipe, values, group_size in sorted(
             ranked_groups, key=lambda item: (-item[0], item[1])):
-        proposed = dict(morph_members)
-        proposed[recipe] = [
-            (root_id, word) for root_id, word, _ in values
-        ]
-        proposed_groups = [MorphologyGroup(
-            key[0], key[1],
-            tuple(sorted({entry[0] for entry in members})),
-        ) for key, members in proposed.items()]
-        if len(encode_morphology(proposed_groups)) <= 3824:
-            morph_members = proposed
+        if morphology_size + group_size <= 3824:
+            morph_members[recipe] = [
+                (root_id, word) for root_id, word, _ in values
+            ]
             morph_words.update(word for _, word, _ in values)
+            morphology_size += group_size
     morphology = [MorphologyGroup(key[0], key[1],
                   tuple(sorted({entry[0] for entry in values})))
                   for key, values in morph_members.items()]
@@ -755,7 +813,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=7250)
+    parser.add_argument("--vocabulary", type=int, default=7600)
     parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()

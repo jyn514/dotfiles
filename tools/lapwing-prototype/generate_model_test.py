@@ -134,6 +134,15 @@ class GenerateModelTest(unittest.TestCase):
             dawg = generate_model.build_dawg(vocabulary)
             packed_edge_bytes = (dawg[2] * 20 + 7) // 8
             self.assertGreater(len(dawg[0]), packed_edge_bytes)
+            overflow_count = sum(
+                1 for index in range(dawg[2])
+                if ((int.from_bytes(
+                    dawg[0][index * 20 // 8:index * 20 // 8 + 4], "little"
+                ) >> (index * 20 % 8 + 5)) & generate_model.LEAF_OFFSET)
+                == generate_model.OVERFLOW_OFFSET
+            )
+            self.assertGreater(overflow_count, generate_model.OVERFLOW_BLOCK_RECORDS)
+            self.assertLess(len(dawg[0]) - packed_edge_bytes, overflow_count * 4)
             cat_id = generate_model.primary_root_ids(vocabulary, dawg)["cat"]
             morphology = [generate_model.MorphologyGroup("", "s", (cat_id,))]
             model.write_bytes(generate_model.pack_model(
@@ -191,6 +200,27 @@ class GenerateModelTest(unittest.TestCase):
         finally:
             generate_model.build_dawg = original
         self.assertEqual(calls, 1)
+
+    def test_model_selection_reuses_outline_generation_results(self) -> None:
+        original = generate_model.hand_rules.generate_outline
+        calls: list[tuple[str, bool]] = []
+
+        def counted(outline, beam, prefixes=None, prune_final=True):
+            calls.append((outline, prune_final))
+            if outline == "KATS":
+                return [] if prune_final else ["cats"]
+            return original(outline, beam, prefixes, prune_final)
+
+        try:
+            generate_model.hand_rules.generate_outline = counted
+            generate_model.choose_model(
+                {"KAT": "cat", "KATS": "cats"},
+                [("cat", 7.0), ("cats", 6.0)],
+                2, 24, 4096,
+            )
+        finally:
+            generate_model.hand_rules.generate_outline = original
+        self.assertEqual(calls.count(("KATS", False)), 1)
 
     def test_vocabulary_rebalance_replaces_outline_less_tail_token(self) -> None:
         vocabulary, _, report = generate_model.choose_model(
