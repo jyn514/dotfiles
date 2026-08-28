@@ -184,8 +184,10 @@ translator backspaces. Non-US symbolic variants and `F0` are rejected.
 The `STPH` and `#TPH` movement families implement the forty actions from
 `lapwing-movement.modal`. A matching entry stroke executes its action and opens
 a modal continuation; matching suffix strokes repeat movement without the
-prefix, while the first mismatch closes the mode and is retried normally.
-Movement actions share the modifier action's pending-text and undo boundary.
+prefix, while the first mismatch closes the mode and is retried normally. The
+same forty suffix strokes are also accepted directly as semi-modal movement;
+direct actions do not open a continuation mode. Movement actions share the
+modifier action's pending-text and undo boundary.
 
 Words receive one leading space after existing text. The first alphabetic word
 and the first word after `.`, `?`, or `!` are capitalized. Punctuation strokes
