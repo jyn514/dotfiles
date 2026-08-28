@@ -17,16 +17,17 @@ from analyze_storage import common_prefix_length, encode_varint
 from common_text_budget import load_frequencies
 
 MAGIC = b"LWMD"
-VERSION = 9
+VERSION = 10
 HEADER = struct.Struct("<4sBBHIIIIIIIIII")
 EXCEPTION_HASH_BITS = 29
 EXCEPTION_ID_BITS = 11
 EXCEPTION_HASH_MASK = (1 << EXCEPTION_HASH_BITS) - 1
 BLOCK_WORDS = 384
+EXCEPTION_CHECKPOINT_STRIDE = 64
 VOCABULARY_REBALANCE_REMOVALS = 100
 VOCABULARY_REBALANCE_ADDITIONS = 40
 RULE_BYTES = 4228
-DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024
+DEFAULT_TOTAL_DATA_BUDGET = 40 * 1024 + 10_000
 WORD_RE = re.compile(r"^[A-Za-z]+(?:[-'][A-Za-z]+)*$")
 ALPHABET = "abcdefghijklmnopqrstuvwxyz'-"
 STANDALONE_OUTLINES = {
@@ -59,10 +60,18 @@ LOUDS_CHECKPOINT_STRIDE = 64
 def pack_bit_values(values: list[int], width: int) -> bytes:
     encoded = bytearray((len(values) * width + 7) // 8)
     for index, value in enumerate(values):
+        if value < 0 or value >= 1 << width:
+            raise ValueError("packed value exceeds field width")
         bit = index * width
-        encoded[bit // 8] |= value << (bit % 8) & 0xff
-        if bit % 8 + width > 8:
-            encoded[bit // 8 + 1] |= value >> (8 - bit % 8)
+        remaining = width
+        while remaining:
+            byte = bit // 8
+            offset = bit % 8
+            chunk = min(remaining, 8 - offset)
+            encoded[byte] |= (value & ((1 << chunk) - 1)) << offset
+            value >>= chunk
+            bit += chunk
+            remaining -= chunk
     return bytes(encoded)
 
 
@@ -102,10 +111,10 @@ def build_dawg(words: list[str]) -> tuple[bytes, int, int]:
 
     zero_positions = [index for index, value in enumerate(topology) if not value]
     checkpoint_positions = zero_positions[::LOUDS_CHECKPOINT_STRIDE]
-    if checkpoint_positions and checkpoint_positions[-1] > 0xffff:
-        raise ValueError("vocabulary LOUDS checkpoints exceed 16-bit positions")
+    if checkpoint_positions and checkpoint_positions[-1] > 0xffffff:
+        raise ValueError("vocabulary LOUDS checkpoints exceed 24-bit positions")
     checkpoints = b"".join(
-        struct.pack("<H", position) for position in checkpoint_positions
+        position.to_bytes(3, "little") for position in checkpoint_positions
     )
     encoded = (
         pack_bit_values(labels, 5)
@@ -121,7 +130,7 @@ def louds_sections(data: bytes, edges: int) -> tuple[bytes, bytes, bytes, bytes]
     label_bytes = (edges * 5 + 7) // 8
     topology_bytes = (2 * nodes - 1 + 7) // 8
     terminal_bytes = (nodes + 7) // 8
-    checkpoint_bytes = 2 * ((nodes + LOUDS_CHECKPOINT_STRIDE - 1)
+    checkpoint_bytes = 3 * ((nodes + LOUDS_CHECKPOINT_STRIDE - 1)
                             // LOUDS_CHECKPOINT_STRIDE)
     expected = label_bytes + topology_bytes + terminal_bytes + checkpoint_bytes
     if len(data) != expected:
@@ -135,7 +144,7 @@ def louds_sections(data: bytes, edges: int) -> tuple[bytes, bytes, bytes, bytes]
 
 def louds_select_zero(topology: bytes, checkpoints: bytes, node: int) -> int:
     block, remaining = divmod(node, LOUDS_CHECKPOINT_STRIDE)
-    position = struct.unpack_from("<H", checkpoints, block * 2)[0]
+    position = int.from_bytes(checkpoints[block * 3:block * 3 + 3], "little")
     while remaining:
         position += 1
         if not read_bit_value(topology, position, 1):
@@ -514,6 +523,81 @@ def add_productive_outlines(outlines_by_word: dict[str, list[str]],
 
 
 
+def node_exception_parameters(count: int, nodes: int) -> tuple[int, int, int]:
+    """Return Elias-Fano low bits, quotient buckets, and node-reference bits."""
+    if count <= 0 or nodes <= 1:
+        return 0, 0, 0
+    low_bits = ((1 << EXCEPTION_HASH_BITS) // count).bit_length() - 1
+    buckets = 1 << (EXCEPTION_HASH_BITS - low_bits)
+    node_bits = (nodes - 1).bit_length()
+    return low_bits, buckets, node_bits
+
+
+def node_exception_storage_size(count: int, nodes: int) -> int:
+    if not count:
+        return 0
+    low_bits, buckets, node_bits = node_exception_parameters(count, nodes)
+    return (
+        (count * low_bits + 7) // 8
+        + (count + buckets + 7) // 8
+        + 2 * ((buckets + EXCEPTION_CHECKPOINT_STRIDE - 1)
+               // EXCEPTION_CHECKPOINT_STRIDE)
+        + (count * node_bits + 7) // 8
+    )
+
+
+def encode_node_exceptions(
+    vocabulary: list[str], exceptions: list[ExceptionEntry],
+    dawg_info: tuple[bytes, int, int],
+) -> tuple[bytes, int, int]:
+    if not exceptions:
+        return b"", 0, 0
+    identities = primary_root_ids(vocabulary, dawg_info)
+    records = []
+    for entry in exceptions:
+        identity = identities.get(entry.word)
+        if identity is None:
+            raise ValueError(f"exception output is not a primary trie word: {entry.word}")
+        records.append((hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK,
+                        identity >> 5, entry.outline))
+    records.sort()
+    for left, right in zip(records, records[1:]):
+        if left[0] == right[0]:
+            raise ValueError(f"exception hash collision: {left[2]} and {right[2]}")
+
+    count = len(records)
+    if count >= 0xffff:
+        raise ValueError("exception count exceeds format limit")
+    nodes = dawg_info[2] + 1
+    low_bits, buckets, node_bits = node_exception_parameters(count, nodes)
+    low_mask = (1 << low_bits) - 1
+    lows = [fingerprint & low_mask for fingerprint, _, _ in records]
+    highs = [fingerprint >> low_bits for fingerprint, _, _ in records]
+    high_stream: list[int] = []
+    zero_positions: list[int] = []
+    index = 0
+    for bucket in range(buckets):
+        while index < count and highs[index] == bucket:
+            high_stream.append(1)
+            index += 1
+        zero_positions.append(len(high_stream))
+        high_stream.append(0)
+    if index != count:
+        raise AssertionError("exception quotient outside Elias-Fano range")
+    checkpoints = zero_positions[::EXCEPTION_CHECKPOINT_STRIDE]
+    if checkpoints[-1] > 0xffff:
+        raise ValueError("exception Elias-Fano checkpoints exceed 16-bit positions")
+    encoded = (
+        pack_bit_values(lows, low_bits)
+        + pack_bit_values(high_stream, 1)
+        + b"".join(struct.pack("<H", position) for position in checkpoints)
+        + pack_bit_values([node for _, node, _ in records], node_bits)
+    )
+    if len(encoded) != node_exception_storage_size(count, nodes):
+        raise AssertionError("incorrect exception Elias-Fano size")
+    return encoded, low_bits, node_bits
+
+
 def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
                dawg_info: tuple[bytes, int, int] | None = None,
                morphology: list[MorphologyGroup] | None = None) -> bytes:
@@ -525,34 +609,22 @@ def pack_model(vocabulary: list[str], exceptions: list[ExceptionEntry],
             raise ValueError(
                 f"exception outline has multiple outputs: {entry.outline}: {previous}, {entry.word}"
             )
-    output_words = sorted({entry.word for entry in exceptions})
-    word_ids = {word: index for index, word in enumerate(output_words)}
-    if len(output_words) >= 1 << EXCEPTION_ID_BITS:
-        raise ValueError("exception output count exceeds packed IDs")
-    records = sorted((hash32(entry.outline.encode("ascii")) & EXCEPTION_HASH_MASK,
-                      word_ids[entry.word], entry.outline)
-                     for entry in exceptions)
-    for left, right in zip(records, records[1:]):
-        if left[0] == right[0] and left[2] != right[2]:
-            raise ValueError(f"exception hash collision: {left[2]} and {right[2]}")
-    record_bytes = b"".join(
-        ((fingerprint << EXCEPTION_ID_BITS) | word_id).to_bytes(5, "little")
-        for fingerprint, word_id, _ in records
-    )
-    block_offsets, word_data = encode_word_blocks(output_words)
     louds_sections(dawg, edge_count)
     morphology = morphology or []
     morph_bytes = encode_morphology(morphology)
+    exception_bytes, low_bits, node_bits = encode_node_exceptions(
+        vocabulary, exceptions, (dawg, root_offset, edge_count),
+    )
     morphology_offset = HEADER.size + len(dawg)
     exceptions_offset = morphology_offset + len(morph_bytes)
-    block_offsets_offset = exceptions_offset + len(record_bytes)
+    total_size = exceptions_offset + len(exception_bytes)
     header = HEADER.pack(
-        MAGIC, VERSION, 0, BLOCK_WORDS,
+        MAGIC, VERSION, 0, EXCEPTION_CHECKPOINT_STRIDE,
         len(vocabulary), edge_count, root_offset,
-        len(exceptions), len(output_words), 0, len(morphology),
-        morphology_offset, exceptions_offset, block_offsets_offset,
+        len(exceptions), low_bits, node_bits, len(morphology),
+        morphology_offset, exceptions_offset, total_size,
     )
-    return header + dawg + morph_bytes + record_bytes + block_offsets + word_data
+    return header + dawg + morph_bytes + exception_bytes
 
 
 def improve_exception_selection(
@@ -760,49 +832,35 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
                   for key, values in morph_members.items()]
 
     candidates = [word for word in weights
-                  if word not in successful and word not in morph_words
-                  and word in preferred_outline]
-    candidates.sort(key=lambda word: weights[word] / (6 + max(1, len(word) // 2)), reverse=True)
+                  if word in vocabulary_set and word not in successful
+                  and word not in morph_words and word in preferred_outline]
+    candidates.sort(key=lambda word: (-weights[word], word, preferred_outline[word]))
     selected: list[ExceptionEntry] = []
-    selected_words_sorted: list[str] = []
     selected_outlines: set[str] = set()
-    selected_fingerprints: dict[int, str] = {}
+    fingerprint_outlines: dict[int, str | None] = {}
+    for outline in (value for values in outlines_by_word.values() for value in values):
+        fingerprint = hash32(outline.encode("ascii")) & EXCEPTION_HASH_MASK
+        previous = fingerprint_outlines.get(fingerprint)
+        if previous is None and fingerprint not in fingerprint_outlines:
+            fingerprint_outlines[fingerprint] = outline
+        elif previous != outline:
+            fingerprint_outlines[fingerprint] = None
     model_base_size = HEADER.size + len(dawg_info[0]) + len(encode_morphology(morphology))
-    exception_size = 0
+    nodes = dawg_info[2] + 1
+    collision_exclusions = 0
     for word in candidates:
-        if len(selected) >= (1 << EXCEPTION_ID_BITS) - 1:
-            break
-        # Keep considering later candidates even when the model appears full:
-        # inserting a lexical neighbor can shorten another front-coded suffix,
-        # so the marginal size is not strictly positive.
         outline = preferred_outline[word]
         if outline in selected_outlines:
             continue
         fingerprint = hash32(outline.encode("ascii")) & EXCEPTION_HASH_MASK
-        collision = selected_fingerprints.get(fingerprint)
-        if collision is not None and collision != outline:
+        if fingerprint_outlines.get(fingerprint) != outline:
+            collision_exclusions += 1
             continue
-        proposed_exception_size = exception_storage_size_after_insert(
-            selected_words_sorted, exception_size, word,
-        )
-        if model_base_size + proposed_exception_size <= binary_budget:
-            selected.append(ExceptionEntry(outline, word))
-            bisect.insort(selected_words_sorted, word)
-            selected_outlines.add(outline)
-            selected_fingerprints[fingerprint] = outline
-            exception_size = proposed_exception_size
-
-    used_outlines = {entry.outline for entry in selected}
-    selected_words = {entry.word for entry in selected}
-    all_exception_candidates = [
-        ExceptionEntry(preferred_outline[word], word)
-        for word in candidates
-        if word in selected_words
-        or preferred_outline[word] not in used_outlines
-    ]
-    selected = improve_exception_selection(
-        selected, all_exception_candidates, weights, model_base_size, binary_budget,
-    )
+        proposed_count = len(selected) + 1
+        if model_base_size + node_exception_storage_size(proposed_count, nodes) > binary_budget:
+            break
+        selected.append(ExceptionEntry(outline, word))
+        selected_outlines.add(outline)
     model = pack_model(vocabulary, selected, dawg_info, morphology)
     conventional = successful | morph_words | {entry.word for entry in selected}
     covered = fingerspelled | conventional
@@ -817,6 +875,8 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
         "rule_resolved_words": len(successful),
         "fingerspelled_words": len(fingerspelled),
         "exception_outlines": len(selected),
+        "exception_bytes": node_exception_storage_size(len(selected), dawg_info[2] + 1),
+        "exception_collision_exclusions": collision_exclusions,
         "morphology_groups": len(morphology),
         "morphology_words": len(morph_words),
         "morphology_bytes": len(encode_morphology(morphology)),
@@ -825,6 +885,7 @@ def choose_model(dictionary: dict[str, str], frequencies: list[tuple[str, float]
             sum(weights.get(word, 0) for word in conventional) / total_weight
         ),
         "probabilistic_membership": False,
+        "probabilistic_exception_lookup": True,
     }
     report["morphology"] = morphology
     report["conventional_words"] = conventional
@@ -838,7 +899,7 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=10400)
+    parser.add_argument("--vocabulary", type=int, default=14200)
     parser.add_argument("--beam", type=int, default=64)
     parser.add_argument("--total-data-budget", type=int, default=DEFAULT_TOTAL_DATA_BUDGET)
     args = parser.parse_args()

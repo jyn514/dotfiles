@@ -88,10 +88,13 @@ def main() -> None:
     parser.add_argument("frequencies", type=Path)
     parser.add_argument("corpora", type=Path, nargs="+")
     parser.add_argument("--words", type=int, default=20000)
-    parser.add_argument("--vocabulary", type=int, default=10400)
+    parser.add_argument("--vocabulary", type=int, default=14200)
     parser.add_argument("--evaluation-words", type=int, default=50000)
     parser.add_argument("--beam", type=int, default=64)
-    parser.add_argument("--total-data-budget", type=int, default=40960)
+    parser.add_argument(
+        "--total-data-budget", type=int,
+        default=generate_model.DEFAULT_TOTAL_DATA_BUDGET,
+    )
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 

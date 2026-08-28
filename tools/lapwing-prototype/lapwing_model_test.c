@@ -19,10 +19,15 @@ int main(int argc, char **argv) {
     uint8_t *data = malloc(size);
     if (!data || fread(data, 1, size, file) != size) return fail("cannot read model");
     fclose(file);
-    lw_model_t model = {data, size};
+    lw_model_t model = {.data = data, .size = size};
     char output[4][LW_MAX_WORD + 1];
     int result = 0;
     if (!lw_model_valid(&model)) result |= fail("model rejected");
+    const lw_model_t *loaded = lw_model_load(data, size);
+    if (!loaded || lw_model_load(data, size) != loaded)
+        result |= fail("immutable model load failed");
+    if (lw_model_load(data + 1u, size - 1u))
+        result |= fail("different second model load accepted");
     if (!lw_model_contains(&model, "cat")) result |= fail("cat absent");
     if (!lw_model_contains(&model, "python")) result |= fail("python absent");
     if (!lw_model_contains(&model, "zzzppzxw")) result |= fail("overflow word absent");
@@ -32,7 +37,7 @@ int main(int argc, char **argv) {
         || strcmp(output[0], "people") != 0) result |= fail("exception lookup failed");
     if (!lw_model_exception(&model, "LONG2", output[0])
         || strcmp(output[0], "abcdefghijklmnopqr") != 0)
-        result |= fail("long exception delta escape failed");
+        result |= fail("long exception node reconstruction failed");
     if (lw_model_translate(&model, "P", output, 4) != 1
         || strcmp(output[0], "people") != 0) result |= fail("exception priority failed");
     if (lw_model_translate(&model, "#SKWRO*PB", output, 4) != 1
@@ -40,7 +45,7 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "#/SKWRO*PB", output, 4) != 1
         || strcmp(output[0], "John") != 0) result |= fail("prefixed proper noun failed");
     if (!lw_model_exception(&model, "DUMMY399", output[0])
-        || strcmp(output[0], "qapj") != 0) result |= fail("large restart block lookup failed");
+        || strcmp(output[0], "qapj") != 0) result |= fail("large Elias-Fano lookup failed");
     if (lw_model_translate(&model, "#KAT", output, 4) != 1
         || strcmp(output[0], "Cat") != 0) result |= fail("proper rule capitalization failed");
     size_t count = lw_model_translate(&model, "KAT", output, 4);
@@ -111,7 +116,7 @@ int main(int argc, char **argv) {
     if (lw_model_translate(&model, "TRAFLD", output, 4) != 1
         || strcmp(output[0], "travelled") != 0)
         result |= fail("british doubled-l repair failed");
-    lw_model_t truncated = {data, 12};
+    lw_model_t truncated = {.data = data, .size = 12};
     if (lw_model_valid(&truncated)) result |= fail("truncated model accepted");
     uint32_t edges = (uint32_t)data[12] | ((uint32_t)data[13] << 8)
         | ((uint32_t)data[14] << 16) | ((uint32_t)data[15] << 24);
@@ -137,6 +142,26 @@ int main(int argc, char **argv) {
     data[20] = data[21] = data[22] = data[23] = 0xffu;
     if (lw_model_valid(&model)) result |= fail("overflowing exception count accepted");
     memcpy(data + 20, saved_exceptions, sizeof(saved_exceptions));
+    uint32_t exception_count = (uint32_t)data[20] | ((uint32_t)data[21] << 8)
+        | ((uint32_t)data[22] << 16) | ((uint32_t)data[23] << 24);
+    uint32_t low_bits = (uint32_t)data[24] | ((uint32_t)data[25] << 8)
+        | ((uint32_t)data[26] << 16) | ((uint32_t)data[27] << 24);
+    uint32_t exception_offset = (uint32_t)data[40] | ((uint32_t)data[41] << 8)
+        | ((uint32_t)data[42] << 16) | ((uint32_t)data[43] << 24);
+    uint32_t buckets = 1u << (29u - low_bits);
+    uint32_t low_bytes = (exception_count * low_bits + 7u) / 8u;
+    uint32_t high_bytes = (exception_count + buckets + 7u) / 8u;
+    uint32_t exception_checkpoint_offset = exception_offset + low_bytes + high_bytes;
+    saved = data[exception_checkpoint_offset];
+    data[exception_checkpoint_offset] ^= 1u;
+    if (lw_model_valid(&model)) result |= fail("corrupt exception checkpoint accepted");
+    data[exception_checkpoint_offset] = saved;
+    uint32_t reference_offset = exception_checkpoint_offset
+        + 2u * ((buckets + 63u) / 64u);
+    uint8_t saved_reference[2] = {data[reference_offset], data[reference_offset + 1u]};
+    data[reference_offset] = data[reference_offset + 1u] = 0u;
+    if (lw_model_valid(&model)) result |= fail("nonterminal exception reference accepted");
+    memcpy(data + reference_offset, saved_reference, sizeof(saved_reference));
     uint32_t morph_offset = (uint32_t)data[36] | ((uint32_t)data[37] << 8)
         | ((uint32_t)data[38] << 16) | ((uint32_t)data[39] << 24);
     saved = data[morph_offset];
