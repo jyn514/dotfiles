@@ -48,6 +48,14 @@
   (is (= "preflight: stale selected content"
          ((ns-resolve (quote scripts.jj-split-patch) (quote failure-text)) "preflight" "stale selected content"))))
 
+(deftest jj-split-patch-parses-json-output-mode
+  (is (= {:patch "selected.patch"
+          :message "Extract change"
+          :revision "change-id"
+          :json? true}
+         ((ns-resolve (quote scripts.jj-split-patch) (quote parse-args))
+          ["--json" "selected.patch" "-m" "Extract change" "change-id"]))))
+
 (deftest jj-split-patch-help-recognition-stops-at-double-dash
   (let [{:keys [exit err]}
         (captured-failure
@@ -76,6 +84,50 @@
     (is (= 1 exit))
     (is (str/includes? err "preflight:"))
     (is (str/includes? err "not contained in original diff"))))
+
+(deftest jj-split-patch-verification-failures-use-distinct-status
+  (let [{:keys [exit err]} (captured-failure
+                            #((ns-resolve (quote scripts.jj-split-patch) (quote verify-fail!))
+                              "tree mismatch"))]
+    (is (= 3 exit))
+    (is (str/includes? err "verify: tree mismatch"))))
+
+(deftest jj-split-patch-restores-before-reporting-verification-failure
+  (let [restore-operation! (ns-resolve (quote scripts.jj-split-patch) (quote restore-operation!))
+        recover! (ns-resolve (quote scripts.jj-split-patch) (quote recover-verification-failure!))
+        {:keys [exit err]} (captured-failure
+                            (fn []
+                              (with-redefs-fn {restore-operation! (constantly true)}
+                                (fn []
+                                  (recover! "operation-id" "tree mismatch")))))]
+    (is (= 3 exit))
+    (is (str/includes? err "restored operation operation-id"))))
+
+(deftest jj-split-patch-verification-rejects-unexpected-selected-paths
+  (let [root (fs/create-temp-dir {:prefix "agent-split-verify"})
+        expected (fs/file root "expected")
+        helper (fs/file root "helper")
+        verify! (ns-resolve (quote scripts.jj-split-patch) (quote verify!))
+        changed-paths (ns-resolve (quote scripts.jj-split-patch) (quote changed-paths))
+        materialize! (ns-resolve (quote scripts.jj-split-patch) (quote materialize-patch-paths!))
+        diff-output (ns-resolve (quote scripts.jj-split-patch) (quote diff-output))
+        run-command (ns-resolve (quote scripts.jj-split-patch) (quote run))]
+    (try
+      (fs/create-dirs expected)
+      (fs/create-dirs helper)
+      (let [result (with-redefs-fn {changed-paths (constantly #{"expected.txt" "invented.txt"})
+                                    materialize! (fn [& _])
+                                    diff-output (fn [& _] "")
+                                    run-command (fn [& _] {:out ""})}
+                     (fn []
+                       (verify! {:original-paths ["expected.txt"]
+                                 :expected-selected-tree expected}
+                                "original"
+                                {:selected "selected" :remaining "remaining"}
+                                helper)))]
+        (is (str/includes? result "invented.txt")))
+      (finally
+        (fs/delete-tree root)))))
 
 (deftest jj-split-patch-classifies-patch-artifact-safety
   (let [root (fs/path "/flower-jj-split-patch")

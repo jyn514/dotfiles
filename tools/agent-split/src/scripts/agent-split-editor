@@ -192,8 +192,10 @@
       (fail! (str "expected deleted symlink at " path)))))
 
 (defn- copy-tree! [from to]
-  (fs/create-dirs to)
-  (run! "rsync" "-a" "--checksum" "--delete" (str from "/") (str to "/")))
+  (when (fs/exists? to)
+    (fs/delete-tree to))
+  (fs/create-dirs (fs/parent to))
+  (run! "cp" "-a" (str from) (str to)))
 
 (defn- apply-patch! [tree patch]
   (let [check (process/shell {:dir (str tree)

@@ -130,7 +130,8 @@ cp -a "$left"/. "$tmp"/
 cd "$tmp"
 git apply "$patch"
 
-rsync -a --delete "$tmp"/ "$right"/
+rm -rf "$right"
+cp -a "$tmp" "$right"
 ```
 ]
 
@@ -165,7 +166,8 @@ The agent writes it outside visible source, normally under the repository's igno
 The patch is an artifact, not an implicit prompt: it must be possible to inspect it before the split and compare against it after the split.]
 
 #requirement[The normal agent entry point is `bb agent-split target/jj-split/<name>.patch -m 'message' [revision]`.
-Agents should use the wrapper instead of interactive `jj split` for patch-level selection.]
+Agents should use the wrapper instead of interactive `jj split` for patch-level selection.
+Automation may pass `--json` to receive only the selected and remaining change IDs as a JSON object.]
 
 #example[
 ```sh
@@ -186,11 +188,17 @@ The `-m` argument is mandatory for this workflow because it prevents a selected-
 #requirement[If the remaining commit needs a description fixup, the agent runs a separate non-interactive command after the split, for example `jj describe -r <remaining> -m 'Keep unrelated cleanup'`.
 The workflow must not use a command path that opens a commit-message editor.]
 
-#requirement[After the split, the wrapper verifies both resulting commits: the selected commit's diff matches the selected patch or an equivalent normalized representation, and the remaining commit still contains the unselected changes.
+#requirement[After the split, the wrapper verifies resulting trees rather than comparing textual diff fragments.
+The selected tree must equal the left tree with the supplied patch applied, and the remaining revision's resulting tree must equal the immutable commit recorded before the split.
+This preserves duplicate lines and changes whose textual hunks are normalized differently by Jujutsu or Git.
 The agent should then inspect `jj status` and the relevant `jj diff --git -r <selected>` and `jj diff --git -r <remaining>` output before committing or continuing.]
 
-#requirement[If verification fails, the agent restores the Jujutsu operation or performs another explicit corrective split.
+#requirement[Preflight, split execution, and post-split verification failures use distinct exit statuses 1, 2, and 3.
+If verification fails outside the sandbox proxy, the wrapper restores the operation recorded before mutation; when automatic restoration is unavailable, it names the required `jj op restore` recovery action.
 It must not silently continue with a bad history boundary.]
+
+#requirement[If the requested patch and message already describe the selected revision, the wrapper rejects the duplicate split before mutation.
+When that revision has exactly one child, the diagnostic names it as the possible continuation without assuming that the child is semantically the original remainder.]
 
 == Worked two-hunk example <agent-jj-split-worked-example>
 

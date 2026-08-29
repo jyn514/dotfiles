@@ -82,6 +82,29 @@
   (fs/move (fs/file repo "old.txt") (fs/file repo "new.txt"))
   (write-file! (fs/file repo "note.txt") "after\n"))
 
+(defn- init-new-file-repo! [repo]
+  (fs/create-dirs repo)
+  (let [init-result (run repo "jj" "git" "init" "--colocate")]
+    (when-not (zero? (:exit init-result))
+      (shell! repo "jj" "git" "init")))
+  (write-file! (fs/file repo ".gitignore") "target/\n")
+  (write-file! (fs/file repo "note.txt") "before\n")
+  (run repo "jj" "file" "track" ".gitignore" "note.txt")
+  (shell! repo "jj" "commit" "-m" "base")
+  (write-file! (fs/file repo "added.txt") "selected\n")
+  (write-file! (fs/file repo "note.txt") "after\n"))
+
+(defn- init-duplicate-change-repo! [repo]
+  (fs/create-dirs repo)
+  (let [init-result (run repo "jj" "git" "init" "--colocate")]
+    (when-not (zero? (:exit init-result))
+      (shell! repo "jj" "git" "init")))
+  (write-file! (fs/file repo ".gitignore") "target/\n")
+  (write-file! (fs/file repo "note.txt") "first\nold\nmiddle\nold\nlast\n")
+  (run repo "jj" "file" "track" ".gitignore" "note.txt")
+  (shell! repo "jj" "commit" "-m" "base")
+  (write-file! (fs/file repo "note.txt") "first\nnew\nmiddle\nnew\nlast\n"))
+
 (defn- init-deleted-symlink-repo! [repo]
   (fs/create-dirs repo)
   (let [init-result (run repo "jj" "git" "init" "--colocate")]
@@ -127,6 +150,24 @@
       (finally
         (fs/delete-tree root)))))
 
+(defn- with-new-file-repo* [f]
+  (let [root (temp-root)
+        repo (fs/file root "repo")]
+    (try
+      (init-new-file-repo! repo)
+      (f {:root root :repo repo})
+      (finally
+        (fs/delete-tree root)))))
+
+(defn- with-duplicate-change-repo* [f]
+  (let [root (temp-root)
+        repo (fs/file root "repo")]
+    (try
+      (init-duplicate-change-repo! repo)
+      (f {:root root :repo repo})
+      (finally
+        (fs/delete-tree root)))))
+
 (defn- with-deleted-symlink-repo* [f]
   (let [root (temp-root)
         repo (fs/file root "repo")]
@@ -137,10 +178,15 @@
       (finally
         (fs/delete-tree root)))))
 
-(defn- run-wrapper [{:keys [repo]} patch-content]
+(defn- run-wrapper-with-args [{:keys [repo]} patch-content & args]
   (let [patch (fs/file repo "target" "jj-split" "selected.patch")]
     (write-file! patch patch-content)
-    (run repo "bb" script (str patch) "-m" "selected")))
+    (apply run repo "env" "-u" "SANDBOX_PROXY_DIR"
+           "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent"
+           "bb" script (concat args [(str patch) "-m" "selected"]))))
+
+(defn- run-wrapper [ctx patch-content]
+  (run-wrapper-with-args ctx patch-content))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-splits-selected-hunk-and-verifies-remainder
   (with-repo*
@@ -155,6 +201,66 @@
                                 "+TEN")))
         (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
                            "+TEN"))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-json-output-is-machine-readable
+  (with-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [{:keys [exit out err]} (run-wrapper-with-args ctx selected-patch "--json")]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (re-matches #"\{\"selected\":\"[a-z]+\",\"remaining\":\"[a-z]+\"\}\n" out))
+        (is (str/blank? err))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-rejects-an-already-applied-split
+  (with-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [first-result (run-wrapper ctx selected-patch)
+            selected (str/trim-newline
+                      (:out (shell! repo "jj" "log" "-r" "@-" "--no-graph"
+                                    "-T" "change_id ++ \"\\n\"")))
+            second-result (run repo "env" "-u" "SANDBOX_PROXY_DIR"
+                               "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent"
+                               "bb" script
+                               (str (fs/file repo "target" "jj-split" "selected.patch"))
+                               "-m" "selected" selected)]
+        (is (zero? (:exit first-result)))
+        (is (= 1 (:exit second-result))
+            (str "stdout:\n" (:out second-result) "\nstderr:\n" (:err second-result)))
+        (is (str/includes? (:err second-result) "already describe revision"))
+        (is (str/includes? (:err second-result) "continue with child"))
+        (is (= 1 (count (str/split-lines
+                         (:out (shell! repo "jj" "log" "-r" (str "children(" selected ")")
+                                       "--no-graph" "-T" "change_id ++ \"\\n\""))))))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-selects-new-file
+  (with-new-file-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [patch (:out (shell! repo "jj" "diff" "--git" "--" "added.txt"))
+            {:keys [exit out err]} (run-wrapper ctx patch)]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@-"))
+                           "new file mode"))
+        (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
+                           "+after"))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-verifies-duplicate-diff-lines-by-tree
+  (with-duplicate-change-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [patch (str "diff --git a/note.txt b/note.txt\n"
+                       "--- a/note.txt\n"
+                       "+++ b/note.txt\n"
+                       "@@ -1,4 +1,4 @@\n"
+                       " first\n"
+                       "-old\n"
+                       "+new\n"
+                       " middle\n"
+                       " old\n")
+            {:keys [exit out err]} (run-wrapper ctx patch)]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@"))
+                           "-old\n+new"))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-selects-pure-rename
   (with-rename-repo*
