@@ -1,6 +1,7 @@
 (ns scripts.jj-split-patch-integration-test
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
+            [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.test :refer [deftest is]]))
 
@@ -195,6 +196,7 @@
         (is (zero? exit)
             (str "stdout:\n" out "\nstderr:\n" err))
         (is (str/includes? out "note.txt (1 hunk)"))
+        (is (not (str/includes? out "Selected changes")))
         (is (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@-"))
                            "+TWO"))
         (is (not (str/includes? (:out (shell! repo "jj" "diff" "--git" "-r" "@-"))
@@ -205,11 +207,37 @@
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-json-output-is-machine-readable
   (with-repo*
     (fn [{:keys [repo] :as ctx}]
-      (let [{:keys [exit out err]} (run-wrapper-with-args ctx selected-patch "--json")]
+      (let [{:keys [exit out err]} (run-wrapper-with-args ctx selected-patch "--json")
+            ids (json/parse-string out true)
+            expected-selected (str/trim-newline
+                               (:out (shell! repo "jj" "log" "-r" "@-" "--no-graph"
+                                             "-T" "change_id.short(32)")))
+            expected-remaining (str/trim-newline
+                                (:out (shell! repo "jj" "log" "-r" "@" "--no-graph"
+                                              "-T" "change_id.short(32)")))]
         (is (zero? exit)
             (str "stdout:\n" out "\nstderr:\n" err))
-        (is (re-matches #"\{\"selected\":\"[a-z]+\",\"remaining\":\"[a-z]+\"\}\n" out))
+        (is (= {:selected expected-selected :remaining expected-remaining} ids))
+        (is (every? #(= 32 (count %)) (vals ids)))
         (is (str/blank? err))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-describes-the-remainder
+  (with-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (let [{:keys [exit out err]} (run-wrapper-with-args
+                                     ctx selected-patch "--json"
+                                     "--remaining-message" "Keep the other hunk")
+            {:keys [selected remaining]} (json/parse-string out true)]
+        (is (zero? exit)
+            (str "stdout:\n" out "\nstderr:\n" err))
+        (is (= "Keep the other hunk"
+               (str/trim-newline
+                (:out (shell! repo "jj" "log" "-r" remaining "--no-graph"
+                              "-T" "description")))))
+        (is (= "selected"
+               (str/trim-newline
+                (:out (shell! repo "jj" "log" "-r" selected "--no-graph"
+                              "-T" "description")))))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-rejects-an-already-applied-split
   (with-repo*
