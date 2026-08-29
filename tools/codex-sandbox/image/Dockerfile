@@ -44,7 +44,7 @@ RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
-ARG PI_REVISION=1b86d55a81cc5cef4df5fe3c84871fe96c021721
+ARG PI_REVISION=a58c0d49c90d7b0d4c164dbb04d8d1e16b06ac24
 RUN printf '%s\n' "${PI_REVISION}" > /REVISION
 RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
 RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
@@ -57,7 +57,8 @@ COPY --from=pi-source /src /opt/agent-pi/src
 COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
 WORKDIR /opt/agent-pi/src
 RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
-    && npm run hydrate:model-data --prefix /opt/agent-pi/src \
+    && npm run hydrate:pinned-model-data --prefix /opt/agent-pi/src \
+    && chmod -R a+rX packages/ai/src/providers/data \
     && npm run build:offline --prefix /opt/agent-pi/src \
     && bun build --compile --no-compile-autoload-bunfig \
         ./packages/coding-agent/dist/bun/cli.js \

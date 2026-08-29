@@ -23,6 +23,7 @@ LAUNCHER = TOOL / "codex-sandbox"
 AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
+SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -37,6 +38,12 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class AgentSandboxImageTest(unittest.TestCase):
+    def test_pi_build_uses_lockfile_pinned_model_data(self) -> None:
+        dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn("npm run hydrate:pinned-model-data", dockerfile)
+        self.assertNotIn("npm run hydrate:model-data", dockerfile)
+
     def test_login_profile_restores_agent_wrappers_path(self) -> None:
         result = subprocess.run(
             ["sh", "-c", f'. "{AGENT_WRAPPERS_PROFILE}"; printf "%s\\n" "$PATH"'],
