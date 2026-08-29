@@ -52,9 +52,17 @@
   (is (= {:patch "selected.patch"
           :message "Extract change"
           :revision "change-id"
-          :json? true}
+          :json? true
+          :remaining-message nil}
          ((ns-resolve (quote scripts.jj-split-patch) (quote parse-args))
           ["--json" "selected.patch" "-m" "Extract change" "change-id"]))))
+
+(deftest jj-split-patch-parses-remaining-message
+  (is (= "Keep other work"
+         (:remaining-message
+          ((ns-resolve (quote scripts.jj-split-patch) (quote parse-args))
+           ["--remaining-message" "Keep other work"
+            "selected.patch" "-m" "Extract change" "change-id"])))))
 
 (deftest jj-split-patch-help-recognition-stops-at-double-dash
   (let [{:keys [exit err]}
@@ -103,6 +111,23 @@
     (is (= 3 exit))
     (is (str/includes? err "restored operation operation-id"))))
 
+(deftest jj-split-patch-selects-one-commit-from-a-divergent-change
+  (let [matching-selected-commit (ns-resolve (quote scripts.jj-split-patch) (quote matching-selected-commit))
+        revision-ids (ns-resolve (quote scripts.jj-split-patch) (quote revision-ids))
+        revision-description (ns-resolve (quote scripts.jj-split-patch) (quote revision-description))
+        parent-commit-ids (ns-resolve (quote scripts.jj-split-patch) (quote parent-commit-ids))
+        matches-tree? (ns-resolve (quote scripts.jj-split-patch) (quote revision-matches-selected-tree?))
+        result (with-redefs-fn {revision-ids (fn [& _] ["commit-a" "commit-b"])
+                                revision-description (constantly "Selected work")
+                                parent-commit-ids #(if (= "commit-a" %)
+                                                     #{"original-parent"}
+                                                     #{"other-parent"})
+                                matches-tree? (fn [& _] true)}
+                 (fn []
+                   (matching-selected-commit {} "change-id" "Selected work"
+                                             #{"original-parent"} "helper")))]
+    (is (= "commit-a" result))))
+
 (deftest jj-split-patch-verification-rejects-unexpected-selected-paths
   (let [root (fs/create-temp-dir {:prefix "agent-split-verify"})
         expected (fs/file root "expected")
@@ -123,7 +148,10 @@
                        (verify! {:original-paths ["expected.txt"]
                                  :expected-selected-tree expected}
                                 "original"
-                                {:selected "selected" :remaining "remaining"}
+                                {:selected "selected-change"
+                                 :remaining "remaining-change"
+                                 :selected-revision "selected"
+                                 :remaining-revision "remaining"}
                                 helper)))]
         (is (str/includes? result "invented.txt")))
       (finally

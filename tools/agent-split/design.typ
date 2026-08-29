@@ -167,7 +167,9 @@ The patch is an artifact, not an implicit prompt: it must be possible to inspect
 
 #requirement[The normal agent entry point is `bb agent-split target/jj-split/<name>.patch -m 'message' [revision]`.
 Agents should use the wrapper instead of interactive `jj split` for patch-level selection.
-Automation may pass `--json` to receive only the selected and remaining change IDs as a JSON object.]
+Automation may pass `--json` to receive only the full selected and remaining change IDs as a JSON object.
+The wrapper requests the complete 32-character change-ID representation explicitly.
+It discovers the selected commit by matching the original parents, selected tree, and message within the possibly divergent change ID, then discovers the remainder from that unique commit; it does not parse human `jj split` output.]
 
 #example[
 ```sh
@@ -185,8 +187,8 @@ Artifacts in visible source are a workflow bug because `jj split` snapshots the 
 #requirement[The wrapper runs `jj split --tool agent-split -m 'message' -r <revision>` with `JJ_AGENT_SPLIT_PATCH` pointing at the selected patch.
 The `-m` argument is mandatory for this workflow because it prevents a selected-commit message editor from opening.]
 
-#requirement[If the remaining commit needs a description fixup, the agent runs a separate non-interactive command after the split, for example `jj describe -r <remaining> -m 'Keep unrelated cleanup'`.
-The workflow must not use a command path that opens a commit-message editor.]
+#requirement[If the remaining commit needs a description, the agent passes `--remaining-message 'Keep unrelated cleanup'` to the wrapper.
+The wrapper describes the discovered remainder before post-split verification completes, without opening a commit-message editor.]
 
 #requirement[After the split, the wrapper verifies resulting trees rather than comparing textual diff fragments.
 The selected tree must equal the left tree with the supplied patch applied, and the remaining revision's resulting tree must equal the immutable commit recorded before the split.

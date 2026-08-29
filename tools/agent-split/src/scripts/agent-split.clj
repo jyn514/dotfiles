@@ -50,27 +50,40 @@
     result))
 
 (defn- usage! []
-  (fail! "Usage" "bb agent-split [--json] <patch-file> -m <message> [revision]"))
+  (fail! "Usage" "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [revision]"))
 
 (defn- print-help! []
-  (println "Usage: bb agent-split [--json] <patch-file> -m <message> [revision]")
+  (println "Usage: bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [revision]")
   (println "Splits the selected Git-style patch from a Jujutsu revision; revision defaults to @.")
   (println "The patch paths and hunks define the fileset to select and must be contained in the revision's diff.")
   (println "The patch and helper artifacts must be outside the visible workspace or under ignored target/jj-split/.")
   (println "Runs jj split with the repository's non-interactive jj-agent-split-editor, then verifies both resulting revisions.")
   (println "The split changes workspace history; preflight failures return before invoking jj split or the editor.")
   (println "Exit status 1 means preflight failure, 2 means jj split failure, and 3 means post-split verification failure.")
-  (println "--json suppresses human progress output and prints selected and remaining revision IDs as JSON.")
+  (println "--json suppresses human progress output and prints full selected and remaining change IDs as JSON.")
+  (println "--remaining-message describes the remaining commit before verification completes.")
   (println "Use -- to stop recognizing wrapper options; arguments after -- are validated as operands."))
 
+(defn- parse-wrapper-options [args]
+  (loop [remaining args
+         options {:json? false :remaining-message nil :help? false}
+         operands []]
+    (let [[arg & more] remaining]
+      (cond
+        (nil? arg) [options operands]
+        (= "--" arg) [options (into operands more)]
+        (#{"-h" "--help"} arg) (recur more (assoc options :help? true) operands)
+        (= "--json" arg) (recur more (assoc options :json? true) operands)
+        (= "--remaining-message" arg)
+        (if-let [message (first more)]
+          (recur (rest more) (assoc options :remaining-message message) operands)
+          (usage!))
+        :else (recur more options (conj operands arg))))))
+
 (defn- parse-args [args]
-  (let [[before-separator after-separator] (split-with #(not= "--" %) args)
-        has-separator? (= "--" (first after-separator))
-        json? (some #{"--json"} before-separator)
-        wrapper-args (remove #{"--json"} before-separator)
-        operands (concat wrapper-args (when has-separator? (rest after-separator)))
+  (let [[options operands] (parse-wrapper-options args)
         [patch flag message revision & extra] operands]
-    (when (some #{"-h" "--help"} wrapper-args)
+    (when (:help? options)
       (print-help!)
       (System/exit 0))
     (when (or (nil? patch)
@@ -78,10 +91,10 @@
               (nil? message)
               (seq extra))
       (usage!))
-    {:patch patch
-     :message message
-     :revision (or revision "@")
-     :json? (boolean json?)}))
+    (merge (dissoc options :help?)
+           {:patch patch
+            :message message
+            :revision (or revision "@")})))
 
 (defn- split-diff-paths [line]
   (when-let [[_ left right] (re-matches #"diff --git a/(.+) b/(.+)" line)]
@@ -385,7 +398,7 @@
         (when (fs/exists? (fs/file directory "jj" "socket"))
           directory))))
 
-(defn- run-split! [patch message revision quiet?]
+(defn- run-split! [patch message revision]
   (let [editor (str (fs/file (script-dir) "agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
         proxy-dir (sandbox-proxy-dir)
@@ -407,11 +420,7 @@
                       command)]
     (when-not (zero? (:exit result))
       (fail-with-status! 2 "split" (str "jj split failed\n" (:out result) (:err result))))
-    (when-not quiet?
-      (print (:out result))
-      (binding [*out* *err*]
-        (print (:err result))))
-    (str (:out result) "\n" (:err result))))
+    nil))
 
 (defn- current-operation-id []
   (when-not (sandbox-proxy-dir)
@@ -428,39 +437,73 @@
                                 "jj" "op" "restore" operation-id)]
       (zero? (:exit result)))))
 
-(defn- split-output-revisions [output]
-  (let [selected (some->> output
-                          str/split-lines
-                          (keep #(second (re-find #"Selected changes\s*:\s+([a-z]+)" %)))
-                          first)
-        remaining (some->> output
-                           str/split-lines
-                           (keep #(second (re-find #"Remaining changes:\s+([a-z]+)" %)))
-                           first)]
-    (when-not (and selected remaining)
-      (verify-fail! "could not identify selected and remaining revisions from jj split output"))
-    {:selected selected
-     :remaining remaining}))
+(def change-id-template "change_id.short(32) ++ \"\\n\"")
+(def commit-id-template "commit_id.short(40) ++ \"\\n\"")
+
+(defn- revision-change-id [revision]
+  (str/trim-newline
+   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
+              "-T" change-id-template))))
 
 (defn- revision-commit-id [revision]
   (str/trim-newline
-   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph" "-T" "commit_id ++ \"\\n\""))))
+   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
+              "-T" commit-id-template))))
 
 (defn- revision-description [revision]
   (str/trim-newline
    (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
               "-T" "description"))))
 
-(defn- revision-children [revision]
-  (->> (:out (run "preflight" "jj" "log" "-r" (str "children(" revision ")")
-                   "--no-graph" "-T" "change_id ++ \"\\n\""))
+(defn- revision-ids [revset template]
+  (->> (:out (run "preflight" "jj" "log" "-r" revset "--no-graph" "-T" template))
        str/split-lines
        (remove str/blank?)
        vec))
 
+(defn- revision-children [revision]
+  (revision-ids (str "children(" revision ")") change-id-template))
+
+(defn- parent-commit-ids [revision]
+  (set (revision-ids (str "parents(" revision ")") commit-id-template)))
+
+(declare revision-matches-selected-tree?)
+
+(defn- matching-selected-commit [preflight change-id message original-parents helper-root]
+  (let [candidates (revision-ids change-id commit-id-template)
+        matches (filter #(and (= message (revision-description %))
+                              (= original-parents (parent-commit-ids %))
+                              (revision-matches-selected-tree? preflight % helper-root))
+                        candidates)]
+    (when-not (= 1 (count matches))
+      (verify-fail!
+       (str "expected one selected commit for change " change-id
+            ", found " (count matches))))
+    (first matches)))
+
+(defn- discover-split-revisions [preflight change-id message original-parents helper-root]
+  (let [selected-commit (matching-selected-commit preflight change-id message
+                                                   original-parents helper-root)
+        remaining-commits (revision-ids (str "children(" selected-commit ")")
+                                        commit-id-template)]
+    (when-not (= 1 (count remaining-commits))
+      (verify-fail!
+       (str "expected one remaining child of commit " selected-commit
+            ", found " (count remaining-commits))))
+    (let [remaining-commit (first remaining-commits)]
+      {:selected (revision-change-id selected-commit)
+       :remaining (revision-change-id remaining-commit)
+       :selected-revision selected-commit
+       :remaining-revision remaining-commit})))
+
+(defn- describe-revision! [revision message]
+  (run "verify" "jj" "describe" "-r" revision "-m" message))
+
 (defn- revision-matches-selected-tree?
   [{:keys [original-paths expected-selected-tree]} revision helper-root]
   (let [actual-tree (fs/file helper-root "already-selected")]
+    (when (fs/exists? actual-tree)
+      (fs/delete-tree actual-tree))
     (fs/create-dirs actual-tree)
     (materialize-patch-paths! revision original-paths actual-tree)
     (str/blank?
@@ -486,19 +529,19 @@
 
 (defn- verify! [{:keys [original-paths expected-selected-tree]}
                 original-commit split-revisions helper-root]
-  (let [{:keys [selected remaining]} split-revisions
+  (let [{:keys [selected-revision remaining-revision]} split-revisions
         expected-paths (set original-paths)
-        actual-paths (changed-paths selected)
+        actual-paths (changed-paths selected-revision)
         unexpected-paths (set/difference actual-paths expected-paths)
         actual-selected-tree (fs/file helper-root "verify-selected")
         _ (fs/create-dirs actual-selected-tree)
-        _ (materialize-patch-paths! selected original-paths actual-selected-tree)
+        _ (materialize-patch-paths! selected-revision original-paths actual-selected-tree)
         selected-diff (normalize-diff-paths
                        (diff-output expected-selected-tree actual-selected-tree)
                        expected-selected-tree
                        actual-selected-tree)
         remaining-diff (:out (run "verify" "jj" "diff" "--from" original-commit
-                                  "--to" remaining "--name-only"))]
+                                  "--to" remaining-revision "--name-only"))]
     (cond
       (seq unexpected-paths)
       (str "selected commit changed unexpected paths: "
@@ -550,7 +593,7 @@
     (println (str "  " file " (" hunks " hunk" (when-not (= 1 hunks) "s") ")"))))
 
 (defn main [args]
-  (let [{:keys [patch message revision json?]} (parse-args args)
+  (let [{:keys [patch message revision json? remaining-message]} (parse-args args)
         patch (fs/canonicalize patch)
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
@@ -562,14 +605,23 @@
                                          :prefix "jj-split-patch"})]
     (try
       (check-artifact-root-ignored! repo-root)
-      (let [original-commit (revision-commit-id revision)
+      (let [selected-change-id (revision-change-id revision)
+            original-commit (revision-commit-id revision)
+            original-parents (parent-commit-ids revision)
             preflight (preflight! patch-text revision helper-root)]
         (check-snapshot-safety! repo-root artifact-root patch helper-root)
         (reject-already-applied! preflight revision message helper-root)
         (let [operation-id (current-operation-id)
-              split-output (run-split! patch message revision json?)
+              _ (run-split! patch message revision)
               post-split (capture-failure
-                          #(let [split-revisions (split-output-revisions split-output)]
+                          #(let [split-revisions (discover-split-revisions preflight
+                                                                           selected-change-id
+                                                                           message
+                                                                           original-parents
+                                                                           helper-root)
+                                 _ (when remaining-message
+                                     (describe-revision! (:remaining-revision split-revisions)
+                                                         remaining-message))]
                              {:split-revisions split-revisions
                               :verification-error (verify! preflight
                                                            original-commit
@@ -581,7 +633,8 @@
             (when verification-error
               (recover-verification-failure! operation-id verification-error))
             (if json?
-              (println (json/generate-string split-revisions))
+              (println (json/generate-string (select-keys split-revisions
+                                                          [:selected :remaining])))
               (do
                 (print-summary! patch-text)
                 (println (str "selected revision: " (:selected split-revisions)))
