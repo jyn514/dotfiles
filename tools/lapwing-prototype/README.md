@@ -6,8 +6,9 @@ Lapwing's dictionary with compositional rules and a compact vocabulary.
 `learn_chunks.py` tests an optimistic compositional approximation rather than
 implementing Lapwing theory directly.
 
-See `SPEC.md` for the implemented firmware design and `EXPERIMENTS.md` for
-rejected, superseded, and still-promising optimization directions.
+See `SPEC.md` for the implemented firmware design, `EXPERIMENTS.md` for
+rejected, superseded, and still-promising optimization directions, and
+`DICTIONARY-AUDIT.md` for dictionary-storage and synthesis measurements.
 
 ## Data
 
