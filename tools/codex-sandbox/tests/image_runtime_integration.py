@@ -7,7 +7,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
-PI_REVISION = "b71f69a5dc996fd1d781f69a44add1485a83079e"
+PI_REVISION = "a58c0d49c90d7b0d4c164dbb04d8d1e16b06ac24"
 
 
 def run(*args: str) -> str:
