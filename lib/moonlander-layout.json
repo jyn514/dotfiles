@@ -52,7 +52,9 @@
           "reactiveSolidSplash",
           "reactiveSolidMultisplash"
         ],
+        "geminipr": true,
         "rgbTimeout": 5,
+        "stenography": true,
         "tappingTerm": 135
       },
       "layers": [
@@ -756,6 +758,16 @@
               }
             },
             {
+              "customLabel": "comp/steno",
+              "doubleTap": {
+                "code": "TO",
+                "color": null,
+                "description": null,
+                "layer": 7,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              },
               "tap": {
                 "code": "KC_SCRL",
                 "color": null,
@@ -6777,6 +6789,786 @@
           ],
           "position": 6,
           "title": "r-numpad"
+        },
+        {
+          "automouse": false,
+          "color": null,
+          "keys": [
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {},
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N1",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N2",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N3",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N4",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N5",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "TO",
+                "color": null,
+                "description": null,
+                "layer": 0,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_S1",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_TL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_PL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_HL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_ST1",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_S2",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_KL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_WL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_RL",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_ST2",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NC",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NC",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_A",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_O",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {},
+            {
+              "tap": {
+                "code": "STN_FN",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_RES1",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_RES2",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_PWR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N6",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N7",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N8",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_N9",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NA",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NB",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_ST3",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_FR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_PR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_LR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_TR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_DR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_ST4",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_RR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_BR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_GR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_SR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_ZR",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NC",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_NC",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "KC_TRANSPARENT",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_E",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            },
+            {
+              "tap": {
+                "code": "STN_U",
+                "color": null,
+                "description": null,
+                "layer": null,
+                "macro": null,
+                "modifier": null,
+                "modifiers": null
+              }
+            }
+          ],
+          "position": 7,
+          "title": "steno"
         }
       ],
       "model": "mk1",
