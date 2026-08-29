@@ -38,7 +38,7 @@ target/
 .nvimlog
 .pnpm-store/
 
-AGENTS.local.md
+AGENTS.override.md
 /.codex/rules/local.rules
 **/.claude/settings.local.json
 **/.claude/.cc-writes/
