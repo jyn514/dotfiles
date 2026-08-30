@@ -38,7 +38,7 @@ class CommandTest(unittest.TestCase):
             ("https://example.invalid/file", "https://example.invalid/file"),
         ):
             result = subprocess.run(
-                [str(ROOT / "config/dragon.sh"), argument],
+                [str(ROOT / "libexec/tmux/dragon.sh"), argument],
                 env=environment,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -48,7 +48,7 @@ class CommandTest(unittest.TestCase):
             self.assertEqual(["-x", expected], calls.read_text().splitlines())
 
         result = subprocess.run(
-            [str(ROOT / "config/dragon.sh"), "one", "two words"],
+            [str(ROOT / "libexec/tmux/dragon.sh"), "one", "two words"],
             env=environment,
             text=True,
             stdout=subprocess.PIPE,
@@ -59,7 +59,7 @@ class CommandTest(unittest.TestCase):
 
         for arguments in ([],):
             result = subprocess.run(
-                [str(ROOT / "config/dragon.sh"), *arguments],
+                [str(ROOT / "libexec/tmux/dragon.sh"), *arguments],
                 env=environment,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -77,7 +77,7 @@ class CommandTest(unittest.TestCase):
         payload = b"path with spaces\0line\nbreak\0-invalid-\xff\0"
 
         result = subprocess.run(
-            [str(ROOT / "config/dragon.sh"), "--read0"],
+            [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
             input=payload,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -93,7 +93,7 @@ class CommandTest(unittest.TestCase):
         calls.unlink()
         for payload in (b"missing terminator", b"one\0\0"):
             malformed = subprocess.run(
-                [str(ROOT / "config/dragon.sh"), "--read0"],
+                [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
                 input=payload,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -104,7 +104,7 @@ class CommandTest(unittest.TestCase):
 
         for empty in (b"", b"\0"):
             cancelled = subprocess.run(
-                [str(ROOT / "config/dragon.sh"), "--read0"],
+                [str(ROOT / "libexec/tmux/dragon.sh"), "--read0"],
                 input=empty,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -119,14 +119,14 @@ class CommandTest(unittest.TestCase):
         environment = os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"}
 
         failed = subprocess.run(
-            [str(ROOT / "config/dragon.sh"), "selection"],
+            [str(ROOT / "libexec/tmux/dragon.sh"), "selection"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=environment,
         )
         dragon.unlink()
         missing = subprocess.run(
-            [sys.executable, str(ROOT / "config/dragon.sh"), "selection"],
+            [sys.executable, str(ROOT / "libexec/tmux/dragon.sh"), "selection"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env={"PATH": str(self.directory)},
@@ -412,7 +412,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -463,7 +463,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -506,14 +506,14 @@ class CommandTest(unittest.TestCase):
         environment.pop("TMUX_TMPDIR", None)
 
         unset = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=environment,
         )
         empty = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -542,7 +542,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -565,7 +565,7 @@ class CommandTest(unittest.TestCase):
         self.executable("tmux", 'printf "%s\\n" "$*" > "$TMUX_CALLS"\n')
 
         result = subprocess.run(
-            [str(ROOT / "config/set-tmux-env.sh")],
+            [str(ROOT / "libexec/tmux/set-tmux-env.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -662,7 +662,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -685,7 +685,7 @@ class CommandTest(unittest.TestCase):
         self.executable("tmux", "exit 19\n")
 
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -707,7 +707,7 @@ class CommandTest(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -763,7 +763,7 @@ class CommandTest(unittest.TestCase):
                 state.write_text(json.dumps(original))
                 count.write_text("0")
                 result = subprocess.run(
-                    [str(ROOT / "config/renumber-tmux-sessions.sh")],
+                    [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
                     text=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -775,7 +775,7 @@ class CommandTest(unittest.TestCase):
         state.write_text(json.dumps(original))
         count.write_text("0")
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -787,7 +787,7 @@ class CommandTest(unittest.TestCase):
         state.write_text(json.dumps(original))
         count.write_text("0")
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -799,7 +799,7 @@ class CommandTest(unittest.TestCase):
         state.write_text(json.dumps(original))
         count.write_text("0")
         result = subprocess.run(
-            [str(ROOT / "config/renumber-tmux-sessions.sh")],
+            [str(ROOT / "libexec/tmux/renumber-tmux-sessions.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2138,7 +2138,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/attach-session.sh")],
+            [str(ROOT / "libexec/tmux/attach-session.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2162,7 +2162,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/attach-session.sh")],
+            [str(ROOT / "libexec/tmux/attach-session.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2181,7 +2181,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
 
         for mode in ("disable", "enable"):
             result = subprocess.run(
-                [str(ROOT / "config/attach-session.sh"), mode],
+                [str(ROOT / "libexec/tmux/attach-session.sh"), mode],
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -2212,7 +2212,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/attach-session.sh")],
+            [str(ROOT / "libexec/tmux/attach-session.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2243,7 +2243,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
         )
 
         result = subprocess.run(
-            [str(ROOT / "config/attach-session.sh")],
+            [str(ROOT / "libexec/tmux/attach-session.sh")],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

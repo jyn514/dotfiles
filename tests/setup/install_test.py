@@ -775,6 +775,17 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual("config/mise.toml", links["$HOME/.config/mise/config.toml"])
         self.assertEqual("config/mise.lock", links["$HOME/.config/mise/mise.lock"])
 
+    def test_dotbot_installs_tmux_helpers_at_stable_paths(self) -> None:
+        install = json.loads((ROOT / "install.conf.json").read_text())
+        links = next(section["link"] for section in install if "link" in section)
+        expected = {
+            "$HOME/.config/tmux/attach-session.sh": "libexec/tmux/attach-session.sh",
+            "$HOME/.config/tmux/dragon.sh": "libexec/tmux/dragon.sh",
+            "$HOME/.config/tmux/renumber-sessions.sh": "libexec/tmux/renumber-tmux-sessions.sh",
+            "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
+        }
+        self.assertEqual(expected, {destination: links[destination] for destination in expected})
+
     @staticmethod
     def backend_packages(tools: dict[str, object], backend: str) -> set[str]:
         prefix = f"{backend}:"
