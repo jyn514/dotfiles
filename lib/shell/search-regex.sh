@@ -1,17 +1,29 @@
 #!/bin/sh
-start_delim='(^|/|\<|[[:space:]"])'
+word_start='(^|\<)'
+context_start='[[:space:]"]'
 
 relative_path='(\.|\.\.)'
-start_path="($relative_path|[[:alnum:]~_\"-]*)"
-
+word_path='[[:alnum:]_][.[:alnum:]~_"-]*'
+nonword_path="($relative_path|~|\.$word_path)"
 component='[][[:alnum:]_.#$%&+=@"-]'
-intermediate_paths="(/$component+)"
-
+intermediate_path="(/$component+)"
 line_no='(:[0-9]+)'
-file_end="($component+$line_no?$line_no?)"
-end="([/ \"]|\.$file_end|$component+$line_no$line_no?)"
+position="$line_no$line_no?"
+extension_file="$component*\.$component+"
 
-regex="$start_delim$start_path(${intermediate_paths}+$end|${intermediate_paths}{2,}$end?|$relative_path/$file_end)"
+with_extension="${intermediate_path}*/$extension_file($position)?\>"
+with_position="${intermediate_path}*/$component+$position\>"
+deep_path="${intermediate_path}{2,}\>"
+directory="${intermediate_path}+/"
+path_tail="($with_extension|$with_position|$deep_path|$directory)"
+relative_file="($relative_path/$component+($position)?\>)"
+executable_path='((bin|sbin|libexec)/[][[:alnum:]_.#$%&+=@"-]+\>)'
+bare_file="$component+\.$component+$position:"
+
+# Word-starting paths use a zero-width boundary so tmux copies only the path.
+# Non-word paths need a consumed context delimiter because tmux's regex engine
+# has no lookbehind; picker actions already receive the selected bytes intact.
+regex="($word_start(($word_path|$nonword_path)$path_tail|$relative_file|$executable_path|$bare_file)|$context_start((($word_path|$nonword_path)$path_tail)|$path_tail|$relative_file|$executable_path))"
 
 # Behavioral coverage uses tmux's regex engine directly; see
 # tests/tmux/search_regex_test.py.
