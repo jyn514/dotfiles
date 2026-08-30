@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.84.2",
+  "lastChangelogVersion": "0.84.4",
   "defaultThinkingLevel": "low",
   "transport": "sse",
   "tuiMode": "fullscreen",
@@ -11,7 +11,7 @@
     "./pi-extensions/index.ts"
   ],
   "packages": [
-    "npm:pi-codex-goal@0.2.0",
+    "git:github.com/jyn514/pi-codex-goal@pre-compile",
     "git:github.com/adobe/pi-session-search@5a36613b70098544126a79c1bdc3c02f6829d9c1",
     {
       "source": "git:github.com/jyn514/pi-extensions@working",

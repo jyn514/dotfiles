@@ -44,7 +44,7 @@ RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
-ARG PI_REVISION=a58c0d49c90d7b0d4c164dbb04d8d1e16b06ac24
+ARG PI_REVISION=41f139f723ccbd6bdee5c3b4077e292bdfae1df3
 RUN printf '%s\n' "${PI_REVISION}" > /REVISION
 RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
 RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
