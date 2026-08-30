@@ -16,7 +16,7 @@
     },
     "git-filter-repo": {
       "license": null,
-      "path": "bin/git-filter-repo",
+      "path": "vendor/git-filter-repo/git-filter-repo",
       "sha256": "69d2dae2d2331ce73b9c46d2a993046ec4bc26fd3c2328c2bcffb323b8338f8f",
       "source": "https://github.com/newren/git-filter-repo",
       "version": "v2.38.0"
