@@ -17,6 +17,7 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`cargo-aliases`](cargo-aliases/) implements `generate-cargo-fish-abbr [cargo-command]`, converting `cargo --list` aliases to Fish abbreviations on standard output.
 - [`fork-github`](fork-github/) implements `fork-github REPOSITORY [DIRECTORY]`, cloning a GitHub repository and configuring upstream and personal remotes.
 - [`gh-comments`](gh-comments/) implements `gh-comments <<REPOSITORY ISSUE>|URL>`, exporting a GitHub issue and its comments without publishing partial output.
+- [`git-autosquash`](git-autosquash/) implements `git-autosquash [--rebase] [BASE] [ARGS...]`, selecting an upstream base before an interactive revise or rebase.
 - [`git-backup`](git-backup/) implements `git-backup URL-OR-PATH DESTINATION`, creating a Git bundle and compressed checkout. It requires Git and tar with xz support and never overwrites its destination.
 - [`git-hooks`](git-hooks/) implements the tracked pre-commit and pre-push hooks. They may block operations after inspecting staged files or relevant Rust pushes, but do not rewrite source files.
 - [`package-inspection`](package-inspection/) implements `what-belongs`, `what-runs`, `what-package`, `pip-upgrade-all`, and `purge-removed`. The last two mutate installed packages and prompt without `--yes`.

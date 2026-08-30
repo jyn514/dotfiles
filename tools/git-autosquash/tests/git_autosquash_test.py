@@ -8,8 +8,8 @@ import unittest
 from unittest import mock
 
 
-ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT / "bin/git-autosquash"
+ROOT = Path(__file__).resolve().parents[3]
+MODULE_PATH = ROOT / "tools/git-autosquash/git-autosquash"
 LOADER = importlib.machinery.SourceFileLoader(
     "git_autosquash_command", str(MODULE_PATH)
 )
