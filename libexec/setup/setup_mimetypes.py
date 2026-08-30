@@ -154,16 +154,15 @@ def write_macos_app(
     role: str,
     utis: list[str],
     launcher_source: Path,
-    imported_extensions: list[str] | None = None,
-    imported_parent: str = "public.data",
+    declared_extensions: list[str] | None = None,
+    declared_parent: str = "public.data",
 ) -> None:
     contents = app / "Contents"
     macos = contents / "MacOS"
     macos.mkdir(parents=True, exist_ok=True)
-    imported_extensions = imported_extensions or []
+    declared_extensions = declared_extensions or []
     extension_utis = [
-        f"{bundle_id}.document.{extension.replace('_', '-')}"
-        for extension in imported_extensions
+        managed_extension_uti(bundle_id, extension) for extension in declared_extensions
     ]
     plist = {
         "CFBundleDisplayName": name,
@@ -183,9 +182,9 @@ def write_macos_app(
         "CFBundleShortVersionString": "1.0",
         "JynCommand": command,
         "LSUIElement": True,
-        "UTImportedTypeDeclarations": [
+        "UTExportedTypeDeclarations": [
             {
-                "UTTypeConformsTo": [imported_parent],
+                "UTTypeConformsTo": [declared_parent],
                 "UTTypeDescription": f"{extension} {name} document",
                 "UTTypeIdentifier": identifier,
                 "UTTypeTagSpecification": {
@@ -193,7 +192,7 @@ def write_macos_app(
                 },
             }
             for extension, identifier in zip(
-                imported_extensions, extension_utis
+                declared_extensions, extension_utis
             )
         ],
     }
@@ -348,22 +347,78 @@ def resolve_extension_utis(
     return resolved
 
 
-def missing_extension_associations(
-    extensions: list[str],
-    resolved_utis: dict[str, str],
-    existing_utis: set[str],
-    planned_utis: list[str],
+def missing_uti_defaults(
+    utis: list[str], current_defaults: dict[str, str], bundle_id: str
 ) -> list[str]:
-    return [
+    return sorted(uti for uti in utis if current_defaults.get(uti) != bundle_id)
+
+
+def missing_extension_defaults(
+    extensions: list[str], current_defaults: dict[str, str], bundle_id: str
+) -> list[str]:
+    return sorted(
         extension
         for extension in extensions
-        if resolved_utis.get(extension) not in existing_utis
-        and resolved_utis.get(extension) not in planned_utis
-    ]
+        if current_defaults.get(extension) != bundle_id
+    )
+
+
+def managed_extension_uti(bundle_id: str, extension: str) -> str:
+    return f"{bundle_id}.document.{extension.replace('_', '-')}"
+
+
+def role_defaults(preferences: dict, utis: list[str], role: str) -> dict[str, str]:
+    defaults = {}
+    role_key = f"LSHandlerRole{role}"
+    for handler in preferences.get("LSHandlers", []):
+        if not isinstance(handler, dict):
+            continue
+        content_type = handler.get("LSHandlerContentType")
+        if content_type not in utis:
+            continue
+        default = handler.get(role_key) or handler.get("LSHandlerRoleAll")
+        if isinstance(default, str):
+            defaults[content_type] = default
+    return defaults
+
+
+def extension_defaults(
+    classifier: Path, probe_directory: Path, extensions: list[str]
+) -> dict[str, str]:
+    probe_directory.mkdir()
+    probes = {extension: probe_directory / f"probe.{extension}" for extension in extensions}
+    for probe in probes.values():
+        probe.touch()
+    result = run(
+        [str(classifier), "--file-defaults"],
+        input="".join(f"{probe}\n" for probe in probes.values()),
+        text=True,
+        capture_output=True,
+    )
+    defaults_by_path = dict(line.split("\t", 1) for line in result.stdout.splitlines())
+    return {
+        extension: defaults_by_path.get(str(probe), "")
+        for extension, probe in probes.items()
+    }
+
+
+def validate_macos_policy(policy: dict) -> None:
+    editor_extensions = set(policy["editor_extensions"])
+    ambiguous_extensions = set(policy["editor_ambiguous_extensions"])
+    json_extensions = set(policy["json_handler"]["extensions"])
+    if unknown := ambiguous_extensions - editor_extensions:
+        raise RuntimeError(
+            "ambiguous extensions are not editor-owned: " + ", ".join(sorted(unknown))
+        )
+    if overlap := editor_extensions & json_extensions:
+        raise RuntimeError(
+            "extensions are owned by both nvim and fx: " + ", ".join(sorted(overlap))
+        )
 
 
 def macos_setup(policy: dict, dry_run: bool) -> None:
-    required_commands = ("xcrun",) if dry_run else ("duti", "xcrun")
+    validate_macos_policy(policy["macos"])
+    required_commands = ("duti", "xcrun")
     missing = [
         command for command in required_commands if not command_exists(command)
     ]
@@ -392,27 +447,48 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
         registered_utis = read_macos_handler_utis(preferences_path)
         source_utis = filter_source_utis(classifier, registered_utis)
         explicit_utis = policy["macos"]["editor_utis"]
-        extensions = policy["macos"]["editor_extension_exceptions"]
+        extensions = policy["macos"]["editor_extensions"]
+        ambiguous_extensions = set(policy["macos"]["editor_ambiguous_extensions"])
         json_handler = policy["macos"]["json_handler"]
         json_extensions = json_handler["extensions"]
         extension_utis = resolve_extension_utis(
             classifier, [*extensions, *json_extensions]
         )
         existing_roles = bundle_handler_roles(preferences, BUNDLE_ID)
-        existing_utis = {content_type for content_type, _ in existing_roles}
-        desired_utis = set([*explicit_utis, *source_utis, *extension_utis.values()])
+        managed_extension_utis = {
+            extension: managed_extension_uti(BUNDLE_ID, extension)
+            for extension in extensions
+        }
+        claimed_extension_utis = {
+            uti
+            for extension, uti in extension_utis.items()
+            if extension not in ambiguous_extensions
+        }
+        desired_utis = set(
+            [
+                *explicit_utis,
+                *source_utis,
+                *claimed_extension_utis,
+                *managed_extension_utis.values(),
+            ]
+        )
         stale_roles = [
             role for role in existing_roles if role[0] not in desired_utis
         ]
-        missing_utis = sorted(set([*explicit_utis, *source_utis]) - existing_utis)
-        missing_extensions = missing_extension_associations(
-            extensions, extension_utis, existing_utis, missing_utis
+        current_uti_defaults = role_defaults(
+            preferences, [*explicit_utis, *source_utis], "Editor"
+        )
+        current_extension_defaults = extension_defaults(
+            classifier, temporary_directory / "editor-probes", extensions
+        )
+        missing_utis = missing_uti_defaults(
+            [*explicit_utis, *source_utis], current_uti_defaults, BUNDLE_ID
+        )
+        missing_extensions = missing_extension_defaults(
+            extensions, current_extension_defaults, BUNDLE_ID
         )
         json_bundle_id = json_handler["bundle_id"]
         json_existing_roles = bundle_handler_roles(preferences, json_bundle_id)
-        json_existing_utis = {
-            content_type for content_type, _ in json_existing_roles
-        }
         json_desired_utis = set(
             [
                 *json_handler["utis"],
@@ -426,14 +502,19 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
         json_stale_roles = [
             role for role in json_existing_roles if role[0] not in json_desired_utis
         ]
-        json_missing_utis = sorted(
-            set(json_handler["utis"]) - json_existing_utis
+        json_current_uti_defaults = role_defaults(
+            preferences, json_handler["utis"], json_handler["role"]
         )
-        json_missing_extensions = missing_extension_associations(
+        json_current_extension_defaults = extension_defaults(
+            classifier, temporary_directory / "json-probes", json_extensions
+        )
+        json_missing_utis = missing_uti_defaults(
+            json_handler["utis"], json_current_uti_defaults, json_bundle_id
+        )
+        json_missing_extensions = missing_extension_defaults(
             json_extensions,
-            extension_utis,
-            json_existing_utis,
-            json_missing_utis,
+            json_current_extension_defaults,
+            json_bundle_id,
         )
 
         if dry_run:
@@ -484,10 +565,10 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
             bundle_id=BUNDLE_ID,
             command=[str(ROOT / "bin/hx-hax")],
             role="Editor",
-            utis=explicit_utis,
+            utis=sorted({*explicit_utis, *source_utis, *claimed_extension_utis}),
             launcher_source=ROOT / "libexec/setup/file-handler.swift",
-            imported_extensions=extensions,
-            imported_parent="public.plain-text",
+            declared_extensions=extensions,
+            declared_parent="public.plain-text",
         )
         compile_launcher(app / "Contents/MacOS/file-handler")
         run([str(LSREGISTER), "-f", str(app)])
@@ -504,7 +585,39 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
         )
         compile_launcher(fx_app / "Contents/MacOS/file-handler")
         run([str(LSREGISTER), "-f", str(fx_app)])
+        for uti in missing_utis:
+            run(["duti", "-s", BUNDLE_ID, uti, "editor"])
+        for extension in missing_extensions:
+            run(
+                [
+                    "duti",
+                    "-s",
+                    BUNDLE_ID,
+                    managed_extension_utis[extension],
+                    "editor",
+                ]
+            )
+            if extension not in ambiguous_extensions and extension in extension_utis:
+                run(
+                    [
+                        "duti",
+                        "-s",
+                        BUNDLE_ID,
+                        extension_utis[extension],
+                        "editor",
+                    ]
+                )
+            run(["duti", "-s", BUNDLE_ID, f".{extension}", "editor"])
+        json_role = json_handler["role"].lower()
+        for uti in json_missing_utis:
+            run(["duti", "-s", json_bundle_id, uti, json_role])
+        for extension in json_missing_extensions:
+            run(["duti", "-s", json_bundle_id, f".{extension}", json_role])
         if preferences_available:
+            if not export_launch_services(preferences_path):
+                raise RuntimeError("could not re-read Launch Services associations")
+            with preferences_path.open("rb") as input_file:
+                preferences = plistlib.load(input_file)
             remove_macos_bundle_handlers(preferences, BUNDLE_ID, desired_utis)
             remove_macos_bundle_handlers(
                 preferences, json_bundle_id, json_desired_utis
@@ -515,15 +628,6 @@ def macos_setup(policy: dict, dry_run: bool) -> None:
                 ["defaults", "import", LAUNCH_SERVICES_DOMAIN, str(clean_path)],
                 stdout=subprocess.DEVNULL,
             )
-        for uti in missing_utis:
-            run(["duti", "-s", BUNDLE_ID, uti, "editor"])
-        for extension in missing_extensions:
-            run(["duti", "-s", BUNDLE_ID, f".{extension}", "editor"])
-        json_role = json_handler["role"].lower()
-        for uti in json_missing_utis:
-            run(["duti", "-s", json_bundle_id, uti, json_role])
-        for extension in json_missing_extensions:
-            run(["duti", "-s", json_bundle_id, f".{extension}", json_role])
 
 
 def main() -> None:

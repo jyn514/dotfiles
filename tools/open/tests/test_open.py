@@ -26,7 +26,7 @@ class OpenScriptTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory(prefix="open-test-", dir=os.environ.get("TMPDIR"))
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
 
     @staticmethod
     def real(path: Path) -> str:
@@ -107,7 +107,68 @@ class OpenScriptTest(unittest.TestCase):
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
             self.assertEqual(module.xdgopen([str(target)]), 0)
 
-        os_open.assert_called_once_with([str(target)])
+        os_open.assert_called_once_with([self.real(target)])
+
+    def test_macos_extensionless_text_opens_in_editor(self) -> None:
+        target = self.root / "Dockerfile"
+        target.write_text("FROM alpine\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module.sys, "platform", "darwin"),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
+            mock.patch.object(module, "os_open") as os_open,
+        ):
+            self.assertEqual(module.xdgopen([str(target)]), 0)
+
+        editor.assert_called_once_with([self.real(target)])
+        os_open.assert_not_called()
+
+    def test_macos_extensionless_executable_text_opens_in_editor(self) -> None:
+        target = self.root / "script"
+        target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        target.chmod(0o755)
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module.sys, "platform", "darwin"),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
+            mock.patch.object(module, "os_open") as os_open,
+        ):
+            self.assertEqual(module.xdgopen([str(target)]), 0)
+
+        editor.assert_called_once_with([self.real(target)])
+        os_open.assert_not_called()
+
+    def test_macos_extensionless_binary_still_uses_launch_services(self) -> None:
+        target = self.root / "model"
+        target.write_bytes(b"weights\x00binary")
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module.sys, "platform", "darwin"),
+            mock.patch.object(module, "open_in_tmux_editor") as editor,
+            mock.patch.object(module, "os_open", return_value=0) as os_open,
+        ):
+            self.assertEqual(module.xdgopen([str(target)]), 0)
+
+        editor.assert_not_called()
+        os_open.assert_called_once_with([self.real(target)])
+
+    def test_macos_suffixed_text_still_uses_launch_services(self) -> None:
+        target = self.root / "data.json"
+        target.write_text("{}\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module.sys, "platform", "darwin"),
+            mock.patch.object(module, "open_in_tmux_editor") as editor,
+            mock.patch.object(module, "os_open", return_value=0) as os_open,
+        ):
+            self.assertEqual(module.xdgopen([str(target)]), 0)
+
+        editor.assert_not_called()
+        os_open.assert_called_once_with([self.real(target)])
 
     def test_os_open_returns_xdg_open_exit_code(self) -> None:
         target = self.root / "note.txt"
@@ -162,7 +223,7 @@ class OpenScriptTest(unittest.TestCase):
         with mock.patch.object(module, "os_open", return_value=0) as os_open:
             self.assertEqual(module.xdgopen(["--reveal", str(first), str(second)]), 0)
 
-        os_open.assert_called_once_with(["--reveal", str(first), str(second)])
+        os_open.assert_called_once_with(["--reveal", str(first), self.real(second)])
 
     def test_tilde_is_expanded_before_os_open(self) -> None:
         home = self.root / "home"
@@ -177,7 +238,7 @@ class OpenScriptTest(unittest.TestCase):
         ):
             self.assertEqual(module.xdgopen(["~/note.txt"]), 0)
 
-        os_open.assert_called_once_with([str(target)])
+        os_open.assert_called_once_with([self.real(target)])
 
     def test_non_editor_default_opens_file_without_line_suffix(self) -> None:
         target = self.root / "note.txt"
@@ -314,10 +375,12 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        with mock.patch.object(module, "os_open", return_value=0) as os_open:
+        with mock.patch.object(
+            module, "open_in_tmux_editor", return_value=0
+        ) as editor:
             self.assertEqual(module.xdgopen([str(target)]), 0)
 
-        os_open.assert_called_once_with([self.real(target)])
+        editor.assert_called_once_with([self.real(target)])
 
     def test_nonexistent_file_with_line_keeps_uncanonicalized_path(self) -> None:
         target = self.root / "missing.txt"
