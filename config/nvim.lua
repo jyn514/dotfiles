@@ -1362,6 +1362,9 @@ vim.lsp.config('rust_analyzer', {
 ---- Session and meta config ----
 
 -- begin saving session immediately on startup
-if vim.fn.ObsessionStatus('a') ~= 'a' and not vim.uv.fs_stat('.session.vim') then
-	vim.cmd.Obsess(".session.vim")
+if vim.fn.ObsessionStatus('a') ~= 'a'
+	and not vim.uv.fs_stat('.session.vim')
+	and vim.fn.filewritable('.') == 2
+then
+	vim.cmd.Obsess('.session.vim')
 end
