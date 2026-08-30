@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "domains": {
+    "com.jyn.dotfiles.macos-preferences-test": {
+      "preferences": {
+        "RoundTripBoolean": true,
+        "RoundTripInteger": 42,
+        "RoundTripString": "temporary"
+      }
+    }
+  }
+}
