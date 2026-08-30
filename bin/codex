@@ -32,4 +32,4 @@ done < "$MANIFEST"
 DEVELOPER_INSTRUCTIONS=$(jq -Rs . < "$COMBINED")
 rm -f "$COMBINED"
 trap - 0 1 2 15
-exec "$REAL" -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
+exec "$REAL" --profile dotfiles -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
