@@ -60,6 +60,14 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 - Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
 - If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
 
+## Writing code
+
+Think about LANGSEC (Language-theoretical security).
+Do not nest languages in each other;
+use separate files for separate languages.
+For example, if writing a Python script that launches a Bash scripts,
+the Bash script must always be a separate file, not a multi-line inline string.
+
 ## Commits
 
 Use `jj`, not `git`, for change management; it supports undo and history editing
