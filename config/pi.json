@@ -12,8 +12,14 @@
   ],
   "packages": [
     "npm:pi-codex-goal@0.2.0",
-    "npm:@ogulcancelik/pi-codex-subagents@0.3.3",
-    "git:github.com/adobe/pi-session-search@0.1.0"
+    "git:github.com/adobe/pi-session-search@5a36613b70098544126a79c1bdc3c02f6829d9c1",
+    {
+      "source": "git:github.com/jyn514/pi-extensions@working",
+      "extensions": [
+        "packages/pi-codex-subagents/index.ts"
+      ],
+      "skills": []
+    }
   ],
   "compaction": {
     "enabled": true
