@@ -1,5 +1,12 @@
 {
   "artifacts": {
+    "ansi": {
+      "license": null,
+      "path": "vendor/ansi/ansi",
+      "sha256": "e84572fe1d804bfe5aa89edb962efd7ae29dc87bbf4c594c70f3e64f9dfb688b",
+      "source": "https://github.com/fidian/ansi",
+      "version": "repository-snapshot-cdda455eec9b"
+    },
     "bat-mumps-syntax": {
       "license": null,
       "path": "config/bat/mumps.sublime-syntax",

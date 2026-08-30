@@ -7,6 +7,7 @@ machine-readable provenance and checksums are in `install/vendored.json`.
 
 ## Inventory
 
+- `vendor/ansi/ansi` is a locally patched snapshot of fidian/ansi originally imported in repository change `cdda455eec9b`; `bin/ansi` is its public command link.
 - `config/bat/mumps.sublime-syntax` is derived from MUMPS.tmbundle at the
   recorded commit, with its file-extension list narrowed to `.m`.
 - `vendor/dotbot/` is a minimal Dotbot snapshot. `VERSION` records the exact

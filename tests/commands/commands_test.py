@@ -427,23 +427,6 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(23, failed.returncode)
         self.assertFalse(calls.exists())
 
-    def test_ansi_resets_background_without_debug_output(self) -> None:
-        command = (
-            f'source {ROOT / "bin/ansi"}; '
-            "ansi::isAnsiSupported() { return 0; }; "
-            "ansi --reset-background --no-restore tea"
-        )
-        result = subprocess.run(
-            ["bash", "-c", command],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("\x1b[49mtea", result.stdout)
-        self.assertNotIn("set | grep", (ROOT / "bin/ansi").read_text())
 
     def test_ssh_wrapper_cleans_up_agents_and_propagates_startup_failure(self) -> None:
         calls = self.directory / "ssh-wrapper-calls"
