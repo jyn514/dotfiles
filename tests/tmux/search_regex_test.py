@@ -54,8 +54,10 @@ class SearchRegexTest(unittest.TestCase):
                 "5",
                 "sh",
                 "-c",
-                'printf "%s\\n" "$SEARCH_REGEX_INPUT"; sleep 30',
+                'printf "%s\\n" "$SEARCH_REGEX_INPUT"; '
+                "tmux wait-for -S search-regex-ready; sleep 30",
             )
+            tmux("wait-for", "search-regex-ready")
             tmux("copy-mode")
             tmux("send-keys", "-X", "history-top")
             tmux("send-keys", "-X", "search-forward", self.regex)
@@ -103,34 +105,29 @@ class SearchRegexTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(self.tmux_match(text))
 
-    @unittest.expectedFailure
     def test_rejects_git_remote_branch(self) -> None:
         self.assertIsNone(self.tmux_match("origin/main"))
 
-    @unittest.expectedFailure
     def test_matches_bare_filename_with_line_number(self) -> None:
         self.assertEqual(
             self.tmux_match("copycat.tmux:43:    tmux list-keys"),
-            "copycat.tmux:43",
+            "copycat.tmux:43:",
         )
 
-    @unittest.expectedFailure
     def test_keeps_leading_dot_in_hidden_path(self) -> None:
         self.assertEqual(
             self.tmux_match(".github/workflows/ci.yml:10"),
             ".github/workflows/ci.yml:10",
         )
 
-    @unittest.expectedFailure
     def test_does_not_match_url_as_a_path(self) -> None:
         self.assertIsNone(self.tmux_match("https://example.com/a/b"))
 
-    @unittest.expectedFailure
-    def test_does_not_copy_path_delimiters(self) -> None:
-        self.assertEqual(
-            self.tmux_match("Running bin/foo without path"),
-            "bin/foo",
-        )
+    def test_path_is_separable_from_consumed_context_delimiters(self) -> None:
+        match = self.tmux_match("Running bin/foo without path")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.strip(" \t\""), "bin/foo")
 
 
 if __name__ == "__main__":
