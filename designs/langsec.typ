@@ -149,8 +149,8 @@ prototype and contract test:
 
 === Git hook subsystem
 
-/ Current files: `config/githooks/pre-commit`, `config/githooks/pre-push`, and
-  `config/githooks/pre_commit_hooks/*.py`.
+/ Current files: installed launchers are `config/githooks/pre-commit` and
+  `config/githooks/pre-push`; drivers and checkers live under `tools/git-hooks/`.
 
 / Target: A Python hook driver owns index inspection, snapshot materialization,
   hook selection, and diagnostics. Installed hook files become tiny launchers

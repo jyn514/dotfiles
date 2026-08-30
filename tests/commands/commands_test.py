@@ -1793,7 +1793,7 @@ console.log("__RESULT__" + JSON.stringify({ status, state }));
                 "python3",
                 str(
                     ROOT
-                    / "config/githooks/pre_commit_hooks/check_case_conflict.py"
+                    / "tools/git-hooks/pre_commit_hooks/check_case_conflict.py"
                 ),
                 "FOO\nbaz",
             ],
