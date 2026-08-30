@@ -1,6 +1,8 @@
 # dotfiles
 Configuration and options for various common Unix commands.
 
+See the [`tools/` reference](tools/README.md) for the repository's standalone commands and executable subsystems.
+
 Partly taken (with love) from Charles Daniels' [excellent repository](https://github.com/charlesdaniels/dotfiles).
 
 ## Maintenance
