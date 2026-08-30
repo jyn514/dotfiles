@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "domains": {
+    "com.apple.screencapture": {
+      "preferences": {
+        "location": "~/Documents/"
+      }
+    },
+    "com.theron.UnnaturalScrollWheels": {
+      "preferences": {
+        "AlternateDetectionMethod": true,
+        "DisableScrollAccel": false,
+        "ScrollLines": 1,
+        "ShowMenuBarIcon": false
+      }
+    },
+    "com.knollsoft.Rectangle": {
+      "preferences": {
+        "alternateDefaultShortcuts": true
+      },
+      "shortcuts": {
+        "almostMaximize": { "key": "return", "modifiers": ["shift", "control", "option"] },
+        "bottomHalf": { "key": "j", "modifiers": ["shift", "command"] },
+        "bottomLeft": { "key": "m", "modifiers": ["control", "option"] },
+        "bottomRight": { "key": "comma", "modifiers": ["control", "option"] },
+        "centerHalf": { "key": "c", "modifiers": ["shift", "command"] },
+        "larger": { "key": "equal", "modifiers": ["shift", "command"] },
+        "leftHalf": { "key": "h", "modifiers": ["shift", "command"] },
+        "maximize": { "key": "return", "modifiers": ["shift", "command"] },
+        "maximizeHeight": { "key": "k", "modifiers": ["shift", "control", "option"] },
+        "nextDisplay": { "key": "right-arrow", "modifiers": ["shift", "command"] },
+        "previousDisplay": { "key": "left-arrow", "modifiers": ["shift", "command"] },
+        "restore": { "key": "delete", "modifiers": ["shift", "command"] },
+        "rightHalf": { "key": "l", "modifiers": ["shift", "command"] },
+        "smaller": { "key": "minus", "modifiers": ["shift", "command"] },
+        "topHalf": { "key": "k", "modifiers": ["shift", "command"] }
+      }
+    },
+    "com.knollsoft.Hookshot": {
+      "preferences": {
+        "hideMenubarIcon": true
+      },
+      "shortcuts": {
+        "almostMaximize": { "key": "return", "modifiers": ["shift", "option", "command"] },
+        "bottomHalf": { "key": "j", "modifiers": ["shift", "command"] },
+        "bottomLeft": { "key": "m", "modifiers": ["shift", "command"] },
+        "bottomRight": { "key": "comma", "modifiers": ["shift", "command"] },
+        "centerHalf": { "key": "c", "modifiers": ["shift", "command"] },
+        "larger": { "key": "equal", "modifiers": ["shift", "command"] },
+        "leftHalf": { "key": "h", "modifiers": ["shift", "command"] },
+        "maximize": { "key": "return", "modifiers": ["shift", "command"] },
+        "maximizeHeight": { "key": "k", "modifiers": ["shift", "option", "command"] },
+        "nextDisplay": { "key": "right-arrow", "modifiers": ["shift", "command"] },
+        "previousDisplay": { "key": "left-arrow", "modifiers": ["shift", "command"] },
+        "restore": { "key": "delete", "modifiers": ["shift", "command"] },
+        "rightHalf": { "key": "l", "modifiers": ["shift", "command"] },
+        "smaller": { "key": "minus", "modifiers": ["shift", "command"] },
+        "topHalf": { "key": "k", "modifiers": ["shift", "command"] },
+        "topLeft": { "key": "u", "modifiers": ["shift", "command"] },
+        "topRight": { "key": "i", "modifiers": ["shift", "command"] }
+      }
+    }
+  }
+}
