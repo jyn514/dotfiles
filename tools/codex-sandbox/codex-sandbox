@@ -366,7 +366,7 @@ def image_cache_key(state: State, base_image: str) -> str:
 
 
 def resolve_sidecar_image() -> str:
-    builder = DOTFILES / "tools/codex-auth-proxy/image"
+    builder = DOTFILES / "tools/codex-sandbox/auth-proxy/image"
     result = run([str(builder)], capture=True, cwd=DOTFILES)
     output = result.stdout.strip()
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", output):
@@ -584,7 +584,7 @@ def codex_sidecar_arguments(container: str, key: str) -> list[str]:
     return [
         "--env", f"CODEX_SIDECAR_URL=http://{container}:8787",
         "--env", f"CODEX_SIDECAR_KEY={key}",
-        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-auth-proxy/pi-extension'},dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'tools/codex-sandbox/auth-proxy/pi-extension'},dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
     ]
 
 
