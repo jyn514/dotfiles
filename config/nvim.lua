@@ -263,11 +263,11 @@ end, { desc = "Open today's Obsidian daily journal", force = true })
 
 vim.api.nvim_create_user_command('TrimWhitespace', function(info)
 	local view = vim.fn.winsaveview()
-	local cmd = 'keeppatterns '
+	local range = '%'
 	if info.range > 0 then
-		cmd = cmd .. info.line1 .. ',' .. info.line2
+		range = info.line1 .. ',' .. info.line2
 	end
-	vim.cmd(cmd .. [[s/\s\+$//e]])
+	vim.cmd('keeppatterns ' .. range .. [[s/\s\+$//e]])
 	vim.fn.winrestview(view)
 end, { range = true, desc = "trim trailing spaces", force = true })
 
@@ -301,12 +301,15 @@ end, { desc = "Show a list of all highlight groups", force = true })
 local autosave_group = vim.api.nvim_create_augroup('dotfiles_autosave', { clear = false })
 local function autosave_enable()
 	local buf = vim.api.nvim_get_current_buf()
+	local buf_name = vim.api.nvim_buf_get_name(buf)
+	if buf_name == '' then
+		error('AutoSave requires a named buffer')
+	end
 	if #vim.api.nvim_get_autocmds({ group = autosave_group, buffer = buf }) > 0 then
 		return
 	end
 
-	local buf_name = vim.fn.expand '%'
-	vim.notify("autosaving " .. buf_name)
+	vim.notify("autosaving " .. vim.fn.fnamemodify(buf_name, ':~:.'))
 	vim.api.nvim_create_autocmd("CursorHold", {
 		group = autosave_group,
 		desc = "Save " .. buf_name .. " on change",
@@ -820,18 +823,31 @@ vim.keymap.set('v', '<C-c>', '<Plug>(comment_toggle_linewise_visual)')
 vim.api.nvim_create_user_command('MoveCommentUp', function(info)
 	local view = vim.fn.winsaveview()
 
-	local comment = vim.bo.commentstring
-	if comment == "" then return end
-	comment = string.gsub(comment, "%%s", "")
-	local escaped_comment = vim.fn.escape(comment, "\\/.*$^~[]")
+	local prefix, suffix = vim.bo.commentstring:match('^(.-)%%s(.-)$')
+	if not prefix or prefix == '' then return end
 
-	-- {-} means "non-greedy *"
-	local regex = [[s/\(\s*\)\(.\{-}\) \?\(]] .. escaped_comment .. [[.*\)/\1\3\r\1\2/e]]
-	for line = info.line2, info.line1, -1 do
-		if string.find(vim.fn.getline(line), comment, 1, true) then
-			local cmd = 'keeppatterns ' .. line .. regex
-			vim.notify(cmd)
-			vim.cmd(cmd)
+	local buf = vim.api.nvim_get_current_buf()
+	for line_number = info.line2, info.line1, -1 do
+		local line = vim.api.nvim_buf_get_lines(buf, line_number - 1, line_number, false)[1]
+		local comment_start = line:find(prefix, 1, true)
+		if comment_start then
+			local body = line:sub(1, comment_start - 1):gsub('%s+$', '')
+			local comment = line:sub(comment_start)
+			local suffix_end
+			if suffix == '' then
+				suffix_end = #comment
+			else
+				local suffix_start = comment:find(suffix, 1, true)
+				if suffix_start then suffix_end = suffix_start + #suffix - 1 end
+			end
+			local comment_ends_line = suffix_end and not comment:sub(suffix_end + 1):find('%S')
+			if body:find('%S') and comment_ends_line then
+				local indent = line:match('^%s*')
+				vim.api.nvim_buf_set_lines(buf, line_number - 1, line_number, false, {
+					indent .. comment,
+					body,
+				})
+			end
 		end
 	end
 
