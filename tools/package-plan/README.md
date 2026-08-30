@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`dev/package-plan` validates, explains, previews, and applies the cross-platform package policy in [`install/packages.clj`](../../install/packages.clj). It supports Debian, Ubuntu, Fedora, Arch, Alpine, Chimera Linux, and Apple-silicon macOS; Intel macOS is unsupported.
+`dev/package-plan` validates, explains, previews, and applies the cross-platform package policy in [`install/packages.clj`](../../install/packages.clj). It supports Debian, Ubuntu, Fedora, Arch, Alpine, Chimera Linux, and Apple-silicon macOS; Intel macOS is unsupported. The [design](design.typ) records the ownership and bootstrap model.
 
 ## Prerequisites and setup
 
