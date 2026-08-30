@@ -361,7 +361,7 @@ class ProfileContractTests(unittest.TestCase):
 
             for command in dragon_commands:
                 command = command.replace(
-                    "~/.config/tmux/dragon.sh", str(ROOT / "config/dragon.sh")
+                    "~/.config/tmux/dragon.sh", str(ROOT / "libexec/tmux/dragon.sh")
                 )
                 result = subprocess.run(
                     ["/bin/bash", "-c", command],

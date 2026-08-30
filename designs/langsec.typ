@@ -274,9 +274,9 @@ name=expansion text
 
 === Tmux administration
 
-/ Current files: `config/set-tmux-env.sh`, `config/renumber-tmux-sessions.sh`,
-  `config/attach-session.sh`, and complex `run-shell` fragments in
-  `config/tmux.conf`.
+/ Current files: `libexec/tmux/set-tmux-env.sh`, `libexec/tmux/renumber-tmux-sessions.sh`,
+  `libexec/tmux/attach-session.sh`, `libexec/tmux/dragon.sh`, and complex
+  `run-shell` fragments in `config/tmux.conf`.
 
 / Target: Python commands call tmux directly and treat tmux format output as an
   explicit protocol.
