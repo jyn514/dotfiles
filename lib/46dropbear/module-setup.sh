@@ -15,7 +15,7 @@ install() {
     elif [ -e /root/.ssh/dracut_authorized_keys ]; then
         authorized_keys=/root/.ssh/dracut_authorized_keys
     else
-        # TODO: this isn't great lol, fix this in setup.sh
+        # TODO: this isn't great lol, fix this in setup
         authorized_keys=/home/jyn/.ssh/authorized_keys
     fi
     if [ ! -r "$authorized_keys" ]; then

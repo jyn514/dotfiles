@@ -27,7 +27,7 @@ class PackagePlanTests(unittest.TestCase):
         self.assertEqual(before, generated.read_bytes())
 
     def test_setup_runs_planner_before_privileged_main(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         full = setup[setup.index("setup_install_global ()"):]
         packages = setup[setup.index("setup_install_global_packages ()"):]
         privileged = (ROOT / "libexec/setup/setup_sudo.sh").read_text()

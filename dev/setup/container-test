@@ -2,7 +2,7 @@
 set -eu
 
 image=${1:?usage: $0 <container-image>}
-setup_command_prefix=${SETUP_COMMAND_PREFIX:-./setup.sh}
+setup_command_prefix=${SETUP_COMMAND_PREFIX:-./setup}
 
 if [ -n "${CONTAINER_ENGINE:-}" ]; then
 	engine=$CONTAINER_ENGINE
@@ -22,34 +22,34 @@ esac
 
 if [ "${image%%:*}" = alpine ]; then
 	bootstrap_check='for option in 1; do
-			if ./setup.sh "$option" > /tmp/dotfiles-bootstrap.out 2>&1; then
+			if ./setup "$option" > /tmp/dotfiles-bootstrap.out 2>&1; then
 				echo "setup option $option unexpectedly succeeded without python3" >&2
 				exit 1
 			fi
 		grep -q "dotfile setup requires python3; run setup option 7 or 9 first" /tmp/dotfiles-bootstrap.out
 		done
-		if ./setup.sh 6 > /tmp/local-bootstrap.out 2>&1; then
+		if ./setup 6 > /tmp/local-bootstrap.out 2>&1; then
 			echo "local setup unexpectedly succeeded without libgcc" >&2
 			exit 1
 		fi
 		grep -q "Alpine.*libgcc package is required for Rust" /tmp/local-bootstrap.out
 		mkdir -p /tmp/setup-bin
 		ln -s /bin/true /tmp/setup-bin/fish
-		if PATH="/tmp/setup-bin:$PATH" ./setup.sh 2 > /tmp/shell-bootstrap.out 2>&1; then
+		if PATH="/tmp/setup-bin:$PATH" ./setup 2 > /tmp/shell-bootstrap.out 2>&1; then
 			echo "shell setup unexpectedly succeeded without chsh" >&2
 			exit 1
 		fi
 		grep -q "chsh is required.*run setup option 7 or 9 first" /tmp/shell-bootstrap.out
-		if ./setup.sh 4 > /tmp/vim-bootstrap.out 2>&1; then
+		if ./setup 4 > /tmp/vim-bootstrap.out 2>&1; then
 			echo "vim setup unexpectedly succeeded without an editor" >&2
 			exit 1
 		fi
 		grep -q "no vim installed" /tmp/vim-bootstrap.out
 		! grep -q "dotfile setup requires python3" /tmp/vim-bootstrap.out
-		./setup.sh 5 > /tmp/backup-bootstrap.out 2>&1
+		./setup 5 > /tmp/backup-bootstrap.out 2>&1
 		grep -q "Setting up daily backup" /tmp/backup-bootstrap.out
 		! grep -q "dotfile setup requires python3" /tmp/backup-bootstrap.out'
-	post_install_check='printf "1\n0\n" | ./setup.sh'
+	post_install_check='printf "1\n0\n" | ./setup'
 else
 	bootstrap_check=:
 	post_install_check=:

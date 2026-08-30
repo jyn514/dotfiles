@@ -58,14 +58,14 @@ class BootstrapLockTests(unittest.TestCase):
             self.assertEqual("old", destination.read_text())
 
     def test_setup_has_no_floating_plugin_clone_or_latest_release(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         self.assertNotIn("git clone https://github.com/tmux-plugins", setup)
         self.assertNotIn("git clone https://github.com/folke/lazy.nvim", setup)
         self.assertNotIn("releases/download/latest", setup)
         self.assertNotIn("fisher/main/functions/fisher.fish", setup)
 
     def test_mumps_syntax_is_local_configuration(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         manifest = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
 
         self.assertNotIn("mumps-syntax", manifest["downloads"])
@@ -73,7 +73,7 @@ class BootstrapLockTests(unittest.TestCase):
         self.assertNotIn("sed -i", setup)
 
     def test_setup_reads_plugin_revisions_from_the_lock(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("get git brew-command-not-found revision", setup)
         self.assertIn("get git fisher revision", setup)

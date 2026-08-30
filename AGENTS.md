@@ -2,16 +2,16 @@
 
 ## Project Structure & Module Organization
 
-This repository stores dotfiles and bootstrap scripts. User command links and small standalone commands live in `bin/`; self-contained executable subsystems, including their tests and documentation, live in `tools/<name>/`. Shared internal implementations remain in `libexec/`, repository-maintenance commands in `dev/`, and cross-cutting tests in `tests/<feature>/`. User configuration lives in `config/`, system files in `global/`, sourced support and static assets in `lib/`, vendored code in `vendor/`, and package manifests in `install/`. Setup entry points are `setup.sh`, `setup.ps1`, and `track.sh`.
+This repository stores dotfiles and bootstrap scripts. User command links and small standalone commands live in `bin/`; self-contained executable subsystems, including their tests and documentation, live in `tools/<name>/`. Shared internal implementations remain in `libexec/`, repository-maintenance commands in `dev/`, and cross-cutting tests in `tests/<feature>/`. User configuration lives in `config/`, system files in `global/`, sourced support and static assets in `lib/`, vendored code in `vendor/`, and package manifests in `install/`. Setup entry points are `setup`, `setup.ps1`, and `track`.
 
 ## Build, Test, and Development Commands
 
-- `./setup.sh`: installs or links tools and dotfiles for the current platform. Read the relevant function before using it on a new machine.
-- `./track.sh <existing file> [name]`: moves a user file into `config/` and adds its Dotbot mapping, or copies a system file into `global/` and records it in `install/global.txt`.
+- `./setup`: installs or links tools and dotfiles for the current platform. Read the relevant function before using it on a new machine.
+- `./track <existing file> [name]`: moves a user file into `config/` and adds its Dotbot mapping, or copies a system file into `global/` and records it in `install/global.txt`.
 - `python3 tools/open/tests/test_open.py`: runs unit tests for the editor/open wrapper behavior.
 - `python3 tests/wezterm/wezterm_test.py`: validates selector patterns in `config/wezterm.lua`.
 - `dev/test`: runs the test suite and repository checks.
-- `shellcheck setup.sh track.sh bin/* dev/* libexec/**/*.sh tools/**/*.sh`: checks shell scripts where applicable; some entries are not shell scripts.
+- `shellcheck setup track bin/* dev/* libexec/**/*.sh tools/**/*.sh`: checks shell scripts where applicable; some entries are not shell scripts.
 
 ## Coding Style & Naming Conventions
 

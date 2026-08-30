@@ -87,7 +87,7 @@ class InstallationTests(unittest.TestCase):
             [
                 "sh",
                 "-c",
-                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-global",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup'} install-global",
             ],
             cwd=ROOT,
             env=env,
@@ -147,7 +147,7 @@ class InstallationTests(unittest.TestCase):
             self.assertTrue(all("--yes" in command for command in package_commands))
 
     def test_system_package_manifest_has_unique_ownership(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         result = subprocess.run(
             ["bb", "-cp", "tools/package-plan/src", "-m", "package-plan", "validate"],
@@ -245,7 +245,7 @@ class LocalInstallationTests(unittest.TestCase):
             [
                 "sh",
                 "-c",
-                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-local",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup'} install-local",
             ],
             cwd=ROOT,
             env=env,
@@ -269,7 +269,7 @@ class LocalInstallationTests(unittest.TestCase):
             [
                 "sh",
                 "-c",
-                f"{env.get('SETUP_COMMAND_PREFIX') or './setup.sh'} install-local",
+                f"{env.get('SETUP_COMMAND_PREFIX') or './setup'} install-local",
             ],
             cwd=ROOT,
             env=env,
@@ -286,7 +286,7 @@ class LocalInstallationTests(unittest.TestCase):
         return commands
 
     def run_github_auth_helper(self, **overrides: str) -> subprocess.CompletedProcess[str]:
-        source = (ROOT / "setup.sh").read_text()
+        source = (ROOT / "setup").read_text()
         functions = source[: source.index("install_mise()")]
         env = os.environ.copy()
         env.pop("MISE_GITHUB_OAUTH_CLIENT_ID", None)
@@ -315,7 +315,7 @@ class LocalInstallationTests(unittest.TestCase):
     def run_github_auth_offer(
         self, answer: str, **overrides: str
     ) -> subprocess.CompletedProcess[str]:
-        source = (ROOT / "setup.sh").read_text()
+        source = (ROOT / "setup").read_text()
         functions = source[: source.index("install_mise()")]
         env = os.environ.copy()
         env.pop("MISE_GITHUB_OAUTH_CLIENT_ID", None)
@@ -486,7 +486,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertLess(auth_check, all_tools_install)
 
     def test_mise_install_uses_runtime_config_and_lockfile(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("MISE_SETUP_CONFIG=$PWD/config/mise.toml", setup)
         self.assertNotIn("MISE_SETUP_DIR", setup)
@@ -496,7 +496,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotIn("export GITHUB_TOKEN", setup)
 
     def test_github_auth_uses_native_mise_oauth_without_exporting_token(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("mise token github --oauth", setup)
         self.assertNotIn("gh auth login", setup)
@@ -550,7 +550,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIn("OAuth login failed", result.stderr)
 
     def test_alpine_setup_omits_node_and_npm_tools(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("if exists apk; then", setup)
         self.assertIn("MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm", setup)
@@ -558,7 +558,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotIn("MISE_SETUP_CONFIG.alpine", setup)
 
     def test_setup_delegates_cargo_tools_to_mise(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         with (ROOT / "config/mise.toml").open("rb") as config_file:
             config = tomllib.load(config_file)
 
@@ -566,7 +566,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
 
     def test_user_tools_no_longer_bootstrap_homebrew(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         setup_sudo = (ROOT / "libexec/setup/setup_sudo.sh").read_text()
 
         self.assertFalse((ROOT / "install/brew_packages.txt").exists())
@@ -575,7 +575,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertNotIn("clojure/brew-install", setup)
 
     def test_alpine_local_install_requires_rust_runtime_library(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("exists apk && ! [ -e /usr/lib/libgcc_s.so.1 ]", setup)
         self.assertIn("run setup option 7 or 9 first", setup)
@@ -586,7 +586,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertIn(":alpine [:bash :less :libgcc :shadow", policy)
 
     def test_direct_local_and_all_setups_allow_interactive_oauth(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("all|9|install-local|l*|6)", setup)
         self.assertIn('SETUP_NONINTERACTIVE:-', setup)
@@ -766,7 +766,7 @@ class MiseConfigTests(unittest.TestCase):
 
         alpine_only = {"cargo-audit", "difftastic"}
         self.assertEqual(set(), system_commands & mise_packages - alpine_only)
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
         self.assertIn("aqua:Wilfred/difftastic", setup)
         self.assertIn("github:rustsec/rustsec", setup)
 
@@ -856,6 +856,12 @@ class MiseConfigTests(unittest.TestCase):
             links["$HOME/.config/fish/conf.d/mise-activate.fish"],
         )
 
+    def test_fish_fzf_default_accept_key_executes_selection(self) -> None:
+        fish = (ROOT / "config/config.fish").read_text()
+
+        self.assertIn('if [ -z "$key" ]\n\t\tset key Enter\n\tend', fish)
+        self.assertIn("switch $key\n\t\tcase Enter", fish)
+
     def test_shell_startup_files_parse(self) -> None:
         checks = (
             ("bash", "-n", ROOT / "config/bashrc"),
@@ -874,7 +880,7 @@ class MiseConfigTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
 
     def test_setup_no_longer_installs_glide_imperatively(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertNotIn("glide-browser/glide/releases", setup)
 

@@ -17,7 +17,7 @@ class TrackTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory(dir=ROOT)
         self.fixture = Path(self.tempdir.name) / "repo"
         self.fixture.mkdir()
-        shutil.copy2(ROOT / "track.sh", self.fixture / "track.sh")
+        shutil.copy2(ROOT / "track", self.fixture / "track")
         for directory in ("bin", "config", "global", "install", "lib", "libexec", "libexec/setup"):
             (self.fixture / directory).mkdir()
         shutil.copy2(ROOT / "install.conf.json", self.fixture / "install.conf.json")
@@ -51,7 +51,7 @@ class TrackTests(unittest.TestCase):
             TRACK_SUDO_FAIL_FILE=str(self.sudo_fail),
         )
         return subprocess.run(
-            ["sh", str(self.fixture / "track.sh"), *arguments],
+            ["sh", str(self.fixture / "track"), *arguments],
             cwd=self.fixture,
             env=env,
             text=True,
