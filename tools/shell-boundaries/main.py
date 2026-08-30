@@ -64,7 +64,7 @@ def is_shell_file(path: Path) -> bool:
 
 
 def shell_files() -> list[Path]:
-    paths = [ROOT / "setup.sh", ROOT / "track.sh"]
+    paths = [ROOT / "setup", ROOT / "track"]
     for directory in SEARCH_ROOTS:
         paths.extend(path for path in (ROOT / directory).rglob("*") if path.is_file())
     return sorted({path for path in paths if is_shell_file(path)})

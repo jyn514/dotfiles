@@ -3,7 +3,7 @@
 Preview differences between the repository policy and the current user preferences:
 
 ```sh
-swift run --package-path tools/macos-preferences macos-preferences plan config/macos.json
+swift run --package-path tools/macos-preferences macos-preferences plan lib/macos-preferences.json
 ```
 
 Use `check` for a quiet drift check with exit status 1 when preferences differ. Use

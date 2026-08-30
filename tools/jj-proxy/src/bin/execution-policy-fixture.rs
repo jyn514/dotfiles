@@ -8,11 +8,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repo = root.join("repo");
     let git = repo.join(".git");
     let jj_repo = repo.join(".jj/repo");
+    let trusted = root.join("trusted");
+    let trusted_bin = trusted.join("bin");
+    let config = root.join("jj-config");
+    let socket = root.join("sandbox-proxy");
     fs::create_dir_all(&git)?;
     fs::create_dir_all(&jj_repo)?;
-    fs::create_dir_all("/trusted/bin")?;
-    fs::create_dir_all("/tmp/jj-config")?;
-    fs::create_dir_all("/run/sandbox-proxy")?;
+    fs::create_dir_all(&trusted_bin)?;
+    fs::create_dir_all(&config)?;
+    fs::create_dir_all(&socket)?;
 
     let working_file = repo.join("working-file");
     fs::write(&working_file, "old")?;
@@ -20,7 +24,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env::set_var("JJ_PROXY_GIT_DIR", &git);
     env::set_var("JJ_PROXY_COMMON_DIR", &git);
     env::set_var("JJ_PROXY_JJ_REPO", &jj_repo);
-    execution_policy::install(repo.to_str().ok_or("non-UTF-8 repository path")?)?;
+    execution_policy::install_with_paths(
+        repo.to_str().ok_or("non-UTF-8 repository path")?,
+        &execution_policy::PolicyPaths {
+            trusted: &trusted,
+            trusted_bin: &trusted_bin,
+            config: &config,
+            socket: &socket,
+        },
+    )?;
 
     match env::args().nth(1).as_deref() {
         Some("worktree") => {

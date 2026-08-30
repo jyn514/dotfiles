@@ -1,4 +1,5 @@
 use color_eyre::eyre::Result;
+use std::path::Path;
 
 #[cfg(target_os = "linux")]
 use color_eyre::eyre::{bail, WrapErr};
@@ -11,11 +12,32 @@ use landlock::{
     RulesetCreatedAttr, RulesetStatus,
 };
 
+pub struct PolicyPaths<'a> {
+    pub trusted: &'a Path,
+    pub trusted_bin: &'a Path,
+    pub config: &'a Path,
+    pub socket: &'a Path,
+}
+
 #[cfg(target_os = "linux")]
 pub fn install(repo: &str) -> Result<()> {
-    let trusted = PathFd::new("/trusted").wrap_err("cannot open trusted directory")?;
-    let trusted_bin =
-        PathFd::new("/trusted/bin").wrap_err("cannot open trusted executable directory")?;
+    install_with_paths(
+        repo,
+        &PolicyPaths {
+            trusted: Path::new("/trusted"),
+            trusted_bin: Path::new("/trusted/bin"),
+            config: Path::new("/tmp/jj-config"),
+            socket: Path::new("/run/sandbox-proxy"),
+        },
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
+    let trusted =
+        PathFd::new(paths.trusted).wrap_err("cannot open trusted directory")?;
+    let trusted_bin = PathFd::new(paths.trusted_bin)
+        .wrap_err("cannot open trusted executable directory")?;
     let repository = PathFd::new(repo).wrap_err("cannot open repository directory")?;
     let git_path = env::var("JJ_PROXY_GIT_DIR").wrap_err("Git directory is not configured")?;
     let common_path =
@@ -28,9 +50,10 @@ pub fn install(repo: &str) -> Result<()> {
         PathFd::new(format!("{repo}/.jj")).wrap_err("cannot open Jujutsu metadata directory")?;
     let jj_repo =
         PathFd::new(&jj_repo_path).wrap_err("cannot open Jujutsu repository directory")?;
-    let config = PathFd::new("/tmp/jj-config").wrap_err("cannot open secure config directory")?;
+    let config =
+        PathFd::new(paths.config).wrap_err("cannot open secure config directory")?;
     let socket =
-        PathFd::new("/run/sandbox-proxy").wrap_err("cannot open proxy socket directory")?;
+        PathFd::new(paths.socket).wrap_err("cannot open proxy socket directory")?;
     let system_config =
         PathFd::new("/etc").wrap_err("cannot open system configuration directory")?;
     let system_lib = PathFd::new("/lib").wrap_err("cannot open system library directory")?;
@@ -93,5 +116,10 @@ pub fn install(repo: &str) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn install(_repo: &str) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn install_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Result<()> {
     Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
 }

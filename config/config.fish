@@ -199,7 +199,7 @@ function fzf_action
 	end
 	[ $statuses[2] -eq 0 ]; or return $statuses[2]
 	if [ -z "$key" ]
-		set key enter
+		set key Enter
 	end
 	set -l escaped_selection (string escape -- $selection)
 	switch $key

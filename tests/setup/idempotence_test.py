@@ -38,7 +38,7 @@ class SetupIdempotenceTests(unittest.TestCase):
 
             results = [
                 subprocess.run(
-                    ["./setup.sh", "5"],
+                    ["./setup", "5"],
                     cwd=ROOT,
                     env=env,
                     text=True,
@@ -55,7 +55,7 @@ class SetupIdempotenceTests(unittest.TestCase):
             self.assertTrue(entries[0].endswith("/bin/backup"))
 
     def test_kde_keybinding_patch_accepts_an_already_applied_patch(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("patch --forward --silent", setup)
         self.assertIn("patch --reverse --dry-run --silent", setup)

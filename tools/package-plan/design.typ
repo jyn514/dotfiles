@@ -20,7 +20,7 @@ planner validates and expands it before mutation. Mise invokes apt, dnf, apk,
 and Homebrew with explicit package arguments; the typed Arch adapter invokes
 pacman.
 
-This design covers only behavior implemented by `setup.sh` today. It does not
+This design covers only behavior implemented by `setup` today. It does not
 define a general package-management framework.
 
 == Required behavior

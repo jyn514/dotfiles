@@ -24,7 +24,7 @@ setup_install_local() { record local; }
 setup_install_global() { record global; }
 setup_kde() { record kde; }
 """
-        source = (ROOT / "setup.sh").read_text()
+        source = (ROOT / "setup").read_text()
         marker = 'if ! [ $# = 0 ]; then\n'
         instrumented = source.replace(marker, overrides + marker, 1)
         expected = {
@@ -42,7 +42,7 @@ setup_kde() { record kde; }
 
         with tempfile.TemporaryDirectory(dir=ROOT) as temporary_directory:
             directory = Path(temporary_directory)
-            script = directory / "setup.sh"
+            script = directory / "setup"
             script.write_text(instrumented)
             (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
             (directory / "libexec").symlink_to(
@@ -90,7 +90,7 @@ setup_kde() { record kde; }
 
             results = [
                 subprocess.run(
-                    ["./setup.sh", "2"],
+                    ["./setup", "2"],
                     cwd=ROOT,
                     env=env,
                     text=True,
@@ -110,7 +110,7 @@ setup_kde() { record kde; }
             binary_directory = directory / "bin"
             binary_directory.mkdir()
             (binary_directory / "fish").symlink_to("/bin/true")
-            source = (ROOT / "setup.sh").read_text()
+            source = (ROOT / "setup").read_text()
             marker = "if ! [ $# = 0 ]; then\n"
             source = source.replace(
                 marker,
@@ -118,7 +118,7 @@ setup_kde() { record kde; }
                 + marker,
                 1,
             )
-            script = directory / "setup.sh"
+            script = directory / "setup"
             script.write_text(source)
             (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
             (directory / "libexec").symlink_to(
@@ -163,7 +163,7 @@ setup_kde() { record kde; }
             )
 
             result = subprocess.run(
-                ["./setup.sh", "2"],
+                ["./setup", "2"],
                 cwd=ROOT,
                 env=env,
                 text=True,
@@ -175,13 +175,13 @@ setup_kde() { record kde; }
         self.assertIn("Changing default shell to fish", result.stdout)
 
     def test_shell_setup_fails_when_no_supported_shell_exists(self) -> None:
-        source = (ROOT / "setup.sh").read_text()
+        source = (ROOT / "setup").read_text()
         marker = "if ! [ $# = 0 ]; then\n"
         source = source.replace(marker, "exists() { return 1; }\n" + marker, 1)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
-            script = directory / "setup.sh"
+            script = directory / "setup"
             script.write_text(source)
             (directory / "lib").symlink_to(ROOT / "lib", target_is_directory=True)
             (directory / "libexec").symlink_to(
@@ -201,7 +201,7 @@ setup_kde() { record kde; }
         self.assertIn("no supported shell found", result.stderr)
 
     def test_vim_and_backup_options_are_decoupled_from_basics(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertIn("vi*|4) setup_vim", setup)
         self.assertIn("bac*|5) setup_backup", setup)
@@ -209,7 +209,7 @@ setup_kde() { record kde; }
         self.assertNotIn("bac*|5) setup_basics", setup)
 
     def test_setup_restores_strict_mode_and_checks_cron_writes(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         profile_source = setup.index("\t. config/profile\n")
         self.assertGreater(setup.index("\tset -u\n", profile_source), profile_source)
@@ -217,7 +217,7 @@ setup_kde() { record kde; }
         self.assertGreaterEqual(setup.count("unset JJ_CONFIG_PATH"), 4)
 
     def test_menu_has_no_dead_routes_and_reports_full_numbered_range(self) -> None:
-        setup = (ROOT / "setup.sh").read_text()
+        setup = (ROOT / "setup").read_text()
 
         self.assertNotIn("setup_macos", setup)
         self.assertNotIn("macos|10", setup)
@@ -226,7 +226,7 @@ setup_kde() { record kde; }
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
-            (directory / "setup.sh").write_bytes((ROOT / "setup.sh").read_bytes())
+            (directory / "setup").write_bytes((ROOT / "setup").read_bytes())
             shell_library = directory / "lib" / "shell"
             shell_library.mkdir(parents=True)
             (shell_library / "lib.sh").write_text(
@@ -265,7 +265,7 @@ setup_kde() { record kde; }
             )
 
             result = subprocess.run(
-                ["sh", "setup.sh", "7"],
+                ["sh", "setup", "7"],
                 cwd=directory,
                 env=env,
                 text=True,
@@ -297,7 +297,7 @@ setup_kde() { record kde; }
                 PATH=f"{binary_directory}:{env['PATH']}",
             )
             result = subprocess.run(
-                ["./setup.sh"],
+                ["./setup"],
                 cwd=ROOT,
                 env=env,
                 input="3\nnot-a-choice\n0\n",

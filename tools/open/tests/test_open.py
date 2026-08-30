@@ -375,9 +375,10 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        with mock.patch.object(
-            module, "open_in_tmux_editor", return_value=0
-        ) as editor:
+        with (
+            mock.patch.object(module.sys, "platform", "darwin"),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as editor,
+        ):
             self.assertEqual(module.xdgopen([str(target)]), 0)
 
         editor.assert_called_once_with([self.real(target)])

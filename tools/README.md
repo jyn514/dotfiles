@@ -28,7 +28,7 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 
 ## Desktop and shell commands
 
-- [`macos-preferences`](macos-preferences/) checks, previews, and applies the semantic macOS preference policy in `config/macos.json`. `apply` writes only differing keys and refuses to proceed while an affected application is running.
+- [`macos-preferences`](macos-preferences/) checks, previews, and applies the semantic macOS preference policy in `lib/macos-preferences.json`. `apply` writes only differing keys and refuses to proceed while an affected application is running.
 - [`man-page`](man-page/) implements `open-man-page [SECTION] PAGE`, trying OpenBSD and Ubuntu web manpages before native fallback. Web results require network access and a graphical opener.
 - [`open`](open/) implements the basename-sensitive `open`, `hx-hax`, and `editor-hax` commands for desktop dispatch and editor integration, including managed [macOS file associations](open/macos-file-associations.md).
 - [`picker-actions`](picker-actions/) implements `picker-action copy|edit|open|search` for explicit or NUL-delimited selections. Actions may write the clipboard, inject tmux keys, launch an editor, or open a URL.

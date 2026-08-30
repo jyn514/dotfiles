@@ -9,4 +9,4 @@ swiftc -DTESTING -parse-as-library \
 	"$root/tools/macos-preferences/Sources/MacOSPreferences/MacOSPreferences.swift" \
 	"$root/tools/macos-preferences/tests/TestMain.swift" \
 	-o "$test_directory/tests"
-"$test_directory/tests" "$root/config/macos.json"
+"$test_directory/tests" "$root/lib/macos-preferences.json"
