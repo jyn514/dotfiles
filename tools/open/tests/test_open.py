@@ -488,15 +488,25 @@ class OpenScriptTest(unittest.TestCase):
 
         tmux_open.assert_called_once_with(["+normal!7G|", self.real(target)])
 
-    def test_trailing_colon_is_included_in_nvim_normal_command(self) -> None:
+    def test_trailing_diagnostic_colon_is_not_treated_as_a_column(self) -> None:
         target = self.root / "note.txt"
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
         self.assertEqual(
             module.editor_exec_args(module.join_line(module.split_line(f"{target}:6:"))),
-            ["+normal!6G:|", self.real(target)],
+            ["+normal!6G|", self.real(target)],
         )
+
+    def test_colon_without_line_number_remains_part_of_filename(self) -> None:
+        module = self.load_open_module()
+
+        self.assertEqual(module.split_line("missing:"), ["missing:"])
+
+    def test_zero_line_number_remains_part_of_filename(self) -> None:
+        module = self.load_open_module()
+
+        self.assertEqual(module.split_line("missing:0"), ["missing:0"])
 
     def test_editor_hax_without_line_execs_editor_with_file_only(self) -> None:
         target = self.root / "note.txt"
