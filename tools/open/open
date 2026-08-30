@@ -16,6 +16,11 @@ EDITOR = os.environ.get("REAL_EDITOR") or "nvim"
 EDITOR_BASENAME = Path(EDITOR).name
 DESKTOP = "Helix" if EDITOR_BASENAME == "hx" else EDITOR_BASENAME
 LINE_RE = re.compile(r"^(.+?):([1-9][0-9]*)(?::([1-9][0-9]*))?:?$")
+PAREN_POSITION_RE = re.compile(
+    r"^(.+?)\(([1-9][0-9]*)(?:,([1-9][0-9]*))?\):?$"
+)
+TRACEBACK_RE = re.compile(r'''^File ["'](.+?)["'], line ([1-9][0-9]*)''')
+LINE_WORD_RE = re.compile(r"^(.+?) line ([1-9][0-9]*):?$")
 
 
 def cmdexists(command: str) -> bool:
@@ -75,12 +80,38 @@ def split_line(value: str) -> list[str]:
     return [part for part in parts if part is not None]
 
 
-def split_editor_pathspec(value: str) -> list[str]:
-    if value.endswith(".") and not Path(expand_tilde(value)).exists():
-        undotted = split_line(value[:-1])
+def split_pathspec(value: str) -> list[str]:
+    expanded = expand_tilde(value)
+    if Path(expanded).exists():
+        return [canonicalize(expanded)]
+
+    candidate = value.strip()
+    traceback = TRACEBACK_RE.match(candidate)
+    if traceback:
+        file, line = traceback.groups()
+        return split_line(f"{file}:{line}")
+
+    candidate = candidate.strip("\"'`")
+
+    parenthesized = PAREN_POSITION_RE.match(candidate)
+    if parenthesized is None and candidate.startswith("(") and candidate.endswith(")"):
+        candidate = candidate[1:-1]
+        parenthesized = PAREN_POSITION_RE.match(candidate)
+    if parenthesized:
+        file, line, column = parenthesized.groups()
+        suffix = f":{column}" if column is not None else ""
+        return split_line(f"{file}:{line}{suffix}")
+
+    line_word = LINE_WORD_RE.match(candidate)
+    if line_word:
+        file, line = line_word.groups()
+        return split_line(f"{file}:{line}")
+
+    if candidate.endswith("."):
+        undotted = split_line(candidate[:-1])
         if Path(undotted[0]).is_file():
             return undotted
-    return split_line(value)
+    return split_line(candidate)
 
 
 def join_line(parts: list[str]) -> list[str] | str:
@@ -286,8 +317,8 @@ def default_is_editor(default: str) -> bool:
 def xdgopen(argv: list[str]) -> int:
     target = expand_tilde(argv[-1])
 
-    if not re.search(r"^[a-zA-Z]+://", target) and re.search(r":[0-9]+$", target):
-        split = split_line(target)
+    if not re.search(r"^[a-zA-Z]+://", target):
+        split = split_pathspec(target)
         if len(split) < 2:
             return os_open([*map(expand_tilde, argv[:-1]), split[0]])
         file = split[0]
@@ -312,7 +343,7 @@ def main(argv: list[str]) -> int:
             return 2
         os.execvp(
             EDITOR,
-            [EDITOR, *editor_exec_args(join_line(split_editor_pathspec(argv[0])))],
+            [EDITOR, *editor_exec_args(join_line(split_pathspec(argv[0])))],
         )
         return 0
 
@@ -320,7 +351,7 @@ def main(argv: list[str]) -> int:
         if len(argv) > 1:
             return 2
         if argv:
-            joined = join_line(split_line(argv[0]))
+            joined = join_line(split_pathspec(argv[0]))
             return open_in_tmux_editor(flatten_editor_args(joined))
         else:
             return open_in_tmux_editor([""])

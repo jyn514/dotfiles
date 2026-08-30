@@ -449,6 +449,32 @@ class OpenScriptTest(unittest.TestCase):
 
         tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
 
+    def test_tmux_selection_whitespace_is_removed_before_opening(self) -> None:
+        target = self.root / "note.txt"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module, "default_app", return_value="nvim.desktop"),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
+        ):
+            self.assertEqual(module.xdgopen([f" {target}:7:3"]), 0)
+
+        tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
+
+    def test_parenthesized_diagnostic_position_is_opened_in_editor(self) -> None:
+        target = self.root / "note.ts"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        with (
+            mock.patch.object(module, "default_app", return_value="nvim.desktop"),
+            mock.patch.object(module, "open_in_tmux_editor", return_value=0) as tmux_open,
+        ):
+            self.assertEqual(module.xdgopen([f"{target}(7,3)"]), 0)
+
+        tmux_open.assert_called_once_with(["+normal!7G3|", self.real(target)])
+
     def test_editor_default_matches_bare_editor_name(self) -> None:
         target = self.root / "note.txt"
         target.write_text("tea\n", encoding="utf-8")
@@ -524,7 +550,7 @@ class OpenScriptTest(unittest.TestCase):
         module = self.load_open_module()
 
         self.assertEqual(
-            module.split_editor_pathspec(f"{target}:417."),
+            module.split_pathspec(f"{target}:417."),
             [self.real(target), "417"],
         )
 
@@ -533,13 +559,60 @@ class OpenScriptTest(unittest.TestCase):
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
 
-        self.assertEqual(module.split_editor_pathspec(str(target)), [self.real(target)])
+        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
 
     def test_editor_hax_preserves_dot_when_undotted_file_is_missing(self) -> None:
         target = self.root / "missing.txt:417."
         module = self.load_open_module()
 
-        self.assertEqual(module.split_editor_pathspec(str(target)), [self.real(target)])
+        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
+
+    def test_pathspec_removes_tmux_context_whitespace(self) -> None:
+        target = self.root / "note.txt"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(
+            module.split_pathspec(f" {target}:12:3"),
+            [self.real(target), "12", "3"],
+        )
+
+    def test_pathspec_translates_parenthesized_position(self) -> None:
+        target = self.root / "note.ts"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(
+            module.split_pathspec(f"({target}(12,3))"),
+            [self.real(target), "12", "3"],
+        )
+
+    def test_pathspec_translates_python_traceback_location(self) -> None:
+        target = self.root / "note.py"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(
+            module.split_pathspec(f'File "{target}", line 12, in main'),
+            [self.real(target), "12"],
+        )
+
+    def test_pathspec_translates_line_word_location(self) -> None:
+        target = self.root / "script.sh"
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(
+            module.split_pathspec(f"{target} line 12:"),
+            [self.real(target), "12"],
+        )
+
+    def test_existing_path_wins_over_diagnostic_normalization(self) -> None:
+        target = self.root / " note.txt "
+        target.write_text("tea\n", encoding="utf-8")
+        module = self.load_open_module()
+
+        self.assertEqual(module.split_pathspec(str(target)), [self.real(target)])
 
     def test_editor_hax_without_args_execs_editor(self) -> None:
         module = self.load_open_module()
