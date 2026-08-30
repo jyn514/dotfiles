@@ -23,6 +23,9 @@ declare global {
 		dotfiles_algorithms: {
 			repository_from_url(current_url: string): { url: URL; repo: string };
 			hint_labels(elements: Array<{ textContent: string | null; ariaLabel: string | null }>): string[];
+			hint_labels_from_content(content: {
+				map<T>(callback: (element: { textContent: string | null; ariaLabel: string | null }) => T): Promise<T[]>;
+			}): Promise<string[]>;
 		};
 	}
 }
@@ -142,7 +145,7 @@ glide.keymaps.set("normal", "<A-w>", async() => {
 });
 
 glide.include("glide-algorithms.ts").then(() => {
-	const { repository_from_url, hint_labels } = glide.g.dotfiles_algorithms;
+	const { repository_from_url, hint_labels_from_content } = glide.g.dotfiles_algorithms;
 
 	// clone repo
 	glide.keymaps.set("normal", "gC", async () => {
@@ -152,7 +155,7 @@ glide.include("glide-algorithms.ts").then(() => {
 		await glide.process.execute("hx-hax", [repo_path]);
 	}, { description: "open the GitHub repo in the focused tab in Neovim" });
 
-	glide.o.hint_label_generator = async ({ content }) => hint_labels(await content);
+	glide.o.hint_label_generator = ({ content }) => hint_labels_from_content(content);
 });
 
 // text editing works like linux

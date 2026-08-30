@@ -1252,6 +1252,30 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["s"], json.loads(result.stdout))
 
+        content_script = (
+            "globalThis.glide = {g: {}};\n"
+            + f'await import("{algorithms}");\n'
+            + "const {hint_labels_from_content} = glide.g.dotfiles_algorithms;\n"
+            + "const content = {async map(callback) {\n"
+            + "  return [{textContent: 'Settings', ariaLabel: null}].map(callback);\n"
+            + "}};\n"
+            + "process.stdout.write(JSON.stringify(await hint_labels_from_content(content)));"
+        )
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", content_script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["s"], json.loads(result.stdout))
+
+        glide_config = (ROOT / "config/glide.ts").read_text()
+        self.assertIn(
+            "glide.o.hint_label_generator = ({ content }) => hint_labels_from_content(content);",
+            glide_config,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
