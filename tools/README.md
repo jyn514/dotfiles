@@ -4,7 +4,7 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 
 ## Agent infrastructure
 
-- [`agent-permissions`](agent-permissions/) defines agent command policy and renders Codex rules or Claude settings: `render.clj codex POLICY` or `render.clj claude POLICY BASE-SETTINGS`. Policy changes alter agent authority.
+- [`agent-permissions`](agent-permissions/) defines agent command policy, renders Codex rules or Claude settings, and audits Claude command history against generated Bash permissions. Policy changes alter agent authority.
 - [`agent-podman`](agent-podman/) manages a disposable, network-restricted Podman Machine for macOS agent workloads. See the [operator README](agent-podman/README.md) and [CI design](agent-podman/ci-design.typ).
 - [`agent-split`](agent-split/) performs deterministic, patch-level `jj split` operations with `bb agent-split`. It rewrites history; start with the [operator guide](agent-split/README.md), then consult the [design and safety contract](agent-split/design.typ).
 - [`codex-archive-old`](codex-archive-old/) implements `codex-archive-old [--days N] [--apply]`, listing or archiving stale interactive Codex sessions through the app-server protocol.
