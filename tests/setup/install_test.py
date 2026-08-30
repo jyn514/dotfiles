@@ -359,6 +359,9 @@ class LocalInstallationTests(unittest.TestCase):
             any("fisher install jorgebucaran/fisher" in script for script in fish_scripts)
         )
         self.assertTrue(
+            any("fisher install jorgebucaran/nvm.fish" in script for script in fish_scripts)
+        )
+        self.assertTrue(
             any("fisher install icezyclon/zoxide.fish" in script for script in fish_scripts)
         )
         self.assertFalse((ROOT / "install/fish.txt").exists())

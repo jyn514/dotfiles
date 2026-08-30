@@ -73,6 +73,13 @@
       "url": "https://github.com/folke/lazy.nvim.git",
       "version": "v11.17.5"
     },
+    "nvm.fish": {
+      "revision": "85cadd56f71b11574566dbd6c32e0027e361d085",
+      "update": {
+        "type": "git-head"
+      },
+      "url": "https://github.com/jorgebucaran/nvm.fish.git"
+    },
     "tpm": {
       "revision": "e261deb1b47614eed3400089ce7197dc68acc4eb",
       "update": {

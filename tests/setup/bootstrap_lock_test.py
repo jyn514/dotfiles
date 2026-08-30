@@ -77,6 +77,7 @@ class BootstrapLockTests(unittest.TestCase):
 
         self.assertIn("get git brew-command-not-found revision", setup)
         self.assertIn("get git fisher revision", setup)
+        self.assertIn("get git nvm.fish revision", setup)
         self.assertIn("get git zoxide.fish revision", setup)
         self.assertNotIn("791da644d33d392216f6b1a9b5fc1e470db6d7f2", setup)
 

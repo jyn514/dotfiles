@@ -390,9 +390,11 @@ setup_install_local () {
 			return "$result"
 		}
 		rm -f "$fisher_installer"
+		nvm_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git nvm.fish revision) || return
+		fish -c 'fisher install jorgebucaran/nvm.fish@$argv[1]' "$nvm_revision" || return
 		zoxide_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git zoxide.fish revision) || return
 		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision" || return
-		unset fisher_installer fisher_revision zoxide_revision
+		unset fisher_installer fisher_revision nvm_revision zoxide_revision
 	fi
 	# On MacOS, XCode does weird shenanigans and looks at the command name >:(
 	cmd_alias python python3 || return
