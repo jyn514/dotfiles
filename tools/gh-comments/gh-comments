@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Export a GitHub issue and its comments as JSON and terminal-formatted text."""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+import errno
+import os
+from pathlib import Path
+import pty
+import re
+import shlex
+import signal
+import subprocess
+import sys
+import termios
+from typing import BinaryIO
+from typing import Callable
+from typing import Iterator
+
+
+ISSUE_URL = re.compile(
+    r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+$"
+)
+JSON_FIELDS = "title,createdAt,number,body,state,comments"
+
+
+class SignalExit(Exception):
+    def __init__(self, status: int):
+        self.status = status
+
+
+@contextmanager
+def cleanup_signals() -> Iterator[None]:
+    signals = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    previous = {number: signal.getsignal(number) for number in signals}
+
+    def interrupt(number: int, _frame: object) -> None:
+        raise SignalExit(128 + number)
+
+    try:
+        for number in signals:
+            signal.signal(number, interrupt)
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def diagnostic(message: str) -> None:
+    print(f"gh-comments: {message}", file=sys.stderr)
+
+
+def parse_issue(arguments: list[str]) -> tuple[str, str] | None:
+    if not 1 <= len(arguments) <= 2:
+        diagnostic("usage: gh-comments <<repo> <issue>|<url>>")
+        return None
+    if len(arguments) == 2:
+        url = f"https://github.com/{arguments[0]}/issues/{arguments[1]}"
+        issue = arguments[1]
+    else:
+        value = arguments[0]
+        if value.startswith("github.com/"):
+            url = "https://" + value
+        elif value.startswith("https://github.com/"):
+            url = value
+        else:
+            diagnostic("error: <url> must start with github.com/")
+            return None
+        issue_url = re.split(r"[?#]", url, maxsplit=1)[0]
+        issue = issue_url.rsplit("/", 1)[-1]
+
+    if not issue.isascii() or not issue.isdecimal():
+        diagnostic("error: <issue> must be a number")
+        return None
+    url = re.split(r"[?#]", url, maxsplit=1)[0]
+    if ISSUE_URL.fullmatch(url) is None:
+        diagnostic("error: URL is not a GitHub issue")
+        return None
+    return url, issue
+
+
+def spawn_error(program: str, error: OSError) -> int:
+    diagnostic(f"could not execute {program!r}: {error}")
+    return 127 if isinstance(error, FileNotFoundError) else 126
+
+
+def capture_terminal(arguments: list[str], output: BinaryIO) -> int:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    master, slave = pty.openpty()
+    child: subprocess.Popen[bytes] | None = None
+    try:
+        attributes = termios.tcgetattr(slave)
+        attributes[1] &= ~termios.ONLCR
+        termios.tcsetattr(slave, termios.TCSANOW, attributes)
+        try:
+            child = subprocess.Popen(
+                arguments,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                close_fds=True,
+            )
+        except OSError as error:
+            return spawn_error(arguments[0], error)
+        finally:
+            os.close(slave)
+
+        while True:
+            try:
+                chunk = os.read(master, 1024 * 1024)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            output.write(chunk)
+        return exit_status(child.wait())
+    finally:
+        os.close(master)
+        if child is not None and child.poll() is None:
+            child.terminate()
+            child.wait()
+
+
+def produce_exports(url: str, json_path: Path, text_path: Path) -> tuple[int, int]:
+    json_arguments = [
+        "gh",
+        "issue",
+        "view",
+        "-c",
+        url,
+        "--json",
+        JSON_FIELDS,
+    ]
+    text_arguments = ["gh", "issue", "view", "-c", url]
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(json_arguments), file=sys.stderr)
+
+    with json_path.open("wb") as json_output, text_path.open("wb") as text_output:
+        try:
+            json_process = subprocess.Popen(json_arguments, stdout=json_output)
+        except OSError as error:
+            return spawn_error("gh", error), 0
+        try:
+            try:
+                text_status = capture_terminal(text_arguments, text_output)
+            except OSError as error:
+                diagnostic(f"could not capture terminal output: {error}")
+                text_status = 1
+            json_status = exit_status(json_process.wait())
+        finally:
+            if json_process.poll() is None:
+                json_process.terminate()
+                json_process.wait()
+    return json_status, text_status
+
+
+def normalize_terminal(path: Path) -> None:
+    content = path.read_bytes()
+    normalized = re.sub(rb"^.*\r(.)", rb"\1", content, flags=re.MULTILINE)
+    path.write_bytes(normalized)
+
+
+def publish(pending: list[Path], destinations: list[Path]) -> None:
+    installed: list[tuple[Path, Path]] = []
+    try:
+        for source, destination in zip(pending, destinations):
+            source.replace(destination)
+            installed.append((destination, source))
+    except OSError:
+        for destination, source in reversed(installed):
+            destination.replace(source)
+        raise
+
+
+def run(arguments: list[str]) -> int:
+    try:
+        completed = subprocess.run(arguments, check=False)
+    except OSError as error:
+        return spawn_error(arguments[0], error)
+    return exit_status(completed.returncode)
+
+
+def export_issue(
+    arguments: list[str],
+    *,
+    producer: Callable[[str, Path, Path], tuple[int, int]] = produce_exports,
+    runner: Callable[[list[str]], int] = run,
+    directory: Path | None = None,
+) -> int:
+    parsed = parse_issue(arguments)
+    if parsed is None:
+        return 1
+    url, issue = parsed
+    output_directory = directory if directory is not None else Path.cwd()
+    destinations = [
+        output_directory / f"{issue}.json",
+        output_directory / f"{issue}.txt",
+    ]
+    if any(os.path.lexists(path) for path in destinations):
+        diagnostic(f"error: {issue}.json/txt already exists")
+        return 1
+
+    pending = [
+        output_directory / f".{issue}.json.{os.getpid()}",
+        output_directory / f".{issue}.txt.{os.getpid()}",
+    ]
+    if any(os.path.lexists(path) for path in pending):
+        diagnostic("error: pending export path already exists")
+        return 1
+    try:
+        json_status, text_status = producer(url, pending[0], pending[1])
+        if text_status:
+            return text_status
+        if json_status:
+            return json_status
+        normalize_terminal(pending[1])
+        publish(pending, destinations)
+    except OSError as error:
+        diagnostic(f"could not export issue: {error}")
+        return 1
+    finally:
+        for path in pending:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as error:
+                diagnostic(f"could not remove pending export {path}: {error}")
+
+    less_status = runner(["less", str(destinations[1])])
+    if less_status:
+        return less_status
+    print(f"saved {issue}.txt and {issue}.json")
+    return 0
+
+
+def main(arguments: list[str]) -> int:
+    try:
+        with cleanup_signals():
+            return export_issue(arguments)
+    except SignalExit as error:
+        return error.status
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

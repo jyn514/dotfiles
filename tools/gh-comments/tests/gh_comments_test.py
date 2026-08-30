@@ -8,8 +8,8 @@ import unittest
 from unittest import mock
 
 
-ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT / "bin/gh-comments"
+ROOT = Path(__file__).resolve().parents[3]
+MODULE_PATH = ROOT / "tools/gh-comments/gh-comments"
 LOADER = importlib.machinery.SourceFileLoader("gh_comments_command", str(MODULE_PATH))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 assert SPEC
