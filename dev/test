@@ -87,7 +87,7 @@ fi
 
 python3 -m json.tool install.conf.json >/dev/null
 python3 -m json.tool lib/mimetypes.json >/dev/null
-python3 -m json.tool lib/moonlander-layout.json >/dev/null
+python3 -m json.tool tools/moonlander/moonlander-layout.json >/dev/null
 python3 tools/shell-data/main.py lib/abbr.txt
 python3 tools/shell-boundaries/main.py
 python3 -c 'import tomllib; tomllib.load(open("config/mise.toml", "rb")); tomllib.load(open("config/mise.lock", "rb"))'
