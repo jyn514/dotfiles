@@ -115,6 +115,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.docker_log = self.root / "docker.log"
         self.python_log = self.root / "python.log"
         self.codex_log = self.root / "codex.log"
+        self.jj_log = self.root / "jj.log"
 
         write_executable(self.fake_bin / "codex", """
             #!/bin/sh
@@ -122,7 +123,17 @@ class CodexSandboxTest(unittest.TestCase):
         """)
         write_executable(self.fake_bin / "jj", """
             #!/bin/sh
-            [ "$1" = workspace ] && [ "$2" = root ] || exit 2
+            {
+                printf 'CALL'
+                for argument do printf '\t%s' "$argument"; done
+                printf '\n'
+            } >> "$FAKE_JJ_LOG"
+            if [ "$1 $2" = "git init" ]; then
+                mkdir -p "$FAKE_REPOSITORY/.git" "$FAKE_REPOSITORY/.jj/repo"
+                exit
+            fi
+            [ "$1 $2" = "workspace root" ] || exit 2
+            [ -d "$FAKE_REPOSITORY/.jj" ] || exit 1
             printf '%s\n' "$FAKE_REPOSITORY"
         """)
         write_executable(self.fake_bin / "git", """
@@ -251,6 +262,7 @@ class CodexSandboxTest(unittest.TestCase):
             "FAKE_DOCKER_LOG": str(self.docker_log),
             "FAKE_PYTHON_LOG": str(self.python_log),
             "FAKE_CODEX_LOG": str(self.codex_log),
+            "FAKE_JJ_LOG": str(self.jj_log),
             "AGENT_PODMAN_ACCESS_DIR": str(self.root / "no-agent-podman"),
             "FAKE_NETWORK_EXISTS": "1",
             "FAKE_UNAME": "Linux",
@@ -322,6 +334,20 @@ class CodexSandboxTest(unittest.TestCase):
             )
             for item in self.final_run()
         ))
+
+    def test_launch_initializes_a_missing_jj_repository(self) -> None:
+        shutil.rmtree(self.repo / ".jj")
+        shutil.rmtree(self.repo / ".git")
+
+        result = self.run_launcher()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            [["workspace", "root"], ["git", "init"], ["workspace", "root"]],
+            read_calls(self.jj_log),
+        )
+        self.assertTrue((self.repo / ".jj" / "repo").is_dir())
+        self.assertTrue((self.repo / ".git").is_dir())
 
     def test_bare_launch_gets_a_resumable_session_id(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

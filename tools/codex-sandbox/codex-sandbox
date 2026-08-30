@@ -248,8 +248,12 @@ def unregister_tmux_pane(state: State) -> None:
 def validate_repository(state: State) -> None:
     try:
         result = run(["jj", "workspace", "root"], capture=True)
-    except subprocess.CalledProcessError as error:
-        raise LauncherError("The current directory is not in a Jujutsu workspace") from error
+    except subprocess.CalledProcessError:
+        try:
+            run(["jj", "git", "init"])
+            result = run(["jj", "workspace", "root"], capture=True)
+        except subprocess.CalledProcessError as error:
+            raise LauncherError("The current directory could not be initialized as a Jujutsu workspace") from error
     repository = Path(result.stdout.strip()).resolve(strict=True)
     jj = repository / ".jj"
     git = repository / ".git"
