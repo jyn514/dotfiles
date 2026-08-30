@@ -31,8 +31,8 @@ import patch_keymap
 ROOT = Path(__file__).resolve().parents[2]
 TOOL_DIR = Path(__file__).resolve().parent
 
-SNAPSHOT = ROOT / "lib/moonlander-layout.json"
-ADDITIONS = ROOT / "lib/keymap-additions.c"
+SNAPSHOT = TOOL_DIR / "moonlander-layout.json"
+ADDITIONS = TOOL_DIR / "keymap-additions.c"
 KEYBOARD = "zsa/moonlander/reva"
 QMK_BRANCH = "firmware25"
 

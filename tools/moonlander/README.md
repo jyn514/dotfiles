@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Synchronize the repository-owned [ZSA Oryx](https://www.zsa.io/oryx) layout in `lib/moonlander-layout.json`, then build and flash its patched [QMK](https://docs.qmk.fm/) firmware.
+Synchronize the repository-owned [ZSA Oryx](https://www.zsa.io/oryx) layout in `tools/moonlander/moonlander-layout.json`, then build and flash its patched [QMK](https://docs.qmk.fm/) firmware.
 
 ## Prerequisites and setup
 
@@ -50,7 +50,7 @@ tools/moonlander/flash-moonlander
 V=1 COMPILE_ONLY=1 tools/moonlander/flash-moonlander
 ```
 
-On first use, the command creates a ZSA QMK checkout on branch `firmware25`. It caches the Oryx source archive under `~/.local/share/oryx/`, patches it with `lib/keymap-additions.c`, and replaces the matching keymap under `$QMK_HOME/keyboards/zsa/moonlander/keymaps/`. The initial pull still changes `lib/moonlander-layout.json`.
+On first use, the command creates a ZSA QMK checkout on branch `firmware25`. It caches the Oryx source archive under `~/.local/share/oryx/`, patches it with `tools/moonlander/keymap-additions.c`, and replaces the matching keymap under `$QMK_HOME/keyboards/zsa/moonlander/keymaps/`. The initial pull still changes `tools/moonlander/moonlander-layout.json`.
 
 Flashing replaces the keyboard firmware. Use `COMPILE_ONLY=1` whenever hardware changes are not intended.
 
@@ -66,7 +66,7 @@ Flashing replaces the keyboard firmware. Use `COMPILE_ONLY=1` whenever hardware 
 
 ```sh
 python3 -m unittest discover -s tools/moonlander/tests -p '*_test.py'
-python3 -m json.tool lib/moonlander-layout.json >/dev/null
+python3 -m json.tool tools/moonlander/moonlander-layout.json >/dev/null
 ```
 
 ## Design and reference

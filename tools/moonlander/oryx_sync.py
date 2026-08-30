@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 ENDPOINT = "https://oryx.zsa.io/graphql"
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SNAPSHOT = ROOT / "lib" / "moonlander-layout.json"
+DEFAULT_SNAPSHOT = Path(__file__).resolve().parent / "moonlander-layout.json"
 KEY_FIELDS = (
     "glowColor",
     "lockGlowColor",
