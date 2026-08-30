@@ -311,6 +311,50 @@ class CodexSandboxTest(unittest.TestCase):
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
+    def test_loads_repository_and_home_sandbox_instructions(self) -> None:
+        repository_sandbox = self.repo / ".agents" / "sandbox"
+        repository_sandbox.mkdir(parents=True)
+        (repository_sandbox / "AGENTS.md").write_text(
+            "@repository-rule.md\n", encoding="utf-8",
+        )
+        (repository_sandbox / "repository-rule.md").write_text(
+            "repository rule\n", encoding="utf-8",
+        )
+        home_sandbox = self.home / ".agents" / "sandbox"
+        home_sandbox.mkdir()
+        (home_sandbox / "AGENTS.md").write_text(
+            "@home-rule.md\n", encoding="utf-8",
+        )
+        (home_sandbox / "home-rule.md").write_text(
+            "home rule\n", encoding="utf-8",
+        )
+
+        launcher = runpy.run_path(str(LAUNCHER))
+        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        try:
+            launcher["stage_skills"](state)
+            agents = (state.skills_tmp / "config/pi-AGENTS.md").read_text(encoding="utf-8")
+            self.assertEqual(
+                "@breq.md\n"
+                "@/src/work/.agents/sandbox/AGENTS.md\n"
+                "@../../.agents/sandbox/AGENTS.md\n",
+                agents,
+            )
+            self.assertEqual(
+                "home rule\n",
+                (state.skills_tmp / "sandbox/home-rule.md").read_text(encoding="utf-8"),
+            )
+        finally:
+            if state.skills_tmp is not None:
+                shutil.rmtree(state.skills_tmp)
+
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(any(
+            item.endswith("dst=/home/codex/.agents/sandbox,readonly")
+            for item in self.final_run()
+        ))
+
     def test_mounts_subagent_configuration_from_staged_dotfiles(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
