@@ -70,6 +70,7 @@ bb tools/extract-chat/tests/extract_chat_test.clj
 bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
 bb -cp tools/package-plan/src tools/package-plan/tests/run.clj
 node tools/extract-chat-share/tests/extract_chat_share_test.js
+node tools/codex-archive-old/tests/codex_archive_old_test.js
 if [ "$(uname -s)" = Linux ]; then
 	cargo test --manifest-path tools/jj-proxy/Cargo.toml
 else
