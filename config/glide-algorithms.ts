@@ -3,6 +3,9 @@ declare global {
 		dotfiles_algorithms: {
 			repository_from_url(current_url: string): { url: URL; repo: string };
 			hint_labels(elements: Array<{ textContent: string | null; ariaLabel: string | null }>): string[];
+			hint_labels_from_content(content: {
+				map<T>(callback: (element: { textContent: string | null; ariaLabel: string | null }) => T): Promise<T[]>;
+			}): Promise<string[]>;
 		};
 	}
 }
@@ -84,4 +87,14 @@ function hint_labels(elements: Array<{ textContent: string | null; ariaLabel: st
 	return labels(texts);
 }
 
-glide.g.dotfiles_algorithms = { repository_from_url, hint_labels };
+async function hint_labels_from_content(content: {
+	map<T>(callback: (element: { textContent: string | null; ariaLabel: string | null }) => T): Promise<T[]>;
+}) {
+	const elements = await content.map(element => ({
+		textContent: element.textContent,
+		ariaLabel: element.ariaLabel,
+	}));
+	return hint_labels(elements);
+}
+
+glide.g.dotfiles_algorithms = { repository_from_url, hint_labels, hint_labels_from_content };
