@@ -1141,39 +1141,30 @@ vim.api.nvim_create_autocmd("LspAttach", {
 
 ---- specific LSPs ----
 
-local lsplang = require('lspconfig.configs')
+vim.lsp.config('rhombus', {
+	cmd = { "racket", "-l", "racket-langserver" },
+	filetypes = { "rhombus" },
+	root_dir = function(buf, on_dir)
+		on_dir(vim.fs.dirname(vim.api.nvim_buf_get_name(buf)))
+	end,
+	settings = {},
+})
 
-lsplang.rhombus = {
-	default_config = {
-		cmd = { "racket", "-l", "racket-langserver" },
-		filetypes = { "rhombus" },
-		root_dir = vim.fs.dirname,
-		settings = {},
-	},
-}
-
-lsplang.flix = {
-	default_config = {
-		cmd = { "flix", "lsp" },
-		filetypes = { "flix" },
-		root_dir = function(fname)
-			-- Search for flix.toml/flix.jar upwards recursively, with a fallback to the current directory
-			local marker = vim.fs.find({ "flix.toml", "flix.jar" }, { path = fname, upward = true })[1]
-			return marker and vim.fs.dirname(marker) or vim.fs.dirname(fname)
-		end,
-		settings = {},
-		on_attach = function(client, _)
-			client.commands["flix.runMain"] = function(_, _)
-				vim.cmd("terminal flix run")
-			end
-		end,
-	},
-}
--- not through vim.lsp because i don't know yet how to configure the default config
-if first_run then
-	lsplang.rhombus.setup {}
-	lsplang.flix.setup {}
-end
+vim.lsp.config('flix', {
+	cmd = { "flix", "lsp" },
+	filetypes = { "flix" },
+	root_dir = function(buf, on_dir)
+		local filename = vim.api.nvim_buf_get_name(buf)
+		local marker = vim.fs.find({ "flix.toml", "flix.jar" }, { path = filename, upward = true })[1]
+		on_dir(marker and vim.fs.dirname(marker) or vim.fs.dirname(filename))
+	end,
+	settings = {},
+	on_attach = function(client, _)
+		client.commands["flix.runMain"] = function(_, _)
+			vim.cmd("terminal flix run")
+		end
+	end,
+})
 
 vim.lsp.config('powershell_es', {
 	bundle_path = vim.fn.expand('~/.local/lib/PowerShellEditorServices'),
@@ -1204,7 +1195,7 @@ vim.lsp.config('tinymist', {
 
 local enabled_lsps = {
 	'clangd', 'rust_analyzer', 'lua_ls', 'jsonls', 'bashls', 'pylsp', 'ts_ls', 'gopls',
-	'clojure_lsp', 'cssls', 'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'tinymist',
+	'clojure_lsp', 'cssls', 'flix', 'markdown_oxide', 'oxlint', 'perlnavigator', 'powershell_es', 'rhombus', 'tinymist',
 }
 for _, lsp in ipairs(enabled_lsps) do
 	if not first_run then vim.lsp.enable(lsp, false) end

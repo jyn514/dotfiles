@@ -97,7 +97,15 @@ end
 """
         )
 
-
+    def test_custom_lsps_use_native_neovim_registry(self) -> None:
+        self.run_nvim(
+            """
+assert(vim.lsp.config.flix.cmd[1] == 'flix')
+assert(vim.lsp.config.rhombus.cmd[1] == 'racket')
+assert(vim.lsp.is_enabled('flix'))
+assert(vim.lsp.is_enabled('rhombus'))
+"""
+        )
 
 
 if __name__ == "__main__":
