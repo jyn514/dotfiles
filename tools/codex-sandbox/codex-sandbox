@@ -79,6 +79,7 @@ class State:
     lock_coordinated: Path | None = None
     lock_release: Path | None = None
     skills_tmp: Path | None = None
+    pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
     lock_process: subprocess.Popen[bytes] | None = None
     monitor_process: subprocess.Popen[bytes] | None = None
@@ -719,6 +720,27 @@ def run_agent(state: State, arguments: list[str]) -> int:
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
         raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
     pi_agent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sessions = pi_agent / "sessions"
+    if sessions.exists() and (sessions.is_symlink() or not sessions.is_dir()):
+        raise LauncherError(f"Pi sessions directory is invalid: {sessions}")
+    sessions.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Pi's /reload resolves configured packages, installing missing npm packages,
+    # repairing version mismatches, and refreshing eligible Git sources. Keep these
+    # package stores writable and persistent; all other undeclared agent state stays
+    # private to the sandbox so extensions cannot accidentally share runtime data.
+    persistent_package_directories = []
+    for directory in (pi_agent / "npm", pi_agent / "git"):
+        if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
+            raise LauncherError(f"Pi package directory is invalid: {directory}")
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        persistent_package_directories.append(directory)
+    pi_extensions = DOTFILES / "config/pi-extensions"
+    if not pi_extensions.is_dir():
+        raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")
+    state.pi_agent_tmp = Path(tempfile.mkdtemp(prefix="codex-private-agent-"))
+    os.chmod(state.pi_agent_tmp, 0o700)
+    for directory in ("extensions", "pi-codex-subagents"):
+        (state.pi_agent_tmp / directory).mkdir(mode=0o700)
     state.pi_auth_mask = temporary_file()
     state.pi_auth_mask.write_text("{}\n", encoding="utf-8")
 
@@ -727,7 +749,16 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
         "--secret", "codex-github-token,type=env,target=GH_TOKEN",
         "--env", "JJ_AGENT=pi",
-        "--mount", f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
+        "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
+        "--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions",
+        *[
+            item
+            for directory in persistent_package_directories
+            for item in (
+                "--mount",
+                f"type=bind,src={directory},dst=/home/codex/.pi/agent/{directory.name}",
+            )
+        ],
         "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'skills'},dst=/home/codex/.agents/skills",
         *(
@@ -741,7 +772,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-keybindings.json'},dst=/home/codex/.pi/agent/keybindings.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-codex-subagents.json'},dst=/home/codex/.pi/agent/pi-codex-subagents/config.json,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/pi-extensions'},dst=/home/codex/.pi/agent/pi-extensions,readonly",
+        "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
@@ -901,6 +932,14 @@ def cleanup(state: State) -> None:
             elapsed = int(time.monotonic() - started)
             print(f"warning: Cleaning up staged skills {state.skills_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("skills")
+    if state.pi_agent_tmp is not None:
+        started = time.monotonic()
+        try:
+            shutil.rmtree(state.pi_agent_tmp)
+        except OSError:
+            elapsed = int(time.monotonic() - started)
+            print(f"warning: Cleaning up private Pi state {state.pi_agent_tmp} failed after {elapsed}s.", file=sys.stderr)
+    timing("Pi state")
     if state.lock_coordinated is not None:
         state.lock_coordinated.touch()
     if state.lock_release is not None:

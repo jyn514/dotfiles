@@ -476,6 +476,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual([], read_calls(self.docker_log))
 
     def test_constructs_secured_agent_and_trusted_proxy_arguments(self) -> None:
+        pi_agent = self.home / ".pi/agent"
         result = self.run_launcher("resume", "session-id")
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
@@ -484,11 +485,34 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
-        pi_agent = self.home / ".pi/agent"
-        self.assertIn(
+        self.assertNotIn(
             f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
             run,
         )
+        agent_mounts = [
+            item for item in run
+            if item.endswith("dst=/home/codex/.pi/agent")
+        ]
+        self.assertEqual(1, len(agent_mounts))
+        private_agent = Path(agent_mounts[0].split(",src=", 1)[1].split(",dst=", 1)[0])
+        self.assertFalse(private_agent.exists())
+        self.assertIn(
+            f"type=bind,src={pi_agent / 'sessions'},dst=/home/codex/.pi/agent/sessions",
+            run,
+        )
+        for directory in ("npm", "git"):
+            package_store = pi_agent / directory
+            self.assertTrue(package_store.is_dir())
+            self.assertIn(
+                f"type=bind,src={package_store},"
+                f"dst=/home/codex/.pi/agent/{directory}",
+                run,
+            )
+            self.assertNotIn(
+                f"type=bind,src={package_store},"
+                f"dst=/home/codex/.pi/agent/{directory},readonly",
+                run,
+            )
         auth_mounts = [
             item for item in run
             if item.endswith("dst=/home/codex/.pi/agent/auth.json,readonly")
@@ -528,6 +552,30 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(snapshots))
         builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
         self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
+
+    def test_rejects_symlinked_persistent_pi_sessions(self) -> None:
+        pi_agent = self.home / ".pi/agent"
+        pi_agent.mkdir(parents=True)
+        target = self.root / "foreign-sessions"
+        target.mkdir()
+        (pi_agent / "sessions").symlink_to(target, target_is_directory=True)
+
+        result = self.run_launcher("resume", "session-id")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Pi sessions directory is invalid", result.stderr)
+
+    def test_rejects_symlinked_persistent_pi_package_store(self) -> None:
+        pi_agent = self.home / ".pi/agent"
+        pi_agent.mkdir(parents=True)
+        target = self.root / "foreign-packages"
+        target.mkdir()
+        (pi_agent / "npm").symlink_to(target, target_is_directory=True)
+
+        result = self.run_launcher("resume", "session-id")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Pi package directory is invalid", result.stderr)
 
     def test_enables_trusted_zulip_proxy_when_credentials_exist(self) -> None:
         zuliprc = self.home / ".zuliprc"
