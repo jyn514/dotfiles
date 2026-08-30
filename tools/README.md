@@ -37,6 +37,7 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 
 ## Content and device tools
 
+- [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
 - [`extract-chat`](extract-chat/) extracts user and assistant turns from local Codex or Claude JSON/JSONL sessions. It supports session lookup, final-answer filtering, and per-session Markdown; output may expose private conversations.
 - [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.
 - [`lapwing-prototype`](lapwing-prototype/) is a compact, heap-free Lapwing stenography translator prototype for Moonlander/QMK. Start with its [README](lapwing-prototype/README.md), then the [firmware specification](lapwing-prototype/SPEC.md); it is not hardware-verified.
