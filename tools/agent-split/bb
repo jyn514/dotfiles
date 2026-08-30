@@ -3,11 +3,14 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 . "$root/lib/shell/lib.sh"
+original_path=$PATH
 shim_resolve "$0" bb
 real_bb=$REAL
 
 if [ "${1:-}" = agent-split ]; then
 	shift
+	PATH=$original_path
+	export PATH
 	exec "$real_bb" "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
 fi
 

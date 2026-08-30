@@ -35,6 +35,33 @@ class BbWrapperTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(result.stdout.startswith("babashka v"))
 
+    def test_agent_split_preserves_wrapped_jj_on_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            wrappers = temporary / "wrappers"
+            real = temporary / "real"
+            wrappers.mkdir()
+            real.mkdir()
+            fake_jj = wrappers / "jj"
+            fake_jj.write_text("#!/bin/sh\nexit 0\n")
+            fake_jj.chmod(0o755)
+            fake_bb = real / "bb"
+            fake_bb.write_text("#!/bin/sh\ncommand -v jj\n")
+            fake_bb.chmod(0o755)
+
+            result = subprocess.run(
+                [str(ROOT / "tools" / "agent-split" / "bb"), "agent-split", "--help"],
+                cwd=ROOT,
+                env=os.environ | {"PATH": f"{wrappers}:{real}:{os.defpath}"},
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(f"{fake_jj}\n", result.stdout)
+
     def test_resolution_skips_duplicate_wrapper_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
