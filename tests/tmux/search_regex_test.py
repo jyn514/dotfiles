@@ -175,6 +175,12 @@ class SearchRegexTest(unittest.TestCase):
     def test_does_not_match_url_as_a_path(self) -> None:
         self.assertIsNone(self.tmux_match("https://example.com/a/b"))
 
+    def test_matches_abbreviated_prompt_path_through_final_component(self) -> None:
+        match = self.tmux_match("(-fish@hephaestus) ~/.../llms/pi (jj: main)")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.strip(), "~/.../llms/pi")
+
     def test_path_is_separable_from_consumed_context_delimiters(self) -> None:
         match = self.tmux_match("Running bin/foo without path")
 

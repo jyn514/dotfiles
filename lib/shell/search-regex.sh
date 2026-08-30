@@ -16,7 +16,7 @@ extension_file="$component*\.$component+"
 
 with_extension="${intermediate_path}*/$extension_file($position)?\>"
 with_position="${intermediate_path}*/$component+$position\>"
-deep_path="${intermediate_path}{2,}\>"
+deep_path="${intermediate_path}{2,}(\>|[[:space:]])"
 directory="${intermediate_path}+/"
 path_tail="($with_extension|$with_position|$deep_path|$directory)"
 
