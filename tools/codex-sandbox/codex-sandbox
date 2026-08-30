@@ -15,16 +15,20 @@ import shlex
 import shutil
 import secrets
 import signal
+import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 
 
 DOTFILES = Path(__file__).resolve().parents[2]
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
+HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 SANDBOX_SUBNET = "10.254.254.0/24"
 SANDBOX_GATEWAY = "10.254.254.1"
@@ -60,6 +64,9 @@ class State:
     codex_container: str
     proxy_prefix: str
     codex_sidecar_container: str
+    editor_link_network: str
+    editor_egress_network: str
+    editor_relay_container: str
     codex_auth_directory: Path
     agent_podman_access: Path
     agent_podman_connection: Path
@@ -81,6 +88,7 @@ class State:
     skills_tmp: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
+    host_editor: HostEditorBridge | None = None
     lock_process: subprocess.Popen[bytes] | None = None
     monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
@@ -88,6 +96,9 @@ class State:
     relay_link_created: bool = False
     relay_egress_created: bool = False
     relay_container_created: bool = False
+    editor_link_created: bool = False
+    editor_egress_created: bool = False
+    editor_relay_created: bool = False
     cleaned: bool = False
     tmux_pane: str | None = None
     tmux_registration: str | None = None
@@ -171,6 +182,9 @@ def new_state(codex_arguments: list[str]) -> State:
         codex_container=f"codex-sandbox-{suffix}",
         proxy_prefix=f"codex-command-proxy-{suffix}",
         codex_sidecar_container=f"codex-auth-proxy-{suffix}",
+        editor_link_network=f"codex-host-editor-link-{suffix}",
+        editor_egress_network=f"codex-host-editor-egress-{suffix}",
+        editor_relay_container=f"codex-host-editor-relay-{suffix}",
         codex_auth_directory=Path(os.environ.get(
             "CODEX_SANDBOX_AUTH_DIR", home / ".codex-sandbox-auth",
         )),
@@ -480,6 +494,61 @@ def start_relay(state: State) -> list[str]:
     ]
 
 
+def start_editor_relay(state: State) -> list[str]:
+    run([
+        "docker", "network", "create", "--internal", "--opt", "isolate=true",
+        state.editor_link_network,
+    ], discard_stdout=True)
+    state.editor_link_created = True
+    run([
+        "docker", "network", "create", "--opt", "isolate=true",
+        state.editor_egress_network,
+    ], discard_stdout=True)
+    state.editor_egress_created = True
+    state.host_editor = HostEditorBridge()
+    state.host_editor.start()
+    assert state.host_editor.port is not None
+    relay_port = 2223
+    run([
+        "docker", "run", "--detach", "--name", state.editor_relay_container,
+        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+        "--network", state.editor_egress_network, "--http-proxy=false",
+        "--pids-limit", "32", "--memory", "64m", "--cpus", "0.25",
+        "--add-host", "host.docker.internal:host-gateway",
+        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
+        f"TCP4-LISTEN:{relay_port},fork,reuseaddr",
+        f"TCP4:host.docker.internal:{state.host_editor.port}",
+    ], discard_stdout=True)
+    state.editor_relay_created = True
+    run(["docker", "network", "connect", state.editor_link_network, state.editor_relay_container])
+    relay_ip = run([
+        "docker", "inspect", "--format",
+        f'{{{{(index .NetworkSettings.Networks "{state.editor_link_network}").IPAddress}}}}',
+        state.editor_relay_container,
+    ], capture=True).stdout.strip()
+    egress_ip = run([
+        "docker", "inspect", "--format",
+        f'{{{{(index .NetworkSettings.Networks "{state.editor_egress_network}").IPAddress}}}}',
+        state.editor_relay_container,
+    ], capture=True).stdout.strip()
+    if not relay_ip or not egress_ip:
+        raise LauncherError("host editor relay has incomplete network addresses")
+    state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
+    readiness = run([
+        "docker", "exec", state.editor_relay_container, "/usr/local/bin/python3", "-c",
+        "import socket,struct; "
+        f"s=socket.create_connection(('host.docker.internal',{state.host_editor.port}),5); "
+        "s.sendall(struct.pack('>I',2)+b'{}'); assert len(s.recv(4))==4; s.close()",
+    ], check=False, quiet=True)
+    if readiness.returncode:
+        raise LauncherError("host editor relay cannot reach the host listener")
+    return [
+        "--network", state.editor_link_network,
+        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={relay_ip}:{relay_port}",
+        "--env", "CODEX_SANDBOX_EDITOR_TOKEN",
+    ]
+
+
 def _secure_codex_auth_directory(state: State) -> Path | None:
     directory = state.codex_auth_directory
     auth = directory / "auth.json"
@@ -631,6 +700,10 @@ def stage_skills(state: State) -> None:
         "pi-keybindings.json", "pi-codex-subagents.json",
     ):
         shutil.copy2(DOTFILES / "config" / name, config / name)
+    settings_path = config / "pi.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    settings["externalEditor"] = "/opt/agent-tools/bin/host-editor"
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     instruction_includes = []
     repository_instructions = state.repository / ".agents/sandbox/AGENTS.md"
     if repository_instructions.is_file():
@@ -661,6 +734,181 @@ def finalize_proxy_session(state: State) -> list[str]:
     for line in state.proxy_args.read_text(encoding="utf-8").splitlines():
         arguments.insert(0, line)
     return arguments
+
+
+MAX_EDITOR_DOCUMENT_BYTES = 1024 * 1024
+MAX_EDITOR_MESSAGE_BYTES = MAX_EDITOR_DOCUMENT_BYTES * 6 + 4096
+EDITOR_REQUEST_TIMEOUT_SECONDS = 5
+
+
+class HostEditorBridge:
+    """Own the narrow guest-to-host text editor boundary for one sandbox."""
+
+    def __init__(self) -> None:
+        self.token = secrets.token_hex(32)
+        self.stop_event = threading.Event()
+        self.listener: socket.socket | None = None
+        self.thread: threading.Thread | None = None
+        self.port: int | None = None
+        self.panes: set[str] = set()
+        self.panes_lock = threading.Lock()
+        self.allowed_peers: set[str] = set()
+        self.allowed_peers_lock = threading.Lock()
+        self.target_pane = os.environ.get("TMUX_PANE")
+        self.editor = (
+            os.environ.get("CODEX_SANDBOX_HOST_EDITOR")
+            or os.environ.get("VISUAL")
+            or os.environ.get("EDITOR")
+            or "vi"
+        )
+
+    def start(self) -> None:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Docker Desktop and rootless Podman do not expose one portable host-only
+        # bind address. Use an ephemeral port and authenticate every request with
+        # the session token; the guest receives only the private relay address.
+        listener.bind(("0.0.0.0", 0))
+        listener.listen(1)
+        listener.settimeout(0.2)
+        self.listener = listener
+        self.port = listener.getsockname()[1]
+        self.thread = threading.Thread(target=self._serve, name="host-editor-bridge", daemon=True)
+        self.thread.start()
+
+    def allow_peers(self, peers: set[str]) -> None:
+        with self.allowed_peers_lock:
+            self.allowed_peers = set(peers)
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        if self.listener is not None:
+            self.listener.close()
+        if self.thread is not None:
+            self.thread.join(timeout=2)
+        with self.panes_lock:
+            panes = list(self.panes)
+        for pane in panes:
+            run(["tmux", "kill-pane", "-t", pane], check=False, quiet=True)
+
+    @staticmethod
+    def _receive_exact(connection: socket.socket, length: int) -> bytes:
+        chunks: list[bytes] = []
+        remaining = length
+        while remaining:
+            chunk = connection.recv(remaining)
+            if not chunk:
+                raise LauncherError("host editor request ended prematurely")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _send(connection: socket.socket, value: dict[str, object]) -> None:
+        payload = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        if len(payload) > MAX_EDITOR_MESSAGE_BYTES:
+            raise LauncherError("host editor response is too large")
+        connection.sendall(struct.pack(">I", len(payload)) + payload)
+
+    def _serve(self) -> None:
+        assert self.listener is not None
+        while not self.stop_event.is_set():
+            try:
+                connection, address = self.listener.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            with self.allowed_peers_lock:
+                allowed = address[0] in self.allowed_peers
+            if not allowed:
+                connection.close()
+                continue
+            with connection:
+                connection.settimeout(EDITOR_REQUEST_TIMEOUT_SECONDS)
+                self._serve_connection(connection)
+
+    def _serve_connection(self, connection: socket.socket) -> None:
+        try:
+            length = struct.unpack(">I", self._receive_exact(connection, 4))[0]
+            if length > MAX_EDITOR_MESSAGE_BYTES:
+                raise LauncherError("host editor request is too large")
+            request = json.loads(self._receive_exact(connection, length).decode("utf-8"))
+            if not isinstance(request, dict) or set(request) != {"version", "token", "content"} \
+                    or type(request["version"]) is not int or request["version"] != 1 \
+                    or not isinstance(request["token"], str) \
+                    or not secrets.compare_digest(request["token"], self.token) \
+                    or not isinstance(request["content"], str):
+                raise LauncherError("invalid host editor request")
+            if len(request["content"].encode("utf-8")) > MAX_EDITOR_DOCUMENT_BYTES:
+                raise LauncherError("host editor document is too large")
+            self._send(connection, {"version": 1, "status": "editing"})
+            connection.settimeout(None)
+            content = self._edit(request["content"])
+            response = {"version": 1, "status": "complete", "content": content}
+        except (LauncherError, OSError, UnicodeError, json.JSONDecodeError) as error:
+            response = {"version": 1, "status": "failed", "error": str(error)}
+        try:
+            self._send(connection, response)
+        except (LauncherError, OSError):
+            pass
+
+    def _edit(self, content: str) -> str:
+        if "TMUX" not in os.environ or self.target_pane is None:
+            raise LauncherError("host editor bridge requires a tmux pane")
+        try:
+            editor = shlex.split(self.editor)
+        except ValueError as error:
+            raise LauncherError("host editor command is malformed") from error
+        if not editor:
+            raise LauncherError("host editor command is empty")
+        with tempfile.TemporaryDirectory(prefix="codex-host-editor-document-") as directory:
+            document = Path(directory) / "prompt.md"
+            status = Path(directory) / "status"
+            document.write_text(content, encoding="utf-8")
+            pane_command = shlex.join([
+                str(HOST_EDITOR_PANE), str(status), "--", *editor, str(document),
+            ])
+            result = run([
+                "tmux", "split-window", "-h", "-t", self.target_pane,
+                "-P", "-F", "#{pane_id}", pane_command,
+            ], check=False, capture=True, quiet=True)
+            if result.returncode or not result.stdout.strip():
+                raise LauncherError("could not open host editor pane")
+            pane = result.stdout.strip()
+            with self.panes_lock:
+                self.panes.add(pane)
+            try:
+                while not status.exists():
+                    if self.stop_event.wait(0.1):
+                        raise LauncherError("host editor bridge stopped")
+                    alive = run([
+                        "tmux", "display-message", "-p", "-t", pane, "#{pane_id}",
+                    ], check=False, quiet=True)
+                    if alive.returncode:
+                        raise LauncherError("host editor pane exited without a result")
+                try:
+                    exit_status = int(status.read_text(encoding="utf-8").strip())
+                except (OSError, ValueError) as error:
+                    raise LauncherError("host editor returned an invalid status") from error
+                if exit_status:
+                    raise LauncherError(f"host editor exited with status {exit_status}")
+                result_content = document.read_text(encoding="utf-8")
+                if len(result_content.encode("utf-8")) > MAX_EDITOR_DOCUMENT_BYTES:
+                    raise LauncherError("host editor result is too large")
+                return result_content
+            finally:
+                if self.stop_event.is_set():
+                    run(["tmux", "kill-pane", "-t", pane], check=False, quiet=True)
+                    with self.panes_lock:
+                        self.panes.discard(pane)
+                else:
+                    alive = run([
+                        "tmux", "display-message", "-p", "-t", pane, "#{pane_id}",
+                    ], check=False, quiet=True)
+                    if alive.returncode:
+                        with self.panes_lock:
+                            self.panes.discard(pane)
 
 
 def run_agent(state: State, arguments: list[str]) -> int:
@@ -803,7 +1051,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
         ],
         *arguments,
     ]
-    state.agent_process = subprocess.Popen(command)
+    agent_environment = os.environ.copy()
+    assert state.host_editor is not None
+    agent_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
+    state.agent_process = subprocess.Popen(command, env=agent_environment)
     try:
         return state.agent_process.wait()
     except SignalExit as error:
@@ -842,17 +1093,21 @@ def execute(state: State) -> int:
         state.sidecar_image = phase("sidecar image resolution", sidecar_image.result)
     phase("network setup", ensure_network)
     phase("proxy lock", lambda: acquire_lock(state))
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
+        )
+        editor_future = executor.submit(
+            phase, "host editor relay startup", lambda: start_editor_relay(state),
         )
         relay_future = (
             executor.submit(phase, "Podman relay startup", lambda: start_relay(state))
             if state.agent_podman is not None else None
         )
         sidecar_arguments = proxy_future.result()
+        editor_arguments = editor_future.result()
         relay_arguments = relay_future.result() if relay_future else []
-    arguments = [*relay_arguments, state.image, *state.codex_arguments]
+    arguments = [*editor_arguments, *relay_arguments, state.image, *state.codex_arguments]
     system = run(["uname", "-s"], capture=True).stdout.strip()
     if system == "Linux":
         print(
@@ -895,6 +1150,9 @@ def cleanup(state: State) -> None:
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             print(f"Sandbox cleanup: {label}={now - previous:.2f}s", file=sys.stderr)
         previous = now
+    if state.host_editor is not None:
+        state.host_editor.stop()
+    timing("host editor")
     containers = []
     if state.codex_container_created:
         containers.append((
@@ -905,6 +1163,11 @@ def cleanup(state: State) -> None:
         containers.append((
             f"relay container {state.relay_container}",
             ["docker", "rm", "--force", state.relay_container],
+        ))
+    if state.editor_relay_created:
+        containers.append((
+            f"host editor relay container {state.editor_relay_container}",
+            ["docker", "rm", "--force", state.editor_relay_container],
         ))
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         list(executor.map(lambda item: cleanup_resource(*item), containers))
@@ -920,6 +1183,16 @@ def cleanup(state: State) -> None:
         networks.append((
             f"relay network {state.relay_egress_network}",
             ["docker", "network", "rm", state.relay_egress_network],
+        ))
+    if state.editor_link_created:
+        networks.append((
+            f"host editor link network {state.editor_link_network}",
+            ["docker", "network", "rm", state.editor_link_network],
+        ))
+    if state.editor_egress_created:
+        networks.append((
+            f"host editor egress network {state.editor_egress_network}",
+            ["docker", "network", "rm", state.editor_egress_network],
         ))
     with ThreadPoolExecutor(max_workers=max(1, len(networks))) as executor:
         list(executor.map(lambda item: cleanup_resource(*item), networks))

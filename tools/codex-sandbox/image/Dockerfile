@@ -72,6 +72,7 @@ FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
+COPY --chmod=755 ./tools/codex-sandbox/image/host-editor /opt/agent-tools/bin/host-editor
 
 FROM pi-runtime
 COPY --from=tools /opt/agent-tools /opt/agent-tools
@@ -91,6 +92,7 @@ COPY ./tools/codex-sandbox/image/agent-wrappers-path.sh /etc/profile.d/agent-wra
 COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-profile.sh
 
 ENV HOME=/home/codex
+ENV EDITOR=vi VISUAL=vi
 RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src/work \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
         ${HOME} /src

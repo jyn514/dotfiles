@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import runpy
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,8 @@ AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
 SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
+HOST_EDITOR_CLIENT = TOOL / "image" / "host-editor"
+HOST_EDITOR_PANE = TOOL / "host-editor-pane"
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -43,6 +47,16 @@ class AgentSandboxImageTest(unittest.TestCase):
 
         self.assertIn("npm run hydrate:pinned-model-data", dockerfile)
         self.assertNotIn("npm run hydrate:model-data", dockerfile)
+
+    def test_image_installs_host_editor_client(self) -> None:
+        dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "COPY --chmod=755 ./tools/codex-sandbox/image/host-editor "
+            "/opt/agent-tools/bin/host-editor",
+            dockerfile,
+        )
+        self.assertIn("ENV EDITOR=vi VISUAL=vi", dockerfile)
 
     def test_login_profile_restores_agent_wrappers_path(self) -> None:
         result = subprocess.run(
@@ -99,6 +113,146 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertNotIn("[credential]", config)
 
 
+class HostEditorPaneTest(unittest.TestCase):
+    def test_runs_editor_argv_and_records_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            editor = root / "editor"
+            write_executable(editor, """
+                #!/bin/sh
+                printf '%s\\n' "$2" > "$1"
+                exit 7
+            """)
+            output = root / "output"
+            status = root / "status"
+
+            result = subprocess.run([
+                str(HOST_EDITOR_PANE), str(status), "--",
+                str(editor), str(output), "value with spaces",
+            ])
+
+            self.assertEqual(7, result.returncode)
+            self.assertEqual("7\n", status.read_text(encoding="utf-8"))
+            self.assertEqual("value with spaces\n", output.read_text(encoding="utf-8"))
+
+
+class HostEditorBridgeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.launcher = runpy.run_path(str(LAUNCHER))
+        self.bridge = self.launcher["HostEditorBridge"]()
+
+    def tearDown(self) -> None:
+        self.bridge.stop()
+
+    def start_bridge(self) -> None:
+        self.bridge.start()
+        self.bridge.allow_peers({"127.0.0.1"})
+
+    def run_client(
+        self, content: str, *, token: str | None = None,
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        with tempfile.TemporaryDirectory() as directory:
+            document = Path(directory) / "prompt.md"
+            document.write_text(content, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(HOST_EDITOR_CLIENT), str(document)],
+                env={
+                    **os.environ,
+                    "CODEX_SANDBOX_EDITOR_ADDRESS": f"127.0.0.1:{self.bridge.port}",
+                    "CODEX_SANDBOX_EDITOR_TOKEN": token or self.bridge.token,
+                },
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+            )
+            return result, document.read_text(encoding="utf-8")
+
+    def test_guest_client_round_trips_only_document_text(self) -> None:
+        self.bridge._edit = lambda content: content + " edited"
+        self.start_bridge()
+
+        result, content = self.run_client("draft")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("draft edited", content)
+
+    def test_guest_client_preserves_document_when_host_editor_fails(self) -> None:
+        def fail(_content: str) -> str:
+            raise self.launcher["LauncherError"]("editor refused")
+
+        self.bridge._edit = fail
+        self.start_bridge()
+
+        result, content = self.run_client("draft")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("editor refused", result.stderr)
+        self.assertEqual("draft", content)
+
+    def test_client_rejects_linked_files_before_contacting_host(self) -> None:
+        self.start_bridge()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.write_text("draft", encoding="utf-8")
+            link = root / "link"
+            link.symlink_to(target)
+            result = subprocess.run(
+                [sys.executable, str(HOST_EDITOR_CLIENT), str(link)],
+                env={
+                    **os.environ,
+                    "CODEX_SANDBOX_EDITOR_ADDRESS": f"127.0.0.1:{self.bridge.port}",
+                    "CODEX_SANDBOX_EDITOR_TOKEN": self.bridge.token,
+                },
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+            )
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("unlinked regular file", result.stderr)
+
+    def test_unapproved_network_peer_is_closed_immediately(self) -> None:
+        self.bridge.start()
+        connection = socket.create_connection(("127.0.0.1", self.bridge.port), timeout=1)
+        connection.sendall(b"\x00\x00")
+
+        try:
+            self.assertEqual(b"", connection.recv(1))
+        except ConnectionResetError:
+            pass
+        connection.close()
+
+    def test_wrong_session_token_cannot_open_host_editor(self) -> None:
+        self.bridge._edit = mock.Mock(return_value="changed")
+        self.start_bridge()
+
+        result, content = self.run_client("draft", token="wrong")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("invalid host editor request", result.stderr)
+        self.assertEqual("draft", content)
+        self.bridge._edit.assert_not_called()
+
+    def test_partial_request_does_not_wedge_later_edits(self) -> None:
+        self.bridge._edit = lambda content: content + " edited"
+        self.bridge._serve.__globals__["EDITOR_REQUEST_TIMEOUT_SECONDS"] = 0.1
+        self.start_bridge()
+        stalled = socket.create_connection(("127.0.0.1", self.bridge.port), timeout=1)
+        stalled.sendall(b"\x00\x00")
+        time.sleep(0.2)
+
+        result, content = self.run_client("draft")
+
+        stalled.close()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("draft edited", content)
+
+    def test_stop_closes_listener(self) -> None:
+        self.start_bridge()
+        port = self.bridge.port
+        self.bridge.stop()
+
+        with self.assertRaises(OSError):
+            socket.create_connection(("127.0.0.1", port), timeout=0.1)
+
+
 class CodexSandboxTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -152,17 +306,20 @@ class CodexSandboxTest(unittest.TestCase):
         """)
         write_executable(self.fake_bin / "docker", """
             #!/bin/sh
-            {
-                printf 'CALL'
-                for argument do printf '\t%s' "$argument"; done
-                printf '\n'
-            } >> "$FAKE_DOCKER_LOG"
+            tab=$(printf '\t')
+            record=CALL
+            for argument do record="${record}${tab}${argument}"; done
+            printf '%s\n' "$record" >> "$FAKE_DOCKER_LOG"
             if [ "$1 $2" = "network exists" ]; then
                 [ "${FAKE_NETWORK_EXISTS:-1}" = 1 ]
                 exit
             fi
             if [ "$1 $2" = "network create" ] && [ "${FAKE_NETWORK_CREATE_FAIL:-0}" = 1 ]; then
                 exit 44
+            fi
+            if [ "$1 $2" = "network inspect" ]; then
+                printf '%s\n' 127.0.0.1
+                exit
             fi
             if [ "$1 $2" = "image inspect" ]; then
                 case " $* " in
@@ -188,17 +345,22 @@ class CodexSandboxTest(unittest.TestCase):
                     *"if index"*"NetworkSettings.Networks"*)
                         [ "${FAKE_SIDECAR_NETWORK:-1}" = 1 ] && printf '%s\n' true
                         ;;
-                    *) printf '%s\n' "${FAKE_RELAY_IP:-}" ;;
+                    *) printf '%s\n' "${FAKE_RELAY_IP:-10.0.0.9}" ;;
                 esac
                 exit 0
             fi
             if [ "$1" = run ]; then
-                if [ "${FAKE_AGENT_BLOCK:-0}" = 1 ]; then
-                    : > "$FAKE_AGENT_READY"
-                    trap 'exit 143' HUP INT TERM
-                    while :; do sleep 1; done
-                fi
-                exit "${FAKE_AGENT_EXIT:-0}"
+                case " $* " in
+                    *" -it "*)
+                        if [ "${FAKE_AGENT_BLOCK:-0}" = 1 ]; then
+                            : > "$FAKE_AGENT_READY"
+                            trap 'exit 143' HUP INT TERM
+                            while :; do sleep 1; done
+                        fi
+                        exit "${FAKE_AGENT_EXIT:-0}"
+                        ;;
+                esac
+                exit 0
             fi
             exit 0
         """)
@@ -354,6 +516,23 @@ class CodexSandboxTest(unittest.TestCase):
             item.endswith("dst=/home/codex/.agents/sandbox,readonly")
             for item in self.final_run()
         ))
+
+    def test_staged_settings_scope_external_editor_to_the_sandbox(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        try:
+            launcher["stage_skills"](state)
+            settings = json.loads(
+                (state.skills_tmp / "config/pi.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                "/opt/agent-tools/bin/host-editor", settings["externalEditor"]
+            )
+            source = json.loads((ROOT / "config/pi.json").read_text(encoding="utf-8"))
+            self.assertNotIn("externalEditor", source)
+        finally:
+            if state.skills_tmp is not None:
+                shutil.rmtree(state.skills_tmp)
 
     def test_mounts_subagent_configuration_from_staged_dotfiles(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -546,6 +725,12 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertNotIn("pi-agent-", " ".join(run))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
+        self.assertNotIn("EDITOR=/opt/agent-tools/bin/host-editor", run)
+        self.assertNotIn("VISUAL=/opt/agent-tools/bin/host-editor", run)
+        self.assertTrue(any(item.startswith("CODEX_SANDBOX_EDITOR_ADDRESS=") for item in run))
+        self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", run)
+        self.assertFalse(any(item.startswith("CODEX_SANDBOX_EDITOR_TOKEN=") for item in run))
+        self.assertFalse(any("dst=/run/host-editor" in item for item in run))
         self.assertLess(run.index("resume"), run.index("session-id"))
 
         snapshots = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "snapshot"]
@@ -671,7 +856,13 @@ class CodexSandboxTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("belongs to another sandbox network", result.stderr)
-        self.assertFalse(any(call[0] == "run" for call in read_calls(self.docker_log)))
+        calls = read_calls(self.docker_log)
+        self.assertFalse(any(call[:1] == ["run"] and "-it" in call for call in calls))
+        self.assertTrue(any(
+            call[:2] == ["rm", "--force"]
+            and any("codex-host-editor-relay-" in item for item in call)
+            for call in calls
+        ))
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")
@@ -726,9 +917,9 @@ class CodexSandboxTest(unittest.TestCase):
     def test_preserves_agent_exit_status_and_cleans_up(self) -> None:
         result = self.run_launcher(FAKE_AGENT_EXIT="23")
         self.assertEqual(23, result.returncode, result.stderr)
-        removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
-        self.assertEqual(1, len(removals))
-        self.assertRegex(removals[0][2], r"^codex-sandbox-[0-9]+-[0-9a-f]{12}$")
+        docker_log = self.docker_log.read_text(encoding="utf-8")
+        self.assertRegex(docker_log, r"rm\t--force\tcodex-sandbox-[0-9]+-[0-9a-f]{12}")
+        self.assertIn("codex-host-editor-relay-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
@@ -736,12 +927,14 @@ class CodexSandboxTest(unittest.TestCase):
     def test_creates_network_with_public_only_routes(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0")
         self.assertEqual(0, result.returncode, result.stderr)
-        creates = [call for call in read_calls(self.docker_log) if call[:2] == ["network", "create"]]
+        creates = [
+            call for call in read_calls(self.docker_log)
+            if call[:2] == ["network", "create"] and call[-1] == "codex-public-only"
+        ]
         self.assertEqual(1, len(creates))
         self.assertIn("--route", creates[0])
         self.assertIn("10.0.0.0/8,prohibit", creates[0])
         self.assertIn("192.168.0.0/16,prohibit", creates[0])
-        self.assertEqual("codex-public-only", creates[0][-1])
 
     def test_fresh_build_runs_agent_by_immutable_image_id(self) -> None:
         result = self.run_launcher(FAKE_IMAGE_EXISTS="0")
@@ -784,8 +977,9 @@ class CodexSandboxTest(unittest.TestCase):
         os.killpg(process.pid, signal.SIGTERM)
         stdout, stderr = process.communicate(timeout=5)
         self.assertEqual(143, process.returncode, (stdout, stderr))
-        removals = [call for call in read_calls(self.docker_log) if call[:2] == ["rm", "--force"]]
-        self.assertEqual(1, len(removals))
+        docker_log = self.docker_log.read_text(encoding="utf-8")
+        self.assertRegex(docker_log, r"rm\t--force\tcodex-sandbox-[0-9]+-[0-9a-f]{12}")
+        self.assertIn("codex-host-editor-relay-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
@@ -797,6 +991,37 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertNotIn("--cap-drop=ALL", run)
         self.assertNotIn("--security-opt=no-new-privileges", run)
         self.assertNotIn("native Linux sandboxing", result.stderr)
+
+    def test_host_editor_relay_is_isolated_and_injected(self) -> None:
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = read_calls(self.docker_log)
+        relay = next(
+            call for call in calls
+            if call[:2] == ["run", "--detach"]
+            and any("codex-host-editor-relay-" in item for item in call)
+        )
+        self.assertIn("--cap-drop=ALL", relay)
+        self.assertIn("--security-opt=no-new-privileges", relay)
+        self.assertIn("--read-only", relay)
+        self.assertIn("--pids-limit", relay)
+        self.assertIn("--memory", relay)
+        self.assertIn("--cpus", relay)
+        self.assertIn("--http-proxy=false", relay)
+        self.assertIn("/usr/bin/socat", relay)
+        readiness = next(call for call in calls if call[:2] == ["exec", relay[relay.index("--name") + 1]])
+        self.assertIn("socket.create_connection", " ".join(readiness))
+        self.assertIn("s.recv(4)", " ".join(readiness))
+        editor_networks = [
+            call for call in calls if call[:2] == ["network", "create"]
+            and any("codex-host-editor-" in item for item in call)
+        ]
+        self.assertEqual(2, len(editor_networks))
+        self.assertTrue(any("--internal" in call for call in editor_networks))
+        run = self.final_run()
+        self.assertTrue(any(item.startswith("CODEX_SANDBOX_EDITOR_ADDRESS=") for item in run))
+        self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", run)
+        self.assertFalse(any(item.startswith("CODEX_SANDBOX_EDITOR_TOKEN=") for item in run))
 
     def test_agent_podman_relay_is_isolated_and_injected(self) -> None:
         access = self.root / "agent-podman"
@@ -815,7 +1040,11 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
         calls = read_calls(self.docker_log)
-        relay_runs = [call for call in calls if call[:2] == ["run", "--detach"]]
+        relay_runs = [
+            call for call in calls
+            if call[:2] == ["run", "--detach"]
+            and any("codex-agent-podman-relay-" in item for item in call)
+        ]
         self.assertEqual(1, len(relay_runs))
         self.assertIn("--cap-drop=ALL", relay_runs[0])
         self.assertIn("--read-only", relay_runs[0])

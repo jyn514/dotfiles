@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Edit one guest file through the codex-sandbox host editor bridge."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import stat
+import struct
+import sys
+import tempfile
+
+MAX_DOCUMENT_BYTES = 1024 * 1024
+MAX_MESSAGE_BYTES = MAX_DOCUMENT_BYTES * 6 + 4096
+EDITOR_RESULT_TIMEOUT_SECONDS = 12 * 60 * 60
+ADDRESS = os.environ.get("CODEX_SANDBOX_EDITOR_ADDRESS", "")
+TOKEN = os.environ.get("CODEX_SANDBOX_EDITOR_TOKEN", "")
+
+
+def receive_exact(connection: socket.socket, length: int) -> bytes:
+    chunks: list[bytes] = []
+    remaining = length
+    while remaining:
+        chunk = connection.recv(remaining)
+        if not chunk:
+            raise RuntimeError("host editor bridge closed an incomplete response")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def receive_response(connection: socket.socket) -> dict[str, object]:
+    length = struct.unpack(">I", receive_exact(connection, 4))[0]
+    if length > MAX_MESSAGE_BYTES:
+        raise RuntimeError("host editor bridge returned an oversized response")
+    value = json.loads(receive_exact(connection, length).decode("utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("host editor bridge returned an invalid response")
+    return value
+
+
+def require_unlinked_regular_file(path: Path) -> os.stat_result:
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise RuntimeError("host editor requires an unlinked regular file")
+    return metadata
+
+
+def replace_document(path: Path, content: str) -> None:
+    metadata = require_unlinked_regular_file(path)
+    mode = stat.S_IMODE(metadata.st_mode)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            descriptor = -1
+            stream.write(content)
+        shutil.copystat(path, temporary, follow_symlinks=False)
+        require_unlinked_regular_file(path)
+        os.replace(temporary, path)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def parse_address(value: str) -> tuple[str, int]:
+    host, separator, port = value.rpartition(":")
+    if not separator or not host:
+        raise RuntimeError("host editor bridge address is invalid")
+    try:
+        parsed_port = int(port)
+    except ValueError as error:
+        raise RuntimeError("host editor bridge address is invalid") from error
+    if not 1 <= parsed_port <= 65535:
+        raise RuntimeError("host editor bridge address is invalid")
+    return host, parsed_port
+
+
+def main(arguments: list[str]) -> int:
+    if len(arguments) != 1:
+        print("usage: host-editor FILE", file=sys.stderr)
+        return 2
+    path = Path(arguments[0])
+    try:
+        require_unlinked_regular_file(path)
+        content = path.read_text(encoding="utf-8")
+        if len(content.encode("utf-8")) > MAX_DOCUMENT_BYTES:
+            raise RuntimeError("host editor document is too large")
+        payload = json.dumps(
+            {"version": 1, "token": TOKEN, "content": content}, separators=(",", ":")
+        ).encode("utf-8")
+        with socket.create_connection(parse_address(ADDRESS), timeout=5) as connection:
+            connection.sendall(struct.pack(">I", len(payload)) + payload)
+            response = receive_response(connection)
+            if set(response) == {"version", "status"} \
+                    and type(response.get("version")) is int and response.get("version") == 1 \
+                    and response.get("status") == "editing":
+                connection.settimeout(EDITOR_RESULT_TIMEOUT_SECONDS)
+                response = receive_response(connection)
+        if set(response) == {"version", "status", "content"} \
+                and type(response.get("version")) is int and response.get("version") == 1 \
+                and response.get("status") == "complete" \
+                and isinstance(response.get("content"), str):
+            replace_document(path, response["content"])
+            return 0
+        if set(response) == {"version", "status", "error"} \
+                and type(response.get("version")) is int and response.get("version") == 1 \
+                and response.get("status") == "failed" \
+                and isinstance(response.get("error"), str):
+            print(f"host editor failed: {response['error']}", file=sys.stderr)
+            return 1
+        raise RuntimeError("host editor bridge returned an invalid response")
+    except (OSError, UnicodeError, ValueError, RuntimeError) as error:
+        print(f"host editor bridge failed: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
