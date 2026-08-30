@@ -71,7 +71,11 @@ vim.api.nvim_create_autocmd('TextYankPost', {
 vim.api.nvim_create_autocmd('VimResized', {
 	group = config_group,
 	desc = 'Automatically equalize windows on terminal size change',
-	command = 'wincmd ='
+	callback = function()
+		for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+			vim.api.nvim_tabpage_call(tabpage, function() vim.cmd.wincmd('=') end)
+		end
+	end,
 })
 
 ---- Filetype options ----
@@ -304,6 +308,9 @@ local function autosave_enable()
 	local buf_name = vim.api.nvim_buf_get_name(buf)
 	if buf_name == '' then
 		error('AutoSave requires a named buffer')
+	end
+	if vim.bo[buf].buftype ~= '' then
+		error('AutoSave requires a file buffer')
 	end
 	if #vim.api.nvim_get_autocmds({ group = autosave_group, buffer = buf }) > 0 then
 		return
