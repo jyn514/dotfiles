@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -74,6 +75,43 @@ class SearchRegexTest(unittest.TestCase):
         finally:
             tmux("kill-server", check=False)
 
+    def test_selected_diagnostic_is_normalized_by_picker_and_open(self) -> None:
+        selection = self.tmux_match("error: src/main.rs:12:5: mismatched types")
+        self.assertIsNotNone(selection)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "src" / "main.rs"
+            target.parent.mkdir()
+            target.write_text("fn main() {}\n")
+            binaries = root / "bin"
+            binaries.mkdir()
+            (binaries / "open").symlink_to(ROOT / "bin" / "open")
+            calls = root / "calls"
+            for name, contents in {
+                "xdg-open": f'#!/bin/sh\nprintf "%s" "$1" > "{calls}"\n',
+                "xdg-mime": "#!/bin/sh\nprintf 'text/plain\\n'\n",
+                "gio": "#!/bin/sh\nprintf 'Default application for text/plain: viewer.desktop\\n'\n",
+            }.items():
+                executable = binaries / name
+                executable.write_text(contents)
+                executable.chmod(0o755)
+            path = f"{binaries}:/usr/bin:/bin"
+            (root / ".profile").write_text(f'export PATH="{path}"\n')
+            environment = os.environ | {"HOME": str(root), "PATH": path}
+
+            result = subprocess.run(
+                [str(ROOT / "bin" / "picker-action"), "open", "--read0"],
+                input=os.fsencode(selection) + b"\0",
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls.read_text(), str(target.resolve()))
+
     def test_generated_regex_matches_tmux_configuration(self) -> None:
         expected = f"send-keys -X search-backward '{self.regex}'"
         self.assertIn(expected, TMUX_CONFIG.read_text())
@@ -94,6 +132,20 @@ class SearchRegexTest(unittest.TestCase):
                 match = self.tmux_match(text)
                 self.assertIsNotNone(match)
                 self.assertIn(expected, match)
+
+    def test_matches_common_diagnostic_formats(self) -> None:
+        cases = {
+            "/work/src/main.cc:12:5: error": "/work/src/main.cc:12:5",
+            '  File "/work/app.py", line 42, in main': 'File "/work/app.py", line 42',
+            "    at run (/work/app.js:42:7)": "(/work/app.js:42:7)",
+            "    at pkg.Class.run(Class.java:42)": "(Class.java:42)",
+            "CMake Error at CMakeLists.txt:42 (message):": "CMakeLists.txt:42 ",
+            "src/app.ts(42,7): error TS2322": "src/app.ts(42,7)",
+            "In script.sh line 42:": "script.sh line 42:",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(self.tmux_match(text), expected)
 
     def test_rejects_non_paths_using_tmux_regex_engine(self) -> None:
         for text in (
