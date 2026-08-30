@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+
+EDITOR = os.environ.get("REAL_EDITOR") or "nvim"
+EDITOR_BASENAME = Path(EDITOR).name
+DESKTOP = "Helix" if EDITOR_BASENAME == "hx" else EDITOR_BASENAME
+LINE_RE = re.compile(r"(.*?)(?::([0-9]+))?(?::([0-9]+))?(:)?$")
+
+
+def cmdexists(command: str) -> bool:
+    return shutil.which(command) is not None
+
+
+def run_stdout(argv: list[str], *, check: bool = False) -> str:
+    result = run(argv)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, argv)
+    return result.stdout
+
+
+def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def trim(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return value.strip()
+
+
+def expand_tilde(path: str) -> str:
+    if path == "~" or path.startswith("~/"):
+        return os.environ.get("HOME", "") + path[1:]
+    return path
+
+
+def canonicalize(path: str) -> str:
+    return str(Path(path).resolve(strict=False))
+
+
+def split_line(value: str) -> list[str]:
+    expanded = expand_tilde(value)
+    if Path(expanded).exists():
+        return [canonicalize(expanded)]
+
+    match = LINE_RE.match(value)
+    if not match:
+        return [value]
+
+    parts = list(match.groups())
+    file = parts[0]
+    parsed = urlsplit(file)
+    if parsed.scheme.lower() == "file" and parsed.path != file:
+        file = unquote(parsed.path)
+
+    file = expand_tilde(file)
+    file = canonicalize(file)
+    parts[0] = file
+    return [part for part in parts if part is not None]
+
+
+def split_editor_pathspec(value: str) -> list[str]:
+    if value.endswith(".") and not Path(expand_tilde(value)).exists():
+        undotted = split_line(value[:-1])
+        if Path(undotted[0]).is_file():
+            return undotted
+    return split_line(value)
+
+
+def join_line(parts: list[str]) -> list[str] | str:
+    if len(parts) < 2:
+        return parts[0]
+
+    file = parts[0]
+    line = parts[1]
+    column = parts[2] if len(parts) > 2 else ""
+
+    if EDITOR == "nvim":
+        return [f"+normal!{line}G{column}|", file]
+
+    if EDITOR == "kak":
+        suffix = f":{column}" if len(parts) > 2 else ""
+        return [file, f"+{line}{suffix}"]
+
+    suffix = f":{column}" if len(parts) > 2 else ""
+    return f"{file}:{line}{suffix}"
+
+
+def flatten_editor_args(joined: list[str] | str) -> list[str]:
+    if isinstance(joined, list):
+        return joined
+    return [joined]
+
+
+def editor_exec_args(joined: list[str] | str) -> list[str]:
+    args = flatten_editor_args(joined)
+    if args and Path(args[-1]).name.startswith("-"):
+        return [*args[:-1], "--", args[-1]]
+    return args
+
+
+def vim_fnameescape(value: str) -> str:
+    special = set(" \t\n*?[]{} `$\\%#'\"|!<")
+    return "".join(f"\\{char}" if char in special else char for char in value)
+
+
+def editor_commands(args: list[str]) -> list[str]:
+    command = "drop" if EDITOR == "nvim" else "open"
+    if EDITOR != "nvim":
+        quoted = [json.dumps(arg) if arg else "" for arg in args]
+        return [f": {command} {' '.join(quoted)}"]
+
+    file = args[-1]
+    commands = [f": {command} {vim_fnameescape(file)}"]
+    if len(args) > 1:
+        match = re.fullmatch(r"\+normal!(\d+)G(\d*)\|", args[0])
+        if match:
+            line, column = match.groups()
+            commands.append(f": call cursor({line}, {column or 1})")
+    return commands
+
+
+def refresh_path_from_profile() -> None:
+    result = run(["bash", "-c", '. ~/.profile; printf \'%s\\n\' "$PATH"'])
+    if result.returncode == 0 and result.stdout:
+        os.environ["PATH"] = result.stdout.rstrip("\n")
+
+
+def remove_dir_from_path(directory: str) -> None:
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(path for path in paths if path != directory)
+
+
+def open_in_tmux_editor(args: list[str]) -> int:
+    try:
+        current_window = trim(
+            run_stdout(["tmux", "display-message", "-p", "#{window_id}"], check=True)
+        )
+        pane_raw = run_stdout(
+            [
+                "tmux",
+                "list-panes",
+                "-a",
+                "-f",
+                f"#{{&&:#{{==:#{{window_id}},{current_window}}},#{{==:#{{pane_current_command}},{EDITOR}}}}}",
+                "-F",
+                "#{pane_id}",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        return error.returncode
+    pane = trim(pane_raw)
+    if pane == "":
+        pane = None
+
+    if pane is None:
+        result = subprocess.run(
+            ["tmux", "split-window", "-h", "-P", "-F", '"#{pane_id}"', EDITOR, *args],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return result.returncode
+    else:
+        target = ["-t", pane]
+        try:
+            pane_in_mode = trim(
+                run_stdout(
+                    ["tmux", "display-message", *target, "-p", "#{pane_in_mode}"],
+                    check=True,
+                )
+            )
+        except subprocess.CalledProcessError as error:
+            return error.returncode
+        if pane_in_mode == "1":
+            result = subprocess.run(
+                ["tmux", "send-keys", *target, "-X", "cancel"], check=False
+            )
+            if result.returncode != 0:
+                return result.returncode
+        result = subprocess.run(["tmux", "send-keys", *target, "Escape"], check=False)
+        if result.returncode != 0:
+            return result.returncode
+        for editor_command in editor_commands(args):
+            result = subprocess.run(
+                ["tmux", "send-keys", *target, editor_command, "Enter"],
+                check=False,
+            )
+            if result.returncode != 0:
+                return result.returncode
+        result = subprocess.run(["tmux", "select-pane", *target, "-Z"], check=False)
+        if result.returncode != 0:
+            return result.returncode
+
+    activate_window_if_needed(pane)
+    return 0
+
+
+def activate_window_if_needed(pane: str | None) -> None:
+    if "DISPLAY" in os.environ and cmdexists("xdotool"):
+        window_id = os.environ.get("WINDOWID")
+        if not window_id:
+            return
+        active = trim(run_stdout(["xdotool", "getactivewindow"])) or ""
+        pid = trim(run_stdout(["xdotool", "getwindowpid", active])) or ""
+        tree = run_stdout(["pstree", "-p", pid])
+        if "tmux" not in tree:
+            subprocess.run(
+                [
+                    "tmux",
+                    "run-shell",
+                    "-t",
+                    "" if pane is None else pane,
+                    "xdotool",
+                    "windowactivate",
+                    window_id,
+                ],
+                check=False,
+            )
+    elif sys.platform == "darwin":
+        script = """tell application "iTerm2"
+\tactivate  -- bring background window to foreground
+\treopen    -- open window if not yet open
+end tell"""
+        subprocess.run(["osascript", "-e", script], check=False)
+
+
+def os_open(args: list[str]) -> int:
+    if cmdexists("xdg-open"):
+        return subprocess.run(["xdg-open", *args], check=False).returncode
+    else:
+        remove_dir_from_path(str(Path(__file__).parent))
+        return subprocess.run(["open", *args], check=False).returncode
+
+
+def duti_default(file: str) -> str:
+    basename = os.path.basename(file)
+    if "." not in basename:
+        return ""
+    ext = basename.rsplit(".", 1)[1]
+    return run_stdout(["duti", "-x", ext]).split("\n")[0]
+
+
+def xdg_default(file: str) -> str:
+    mime = run_stdout(["xdg-mime", "query", "filetype", file]).rstrip("\n")
+    if cmdexists("gio"):
+        first = run_stdout(["gio", "mime", mime]).split("\n")[0]
+        if not first.startswith("Default "):
+            return ""
+        return re.sub(r"^Default .*: ", "", first)
+    return run_stdout(["xdg-mime", "query", "default", mime])
+
+
+def default_app(file: str) -> str:
+    if cmdexists("duti"):
+        return duti_default(file)
+    return xdg_default(file)
+
+
+def default_is_editor(default: str) -> bool:
+    return (
+        f"{DESKTOP}.desktop" in default
+        or DESKTOP in default
+        or "TextEdit" in default
+    )
+
+
+def xdgopen(argv: list[str]) -> int:
+    target = expand_tilde(argv[-1])
+
+    if not re.search(r"^[a-zA-Z]+://", target) and re.search(r":[0-9]+$", target):
+        split = split_line(target)
+        if len(split) < 2:
+            return os_open([*map(expand_tilde, argv[:-1]), split[0]])
+        file = split[0]
+        if default_is_editor(default_app(file)):
+            joined = join_line(split)
+            return open_in_tmux_editor(flatten_editor_args(joined))
+        else:
+            return os_open([*map(expand_tilde, argv[:-1]), file])
+
+    return os_open([expand_tilde(arg) for arg in argv])
+
+
+def main(argv: list[str]) -> int:
+    name = Path(sys.argv[0]).name
+    refresh_path_from_profile()
+
+    if name == "editor-hax":
+        if not argv:
+            os.execvp(EDITOR, [EDITOR])
+            return 0
+        if len(argv) > 1:
+            return 2
+        os.execvp(
+            EDITOR,
+            [EDITOR, *editor_exec_args(join_line(split_editor_pathspec(argv[0])))],
+        )
+        return 0
+
+    if name == "hx-hax":
+        if len(argv) > 1:
+            return 2
+        if argv:
+            joined = join_line(split_line(argv[0]))
+            return open_in_tmux_editor(flatten_editor_args(joined))
+        else:
+            return open_in_tmux_editor([""])
+
+    if not argv:
+        return 1
+
+    return xdgopen(argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for bin/open and bin/hx-hax behavior."""
+"""Unit tests for the open command subsystem."""
 
 from __future__ import annotations
 
@@ -16,8 +16,10 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-REPO = Path(__file__).resolve().parents[2]
-DEFAULT_HX_HAX = REPO / "bin" / "hx-hax"
+REPO = Path(__file__).resolve().parents[3]
+IMPLEMENTATION = REPO / "tools" / "open" / "open"
+PUBLIC_BIN = REPO / "bin"
+MODULE_PATH = PUBLIC_BIN / "hx-hax"
 
 
 class OpenScriptTest(unittest.TestCase):
@@ -38,7 +40,7 @@ class OpenScriptTest(unittest.TestCase):
             os.environ["REAL_EDITOR"] = real_editor
         try:
             loader = importlib.machinery.SourceFileLoader(
-                f"open_under_test_{id(self)}", str(DEFAULT_HX_HAX)
+                f"open_under_test_{id(self)}", str(MODULE_PATH)
             )
             spec = importlib.util.spec_from_loader(loader.name, loader)
             self.assertIsNotNone(spec)
@@ -421,7 +423,7 @@ class OpenScriptTest(unittest.TestCase):
         target = self.root / "note.txt"
         target.write_text("tea\n", encoding="utf-8")
         module = self.load_open_module()
-        bin_dir = str(DEFAULT_HX_HAX.parent)
+        bin_dir = str(PUBLIC_BIN)
         completed = subprocess.CompletedProcess(["open", str(target)], 0)
 
         with (
