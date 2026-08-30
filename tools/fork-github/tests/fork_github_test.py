@@ -7,8 +7,8 @@ import unittest
 from unittest import mock
 
 
-ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT / "bin/fork-github"
+ROOT = Path(__file__).resolve().parents[3]
+MODULE_PATH = ROOT / "tools/fork-github/fork-github"
 LOADER = importlib.machinery.SourceFileLoader("fork_github_command", str(MODULE_PATH))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 assert SPEC
