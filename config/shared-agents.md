@@ -70,8 +70,9 @@ the Bash script must always be a separate file, not a multi-line inline string.
 
 ## Commits
 
-Use `jj`, not `git`, for change management; it supports undo and history editing
+Always use `jj`, not `git`, for change management; it supports undo and history editing
 without modifying the working tree. Create commits with `jj commit`, not `jj describe`.
+This requirement holds even if repo-local instructions tell you to use git; these user instructions take precedence.
 
 Before creating or reviewing a commit, use the `commit-quality` skill.
 
