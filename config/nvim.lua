@@ -410,8 +410,6 @@ if first_run then
 		},
 		'neovim/nvim-lspconfig',
 		{ 'jyn514/alabaster.nvim',    branch = 'dark' },
-		'mfussenegger/nvim-dap', -- debugging
-		{ "rcarriga/nvim-dap-ui",      dependencies = { "nvim-neotest/nvim-nio" } },
 		{
 			"saghen/blink.cmp",
 			dependencies = { "rafamadriz/friendly-snippets" },
@@ -1007,7 +1005,6 @@ if first_run then
 		}
 	})
 	wk.add({
-		{ '<LocalLeader>', group = "Debugging" },
 		{ '[',             group = "Previous object" },
 		{ ']',             group = "Next object" },
 	})
@@ -1037,81 +1034,6 @@ gitsigns.setup({
 
 bind('<leader>h', gitsigns.blame_line, 'Show blame for current line ([h]istory)')
 bind('<leader>o', function() vim.cmd(".GBrowse") end, "open commit under cursor")
-
----- Debugging ----
-
-local dap = require('dap')
-dap.adapters.cppdbg = {
-	id = 'cppdbg',
-	type = 'executable',
-	-- https://github.com/mfussenegger/nvim-dap/wiki/C-C---Rust-(gdb-via--vscode-cpptools)#installation
-	command = vim.env.HOME .. '/.local/lib/cpptools/extension/debugAdapters/bin/OpenDebugAD7'
-}
--- TODO: get rr integration working
--- https://github.com/farre/midas/ looks promising
--- see also https://github.com/rr-debugger/rr/wiki/Using-rr-in-an-IDE#setting-up-visual-studio-code
-dap.configurations.cpp = {
-	-- See https://code.visualstudio.com/docs/cpp/launch-json-reference
-	{
-		name = "Launch file",
-		type = "cppdbg",
-		request = "launch",
-		program = vim.fn.getcwd() .. '/build/yottadb',
-		args = {},
-		stopAtEntry = false,
-		cwd = vim.fn.getcwd(),
-		-- program = function()
-		-- return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
-		-- end,
-	},
-}
-dap.configurations.c = dap.configurations.cpp
-dap.configurations.rust = dap.configurations.cpp
-
-local dap_widgets = require('dap.ui.widgets')
-local dapui = require('dapui')
-bind('<LocalLeader>b', dap.toggle_breakpoint, 'Toggle line breakpoint')
-bind('<LocalLeader>c', dap.continue, 'Start or continue running')
-bind('<LocalLeader>C', dap.reverse_continue, 'Reverse-continue')
-bind('<LocalLeader>r', dap.restart, 'Restart debuggee')
-bind('<LocalLeader>g', dap.run_to_cursor, 'Run to current line') --mnemonic: goto
--- TODO: this doesn't work without an attached session :(
--- bind('<LocalLeader><LocalLeader>', dap.run_to_cursor, 'Run to current line') --mnemonic: double-tap
-bind('<LocalLeader><Up>', dap.up, 'Go up frame')
-bind('<LocalLeader><Down>', dap.down, 'Go down frame')
--- by analogy with ctrl-o,ctrl-i
--- mnemonic: out, in
-bind('<LocalLeader>o', dap.up, 'Go up frame')
-bind('<LocalLeader>i', dap.down, 'Go down frame')
-bind('<LocalLeader>z', dap.focus_frame, 'Focus current frame')
-bind('<LocalLeader>j', dap.step_into, 'Step into')
-bind('<LocalLeader>k', dap.step_out, 'Step out') -- i think this is what gdb calls 'finish'?
-bind('<LocalLeader>l', dap.step_over, 'Step over')
-bind('<LocalLeader>h', dap.step_back, 'Step backwards')
--- K by analogy with normal hover
-bind('<LocalLeader>K', dap_widgets.hover, 'Inspect expression')
-bind('<LocalLeader><Esc>', function()
-	dap.terminate()
-	dapui.close()
-end, 'Kill process and stop debug session')
--- NOTE: you can set up `display` equivalent by entering insert mode in the 'DAP Watches' panel,
--- but this is NOT the same as a hardware watchpoint.
--- For the latter use `-exec watch ...`
--- See https://github.com/mfussenegger/nvim-dap/issues/1452.
--- TODO: set up a keybinding for watchpoints
--- TODO: set up a thread picker with telescope.
--- might also be useful to replace stack trace on the left?
--- see https://github.com/nvim-telescope/telescope-vimspector.nvim/blob/master/lua/telescope/_extensions/vimspector.lua for a simple example
-
-dapui.setup()
-dap.listeners.before.attach.dapui_config = dapui.open
-dap.listeners.before.launch.dapui_config = dapui.open
--- this is so broken lmao, let's not even try
--- dap.listeners.after.launch.record = function()
--- 	dap.repl.execute("-exec target record-full")
--- end
-dap.listeners.before.event_terminated.dapui_config = dapui.close
-dap.listeners.before.event_exited.dapui_config = dapui.close
 
 ---- LSP ----
 

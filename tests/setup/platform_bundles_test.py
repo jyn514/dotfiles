@@ -23,21 +23,6 @@ class PlatformBundleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.manifest = json.loads((ROOT / "install/bundles.json").read_text())
 
-    def test_cpptools_has_glibc_and_musl_assets_for_x64_and_arm64(self) -> None:
-        platforms = self.manifest["cpptools"]["platforms"]
-
-        self.assertEqual(
-            {
-                "linux-aarch64",
-                "linux-musl-aarch64",
-                "linux-musl-x86_64",
-                "linux-x86_64",
-            },
-            set(platforms),
-        )
-        self.assertIn("cpptools-linux-arm64.vsix", platforms["linux-aarch64"])
-        self.assertIn("cpptools-alpine-arm64.vsix", platforms["linux-musl-aarch64"])
-
     def test_architecture_aliases_are_normalized(self) -> None:
         with (
             mock.patch.object(bundles.platform, "system", return_value="Linux"),
