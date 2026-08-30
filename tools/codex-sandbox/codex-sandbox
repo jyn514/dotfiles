@@ -1083,7 +1083,10 @@ def execute(state: State) -> int:
     register_tmux_pane(state)
     builder = state.repository / ".agents/sandbox/base-image"
     if builder.is_file() and os.access(builder, os.X_OK):
-        base_image = run([str(builder)], capture=True, cwd=state.repository).stdout.strip()
+        base_image = phase(
+            "base image resolution",
+            lambda: run([str(builder)], capture=True, cwd=state.repository).stdout.strip(),
+        )
     else:
         base_image = "node:24-alpine3.22"
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -1120,7 +1123,7 @@ def execute(state: State) -> int:
     arguments = [*sidecar_arguments, *arguments]
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
-        print(f"Sandbox startup: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
+        print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
     return run_agent(state, arguments)
 
 
@@ -1141,8 +1144,8 @@ def cleanup(state: State) -> None:
     if state.cleaned:
         return
     state.cleaned = True
-    started = time.monotonic()
-    previous = started
+    cleanup_started = time.monotonic()
+    previous = cleanup_started
 
     def timing(label: str) -> None:
         nonlocal previous
@@ -1198,19 +1201,19 @@ def cleanup(state: State) -> None:
         list(executor.map(lambda item: cleanup_resource(*item), networks))
     timing("networks")
     if state.skills_tmp is not None:
-        started = time.monotonic()
+        removal_started = time.monotonic()
         try:
             shutil.rmtree(state.skills_tmp)
         except OSError:
-            elapsed = int(time.monotonic() - started)
+            elapsed = int(time.monotonic() - removal_started)
             print(f"warning: Cleaning up staged skills {state.skills_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("skills")
     if state.pi_agent_tmp is not None:
-        started = time.monotonic()
+        removal_started = time.monotonic()
         try:
             shutil.rmtree(state.pi_agent_tmp)
         except OSError:
-            elapsed = int(time.monotonic() - started)
+            elapsed = int(time.monotonic() - removal_started)
             print(f"warning: Cleaning up private Pi state {state.pi_agent_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("Pi state")
     if state.lock_coordinated is not None:
@@ -1241,7 +1244,7 @@ def cleanup(state: State) -> None:
             path.unlink(missing_ok=True)
     timing("temporary files")
     if os.environ.get("CODEX_SANDBOX_TIMING"):
-        print(f"Sandbox cleanup total: {time.monotonic() - started:.2f}s", file=sys.stderr)
+        print(f"Sandbox cleanup total: {time.monotonic() - cleanup_started:.2f}s", file=sys.stderr)
 
 
 def login_codex_sidecar() -> int:

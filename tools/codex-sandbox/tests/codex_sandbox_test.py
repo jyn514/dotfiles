@@ -362,6 +362,9 @@ class CodexSandboxTest(unittest.TestCase):
                 esac
                 exit 0
             fi
+            if [ "$1" = rm ] && [ -n "$FAKE_CLEANUP_DELAY" ]; then
+                sleep "$FAKE_CLEANUP_DELAY"
+            fi
             exit 0
         """)
         write_executable(self.fake_bin / "python3", """
@@ -417,6 +420,7 @@ class CodexSandboxTest(unittest.TestCase):
 
     def launcher_environment(self, **updates: str) -> dict[str, str]:
         environment = os.environ.copy()
+        environment.pop("TMUX", None)
         environment.update({
             "PATH": f"{self.fake_bin}:{environment['PATH']}",
             "HOME": str(self.home),
@@ -923,6 +927,25 @@ class CodexSandboxTest(unittest.TestCase):
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
+
+    def test_timing_names_its_boundary_and_uses_the_full_cleanup_interval(self) -> None:
+        builder = self.repo / ".agents" / "sandbox" / "base-image"
+        builder.parent.mkdir(parents=True)
+        write_executable(builder, "#!/bin/sh\nprintf '%s\\n' node:24-alpine3.22\n")
+        result = self.run_launcher(
+            CODEX_SANDBOX_TIMING="1", FAKE_CLEANUP_DELAY="0.2",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("Sandbox preparation:", result.stderr)
+        self.assertIn("base image resolution=", result.stderr)
+        self.assertNotIn("Sandbox startup:", result.stderr)
+        containers = float(re.search(
+            r"Sandbox cleanup: containers=([0-9.]+)s", result.stderr,
+        ).group(1))
+        total = float(re.search(
+            r"Sandbox cleanup total: ([0-9.]+)s", result.stderr,
+        ).group(1))
+        self.assertGreaterEqual(total, containers)
 
     def test_creates_network_with_public_only_routes(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0")
