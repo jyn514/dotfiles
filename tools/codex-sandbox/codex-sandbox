@@ -630,6 +630,24 @@ def stage_skills(state: State) -> None:
         "pi-keybindings.json", "pi-codex-subagents.json",
     ):
         shutil.copy2(DOTFILES / "config" / name, config / name)
+    instruction_includes = []
+    repository_instructions = state.repository / ".agents/sandbox/AGENTS.md"
+    if repository_instructions.is_file():
+        instruction_includes.append("@/src/work/.agents/sandbox/AGENTS.md")
+    home_instructions = state.home / ".agents/sandbox/AGENTS.md"
+    if home_instructions.is_file():
+        shutil.copytree(
+            home_instructions.parent, state.skills_tmp / "sandbox",
+            symlinks=False, ignore_dangling_symlinks=True,
+        )
+        instruction_includes.append("@../../.agents/sandbox/AGENTS.md")
+    if instruction_includes:
+        agents = config / "pi-AGENTS.md"
+        content = agents.read_text(encoding="utf-8").rstrip("\n")
+        agents.write_text(
+            content + "\n" + "\n".join(instruction_includes) + "\n",
+            encoding="utf-8",
+        )
 
 
 def finalize_proxy_session(state: State) -> list[str]:
@@ -712,6 +730,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
         "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'skills'},dst=/home/codex/.agents/skills",
+        *(
+            ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
+            if (state.skills_tmp / "sandbox").is_dir() else []
+        ),
         "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
