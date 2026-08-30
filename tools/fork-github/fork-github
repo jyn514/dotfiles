@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Clone a repository and configure upstream and personal GitHub remotes."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
+from typing import Callable
+
+
+GITHUB_PAGE = re.compile(r"^(https://github\.com/[^/]+/[^/?#]+)")
+
+
+@dataclass(frozen=True)
+class Result:
+    status: int
+
+
+@dataclass(frozen=True)
+class Repository:
+    url: str
+    name: str
+    host: str
+
+
+def exit_status(returncode: int) -> int:
+    return returncode if returncode >= 0 else 128 - returncode
+
+
+def run(arguments: list[str], *, cwd: Path | None = None) -> Result:
+    if os.environ.get("V") == "1":
+        print("+ " + shlex.join(arguments), file=sys.stderr)
+    try:
+        completed = subprocess.run(arguments, cwd=cwd, check=False)
+    except OSError as error:
+        print(
+            f"fork-github: could not execute {arguments[0]!r}: {error}",
+            file=sys.stderr,
+        )
+        return Result(127 if isinstance(error, FileNotFoundError) else 126)
+    return Result(exit_status(completed.returncode))
+
+
+def repository_url(value: str) -> str:
+    page = GITHUB_PAGE.match(value)
+    if page is not None:
+        return page.group(1).removesuffix(".git") + ".git"
+    if value.startswith(("https://", "ssh://", "git@")):
+        return value
+    return f"https://github.com/{value}.git"
+
+
+def remote_host(url: str) -> str:
+    if url.startswith("https://"):
+        host = url[len("https://") :].split("/", 1)[0]
+    elif url.startswith("ssh://"):
+        host = url[len("ssh://") :].split("/", 1)[0].split("@", 1)[-1]
+    elif url.startswith("git@"):
+        host = url[len("git@") :].split(":", 1)[0]
+    else:
+        host = ""
+    return host.split(":", 1)[0]
+
+
+def parse_repository(value: str) -> Repository:
+    url = repository_url(value)
+    trimmed = url.removesuffix("/").removesuffix(".git")
+    name = trimmed.rsplit("/", 1)[-1]
+    return Repository(url, name, remote_host(url))
+
+
+def configure(
+    repository: Repository,
+    directory: Path,
+    runner: Callable[..., Result] = run,
+) -> int:
+    cloned = runner(
+        ["git", "clone", "--filter=blob:none", repository.url, str(directory)]
+    )
+    if cloned.status:
+        return cloned.status
+
+    renamed = runner(["git", "remote", "rename", "origin", "upstream"], cwd=directory)
+    if renamed.status:
+        return renamed.status
+
+    origin = f"git@{repository.host}:jyn514/{repository.name}.git"
+    added = runner(["git", "remote", "add", "origin", origin], cwd=directory)
+    if not added.status:
+        return 0
+
+    restored = runner(
+        ["git", "remote", "rename", "upstream", "origin"], cwd=directory
+    )
+    if restored.status:
+        print(
+            "fork-github: failed to restore origin after remote setup failure",
+            file=sys.stderr,
+        )
+    return added.status
+
+
+def fork(arguments: list[str], runner: Callable[..., Result] = run) -> int:
+    if not 1 <= len(arguments) <= 2:
+        print("usage: fork-github <repository> [directory]", file=sys.stderr)
+        return 2
+
+    repository = parse_repository(arguments[0])
+    directory = Path(arguments[1] if len(arguments) == 2 else repository.name)
+    status = configure(repository, directory, runner)
+    if status:
+        return status
+    print(directory)
+    return 0
+
+
+def main(arguments: list[str]) -> int:
+    return fork(arguments)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
