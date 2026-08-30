@@ -32,6 +32,11 @@ const FINAL_STATUSES = new Set<AgentRuntimeStatus>(["completed", "failed", "inte
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export type AgentRuntimeStatus = "starting" | "running" | "completed" | "failed" | "interrupted";
 
+export interface DirectSkillRoute {
+  agentType: string;
+  proposalOnly?: boolean;
+}
+
 export interface SubagentConfig {
   shortcut?: string;
   storageDir?: string;
@@ -39,6 +44,7 @@ export interface SubagentConfig {
   models?: string[];
   modelsFromEnabledModels?: boolean;
   modelResponseTimeoutMs?: number;
+  directSkillRoutes?: Record<string, DirectSkillRoute>;
   defaults?: {
     skills?: string[];
     extensions?: string[];
@@ -224,9 +230,31 @@ function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === "string" && (THINKING_LEVELS as readonly string[]).includes(value);
 }
 
+function normalizeDirectSkillRoutes(value: unknown): Record<string, DirectSkillRoute> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([rawSkill, route]) => ({ skill: rawSkill.trim(), route }))
+    .filter(({ skill }) => skill.length > 0);
+  const counts = new Map<string, number>();
+  for (const { skill } of entries) counts.set(skill, (counts.get(skill) ?? 0) + 1);
+
+  const routes: Record<string, DirectSkillRoute> = {};
+  for (const { skill, route: value } of entries) {
+    if (counts.get(skill) !== 1 || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    const route = value as Record<string, unknown>;
+    if (typeof route.agentType !== "string" || !route.agentType.trim()) continue;
+    routes[skill] = {
+      agentType: route.agentType.trim(),
+      ...(route.proposalOnly === true ? { proposalOnly: true } : {}),
+    };
+  }
+  return routes;
+}
+
 function normalizeConfig(value: unknown): SubagentConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const raw = value as Record<string, unknown>;
+  const directSkillRoutes = normalizeDirectSkillRoutes(raw.directSkillRoutes);
   const defaultsRaw = raw.defaults && typeof raw.defaults === "object" && !Array.isArray(raw.defaults)
     ? raw.defaults as Record<string, unknown>
     : undefined;
@@ -249,6 +277,7 @@ function normalizeConfig(value: unknown): SubagentConfig {
     ...(stringList(raw.models) ? { models: stringList(raw.models) } : {}),
     ...(raw.modelsFromEnabledModels === true ? { modelsFromEnabledModels: true } : {}),
     ...(modelResponseTimeoutMs !== undefined ? { modelResponseTimeoutMs } : {}),
+    ...(Object.keys(directSkillRoutes).length ? { directSkillRoutes } : {}),
     ...(defaults && Object.keys(defaults).length ? { defaults } : {}),
   };
 }

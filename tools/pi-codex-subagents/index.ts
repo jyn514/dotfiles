@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
@@ -10,11 +12,13 @@ import { Type } from "typebox";
 import { Text, matchesKey, truncateToWidth, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
 import {
   AgentManager,
+  getAgentDefinition,
   getAgentDefinitionsDescription,
   loadSubagentConfig,
   THINKING_LEVELS,
   type AgentCompletionEvent,
   type AgentInfo,
+  type DirectSkillRoute,
   type ThinkingLevel,
   writeFullToolOutput,
 } from "./core.js";
@@ -188,6 +192,49 @@ export default function (pi: ExtensionAPI) {
     return new Text(text, 0, 0);
   });
 
+  interface SpawnFromContextRequest {
+    taskName: string;
+    message: string;
+    agentType?: string;
+    skills?: string[];
+    loadedSkillPaths?: Record<string, string>;
+    modelReference?: string;
+    thinking?: ThinkingLevel;
+  }
+
+  const spawnFromContext = async (ctx: any, request: SpawnFromContextRequest) => {
+    const currentModel = ctx.model;
+    if (!currentModel?.provider || !currentModel?.id) throw new Error("the parent has no active provider/model pair.");
+    const requestedSkills = request.skills ?? [];
+    const loadedSkillPaths = {
+      ...Object.fromEntries(cachedSkills.map((skill) => [skill.name, skill.filePath])),
+      ...request.loadedSkillPaths,
+    };
+    const unavailableSkills = requestedSkills.filter((skill) => !Object.hasOwn(loadedSkillPaths, skill));
+    if (unavailableSkills.length) throw new Error(`skills are not loaded in the parent session: ${unavailableSkills.join(", ")}`);
+    const model = request.modelReference ? spawnModels.get(request.modelReference) : undefined;
+    if (request.modelReference && !model) throw new Error(`model "${request.modelReference}" is not in the configured spawn models: ${[...spawnModels.keys()].join(", ") || "none"}`);
+    if (model && !ctx.modelRegistry.getAvailable().some((entry: any) => entry.provider === model.provider && entry.id === model.modelId)) {
+      throw new Error(`model "${request.modelReference}" is not currently available.`);
+    }
+    return manager.spawnAgent({
+      task_name: request.taskName,
+      message: request.message,
+      agent_type: request.agentType,
+      skills: requestedSkills,
+      loadedSkillPaths,
+      cwd: ctx.cwd,
+      parentSessionId: parentSessionId(ctx),
+      parentSessionFile: ctx.sessionManager.getSessionFile?.(),
+      inheritedProvider: currentModel.provider,
+      inheritedModelId: currentModel.id,
+      inheritedThinking: pi.getThinkingLevel() as ThinkingLevel,
+      inheritedTools: pi.getActiveTools().join(","),
+      model,
+      thinking: request.thinking,
+    });
+  };
+
   const spawnAgentTool = {
     name: "spawn_agent",
     label: "Spawn Agent",
@@ -221,32 +268,13 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
       });
     },
     async execute(_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: any, ctx: any) {
-      const currentModel = ctx.model;
-      if (!currentModel?.provider || !currentModel?.id) throw new Error("spawn_agent failed: the parent has no active provider/model pair.");
-      const requestedSkills: string[] = params.skills ?? [];
-      const loadedSkillPaths = Object.fromEntries(cachedSkills.map((skill) => [skill.name, skill.filePath]));
-      const unavailableSkills = requestedSkills.filter((skill) => !Object.hasOwn(loadedSkillPaths, skill));
-      if (unavailableSkills.length) throw new Error(`spawn_agent failed: skills are not loaded in the parent session: ${unavailableSkills.join(", ")}`);
-      const model = params.model ? spawnModels.get(params.model) : undefined;
-      if (params.model && !model) throw new Error(`spawn_agent failed: model "${params.model}" is not in the configured spawn models: ${[...spawnModels.keys()].join(", ") || "none"}`);
-      if (model && !ctx.modelRegistry.getAvailable().some((entry: any) => entry.provider === model.provider && entry.id === model.modelId)) {
-        throw new Error(`spawn_agent failed: model "${params.model}" is not currently available.`);
-      }
       try {
-        const result = await manager.spawnAgent({
-          task_name: params.task_name,
+        const result = await spawnFromContext(ctx, {
+          taskName: params.task_name,
           message: params.message,
-          agent_type: params.agent_type,
-          skills: requestedSkills,
-          loadedSkillPaths,
-          cwd: ctx.cwd,
-          parentSessionId: parentSessionId(ctx),
-          parentSessionFile: ctx.sessionManager.getSessionFile?.(),
-          inheritedProvider: currentModel.provider,
-          inheritedModelId: currentModel.id,
-          inheritedThinking: pi.getThinkingLevel() as ThinkingLevel,
-          inheritedTools: pi.getActiveTools().join(","),
-          model,
+          agentType: params.agent_type,
+          skills: params.skills,
+          modelReference: params.model,
           thinking: params.thinking,
         });
         const info = manager.getAgentInfo(result.task_name, parentSessionId(ctx));
@@ -273,9 +301,69 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
     },
   };
 
+  const directSkillMessage = (text: string, route: DirectSkillRoute, ctx: any): string => {
+    if (!route.proposalOnly) return text;
+    const sessionId = parentSessionId(ctx);
+    const sessionFile = ctx.sessionManager.getSessionFile?.();
+    return [
+      text,
+      "",
+      "This is delegated analysis for a parent Pi session.",
+      `Parent session ID: ${sessionId}`,
+      `Parent session file: ${sessionFile || "(not saved)"}`,
+      "Operate in suggest mode only. Do not mutate the parent or child session.",
+      "Return the exact proposal and whether the original request authorized its application.",
+    ].join("\n");
+  };
+
+  pi.on("input", async (event: any, ctx: any) => {
+    if (event.source === "extension" || event.streamingBehavior || event.images?.length) return;
+    if (typeof ctx.resolveSkillCommand !== "function") return;
+    const invocation = ctx.resolveSkillCommand(event.text);
+    if (!invocation) return;
+
+    const route = loadSubagentConfig().directSkillRoutes?.[invocation.skill.name];
+    if (!route) return;
+    const definition = getAgentDefinition(route.agentType);
+    if (!definition) {
+      ctx.ui?.notify?.(`Direct skill route template not found: ${route.agentType}`, "warning");
+      return;
+    }
+    if (definition.prompt?.trim()) {
+      ctx.ui?.notify?.(`Direct skill route template must not have a prompt body: ${route.agentType}`, "warning");
+      return;
+    }
+    if (!ctx.model?.provider || !ctx.model?.id || !ctx.sessionManager.getSessionId?.()) {
+      ctx.ui?.notify?.("Direct skill delegation requires an active model and parent session identity", "warning");
+      return;
+    }
+    const parentSessionFile = ctx.sessionManager.getSessionFile?.();
+    if (route.proposalOnly && (!parentSessionFile || !existsSync(parentSessionFile))) {
+      ctx.ui?.notify?.("Proposal-only direct skill routing requires an existing parent session file", "warning");
+      return;
+    }
+
+    try {
+      const result = await spawnFromContext(ctx, {
+        taskName: `direct/${invocation.skill.name}/${randomUUID()}`,
+        message: directSkillMessage(event.text, route, ctx),
+        agentType: route.agentType,
+        skills: [invocation.skill.name],
+        loadedSkillPaths: { [invocation.skill.name]: invocation.skill.filePath },
+      });
+      ctx.ui?.notify?.(`Delegated /skill:${invocation.skill.name} to ${result.task_name}`, "info");
+    } catch (error) {
+      ctx.ui?.notify?.(`Direct skill delegation failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+    }
+    return { action: "handled" as const };
+  });
+
   pi.on("session_start", async (_event: any, ctx: any) => {
     activeContext = ctx;
     activeAgents.clear();
+    if (loadSubagentConfig().directSkillRoutes && typeof ctx.resolveSkillCommand !== "function") {
+      ctx.ui?.notify?.("Direct skill routes require Pi extension context resolveSkillCommand() support", "warning");
+    }
     try { spawnModels = resolveSpawnModels(ctx); }
     catch (error: any) { ctx.ui?.notify?.(`spawn_agent model resolution failed, keeping the previous list: ${error?.message || error}`, "warning"); }
     pi.registerTool(spawnAgentTool);

@@ -78,6 +78,13 @@ Optional configuration lives at:
   "modelResponseTimeoutMs": 600000,
   "models": ["openai-codex/gpt-5.6-sol", "anthropic/claude-opus-4-6"],
   "modelsFromEnabledModels": true,
+  "directSkillRoutes": {
+    "tighten-docs": { "agentType": "luna-direct" },
+    "session-title-curation": {
+      "agentType": "luna-title-direct",
+      "proposalOnly": true
+    }
+  },
   "defaults": {
     "skills": ["web-investigate"],
     "extensions": ["@scope/pi-extra-tools"]
@@ -94,6 +101,16 @@ Optional configuration lives at:
 Configuration is read when agents spawn, while cleanup runs when the extension loads. Restart Pi after changing `storageDir` or `retentionDays` so storage lookup and cleanup use the same configuration throughout the process.
 
 Template skills and extensions override configured defaults. Skills explicitly requested by the parent are added to configured template/default skills. Tool selection belongs to the template or is inherited from the parent. A `model` and `thinking` level requested by the parent override the template and the inherited values, so one task can run on another model without a template.
+
+## Direct skill routing
+
+`directSkillRoutes` delegates exact `/skill:<name>` invocations to an agent template before the parent model runs. Each route requires `agentType`; `proposalOnly: true` adds the existing parent session identity and instructs the child to return proposals without mutation. This is a prompt-level instruction, not a security boundary: use a read-only template when the child must be mechanically unable to apply changes.
+
+Direct routes apply only to idle, text-only interactive or RPC input. Images, extension-authored input, and queued input follow Pi's normal skill handling. Route templates must contain frontmatter only: a template prompt before `/skill:<name>` would prevent Pi from expanding the skill. Put model, thinking, tools, skills, and extensions in template frontmatter instead.
+
+Missing routes use normal parent execution. A missing or prompted template, unavailable proposal session, or missing parent identity also falls back before child startup, with a warning. Once child startup is attempted, any failure is reported without rerunning the skill on the parent because the child may already have produced effects. Child completion uses the normal parent-continuation delivery path.
+
+Direct routing requires a Pi version whose extension context provides `resolveSkillCommand()`; older versions continue to support ordinary `spawn_agent` use.
 
 ## Model routing
 

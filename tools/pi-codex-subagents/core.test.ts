@@ -139,6 +139,27 @@ describe("run storage", () => {
     fs.rmSync(configFile, { force: true });
   });
 
+  test("normalizes direct skill routes independently", () => {
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(configFile, JSON.stringify({
+      directSkillRoutes: {
+        " tighten-docs ": { agentType: " luna ", proposalOnly: false, ignored: true },
+        "session-title-curation": { agentType: "luna-title", proposalOnly: true },
+        missing: {},
+        empty: { agentType: " " },
+        malformed: "luna",
+        duplicate: { agentType: "first" },
+        " duplicate ": { agentType: "second" },
+      },
+    }));
+
+    expect(loadSubagentConfig().directSkillRoutes).toEqual({
+      "tighten-docs": { agentType: "luna" },
+      "session-title-curation": { agentType: "luna-title", proposalOnly: true },
+    });
+    fs.rmSync(configFile, { force: true });
+  });
+
   test("keeps legacy temporary runs discoverable", () => {
     fs.rmSync(configFile, { force: true });
     const parentSessionId = "legacy-parent";
@@ -959,6 +980,7 @@ describe("extension completion delivery and TUI", () => {
       getActiveTools() { return ["read", "bash"]; },
     };
     const parentSessionId = "index-integration-parent";
+    fs.writeFileSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), "");
     const availableModels = [
       { provider: "test", id: "fake" },
       { provider: "fireworks", id: "accounts/fireworks/models/glm-5p2" },
@@ -983,17 +1005,51 @@ describe("extension completion delivery and TUI", () => {
         setWidget(_key: string, value: any) { widget = value; },
         notify(message: string) { notifications.push(message); },
       },
+      resolveSkillCommand(text: string) {
+        if (!text.startsWith("/skill:")) return undefined;
+        const space = text.indexOf(" ");
+        const name = space === -1 ? text.slice(7) : text.slice(7, space);
+        const args = space === -1 ? "" : text.slice(space + 1);
+        return {
+          skill: { name, filePath: path.join(TEST_AGENT_DIR, "skills", name, "SKILL.md") },
+          args,
+        };
+      },
     };
     const scope = path.join(getRunsDir(), parentScopeKey(parentSessionId));
     fs.rmSync(scope, { recursive: true, force: true });
     const configFile = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "config.json");
     // A thinking suffix on an allowlist entry is tolerated and stripped from the offered pair.
-    fs.writeFileSync(configFile, JSON.stringify({ models: ["test/fake:high", "typo/nope"], modelsFromEnabledModels: true }));
+    fs.writeFileSync(configFile, JSON.stringify({
+      models: ["test/fake:high", "typo/nope"],
+      modelsFromEnabledModels: true,
+      directSkillRoutes: {
+        "tighten-docs": { agentType: "luna-direct" },
+        "session-title-curation": { agentType: "luna-title-direct", proposalOnly: true },
+        blocked: { agentType: "prompted" },
+      },
+    }));
+    const agentsDir = path.join(TEST_AGENT_DIR, "pi-codex-subagents", "agents");
+    fs.mkdirSync(agentsDir, { recursive: true });
+    fs.writeFileSync(path.join(agentsDir, "luna-direct.md"), "---\nname: luna-direct\nprovider: test\nmodel: fake\nthinking: low\n---\n");
+    fs.writeFileSync(path.join(agentsDir, "luna-title-direct.md"), "---\nname: luna-title-direct\nprovider: test\nmodel: fake\nthinking: low\n---\n");
+    fs.writeFileSync(path.join(agentsDir, "prompted.md"), "---\nname: prompted\n---\nTemplate prompt body.");
+    for (const skill of ["tighten-docs", "session-title-curation", "blocked"]) {
+      const directory = path.join(TEST_AGENT_DIR, "skills", skill);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, "SKILL.md"), `---\nname: ${skill}\ndescription: test\n---\nTest skill.`);
+    }
     const { default: subagentExtension } = await import("./index.js");
     subagentExtension(pi);
     const emit = async (name: string, event: any = {}) => {
-      for (const handler of handlers.get(name) ?? []) await handler(event, ctx);
+      let result: any;
+      for (const handler of handlers.get(name) ?? []) result = await handler(event, ctx);
+      return result;
     };
+    const findDirectAgent = (prefix: string) => fs.readdirSync(scope)
+      .filter((file) => file.endsWith(".info.json"))
+      .map((file) => JSON.parse(fs.readFileSync(path.join(scope, file), "utf8")) as any)
+      .find((entry) => entry.taskName.startsWith(prefix));
 
     // Session start is the single resolution point, so before it the arguments are absent.
     const spawnArgs = () => tools.get("spawn_agent").parameters.properties;
@@ -1121,6 +1177,55 @@ describe("extension completion delivery and TUI", () => {
       await expect(tools.get("spawn_agent").execute("spawn-5", { task_name: "gone", message: "x", model: "openai/gpt-5" }, undefined, undefined, ctx))
         .rejects.toThrow(/not currently available/);
 
+      // Direct routing uses the resolved skill path before before_agent_start has populated cachedSkills.
+      const directResult = await emit("input", {
+        text: "/skill:tighten-docs shorten this",
+        source: "interactive",
+      });
+      expect(directResult).toEqual({ action: "handled" });
+      const directAgent = findDirectAgent("direct/tighten-docs/");
+      expect(directAgent).toMatchObject({
+        agentType: "luna-direct",
+        skills: ["tighten-docs"],
+        skillPaths: [path.join(TEST_AGENT_DIR, "skills", "tighten-docs", "SKILL.md")],
+        lastTaskMessage: "/skill:tighten-docs shorten this",
+      });
+      const directChildEntries = fs.readFileSync(directAgent!.sessionFile, "utf8")
+        .trim().split("\n").map((line) => JSON.parse(line));
+      expect(directChildEntries.find((entry) => entry.type === "prompt")?.message)
+        .toStartWith("/skill:tighten-docs shorten this");
+
+      const proposalResult = await emit("input", {
+        text: "/skill:session-title-curation name this session",
+        source: "rpc",
+      });
+      expect(proposalResult).toEqual({ action: "handled" });
+      const proposalAgent = findDirectAgent("direct/session-title-curation/");
+      expect(proposalAgent?.lastTaskMessage).toStartWith("/skill:session-title-curation name this session");
+      expect(proposalAgent?.lastTaskMessage).toContain(`Parent session ID: ${parentSessionId}`);
+      expect(proposalAgent?.lastTaskMessage).toContain("Operate in suggest mode only");
+
+      const notificationCount = notifications.length;
+      expect(await emit("input", { text: "/skill:unknown x", source: "interactive" })).toBeUndefined();
+      expect(await emit("input", { text: "/skill:tighten-docs x", source: "extension" })).toBeUndefined();
+      expect(await emit("input", { text: "/skill:tighten-docs x", source: "interactive", streamingBehavior: "followUp" })).toBeUndefined();
+      expect(await emit("input", { text: "/skill:tighten-docs x", source: "interactive", images: [{ type: "image" }] })).toBeUndefined();
+      expect(await emit("input", { text: "/skill:blocked x", source: "interactive" })).toBeUndefined();
+      fs.rmSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), { force: true });
+      expect(await emit("input", { text: "/skill:session-title-curation x", source: "interactive" })).toBeUndefined();
+      fs.writeFileSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), "");
+      expect(notifications.slice(notificationCount)).toContain("Direct skill route template must not have a prompt body: prompted");
+      expect(notifications.slice(notificationCount)).toContain("Proposal-only direct skill routing requires an existing parent session file");
+
+      const failureNotificationCount = notifications.length;
+      process.env.PI_SUBAGENT_PI_BIN = path.join(TEST_AGENT_DIR, "missing-pi");
+      expect(await emit("input", {
+        text: "/skill:tighten-docs startup failure",
+        source: "interactive",
+      })).toEqual({ action: "handled" });
+      process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
+      expect(notifications.slice(failureNotificationCount).some((message) => message.startsWith("Direct skill delegation failed:"))).toBe(true);
+
       // Unconfigured takes both runtime arguments away again even though Pi still has enabledModels.
       fs.writeFileSync(configFile, "{}");
       await emit("session_start", { reason: "restart" });
@@ -1131,6 +1236,9 @@ describe("extension completion delivery and TUI", () => {
       await emit("session_shutdown", { reason: "quit" });
       fs.rmSync(scope, { recursive: true, force: true });
       fs.rmSync(configFile, { force: true });
+      fs.rmSync(path.join(TEST_AGENT_DIR, "pi-codex-subagents", "agents"), { recursive: true, force: true });
+      fs.rmSync(path.join(TEST_AGENT_DIR, "skills"), { recursive: true, force: true });
+      fs.rmSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), { force: true });
       delete process.env.PI_SUBAGENT_PI_BIN;
     }
   });
