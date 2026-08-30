@@ -1,0 +1,51 @@
+approvals_reviewer = "user"
+service_tier = "default"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "low"
+default_permissions = "default_permission_rules"
+
+[permissions.default_permission_rules]
+extends = ":workspace"
+
+[permissions.default_permission_rules.filesystem]
+"/private/tmp" = "write"
+
+[features.multi_agent_v2]
+# breaks /agent and max_threads
+enabled = false
+# unfortunately Sol forces it on, so configure it anyway
+max_concurrent_threads_per_session = 13
+
+[agents]
+max_threads = 13
+max_depth = 2
+
+[tui]
+status_line = ["model-with-reasoning", "branch-changes", "context-used", "five-hour-limit"]
+status_line_use_colors = true
+session_picker_view = "comfortable"
+resume_cwd = "current"
+terminal_title = ["run-state", "context-used", "model"]
+
+[mcp_servers.cclsp]
+enabled = false
+command = "npx"
+args = ["cclsp"]
+
+[mcp_servers.cclsp.env]
+CCLSP_CONFIG_PATH = ".agents/cclsp.json"
+
+[mcp_servers.cclsp.tools.find_definition]
+approval_mode = "approve"
+
+[mcp_servers.cclsp.tools.find_references]
+approval_mode = "approve"
+
+[mcp_servers.cclsp.tools.get_diagnostics]
+approval_mode = "approve"
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
+
+[notice]
+hide_rate_limit_model_nudge = true

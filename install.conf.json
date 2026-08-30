@@ -11,6 +11,7 @@
     "link": {
       "$HOME/.codex/AGENTS.md": "config/AGENTS.md",
       "$HOME/.codex/breq.md": "config/breq.md",
+      "$HOME/.codex/dotfiles.config.toml": "config/codex.toml",
       "$HOME/.codex/developer-instructions.md": "config/codex-developer-instructions.md",
       "$HOME/.pi/agent/AGENTS.md": "config/pi-AGENTS.md",
       "$HOME/.pi/agent/breq.md": "config/breq.md",
