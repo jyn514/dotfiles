@@ -751,6 +751,8 @@ end
 
 require('nvim-treesitter.configs').setup {
 	auto_install = true,
+	sync_install = true,
+	ensure_installed = { 'markdown', 'markdown_inline' },
 	highlight = { enable = true },
 	-- incremental_selection = { enable = true },
 }
@@ -949,6 +951,16 @@ require("nvim-lightbulb").setup({
 
 ---- UI ----
 
+local function set_mumps_highlights()
+	vim.api.nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })
+	vim.api.nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })
+end
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+	group = config_group,
+	callback = set_mumps_highlights,
+})
+
 vim.cmd.colorscheme 'alabaster-black'
 
 -- try Meslo on macOS; look for "use different font for non-ascii glyphs" in iTerm settings
@@ -1137,17 +1149,6 @@ vim.keymap.set({ 'n', 'v' }, 'g=', vim.lsp.buf.format, { desc = "Format whole fi
 vim.keymap.set('n', 'gc', pickers.lsp_incoming_calls, { desc = "Show incoming calls" })
 vim.keymap.set('n', 'gC', pickers.lsp_outgoing_calls, { desc = "Show outgoing calls" })
 
-vim.api.nvim_create_autocmd("User", {
-	group = config_group,
-	pattern = "TelescopePreviewerLoaded",
-	-- make previews show less space and more text
-	callback = function(args)
-		vim.wo.wrap = true
-		vim.cmd.normal("zs")
-		vim.bo.tabstop = 2
-	end,
-})
-
 -- use K for hover
 
 -- from `:h lspattach` and https://sbulav.github.io/til/til-neovim-highlight-references/
@@ -1276,11 +1277,6 @@ vim.filetype.add { extension = {
 	pet  = 'petal'
 } }
 
-local function set_mumps_highlights()
-	vim.api.nvim_set_hl(0, 'mumpsCommand', { link = 'Special' })
-	vim.api.nvim_set_hl(0, 'mumpsZCommand', { link = 'Special' })
-end
-
 vim.api.nvim_create_autocmd("FileType", {
 	group = config_group,
 	callback = function()
@@ -1295,13 +1291,6 @@ vim.api.nvim_create_autocmd("FileType", {
 		elseif ft == "petal" then
 			vim.bo.commentstring = "//%s"
 		end
-	end
-})
-
-vim.api.nvim_create_autocmd("ColorScheme", {
-	group = config_group,
-	callback = function()
-		set_mumps_highlights()
 	end
 })
 
