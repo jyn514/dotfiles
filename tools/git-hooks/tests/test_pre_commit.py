@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools/git-hooks"))
-sys.path.insert(0, str(ROOT / "config/githooks/pre_commit_hooks"))
+sys.path.insert(0, str(ROOT / "tools/git-hooks/pre_commit_hooks"))
 from git_hooks import pre_commit  # noqa: E402
 import check_added_large_files  # noqa: E402
 import check_case_conflict  # noqa: E402
@@ -80,7 +80,7 @@ class PreCommitTest(unittest.TestCase):
                 mock.patch.dict(os.environ, {"TMPDIR": temporary}),
                 mock.patch.object(pre_commit, "run", side_effect=run),
             ):
-                status = pre_commit.main([], hook_directory=ROOT / "config/githooks")
+                status = pre_commit.main([], hook_directory=ROOT / "tools/git-hooks")
 
             self.assertEqual(128 + signal.SIGTERM, status)
             self.assertEqual(directory.resolve(), Path.cwd())

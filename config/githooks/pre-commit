@@ -12,4 +12,4 @@ from git_hooks.pre_commit import main  # noqa: E402
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:], hook_directory=Path(__file__).resolve().parent))
+    raise SystemExit(main(sys.argv[1:], hook_directory=ROOT / "tools/git-hooks"))
