@@ -133,8 +133,7 @@ vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }, {
 		else
 			value = '+1'
 		end
-		local win = vim.fn.bufwinid(args.buf)
-		if win >= 0 then
+		for _, win in ipairs(vim.fn.win_findbuf(args.buf)) do
 			vim.api.nvim_set_option_value('colorcolumn', value, { win = win })
 		end
 	end,
@@ -968,8 +967,7 @@ MiniStatusline.setup {
 			local filename    = '%f%m%r'
 			local fileinfo    = MiniStatusline.section_fileinfo({ trunc_width = 120 })
 
-			local pos         = vim.fn.getcurpos()
-			local location    = pos[2] .. ':' .. pos[3]
+			local location    = vim.fn.line('.') .. ':' .. vim.fn.virtcol('.')
 			local session     = vim.fn.ObsessionStatus('⏵', '⏸')
 
 			return MiniStatusline.combine_groups({
@@ -1218,12 +1216,12 @@ lsplang.flix = {
 			return marker and vim.fs.dirname(marker) or vim.fs.dirname(fname)
 		end,
 		settings = {},
+		on_attach = function(client, _)
+			client.commands["flix.runMain"] = function(_, _)
+				vim.cmd("terminal flix run")
+			end
+		end,
 	},
-	on_attach = function(client, _)
-		client.commands["flix.runMain"] = function(_, _)
-			vim.cmd("terminal flix run")
-		end
-	end
 }
 -- not through vim.lsp because i don't know yet how to configure the default config
 if first_run then
