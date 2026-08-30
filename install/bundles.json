@@ -1,29 +1,4 @@
 {
-  "cpptools": {
-    "destination": ".local/lib/cpptools",
-    "executable": "extension/debugAdapters/bin/OpenDebugAD7",
-    "platforms": {
-      "linux-aarch64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-linux-arm64.vsix",
-      "linux-musl-aarch64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-alpine-arm64.vsix",
-      "linux-musl-x86_64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-alpine-x64.vsix",
-      "linux-x86_64": "https://github.com/microsoft/vscode-cpptools/releases/download/v1.32.2/cpptools-linux-x64.vsix"
-    },
-    "sha256": {
-      "linux-aarch64": "e2097ab158160245765c914e8a955b0540c61b59dc9b8d538d2a059d15bbf26d",
-      "linux-musl-aarch64": "4912b82f359b5b2e4d88b4ac18822a391cc25019282949801fdef56e88491a05",
-      "linux-musl-x86_64": "850525bc45329bbc4f7734dbbedb8b73ee1dbead563bad233ce7c6348451cf5a",
-      "linux-x86_64": "2931836d7fd3d41868631123a8f98f4c0932363183115d40a389cc2211e91b2b"
-    },
-    "update": {
-      "assets": {
-        "linux-aarch64": "cpptools-linux-arm64.vsix",
-        "linux-musl-aarch64": "cpptools-alpine-arm64.vsix",
-        "linux-musl-x86_64": "cpptools-alpine-x64.vsix",
-        "linux-x86_64": "cpptools-linux-x64.vsix"
-      },
-      "repository": "microsoft/vscode-cpptools"
-    }
-  },
   "powershell-editor-services": {
     "destination": ".local/lib/PowerShellEditorServices",
     "platforms": {

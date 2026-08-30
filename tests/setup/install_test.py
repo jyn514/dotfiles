@@ -222,7 +222,6 @@ class LocalInstallationTests(unittest.TestCase):
             ".config/zsh/antidote",
             ".local/lib/PowerShellEditorServices",
             ".local/lib/cargo/bin",
-            ".local/lib/cpptools",
         ):
             (self.home / directory).mkdir(parents=True)
         cargo_binstall = self.home / ".local/lib/cargo/bin/cargo-binstall"

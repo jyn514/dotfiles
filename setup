@@ -24,9 +24,9 @@ mise_exec() {
 
 install_platform_bundles() {
 	if exists apk; then
-		python3 libexec/setup/install_platform_bundles.py cpptools powershell-editor-services
+		python3 libexec/setup/install_platform_bundles.py powershell-editor-services
 	else
-		mise_exec python libexec/setup/install_platform_bundles.py cpptools powershell-editor-services
+		mise_exec python libexec/setup/install_platform_bundles.py powershell-editor-services
 	fi
 }
 
