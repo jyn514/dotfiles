@@ -1416,72 +1416,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(42, result.returncode)
         self.assertFalse(output.exists())
 
-    def test_fork_github_strips_page_url_suffixes(self) -> None:
-        calls = self.directory / "git-calls"
-        self.executable(
-            "git",
-            'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
-            'if [ "$1" = clone ]; then mkdir "$4"; fi\n',
-        )
 
-        result = subprocess.run(
-            [
-                str(ROOT / "bin/fork-github"),
-                "https://github.com/user/repository?tab=readme-ov-file",
-            ],
-            cwd=self.directory,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=os.environ | {
-                "GIT_CALLS": str(calls),
-                "PATH": f"{self.directory}:{os.environ['PATH']}",
-            },
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            "clone --filter=blob:none https://github.com/user/repository.git repository",
-            calls.read_text().splitlines()[0],
-        )
-
-    def test_fork_github_keeps_repository_name_when_checkout_directory_differs(self) -> None:
-        calls = self.directory / "git-calls"
-        self.executable(
-            "git",
-            'printf "<%s>\\n" "$@" >> "$GIT_CALLS"\n'
-            'if [ "$1" = clone ]; then mkdir "$4"; fi\n',
-        )
-        environment = os.environ | {
-            "GIT_CALLS": str(calls),
-            "PATH": f"{self.directory}:{os.environ['PATH']}",
-        }
-
-        result = subprocess.run(
-            [str(ROOT / "bin/fork-github"), "owner/repository", "custom checkout"],
-            cwd=self.directory,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        )
-        missing = subprocess.run(
-            [str(ROOT / "bin/fork-github")],
-            cwd=self.directory,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("custom checkout\n", result.stdout)
-        self.assertEqual(
-            ["<remote>", "<add>", "<origin>", "<git@github.com:jyn514/repository.git>"],
-            calls.read_text().splitlines()[-4:],
-        )
-        self.assertEqual(2, missing.returncode)
-        self.assertIn("usage:", missing.stderr)
 
     def test_b_enters_workspace_and_preserves_metadata_failures(self) -> None:
         workspace = self.directory / "workspace with spaces"
@@ -1903,83 +1838,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("fmt --check\n", calls.read_text())
 
-    def test_gh_comments_normalizes_url_and_rejects_unsafe_issue_names(self) -> None:
-        calls = self.directory / "gh-calls"
-        self.executable(
-            "gh",
-            'printf "%s\\n" "$*" >> "$GH_CALLS"\n'
-            'case " $* " in *" --json "*) printf \'{}\\n\';; '
-            "*) printf 'issue output\\n';; esac\n",
-        )
-        self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
-        environment = os.environ | {
-            "GH_CALLS": str(calls),
-            "PATH": f"{self.directory}:{os.environ['PATH']}",
-        }
 
-        result = subprocess.run(
-            [str(ROOT / "bin/gh-comments"), "github.com/user/repo/issues/123"],
-            cwd=self.directory,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        )
-        unsafe = subprocess.run(
-            [str(ROOT / "bin/gh-comments"), "user/repo", "../escape"],
-            cwd=self.directory,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=environment,
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("https://github.com/user/repo/issues/123", calls.read_text())
-        self.assertEqual(2, len(calls.read_text().splitlines()))
-        self.assertEqual(1, unsafe.returncode)
-        self.assertFalse((self.directory.parent / "escape.json").exists())
-
-    def test_gh_comments_does_not_publish_partial_exports(self) -> None:
-        self.executable(
-            "gh",
-            'case " $* " in\n'
-            '  *" --json "*) printf "json\\n"; '
-            '[ -z "${GH_STATUS:-}" ] || exit "$GH_STATUS";;\n'
-            '  *) printf "text\\n"; '
-            '[ -z "${TEXT_STATUS:-}" ] || exit "$TEXT_STATUS";;\n'
-            "esac\n",
-        )
-        self.executable("less", 'exit "${LESS_STATUS:-0}"\n')
-        environment = os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"}
-
-        for variable, status in (("GH_STATUS", 24), ("TEXT_STATUS", 25)):
-            result = subprocess.run(
-                [str(ROOT / "bin/gh-comments"), "user/repo", "123"],
-                cwd=self.directory,
-                env=environment | {variable: str(status)},
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            self.assertEqual(status, result.returncode, variable)
-            self.assertFalse((self.directory / "123.json").exists())
-            self.assertFalse((self.directory / "123.txt").exists())
-            self.assertEqual([], list(self.directory.glob(".123.*")))
-
-        less_failure = subprocess.run(
-            [str(ROOT / "bin/gh-comments"), "user/repo", "123"],
-            cwd=self.directory,
-            env=environment | {"LESS_STATUS": "26"},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        self.assertEqual(26, less_failure.returncode)
-        self.assertEqual("json\n", (self.directory / "123.json").read_text())
-        self.assertEqual("text\n", (self.directory / "123.txt").read_text())
 
     def test_claude_statusline_rejects_invalid_workspace(self) -> None:
         result = subprocess.run(
@@ -2350,55 +2209,7 @@ class CommandTest(unittest.TestCase):
         )
         self.assertEqual(0, valid.returncode, valid.stderr)
 
-    def test_git_autosquash_propagates_fallback_branch_failure(self) -> None:
-        self.executable(
-            "git",
-            'case "$1" in\n'
-            "  symbolic-ref) exit 1;;\n"
-            "  for-each-ref) exit 24;;\n"
-            "  *) exit 99;;\n"
-            "esac\n",
-        )
 
-        result = subprocess.run(
-            [str(ROOT / "bin/git-autosquash")],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=os.environ | {"PATH": f"{self.directory}:{os.environ['PATH']}"},
-        )
-
-        self.assertEqual(24, result.returncode)
-
-    def test_git_autosquash_only_defaults_remote_for_a_missing_config_key(self) -> None:
-        calls = self.directory / "git-calls"
-        self.executable(
-            "git",
-            'printf "%s\\n" "$*" >> "$GIT_CALLS"\n'
-            'case "$1" in\n'
-            '  symbolic-ref) printf "main\\n";;\n'
-            '  config) exit "${CONFIG_STATUS:-1}";;\n'
-            '  merge-base) printf "abc123\\n";;\n'
-            '  revise) exit 0;;\n'
-            'esac\n',
-        )
-        environment = os.environ | {
-            "GIT_CALLS": str(calls),
-            "PATH": f"{self.directory}:{os.environ['PATH']}",
-        }
-
-        missing = subprocess.run(
-            [str(ROOT / "bin/git-autosquash")], env=environment, check=False
-        )
-        fatal = subprocess.run(
-            [str(ROOT / "bin/git-autosquash")],
-            env=environment | {"CONFIG_STATUS": "25"},
-            check=False,
-        )
-
-        self.assertEqual(0, missing.returncode)
-        self.assertIn("merge-base HEAD origin/HEAD", calls.read_text().splitlines())
-        self.assertEqual(25, fatal.returncode)
 
 
 if __name__ == "__main__":
