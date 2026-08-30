@@ -39,7 +39,7 @@ class VendoredArtifactTests(unittest.TestCase):
         large_executables = {
             str(path.relative_to(ROOT))
             for path in (ROOT / "bin").iterdir()
-            if path.is_file() and path.stat().st_size > 100_000
+            if path.is_file() and not path.is_symlink() and path.stat().st_size > 100_000
         }
         self.assertLessEqual(large_executables, inventoried)
 

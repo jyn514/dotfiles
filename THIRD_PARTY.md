@@ -11,7 +11,7 @@ machine-readable provenance and checksums are in `install/vendored.json`.
   recorded commit, with its file-extension list narrowed to `.m`.
 - `vendor/dotbot/` is a minimal Dotbot snapshot. `VERSION` records the exact
   upstream commit and the upstream license is stored beside it.
-- `bin/git-filter-repo` is the upstream v2.38.0 single-file program. Its
+- `vendor/git-filter-repo/git-filter-repo` is the upstream v2.38.0 single-file program. Its
   built-in `--version` output is the upstream Git blob ID, not the release tag.
 
 ## Updating an artifact
