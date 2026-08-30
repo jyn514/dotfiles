@@ -8,7 +8,7 @@ This repository stores dotfiles and bootstrap scripts. User command links and sm
 
 - `./setup.sh`: installs or links tools and dotfiles for the current platform. Read the relevant function before using it on a new machine.
 - `./track.sh <existing file> [name]`: moves a user file into `config/` and adds its Dotbot mapping, or copies a system file into `global/` and records it in `install/global.txt`.
-- `python3 tests/open/test_open.py`: runs unit tests for the editor/open wrapper behavior.
+- `python3 tools/open/tests/test_open.py`: runs unit tests for the editor/open wrapper behavior.
 - `python3 tests/wezterm/wezterm_test.py`: validates selector patterns in `config/wezterm.lua`.
 - `dev/test`: runs the test suite and repository checks.
 - `shellcheck setup.sh track.sh bin/* dev/* libexec/**/*.sh tools/**/*.sh`: checks shell scripts where applicable; some entries are not shell scripts.
