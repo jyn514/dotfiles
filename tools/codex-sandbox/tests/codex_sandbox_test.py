@@ -807,7 +807,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertFalse(any(str(auth) in item for item in agent))
         self.assertTrue(any(item.startswith("CODEX_SIDECAR_URL=http://codex-auth-proxy-") for item in agent))
         self.assertIn(
-            f"type=bind,src={ROOT / 'tools/codex-auth-proxy/pi-extension'},"
+            f"type=bind,src={ROOT / 'tools/codex-sandbox/auth-proxy/pi-extension'},"
             "dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
             agent,
         )
@@ -941,7 +941,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
         self.assertEqual(2, len(builds))
-        self.assertTrue(any("tools/codex-auth-proxy/Dockerfile" in call for call in builds))
+        self.assertTrue(any("tools/codex-sandbox/auth-proxy/Dockerfile" in call for call in builds))
         self.assertTrue(any("tools/codex-sandbox/image/Dockerfile" in call for call in builds))
         self.assertIn("sha256:built-image-id", self.final_run())
 

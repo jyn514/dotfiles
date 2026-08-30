@@ -1,16 +1,16 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
 cd "$root"
 cache_key=$(git hash-object \
-	tools/codex-auth-proxy/Dockerfile \
-	tools/codex-auth-proxy/server.py \
+	tools/codex-sandbox/auth-proxy/Dockerfile \
+	tools/codex-sandbox/auth-proxy/server.py \
 	| git hash-object --stdin)
 image="codex-auth-proxy:$cache_key"
 if ! docker image inspect "$image" >/dev/null 2>&1; then
 	printf 'Building Codex authentication proxy image %s ...\n' "$image" >&2
-	docker build --file tools/codex-auth-proxy/Dockerfile --tag "$image" . >&2
+	docker build --file tools/codex-sandbox/auth-proxy/Dockerfile --tag "$image" . >&2
 fi
 image_id=$(docker image inspect --format '{{.Id}}' "$image")
 printf 'sha256:%s\n' "${image_id#sha256:}"
