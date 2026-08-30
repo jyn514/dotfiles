@@ -130,7 +130,7 @@ class LinuxMimetypeTests(unittest.TestCase):
         )
 
         result = subprocess.run(
-            ["sh", "setup.sh", "mimetypes"],
+            ["sh", "setup", "mimetypes"],
             cwd=ROOT,
             env=env,
             text=True,
@@ -244,24 +244,119 @@ class MacOSMimetypeTests(unittest.TestCase):
 
         self.assertEqual({"md": "net.daringfireball.markdown"}, resolved)
 
-    def test_planned_uti_registration_makes_extension_write_redundant(self) -> None:
-        missing = setup_mimetypes.missing_extension_associations(
-            ["json", "rs"],
-            {"json": "public.json"},
-            set(),
-            ["public.json"],
+    def test_registered_handler_that_is_not_default_is_repaired(self) -> None:
+        self.assertEqual(
+            ["com.adobe.edn"],
+            setup_mimetypes.missing_uti_defaults(
+                ["com.adobe.edn"],
+                {"com.adobe.edn": "com.microsoft.VSCode"},
+                "dev.jyn.nvim",
+            ),
         )
 
-        self.assertEqual(["rs"], missing)
+    def test_role_default_prefers_specific_role_over_all_role(self) -> None:
+        preferences = {
+            "LSHandlers": [
+                {
+                    "LSHandlerContentType": "public.plain-text",
+                    "LSHandlerRoleAll": "com.apple.TextEdit",
+                    "LSHandlerRoleEditor": "dev.jyn.nvim",
+                }
+            ]
+        }
+
+        self.assertEqual(
+            {"public.plain-text": "dev.jyn.nvim"},
+            setup_mimetypes.role_defaults(
+                preferences, ["public.plain-text"], "Editor"
+            ),
+        )
+
+    def test_extension_defaults_probe_real_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            probes = Path(temporary_directory) / "probes"
+            completed = subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=(
+                    f"{probes / 'probe.edn'}\tcom.microsoft.VSCode\n"
+                    f"{probes / 'probe.md'}\tdev.jyn.nvim\n"
+                ),
+            )
+            with mock.patch.object(
+                setup_mimetypes, "run", return_value=completed
+            ) as run:
+                defaults = setup_mimetypes.extension_defaults(
+                    Path("classifier"), probes, ["edn", "md"]
+                )
+
+            self.assertTrue((probes / "probe.edn").exists())
+            self.assertTrue((probes / "probe.md").exists())
+
+        self.assertEqual(
+            {"edn": "com.microsoft.VSCode", "md": "dev.jyn.nvim"}, defaults
+        )
+        run.assert_called_once()
+
+    def test_extension_owned_by_another_application_is_repaired(self) -> None:
+        self.assertEqual(
+            ["edn", "ts"],
+            setup_mimetypes.missing_extension_defaults(
+                ["edn", "md", "ts"],
+                {
+                    "edn": "com.microsoft.VSCode",
+                    "md": "dev.jyn.nvim",
+                    "ts": "com.colliderli.iina",
+                },
+                "dev.jyn.nvim",
+            ),
+        )
 
     def test_policy_does_not_claim_broad_text_web_or_calendar_types(self) -> None:
         policy = setup_mimetypes.load_policy(ROOT / "lib/mimetypes.json")["macos"]
 
         self.assertNotIn("public.text", policy["editor_utis"])
-        self.assertNotIn("html", policy["editor_extension_exceptions"])
-        self.assertNotIn("htm", policy["editor_extension_exceptions"])
-        self.assertNotIn("ics", policy["editor_extension_exceptions"])
-        self.assertIn("toml", policy["editor_extension_exceptions"])
+        self.assertNotIn("html", policy["editor_extensions"])
+        self.assertNotIn("htm", policy["editor_extensions"])
+        self.assertNotIn("ics", policy["editor_extensions"])
+        self.assertNotIn("service", policy["editor_extensions"])
+        self.assertIn("toml", policy["editor_extensions"])
+
+    def test_policy_covers_audited_editor_extensions(self) -> None:
+        policy = setup_mimetypes.load_policy(ROOT / "lib/mimetypes.json")["macos"]
+
+        self.assertTrue(
+            {
+                "clj",
+                "conf",
+                "desktop",
+                "edn",
+                "fish",
+                "graphql",
+                "js",
+                "lua",
+                "scm",
+                "sh",
+                "swift",
+                "ts",
+                "typ",
+                "vim",
+            }.issubset(policy["editor_extensions"])
+        )
+
+    def test_policy_rejects_ambiguous_or_overlapping_extension_ownership(self) -> None:
+        policy = {
+            "editor_extensions": ["ts"],
+            "editor_ambiguous_extensions": ["edn"],
+            "json_handler": {"extensions": ["ts"]},
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "ambiguous extensions"):
+            setup_mimetypes.validate_macos_policy(policy)
+
+        policy["editor_ambiguous_extensions"] = ["ts"]
+        with self.assertRaisesRegex(RuntimeError, "both nvim and fx"):
+            setup_mimetypes.validate_macos_policy(policy)
 
     def test_cleanup_removes_only_neovim_handler_roles(self) -> None:
         preferences = {
@@ -367,8 +462,8 @@ class MacOSMimetypeTests(unittest.TestCase):
                 role="Editor",
                 utis=["public.plain-text", "public.source-code"],
                 launcher_source=ROOT / "libexec/setup/file-handler.swift",
-                imported_extensions=["rs"],
-                imported_parent="public.plain-text",
+                declared_extensions=["rs"],
+                declared_parent="public.plain-text",
             )
 
             with (app / "Contents/Info.plist").open("rb") as plist_file:
@@ -386,11 +481,11 @@ class MacOSMimetypeTests(unittest.TestCase):
             document_type["LSItemContentTypes"],
         )
         self.assertEqual("Editor", document_type["CFBundleTypeRole"])
-        imported = plist["UTImportedTypeDeclarations"][0]
-        self.assertEqual("dev.jyn.nvim.document.rs", imported["UTTypeIdentifier"])
-        self.assertEqual(["public.plain-text"], imported["UTTypeConformsTo"])
+        declared = plist["UTExportedTypeDeclarations"][0]
+        self.assertEqual("dev.jyn.nvim.document.rs", declared["UTTypeIdentifier"])
+        self.assertEqual(["public.plain-text"], declared["UTTypeConformsTo"])
         self.assertEqual(
-            ["rs"], imported["UTTypeTagSpecification"]["public.filename-extension"]
+            ["rs"], declared["UTTypeTagSpecification"]["public.filename-extension"]
         )
         self.assertEqual([str(ROOT / "bin/hx-hax")], plist["JynCommand"])
         self.assertIn("openFiles filenames", launcher)

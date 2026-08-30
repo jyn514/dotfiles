@@ -314,15 +314,34 @@ def default_is_editor(default: str) -> bool:
     )
 
 
+def macos_extensionless_text_file(file: str) -> bool:
+    if sys.platform != "darwin":
+        return False
+    path = Path(file)
+    if path.suffix or not path.is_file():
+        return False
+    try:
+        with path.open("rb") as input_file:
+            sample = input_file.read(8192)
+        if b"\0" in sample:
+            return False
+        sample.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return True
+
+
 def xdgopen(argv: list[str]) -> int:
     target = expand_tilde(argv[-1])
 
     if not re.search(r"^[a-zA-Z]+://", target):
         split = split_pathspec(target)
         if len(split) < 2:
+            if len(argv) == 1 and macos_extensionless_text_file(split[0]):
+                return open_in_tmux_editor([split[0]])
             return os_open([*map(expand_tilde, argv[:-1]), split[0]])
         file = split[0]
-        if default_is_editor(default_app(file)):
+        if macos_extensionless_text_file(file) or default_is_editor(default_app(file)):
             joined = join_line(split)
             return open_in_tmux_editor(flatten_editor_args(joined))
         else:

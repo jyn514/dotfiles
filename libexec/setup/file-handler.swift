@@ -22,6 +22,17 @@ if CommandLine.arguments.dropFirst().first == "--extension-utis" {
     exit(EXIT_SUCCESS)
 }
 
+if CommandLine.arguments.dropFirst().first == "--file-defaults" {
+    while let input = readLine() {
+        let path = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let file = URL(fileURLWithPath: path)
+        let application = NSWorkspace.shared.urlForApplication(toOpen: file)
+        let bundleID = application.flatMap { Bundle(url: $0)?.bundleIdentifier } ?? ""
+        print("\(path)\t\(bundleID)")
+    }
+    exit(EXIT_SUCCESS)
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         guard let command = Bundle.main.object(
