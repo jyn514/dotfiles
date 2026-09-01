@@ -29,7 +29,9 @@ class SearchRegexTest(unittest.TestCase):
         )
         cls.regex = result.stdout.rstrip("\n")
 
-    def tmux_match(self, text: str) -> str | None:
+    def tmux_match(
+        self, text: str, *, backward: bool = False, width: int = 160
+    ) -> str | None:
         socket = f"search-regex-test-{os.getpid()}-{uuid.uuid4().hex}"
         environment = os.environ | {"SEARCH_REGEX_INPUT": text}
 
@@ -50,7 +52,7 @@ class SearchRegexTest(unittest.TestCase):
                 "new-session",
                 "-d",
                 "-x",
-                "160",
+                str(width),
                 "-y",
                 "5",
                 "sh",
@@ -60,8 +62,12 @@ class SearchRegexTest(unittest.TestCase):
             )
             tmux("wait-for", "search-regex-ready")
             tmux("copy-mode")
-            tmux("send-keys", "-X", "history-top")
-            tmux("send-keys", "-X", "search-forward", self.regex)
+            if backward:
+                tmux("send-keys", "-X", "history-bottom")
+                tmux("send-keys", "-X", "search-backward", self.regex)
+            else:
+                tmux("send-keys", "-X", "history-top")
+                tmux("send-keys", "-X", "search-forward", self.regex)
             search_present = tmux(
                 "display-message", "-p", "#{search_present}"
             ).stdout.strip()
@@ -132,6 +138,21 @@ class SearchRegexTest(unittest.TestCase):
                 match = self.tmux_match(text)
                 self.assertIsNotNone(match)
                 self.assertIn(expected, match)
+
+    def test_backward_search_finds_path_after_wrapped_command_line(self) -> None:
+        text = "\n".join(
+            (
+                "(-fish@hephaestus) ~/.../personal/third-website (jj: main)",
+                "; ./new_post.sh things are getting scary" + " " * 80 + "[I]",
+                "creating new post at content/things-are-getting-scary.md",
+                ";",
+            )
+        )
+
+        self.assertEqual(
+            self.tmux_match(text, backward=True, width=80),
+            " content/things-are-getting-scary.md",
+        )
 
     def test_matches_common_diagnostic_formats(self) -> None:
         cases = {
