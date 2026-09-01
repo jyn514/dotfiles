@@ -1022,6 +1022,9 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-codex-subagents.json'},dst=/home/codex/.pi/agent/pi-codex-subagents/config.json,readonly",
         "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/codex.toml'},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/codex-developer-instructions.md'},dst=/home/codex/.codex/developer-instructions.md,readonly",
+        "--mount", f"type=bind,src={DOTFILES / 'config/breq.md'},dst=/home/codex/.codex/breq.md,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
         "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
         *[

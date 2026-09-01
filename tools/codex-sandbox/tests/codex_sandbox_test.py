@@ -668,6 +668,21 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/codex.toml'},"
+            "dst=/home/codex/.codex/dotfiles.config.toml,readonly",
+            run,
+        )
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/codex-developer-instructions.md'},"
+            "dst=/home/codex/.codex/developer-instructions.md,readonly",
+            run,
+        )
+        self.assertIn(
+            f"type=bind,src={ROOT / 'config/breq.md'},"
+            "dst=/home/codex/.codex/breq.md,readonly",
+            run,
+        )
         self.assertNotIn(
             f"type=bind,src={pi_agent},dst=/home/codex/.pi/agent",
             run,
