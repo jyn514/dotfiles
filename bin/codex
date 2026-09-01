@@ -9,8 +9,10 @@ shim_resolve "$0" codex
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
 RULES=$CODEX_HOME/rules/default.rules
-"$DOTFILES/libexec/generate-agent-permissions" codex "$RULES" || \
-	fail "codex wrapper: cannot generate rules"
+if [ -z "${DOTFILES_SANDBOX:-}" ]; then
+	"$DOTFILES/libexec/generate-agent-permissions" codex "$RULES" || \
+		fail "codex wrapper: cannot generate rules"
+fi
 MANIFEST=${CODEX_DEVELOPER_INSTRUCTIONS_FILE:-"$CODEX_HOME/developer-instructions.md"}
 MANIFEST_DIR=$(dirname -- "$MANIFEST")
 COMBINED=$(tmp_file codex-developer-instructions.XXXXXX)

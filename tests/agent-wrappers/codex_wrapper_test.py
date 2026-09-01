@@ -102,6 +102,37 @@ class CodexWrapperTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertEqual([published], list(rules_directory.iterdir()))
 
+    def test_sandbox_skips_permission_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            codex = fake_bin / "codex"
+            codex.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            codex.chmod(0o755)
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            manifest = codex_home / "developer-instructions.md"
+            manifest.write_text("", encoding="utf-8")
+            environment = os.environ | {
+                "DOTFILES_SANDBOX": "1",
+                "HOME": str(root),
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            environment.pop("CODEX_HOME", None)
+
+            result = subprocess.run(
+                [str(WRAPPER), "prompt"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("prompt", result.stdout.splitlines())
+            self.assertFalse((codex_home / "rules").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
