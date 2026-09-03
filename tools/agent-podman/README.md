@@ -76,6 +76,32 @@ Don't mount `connection.env` or the whole access directory.
 
 The forwarded port exposes only authenticated guest SSH; it does not expose an unauthenticated Podman TCP API.
 
+## Recovery
+
+The sandbox reaches the machine through a per-session `socat` relay.
+If the machine stops, the relay may continue accepting TCP connections while its upstream host port refuses them.
+SSH then closes before presenting a server banner, and Podman reports a handshake `EOF` rather than saying that the machine is stopped.
+
+Confirm the failure at the authoritative boundaries before changing credentials:
+
+```sh
+# In the sandbox: Podman reports an SSH handshake EOF.
+podman info
+
+# On the host: the relay log names a refused host.docker.internal port.
+podman logs --tail 100 <agent-podman-relay-container>
+```
+
+When the relay's upstream port is refused, start the existing machine from the dotfiles checkout:
+
+```sh
+tools/agent-podman/start.sh
+```
+
+Do not recreate keys, known-hosts files, or the relay first.
+If the machine is already running or its forwarded port changed, restart the sandbox so the launcher regenerates the relay and connection metadata together.
+Use teardown and setup only when the existing machine or persisted access state cannot be recovered.
+
 ## Teardown
 
 ```sh

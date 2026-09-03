@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -78,6 +79,22 @@ class ParseExecTest(unittest.TestCase):
                 os.environ.pop("CONTAINER_HOST", None)
             else:
                 os.environ["CONTAINER_HOST"] = old_host
+
+    def test_ssh_failure_names_machine_start_recovery(self) -> None:
+        failed = subprocess.CompletedProcess(["ssh"], 255)
+        with mock.patch.object(MODULE.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"Agent Podman SSH is unavailable.*tools/agent-podman/start\.sh",
+            ):
+                MODULE.run_checked(["ssh", "agentbuilder@relay", "true"])
+
+    def test_non_ssh_failure_does_not_name_machine_recovery(self) -> None:
+        failed = subprocess.CompletedProcess(["false"], 1)
+        with mock.patch.object(MODULE.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(RuntimeError, "exit status 1") as failure:
+                MODULE.run_checked(["false"])
+        self.assertNotIn("Agent Podman", str(failure.exception))
 
     def test_ssh_requires_the_pinned_host_alias(self) -> None:
         key = Path(self.temp.name) / "key"

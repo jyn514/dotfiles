@@ -127,9 +127,15 @@ def ssh_target() -> tuple[list[str], str]:
 def run_checked(command: list[str], *, stdin=None) -> None:
     result = subprocess.run(command, stdin=stdin)
     if result.returncode:
+        recovery = ""
+        if result.returncode == 255 and command and Path(command[0]).name == "ssh":
+            recovery = (
+                "; Agent Podman SSH is unavailable. On the host, run the "
+                "dotfiles checkout's tools/agent-podman/start.sh, then retry"
+            )
         raise RuntimeError(
             f"command failed with exit status {result.returncode}: "
-            f"{shlex.join(command[:2])}"
+            f"{shlex.join(command[:2])}{recovery}"
         )
 
 
