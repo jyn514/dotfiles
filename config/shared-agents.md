@@ -68,6 +68,10 @@ use separate files for separate languages.
 For example, if writing a Python script that launches a Bash scripts,
 the Bash script must always be a separate file, not a multi-line inline string.
 
+Before changing existing behavior, inspect the relevant path and line history with `jj log`, commit diffs, and annotation.
+Read the tests introduced with those changes.
+Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
+
 ## Commits
 
 Always use `jj`, not `git`, for change management; it supports undo and history editing
@@ -77,8 +81,6 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 Before creating or reviewing a commit, use the `commit-quality` skill.
 
 ## Records and provenance
-
-Before changing existing behavior, inspect the relevant file and line history. Use commit messages, diffs, and tests to recover prior constraints; separate observed intent from inference.
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
 
