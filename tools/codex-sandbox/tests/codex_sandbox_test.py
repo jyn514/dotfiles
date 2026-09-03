@@ -58,6 +58,16 @@ class AgentSandboxImageTest(unittest.TestCase):
         )
         self.assertIn("ENV EDITOR=vi VISUAL=vi", dockerfile)
 
+    def test_woodpecker_adapter_remains_visible_after_bb_resolves_its_wrapper(self) -> None:
+        dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "COPY --chown=${AGENT_UID}:${AGENT_GID} "
+            "./tools/agent-podman/woodpecker-cli "
+            "/opt/agent-tools/bin/woodpecker-cli",
+            dockerfile,
+        )
+
     def test_login_profile_restores_agent_wrappers_path(self) -> None:
         result = subprocess.run(
             ["sh", "-c", f'. "{AGENT_WRAPPERS_PROFILE}"; printf "%s\\n" "$PATH"'],
