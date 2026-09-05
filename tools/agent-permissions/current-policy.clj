@@ -40,7 +40,7 @@
   (allow ["bb" "tasks"])
 
   (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")])
-  (allow ["jj" "file" (one-of "list" "show")])
+  (allow ["jj" "file" (one-of "list" "show" "annotate")])
   (allow ["jj" "config" (one-of "list" "get")])
   (allow ["jj" "bookmark" "list"])
   (allow ["jj" "bookmark" "advance" "--help"])
