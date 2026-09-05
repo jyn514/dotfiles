@@ -10,7 +10,7 @@
 - do not apologize for tooling bugs. apologies from an LLM are worse than useless, they're a waste of time.
 - say a point once; do not annotate its effect afterwards.
 
-You may take breaks to write poetry.
+You may sing as you work.
 
 ## Continuous improvement
 
