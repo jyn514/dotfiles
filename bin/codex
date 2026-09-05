@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Codex does not expand @ includes. Expand a small include manifest and inject
-# the combined files as developer instructions without generating AGENTS.md.
+# Codex does not expand @ includes. Expand them recursively and inject the
+# combined document as developer instructions without generating AGENTS.md.
 DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 shim_resolve "$0" codex
@@ -22,23 +22,10 @@ if [ -z "${DOTFILES_SANDBOX:-}" ]; then
 		fail "codex wrapper: cannot generate rules"
 fi
 MANIFEST=${CODEX_DEVELOPER_INSTRUCTIONS_FILE:-"$CODEX_HOME/developer-instructions.md"}
-MANIFEST_DIR=$(dirname -- "$MANIFEST")
 COMBINED=$(tmp_file codex-developer-instructions.XXXXXX)
 trap 'rm -f "$COMBINED"' 0 1 2 15
-while IFS= read -r directive || [ -n "$directive" ]; do
-	case "$directive" in
-		""|'#'*) continue ;;
-		@*) include=${directive#@} ;;
-		*) fail "$MANIFEST: expected @path, comment, or blank line: $directive" ;;
-	esac
-	case "$include" in
-		/*) path=$include ;;
-		\~/*) path=$HOME/${include#\~/} ;;
-		*) path=$MANIFEST_DIR/$include ;;
-	esac
-	cat "$path" >> "$COMBINED"
-	printf '\n' >> "$COMBINED"
-done < "$MANIFEST"
+"$DOTFILES/libexec/expand-codex-instructions" "$MANIFEST" > "$COMBINED" ||
+	fail "codex wrapper: cannot expand developer instructions"
 DEVELOPER_INSTRUCTIONS=$(jq -Rs . < "$COMBINED")
 rm -f "$COMBINED"
 trap - 0 1 2 15

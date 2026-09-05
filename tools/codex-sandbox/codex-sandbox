@@ -1019,6 +1019,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             if (state.skills_tmp / "sandbox").is_dir() else []
         ),
         "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/coordination-dialect.md'},dst=/home/codex/.agents/coordination-dialect.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/coordination-dialect.md'},dst=/home/codex/.pi/agent/coordination-dialect.md,readonly",

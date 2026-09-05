@@ -1,3 +1,3 @@
-# Include manifest. Expansion is one level deep; included files are not parsed for @ directives.
+# Include manifest. Included files may recursively import further instruction files.
 @breq.md
 @~/.agents/shared.md

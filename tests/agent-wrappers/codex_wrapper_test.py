@@ -45,8 +45,10 @@ class CodexWrapperTests(unittest.TestCase):
             os.link(legacy_source, rules_directory / "default.rules")
             first = codex_home / "first.md"
             second = codex_home / "second file.md"
-            first.write_text("first instructions\n", encoding="utf-8")
+            nested = codex_home / "nested.md"
+            first.write_text("first instructions\n@nested.md\n", encoding="utf-8")
             second.write_text("second instructions", encoding="utf-8")
+            nested.write_text("nested instructions\n", encoding="utf-8")
             manifest = codex_home / "developer-instructions.md"
             manifest.write_text("# Shared instruction files\n@first.md\n@second file.md\n", encoding="utf-8")
             environment = os.environ.copy()
@@ -73,7 +75,10 @@ class CodexWrapperTests(unittest.TestCase):
         self.assertEqual(["--profile", "dotfiles", "-c"], output[:3])
         key, encoded = output[3].split("=", 1)
         self.assertEqual("developer_instructions", key)
-        self.assertEqual("first instructions\n\nsecond instructions\n", json.loads(encoded))
+        self.assertEqual(
+            "first instructions\nnested instructions\nsecond instructions\n",
+            json.loads(encoded),
+        )
         self.assertEqual("prompt", output[4])
         self.assertIn(str(ROOT / "libexec/agent-wrappers"), output[5])
         self.assertIn('deny(["sed"]', rendered_rules)
@@ -86,6 +91,35 @@ class CodexWrapperTests(unittest.TestCase):
         self.assertIn('[tui.model_availability_nux]', migrated_config)
         self.assertIn('"gpt-test" = 1', migrated_config)
         self.assertIn('[history]', migrated_config)
+
+    def test_instruction_include_cycle_does_not_launch_codex(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            marker = root / "codex-ran"
+            codex = fake_bin / "codex"
+            codex.write_text(f"#!/bin/sh\ntouch {marker}\n")
+            codex.chmod(0o755)
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            (codex_home / "developer-instructions.md").write_text("@first.md\n")
+            (codex_home / "first.md").write_text("@second.md\n")
+            (codex_home / "second.md").write_text("@first.md\n")
+            environment = os.environ | {
+                "DOTFILES_SANDBOX": "1",
+                "HOME": str(root),
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            environment.pop("CODEX_HOME", None)
+
+            result = subprocess.run(
+                [str(WRAPPER)], env=environment, text=True, capture_output=True,
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("instruction include cycle", result.stderr)
+            self.assertFalse(marker.exists())
 
     def test_failed_generation_preserves_rules_and_does_not_launch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

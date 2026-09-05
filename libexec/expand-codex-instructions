@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import sys
+
+
+def resolve_include(source: Path, include: str) -> Path:
+    if include.startswith("~/"):
+        return Path.home() / include[2:]
+    path = Path(include)
+    return path if path.is_absolute() else source.parent / path
+
+
+def expand(path: Path, stack: tuple[Path, ...], *, manifest: bool = False) -> str:
+    try:
+        canonical = path.resolve(strict=True)
+    except OSError as error:
+        raise RuntimeError(f"instruction include does not exist: {path}") from error
+    if canonical in stack:
+        cycle = " -> ".join(str(item) for item in (*stack[stack.index(canonical):], canonical))
+        raise RuntimeError(f"instruction include cycle: {cycle}")
+
+    try:
+        lines = canonical.read_text(encoding="utf-8").splitlines(keepends=True)
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f"instruction include is not valid UTF-8: {canonical}") from error
+
+    output: list[str] = []
+    fence: str | None = None
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            marker = stripped[0]
+            fence = None if fence == marker else marker if fence is None else fence
+            output.append(line)
+            continue
+        directive = stripped.strip()
+        if fence is None and directive.startswith("@") and directive[1:]:
+            child = resolve_include(canonical, directive[1:])
+            expanded = expand(child, (*stack, canonical))
+            output.append(expanded)
+            if line.endswith(("\n", "\r")) and expanded and not expanded.endswith(("\n", "\r")):
+                output.append("\n")
+            continue
+        if manifest:
+            if not directive or directive.startswith("#"):
+                continue
+            raise RuntimeError(f"{canonical}: expected @path, comment, or blank line: {directive}")
+        output.append(line)
+    return "".join(output)
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(f"usage: {Path(sys.argv[0]).name} MANIFEST", file=sys.stderr)
+        return 2
+    try:
+        sys.stdout.write(expand(Path(sys.argv[1]), (), manifest=True))
+    except (OSError, RuntimeError) as error:
+        print(f"{Path(sys.argv[0]).name}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

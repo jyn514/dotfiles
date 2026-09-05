@@ -745,6 +745,7 @@ class CodexSandboxTest(unittest.TestCase):
             item for item in run
             if any(item.endswith(f"dst={destination},readonly") for destination in (
                 "/home/codex/.agents/shared.md",
+                "/home/codex/.agents/coordination-dialect.md",
                 "/home/codex/.pi/agent/AGENTS.md",
                 "/home/codex/.pi/agent/breq.md",
                 "/home/codex/.pi/agent/coordination-dialect.md",
@@ -753,7 +754,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "/home/codex/.pi/agent/keybindings.json",
             ))
         ]
-        self.assertEqual(7, len(staged_mounts))
+        self.assertEqual(8, len(staged_mounts))
         staged_sources = [
             Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
             for item in staged_mounts
