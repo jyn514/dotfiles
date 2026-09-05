@@ -75,7 +75,7 @@
       "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
       "$HOME/.agents/shared.md": "config/shared-agents.md",
       "$HOME/.agents/coordination-dialect.md": "config/coordination-dialect.md",
-      "$HOME/.agents/skills": "config/skills",
+      "$HOME/.agents/skills": "skills",
       "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
       "$HOME/.julia/config/startup.jl": "config/startup.jl",
       "$HOME/.config/tmux/tmux.conf": "config/tmux.conf",

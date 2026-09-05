@@ -1,6 +1,29 @@
-# Pi design skills
+# Agent skills
 
-These skills are intentionally small and composable. Use them manually at first; automate only the sequences you actually repeat.
+These skills follow the Agent Skills directory format and are intentionally small and composable. Use them manually at first; automate only the sequences you actually repeat.
+
+## Install
+
+Install the repository through a supported harness, or copy an individual directory from `skills/` into that harness's skill directory.
+
+### Pi
+
+```sh
+pi install git:github.com/jyn514/dotfiles
+```
+
+### Claude Code
+
+```sh
+claude plugin marketplace add jyn514/dotfiles
+claude plugin install jyn514-agent-skills@jyn514-agent-skills
+```
+
+### Codex and other Agent Skills clients
+
+Copy or symlink the desired skill directories into the client's user or project skill directory. For clients that use the shared convention, install them under `~/.agents/skills/` or `.agents/skills/`.
+
+This repository's `./setup dotfiles` command links the complete `skills/` directory to `~/.agents/skills/`.
 
 ## Agent orchestration
 

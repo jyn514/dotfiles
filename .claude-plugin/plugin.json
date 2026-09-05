@@ -1,0 +1,10 @@
+{
+  "name": "jyn514-agent-skills",
+  "version": "0.1.0",
+  "description": "Composable software design, review, documentation, and investigation skills for coding agents",
+  "author": {
+    "name": "jyn514"
+  },
+  "repository": "https://github.com/jyn514/dotfiles",
+  "license": "Unlicense"
+}

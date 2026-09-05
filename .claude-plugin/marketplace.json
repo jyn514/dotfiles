@@ -1,0 +1,14 @@
+{
+  "name": "jyn514-agent-skills",
+  "description": "Composable skills for software design, review, documentation, and investigation",
+  "owner": {
+    "name": "jyn514"
+  },
+  "plugins": [
+    {
+      "name": "jyn514-agent-skills",
+      "source": "./",
+      "description": "Composable software design, review, documentation, and investigation skills for coding agents"
+    }
+  ]
+}
