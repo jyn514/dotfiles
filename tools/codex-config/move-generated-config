@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+from pathlib import Path
+import re
+import stat
+import tempfile
+import tomllib
+
+
+PROJECT_HEADER = re.compile(
+    r"^\s*\[projects\.(?P<key>\"(?:[^\"\\]|\\.)*\"|'[^']*')\]\s*(?:#.*)?$"
+)
+MODEL_AVAILABILITY_HEADER = re.compile(
+    r"^\s*\[tui\.model_availability_nux\]\s*(?:#.*)?$"
+)
+TABLE_HEADER = re.compile(r"^\s*\[\[?.+?\]\]?\s*(?:#.*)?$")
+
+
+def generated_sections(text: str) -> list[tuple[tuple[str, ...], int, int, object]]:
+    lines = text.splitlines(keepends=True)
+    starts: list[tuple[int, tuple[str, ...]]] = []
+    offset = 0
+    table_offsets: list[int] = []
+
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if TABLE_HEADER.match(stripped):
+            table_offsets.append(offset)
+        match = PROJECT_HEADER.match(stripped)
+        if match:
+            key = tomllib.loads(f"key = {match.group('key')}\n")["key"]
+            starts.append((offset, ("projects", key)))
+        elif MODEL_AVAILABILITY_HEADER.match(stripped):
+            starts.append((offset, ("tui", "model_availability_nux")))
+        offset += len(line)
+
+    document = tomllib.loads(text)
+    sections = []
+    for start, path in starts:
+        end = next((candidate for candidate in table_offsets if candidate > start), len(text))
+        value = document
+        for component in path:
+            value = value[component]
+        sections.append((path, start, end, value))
+    return sections
+
+
+def lookup(document: dict, path: tuple[str, ...]) -> object | None:
+    value: object = document
+    for component in path:
+        if not isinstance(value, dict) or component not in value:
+            return None
+        value = value[component]
+    return value
+
+
+def append_blocks(text: str, blocks: list[str]) -> str:
+    if not blocks:
+        return text
+    separator = "" if not text or text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n"
+    return text + separator + "\n".join(block.rstrip("\n") + "\n" for block in blocks)
+
+
+def remove_ranges(text: str, ranges: list[tuple[int, int]]) -> str:
+    for start, end in sorted(ranges, reverse=True):
+        text = text[:start] + text[end:]
+    return text.rstrip("\n") + "\n" if text.strip() else ""
+
+
+def atomic_write(path: Path, text: str, mode: int | None = None) -> None:
+    target = path.resolve(strict=False)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if mode is None:
+        mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o600
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as output:
+            output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def migrate(profile: Path, config: Path) -> bool:
+    if not profile.exists():
+        return False
+
+    profile_text = profile.read_text(encoding="utf-8")
+    tomllib.loads(profile_text)
+    sections = generated_sections(profile_text)
+    if not sections:
+        return False
+
+    config_text = config.read_text(encoding="utf-8") if config.exists() else ""
+    config_data = tomllib.loads(config_text) if config_text else {}
+    config_sections = {
+        path: (start, end, value)
+        for path, start, end, value in generated_sections(config_text)
+    } if config_text else {}
+    additions: list[str] = []
+    replacements: list[tuple[int, int]] = []
+
+    for path, start, end, value in sections:
+        existing = lookup(config_data, path)
+        name = ".".join(path)
+        if existing is None:
+            additions.append(profile_text[start:end])
+        elif existing != value and path == ("tui", "model_availability_nux"):
+            destination_start, destination_end, _ = config_sections[path]
+            replacements.append((destination_start, destination_end))
+            additions.append(profile_text[start:end])
+        elif existing != value:
+            raise ValueError(f"conflicting [{name}] entries")
+
+    config_without_replacements = remove_ranges(config_text, replacements) if replacements else config_text
+    new_config = append_blocks(config_without_replacements, additions)
+    new_profile = remove_ranges(profile_text, [(start, end) for _, start, end, _ in sections])
+    tomllib.loads(new_config)
+    tomllib.loads(new_profile)
+
+    # Publish the destination first. A failure before the profile update leaves a
+    # harmless duplicate that the next run can remove without losing state.
+    if new_config != config_text:
+        atomic_write(config, new_config)
+    if new_profile != profile_text:
+        atomic_write(profile, new_profile)
+    return True
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="move Codex-generated state tables out of a tracked profile"
+    )
+    parser.add_argument("profile", type=Path)
+    parser.add_argument("config", type=Path)
+    arguments = parser.parse_args()
+    migrate(arguments.profile, arguments.config)
+
+
+if __name__ == "__main__":
+    main()

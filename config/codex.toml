@@ -1,6 +1,6 @@
 approvals_reviewer = "user"
 service_tier = "default"
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "low"
 default_permissions = "default_permission_rules"
 

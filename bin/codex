@@ -8,6 +8,14 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 shim_resolve "$0" codex
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
+move_generated_config() {
+	"$DOTFILES/tools/codex-config/move-generated-config" \
+		"$CODEX_HOME/dotfiles.config.toml" "$CODEX_HOME/config.toml" || \
+		fail "codex wrapper: cannot move generated config"
+}
+if [ -z "${DOTFILES_SANDBOX:-}" ]; then
+	move_generated_config
+fi
 RULES=$CODEX_HOME/rules/default.rules
 if [ -z "${DOTFILES_SANDBOX:-}" ]; then
 	"$DOTFILES/libexec/generate-agent-permissions" codex "$RULES" || \
@@ -34,4 +42,12 @@ done < "$MANIFEST"
 DEVELOPER_INSTRUCTIONS=$(jq -Rs . < "$COMBINED")
 rm -f "$COMBINED"
 trap - 0 1 2 15
-exec "$REAL" --profile dotfiles -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
+if "$REAL" --profile dotfiles -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"; then
+	status=0
+else
+	status=$?
+fi
+if [ -z "${DOTFILES_SANDBOX:-}" ]; then
+	move_generated_config
+fi
+exit "$status"

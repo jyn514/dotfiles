@@ -19,10 +19,25 @@ class CodexWrapperTests(unittest.TestCase):
             fake_bin = root / "bin"
             fake_bin.mkdir()
             codex = fake_bin / "codex"
-            codex.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\nprintf "PATH=%s\\n" "$PATH"\n')
+            codex.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "$@"\n'
+                'printf "PATH=%s\\n" "$PATH"\n'
+                'printf "\\n[tui.model_availability_nux]\\n\\\"gpt-test\\\" = 1\\n" '
+                '>> "$HOME/.codex/dotfiles.config.toml"\n'
+            )
             codex.chmod(0o755)
             codex_home = root / ".codex"
             codex_home.mkdir()
+            profile = codex_home / "dotfiles.config.toml"
+            profile.write_text(
+                'model = "gpt-test"\n\n'
+                '[projects."/generated"]\n'
+                'trust_level = "trusted"\n',
+                encoding="utf-8",
+            )
+            config = codex_home / "config.toml"
+            config.write_text('[history]\npersistence = "save-all"\n', encoding="utf-8")
             rules_directory = codex_home / "rules"
             rules_directory.mkdir()
             legacy_source = root / "tracked-codex.rules"
@@ -52,6 +67,8 @@ class CodexWrapperTests(unittest.TestCase):
             rules_mode = rules.stat().st_mode & 0o777
             legacy_rules = legacy_source.read_text()
             replaced_legacy_link = not os.path.samefile(legacy_source, rules)
+            migrated_profile = profile.read_text(encoding="utf-8")
+            migrated_config = config.read_text(encoding="utf-8")
 
         self.assertEqual(["--profile", "dotfiles", "-c"], output[:3])
         key, encoded = output[3].split("=", 1)
@@ -64,6 +81,11 @@ class CodexWrapperTests(unittest.TestCase):
         self.assertEqual(0o600, rules_mode)
         self.assertEqual("legacy rules\n", legacy_rules)
         self.assertTrue(replaced_legacy_link)
+        self.assertEqual('model = "gpt-test"\n', migrated_profile)
+        self.assertIn('[projects."/generated"]', migrated_config)
+        self.assertIn('[tui.model_availability_nux]', migrated_config)
+        self.assertIn('"gpt-test" = 1', migrated_config)
+        self.assertIn('[history]', migrated_config)
 
     def test_failed_generation_preserves_rules_and_does_not_launch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
