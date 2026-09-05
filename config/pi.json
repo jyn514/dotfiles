@@ -11,7 +11,7 @@
     "./pi-extensions/index.ts"
   ],
   "packages": [
-    "git:github.com/jyn514/pi-codex-goal@pre-compile",
+    "git:github.com/fitchmultz/pi-codex-goal",
     "git:github.com/adobe/pi-session-search@5a36613b70098544126a79c1bdc3c02f6829d9c1",
     {
       "source": "git:github.com/jyn514/pi-extensions@working",
