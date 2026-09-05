@@ -70,33 +70,52 @@ class BbWrapperTest(unittest.TestCase):
             real = temporary / "real"
             for directory in (first, second, real):
                 directory.mkdir()
+            alias = temporary / "alias"
+            alias.symlink_to(first, target_is_directory=True)
 
             wrapper = (
                 "#!/bin/sh\n"
                 "set -eu\n"
                 f'. "{ROOT}/lib/shell/lib.sh"\n'
-                'shim_resolve "$0" sample\n'
+                'shim_resolve "$0" dotfiles-test-command\n'
                 'exec "$REAL" "$@"\n'
             )
             for directory in (first, second):
-                command = directory / "sample"
+                command = directory / "dotfiles-test-command"
                 command.write_text(wrapper)
                 command.chmod(0o755)
-            command = real / "sample"
+            command = real / "dotfiles-test-command"
             command.write_text("#!/bin/sh\nprintf 'real\\n'\n")
             command.chmod(0o755)
 
+            for cwd, path in (
+                (temporary, f"{alias}:{first}:{second}:{real}:{os.defpath}"),
+                (first, f":.:../alias:../second:{real}:{os.defpath}"),
+                (real, f"{alias}:{second}::{os.defpath}"),
+            ):
+                with self.subTest(cwd=cwd, path=path):
+                    result = subprocess.run(
+                        [str(first / "dotfiles-test-command")],
+                        cwd=cwd,
+                        env=os.environ | {"PATH": path},
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=5,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("real\n", result.stdout)
+
             result = subprocess.run(
-                [str(first / "sample")],
-                env=os.environ | {"PATH": f"{first}:{second}:{real}:{os.defpath}"},
+                [str(first / "dotfiles-test-command")],
+                env=os.environ | {"PATH": f"{alias}:{first}:{second}:{os.defpath}"},
                 text=True,
                 capture_output=True,
                 check=False,
                 timeout=5,
             )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("real\n", result.stdout)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("real dotfiles-test-command not found on PATH", result.stderr)
 
 
 if __name__ == "__main__":

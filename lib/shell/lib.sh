@@ -81,9 +81,28 @@ is_macos() {
 # next candidate. Duplicate mounted wrappers are therefore visited at most once.
 # Sets SHIM_DIR and REAL and exports the cleaned PATH.
 shim_resolve() {
-	SHIM_DIR=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd -P)
-	_clean=$(printf '%s' "$PATH" | tr : '\n' | grep -vxF "$SHIM_DIR" | tr '\n' :)
-	_clean=${_clean%:}
+	_shim_parent=$(dirname -- "$1") || return
+	SHIM_DIR=$(CDPATH= cd -- "$_shim_parent" && pwd -P) || return
+	_clean=
+	_separator=
+	_rest=$PATH
+	while :; do
+		_entry=${_rest%%:*}
+		# Compare physical directories: aliases such as /var and /private/var
+		# must be removed together so each wrapper is visited at most once.
+		if _physical=$(CDPATH= cd -- "${_entry:-.}" 2>/dev/null && pwd -P) &&
+			[ "$_physical" = "$SHIM_DIR" ]; then
+			:
+		else
+			_clean=$_clean$_separator$_entry
+			_separator=:
+		fi
+		case $_rest in
+			*:*) _rest=${_rest#*:} ;;
+			*) break ;;
+		esac
+	done
+	[ -n "$_separator" ] || fail "$2 wrapper: real $2 not found on PATH"
 	REAL=$(PATH="$_clean" command -v "$2") || fail "$2 wrapper: real $2 not found on PATH"
 	PATH=$_clean
 	export PATH
