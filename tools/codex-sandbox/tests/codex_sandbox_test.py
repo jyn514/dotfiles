@@ -470,34 +470,30 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(runs))
         return runs[0]
 
-    def test_stages_repository_skill_links_as_container_workspace_links(self) -> None:
-        repository_skill = self.repo / ".agents" / "skills" / "tighten-docs"
-        repository_skill.mkdir(parents=True)
-        (repository_skill / "SKILL.md").write_text("repository skill\n", encoding="utf-8")
-        external_skill = self.root / "external-skill"
-        external_skill.mkdir()
-        (external_skill / "SKILL.md").write_text("external skill\n", encoding="utf-8")
+    def test_mounts_host_skills_writable_through_resolved_source(self) -> None:
         skills = self.home / ".agents" / "skills"
-        (skills / "tighten-docs").symlink_to(repository_skill, target_is_directory=True)
-        (skills / "external").symlink_to(external_skill, target_is_directory=True)
+        skills.rmdir()
+        source = self.root / "tracked-skills"
+        source.mkdir()
+        skills.symlink_to(source, target_is_directory=True)
 
         launcher = runpy.run_path(str(LAUNCHER))
-        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        state = SimpleNamespace(
+            home=self.home, repository=self.repo, skills_tmp=None, skills_source=None,
+        )
         try:
             launcher["stage_skills"](state)
-            staged = state.skills_tmp / "skills"
-            self.assertEqual(
-                "/src/work/.agents/skills/tighten-docs",
-                os.readlink(staged / "tighten-docs"),
-            )
-            self.assertFalse((staged / "external").is_symlink())
-            self.assertEqual(
-                "external skill\n",
-                (staged / "external" / "SKILL.md").read_text(encoding="utf-8"),
-            )
+            self.assertEqual(source, state.skills_source)
+            self.assertFalse((state.skills_tmp / "skills").exists())
         finally:
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
+
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        mount = f"type=bind,src={source},dst=/home/codex/.agents/skills"
+        self.assertIn(mount, self.final_run())
+        self.assertNotIn(mount + ",readonly", self.final_run())
 
     def test_loads_repository_and_home_sandbox_instructions(self) -> None:
         repository_sandbox = self.repo / ".agents" / "sandbox"

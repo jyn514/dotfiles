@@ -86,6 +86,7 @@ class State:
     lock_coordinated: Path | None = None
     lock_release: Path | None = None
     skills_tmp: Path | None = None
+    skills_source: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
     host_editor: HostEditorBridge | None = None
@@ -672,27 +673,12 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp())
     source = state.home / ".agents/skills"
-    staged = state.skills_tmp / "skills"
-    repository_links: list[tuple[Path, Path]] = []
-    for path in source.rglob("*"):
-        if not path.is_symlink():
-            continue
-        try:
-            relative_target = path.resolve(strict=True).relative_to(state.repository)
-        except (OSError, ValueError):
-            continue
-        repository_links.append((path.relative_to(source), relative_target))
-    shutil.copytree(
-        source, staged, symlinks=False, ignore_dangling_symlinks=True,
-        dirs_exist_ok=True,
-    )
-    for relative_path, relative_target in repository_links:
-        destination = staged / relative_path
-        if destination.is_dir():
-            shutil.rmtree(destination)
-        else:
-            destination.unlink(missing_ok=True)
-        destination.symlink_to(Path("/src/work") / relative_target)
+    try:
+        state.skills_source = source.resolve(strict=True)
+    except OSError as error:
+        raise LauncherError(f"Agent skills directory is invalid: {source}") from error
+    if not state.skills_source.is_dir():
+        raise LauncherError(f"Agent skills directory is invalid: {source}")
     config = state.skills_tmp / "config"
     config.mkdir()
     for name in (
@@ -1013,7 +999,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             )
         ],
         "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'skills'},dst=/home/codex/.agents/skills",
+        "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
         *(
             ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
             if (state.skills_tmp / "sandbox").is_dir() else []

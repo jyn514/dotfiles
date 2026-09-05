@@ -33,7 +33,7 @@ Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor; otherwise `VISUAL`,
 
 ### Operational and security boundaries
 
-- Treat the agent, including container root, as untrusted. It can modify ordinary working-tree files and call every mounted proxy, but must not receive the outer daemon or direct writable access to `.git`, `.jj`, or `.agents/sandbox`.
+- Treat the agent, including container root, as untrusted. It can modify ordinary working-tree files, the host's shared `~/.agents/skills` directory, and call every mounted proxy, but must not receive the outer daemon or direct writable access to `.git`, `.jj`, or `.agents/sandbox`.
 - Trust the checkout and manifest authors before startup. Image builders and proxy images are part of the trusted computing base; a read-only mount does not make hostile policy safe.
 - Networking blocks private and special-use IPv4 ranges. A manifest must explicitly enable network access for a proxy.
 - The Codex sidecar keeps reusable OAuth tokens outside the agent, but the agent can submit model requests, disclose their contents, consume quota, and incur charges.
