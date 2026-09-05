@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rustc Diagnostic Gap Tests"
+  short_description: "Survey and test weak rustc diagnostics"
+  default_prompt: "Use $rustc-diagnostic-gap-tests to find and add non-duplicated rustc diagnostic-gap UI tests."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tighten Docs"
+  short_description: "Make docs, specs, and skills clear and concise"
+  default_prompt: "Use $tighten-docs to make this documentation clearer and shorter without losing required meaning or rationale."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zulip API"
+  short_description: "Read public and private Rust Zulip safely"
+  default_prompt: "Use $zulip-api to read and summarize this Rust Zulip conversation through the appropriate read-only path."
