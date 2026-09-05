@@ -41,9 +41,6 @@ prefer `rg`, `head`, `tail`, and other read-only commands.
 When vendoring or duplicating an existing file without modification, use `cp` rather than reconstructing it with `write` or a generated patch.
 Verify the copy with `cmp` before making any targeted edits.
 
-Run `jj` outside the sandbox and as a separate command: it snapshots the working
-directory, and combining it makes unrelated commands require approval.
-
 Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead.
 For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
 Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
@@ -74,7 +71,9 @@ Before changing existing behavior, inspect the relevant path and line history wi
 Read the tests introduced with those changes.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
-## Commits
+Before adding or reviewing a dependency, use the `dependency-review` skill.
+
+## Jujutsu and commits
 
 Always use `jj`, not `git`, for change management; it supports undo and history editing
 without modifying the working tree. Create commits with `jj commit`, not `jj describe`.
@@ -82,11 +81,13 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 
 Before creating or reviewing a commit, use the `commit-quality` skill.
 
+Run `jj` outside the sandbox and as a separate command: it snapshots the working
+directory, and combining it makes unrelated commands require approval.
+For mixed sandbox requirements, follow **Commands and permissions** above.
+
 ## Records and provenance
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
-
-Before adding or reviewing a dependency, use the `dependency-review` skill.
 
 ## Working with jyn
 

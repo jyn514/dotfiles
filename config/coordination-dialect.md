@@ -1,6 +1,6 @@
 # Coordination Dialect
 
-Shared shorthand for human-agent and inter-agent coordination. English remains the default; use these fields when structure improves a request, handoff, or status report.
+Shared shorthand for human-agent and inter-agent coordination. Use these fields when structure improves a request, handoff, or status report; otherwise use English.
 
 ## Fields
 
@@ -107,5 +107,3 @@ CONF: high
 RESULT: H2 investigation completed; hypothesis supported; no files changed
 BASED_ON: repository revision qpvuntsm
 ```
-
-Use English when this notation would be less clear.
