@@ -73,6 +73,7 @@
       "$HOME/.selected_editor": "config/selected_editor",
       "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
       "$HOME/.agents/shared.md": "config/shared-agents.md",
+      "$HOME/.agents/coordination-dialect.md": "config/coordination-dialect.md",
       "$HOME/.agents/skills/commit-quality": "config/skills/commit-quality",
       "$HOME/.agents/skills/dependency-review": "config/skills/dependency-review",
       "$HOME/.agents/skills/design-for-change": "config/skills/design-for-change",
