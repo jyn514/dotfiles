@@ -33,7 +33,9 @@ case "$agent" in
     JJ_EMAIL='breq@jyn.dev'
     ;;
   codex)
-    model=$(codex_version)
+    # Session metadata is optional; lookup failure must reach the generic identity
+    # fallback instead of letting set -e prevent the requested jj command.
+    model=$(codex_version) || model=
     JJ_EMAIL='breq@jyn.dev'
     JJ_USER="Codex $model"
 

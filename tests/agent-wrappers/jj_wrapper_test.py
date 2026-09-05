@@ -139,14 +139,39 @@ class JjWrapperTest(unittest.TestCase):
             )
 
     def test_forwards_codex_model_identity_to_sandbox_client(self) -> None:
+        result, identity = self.run_codex_identity(
+            "status", '{"type":"turn_context","payload":{"model":"gpt-test-model"}}\n'
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["Codex gpt-test-model", "breq@jyn.dev"], identity)
+
+    def test_missing_codex_session_does_not_block_jj(self) -> None:
+        for directories_exist in (False, True):
+            for command in ("status", "commit", "split"):
+                with self.subTest(directories_exist=directories_exist, command=command):
+                    result, identity = self.run_codex_identity(
+                        command, None, directories_exist=directories_exist
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(["Codex", "breq@jyn.dev"], identity)
+                    if command == "status":
+                        self.assertEqual("", result.stderr)
+                    else:
+                        self.assertIn("could not determine Codex model", result.stderr)
+
+    def run_codex_identity(
+        self, command: str, session_contents: str | None, *, directories_exist: bool = False
+    ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             codex_home = root / "codex"
             session = codex_home / "sessions/2026/08/01/rollout-thread-123.jsonl"
-            session.parent.mkdir(parents=True)
-            session.write_text(
-                '{"type":"turn_context","payload":{"model":"gpt-test-model"}}\n'
-            )
+            if directories_exist:
+                session.parent.mkdir(parents=True)
+                (codex_home / "archived_sessions").mkdir()
+            if session_contents is not None:
+                session.parent.mkdir(parents=True, exist_ok=True)
+                session.write_text(session_contents)
             result_file = root / "identity"
             client = root / "client"
             client.write_text(
@@ -163,7 +188,7 @@ class JjWrapperTest(unittest.TestCase):
             wrapper.chmod(0o755)
 
             result = subprocess.run(
-                [str(wrapper), "status"],
+                [str(wrapper), command],
                 env={
                     **os.environ,
                     "JJ_AGENT": "codex",
@@ -177,11 +202,8 @@ class JjWrapperTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertEqual(
-                ["Codex gpt-test-model", "breq@jyn.dev"],
-                result_file.read_text().splitlines(),
-            )
+            identity = result_file.read_text().splitlines() if result_file.exists() else []
+            return result, identity
 
 
 if __name__ == "__main__":
