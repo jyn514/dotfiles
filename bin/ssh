@@ -1,0 +1,24 @@
+#!/bin/sh
+set -u
+
+/usr/bin/ssh "$@"
+status=$?
+
+# SSH uses 255 for connection errors (a remote command can also return 255).
+# Diagnose afterward so an unavailable agent cannot block other credentials.
+if [ "$status" -eq 255 ]; then
+	config=$(/usr/bin/ssh -G "$@" 2>/dev/null) || exit "$status"
+	agent=$(printf '%s\n' "$config" | awk '/^identityagent / {sub(/^identityagent /, ""); print; exit}')
+	case "$agent" in
+		none) exit "$status" ;;
+		''|SSH_AUTH_SOCK) agent=${SSH_AUTH_SOCK-} ;;
+		\$*) agent=$(printenv "${agent#\$}") || exit "$status" ;;
+	esac
+	[ -n "$agent" ] || exit "$status"
+	SSH_AUTH_SOCK="$agent" /usr/bin/ssh-add -l >/dev/null 2>&1
+	if [ "$?" -eq 2 ]; then
+		printf '%s\n' 'ssh: Cannot contact the configured SSH agent. If you use 1Password, start it and retry.' >&2
+	fi
+fi
+
+exit "$status"
