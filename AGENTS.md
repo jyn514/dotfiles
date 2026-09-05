@@ -19,6 +19,8 @@ Keep scripts portable unless a file already targets one platform. Shell scripts 
 
 For shell and generated configuration, preserve producer failures. Avoid nested command substitutions and unchecked pipelines that can mask an earlier error; source generated output only after its producer succeeds, and update persistent caches transactionally. Add regression tests for both success and failure paths.
 
+When a simple implementation choice preserves a non-obvious historical constraint, add a brief comment explaining the constraint and why that choice preserves it.
+
 ## Testing Guidelines
 
 Keep subsystem-owned tests under `tools/<name>/tests/`; add cross-cutting tests under the matching `tests/<feature>/` directory. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
