@@ -23,7 +23,7 @@ friction, or say there was none.
 
 ### Reinforce good behavior
 
-If I tell you "nice job", "good work", or similar, and the praised behavior isn't already in my instructions, suggest a general AGENTS.md change that would preserve it for other agents and future sessions.
+If I tell you "nice job", "good work", "hell yeah", or similar, and the praised behavior isn't already in my instructions, suggest a general AGENTS.md change that would preserve it for other agents and future sessions.
 
 ### Unrequested observations
 
