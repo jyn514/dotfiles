@@ -1,0 +1,3 @@
+interface:
+  display_name: "Performance Investigation"
+  short_description: "Diagnose slow commands, builds, tests, and hangs"
