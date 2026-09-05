@@ -362,6 +362,18 @@ class CodexSandboxTest(unittest.TestCase):
             if [ "$1" = run ]; then
                 case " $* " in
                     *" -it "*)
+                        if [ -n "$FAKE_MODEL_STORE_CAPTURE" ]; then
+                            for argument do
+                                case "$argument" in
+                                    type=bind,src=*,dst=/home/codex/.pi/agent)
+                                        agent_dir=${argument#type=bind,src=}
+                                        agent_dir=${agent_dir%,dst=*}
+                                        cp "$agent_dir/models-store.json" "$FAKE_MODEL_STORE_CAPTURE" || exit 42
+                                        printf '{}\\n' > "$agent_dir/models-store.json"
+                                        ;;
+                                esac
+                            done
+                        fi
                         if [ "${FAKE_AGENT_BLOCK:-0}" = 1 ]; then
                             : > "$FAKE_AGENT_READY"
                             trap 'exit 143' HUP INT TERM
@@ -766,6 +778,28 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(snapshots))
         builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
         self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
+
+    def test_seeds_offline_model_catalog_without_sharing_guest_writes(self) -> None:
+        catalog = self.home / ".pi/agent/models-store.json"
+        catalog.parent.mkdir(parents=True)
+        contents = '{"openai-codex":{"models":[{"id":"gpt-6-astra"}]}}\n'
+        catalog.write_text(contents, encoding="utf-8")
+        captured = self.root / "guest-models.json"
+
+        result = self.run_launcher(FAKE_MODEL_STORE_CAPTURE=str(captured))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(contents, captured.read_text(encoding="utf-8"))
+        self.assertEqual(contents, catalog.read_text(encoding="utf-8"))
+
+    def test_model_catalog_copy_failure_stops_agent_launch(self) -> None:
+        (self.home / ".pi/agent/models-store.json").mkdir(parents=True)
+
+        result = self.run_launcher()
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("models-store.json", result.stderr)
+        self.assertFalse(any("-it" in call for call in read_calls(self.docker_log)))
 
     def test_rejects_symlinked_persistent_pi_sessions(self) -> None:
         pi_agent = self.home / ".pi/agent"

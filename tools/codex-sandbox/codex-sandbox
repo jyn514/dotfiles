@@ -987,6 +987,11 @@ def run_agent(state: State, arguments: list[str]) -> int:
         raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")
     state.pi_agent_tmp = Path(tempfile.mkdtemp(prefix="codex-private-agent-"))
     os.chmod(state.pi_agent_tmp, 0o700)
+    # Offline Pi needs the host's refreshed catalog. Copy it so guest updates
+    # remain private and disappear with the rest of this sandbox's runtime state.
+    model_catalog = pi_agent / "models-store.json"
+    if model_catalog.exists():
+        shutil.copyfile(model_catalog, state.pi_agent_tmp / model_catalog.name)
     for directory in ("extensions", "pi-codex-subagents"):
         (state.pi_agent_tmp / directory).mkdir(mode=0o700)
     state.pi_auth_mask = temporary_file()
