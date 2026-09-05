@@ -26,6 +26,8 @@ jj diff --git -r @
 # Write only the selected hunks to target/jj-split/my-change.patch.
 ```
 
+Hunk line counts are recalculated automatically, so removing lines from a hunk does not require updating its counts. Context must still apply, and selected changes must belong to the revision.
+
 ## Common commands
 
 ```sh

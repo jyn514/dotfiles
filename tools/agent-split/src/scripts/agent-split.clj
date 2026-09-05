@@ -102,15 +102,23 @@
 
 (defn- patch-file-paths [patch-text]
   (let [paths (atom [])
-        saw-diff? (atom false)]
+        saw-diff? (atom false)
+        in-hunk? (atom false)]
     (doseq [line (str/split-lines patch-text)]
       (cond
         (str/starts-with? line "diff --git ")
         (if-let [[left right] (split-diff-paths line)]
           (do
             (reset! saw-diff? true)
+            (reset! in-hunk? false)
             (swap! paths into [left right]))
           (fail! "preflight" (str "malformed diff header: " line)))
+
+        (str/starts-with? line "@@ ")
+        (reset! in-hunk? true)
+
+        ;; Hunk content can itself begin with --- or +++; only parse file headers.
+        @in-hunk? nil
 
         (some #(str/starts-with? line %)
               ["rename from " "rename to " "copy from " "copy to "])
@@ -235,17 +243,18 @@
        (apply str)))
 
 (defn- apply-patch! [tree patch]
+  ;; Hand-selected hunks may retain old counts; application and containment still validate content.
   (let [check (process/shell {:dir (str tree)
                               :out :string
                               :err :string
                               :shutdown nil
                               :continue true}
-                             "git" "apply" "--unsafe-paths" "--check"
+                             "git" "apply" "--recount" "--unsafe-paths" "--check"
                              (str patch))]
     (when-not (zero? (:exit check))
       (fail! "preflight" (str "patch dry-run failed\n" (:err check))))
     (run "preflight" {:dir (str tree)}
-         "git" "apply" "--unsafe-paths" (str patch))))
+         "git" "apply" "--recount" "--unsafe-paths" (str patch))))
 
 (defn- diff-output [left right]
   (let [result (process/shell {:dir (git-tool-dir)
@@ -304,9 +313,7 @@
 
       (and in-hunk?
            (or (str/starts-with? line "+")
-               (str/starts-with? line "-"))
-           (not (str/starts-with? line "+++ "))
-           (not (str/starts-with? line "--- ")))
+               (str/starts-with? line "-")))
       (recur more file in-hunk? (update index file (fnil conj #{}) line))
 
       :else

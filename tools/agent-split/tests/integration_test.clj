@@ -189,6 +189,41 @@
 (defn- run-wrapper [ctx patch-content]
   (run-wrapper-with-args ctx patch-content))
 
+(deftest jj-split-patch-recounts-without-accepting-invented-content
+  (doseq [replacement ["TWO" "INVENTED"]]
+    (with-repo*
+      (fn [{:keys [repo] :as ctx}]
+        (let [before (:out (shell! repo "jj" "log" "-r" "@" "--no-graph" "-T" "commit_id"))
+              patch (-> selected-patch
+                        (str/replace "-1,5 +1,5" "-1,9 +1,2")
+                        (str/replace "TWO" replacement))
+              result (run-wrapper ctx patch)]
+          (if (= replacement "TWO")
+            (do
+              (is (zero? (:exit result)) (:err result))
+              (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
+                     (:out (shell! repo "jj" "file" "show" "-r" "@-" "note.txt")))))
+            (do
+              (is (= 1 (:exit result)))
+              (is (str/includes? (:err result) "not contained"))
+              (is (= before (:out (shell! repo "jj" "log" "-r" "@" "--no-graph" "-T" "commit_id"))))))
+          (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
+                 (slurp (str (fs/file repo "note.txt"))))))))))
+
+(deftest jj-split-patch-selects-header-like-content
+  (with-repo*
+    (fn [{:keys [repo] :as ctx}]
+      (write-file! (fs/file repo "comment.lua") "-- comment\ncontext\n")
+      (shell! repo "jj" "commit" "-m" "comment base")
+      (write-file! (fs/file repo "comment.lua") "++ selected\ncontext\n")
+      (write-file! (fs/file repo "note.txt") "remaining\n")
+      (let [patch (:out (shell! repo "jj" "diff" "--git" "--" "comment.lua"))
+            result (run-wrapper ctx patch)]
+        (is (zero? (:exit result)) (:err result))
+        (is (= "++ selected\ncontext\n"
+               (:out (shell! repo "jj" "file" "show" "-r" "@-" "comment.lua"))))
+        (is (= "remaining\n" (slurp (str (fs/file repo "note.txt")))))))))
+
 (deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-splits-selected-hunk-and-verifies-remainder
   (with-repo*
     (fn [{:keys [repo] :as ctx}]

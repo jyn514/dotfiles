@@ -129,6 +129,31 @@
         (is (str/includes? (:out result) "note.txt"))
         (is (= multi-hunk-selected (slurp (str (fs/file right "note.txt")))))))))
 
+(deftest split-editor-recounts-edited-hunks
+  (with-trees*
+    (fn [{:keys [left right] :as trees}]
+      (write-file! (fs/file left "note.txt") multi-hunk-base)
+      (write-file! (fs/file right "note.txt") multi-hunk-right)
+      (assert-success (run-editor trees
+                                  (str/replace multi-hunk-patch "-1,5 +1,5" "-1,9 +1,2")))
+      (is (= multi-hunk-selected (slurp (str (fs/file right "note.txt"))))))))
+
+(deftest split-editor-treats-header-like-lines-as-content
+  (doseq [replacement ["++ selected" "++ invented"]]
+    (with-trees*
+      (fn [{:keys [left right] :as trees}]
+        (write-file! (fs/file left "note.txt") "-- comment\ncontext\n")
+        (write-file! (fs/file right "note.txt") "++ selected\ncontext\n")
+        (let [result (run-editor trees
+                                 (str "diff --git a/note.txt b/note.txt\n"
+                                      "--- a/note.txt\n+++ b/note.txt\n"
+                                      "@@ -1,2 +1,2 @@\n--- comment\n+" replacement
+                                      "\n context\n"))]
+          (if (= replacement "++ selected")
+            (assert-success result)
+            (assert-failure result #"not contained|stale"))
+          (is (= "++ selected\ncontext\n" (slurp (str (fs/file right "note.txt"))))))))))
+
 (deftest split-editor-fails-clearly-for-missing-and-malformed-patches
   (testing "missing JJ_AGENT_SPLIT_PATCH"
     (with-trees*
