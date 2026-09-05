@@ -696,8 +696,8 @@ def stage_skills(state: State) -> None:
     config = state.skills_tmp / "config"
     config.mkdir()
     for name in (
-        "shared-agents.md", "pi-AGENTS.md", "breq.md", "pi.json", "pi-mcp.json",
-        "pi-keybindings.json", "pi-codex-subagents.json",
+        "shared-agents.md", "pi-AGENTS.md", "breq.md", "coordination-dialect.md",
+        "pi.json", "pi-mcp.json", "pi-keybindings.json", "pi-codex-subagents.json",
     ):
         shutil.copy2(DOTFILES / "config" / name, config / name)
     settings_path = config / "pi.json"
@@ -1021,6 +1021,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
+        "--mount", f"type=bind,src={state.skills_tmp / 'config/coordination-dialect.md'},dst=/home/codex/.pi/agent/coordination-dialect.md,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
         "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-keybindings.json'},dst=/home/codex/.pi/agent/keybindings.json,readonly",
