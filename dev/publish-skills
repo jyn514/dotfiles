@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+PACKAGE_FILES = ("package.json", "LICENSE", ".codex-plugin", "skills")
+
+
+def stage_package(destination: Path) -> None:
+    for relative in PACKAGE_FILES:
+        source = ROOT / relative
+        target = destination / relative
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            shutil.copy2(source, target)
+    shutil.copy2(ROOT / "skills/README.md", destination / "README.md")
+
+
+def main(arguments: list[str]) -> int:
+    with tempfile.TemporaryDirectory(prefix="judgement-yields-navigation-") as temporary:
+        package = Path(temporary)
+        stage_package(package)
+        return subprocess.run(["npm", "publish", str(package), *arguments]).returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

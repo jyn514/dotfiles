@@ -38,14 +38,14 @@ This repository's `./setup dotfiles` command links the complete `skills/` direct
 
 ## Publish a release
 
-The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change.
+The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change. `dev/publish-skills` stages this file as the package-root `README.md` without changing the repository root README.
 
 1. Set the same new semantic version in `package.json`, `.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (`source.version`).
 2. Validate the metadata and npm archive:
 
    ```sh
    tests/setup/agent_skills_package_test.py
-   npm publish --dry-run
+   dev/publish-skills --dry-run
    ```
 
 3. Review and commit the release, then authenticate and publish:
@@ -53,7 +53,7 @@ The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`
    ```sh
    npm login
    npm whoami
-   npm publish --access public
+   dev/publish-skills --access public
    ```
 
 4. Verify the published version, then push the release commit:
