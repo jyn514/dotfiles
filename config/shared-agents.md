@@ -59,6 +59,10 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 - Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
 - If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
 
+## Documentation
+
+When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
+
 ## Writing code
 
 Think about LANGSEC (Language-theoretical security).
