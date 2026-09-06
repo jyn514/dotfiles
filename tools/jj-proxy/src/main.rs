@@ -154,11 +154,7 @@ fn author_update_command() -> Command {
     command
 }
 
-fn command_environment<'a>(
-    user: &'a str,
-    email: &'a str,
-    temporary_directory: &'a str,
-) -> Vec<(&'a str, &'a str)> {
+fn trusted_environment(temporary_directory: &str) -> Vec<(&str, &str)> {
     vec![
         ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
         ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
@@ -168,9 +164,18 @@ fn command_environment<'a>(
         ("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_TERMINAL_PROMPT", "0"),
         ("GIT_CONFIG_COUNT", "1"), ("GIT_CONFIG_KEY_0", "core.excludesFile"),
         ("GIT_CONFIG_VALUE_0", "/trusted/gitignore"),
-        ("JJ_USER", user), ("JJ_EMAIL", email),
         ("RUST_BACKTRACE", "1"),
     ]
+}
+
+fn command_environment<'a>(
+    user: &'a str,
+    email: &'a str,
+    temporary_directory: &'a str,
+) -> Vec<(&'a str, &'a str)> {
+    let mut environment = trusted_environment(temporary_directory);
+    environment.extend([("JJ_USER", user), ("JJ_EMAIL", email)]);
+    environment
 }
 
 fn collect<R: Read>(file: R) -> io::Result<Vec<u8>> {
@@ -296,6 +301,16 @@ fn execute(
     let stderr = err_thread.join().ok().and_then(Result::ok).unwrap_or_default();
     if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
         return failure("output limit exceeded".into());
+    }
+    if status == 0 {
+        let mut reset = author_update_command();
+        reset.env_clear().envs(trusted_environment(temporary_directory))
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        // A successful agent command may create or snapshot a new working-copy
+        // commit. Return its author to the repository identity so later human
+        // work is not attributed to the agent that happened to create `@`.
+        unsafe { reset.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
+        let _ = reset.status();
     }
     Response { version: 1, exit: status, stdout: String::from_utf8_lossy(&stdout).into_owned(), stderr: String::from_utf8_lossy(&stderr).into_owned() }
 }
@@ -435,6 +450,12 @@ mod tests {
                 .into_iter()
                 .collect();
         assert_eq!(Some(&TEMP_HOME), environment.get("TMPDIR"));
+        assert_eq!(Some(&"agent"), environment.get("JJ_USER"));
+
+        let trusted: std::collections::HashMap<_, _> =
+            trusted_environment(TEMP_HOME).into_iter().collect();
+        assert!(!trusted.contains_key("JJ_USER"));
+        assert!(!trusted.contains_key("JJ_EMAIL"));
     }
 
     #[test]
