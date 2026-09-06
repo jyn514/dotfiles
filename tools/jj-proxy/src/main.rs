@@ -143,6 +143,17 @@ fn jj_command() -> Command {
     command
 }
 
+fn author_update_required(request: &Request) -> bool {
+    request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
+        || matches!(request.argv.first().map(String::as_str), Some("commit" | "split"))
+}
+
+fn author_update_command() -> Command {
+    let mut command = jj_command();
+    command.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
+    command
+}
+
 fn command_environment<'a>(
     user: &'a str,
     email: &'a str,
@@ -227,6 +238,16 @@ fn execute(
         return failure(error.to_string());
     }
     let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+
+    if author_update_required(request) {
+        let mut update = author_update_command();
+        update.env_clear().envs(command_environment(user, email, temporary_directory))
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        // Match the local wrapper's best-effort update: failure must not block the
+        // requested command, but successful commits must not inherit jyn's author.
+        unsafe { update.pre_exec(limits_and_cwd(cwd.as_raw_fd())); }
+        let _ = update.status();
+    }
 
     let mut command = jj_command();
     if matches!(request.argv.first().map(String::as_str), Some("diff" | "show")) {
@@ -414,5 +435,50 @@ mod tests {
                 .into_iter()
                 .collect();
         assert_eq!(Some(&TEMP_HOME), environment.get("TMPDIR"));
+    }
+
+    #[test]
+    fn commit_paths_update_the_working_copy_author() {
+        let request = |argv: &[&str], agent_split| Request {
+            version: 1,
+            cwd: String::new(),
+            argv: argv.iter().map(|arg| (*arg).to_owned()).collect(),
+            agent_split,
+            user: Some("Pi".into()),
+            email: Some("pi@example.test".into()),
+        };
+
+        assert!(author_update_required(&request(&["commit", "-m", "message"], None)));
+        assert!(author_update_required(&request(&["split", "-m", "message"], None)));
+        assert!(author_update_required(&request(
+            &[],
+            Some(AgentSplit {
+                patch: "patch".into(),
+                message: "message".into(),
+                revision: "@".into(),
+            }),
+        )));
+        assert!(!author_update_required(&request(
+            &[],
+            Some(AgentSplit {
+                patch: "patch".into(),
+                message: "message".into(),
+                revision: "@-".into(),
+            }),
+        )));
+        assert!(!author_update_required(&request(&["status"], None)));
+
+        let command = author_update_command();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.ends_with(&[
+            "metaedit".into(),
+            "--update-author".into(),
+            "-r".into(),
+            "@".into(),
+            "--quiet".into(),
+        ]));
     }
 }
