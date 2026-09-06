@@ -171,7 +171,9 @@ This skill chooses an opportunity area; it does not choose an architecture.
 
 After selecting an area:
 
+- use `cleanup-triage` when cleanup is the selected opportunity and the work must be prioritized or sliced;
 - use `pain-axis` to investigate its historical failure/coupling evidence in depth when useful;
+- use `architecture-design` when a bounded subsystem and architectural problem are selected without a genuine design fork;
 - use `design-space-scout` when there is a genuine design fork;
 - use a smaller local workflow when the opportunity is already concrete and does not require architectural exploration.
 

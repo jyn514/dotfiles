@@ -1,6 +1,6 @@
 ---
 name: technical-docs
-description: Create, edit, review, or reorganize technical documentation using jyn's documentation conventions. Use whenever documentation is a material deliverable, including READMEs, tutorials, how-to guides, reference pages, explanations, specifications, and design documents; also use when a code change requires documentation.
+description: Create, edit, or review technical documentation using jyn's documentation conventions. Use whenever documentation is a material deliverable, including READMEs, tutorials, how-to guides, reference pages, explanations, specifications, and design documents, or when a code change requires documentation. For information architecture, consolidation, splits, renames, archives, or navigation, use reorganize-docs.
 ---
 
 # Technical Documentation

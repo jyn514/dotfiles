@@ -46,6 +46,17 @@ After choosing a design and before implementation:
 8. `second-user` — challenge any new abstraction that lacks a second concrete consumer.
 9. `ratchet` — turn verified invariants and discovered failure modes into mechanical checks where possible.
 
+## Focused workflows
+
+Use these independently when their target is already selected:
+
+- `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
+- `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
+- `double-check` — audit completed work against requirements and concrete evidence.
+- `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
+
+`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. `technical-docs` owns documentation content; `reorganize-docs` owns its organization.
+
 ## Minimal use
 
 You do not need the whole chain every time.
