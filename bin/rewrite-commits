@@ -1,0 +1,98 @@
+#!/usr/bin/env bb
+
+(ns rewrite-commits
+  (:require
+   [babashka.fs :as fs]
+   [babashka.process :as process]
+   [clojure.string :as str]))
+
+(defn usage []
+  (println "Usage: rewrite-commits [--apply]")
+  (println)
+  (println "Find commits on HEAD whose author is jyn <github@jyn.dev> and whose")
+  (println "committer uses breq@jyn.dev. Rewrite them so the agent committer becomes")
+  (println "the author and jyn becomes the committer. Other metadata is preserved.")
+  (println)
+  (println "Without --apply, only prints matching commits."))
+
+(defn sh [& args]
+  (let [result (apply process/shell
+                      {:out :string :err :string :continue true :shutdown nil}
+                      args)]
+    (if (zero? (:exit result))
+      (:out result)
+      (throw (ex-info (str "Command failed: " (str/join " " args)
+                           (when (seq (:err result)) (str "\n" (:err result))))
+                      {:exit (:exit result) :args args})))))
+
+(defn git [& args]
+  (apply sh "git" args))
+
+(defn candidates []
+  (->> (git "log" "HEAD" "--format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%s%x1e")
+       (#(str/split % #"\u001e"))
+       (keep (fn [record]
+               (let [[commit author-name author-email committer-name committer-email subject]
+                     (str/split (str/trim-newline record) #"\u0000" 6)]
+                 (when (and (= author-name "jyn")
+                            (= author-email "github@jyn.dev")
+                            (= committer-email "breq@jyn.dev"))
+                   {:commit commit
+                    :author-name author-name
+                    :author-email author-email
+                    :committer-name committer-name
+                    :committer-email committer-email
+                    :subject subject}))))))
+
+(defn print-candidate [{:keys [commit author-name author-email committer-name committer-email subject]}]
+  (println (format "%s  %s <%s> / %s <%s>  %s"
+                   (subs commit 0 12)
+                   author-name author-email
+                   committer-name committer-email
+                   subject)))
+
+(defn clean-worktree? []
+  (str/blank? (git "status" "--porcelain=v1")))
+
+(defn callback-path []
+  (let [script (fs/canonicalize *file*)]
+    (str (fs/canonicalize (fs/path (fs/parent script) ".." "libexec"
+                                   "rewrite-commits-callback.py")))))
+
+(defn apply-rewrite! []
+  (when-not (clean-worktree?)
+    (throw (ex-info "Refusing to rewrite history with a dirty Git worktree." {})))
+  (sh "jj" "git" "export")
+  (let [matches (vec (candidates))]
+    (if (seq matches)
+      (run! print-candidate matches)
+      (do
+        (println "Nothing to rewrite.")
+        (System/exit 0))))
+  (sh (str (fs/canonicalize (fs/path (fs/parent (fs/parent (fs/canonicalize *file*)))
+                                     "vendor" "git-filter-repo" "git-filter-repo")))
+      "--force"
+      "--refs" "HEAD"
+      "--commit-callback" (str "exec(open(" (pr-str (callback-path)) ").read())"))
+  (sh "jj" "git" "import"))
+
+(defn -main [& args]
+  (let [apply? (cond
+                 (empty? args) false
+                 (= args '("--apply")) true
+                 (or (= args '("--help")) (= args '("-h"))) :help
+                 :else (throw (ex-info (str "Unknown arguments: " (str/join " " args)) {})))]
+    (cond
+      (= apply? :help) (usage)
+      apply? (apply-rewrite!)
+      :else (let [matches (vec (candidates))]
+              (if (seq matches)
+                (run! print-candidate matches)
+                (println "No matching commits found."))))))
+
+(try
+  (apply -main *command-line-args*)
+  (catch Exception error
+    (binding [*out* *err*]
+      (println (.getMessage error)))
+    (System/exit 1)))
