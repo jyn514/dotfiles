@@ -1,7 +1,7 @@
 {
-  "name": "jyn514-agent-skills",
+  "name": "judgement-yields-navigation",
   "version": "0.1.0",
-  "description": "Composable software design, review, documentation, and investigation skills for coding agents",
+  "description": "Judgement Yields Navigation: composable software design, review, documentation, and investigation skills for coding agents",
   "license": "Unlicense",
   "repository": {
     "type": "git",
@@ -9,9 +9,11 @@
   },
   "keywords": [
     "agent-skills",
+    "codex-plugin",
     "pi-package"
   ],
   "files": [
+    ".codex-plugin/",
     "skills/"
   ],
   "pi": {

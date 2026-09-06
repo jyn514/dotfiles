@@ -16,14 +16,58 @@ pi install git:github.com/jyn514/dotfiles
 
 ```sh
 claude plugin marketplace add jyn514/dotfiles
-claude plugin install jyn514-agent-skills@jyn514-agent-skills
+claude plugin install judgement-yields-navigation@jyn-plugins
 ```
 
-### Codex and other Agent Skills clients
+### Codex
+
+Once published, install the npm package through this repository's Codex marketplace:
+
+```sh
+codex plugin marketplace add jyn514/dotfiles
+codex plugin add judgement-yields-navigation@jyn-plugins
+```
+
+In `plugin@marketplace`, the suffix names the Codex marketplace; it is not an npm scope.
+
+### Other Agent Skills clients
 
 Copy or symlink the desired skill directories into the client's user or project skill directory. For clients that use the shared convention, install them under `~/.agents/skills/` or `.agents/skills/`.
 
 This repository's `./setup dotfiles` command links the complete `skills/` directory to `~/.agents/skills/`.
+
+## Publish a release
+
+The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change.
+
+1. Set the same new semantic version in `package.json`, `.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (`source.version`).
+2. Validate the metadata and npm archive:
+
+   ```sh
+   python3 tests/setup/agent_skills_package_test.py
+   npm publish --dry-run
+   ```
+
+3. Review and commit the release, then authenticate and publish:
+
+   ```sh
+   npm login
+   npm whoami
+   npm publish --access public
+   ```
+
+4. Verify the published version, then push the release commit:
+
+   ```sh
+   npm view judgement-yields-navigation version
+   ```
+
+5. Test a clean installation and start a new Codex thread so it loads the skills:
+
+   ```sh
+   codex plugin marketplace add jyn514/dotfiles
+   codex plugin add judgement-yields-navigation@jyn-plugins
+   ```
 
 ## Agent orchestration
 

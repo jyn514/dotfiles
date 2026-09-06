@@ -1,0 +1,21 @@
+{
+  "name": "jyn-plugins",
+  "interface": {
+    "displayName": "Judgement Yields Navigation"
+  },
+  "plugins": [
+    {
+      "name": "judgement-yields-navigation",
+      "source": {
+        "source": "npm",
+        "package": "judgement-yields-navigation",
+        "version": "0.1.0"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

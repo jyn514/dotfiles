@@ -1,0 +1,32 @@
+{
+  "name": "judgement-yields-navigation",
+  "version": "0.1.0",
+  "description": "Judgement Yields Navigation: composable software design, review, documentation, and investigation skills for coding agents",
+  "author": {
+    "name": "jyn514",
+    "url": "https://github.com/jyn514"
+  },
+  "repository": "https://github.com/jyn514/dotfiles",
+  "license": "Unlicense",
+  "keywords": [
+    "agent-skills",
+    "software-design",
+    "code-review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Judgement Yields Navigation",
+    "shortDescription": "Software design and maintenance workflows",
+    "longDescription": "Composable workflows for software architecture, implementation planning, review, testing, documentation, and investigation.",
+    "developerName": "jyn514",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Guidance"
+    ],
+    "defaultPrompt": [
+      "Choose the smallest useful design workflow for this change.",
+      "Review this change against repository evidence.",
+      "Find the highest-leverage project improvement."
+    ]
+  }
+}
