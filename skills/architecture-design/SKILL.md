@@ -34,7 +34,7 @@ Stop and route elsewhere if the subsystem is unselected or the real task is comp
 ### 1. Map the current subsystem
 
 Inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, and open or closed issues.
-Use history as evidence when useful, but do not equate churn with pain.
+Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 
 Classify responsibilities by reason to change: parsing, normalization, validation, domain policy, lifecycle, effects, projection, compatibility, and orchestration.
 Record data shapes, effect owners, dynamic state, and dependency direction before naming destination modules or components.
@@ -45,6 +45,7 @@ A useful seam has a one-sentence job, a named boundary value, mostly one-way dep
 Consumer behavior should remain stable during extraction.
 
 Reject seams supported only by line count, aesthetics, symmetrical names, or hypothetical reuse.
+Before detailed design, run the cheapest check that could disprove the seam: a dependency trace, classpath-load check, differential fixture, effect inventory, or focused caller/test probe.
 Invoke `second-user` before proposing generalized machinery without two concrete consumers.
 
 ### 3. Define the target boundary
@@ -95,6 +96,9 @@ Challenge the result:
 - Does it improve ownership or only shorten a file?
 - Does a facade preserve the old coupling?
 - Did a leaf acquire orchestration, filesystem, or domain-policy dependencies?
+- Does the proposed owner need callbacks for most lifecycle or policy decisions? If so, it is probably orchestration indirection rather than a coherent boundary.
+- Did history previously combine these responsibilities, and why were they separated?
+- Can a dependency or fixture demonstrably disappear through a classpath, caller, or focused-test check?
 - Are tests merely renamed around private vars?
 - Can the work stop after the first useful extraction?
 
