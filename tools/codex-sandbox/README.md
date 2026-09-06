@@ -17,6 +17,8 @@
 
 A repository may provide executable `.agents/sandbox/base-image` and a version 1 `.agents/sandbox/proxy-commands.json`. Repositories without extra command proxies may omit the manifest. These files are trusted startup policy, not agent configuration.
 
+Alpine images run Pi's bundled Node CLI to reduce module-loading overhead. Other images use the standalone Bun executable.
+
 ## Common commands
 
 ```sh

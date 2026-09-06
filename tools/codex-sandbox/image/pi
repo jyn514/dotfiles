@@ -18,5 +18,7 @@ if ! node -e '
     exit 1
 fi
 
+# Binary asset staging puts another package.json under dist; keep Node's
+# asset lookup rooted at the source package when using the published bundle.
 export PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
-exec node /opt/agent-pi/src/packages/coding-agent/dist/cli.js "$@"
+exec node /opt/agent-pi/src/packages/coding-agent/dist/bundle/cli.js "$@"
