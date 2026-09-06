@@ -243,7 +243,8 @@ Before discovering or starting proxies, the launcher acquires an exclusive host-
 If session metadata exists, the launcher attaches its agent to the recorded socket volumes and uses the already validated manifest snapshot.
 Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
-After every proxy becomes ready, the launcher atomically publishes session metadata containing the repository identity and each manifest command's immutable proxy container ID and resolved image hash.
+After required repository-command proxies become ready, the launcher atomically publishes session metadata containing the repository identity and each manifest command's immutable proxy container ID and resolved image hash.
+The optional trusted Zulip proxy starts without a readiness probe; an early request may fail and be retried after its socket becomes available.
 The metadata contains no command-specific protocol version or request fields.
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and Podman invocation for every manifest command.
@@ -379,6 +380,9 @@ A future proxy command with caller-controlled arguments must define a complete a
 
 == Lifecycle
 
+Short helper calls share the launcher's interpreter and receive explicit argument lists.
+The lock holder and monitor retain separate process lifetimes.
+
 The launcher performs these steps:
 
 + Resolve and validate the repository and protected paths
@@ -387,13 +391,18 @@ The launcher performs these steps:
 + Run every proxy image command and validate its resolved image hash
 + Create session-specific socket volumes and container names
 + Start each configured proxy with its declared mounts and limits
-+ Wait for each conventional server socket to become ready
++ Wait for required repository-command sockets to become ready; skip the optional Zulip readiness probe
 + Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
-+ Atomically publish session metadata for the ready proxies
++ Atomically publish session metadata for the proxy set
++ Create private networks for the host editor and optional Agent Podman relays; start their containers in background jobs owned by the launcher
 + Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
++ Join relay startup jobs before cleanup, deferring termination signals during the join
 + Detach the agent, then stop the sidecar and proxies and remove session resources after the last attached agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
+The agent addresses editor and Podman relays by their session-specific container DNS names.
+Early requests may fail; relay startup failures are reported without terminating the agent.
+The editor listener rejects all peers until relay address inspection installs its allowlist.
 Names include the host UID and first launcher PID to prevent collisions.
 
 The launcher may keep a proxy alive for the whole sandbox session.

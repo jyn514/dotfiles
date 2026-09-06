@@ -8,9 +8,9 @@ cache_key=$(git hash-object \
 	tools/codex-sandbox/auth-proxy/server.py \
 	| git hash-object --stdin)
 image="codex-auth-proxy:$cache_key"
-if ! docker image inspect "$image" >/dev/null 2>&1; then
+if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
 	printf 'Building Codex authentication proxy image %s ...\n' "$image" >&2
 	docker build --file tools/codex-sandbox/auth-proxy/Dockerfile --tag "$image" . >&2
+	image_id=$(docker image inspect --format '{{.Id}}' "$image")
 fi
-image_id=$(docker image inspect --format '{{.Id}}' "$image")
 printf 'sha256:%s\n' "${image_id#sha256:}"

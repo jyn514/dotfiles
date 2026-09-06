@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 from types import SimpleNamespace
 import unittest
@@ -23,6 +24,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[3]
 TOOL = ROOT / "tools" / "codex-sandbox"
 LAUNCHER = TOOL / "codex-sandbox"
+LAUNCHER_FIXTURE = TOOL / "tests" / "launcher_fixture.py"
 AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
@@ -40,6 +42,20 @@ def read_calls(path: Path) -> list[list[str]]:
     if not path.exists():
         return []
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class ProxyHelperTest(unittest.TestCase):
+    def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
+        helper = runpy.run_path(str(LAUNCHER))["helper"]
+        entrypoint = mock.Mock(return_value=0)
+        with mock.patch.dict(helper.__globals__, proxy_entrypoint=lambda: entrypoint), \
+                mock.patch("subprocess.run", side_effect=AssertionError("unexpected process")):
+            self.assertEqual(0, helper("snapshot", "--repo", "example").returncode)
+            entrypoint.assert_called_once_with(["snapshot", "--repo", "example"])
+            entrypoint.return_value = 1
+            with self.assertRaises(subprocess.CalledProcessError):
+                helper("snapshot", "--repo", "example")
+            self.assertEqual(1, helper("snapshot", "--repo", "example", check=False).returncode)
 
 
 class ContainerTimingTest(unittest.TestCase):
@@ -73,6 +89,169 @@ class ContainerTimingTest(unittest.TestCase):
                     mock.patch("sys.stderr", new_callable=io.StringIO) as output:
                 report(SimpleNamespace(codex_container="measurement"))
                 self.assertIn("timing: unavailable", output.getvalue())
+
+
+class BackgroundRelayTest(unittest.TestCase):
+    def test_signal_during_image_build_waits_before_proxy_cleanup(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        main = launcher["main"]
+        build_release = threading.Event()
+        build_finished = threading.Event()
+        proxy_attached = threading.Event()
+        joining_observed = threading.Event()
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = SimpleNamespace(
+                repository=Path(directory), agent_podman=None, codex_arguments=[],
+                joining_workers=False, deferred_signal=None,
+            )
+
+            def ensure_image(_state, _base_image):
+                if not build_release.wait(5):
+                    raise RuntimeError("test did not release image build")
+                build_finished.set()
+                return "image"
+
+            def attach_proxies(_state):
+                proxy_attached.set()
+                return []
+
+            def interrupt_after_proxy_attachment():
+                if not proxy_attached.wait(2):
+                    build_release.set()
+                    return
+                os.kill(os.getpid(), signal.SIGTERM)
+                deadline = time.monotonic() + 2
+                while not state.joining_workers and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                if state.joining_workers:
+                    joining_observed.set()
+                build_release.set()
+
+            replacements = {
+                name: mock.Mock(return_value=[])
+                for name in (
+                    "validate_repository", "register_tmux_pane", "ensure_network",
+                    "acquire_lock", "prepare_editor_relay", "stage_skills",
+                )
+            }
+            replacements.update(
+                ensure_image=ensure_image,
+                resolve_sidecar_image=mock.Mock(return_value="sidecar"),
+                attach_proxies=attach_proxies,
+                run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
+                start_editor_relay=mock.Mock(),
+                run_agent=mock.Mock(side_effect=AssertionError("agent must not start")),
+            )
+
+            interrupter = threading.Thread(target=interrupt_after_proxy_attachment)
+
+            def cleanup(_state):
+                self.assertTrue(
+                    joining_observed.is_set(),
+                    "cleanup began before build ownership transferred",
+                )
+                self.assertTrue(build_finished.is_set(), "cleanup raced the image build")
+
+            with mock.patch.dict(
+                main.__globals__,
+                new_state=lambda _: state,
+                cleanup=cleanup,
+                unregister_tmux_pane=lambda _: None,
+            ), mock.patch.dict(launcher["execute"].__globals__, replacements):
+                interrupter.start()
+                try:
+                    self.assertEqual(128 + signal.SIGTERM, main([]))
+                finally:
+                    build_release.set()
+                    interrupter.join(5)
+                self.assertFalse(interrupter.is_alive())
+
+    def test_signal_during_join_cannot_race_cleanup(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        main = launcher["main"]
+        state = SimpleNamespace(joining_workers=False, deferred_signal=None)
+        abort = threading.Event()
+        finished = threading.Event()
+
+        def relay():
+            deadline = time.monotonic() + 2
+            while not state.joining_workers:
+                if abort.wait(0.01) or time.monotonic() >= deadline:
+                    return
+            os.kill(os.getpid(), signal.SIGTERM)
+            while state.deferred_signal is None:
+                if abort.wait(0.01) or time.monotonic() >= deadline:
+                    return
+            finished.set()
+
+        def execute(_state):
+            with launcher["startup_workers"](state, 1) as executor:
+                executor.submit(relay)
+            return 0
+
+        def cleanup(_state):
+            self.assertTrue(finished.is_set(), "cleanup raced the relay worker")
+
+        with mock.patch.dict(main.__globals__, new_state=lambda _: state,
+                             execute=execute, cleanup=cleanup,
+                             unregister_tmux_pane=lambda _: None):
+            try:
+                self.assertEqual(128 + signal.SIGTERM, main([]))
+            finally:
+                abort.set()
+
+    def test_agent_starts_before_relays_and_exit_joins_them(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        release = threading.Event()
+        agent_started = threading.Event()
+        complete = threading.Event()
+        result = []
+
+        def relay(_state):
+            if not release.wait(5):
+                raise RuntimeError("test did not release relay")
+            raise RuntimeError("injected optional failure")
+
+        def agent(_state, _arguments):
+            agent_started.set()
+            return 19
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = SimpleNamespace(repository=Path(directory), agent_podman={}, codex_arguments=[],
+                                    deferred_signal=None)
+            replacements = {
+                name: mock.Mock(return_value=[])
+                for name in ("validate_repository", "register_tmux_pane", "ensure_network",
+                             "acquire_lock", "attach_proxies", "prepare_editor_relay",
+                             "prepare_relay", "stage_skills")
+            }
+            replacements.update(
+                ensure_image=mock.Mock(return_value="image"),
+                resolve_sidecar_image=mock.Mock(return_value="sidecar"),
+                run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
+                start_editor_relay=relay, start_relay=relay, run_agent=agent,
+            )
+
+            def launch():
+                try:
+                    result.append(execute(state))
+                finally:
+                    complete.set()
+
+            with mock.patch.dict(execute.__globals__, replacements), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+                thread = threading.Thread(target=launch)
+                thread.start()
+                try:
+                    self.assertTrue(agent_started.wait(2), "Pi waited for optional relays")
+                    self.assertFalse(complete.wait(0.1), "cleanup can race relay creation")
+                finally:
+                    release.set()
+                    thread.join(5)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual([19], result)
+                self.assertEqual(2, output.getvalue().count("injected optional failure"))
 
 
 class AgentSandboxImageTest(unittest.TestCase):
@@ -366,13 +545,23 @@ class CodexSandboxTest(unittest.TestCase):
                 exit
             fi
             if [ "$1 $2" = "image inspect" ]; then
+                for image do :; done
+                if [ "${FAKE_IMAGE_EXISTS:-1}" != 1 ] && [ ! -f "$FAKE_DOCKER_LOG.$image" ]; then
+                    exit 1
+                fi
                 case " $* " in
                     *" --format "*) printf 'sha256:%064d\n' 0; exit 0 ;;
                 esac
-                [ "${FAKE_IMAGE_EXISTS:-1}" = 1 ]
-                exit
+                exit 0
             fi
             if [ "$1" = build ]; then
+                previous=
+                for argument do
+                    if [ "$previous" = --tag ]; then
+                        : > "$FAKE_DOCKER_LOG.$argument"
+                    fi
+                    previous=$argument
+                done
                 previous=
                 for argument do
                     if [ "$previous" = --iidfile ]; then
@@ -420,6 +609,9 @@ class CodexSandboxTest(unittest.TestCase):
             fi
             if [ "$1" = rm ] && [ -n "$FAKE_CLEANUP_DELAY" ]; then
                 sleep "$FAKE_CLEANUP_DELAY"
+            fi
+            if [ "$1" = exec ] && [ "${FAKE_EDITOR_UNREACHABLE:-0}" = 1 ]; then
+                case "$2" in codex-host-editor-relay-*) exit 79 ;; esac
             fi
             exit 0
         """)
@@ -494,7 +686,7 @@ class CodexSandboxTest(unittest.TestCase):
 
     def run_launcher(self, *arguments: str, **updates: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(LAUNCHER), *arguments], cwd=self.repo,
+            [sys.executable, str(LAUNCHER_FIXTURE), *arguments], cwd=self.repo,
             env=self.launcher_environment(**updates),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
         )
@@ -623,12 +815,9 @@ class CodexSandboxTest(unittest.TestCase):
         result = self.run_launcher()
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            [["workspace", "root"], ["git", "init"], ["workspace", "root"]],
-            read_calls(self.jj_log),
-        )
         self.assertTrue((self.repo / ".jj" / "repo").is_dir())
         self.assertTrue((self.repo / ".git").is_dir())
+        self.final_run()
 
     def test_bare_launch_gets_a_resumable_session_id(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -1061,11 +1250,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertTrue(any("tools/codex-sandbox/image/Dockerfile" in call for call in builds))
         self.assertIn("sha256:built-image-id", self.final_run())
 
-    def test_network_failure_stops_before_lock_and_proxy_start(self) -> None:
+    def test_network_failure_stops_before_proxy_and_agent_start(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0", FAKE_NETWORK_CREATE_FAIL="1")
         self.assertEqual(1, result.returncode)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
-        self.assertEqual(["snapshot"], actions)
+        self.assertNotIn("attach", actions)
         self.assertFalse(any(call[:1] == ["run"] for call in read_calls(self.docker_log)))
 
     def test_staging_ignores_dangling_skill_links(self) -> None:
@@ -1078,7 +1267,7 @@ class CodexSandboxTest(unittest.TestCase):
     def test_term_signal_cleans_running_agent_and_proxies(self) -> None:
         ready = self.root / "agent-ready"
         process = subprocess.Popen(
-            [sys.executable, str(LAUNCHER)], cwd=self.repo,
+            [sys.executable, str(LAUNCHER_FIXTURE)], cwd=self.repo,
             env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_AGENT_READY=str(ready)),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
         )
@@ -1125,9 +1314,6 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("--cpus", relay)
         self.assertIn("--http-proxy=false", relay)
         self.assertIn("/usr/bin/socat", relay)
-        readiness = next(call for call in calls if call[:2] == ["exec", relay[relay.index("--name") + 1]])
-        self.assertIn("socket.create_connection", " ".join(readiness))
-        self.assertIn("s.recv(4)", " ".join(readiness))
         editor_networks = [
             call for call in calls if call[:2] == ["network", "create"]
             and any("codex-host-editor-" in item for item in call)
@@ -1138,6 +1324,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertTrue(any(item.startswith("CODEX_SANDBOX_EDITOR_ADDRESS=") for item in run))
         self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", run)
         self.assertFalse(any(item.startswith("CODEX_SANDBOX_EDITOR_TOKEN=") for item in run))
+
+    def test_unreachable_editor_does_not_prevent_agent_startup(self) -> None:
+        result = self.run_launcher(FAKE_EDITOR_UNREACHABLE="1")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", self.final_run())
 
     def test_agent_podman_relay_is_isolated_and_injected(self) -> None:
         access = self.root / "agent-podman"
@@ -1169,7 +1360,8 @@ class CodexSandboxTest(unittest.TestCase):
             relay_runs[0][relay_runs[0].index("/usr/bin/socat") + 1],
         )
         run = self.final_run()
-        self.assertIn("CONTAINER_HOST=ssh://worker@10.0.0.8:2222/run/user/501/podman.sock", run)
+        relay_name = relay_runs[0][relay_runs[0].index("--name") + 1]
+        self.assertIn(f"CONTAINER_HOST=ssh://worker@{relay_name}:2222/run/user/501/podman.sock", run)
         self.assertIn(
             f"type=bind,src={access / 'id_ed25519'},dst=/run/secrets/agent-podman-key,readonly",
             run,

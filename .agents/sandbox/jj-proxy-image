@@ -14,9 +14,9 @@ trap 'rm -f "$sources" "$hashes"' EXIT HUP INT TERM
 git hash-object --stdin-paths < "$sources" > "$hashes"
 cache_key=$(/usr/bin/paste -d ' ' "$sources" "$hashes" | git hash-object --stdin)
 image="jj-proxy:$cache_key"
-if ! docker image inspect "$image" >/dev/null 2>&1; then
+if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
 	printf 'Building Jujutsu proxy image %s ...\n' "$image" >&2
 	docker build -f tools/jj-proxy/Dockerfile --tag "$image" . >&2
+	image_id=$(docker image inspect --format '{{.Id}}' "$image")
 fi
-image_id=$(docker image inspect --format '{{.Id}}' "$image")
 printf 'sha256:%s\n' "${image_id#sha256:}"

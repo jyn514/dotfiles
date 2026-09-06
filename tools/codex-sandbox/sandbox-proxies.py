@@ -558,6 +558,10 @@ def start_one_proxy(
     docker_args += proxy_repository_mount_args(repo, name, command)
     docker_args += [images[name], *command["argv"][1:]]
     _docker(*docker_args)
+    # Optional Zulip access can report an unready socket on first use.
+    # Required repository-command proxies still gate session publication below.
+    if name == "zulip":
+        return proxy
     deadline = time.monotonic() + 10
     readiness_error = ""
     while time.monotonic() < deadline:
@@ -855,7 +859,7 @@ def monitor_main(args: argparse.Namespace) -> int:
                 process.stdout.close()
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="action", required=True)
     inspect = sub.add_parser("inspect")
@@ -929,12 +933,12 @@ def parse_args() -> argparse.Namespace:
     monitor.add_argument("--state", required=True)
     monitor.add_argument("--agent", required=True)
     monitor.set_defaults(function=monitor_main)
-    return parser.parse_args()
+    return parser.parse_args(arguments)
 
 
-def main() -> int:
+def main(arguments: list[str] | None = None) -> int:
     try:
-        args = parse_args()
+        args = parse_args(arguments)
         return args.function(args)
     except (ConfigError, OSError, subprocess.SubprocessError) as error:
         print(f"sandbox proxies: {error}", file=sys.stderr)

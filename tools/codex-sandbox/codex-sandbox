@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from functools import cache
+import importlib.util
 import json
 import os
 from dataclasses import dataclass
@@ -102,6 +105,8 @@ class State:
     editor_egress_created: bool = False
     editor_relay_created: bool = False
     cleaned: bool = False
+    joining_workers: bool = False
+    deferred_signal: int | None = None
     tmux_pane: str | None = None
     tmux_registration: str | None = None
 
@@ -128,8 +133,23 @@ def run(
     return result
 
 
+@cache
+def proxy_entrypoint() -> Callable[[list[str]], int]:
+    # Snapshot loads this on the main thread before concurrent startup begins.
+    spec = importlib.util.spec_from_file_location("sandbox_proxies", PROXY_HELPER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.main
+
+
 def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return run(["python3", str(PROXY_HELPER), *arguments], check=check)
+    # Short operations share the launcher's interpreter; lock/monitor lifetimes
+    # remain separate processes so they can supervise and outlive these calls.
+    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments], proxy_entrypoint()(list(arguments)))
+    if check:
+        result.check_returncode()
+    return result
 
 
 def temporary_file() -> Path:
@@ -264,11 +284,12 @@ def unregister_tmux_pane(state: State) -> None:
 
 def validate_repository(state: State) -> None:
     try:
-        result = run(["jj", "workspace", "root"], capture=True)
+        # Finding the mount root needs metadata, not a working-tree snapshot.
+        result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
     except subprocess.CalledProcessError:
         try:
             run(["jj", "git", "init"])
-            result = run(["jj", "workspace", "root"], capture=True)
+            result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
         except subprocess.CalledProcessError as error:
             raise LauncherError("The current directory could not be initialized as a Jujutsu workspace") from error
     repository = Path(result.stdout.strip()).resolve(strict=True)
@@ -458,34 +479,16 @@ def attach_proxies(state: State) -> list[str]:
         state.lock_coordinated.touch()
 
 
-def start_relay(state: State) -> list[str]:
+def prepare_relay(state: State) -> list[str]:
     values = state.agent_podman
     run(["docker", "network", "create", "--internal", "--opt", "isolate=true", state.relay_link_network], discard_stdout=True)
     state.relay_link_created = True
     run(["docker", "network", "create", "--opt", "isolate=true", state.relay_egress_network], discard_stdout=True)
     state.relay_egress_created = True
-    run([
-        "docker", "run", "--detach", "--name", state.relay_container,
-        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--network", state.relay_egress_network, "--http-proxy=false",
-        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
-        f"TCP4-LISTEN:{state.relay_port},fork,reuseaddr",
-        f"TCP4:host.docker.internal:{values['AGENT_PODMAN_SSH_PORT']}",
-    ], discard_stdout=True)
-    state.relay_container_created = True
-    run(["docker", "network", "connect", state.relay_link_network, state.relay_container])
-    relay_ip = run([
-        "docker", "inspect", "--format",
-        f'{{{{(index .NetworkSettings.Networks "{state.relay_link_network}").IPAddress}}}}',
-        state.relay_container,
-    ], capture=True).stdout.strip()
-    if not relay_ip:
-        raise LauncherError("Agent Podman relay has no link address")
     container_host = (
-        f"ssh://{values['AGENT_PODMAN_SSH_USER']}@{relay_ip}:"
+        f"ssh://{values['AGENT_PODMAN_SSH_USER']}@{state.relay_container}:"
         f"{state.relay_port}/{values['SOCKET_PATH']}"
     )
-    print(f"Agent Podman relay ready at {relay_ip}:{state.relay_port}.")
     return [
         "--network", state.relay_link_network,
         "--env", f"CONTAINER_HOST={container_host}",
@@ -496,7 +499,22 @@ def start_relay(state: State) -> list[str]:
     ]
 
 
-def start_editor_relay(state: State) -> list[str]:
+def start_relay(state: State) -> None:
+    values = state.agent_podman
+    # A failed run may still create a container; cleanup owns the name either way.
+    state.relay_container_created = True
+    run([
+        "docker", "run", "--detach", "--name", state.relay_container,
+        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+        "--network", state.relay_egress_network,
+        "--network", state.relay_link_network, "--http-proxy=false",
+        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
+        f"TCP4-LISTEN:{state.relay_port},fork,reuseaddr",
+        f"TCP4:host.docker.internal:{values['AGENT_PODMAN_SSH_PORT']}",
+    ], discard_stdout=True)
+
+
+def prepare_editor_relay(state: State) -> list[str]:
     run([
         "docker", "network", "create", "--internal", "--opt", "isolate=true",
         state.editor_link_network,
@@ -509,20 +527,29 @@ def start_editor_relay(state: State) -> list[str]:
     state.editor_egress_created = True
     state.host_editor = HostEditorBridge()
     state.host_editor.start()
+    return [
+        "--network", state.editor_link_network,
+        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.editor_relay_container}:2223",
+        "--env", "CODEX_SANDBOX_EDITOR_TOKEN",
+    ]
+
+
+def start_editor_relay(state: State) -> None:
+    assert state.host_editor is not None
     assert state.host_editor.port is not None
     relay_port = 2223
+    state.editor_relay_created = True
     run([
         "docker", "run", "--detach", "--name", state.editor_relay_container,
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--network", state.editor_egress_network, "--http-proxy=false",
+        "--network", state.editor_egress_network,
+        "--network", state.editor_link_network, "--http-proxy=false",
         "--pids-limit", "32", "--memory", "64m", "--cpus", "0.25",
         "--add-host", "host.docker.internal:host-gateway",
         "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
         f"TCP4-LISTEN:{relay_port},fork,reuseaddr",
         f"TCP4:host.docker.internal:{state.host_editor.port}",
     ], discard_stdout=True)
-    state.editor_relay_created = True
-    run(["docker", "network", "connect", state.editor_link_network, state.editor_relay_container])
     relay_ip = run([
         "docker", "inspect", "--format",
         f'{{{{(index .NetworkSettings.Networks "{state.editor_link_network}").IPAddress}}}}',
@@ -536,19 +563,7 @@ def start_editor_relay(state: State) -> list[str]:
     if not relay_ip or not egress_ip:
         raise LauncherError("host editor relay has incomplete network addresses")
     state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
-    readiness = run([
-        "docker", "exec", state.editor_relay_container, "/usr/local/bin/python3", "-c",
-        "import socket,struct; "
-        f"s=socket.create_connection(('host.docker.internal',{state.host_editor.port}),5); "
-        "s.sendall(struct.pack('>I',2)+b'{}'); assert len(s.recv(4))==4; s.close()",
-    ], check=False, quiet=True)
-    if readiness.returncode:
-        raise LauncherError("host editor relay cannot reach the host listener")
-    return [
-        "--network", state.editor_link_network,
-        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={relay_ip}:{relay_port}",
-        "--env", "CODEX_SANDBOX_EDITOR_TOKEN",
-    ]
+    # Until this allowlist is installed, the listener rejects every connection.
 
 
 def _secure_codex_auth_directory(state: State) -> Path | None:
@@ -1106,6 +1121,22 @@ def run_agent(state: State, arguments: list[str]) -> int:
             report_container_timing(state)
 
 
+@contextmanager
+def startup_workers(state: State, max_workers: int) -> Iterator[ThreadPoolExecutor]:
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield executor
+    finally:
+        # Signal handlers must not unwind cleanup while a worker creates resources.
+        state.joining_workers = True
+        try:
+            executor.shutdown(wait=True)
+        finally:
+            state.joining_workers = False
+        if state.deferred_signal is not None:
+            raise SignalExit(state.deferred_signal)
+
+
 def execute(state: State) -> int:
     started = time.monotonic()
     timings: list[tuple[str, float]] = []
@@ -1119,50 +1150,64 @@ def execute(state: State) -> int:
 
     phase("repository validation", lambda: validate_repository(state))
     register_tmux_pane(state)
-    builder = state.repository / ".agents/sandbox/base-image"
-    if builder.is_file() and os.access(builder, os.X_OK):
-        base_image = phase(
-            "base image resolution",
-            lambda: run([str(builder)], capture=True, cwd=state.repository).stdout.strip(),
+    def model_image() -> str:
+        builder = state.repository / ".agents/sandbox/base-image"
+        if builder.is_file() and os.access(builder, os.X_OK):
+            base_image = phase(
+                "base image resolution",
+                lambda: run([str(builder)], capture=True, cwd=state.repository).stdout.strip(),
+            )
+        else:
+            base_image = "node:24-alpine3.22"
+        return phase("model image resolution", lambda: ensure_image(state, base_image))
+
+    def optional_relay(name: str, action: Callable[[], object]) -> None:
+        try:
+            phase(name, action)
+        except Exception as error:
+            print(f"warning: {name} failed: {error}", file=sys.stderr)
+
+    # Keep these jobs owned until session exit so cleanup cannot race creation.
+    with startup_workers(state, max_workers=6) as executor:
+        model_future = executor.submit(model_image)
+        sidecar_future = executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
+        network_future = executor.submit(phase, "network setup", ensure_network)
+        lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
+        editor_future = executor.submit(
+            phase, "host editor network setup", lambda: prepare_editor_relay(state),
         )
-    else:
-        base_image = "node:24-alpine3.22"
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        model_image = executor.submit(ensure_image, state, base_image)
-        sidecar_image = executor.submit(resolve_sidecar_image)
-        state.image = phase("model image resolution", model_image.result)
-        state.sidecar_image = phase("sidecar image resolution", sidecar_image.result)
-    phase("network setup", ensure_network)
-    phase("proxy lock", lambda: acquire_lock(state))
-    with ThreadPoolExecutor(max_workers=3) as executor:
+        relay_future = (
+            executor.submit(phase, "Podman network setup", lambda: prepare_relay(state))
+            if state.agent_podman is not None else None
+        )
+        state.sidecar_image = sidecar_future.result()
+        network_future.result()
+        lock_future.result()
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
         )
-        editor_future = executor.submit(
-            phase, "host editor relay startup", lambda: start_editor_relay(state),
-        )
-        relay_future = (
-            executor.submit(phase, "Podman relay startup", lambda: start_relay(state))
-            if state.agent_podman is not None else None
-        )
-        sidecar_arguments = proxy_future.result()
         editor_arguments = editor_future.result()
+        executor.submit(optional_relay, "host editor relay startup", lambda: start_editor_relay(state))
         relay_arguments = relay_future.result() if relay_future else []
-    arguments = [*editor_arguments, *relay_arguments, state.image, *state.codex_arguments]
-    system = run(["uname", "-s"], capture=True).stdout.strip()
-    if system == "Linux":
-        print(
-            "warning: native Linux sandboxing disables sudo elevation with cap-drop=ALL and no-new-privileges.\n"
-            "warning: a Podman Machine micro-VM would allow container sudo without weakening host isolation.",
-            file=sys.stderr,
-        )
-        arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
-    phase("skill staging", lambda: stage_skills(state))
-    arguments = [*sidecar_arguments, *arguments]
-    if os.environ.get("CODEX_SANDBOX_TIMING"):
-        detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
-        print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
-    return run_agent(state, arguments)
+        if relay_future:
+            executor.submit(optional_relay, "Podman relay startup", lambda: start_relay(state))
+        sidecar_arguments = proxy_future.result()
+        state.image = model_future.result()
+        arguments = [*editor_arguments, *relay_arguments, state.image, *state.codex_arguments]
+        system = run(["uname", "-s"], capture=True).stdout.strip()
+        if system == "Linux":
+            print(
+                "warning: native Linux sandboxing disables sudo elevation with cap-drop=ALL and no-new-privileges.\n"
+                "warning: a Podman Machine micro-VM would allow container sudo without weakening host isolation.",
+                file=sys.stderr,
+            )
+            arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
+        phase("skill staging", lambda: stage_skills(state))
+        arguments = [*sidecar_arguments, *arguments]
+        if os.environ.get("CODEX_SANDBOX_TIMING"):
+            detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
+            print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
+        return run_agent(state, arguments)
 
 
 def cleanup_resource(label: str, arguments: list[str]) -> None:
@@ -1378,6 +1423,9 @@ def main(arguments: list[str]) -> int:
     previous_handlers: dict[int, object] = {}
 
     def handle_signal(signum: int, _frame: object) -> None:
+        if state is not None and state.joining_workers:
+            state.deferred_signal = signum
+            return
         raise SignalExit(signum)
 
     try:

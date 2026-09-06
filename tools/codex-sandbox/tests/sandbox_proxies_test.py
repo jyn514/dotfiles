@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import fcntl
+import io
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,18 @@ class ManifestTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def test_explicit_arguments_preserve_caller_argv_and_report_errors(self) -> None:
+        output = self.repo / "snapshot.json"
+        arguments = ["snapshot", "--repo", str(self.repo), "--output", str(output)]
+        with mock.patch.object(sys, "argv", ["caller", "unrelated-argument"]):
+            self.assertEqual(0, sandbox_proxies.main(arguments))
+            self.assertEqual({"version": 1, "commands": {}}, json.loads(output.read_text()))
+            self.assertEqual(["caller", "unrelated-argument"], sys.argv)
+            (self.sandbox / "proxy-commands.json").write_text("invalid JSON")
+            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                self.assertEqual(1, sandbox_proxies.main(arguments))
+                self.assertIn("sandbox proxies:", stderr.getvalue())
 
     def write(self, commands: dict = None, **extra: object) -> None:
         manifest = {"version": 1, "commands": commands or {}, **extra}
@@ -349,6 +362,30 @@ class ManifestTest(unittest.TestCase):
                     args, self.repo, "identity", {"example": image},
                     {"proxies": []}, mock.MagicMock(), "example", command,
                 )
+
+    def test_zulip_can_start_before_its_socket_is_ready(self) -> None:
+        zuliprc = self.repo / "zuliprc"
+        zuliprc.write_text("secret", encoding="utf-8")
+        zuliprc.chmod(0o600)
+        args = type("Args", (), {
+            "prefix": "test", "state": str(self.repo / "state"), "network": "sandbox",
+            "zuliprc": str(zuliprc),
+        })
+        image = "sha256:" + "0" * 64
+        state = {"proxies": []}
+        running = subprocess.CompletedProcess([], 0, stdout="true\n")
+        not_ready = subprocess.CompletedProcess([], 1, stderr="socket not ready\n")
+        with mock.patch.object(sandbox_proxies, "_docker", return_value=running), \
+                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=not_ready), \
+                mock.patch.object(sandbox_proxies, "proxy_logs", return_value=""), \
+                mock.patch.object(sandbox_proxies.time, "monotonic", side_effect=[0, 0, 11]), \
+                mock.patch.object(sandbox_proxies.time, "sleep"):
+            proxy = sandbox_proxies.start_one_proxy(
+                args, self.repo, "identity", {"zulip": image}, state,
+                mock.MagicMock(), "zulip", self.command(argv=["zulip-proxy"], network=True),
+            )
+        self.assertEqual("zulip", proxy["name"])
+        self.assertEqual([proxy], state["proxies"])
 
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
         self.sandbox.rmdir()
