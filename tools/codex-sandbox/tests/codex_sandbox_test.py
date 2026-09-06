@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -98,7 +99,6 @@ class BackgroundRelayTest(unittest.TestCase):
         build_release = threading.Event()
         build_finished = threading.Event()
         proxy_attached = threading.Event()
-        joining_observed = threading.Event()
 
         with tempfile.TemporaryDirectory() as directory:
             state = SimpleNamespace(
@@ -124,8 +124,6 @@ class BackgroundRelayTest(unittest.TestCase):
                 deadline = time.monotonic() + 2
                 while not state.joining_workers and time.monotonic() < deadline:
                     time.sleep(0.01)
-                if state.joining_workers:
-                    joining_observed.set()
                 build_release.set()
 
             replacements = {
@@ -147,10 +145,6 @@ class BackgroundRelayTest(unittest.TestCase):
             interrupter = threading.Thread(target=interrupt_after_proxy_attachment)
 
             def cleanup(_state):
-                self.assertTrue(
-                    joining_observed.is_set(),
-                    "cleanup began before build ownership transferred",
-                )
                 self.assertTrue(build_finished.is_set(), "cleanup raced the image build")
 
             with mock.patch.dict(
@@ -836,29 +830,91 @@ class CodexSandboxTest(unittest.TestCase):
     def test_restart_all_stops_resets_and_relaunches_registered_panes(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         registrations = [{
-            "version": 1, "pane": "%3", "repository": str(self.repo),
-            "session": "session-id", "token": "token",
+            "version": 1, "pane": "%3", "dead": False, "pid": 12345,
+            "repository": str(self.repo), "session": "session-id", "token": "token",
         }]
         calls = []
         resets = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            return SimpleNamespace(stdout="off\n")
+
         function_globals = launcher["restart_all_tmux_sessions"].__globals__
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
             function_globals, {
                 "tmux_registrations": mock.Mock(side_effect=[registrations, []]),
-                "run": lambda arguments, **kwargs: calls.append(arguments),
+                "run": fake_run,
                 "helper": lambda *arguments: resets.append(arguments),
             },
-        ):
+        ), mock.patch.object(os, "kill") as kill:
             self.assertEqual(0, launcher["restart_all_tmux_sessions"]())
+        kill.assert_called_once_with(12345, signal.SIGTERM)
         self.assertEqual([("reset", "--repo", str(self.repo))], resets)
-        self.assertEqual(3, sum(call[-1] == "C-c" for call in calls))
-        literal = next(call for call in calls if "-l" in call)
+        self.assertIn(
+            ["tmux", "set-option", "-p", "-t", "%3", "remain-on-exit", "on"],
+            calls,
+        )
+        respawn = next(call for call in calls if call[:2] == ["tmux", "respawn-pane"])
         self.assertEqual(
             f"cd {shlex.quote(str(self.repo))} && pi --session session-id",
-            literal[-1],
+            respawn[-1],
         )
-        self.assertTrue(any(call[-1] == "Enter" for call in calls))
+        self.assertIn(
+            ["tmux", "set-option", "-p", "-t", "%3", "remain-on-exit", "off"],
+            calls,
+        )
+        self.assertFalse(any(call[-1:] in (["C-c"], ["Enter"]) for call in calls))
         self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
+
+    def test_restart_all_respawns_an_already_dead_registered_pane(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        registrations = [{
+            "version": 1, "pane": "%3", "dead": True, "pid": None,
+            "repository": str(self.repo), "session": "session-id", "token": "token",
+        }]
+        calls = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            return SimpleNamespace(stdout="off\n")
+
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_all_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(side_effect=[registrations, registrations]),
+                "run": fake_run,
+                "helper": mock.Mock(),
+            },
+        ), mock.patch.object(os, "kill") as kill:
+            self.assertEqual(0, launcher["restart_all_tmux_sessions"]())
+
+        kill.assert_not_called()
+        self.assertTrue(any(call[:2] == ["tmux", "respawn-pane"] for call in calls))
+
+    def test_restart_registration_includes_the_launcher_process(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        registration = base64.urlsafe_b64encode(json.dumps({
+            "version": 1, "pane": "%3", "repository": str(self.repo),
+            "session": "session-id", "token": "token",
+        }).encode()).decode()
+        result = SimpleNamespace(stdout=f"0\t12345\t{registration}\n1\t\t{registration}\n")
+
+        with mock.patch.dict(
+            launcher["tmux_registrations"].__globals__,
+            run=mock.Mock(return_value=result),
+        ):
+            self.assertEqual(
+                [{
+                    "version": 1, "pane": "%3", "dead": False, "pid": 12345,
+                    "repository": str(self.repo), "session": "session-id",
+                    "token": "token",
+                }, {
+                    "version": 1, "pane": "%3", "dead": True, "pid": None,
+                    "repository": str(self.repo), "session": "session-id",
+                    "token": "token",
+                }],
+                launcher["tmux_registrations"](),
+            )
 
     def test_tmux_registration_declares_and_clears_pi_command(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

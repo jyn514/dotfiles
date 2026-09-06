@@ -80,7 +80,7 @@ The launcher preserves the agent's exit status and attempts to remove its contai
 - If startup reports invalid repository metadata or sandbox policy, repair the named path; do not bypass the validation.
 - If authentication is disabled, run `codex-sandbox auth login`, then start a new sandbox.
 - If Agent Podman reports an SSH handshake `EOF`, inspect the relay log before restarting the sandbox. A relay that accepts the sandbox connection but reports `host.docker.internal:<port>: Connection refused` means the Agent Podman machine is stopped; run `tools/agent-podman/start.sh` on the host. See [Agent Podman recovery](../agent-podman/README.md#recovery).
-- If cached proxy/auth state changed or belongs to another network, stop all sandbox sessions for that checkout and run `codex-sandbox restart-all` from tmux. The command resets shared session metadata before resuming registered sessions.
+- If cached proxy/auth state changed or belongs to another network, run `codex-sandbox restart-all` from tmux. It terminates registered launcher processes, resets shared session metadata after cleanup, then resumes their sessions.
 - If automatic cleanup warns about a named resource, inspect and remove only that generated resource with the container CLI, then retry. Do not delete the host coordination lock files manually.
 - A stopped shared proxy terminates attached agents. Restart the sandbox rather than running the protected operation locally.
 

@@ -1342,26 +1342,32 @@ def login_codex_sidecar() -> int:
     return subprocess.run(["codex", "login"], env=environment).returncode
 
 
-def tmux_registrations() -> list[dict[str, str]]:
+def tmux_registrations() -> list[dict[str, object]]:
     result = run([
-        "tmux", "list-panes", "-a", "-F", "#{@codex_sandbox_restart}",
+        "tmux", "list-panes", "-a", "-F",
+        "#{pane_dead}\t#{pane_pid}\t#{@codex_sandbox_restart}",
     ], capture=True)
     registrations = []
-    for encoded in result.stdout.splitlines():
-        if not encoded:
+    for line in result.stdout.splitlines():
+        fields = line.split("\t", 2)
+        if len(fields) != 3 or not fields[2]:
             continue
+        dead_text, pid_text, encoded = fields
         try:
             payload = json.loads(base64.urlsafe_b64decode(encoded).decode())
+            pid = int(pid_text) if pid_text else None
         except (ValueError, UnicodeError, json.JSONDecodeError) as error:
             raise LauncherError("tmux contains an invalid sandbox restart registration") from error
-        if not isinstance(payload, dict) or set(payload) != {
+        dead = dead_text == "1"
+        if dead_text not in {"0", "1"} or (not dead and (pid is None or pid <= 1)) \
+                or not isinstance(payload, dict) or set(payload) != {
             "version", "pane", "repository", "session", "token",
         } or payload["version"] != 1 or not all(
             isinstance(payload[field], str) and payload[field]
             for field in ("pane", "repository", "session", "token")
         ):
             raise LauncherError("tmux contains an invalid sandbox restart registration")
-        registrations.append(payload)
+        registrations.append({**payload, "dead": dead, "pid": pid})
     return registrations
 
 
@@ -1372,17 +1378,33 @@ def restart_all_tmux_sessions() -> int:
     if not registrations:
         raise LauncherError("tmux has no registered sandbox sessions")
     for registration in registrations:
-        for _ in range(3):
-            run(["tmux", "send-keys", "-t", registration["pane"], "C-c"])
-            time.sleep(0.05)
+        remain_on_exit = run([
+            "tmux", "show-options", "-p", "-v", "-t", registration["pane"],
+            "remain-on-exit",
+        ], capture=True).stdout.strip()
+        if remain_on_exit not in {"0", "1", "off", "on"}:
+            raise LauncherError("tmux returned an invalid remain-on-exit setting")
+        registration["remain_on_exit"] = remain_on_exit
+        run([
+            "tmux", "set-option", "-p", "-t", registration["pane"],
+            "remain-on-exit", "on",
+        ])
+        if not registration["dead"]:
+            os.kill(registration["pid"], signal.SIGTERM)
+    panes = {registration["pane"] for registration in registrations}
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        if not tmux_registrations():
+        active = {
+            registration["pane"]
+            for registration in tmux_registrations()
+            if not registration["dead"]
+        }
+        if not panes.intersection(active):
             break
         time.sleep(0.1)
     else:
         raise LauncherError("sandbox panes did not stop within 15 seconds")
-    for repository in sorted({item["repository"] for item in registrations}):
+    for repository in sorted({str(item["repository"]) for item in registrations}):
         helper("reset", "--repo", repository)
     for registration in registrations:
         command = (
@@ -1390,8 +1412,11 @@ def restart_all_tmux_sessions() -> int:
             + " && "
             + shlex.join(["pi", "--session", registration["session"]])
         )
-        run(["tmux", "send-keys", "-t", registration["pane"], "-l", command])
-        run(["tmux", "send-keys", "-t", registration["pane"], "Enter"])
+        run(["tmux", "respawn-pane", "-k", "-t", registration["pane"], command])
+        run([
+            "tmux", "set-option", "-p", "-t", registration["pane"],
+            "remain-on-exit", registration["remain_on_exit"],
+        ])
     message = f"Restarted {len(registrations)} sandbox session(s)."
     run(["tmux", "display-message", "-d", "5000", message], check=False, quiet=True)
     print(message)
