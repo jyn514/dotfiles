@@ -68,6 +68,19 @@ RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
     && mkdir -p /opt/agent-pi/standalone \
     && cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/
 
+FROM pi-build AS pi-extension-cache
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+ENV HOME=/home/codex
+ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
+ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
+WORKDIR /src/work
+COPY ./config/pi.json /home/codex/.pi/agent/settings.json
+COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
+RUN node /opt/cache-pi-extensions.mjs install
+COPY ./config/pi-extensions /home/codex/.pi/agent/pi-extensions
+COPY ./tools/codex-sandbox/auth-proxy/pi-extension /home/codex/.pi/agent/extensions/codex-sidecar
+RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
+
 FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
@@ -80,6 +93,7 @@ COPY --from=tools /opt/agent-tools /opt/agent-tools
 COPY ./tools/codex-sandbox/image/create-user.sh .
 ARG AGENT_UID=1000
 ARG AGENT_GID=1000
+COPY --from=pi-extension-cache --chown=${AGENT_UID}:${AGENT_GID} /tmp/jiti /tmp/jiti
 RUN ./create-user.sh "${AGENT_UID}" "${AGENT_GID}" codex /home/codex \
     && agent_name=$(awk -F: -v uid="${AGENT_UID}" '$3 == uid { print $1; exit }' /etc/passwd) \
     && test -n "${agent_name}" \

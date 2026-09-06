@@ -19,7 +19,11 @@ A repository may provide executable `.agents/sandbox/base-image` and a version 1
 
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead. Other images use the standalone Bun executable.
 
-The goal extension uses the precompiled npm release pinned in `config/pi.json`. Its Git distribution loads TypeScript and incurs startup transpilation even at the same release version.
+The image build installs the packages selected by `config/pi.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache. Only the cache enters the final image, at `/tmp/jiti`; build-time package stores and extension runtime state are discarded.
+
+Jiti checks source hashes before reuse. Edited or newly installed extensions compile into the disposable container, so `/reload` still sees current source and cache writes never reach host Pi or another session. Local extension and settings changes invalidate the image; moving Git refs are captured when the package-install layer builds and may produce runtime cache misses after an upstream update.
+
+The goal extension uses the precompiled npm release pinned in `config/pi.json`. Its Git distribution loads TypeScript, making cache misses more expensive.
 
 ## Common commands
 
@@ -74,6 +78,16 @@ The runtime integration test builds real images and requires a working Docker-co
 ```sh
 python3 tools/codex-sandbox/tests/image_runtime_integration.py
 ```
+
+Check the extension cache against a built final image; test containers run without network access:
+
+```sh
+docker build --target pi-extension-cache -f tools/codex-sandbox/image/Dockerfile -t pi-cache-test .
+python3 tools/codex-sandbox/tests/cache_integration.py --runtime <sandbox-image> --builder pi-cache-test
+docker image rm pi-cache-test
+```
+
+This checks first-launch cache hits, edited source, isolation between containers, and build failure on missing packages or extension errors.
 
 ## Design and reference
 
