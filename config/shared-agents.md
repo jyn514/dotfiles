@@ -67,6 +67,14 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 
 When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
 
+After creating or substantially rewriting documentation, specifications, prompts, instructions, or skills, invoke `tighten-docs` before completion. Do not apply it to code, generated files, or machine-owned data.
+
+### AGENTS.md files
+
+Treat `AGENTS.md` as an early routing and correction layer. Include only rules that always apply within its scope, routes to canonical task documentation, and constraints that must change the agent's plan before further work.
+
+Do not duplicate repository documentation, procedures, command catalogs, or style guides. Keep them with their canonical owner and route to them with enough context to know when and why to read them. If guidance applies only after selecting a task or subsystem, route to it instead of embedding it in `AGENTS.md`.
+
 ## Writing code
 
 Think about LANGSEC (Language-theoretical security).
