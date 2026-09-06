@@ -30,13 +30,13 @@ case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
   pi)
     JJ_USER="Pi${PI_MODEL:+ $PI_MODEL}"
-    JJ_EMAIL='breq@jyn.dev'
+    JJ_EMAIL='325577925+one-esk-nineteen@users.noreply.github.com'
     ;;
   codex)
     # Session metadata is optional; lookup failure must reach the generic identity
     # fallback instead of letting set -e prevent the requested jj command.
     model=$(codex_version) || model=
-    JJ_EMAIL='breq@jyn.dev'
+    JJ_EMAIL='325577925+one-esk-nineteen@users.noreply.github.com'
     JJ_USER="Codex $model"
 
     case "$model" in
