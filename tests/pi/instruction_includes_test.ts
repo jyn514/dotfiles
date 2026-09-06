@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expandInstructionIncludes } from "../../config/pi-extensions/pi-instruction-includes";
@@ -34,6 +34,26 @@ describe("instruction includes", () => {
     expect(result[0]).toContain("nested");
     expect(result[0].indexOf("first")).toBeLessThan(result[0].indexOf("nested"));
     expect(result[1]).toContain("second");
+  });
+
+  test("expands the sandboxed Pi instruction layout", async () => {
+    const home = await fixture();
+    const agent = join(home, ".pi", "agent");
+    const shared = join(home, ".agents");
+    await mkdir(agent, { recursive: true });
+    await mkdir(shared, { recursive: true });
+    await writeFile(join(agent, "breq.md"), "Breq");
+    await writeFile(join(agent, "coordination-dialect.md"), "Coordination");
+    await writeFile(join(shared, "shared.md"), "Shared");
+    const content = await readFile(join(import.meta.dir, "../../config/pi-AGENTS.md"), "utf8");
+
+    const result = await expandInstructionIncludes(
+      [{ path: join(agent, "AGENTS.md"), content }],
+      agent,
+    );
+
+    expect(result).toHaveLength(3);
+    expect(result[2]).toContain("Shared");
   });
 
   test("ignores directives inside fenced code blocks", async () => {

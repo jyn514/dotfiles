@@ -521,6 +521,7 @@ class CodexSandboxTest(unittest.TestCase):
             self.assertEqual(
                 "@breq.md\n"
                 "@coordination-dialect.md\n"
+                "@../../.agents/shared.md\n"
                 "@/src/work/.agents/sandbox/AGENTS.md\n"
                 "@../../.agents/sandbox/AGENTS.md\n",
                 agents,
