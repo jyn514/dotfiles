@@ -1,4 +1,4 @@
-approvals_reviewer = "user"
+approvals_reviewer = "auto_review"
 service_tier = "default"
 model = "gpt-6-astra"
 model_reasoning_effort = "low"
