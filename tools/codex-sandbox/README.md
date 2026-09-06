@@ -37,7 +37,7 @@ codex-sandbox restart-all       # restart registered sessions; run inside tmux
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
 
-Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor; otherwise `VISUAL`, `EDITOR`, then `vi` is used.
+Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor; otherwise `VISUAL`, `EDITOR`, then `vi` is used. The dotfiles profile selects `config/nvim-host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim-shared.lua`; normal Neovim loads the same shared behavior before its IDE configuration.
 
 Host editor and Agent Podman relays start in the background, after their private networks are created. Pi reaches them by container DNS name; early use may report a connection error. Zulip also skips its readiness probe. Retry once the service is available. Authentication and repository-command proxies still require readiness checks.
 

@@ -12,39 +12,23 @@
 -- use `:menu` to get an exhaustive list of mappings
 -- use `:put =getcompletion('', 'command')` to get an exhaustive list of commands
 
+dofile(vim.fn.stdpath('config') .. '/shared.lua')
+
 local first_run = not vim.g.lazy_did_setup
 local config_group = vim.api.nvim_create_augroup('dotfiles_config', { clear = true })
 
 ---- Options ----
 
 -- misc
-vim.g.mapleader = ' '
-vim.g.maplocalleader = 'f'
 vim.opt.undofile = true
-vim.opt.ignorecase = true
-vim.opt.wildignorecase = true
-vim.opt.smartcase = true
-vim.opt.scrolloff = 3
-vim.opt.sidescrolloff = 10
-vim.opt.visualbell = true
 vim.opt.title = true      -- allows M-d to search for a file
 -- see `:help zo` for keybinds
-vim.opt.shiftround = true -- TODO: disable this for markdown and mumps files
 
 -- folds
 vim.opt.foldlevelstart = 4
 vim.opt.foldminlines = 2
 vim.opt.foldmethod = "expr"
 vim.opt.foldexpr = "v:lua.vim.lsp.foldexpr()"
-
--- ui
-vim.opt.termguicolors = true
-vim.opt.number = true
-vim.opt.breakindent = true
-vim.opt.list = true
-vim.opt.listchars = { tab = '│ ', trail = '·', nbsp = '␣' }
--- shows :s/foo/bar preview live
-vim.opt.inccommand = 'split'
 
 -- TODO: OSC 52 (`:h clipboard-osc52`)
 vim.cmd.set('clipboard=unnamed')
@@ -53,10 +37,6 @@ vim.cmd.set('clipboard=unnamed')
 vim.g.loaded_node_provider = 0
 vim.g.loaded_perl_provider = 0
 vim.g.loaded_ruby_provider = 0
-
--- use absolute directions for search, not relative
-vim.keymap.set('n', 'n', '/<CR>')
-vim.keymap.set('n', 'N', '?<CR>')
 
 -- If this doesn't look right, try `:set termguicolors`.
 -- SSH should be forwarding $COLORTERM, which sets it automatically, but some ssh servers block it unless you add `AcceptEnv COLORTERM`.
@@ -142,28 +122,7 @@ vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }, {
 		end
 	end,
 })
--- always keep this at 0, otherwise vim will force-wrap lines as you type 
-vim.opt.textwidth = 0
-
 ---- Keybinds ----
-
-vim.keymap.set('n', '<Esc>', function()
-	-- If we find a floating window, close it.
-	-- https://www.reddit.com/r/neovim/comments/11axh2p/comment/jasdwkr/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
-	local found_float = false
-	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		if vim.api.nvim_win_get_config(win).relative ~= '' then
-			vim.api.nvim_win_close(win, true)
-			found_float = true
-		end
-	end
-
-	if found_float then
-		return
-	end
-
-	vim.cmd.nohlsearch()
-end)
 
 -- what does this do lol
 -- vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
@@ -172,26 +131,11 @@ local function bind(binding, target, desc)
 	vim.keymap.set({ 'n', 'v' }, binding, target, { desc = desc })
 end
 
-vim.keymap.set('n', '<A-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
-vim.keymap.set('n', '<A-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
-vim.keymap.set('n', '<A-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
-vim.keymap.set('n', '<A-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
-vim.keymap.set('n', '<A-z>', '<C-w>_', { desc = 'Maximize the current window' })
-
-vim.keymap.set('n', 'gqq', 'gww', { desc = 'Only format selection, not sentence' })
-
 -- TODO: these don't work in visual mode
 bind('<A-Left>', '<C-o>', 'Go back in history')
 bind('<A-Right>', '<C-i>', 'Go forward in history')
 bind('<X1Mouse>', '<C-o>', 'Go back in history')
 bind('<X2Mouse>', '<C-i>', 'Go forward in history')
-
-vim.keymap.set('n', '<A-i>', 'i_<Esc>r', { desc = 'Insert a single character' })
-
-vim.keymap.set('', '<S-ScrollWheelDown>', '5zl', { desc = 'Scroll right' })
-vim.keymap.set('', '<S-ScrollWheelUp>', '5zh', { desc = 'Scroll left' })
-vim.keymap.set('', '<A-ScrollWheelDown>', '<C-d>', { desc = 'Scroll page down' })
-vim.keymap.set('', '<A-ScrollWheelUp>', '<C-u>', { desc = 'Scroll page up' })
 
 -- to insert newline without indentation, use `[ `
 
@@ -200,44 +144,6 @@ vim.keymap.set('n', '<leader>t', function()
 	vim.cmd.make('test')
 end, { desc = "Run `make test`" })
 -- TODO: add ninja output to `errorformat` (see `:h efm-ignore`)
-
--- add some emacs keybinds
-vim.keymap.set({ 'i', 'c' }, '<C-e>', '<End>', { desc = "End" }) -- overwrites "insert character on line below" with no replacement
-vim.keymap.set({ 'i', 'c' }, '<C-a>', '<Home>', { desc = "Home" }) -- overwrites "insert previously inserted text" with no replacement
-
--- add some helix keybinds
-vim.keymap.set('n', 'U', '<C-r>', { desc = "Redo" })                               -- overwrites "undo line" with no replacement
-vim.keymap.set('n', 'ga', ':b#<cr>', { desc = "Go to most recently used buffer" }) -- overwrites `:as[cii]` keybind
-vim.keymap.set('n', 'gn', ':bnext<cr>', { desc = "Go to next buffer" })            -- overwrites `nv` keybind
-vim.keymap.set('n', 'gp', ':bprevious<cr>', { desc = "Go to previous buffer" })    -- overwrites "paste before cursor"
-
--- note: overwrites select mode
-vim.keymap.set({ 'n', 'v' }, 'gh', '^', { desc = "Go to line start" })
-vim.keymap.set({ 'n', 'v' }, 'gl', '$', { desc = "Go to line end" })
-
--- for flower
-vim.keymap.set('i', '<M-f>', '◊', { desc = "Lozenge" })
-vim.keymap.set('i', '\\l', '◊', { desc = "Lozenge" })
-vim.keymap.set('i', '\\p', '⚘', { desc = "Petal" })
-vim.keymap.set('i', '\\j', '«', { desc = "Sunflower open quote" })
-vim.keymap.set('i', '\\k', '»', { desc = "Sunflower close quote" })
-vim.keymap.set('i', '\\f', '⚘', { desc = "Floret" })
-
--- https://vi.stackexchange.com/a/43848
-vim.keymap.set('i', '<Tab>', function()
-	local byte_col = vim.fn.getcurpos()[3] - 1
-	local display_col = vim.fn.virtcol('.') - 1
-	local ws = vim.regex('^\\s*$')
-	-- TODO: figure out how to do this with match_line
-	local line = vim.fn.getline('.'):sub(1, byte_col)
-	if ws:match_str(line) then
-		return '<Tab>'
-	else
-		local sw = vim.fn.shiftwidth()
-		local width = sw - (display_col % sw)
-		return vim.fn['repeat'](' ', width)
-	end
-end, { expr = true, desc = "Don't insert hard tabs in the middle of lines" })
 
 -- completion
 vim.keymap.set('i', '<C-n>', '<C-x><C-o>', { desc = "Trigger omnicompletion" }) -- overwrites "complete keyword"

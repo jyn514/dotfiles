@@ -65,6 +65,8 @@
       "$HOME/.config/nvim/syntax/mumps.vim": "config/mumps.vim",
       "$HOME/.config/nvim/colors/ayu-evolve.lua": "config/nvim-ayu-evolve.lua",
       "$HOME/.local/share/applications/nvim.desktop": "config/nvim.desktop",
+      "$HOME/.config/nvim/host-editor.lua": "config/nvim-host-editor.lua",
+      "$HOME/.config/nvim/shared.lua": "config/nvim-shared.lua",
       "$HOME/.config/nvim/init.lua": "config/nvim.lua",
       "$HOME/.config/openbox/lubuntu-rc.xml": "config/openbox.xml",
       "$HOME/.profile": "config/profile",

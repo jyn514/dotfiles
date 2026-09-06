@@ -93,6 +93,7 @@ end
 
 if exists nvim
 	export EDITOR=editor-hax
+	export CODEX_SANDBOX_HOST_EDITOR="nvim --clean --noplugin -u '$HOME/.config/nvim/host-editor.lua'"
 	export LESSEDIT='%E %g?lm\:%lm'
 	# julia has AWFUL defaults and doesn't wait for the editor to exit if it doesn't recognize it
 	# https://github.com/JuliaLang/julia/blob/083bd8f687bb2a0608a1b0b4c99f811eecb56b3e/stdlib/InteractiveUtils/src/editless.jl#L49
