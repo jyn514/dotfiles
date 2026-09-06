@@ -19,6 +19,8 @@ A repository may provide executable `.agents/sandbox/base-image` and a version 1
 
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead. Other images use the standalone Bun executable.
 
+The goal extension uses the precompiled npm release pinned in `config/pi.json`. Its Git distribution loads TypeScript and incurs startup transpilation even at the same release version.
+
 ## Common commands
 
 ```sh
