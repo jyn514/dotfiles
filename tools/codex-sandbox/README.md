@@ -47,6 +47,20 @@ Timing separates launch setup from `docker run`, then uses daemon timestamps to 
 
 Timestamp inspection runs after exit, has a five-second timeout, and preserves the agent's exit status.
 
+### Measure interactive startup
+
+From the checkout being measured, run this repository's probe on a Unix host with local container-socket access:
+
+```sh
+TMPDIR=/private/tmp python3 tools/codex-sandbox/tests/interactive_startup.py --runs 3
+```
+
+The probe uses the normal launcher and configured extensions in a 30×100 pseudo-terminal, with `--no-session` and Pi's `PI_STARTUP_BENCHMARK` mode. It makes no model request. Readiness is the arrival of `interactiveMode.init:` in Pi's timing output, emitted after TUI initialization and a deliberate 150ms terminal-drain pause. Output reports the observed elapsed time, that pause, and an estimate with the pause subtracted; process shutdown is excluded.
+
+Each invocation prints a new log directory and retains one raw terminal log per run. A missing readiness marker or unsuccessful exit fails the probe; `--timeout` defaults to 30 seconds per run, excluding cleanup. On macOS, `/private/tmp` avoids the launcher's path-alias assertion.
+
+Record whether images and shared required proxies were already warm, plus host/VM load. Each run creates fresh agent and optional relay containers, but the probe does not reset caches or shared services. Compare cold and warm samples separately; image builds may need a longer timeout. Do not remove unrelated sessions to manufacture a cold run.
+
 ## Safety and recovery
 
 ### Operational and security boundaries
