@@ -96,8 +96,10 @@ python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
 The runtime integration test builds real images and requires a working Docker-compatible daemon and network access:
 
 ```sh
-python3 tools/codex-sandbox/tests/image_runtime_integration.py
+python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
 ```
+
+Use the `PI_REVISION` selected by `image/Dockerfile`. The test builds the Dockerfile as written and checks its recorded revision against this explicit expectation, retaining Alpine Node and Debian Node-20/Bun coverage.
 
 Check the image caches against a built final image; test containers run without network access:
 

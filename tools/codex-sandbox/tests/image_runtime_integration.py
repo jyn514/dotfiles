@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import subprocess
 import uuid
@@ -7,7 +8,6 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
-PI_REVISION = "a58c0d49c90d7b0d4c164dbb04d8d1e16b06ac24"
 
 
 def run(*args: str) -> str:
@@ -31,6 +31,9 @@ def build(tag: str, base_image: str | None = None) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description='Build and check Alpine Node and Debian Bun runtimes.')
+    parser.add_argument('--expected-revision', required=True, help='expected Pi commit in the built images')
+    args = parser.parse_args()
     suffix = uuid.uuid4().hex
     alpine = f"codex-sandbox-pi-alpine-test:{suffix}"
     debian = f"codex-sandbox-pi-debian-test:{suffix}"
@@ -46,7 +49,7 @@ def main() -> None:
                 "/opt/agent-pi/bin/pi --version",
             ).splitlines()
             expected_node = "v24." if tag == alpine else "v20."
-            if not output[0].startswith(expected_node) or output[1] != PI_REVISION:
+            if not output[0].startswith(expected_node) or output[1] != args.expected_revision:
                 raise RuntimeError(f"unexpected Pi runtime: {output!r}")
     finally:
         subprocess.run(

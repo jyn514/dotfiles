@@ -99,7 +99,8 @@ if [ "$run_containers" = 1 ]; then
 	printf 'Running package planner bootstrap integration...\n'
 	python3 tools/package-plan/tests/container.py
 	printf 'Running codex sandbox runtime integration...\n'
-	python3 tools/codex-sandbox/tests/image_runtime_integration.py
+	pi_revision=$(awk -F= '/^ARG PI_REVISION=/ { print $2 }' tools/codex-sandbox/image/Dockerfile)
+	python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision "$pi_revision"
 	container_results=$results/containers
 	mkdir "$container_results"
 	export container_results
