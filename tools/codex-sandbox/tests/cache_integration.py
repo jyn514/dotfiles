@@ -40,6 +40,11 @@ def main() -> None:
     parser.add_argument("--runtime", required=True, help="built final sandbox image")
     parser.add_argument("--builder", required=True, help="pi-extension-cache stage image")
     args = parser.parse_args()
+    bytecode = run(args.runtime, "/tmp/node-cache.py", entrypoint="python3", mounts=(
+        f"type=bind,src={FIXTURES / 'node-cache.py'},dst=/tmp/node-cache.py,readonly",
+    ))
+    assert bytecode.returncode == 0, bytecode.stdout
+    print(bytecode.stdout)
     help_args = ("--no-extensions", "--extension", f"{EXTENSIONS}/index.ts", "--help")
 
     # The first container must use the image seed, without a previous session.

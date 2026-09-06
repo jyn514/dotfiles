@@ -85,6 +85,8 @@ FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
+COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
+RUN if [ -e /etc/alpine-release ]; then node /opt/agent-pi/check-runtime.mjs; fi
 COPY --chmod=755 ./tools/codex-sandbox/image/host-editor /opt/agent-tools/bin/host-editor
 
 FROM pi-runtime
@@ -130,6 +132,10 @@ ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /src/work
+
+# Use the final Node version, paths, and UID: bytecode is not portable across
+# Node versions, and every new container should start with a populated cache.
+RUN --network=none if [ -e /etc/alpine-release ]; then pi --offline --help >/dev/null; fi
 
 ENV COLORTERM=truecolor
 ARG TERM=xterm-256color
