@@ -25,6 +25,10 @@ friction, or say there was none.
 
 If I tell you "nice job", "good work", "hell yeah", or similar, and the praised behavior isn't already in my instructions, suggest a general AGENTS.md change that would preserve it for other agents and future sessions.
 
+### Naming
+
+Prefer names that encode the project's governing philosophy, not merely its contents.
+
 ### Unrequested observations
 
 Keep a `notes/` directory. At the end of a turn, record one or two unaddressed
