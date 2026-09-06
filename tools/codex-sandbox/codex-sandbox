@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import re
 import shlex
@@ -897,7 +898,36 @@ class HostEditorBridge:
                             self.panes.discard(pane)
 
 
+def report_container_timing(state: State) -> None:
+    # Use daemon timestamps together: the VM and host clocks may differ.
+    # Diagnostics must neither replace the agent's exit status nor block cleanup.
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "--format",
+             "{{json .Created}}|{{json .State.StartedAt}}|{{json .State.FinishedAt}}",
+             state.codex_container],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        timestamps = [json.loads(value) for value in result.stdout.strip().split("|")]
+        if not all(isinstance(value, str) for value in timestamps):
+            raise ValueError("container timestamps are not strings")
+        created, started, finished = (
+            datetime.fromisoformat(value.replace("Z", "+00:00")) for value in timestamps
+        )
+        if not created <= started <= finished:
+            raise ValueError("container did not complete its lifecycle")
+        print(
+            f"Sandbox container: creation to start={(started - created).total_seconds():.2f}s, "
+            f"start to exit={(finished - started).total_seconds():.2f}s",
+            file=sys.stderr,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        print("Sandbox container timing: unavailable", file=sys.stderr)
+
+
 def run_agent(state: State, arguments: list[str]) -> int:
+    setup_started = time.monotonic()
+    timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
     state.monitor_process = subprocess.Popen([
         "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
@@ -988,6 +1018,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--network", SANDBOX_NETWORK, "--http-proxy=false",
         "--secret", "codex-github-token,type=env,target=GH_TOKEN",
         "--env", "JJ_AGENT=pi",
+        *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
         "--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions",
         *[
@@ -1050,6 +1081,13 @@ def run_agent(state: State, arguments: list[str]) -> int:
     agent_environment = os.environ.copy()
     assert state.host_editor is not None
     agent_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
+    if timing:
+        print(
+            f"Sandbox launch setup: {time.monotonic() - setup_started:.2f}s; "
+            f"starting docker run ({state.codex_container})",
+            file=sys.stderr,
+        )
+    launch_started = time.monotonic()
     state.agent_process = subprocess.Popen(command, env=agent_environment)
     try:
         return state.agent_process.wait()
@@ -1062,6 +1100,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
                 state.agent_process.kill()
                 state.agent_process.wait()
         raise
+    finally:
+        if timing:
+            print(f"Sandbox docker run: {time.monotonic() - launch_started:.2f}s", file=sys.stderr)
+            report_container_timing(state)
 
 
 def execute(state: State) -> int:

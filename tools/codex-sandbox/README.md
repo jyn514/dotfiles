@@ -24,10 +24,14 @@ pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
 codex-sandbox auth login        # create/update dedicated sandbox OAuth state
 codex-sandbox restart-all       # restart registered sessions; run inside tmux
-CODEX_SANDBOX_TIMING=1 pi       # report preparation and cleanup timings
+CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
 
 Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor; otherwise `VISUAL`, `EDITOR`, then `vi` is used.
+
+Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals. It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports. The runtime interval includes the whole session; use `CODEX_SANDBOX_TIMING=1 pi --help` for a bounded probe, not a measurement of interactive readiness.
+
+Timestamp inspection runs after exit, has a five-second timeout, and preserves the agent's exit status.
 
 ## Safety and recovery
 

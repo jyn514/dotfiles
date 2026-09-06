@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,39 @@ def read_calls(path: Path) -> list[list[str]]:
     if not path.exists():
         return []
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class ContainerTimingTest(unittest.TestCase):
+    def test_daemon_timestamps_keep_host_clock_out_of_durations(self) -> None:
+        report = runpy.run_path(str(LAUNCHER))["report_container_timing"]
+        timestamps = "|".join(json.dumps(value) for value in (
+            "2026-09-06T01:00:00.123456789-04:00",
+            "2026-09-06T01:00:00.373456789-04:00",
+            "2026-09-06T01:00:07.873456789-04:00",
+        ))
+        with mock.patch("subprocess.run", return_value=SimpleNamespace(stdout=timestamps)), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+            report(SimpleNamespace(codex_container="measurement"))
+        self.assertIn("creation to start=0.25s, start to exit=7.50s", output.getvalue())
+
+    def test_failed_inspection_does_not_prevent_cleanup(self) -> None:
+        report = runpy.run_path(str(LAUNCHER))["report_container_timing"]
+        for error in (OSError("missing CLI"), subprocess.TimeoutExpired("docker", 5),
+                      subprocess.CalledProcessError(1, "docker")):
+            with self.subTest(error=error), mock.patch("subprocess.run", side_effect=error), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+                report(SimpleNamespace(codex_container="measurement"))
+                self.assertIn("timing: unavailable", output.getvalue())
+
+    def test_missing_or_invalid_timestamps_are_unavailable(self) -> None:
+        report = runpy.run_path(str(LAUNCHER))["report_container_timing"]
+        for timestamps in ("", "null|null|null", '"bad"|"bad"|"bad"',
+                           '"2026-09-06T00:00:00Z"|"0001-01-01T00:00:00Z"|"0001-01-01T00:00:00Z"'):
+            with self.subTest(timestamps=timestamps), \
+                    mock.patch("subprocess.run", return_value=SimpleNamespace(stdout=timestamps)), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+                report(SimpleNamespace(codex_container="measurement"))
+                self.assertIn("timing: unavailable", output.getvalue())
 
 
 class AgentSandboxImageTest(unittest.TestCase):
@@ -978,7 +1012,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
 
     def test_preserves_agent_exit_status_and_cleans_up(self) -> None:
-        result = self.run_launcher(FAKE_AGENT_EXIT="23")
+        result = self.run_launcher(FAKE_AGENT_EXIT="23", CODEX_SANDBOX_TIMING="1")
         self.assertEqual(23, result.returncode, result.stderr)
         docker_log = self.docker_log.read_text(encoding="utf-8")
         self.assertRegex(docker_log, r"rm\t--force\tcodex-sandbox-[0-9]+-[0-9a-f]{12}")
