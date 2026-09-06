@@ -44,7 +44,7 @@ The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`
 2. Validate the metadata and npm archive:
 
    ```sh
-   python3 tests/setup/agent_skills_package_test.py
+   tests/setup/agent_skills_package_test.py
    npm publish --dry-run
    ```
 
