@@ -33,7 +33,8 @@ Stop and route elsewhere if the subsystem is unselected or the real task is comp
 
 ### 1. Map the current subsystem
 
-Inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, and open or closed issues.
+Inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, open or closed issues, and prepared issue drafts or campaign ledgers.
+Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 
 Classify responsibilities by reason to change: parsing, normalization, validation, domain policy, lifecycle, effects, projection, compatibility, and orchestration.
@@ -45,6 +46,7 @@ A useful seam has a one-sentence job, a named boundary value, mostly one-way dep
 Consumer behavior should remain stable during extraction.
 
 Reject seams supported only by line count, aesthetics, symmetrical names, or hypothetical reuse.
+Prefer deleting obsolete, lossy, or misleading APIs over extracting new owners around them; a facade that drops diagnostics, provenance, lifecycle state, or other operation results is not a harmless convenience.
 Before detailed design, run the cheapest check that could disprove the seam: a dependency trace, classpath-load check, differential fixture, effect inventory, or focused caller/test probe.
 Invoke `second-user` before proposing generalized machinery without two concrete consumers.
 
