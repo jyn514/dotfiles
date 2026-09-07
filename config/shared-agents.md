@@ -24,6 +24,7 @@ friction, or say there was none.
 ### Reinforce good behavior
 
 If I tell you "nice job", "good work", "hell yeah", or similar, and the praised behavior isn't already in my instructions, suggest a general AGENTS.md change that would preserve it for other agents and future sessions.
+The change must not already be present in an AGENTS.md or a skill you read in that session.
 
 ### Naming
 
