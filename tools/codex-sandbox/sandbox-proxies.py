@@ -748,7 +748,10 @@ def agent_args_main(args: argparse.Namespace) -> int:
         for proxy in state.get("proxies", [])
     }
     output = Path(args.output)
-    lines = ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
+    lines = [
+        "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
+        "--env", f"JJ_PROXY_REPO={container_repo}",
+    ]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
         lines += ["--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly"]

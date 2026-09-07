@@ -251,6 +251,7 @@ class ManifestTest(unittest.TestCase):
         sandbox_proxies.agent_args_main(args)
         generated = output.read_text(encoding="utf-8")
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", generated)
+        self.assertIn(f"JJ_PROXY_REPO={self.container_repo}", generated)
         self.assertIn("src=shared-example,dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/src/example/state,readonly", generated)
