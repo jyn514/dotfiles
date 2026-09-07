@@ -21,6 +21,8 @@ For shell and generated configuration, preserve producer failures. Avoid nested 
 
 When a simple implementation choice preserves a non-obvious historical constraint, add a brief comment explaining the constraint and why that choice preserves it.
 
+For Pi UI extensions, verify documented hooks against the installed implementation and reuse Pi's authoritative providers instead of duplicating resource discovery.
+
 ## Testing Guidelines
 
 Keep subsystem-owned tests under `tools/<name>/tests/`; add cross-cutting tests under the matching `tests/<feature>/` directory. Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection. Prefer temporary directories and mocks over touching real home-directory state. For config regex changes, include positive and negative examples.
