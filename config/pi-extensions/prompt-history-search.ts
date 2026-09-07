@@ -1,9 +1,10 @@
 import {
   type ExtensionAPI,
   type ExtensionContext,
-  SessionManager,
+  getAgentDir,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import {
   type Component,
   type Focusable,
@@ -14,6 +15,9 @@ import {
 } from "@earendil-works/pi-tui";
 import {
   collectPromptHistory,
+  listPromptHistoryFiles,
+  loadPromptHistoryFiles,
+  loadPromptHistoryWithRipgrep,
   mergePromptHistories,
   type PromptHistoryEntry,
   searchPromptHistory,
@@ -106,23 +110,30 @@ class PromptHistorySearch implements Component, Focusable {
   }
 }
 
-async function loadPromptHistory(ctx: ExtensionContext): Promise<PromptHistoryEntry[]> {
-  const currentSessionFile = ctx.sessionManager.getSessionFile();
-  const histories: PromptHistoryEntry[][] = [
-    collectPromptHistory(ctx.sessionManager.getBranch()),
-  ];
+const savedHistoryPromises = new Map<string | undefined, Promise<PromptHistoryEntry[]>>();
 
-  const sessions = await SessionManager.listAll();
-  for (const session of sessions) {
-    if (session.path === currentSessionFile) continue;
-    try {
-      histories.push(collectPromptHistory(SessionManager.open(session.path).getEntries()));
-    } catch {
-      // Session listing already tolerates damaged files. Skip any that fail on full open too.
-    }
+async function loadSavedPromptHistory(currentSessionFile?: string): Promise<PromptHistoryEntry[]> {
+  let pending = savedHistoryPromises.get(currentSessionFile);
+  if (!pending) {
+    const sessionsDir = join(getAgentDir(), "sessions");
+    pending = loadPromptHistoryWithRipgrep(sessionsDir, currentSessionFile)
+      .catch(async () => loadPromptHistoryFiles(
+        await listPromptHistoryFiles(sessionsDir),
+        currentSessionFile,
+      ))
+      .catch((error) => {
+        savedHistoryPromises.delete(currentSessionFile);
+        throw error;
+      });
+    savedHistoryPromises.set(currentSessionFile, pending);
   }
+  return pending;
+}
 
-  return mergePromptHistories(histories);
+async function loadPromptHistory(ctx: ExtensionContext): Promise<PromptHistoryEntry[]> {
+  const current = collectPromptHistory(ctx.sessionManager.getBranch());
+  const saved = await loadSavedPromptHistory(ctx.sessionManager.getSessionFile());
+  return mergePromptHistories([current, saved]);
 }
 
 async function searchHistory(ctx: ExtensionContext): Promise<void> {
