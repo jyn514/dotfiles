@@ -27,10 +27,11 @@ class PromptHistorySearch implements Component, Focusable {
   private readonly input = new Input();
   private filtered: PromptHistoryEntry[];
   private selected = 0;
+  private loading = true;
   private _focused = false;
 
   constructor(
-    private readonly prompts: PromptHistoryEntry[],
+    private prompts: PromptHistoryEntry[],
     private readonly theme: Theme,
     initialQuery: string,
     private readonly done: (result: string | null) => void,
@@ -69,6 +70,19 @@ class PromptHistorySearch implements Component, Focusable {
     }
   }
 
+  setPrompts(prompts: PromptHistoryEntry[]): void {
+    const selectedText = this.filtered[this.selected]?.text;
+    this.prompts = prompts;
+    this.filtered = searchPromptHistory(prompts, this.input.getValue());
+    this.selected = selectedText
+      ? Math.max(0, this.filtered.findIndex(({ text }) => text === selectedText))
+      : 0;
+  }
+
+  finishLoading(): void {
+    this.loading = false;
+  }
+
   render(width: number): string[] {
     const lines = [
       truncateToWidth(this.theme.fg("accent", this.theme.bold("Search prompt history")), width),
@@ -76,7 +90,8 @@ class PromptHistorySearch implements Component, Focusable {
     ];
 
     if (this.filtered.length === 0) {
-      lines.push(truncateToWidth(this.theme.fg("warning", "No matching prompts"), width));
+      const message = this.loading ? "Loading older prompts…" : "No matching prompts";
+      lines.push(truncateToWidth(this.theme.fg(this.loading ? "dim" : "warning", message), width));
     } else {
       const maxVisible = 10;
       const start = Math.max(0, Math.min(this.selected - Math.floor(maxVisible / 2), this.filtered.length - maxVisible));
@@ -89,10 +104,10 @@ class PromptHistorySearch implements Component, Focusable {
       }
     }
 
-    lines.push(truncateToWidth(
-      this.theme.fg("dim", "type to filter • ↑↓/ctrl+r navigate • enter restore • esc cancel"),
-      width,
-    ));
+    const help = this.loading
+      ? "loading older prompts… • type to filter • ↑↓/ctrl+r navigate • enter restore • esc cancel"
+      : "type to filter • ↑↓/ctrl+r navigate • enter restore • esc cancel";
+    lines.push(truncateToWidth(this.theme.fg("dim", help), width));
     return lines;
   }
 
@@ -130,27 +145,27 @@ async function loadSavedPromptHistory(currentSessionFile?: string): Promise<Prom
   return pending;
 }
 
-async function loadPromptHistory(ctx: ExtensionContext): Promise<PromptHistoryEntry[]> {
-  const current = collectPromptHistory(ctx.sessionManager.getBranch());
-  const saved = await loadSavedPromptHistory(ctx.sessionManager.getSessionFile());
-  return mergePromptHistories([current, saved]);
-}
-
 async function searchHistory(ctx: ExtensionContext): Promise<void> {
-  ctx.ui.setStatus("history-search", "loading prompt history…");
-  let prompts: PromptHistoryEntry[];
-  try {
-    prompts = await loadPromptHistory(ctx);
-  } finally {
-    ctx.ui.setStatus("history-search", undefined);
-  }
-  if (prompts.length === 0) {
-    ctx.ui.notify("No previous prompts found", "info");
-    return;
-  }
-
+  const current = collectPromptHistory(ctx.sessionManager.getBranch());
+  let active = true;
   const result = await ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
-    const search = new PromptHistorySearch(prompts, theme, ctx.ui.getEditorText(), done);
+    const finish = (value: string | null) => {
+      active = false;
+      done(value);
+    };
+    const search = new PromptHistorySearch(current, theme, ctx.ui.getEditorText(), finish);
+    void loadSavedPromptHistory(ctx.sessionManager.getSessionFile())
+      .then((saved) => {
+        if (!active) return;
+        search.setPrompts(mergePromptHistories([current, saved]));
+        search.finishLoading();
+        tui.requestRender();
+      })
+      .catch(() => {
+        if (!active) return;
+        search.finishLoading();
+        tui.requestRender();
+      });
     return {
       get focused() { return search.focused; },
       set focused(value: boolean) { search.focused = value; },
