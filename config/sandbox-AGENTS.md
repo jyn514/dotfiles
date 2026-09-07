@@ -1,7 +1,7 @@
 # Sandbox instructions
 
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
-- `/src` is a read-only view of the host's source directory; `/src/work` overlays the writable current repository. Do not modify neighboring repositories.
+- `/src` is a read-only view of the host's source directory. The current repository is overlaid writable at its host-relative path beneath `/src` when possible, and the initial working directory names that path; do not modify neighboring repositories.
 - Repository metadata and sandbox policy—including `.git`, `.jj`, and `.agents/sandbox`—are protected. Use ordinary wrapped commands such as `jj`; proxy failure is fail-closed and does not authorize bypassing the mount or invoking another binary.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
 - Most `/home/codex/.pi/agent` state is private and disposable. Sessions and package stores persist, while staged configuration is read-only; edit its tracked source and start a new sandbox session to refresh startup-loaded state.

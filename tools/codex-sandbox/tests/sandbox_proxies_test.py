@@ -31,6 +31,7 @@ class ManifestTest(unittest.TestCase):
         (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.sandbox = self.repo / ".agents" / "sandbox"
         self.sandbox.mkdir(parents=True)
+        self.container_repo = Path("/src/example")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -80,22 +81,24 @@ class ManifestTest(unittest.TestCase):
             {"source": ".", "target": ".", "proxy": "read-write"},
         ])})
         command = sandbox_proxies.load_manifest(self.repo)["commands"]["jj"]
-        arguments = sandbox_proxies.proxy_repository_mount_args(self.repo, "jj", command)
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            self.repo, self.container_repo, "jj", command,
+        )
         mounts = arguments[1::2]
         self.assertIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true",
+            f"type=bind,src={self.repo.resolve()},dst=/src/example,bind-nonrecursive=true",
             mounts,
         )
         self.assertNotIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/work,readonly,bind-nonrecursive=true",
+            f"type=bind,src={self.repo.resolve()},dst=/src/example,readonly,bind-nonrecursive=true",
             mounts,
         )
         self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git",
+            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/example/.git",
             mounts,
         )
         self.assertIn(
-            f"type=bind,src={(self.repo / '.jj/repo').resolve()},dst=/src/work/.jj/repo",
+            f"type=bind,src={(self.repo / '.jj/repo').resolve()},dst=/src/example/.jj/repo",
             mounts,
         )
 
@@ -113,14 +116,31 @@ class ManifestTest(unittest.TestCase):
         subprocess.run(["git", "-C", str(main), "worktree", "add", "--quiet", str(worktree)], check=True)
         (worktree / ".jj" / "repo").mkdir(parents=True)
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
-        arguments = sandbox_proxies.proxy_repository_mount_args(worktree, "jj", command)
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            worktree, self.container_repo, "jj", command,
+        )
         self.assertIn(
-            f"type=bind,src={worktree.resolve()},dst=/src/work,bind-nonrecursive=true",
+            f"type=bind,src={worktree.resolve()},dst=/src/example,bind-nonrecursive=true",
             arguments,
         )
         common_dir = sandbox_proxies.git_metadata_paths(worktree)[1]
-        target = sandbox_proxies.jj_container_path(worktree, common_dir)
+        target = sandbox_proxies.jj_container_path(
+            worktree, common_dir, self.container_repo,
+        )
         self.assertIn(f"type=bind,src={common_dir},dst={target}", arguments)
+
+    def test_nested_repository_allows_sibling_metadata_beneath_source_root(self) -> None:
+        host_root = self.repo / "host-source"
+        nested_repository = host_root / "team" / "project"
+        sibling = host_root / "shared"
+        nested_repository.mkdir(parents=True)
+        sibling.mkdir()
+        self.assertEqual(
+            Path("/src/shared"),
+            sandbox_proxies.jj_container_path(
+                nested_repository, sibling, Path("/src/team/project"),
+            ),
+        )
 
     def test_external_jj_repository_pointer_mounts_only_metadata(self) -> None:
         external = Path(self.temporary.name + "-jj-repo")
@@ -130,14 +150,18 @@ class ManifestTest(unittest.TestCase):
         relative = os.path.relpath(external, self.repo / ".jj")
         (self.repo / ".jj" / "repo").write_text(relative + "\n", encoding="utf-8")
         command = self.command(mounts=[{"source": ".", "target": ".", "proxy": "read-write"}])
-        arguments = sandbox_proxies.proxy_repository_mount_args(self.repo, "jj", command)
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            self.repo, self.container_repo, "jj", command,
+        )
         self.assertIn(
-            f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true",
+            f"type=bind,src={self.repo.resolve()},dst=/src/example,bind-nonrecursive=true",
             arguments,
         )
-        target = sandbox_proxies.jj_container_path(self.repo, external)
+        target = sandbox_proxies.jj_container_path(
+            self.repo, external, self.container_repo,
+        )
         self.assertIn(f"type=bind,src={external.resolve()},dst={target}", arguments)
-        self.assertNotIn(f"src={self.repo.parent},dst=/src/work", " ".join(arguments))
+        self.assertNotIn(f"src={self.repo.parent},dst=/src/example", " ".join(arguments))
 
     def test_rejects_agent_authority_on_repository_root(self) -> None:
         self.write({"example": self.command(mounts=[{
@@ -220,7 +244,8 @@ class ManifestTest(unittest.TestCase):
             "name": "example", "volume": "shared-example",
         }]}), encoding="utf-8")
         args = type("Args", (), {
-            "repo": str(self.repo), "state": str(state), "output": str(output),
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "state": str(state), "output": str(output),
             "manifest": str(self.sandbox / "proxy-commands.json"),
         })
         sandbox_proxies.agent_args_main(args)
@@ -228,8 +253,8 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", generated)
         self.assertIn("src=shared-example,dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
-        self.assertIn("dst=/src/work/state,readonly", generated)
-        self.assertIn("/src/work/secret:ro,noexec", generated)
+        self.assertIn("dst=/src/example/state,readonly", generated)
+        self.assertIn("/src/example/secret:ro,noexec", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
 
     def test_finalize_publishes_before_generating_agent_arguments(self) -> None:
@@ -340,7 +365,7 @@ class ManifestTest(unittest.TestCase):
         state_path = self.repo / "state"
         args = type("Args", (), {
             "prefix": "test", "state": str(state_path), "network": "sandbox",
-            "zuliprc": None,
+            "container_repo": str(self.container_repo), "zuliprc": None,
         })
         command = self.command()
         image = "sha256:" + "0" * 64
@@ -369,7 +394,7 @@ class ManifestTest(unittest.TestCase):
         zuliprc.chmod(0o600)
         args = type("Args", (), {
             "prefix": "test", "state": str(self.repo / "state"), "network": "sandbox",
-            "zuliprc": str(zuliprc),
+            "container_repo": str(self.container_repo), "zuliprc": str(zuliprc),
         })
         image = "sha256:" + "0" * 64
         state = {"proxies": []}
@@ -507,6 +532,7 @@ class ManifestTest(unittest.TestCase):
         (runtime / "session.json").write_text(json.dumps({
             "version": 1,
             "repository": sandbox_proxies.repository_identity(self.repo),
+            "container_repository": str(self.container_repo),
             "commands": {}, "state": shared_state, "manifest": shared_manifest,
         }), encoding="utf-8")
         state = self.repo / "attached-state"
@@ -515,8 +541,8 @@ class ManifestTest(unittest.TestCase):
         session = self.repo / "attached-session"
         session.write_text("shared\n", encoding="utf-8")
         args = type("Args", (), {
-            "repo": str(self.repo), "session": str(session),
-            "state": str(state), "manifest": str(manifest),
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "session": str(session), "state": str(state), "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
@@ -544,8 +570,9 @@ class ManifestTest(unittest.TestCase):
         session = self.repo / "session"
         session.write_text("new\n", encoding="utf-8")
         args = type("Args", (), {
-            "repo": str(self.repo), "session": str(session),
-            "state": str(self.repo / "state"), "manifest": str(self.repo / "manifest"),
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "session": str(session), "state": str(self.repo / "state"),
+            "manifest": str(self.repo / "manifest"),
         })
         Path(args.manifest).write_text(json.dumps(
             sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))
@@ -569,8 +596,9 @@ class ManifestTest(unittest.TestCase):
         manifest = self.repo / "manifest"
         manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
-            "repo": str(self.repo), "session": str(session),
-            "state": str(self.repo / "state"), "manifest": str(manifest),
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "session": str(session), "state": str(self.repo / "state"),
+            "manifest": str(manifest),
         })
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "restart after active"):
             sandbox_proxies.attach_main(args)
@@ -582,8 +610,9 @@ class ManifestTest(unittest.TestCase):
         manifest = self.repo / "manifest"
         manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
-            "repo": str(self.repo), "session": str(session),
-            "state": str(self.repo / "state"), "manifest": str(manifest),
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "session": str(session), "state": str(self.repo / "state"),
+            "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start:
             with self.assertRaisesRegex(sandbox_proxies.ConfigError, "changed or is unavailable"):

@@ -76,10 +76,13 @@ class State:
     agent_podman_connection: Path
     agent_podman_key: Path
     agent_podman_known_hosts: Path
+    host_working_directory: Path
     container_known_hosts: str = "/run/secrets/agent-podman-known-hosts"
     relay_port: int = 2222
     agent_podman: dict[str, str] | None = None
     repository: Path | None = None
+    container_repository: Path | None = None
+    container_working_directory: Path | None = None
     zuliprc: Path | None = None
     image: str = ""
     sidecar_image: str = ""
@@ -214,6 +217,7 @@ def new_state(codex_arguments: list[str]) -> State:
         agent_podman_connection=access / "connection.env",
         agent_podman_key=access / "id_ed25519",
         agent_podman_known_hosts=access / "known_hosts.sandbox",
+        host_working_directory=Path.cwd().resolve(strict=True),
     )
     load_agent_podman(state)
     return state
@@ -282,6 +286,27 @@ def unregister_tmux_pane(state: State) -> None:
         ], check=False, quiet=True)
 
 
+def container_repository_path(home: Path, repository: Path) -> Path:
+    source_root = (home / "src").resolve(strict=True)
+    try:
+        relative = repository.relative_to(source_root)
+    except ValueError:
+        return Path("/src/repository")
+    if relative == Path("."):
+        return Path("/src/repository")
+    return Path("/src") / relative
+
+
+def container_working_directory_path(
+    repository: Path, container_repository: Path, working_directory: Path,
+) -> Path:
+    try:
+        relative = working_directory.relative_to(repository)
+    except ValueError as error:
+        raise LauncherError("The launch directory is outside the repository workspace") from error
+    return container_repository / relative
+
+
 def validate_repository(state: State) -> None:
     try:
         # Finding the mount root needs metadata, not a working-tree snapshot.
@@ -334,6 +359,10 @@ def validate_repository(state: State) -> None:
         if not root.is_dir() or root.is_symlink():
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
     state.repository = repository
+    state.container_repository = container_repository_path(state.home, repository)
+    state.container_working_directory = container_working_directory_path(
+        repository, state.container_repository, state.host_working_directory,
+    )
     state.manifest = temporary_file()
     snapshot_arguments = [
         "snapshot", "--repo", str(repository), "--output", str(state.manifest),
@@ -462,8 +491,9 @@ def acquire_lock(state: State) -> None:
 def attach_proxies(state: State) -> list[str]:
     try:
         arguments = [
-            "attach", "--repo", str(state.repository), "--prefix", state.proxy_prefix,
-            "--session", str(state.lock_ready),
+            "attach", "--repo", str(state.repository),
+            "--container-repo", str(state.container_repository),
+            "--prefix", state.proxy_prefix, "--session", str(state.lock_ready),
             "--state", str(state.proxy_state), "--helper-image", state.sidecar_image,
             "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
         ]
@@ -709,7 +739,7 @@ def stage_skills(state: State) -> None:
     instruction_includes = []
     repository_instructions = state.repository / ".agents/sandbox/AGENTS.md"
     if repository_instructions.is_file():
-        instruction_includes.append("@/src/work/.agents/sandbox/AGENTS.md")
+        instruction_includes.append(f"@{state.container_repository}/.agents/sandbox/AGENTS.md")
     home_instructions = state.home / ".agents/sandbox/AGENTS.md"
     if home_instructions.is_file():
         shutil.copytree(
@@ -729,8 +759,10 @@ def stage_skills(state: State) -> None:
 def finalize_proxy_session(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     helper(
-        "finalize", "--repo", str(state.repository), "--state", str(state.proxy_state),
-        "--output", str(state.proxy_args), "--manifest", str(state.manifest),
+        "finalize", "--repo", str(state.repository),
+        "--container-repo", str(state.container_repository),
+        "--state", str(state.proxy_state), "--output", str(state.proxy_args),
+        "--manifest", str(state.manifest),
     )
     arguments: list[str] = []
     for line in state.proxy_args.read_text(encoding="utf-8").splitlines():
@@ -962,7 +994,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             path.relative_to(state.repository)
         except ValueError:
             relative = Path(os.path.relpath(path, state.repository))
-            target = Path(os.path.normpath(Path("/src/work") / relative))
+            target = Path(os.path.normpath(state.container_repository / relative))
             try:
                 target.relative_to("/src")
             except ValueError as error:
@@ -993,7 +1025,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
                     raise LauncherError("Git metadata produced an unsafe worktree alias") from error
                 if alias == Path("/src"):
                     raise LauncherError("Git metadata worktree alias is too broad")
-            if alias != Path("/src/work") and alias not in repository_aliases:
+            if alias != state.container_repository and alias not in repository_aliases:
                 repository_aliases.append(alias)
     pi_agent = state.home / ".pi/agent"
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
@@ -1065,7 +1097,8 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={DOTFILES / 'config/codex-developer-instructions.md'},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/breq.md'},dst=/home/codex/.codex/breq.md,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
-        "--mount", f"type=bind,src={state.repository},dst=/src/work,bind-nonrecursive=true",
+        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},bind-nonrecursive=true",
+        "--workdir", str(state.container_working_directory),
         *[
             item
             for target in repository_aliases
@@ -1079,7 +1112,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             for path in protected
             for item in (
                 "--mount",
-                f"type=bind,src={path},dst={Path('/src/work') / path.relative_to(state.repository)},readonly",
+                f"type=bind,src={path},dst={state.container_repository / path.relative_to(state.repository)},readonly",
             )
         ],
         *[

@@ -29,7 +29,6 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 BARE_IMAGE_RE = re.compile(r"^[0-9a-f]{64}$")
 MODES = {"read-only", "read-write", "hidden"}
-CONTAINER_REPO = Path("/src/work")
 COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
 MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
 
@@ -46,6 +45,17 @@ def _plain_relative(value: Any, label: str, *, allow_dot: bool = False) -> str:
     if normalized == "." and not allow_dot:
         raise ConfigError(f"{label} cannot name the repository root")
     return normalized
+
+
+def container_repository(value: str) -> Path:
+    if not value or any(character in value for character in (",", "\0", "\n", "\r")):
+        raise ConfigError("container repository path contains a container-mount delimiter")
+    path = Path(value)
+    if not path.is_absolute() or path != Path(os.path.normpath(path)):
+        raise ConfigError("container repository path must be normalized and absolute")
+    if path == Path("/src") or not path.is_relative_to("/src"):
+        raise ConfigError("container repository path must stay beneath /src")
+    return path
 
 
 def _regular_unlinked(path: Path, label: str) -> None:
@@ -243,19 +253,19 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     return paths
 
 
-def jj_container_path(repo: Path, host_path: Path) -> Path:
+def jj_container_path(repo: Path, host_path: Path, container_repo: Path) -> Path:
     repo = repo.resolve(strict=True)
     host_path = host_path.resolve(strict=True)
     relative = Path(os.path.relpath(host_path, repo))
-    target = Path(os.path.normpath(CONTAINER_REPO / relative))
+    target = Path(os.path.normpath(container_repo / relative))
     try:
-        target.relative_to(CONTAINER_REPO.parent)
+        target.relative_to("/src")
     except ValueError as error:
         raise ConfigError(f"Jujutsu metadata path escapes the container workspace: {host_path}") from error
     return target
 
 
-def jj_proxy_metadata_mounts(repo: Path) -> list[tuple[Path, Path]]:
+def jj_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Path, Path]]:
     repo = repo.resolve(strict=True)
     git_dir, common_dir = git_metadata_paths(repo)
     jj_repo = jj_repository_path(repo)
@@ -264,7 +274,7 @@ def jj_proxy_metadata_mounts(repo: Path) -> list[tuple[Path, Path]]:
     for source in candidates:
         if any(source.is_relative_to(parent) for parent, _ in mounts):
             continue
-        mounts.append((source, jj_container_path(repo, source)))
+        mounts.append((source, jj_container_path(repo, source, container_repo)))
     return mounts
 
 
@@ -357,6 +367,7 @@ def publish_main(args: argparse.Namespace) -> int:
     payload = {
         "version": 1,
         "repository": repository_identity(Path(args.repo)),
+        "container_repository": str(container_repository(args.container_repo)),
         "commands": {},
         "state": state,
         "manifest": serializable_manifest(manifest),
@@ -383,6 +394,8 @@ def cached_session_state(
     if not isinstance(metadata, dict) or metadata.get("version") != 1:
         return None
     if metadata.get("repository") != repository_identity(repo):
+        return None
+    if metadata.get("container_repository") != str(container_repository(args.container_repo)):
         return None
     state = metadata.get("state")
     cached_manifest = metadata.get("manifest")
@@ -461,28 +474,30 @@ def proxy_logs(container: str) -> str:
     return result.stdout.strip()
 
 
-def proxy_repository_mount_args(repo: Path, name: str, command: dict[str, Any]) -> list[str]:
+def proxy_repository_mount_args(
+    repo: Path, container_repo: Path, name: str, command: dict[str, Any],
+) -> list[str]:
     repo = repo.resolve(strict=True)
     repository_mode = ",readonly"
     if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
         repository_mode = ""
     arguments = [
-        "--mount", f"type=bind,src={repo},dst={CONTAINER_REPO}{repository_mode},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},bind-nonrecursive=true",
     ]
     if name == "jj":
-        for source, target in jj_proxy_metadata_mounts(repo):
+        for source, target in jj_proxy_metadata_mounts(repo, container_repo):
             arguments += [
                 "--mount", f"type=bind,src={source},dst={target}{repository_mode}",
             ]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
         arguments += [
-            "--mount", f"type=bind,src={sandbox},dst={CONTAINER_REPO / '.agents/sandbox'},readonly",
+            "--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly",
         ]
     for mount in command["mounts"]:
         source = checked_repository_path(repo, mount["source"], f"command {name} mount source")
         checked_repository_path(repo, mount["target"], f"command {name} mount target")
-        target = CONTAINER_REPO / mount["target"]
+        target = container_repo / mount["target"]
         mode = mount["proxy"]
         if mount["target"] == "." or mode is None:
             continue
@@ -526,6 +541,7 @@ def start_one_proxy(
     _docker(
         "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
     )
+    container_repo = container_repository(args.container_repo)
     docker_args = [
         "run", "--detach", "--name", container, "--cap-drop=ALL",
         "--label", "dev.codex.sandbox-proxy=true",
@@ -536,7 +552,7 @@ def start_one_proxy(
         "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
         "--network", args.network if command["network"] else "none",
         "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
-        "--ulimit", "nofile=1024:1024", "--workdir", str(CONTAINER_REPO / command["workdir"]),
+        "--ulimit", "nofile=1024:1024", "--workdir", str(container_repo / command["workdir"]),
         "--entrypoint", command["argv"][0],
         "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
@@ -545,17 +561,17 @@ def start_one_proxy(
         git_dir, common_dir = git_metadata_paths(repo)
         jj_repo = jj_repository_path(repo)
         docker_args += [
-            "--env", f"JJ_PROXY_REPO={CONTAINER_REPO}",
-            "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir)}",
-            "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir)}",
-            "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo)}",
+            "--env", f"JJ_PROXY_REPO={container_repo}",
+            "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir, container_repo)}",
+            "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir, container_repo)}",
+            "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo, container_repo)}",
         ]
     if name == "zulip":
         if not args.zuliprc:
             raise ConfigError("trusted Zulip proxy requires a credential path")
         docker_args += zuliprc_mount_args(Path(args.zuliprc))
     checked_repository_path(repo, command["workdir"], f"command {name} workdir")
-    docker_args += proxy_repository_mount_args(repo, name, command)
+    docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
     docker_args += [images[name], *command["argv"][1:]]
     _docker(*docker_args)
     # Optional Zulip access can report an unready socket on first use.
@@ -724,6 +740,7 @@ def finalize_main(args: argparse.Namespace) -> int:
 
 def agent_args_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
+    container_repo = container_repository(args.container_repo)
     manifest = load_manifest_file(Path(args.manifest))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     volumes = {
@@ -734,7 +751,7 @@ def agent_args_main(args: argparse.Namespace) -> int:
     lines = ["--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies"]
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
-        lines += ["--mount", f"type=bind,src={sandbox},dst={CONTAINER_REPO / '.agents/sandbox'},readonly"]
+        lines += ["--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly"]
     for name, command in manifest["commands"].items():
         if name not in volumes:
             raise ConfigError(f"shared proxy state is missing command: {name}")
@@ -745,7 +762,7 @@ def agent_args_main(args: argparse.Namespace) -> int:
                 continue
             if any(mount["target"] == path or mount["target"].startswith(path + "/") for path in (".git", ".jj")):
                 continue
-            target = CONTAINER_REPO / mount["target"]
+            target = container_repo / mount["target"]
             if mode == "hidden":
                 lines += ["--tmpfs", f"{target}:ro,noexec,nosuid,nodev,size=4k"]
             else:
@@ -881,6 +898,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     lock.set_defaults(function=lock_main)
     attach = sub.add_parser("attach")
     attach.add_argument("--repo", required=True)
+    attach.add_argument("--container-repo", required=True)
     attach.add_argument("--session", required=True)
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
@@ -896,23 +914,27 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
 
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)
+    publish.add_argument("--container-repo", required=True)
     publish.add_argument("--state", required=True)
     publish.add_argument("--manifest", required=True)
     publish.set_defaults(function=publish_main)
     finalize = sub.add_parser("finalize")
     finalize.add_argument("--repo", required=True)
+    finalize.add_argument("--container-repo", required=True)
     finalize.add_argument("--state", required=True)
     finalize.add_argument("--output", required=True)
     finalize.add_argument("--manifest", required=True)
     finalize.set_defaults(function=finalize_main)
     agent = sub.add_parser("agent-args")
     agent.add_argument("--repo", required=True)
+    agent.add_argument("--container-repo", required=True)
     agent.add_argument("--state", required=True)
     agent.add_argument("--output", required=True)
     agent.add_argument("--manifest", required=True)
     agent.set_defaults(function=agent_args_main)
     start = sub.add_parser("start")
     start.add_argument("--repo", required=True)
+    start.add_argument("--container-repo", required=True)
     start.add_argument("--prefix", required=True)
     start.add_argument("--state", required=True)
     start.add_argument("--helper-image", required=True)

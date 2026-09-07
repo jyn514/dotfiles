@@ -45,6 +45,34 @@ def read_calls(path: Path) -> list[list[str]]:
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_preserves_repository_path_beneath_home_source_root(self) -> None:
+        function = runpy.run_path(str(LAUNCHER))["container_repository_path"]
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            repository = home / "src" / "nested" / "project"
+            repository.mkdir(parents=True)
+            self.assertEqual(Path("/src/nested/project"), function(home, repository))
+
+    def test_preserves_invocation_subdirectory_inside_repository(self) -> None:
+        function = runpy.run_path(str(LAUNCHER))["container_working_directory_path"]
+        repository = Path("/host/src/llms")
+        self.assertEqual(
+            Path("/src/llms/playground"),
+            function(repository, Path("/src/llms"), repository / "playground"),
+        )
+
+    def test_uses_stable_fallback_outside_home_source_root(self) -> None:
+        function = runpy.run_path(str(LAUNCHER))["container_repository_path"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            (home / "src").mkdir(parents=True)
+            repository = root / "project"
+            repository.mkdir()
+            self.assertEqual(Path("/src/repository"), function(home, repository))
+
+
 class ProxyHelperTest(unittest.TestCase):
     def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
         helper = runpy.run_path(str(LAUNCHER))["helper"]
@@ -249,6 +277,14 @@ class BackgroundRelayTest(unittest.TestCase):
 
 
 class AgentSandboxImageTest(unittest.TestCase):
+    def test_image_creates_source_mount_point_before_chown(self) -> None:
+        dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace",
+            dockerfile,
+        )
+
     def test_pi_build_uses_lockfile_pinned_model_data(self) -> None:
         dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
@@ -678,9 +714,11 @@ class CodexSandboxTest(unittest.TestCase):
         environment.update(updates)
         return environment
 
-    def run_launcher(self, *arguments: str, **updates: str) -> subprocess.CompletedProcess[str]:
+    def run_launcher(
+        self, *arguments: str, cwd: Path | None = None, **updates: str,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(LAUNCHER_FIXTURE), *arguments], cwd=self.repo,
+            [sys.executable, str(LAUNCHER_FIXTURE), *arguments], cwd=cwd or self.repo,
             env=self.launcher_environment(**updates),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
         )
@@ -734,7 +772,10 @@ class CodexSandboxTest(unittest.TestCase):
         )
 
         launcher = runpy.run_path(str(LAUNCHER))
-        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        state = SimpleNamespace(
+            home=self.home, repository=self.repo,
+            container_repository=Path("/src/repository"), skills_tmp=None,
+        )
         try:
             launcher["stage_skills"](state)
             agents = (state.skills_tmp / "config/pi-AGENTS.md").read_text(encoding="utf-8")
@@ -742,7 +783,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "@breq.md\n"
                 "@coordination-dialect.md\n"
                 "@../../.agents/shared.md\n"
-                "@/src/work/.agents/sandbox/AGENTS.md\n"
+                "@/src/repository/.agents/sandbox/AGENTS.md\n"
                 "@../../.agents/sandbox/AGENTS.md\n",
                 agents,
             )
@@ -957,6 +998,14 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0o700, (self.home / ".codex-sandbox-auth").stat().st_mode & 0o777)
         self.assertEqual([], read_calls(self.docker_log))
 
+    def test_preserves_initial_working_directory_beneath_repository(self) -> None:
+        playground = self.repo / "playground"
+        playground.mkdir()
+        result = self.run_launcher(cwd=playground)
+        self.assertEqual(0, result.returncode, result.stderr)
+        run = self.final_run()
+        self.assertEqual("/src/repository/playground", run[run.index("--workdir") + 1])
+
     def test_constructs_secured_agent_and_trusted_proxy_arguments(self) -> None:
         pi_agent = self.home / ".pi/agent"
         result = self.run_launcher("resume", "session-id")
@@ -964,9 +1013,10 @@ class CodexSandboxTest(unittest.TestCase):
         run = self.final_run()
         self.assertIn("--cap-drop=ALL", run)
         self.assertIn("--security-opt=no-new-privileges", run)
-        self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/work,bind-nonrecursive=true", run)
-        self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly", run)
-        self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/work/.jj,readonly", run)
+        self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/repository,bind-nonrecursive=true", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly", run)
+        self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
+        self.assertEqual("/src/repository", run[run.index("--workdir") + 1])
         self.assertIn(
             f"type=bind,src={ROOT / 'config/codex.toml'},"
             "dst=/home/codex/.codex/dotfiles.config.toml,readonly",
@@ -1219,7 +1269,7 @@ class CodexSandboxTest(unittest.TestCase):
         run = self.final_run()
         repository = self.repo.resolve()
         self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/work/.git,readonly",
+            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly",
             run,
         )
         self.assertIn(
@@ -1231,7 +1281,7 @@ class CodexSandboxTest(unittest.TestCase):
             run,
         )
         relative_target = Path(os.path.normpath(
-            Path("/src/work") / os.path.relpath(common_dir.resolve(), self.repo.resolve())
+            Path("/src/repository") / os.path.relpath(common_dir.resolve(), self.repo.resolve())
         ))
         self.assertIn(
             f"type=bind,src={common_dir.resolve()},dst={relative_target},readonly",

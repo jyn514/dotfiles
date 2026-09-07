@@ -5,8 +5,8 @@ import {
     SettingsManager,
 } from "/opt/agent-pi/src/packages/coding-agent/dist/bundle/index.js";
 
-// Match runtime paths: Jiti keys its cache by absolute source path and content.
-const cwd = "/src/work";
+// Use the image's neutral build workspace; extension source paths remain stable under agentDir.
+const cwd = "/workspace";
 const agentDir = "/home/codex/.pi/agent";
 const settingsManager = SettingsManager.create(cwd, agentDir);
 const packages = new DefaultPackageManager({ cwd, agentDir, settingsManager });

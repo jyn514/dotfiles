@@ -73,7 +73,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 ENV HOME=/home/codex
 ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
-WORKDIR /src/work
+WORKDIR /workspace
 COPY ./config/pi.json /home/codex/.pi/agent/settings.json
 COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
 RUN node /opt/cache-pi-extensions.mjs install
@@ -109,7 +109,7 @@ COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-pro
 
 ENV HOME=/home/codex
 ENV EDITOR=vi VISUAL=vi
-RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src/work \
+RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace \
     && chown -R ${AGENT_UID}:${AGENT_GID} \
         ${HOME} /src
 
@@ -131,7 +131,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers /libexec/agent-w
 ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}
-WORKDIR /src/work
+WORKDIR /workspace
 
 # Use the final Node version, paths, and UID: bytecode is not portable across
 # Node versions, and every new container should start with a populated cache.

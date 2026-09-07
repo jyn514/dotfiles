@@ -4,6 +4,8 @@
 
 `codex-sandbox` launches Pi in a disposable agent container. Launcher-owned sibling services provide narrowly scoped access to protected repository operations, Codex authentication, the host editor, optional Zulip, and optional Agent Podman. The agent can write the working tree, but Git, Jujutsu, sandbox policy, and reusable credentials remain outside its direct authority.
 
+The launcher mounts `~/src` read-only at `/src`, then overlays the active repository writable at the same relative path when it is beneath `~/src`—for example, `~/src/dotfiles` becomes `/src/dotfiles`. Repositories outside `~/src` use `/src/repository`. The selected path is also the agent and proxy working directory.
+
 ## Prerequisites and setup
 
 - Run from a Git checkout. The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
