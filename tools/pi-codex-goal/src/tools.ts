@@ -3,7 +3,7 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Type } from "typebox";
 
 import { goalToolResponse, toToolText, type GoalToolResponse } from "./format.js";
-import { createGoal, replaceGoal } from "./state.js";
+import { createGoal, MIN_TOKEN_BUDGET, replaceGoal } from "./state.js";
 import { TOOL_PROMPT_GUIDELINES } from "./prompts.js";
 import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
 
@@ -15,8 +15,8 @@ const CreateGoalParams = Type.Object({
   }),
   token_budget: Type.Optional(
     Type.Integer({
-      description: "Optional positive integer token budget.",
-      minimum: 1,
+      description: `Optional integer token budget of at least ${MIN_TOKEN_BUDGET}; omit for unlimited.`,
+      minimum: MIN_TOKEN_BUDGET,
     }),
   ),
   replace_existing: Type.Optional(
@@ -73,7 +73,7 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     label: "Create Goal",
     description: "Create a Codex-style long-running goal for this pi session.",
     promptSnippet:
-      "Create one goal with an objective and optional positive token budget. Fails when a non-complete goal already exists unless replace_existing is true; replaces a completed goal.",
+      "Create one goal with an objective and optional token budget (unlimited if omitted). Fails when a non-complete goal already exists unless replace_existing is true; replaces a completed goal.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: CreateGoalParams,
     executionMode: "sequential",

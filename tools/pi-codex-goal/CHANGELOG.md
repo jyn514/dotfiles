@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 - 2026-09-07
+
+- Require new explicit goal token budgets to be integers of at least 500,000, including replacements. Smaller budgets are rejected rather than raised; omitted budgets remain unlimited and existing saved budgets stay unchanged.
+- Run the model-backed platform smoke through the installed Pi package's declared CLI executable, including the bundled CLI in newer Pi releases.
+
 ## 0.2.1 - 2026-09-05
 
 - Precompile the published npm extension to NodeNext ESM during `npm pack` and `npm publish`, so Pi loads `dist/index.js` instead of transpiling the TypeScript module graph at startup.

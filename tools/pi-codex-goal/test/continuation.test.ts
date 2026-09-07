@@ -63,9 +63,9 @@ test("a new user-driven agent start leaves a paused goal paused", async () => {
   assert.equal(harness.snapshot().goal?.usage.tokensUsed, 10);
 });
 
-test("session resume over-budget paused goal stays budgetLimited without follow-up turn", async () => {
+test("session resume of a saved over-budget paused goal stays budgetLimited without follow-up turn", async () => {
   const harness = createRuntimeHarness();
-  await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+  await harness.runTool("create_goal", { objective: "ship it" });
   await harness.runCommand("pause");
   const paused = harness.snapshot().goal;
   assert.ok(paused);
@@ -80,6 +80,7 @@ test("session resume over-budget paused goal stays budgetLimited without follow-
     data: setEntry(
       {
         ...paused,
+        tokenBudget: 10,
         usage: { tokensUsed: 10, activeSeconds: paused.usage.activeSeconds },
       },
       "runtime",
@@ -177,7 +178,7 @@ test("tool-use turn ends do not queue continuation before tool execution finishe
 
 test("successful budget-crossing turn clears stale recovery footer attention", async () => {
   const harness = createRuntimeHarness();
-  await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+  await harness.runTool("create_goal", { objective: "ship it", token_budget: 500_000 });
   harness.sentMessages.length = 0;
   harness.footerStatuses.length = 0;
 
@@ -189,13 +190,13 @@ test("successful budget-crossing turn clears stale recovery footer attention", a
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 1,
-    message: assistantMessage("stop", { input: 8, output: 3 }),
+    message: assistantMessage("stop", { input: 499_998, output: 3 }),
     toolResults: [],
   });
 
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "budgetLimited");
-  assert.equal(goal?.usage.tokensUsed, 13);
+  assert.equal(goal?.usage.tokensUsed, 500_003);
   assert.equal(harness.footerStatuses.at(-1), formatFooterStatus(goal));
   assert.match(harness.footerStatuses.at(-1) ?? "", /Goal unmet/);
   assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
@@ -203,19 +204,19 @@ test("successful budget-crossing turn clears stale recovery footer attention", a
 
 test("budget crossing sends one hidden budget-limit steering message", async () => {
   const harness = createRuntimeHarness();
-  await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+  await harness.runTool("create_goal", { objective: "ship it", token_budget: 500_000 });
 
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 0,
-    message: assistantMessage("toolUse", { input: 8, output: 3 }),
+    message: assistantMessage("toolUse", { input: 499_998, output: 3 }),
     toolResults: [],
   });
 
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "budgetLimited");
-  assert.equal(goal?.usage.tokensUsed, 11);
+  assert.equal(goal?.usage.tokensUsed, 500_001);
   assert.equal(harness.sentMessages.length, 1);
   assert.deepEqual(harness.sentMessages[0]?.message.details, {
     kind: "budget_limit",
@@ -260,16 +261,16 @@ test("goal tools return Codex-shaped response details", async () => {
   const harness = createRuntimeHarness();
   const created = (await harness.runTool("create_goal", {
     objective: "ship it",
-    token_budget: 20,
+    token_budget: 500_000,
   })) as { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> };
 
   assert.equal((created.details.goal as { objective?: string }).objective, "ship it");
-  assert.equal((created.details.goal as { tokenBudget?: number }).tokenBudget, 20);
-  assert.equal(created.details.remainingTokens, 20);
+  assert.equal((created.details.goal as { tokenBudget?: number }).tokenBudget, 500_000);
+  assert.equal(created.details.remainingTokens, 500_000);
   assert.equal(created.details.completionBudgetReport, null);
   assert.deepEqual(JSON.parse(created.content[0]?.text ?? ""), {
     goal: created.details.goal,
-    remainingTokens: 20,
+    remainingTokens: 500_000,
     completionBudgetReport: null,
   });
 

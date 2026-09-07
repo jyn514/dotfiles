@@ -173,7 +173,9 @@ This intentionally matches Codex TUI behavior: token budgets are set through the
 
 ## Model Tools
 
-`create_goal` starts a goal with an objective and optional positive token budget. It fails if a non-complete goal already exists unless `replace_existing: true` is provided. After a goal is complete, `create_goal` replaces it with a new active goal.
+`create_goal` starts a goal with an objective and an optional token budget. It fails if a non-complete goal already exists unless `replace_existing: true` is provided. After a goal is complete, `create_goal` replaces it with a new active goal.
+
+Omit `token_budget` for an unlimited goal. New explicit budgets must be integers of at least 500,000 tokens, including replacements; smaller budgets are rejected, never raised automatically. Existing saved goals keep their original budgets.
 
 `get_goal` returns the current goal state and usage.
 

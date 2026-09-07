@@ -159,7 +159,11 @@ mkdirSync(agentDir, { recursive: true });
 
 const npm = commandName("npm");
 const piCli = resolve(sourceRoot, "node_modules", ".bin", process.platform === "win32" ? "pi.cmd" : "pi");
-const piJs = resolve(sourceRoot, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js");
+const piPackageRoot = resolve(sourceRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+const piPackageJson = join(piPackageRoot, "package.json");
+const piBin = existsSync(piPackageJson) ? JSON.parse(readFileSync(piPackageJson, "utf8")).bin : undefined;
+const piEntry = typeof piBin === "string" ? piBin : piBin?.pi;
+const piJs = piEntry ? resolve(piPackageRoot, piEntry) : "";
 const piCommand = existsSync(piJs) ? process.execPath : (existsSync(piCli) ? piCli : "pi");
 const piPrefixArgs = existsSync(piJs) ? [piJs] : [];
 const piEnv = { PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1" };

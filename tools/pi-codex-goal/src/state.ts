@@ -14,6 +14,8 @@ import {
   type ThreadGoal,
 } from "./types.js";
 
+export const MIN_TOKEN_BUDGET = 500_000;
+
 export interface ApplyUsageOptions {
   expectedGoalId?: string | null;
   accountBudgetLimited?: boolean;
@@ -62,8 +64,8 @@ export function validateTokenBudget(tokenBudget: number | null | undefined): str
   if (tokenBudget === null || tokenBudget === undefined) {
     return null;
   }
-  if (!Number.isInteger(tokenBudget) || tokenBudget <= 0) {
-    return "Token budget must be a positive integer.";
+  if (!Number.isInteger(tokenBudget) || tokenBudget < MIN_TOKEN_BUDGET) {
+    return `Token budget must be an integer of at least ${MIN_TOKEN_BUDGET}.`;
   }
   return null;
 }

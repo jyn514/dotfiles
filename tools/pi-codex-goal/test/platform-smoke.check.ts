@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 function run(command: string, args: string[]) {
@@ -62,6 +64,50 @@ test("platform smoke scripts have working syntax and help", () => {
     assert.match(text, /session JSONL contains the `\/goal` command path/);
     assert.match(text, /`update_goal` completion/);
   }
+});
+
+test("goal runtime smoke uses the installed Pi official executable", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "pi-goal-cli-contract-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  symlinkSync(resolve("node_modules"), join(root, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+  const preload = join(root, "cli-contract.mjs");
+  writeFileSync(preload, String.raw`
+import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import { readFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { resolve } from "node:path";
+const packageRoot = resolve("node_modules", "@earendil-works", "pi-coding-agent");
+const pkg = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
+const officialBin = resolve(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
+const spawn = childProcess.spawnSync;
+childProcess.spawnSync = (command, args, options) => {
+  // This contract check needs no package install or model request.
+  if (command === "npm" || command === "npm.cmd") return { status: 0, stdout: "", stderr: "", signal: null };
+  assert.equal(command, process.execPath);
+  const result = spawn(command, [args[0], "--version"], options);
+  console.log("PI_OFFICIAL_CLI_PROBE=" + JSON.stringify({
+    intent: args.includes("--model") ? "model" : args[1], binary: args[0], version: result.stdout.trim(),
+  }));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), pkg.version);
+  assert.equal(args[0], officialBin, "smoke must launch the installed package's official bin");
+  return result;
+};
+syncBuiltinESMExports();
+`);
+  const result = spawnSync(process.execPath, ["--import", preload, resolve("scripts/platform-smoke/goal-runtime-smoke.mjs")], {
+    cwd: root,
+    env: { ...process.env, HOME: root, PI_CODING_AGENT_DIR: join(root, "agent"), PI_OFFLINE: "1" },
+    encoding: "utf8",
+  });
+  const prefix = "PI_OFFICIAL_CLI_PROBE=";
+  const probes = result.stdout.split(/\r?\n/).filter((line) => line.startsWith(prefix));
+  for (const probe of probes) t.diagnostic(probe);
+  // Version probes deliberately cannot satisfy the real model smoke's goal assertions.
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stdout, /^GOAL_RUNTIME_SMOKE_FAILED$/m, result.stderr);
+  assert.deepEqual(probes.map((line) => JSON.parse(line.slice(prefix.length)).intent), ["install", "list", "model"]);
 });
 
 test("platform smoke config and package scripts require macOS, Ubuntu, and native Windows", () => {

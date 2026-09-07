@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, validateToolArguments } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -69,13 +69,18 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
     modelsPath: null,
     modelsStorePath: join(agentDir, "models-store.json"),
   });
+  const sessionManager = SessionManager.create(cwd, root);
+  const sessionFile = sessionManager.getSessionFile();
+  assert.ok(sessionFile);
+  writeFileSync(sessionFile, `${JSON.stringify(sessionManager.getHeader())}\n`);
+  sessionManager.setSessionFile(sessionFile);
   const { session } = await createAgentSession({
     cwd,
     agentDir,
     modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(cwd),
+    sessionManager,
     settingsManager,
   });
   const runner = session.extensionRunner;
@@ -86,11 +91,83 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
       assert.ok(tool);
       return tool.execute(name, params, undefined, undefined, runner.createContext());
     };
-    const created = await call("create_goal", { objective: "Verify the installed package" });
-    assert.partialDeepStrictEqual(created.details, { goal: { objective: "Verify the installed package" } });
+    const createGoal = runner.getToolDefinition("create_goal");
+    assert.ok(createGoal);
+    const validateCreate = (args: Record<string, unknown>) => validateToolArguments(createGoal, {
+      type: "toolCall", id: "create", name: "create_goal", arguments: args,
+    });
+    const rejectBudget = async (args: Record<string, unknown>) => {
+      const before = await call("get_goal", {});
+      const entries = structuredClone(sessionManager.getEntries());
+      const persisted = readFileSync(sessionFile, "utf8");
+      assert.throws(() => validateCreate(args), /token_budget/);
+      // Direct execution bypasses Pi's schema validation (as tool_call mutations can).
+      await assert.rejects(() => call("create_goal", args), /integer of at least 500000/);
+      assert.deepEqual(await call("get_goal", {}), before);
+      assert.deepEqual(sessionManager.getEntries(), entries);
+      assert.equal(readFileSync(sessionFile, "utf8"), persisted);
+    };
+    await rejectBudget({ objective: "Too small", token_budget: 499_999 });
+    await rejectBudget({ objective: "Too small after native conversion", token_budget: 499_999.5 });
+    assert.partialDeepStrictEqual(createGoal.parameters, {
+      properties: { token_budget: { type: "integer", minimum: 500_000 } },
+      required: ["objective"],
+    });
+
+    const unlimited = { objective: "Verify the installed package" };
+    assert.deepEqual(validateCreate(unlimited), unlimited);
+    const created = await call("create_goal", unlimited);
+    assert.partialDeepStrictEqual(created.details, {
+      goal: { objective: unlimited.objective, status: "active", tokenBudget: null }, remainingTokens: null,
+    });
     assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "active" } });
     assert.partialDeepStrictEqual((await call("update_goal", { status: "complete" })).details, { goal: { status: "complete" } });
     assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "complete" } });
+    await rejectBudget({ objective: "Too small after completion", token_budget: 499_999 });
+
+    const minimum = { objective: "Exact minimum", token_budget: 500_000 };
+    assert.deepEqual(validateCreate(minimum), minimum);
+    // Pi truncates numeric fractions before validation; raw execution still requires an integer.
+    const fractional = { ...minimum, token_budget: 500_000.5 };
+    assert.deepEqual(validateCreate(fractional), minimum);
+    await assert.rejects(() => call("create_goal", fractional), /integer of at least 500000/);
+    assert.partialDeepStrictEqual((await call("create_goal", minimum)).details, {
+      goal: { objective: minimum.objective, status: "active", tokenBudget: 500_000 }, remainingTokens: 500_000,
+    });
+
+    const legacyGoal = {
+      goalId: "saved-small-budget",
+      objective: "Keep the saved goal unchanged",
+      status: "active",
+      tokenBudget: 123,
+      usage: { tokensUsed: 50, activeSeconds: 7 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    sessionManager.appendCustomEntry("pi-codex-goal", {
+      version: 1, kind: "set", source: "tool", goal: legacyGoal, at: 2,
+    });
+    const persisted = readFileSync(sessionFile, "utf8");
+    sessionManager.setSessionFile(sessionFile);
+    await runner.emit({ type: "session_start", reason: "reload" });
+    assert.partialDeepStrictEqual((await call("get_goal", {})).details, {
+      goal: {
+        goalId: legacyGoal.goalId, objective: legacyGoal.objective, status: "active", tokenBudget: 123,
+        tokensUsed: 50, timeUsedSeconds: 7, createdAt: 1, updatedAt: 2,
+      },
+      remainingTokens: 73,
+    });
+    assert.equal(readFileSync(sessionFile, "utf8"), persisted);
+    await rejectBudget({ objective: "Too small replacement", token_budget: 499_999, replace_existing: true });
+
+    const replacement = { ...minimum, replace_existing: true };
+    assert.deepEqual(validateCreate(replacement), replacement);
+    assert.partialDeepStrictEqual((await call("create_goal", replacement)).details, {
+      goal: { objective: minimum.objective, status: "active", tokenBudget: 500_000 }, remainingTokens: 500_000,
+    });
+    assert.partialDeepStrictEqual((await call("create_goal", { ...unlimited, replace_existing: true })).details, {
+      goal: { objective: unlimited.objective, status: "active", tokenBudget: null }, remainingTokens: null,
+    });
   } finally {
     await runner.emit({ type: "session_shutdown", reason: "quit" });
     session.dispose();

@@ -13,7 +13,7 @@ import {
   goalToolReference,
   supersededContinuationMessage,
 } from "../src/prompts.js";
-import { createGoal } from "../src/state.js";
+import { createThreadGoal } from "../src/state.js";
 
 test("tool prompt guidelines include exposed and namespaced goal tool guidance", () => {
   assert.match(GOAL_TOOL_NAME_GUIDANCE, /available tool list/);
@@ -34,8 +34,7 @@ test("tool prompt guidelines include exposed and namespaced goal tool guidance",
 });
 
 test("continuation prompt uses the canonical completion-audit contract", () => {
-  const created = createGoal(null, "ship it", 10).goal;
-  assert.ok(created);
+  const created = createThreadGoal("ship it", 10);
 
   const continuation = continuationPrompt(created);
   assert.match(continuation, /Before deciding that the goal is achieved, perform a completion audit/);
@@ -46,8 +45,7 @@ test("continuation prompt uses the canonical completion-audit contract", () => {
 });
 
 test("compact continuation keeps marker detection without repeating the full objective", () => {
-  const created = createGoal(null, "ship it", 10).goal;
-  assert.ok(created);
+  const created = createThreadGoal("ship it", 10);
 
   const compact = compactContinuationPrompt(created);
   const full = continuationPrompt(created);
@@ -60,8 +58,7 @@ test("compact continuation keeps marker detection without repeating the full obj
 });
 
 test("superseded continuation bookkeeping does not expose a runnable marker", () => {
-  const created = createGoal(null, "ship it", 10).goal;
-  assert.ok(created);
+  const created = createThreadGoal("ship it", 10);
 
   const superseded = supersededContinuationMessage(created.goalId);
   assert.equal(continuationGoalIdFromPrompt(superseded), null);
@@ -69,8 +66,7 @@ test("superseded continuation bookkeeping does not expose a runnable marker", ()
 });
 
 test("continuation and budget-limit prompts reference exposed goal-completion tool names", () => {
-  const created = createGoal(null, "ship it", 10).goal;
-  assert.ok(created);
+  const created = createThreadGoal("ship it", 10);
 
   const continuation = continuationPrompt(created);
   const budget = budgetLimitPrompt(created);
