@@ -62,6 +62,62 @@ class BbWrapperTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"{fake_jj}\n", result.stdout)
 
+    def run_stub_bb(
+        self, *args: str, tmpdir: str | None
+    ) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            real = Path(temporary_directory) / "real"
+            real.mkdir()
+            stub = real / "bb"
+            stub.write_text(
+                '#!/bin/sh\nfor argument in "$@"; do printf "%s\\n" "$argument"; done\n'
+            )
+            stub.chmod(0o755)
+            environment = {
+                key: value for key, value in os.environ.items() if key != "TMPDIR"
+            }
+            environment["PATH"] = f"{WRAPPERS}:{real}:{os.defpath}"
+            if tmpdir is not None:
+                environment["TMPDIR"] = tmpdir
+            # Enter through the PATH wrapper, as a caller does: reaching the
+            # script directly leaves its symlink on PATH and wraps twice.
+            return subprocess.run(
+                [str(WRAPPERS / "bb"), *args],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+    def test_forces_writable_tmpdir_ahead_of_forwarded_arguments(self) -> None:
+        result = self.run_stub_bb("tasks", tmpdir="/sandbox/tmp")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(), ["-Djava.io.tmpdir=/sandbox/tmp", "tasks"]
+        )
+
+    def test_forces_writable_tmpdir_for_agent_split(self) -> None:
+        result = self.run_stub_bb("agent-split", "--help", tmpdir="/sandbox/tmp")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            [
+                "-Djava.io.tmpdir=/sandbox/tmp",
+                str(ROOT / "tools" / "agent-split" / "src" / "scripts" / "agent-split.clj"),
+                "--help",
+            ],
+        )
+
+    def test_forwards_unchanged_without_tmpdir(self) -> None:
+        result = self.run_stub_bb("tasks", tmpdir=None)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["tasks"])
+
     def test_resolution_skips_duplicate_wrapper_copies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)

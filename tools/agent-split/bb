@@ -7,11 +7,19 @@ original_path=$PATH
 shim_resolve "$0" bb
 real_bb=$REAL
 
+# babashka is a native image, so it never reaches the java wrapper. See that
+# wrapper for why $TMPDIR has to be forced. Substrate VM options lead the
+# command line, ahead of any task or subcommand.
+tmpdir_opt=
+if [ -n "${TMPDIR:-}" ]; then
+	tmpdir_opt=-Djava.io.tmpdir=$TMPDIR
+fi
+
 if [ "${1:-}" = agent-split ]; then
 	shift
 	PATH=$original_path
 	export PATH
-	exec "$real_bb" "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
+	exec "$real_bb" ${tmpdir_opt:+"$tmpdir_opt"} "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
 fi
 
-exec "$real_bb" "$@"
+exec "$real_bb" ${tmpdir_opt:+"$tmpdir_opt"} "$@"
