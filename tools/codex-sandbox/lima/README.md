@@ -2,7 +2,11 @@
 
 The outer runtime remains Podman. This opt-in prototype tests container-level
 network restrictions for a possible Lima migration; it is not a production
-provisioning tool or a completed network gate.
+provisioning tool.
+
+The 2.3.5 bundle omits slirp4netns. Lima's dependency hook installs a checksum-pinned
+slirp4netns 1.3.5 before containerd setup; see the
+[stack review](stack-review.md).
 
 ## Run the probe
 
@@ -10,15 +14,25 @@ On Apple Silicon macOS with Lima 1.2.1 installed:
 
 ```sh
 python3 tools/codex-sandbox/tests/lima_policy_test.py
+python3 tools/codex-sandbox/tests/lima_slirp_install_test.py
 python3 tools/codex-sandbox/tests/lima_network_integration.py --reboot > /tmp/lima-network.log 2>&1
+python3 tools/codex-sandbox/tests/lima_interruption_integration.py > /tmp/lima-interruption.log 2>&1
 ```
 
 The integration command creates a uniquely named VM with no host shares or
-forwarded SSH agent. It downloads a digest-pinned Ubuntu 24.04 image, the same
-nerdctl 2.1.3 bundle used by the installed Lima template, and a digest-pinned
-official Python/Alpine test image. These fixture pins are not the production
-version selection required before migration. Ubuntu's archived guest image uses HTTP;
+forwarded SSH agent. It downloads a digest-pinned Ubuntu 24.04 image, the
+nerdctl 2.3.5 bundle, and a digest-pinned official Python/Alpine test image.
+The [stack review](stack-review.md) records the
+candidate versions and validation status. Ubuntu's archived guest image uses HTTP;
 Lima must verify its SHA-256 before booting it.
+
+The [transport installer](install-slirp4netns.py) verifies the upstream binary
+before publishing it atomically at `/usr/local/bin/slirp4netns`. Repeated setup
+verifies the installed file without downloading it again; a different existing
+binary is rejected. Download or checksum failure leaves the executable path
+untouched. Lima can continue later boot scripts after a dependency-hook failure,
+so the fixture's network preflight still rejects a missing or different transport
+before running any workload.
 
 The command prints the owned VM name before creation and deletes that VM on
 success or failure. Use `--keep` to stop and retain it for inspection instead.
@@ -26,6 +40,34 @@ If cleanup fails or the host process is killed before cleanup, inspect the
 printed instance name and remove only that instance with
 `limactl delete --force INSTANCE`. It never selects `ferrocene` or a real session.
 `--reboot` repeats the probes after a VM stop/start without reinstalling the policy.
+The interruption command runs separate fixtures, waits for a live startup or
+probe subprocess, sends SIGTERM, and requires exit status 143 and VM removal.
+The network fixture also owns a loopback-only host HTTP listener, which serves
+only a random marker and closes during cleanup.
+
+## Relay and failure probes
+
+The fixture directly configures a CNI internal link with no bridge gateway,
+masquerading, or default route. Its tuning plugin disables IPv6 on that attachment
+only; namespace-wide restoration during DEL could undo another attachment's policy.
+See the CNI [bridge](https://www.cni.dev/plugins/current/main/bridge/) and
+[tuning](https://www.cni.dev/plugins/current/meta/tuning/) contracts.
+
+A non-root, read-only relay joins the internal link and a separate egress network.
+It forwards HTTP only to the owned host listener. Root agent and restricted
+non-root proxy probes must receive the marker through that relay while direct
+access to the live host IP is denied by policy. An internal-only client must
+reach the relay, lack an IPv4 default route and non-loopback IPv6 addresses,
+and fail to re-enable IPv6 or reach the host directly.
+
+The fixture-only `policy-fault` wrapper invokes the installed policy and injects
+an error or SIGKILL after a real prohibited-route or TCP DNS-rule mutation.
+Each case requires recorded kernel evidence, no workload output, removal of
+container metadata, namespace, IPAM allocation, and veth, then valid startup on
+the same network. Bridge inspection explicitly enters RootlessKit's detached
+network namespace and requires the running peer's bridge as a positive control.
+Missing policy, stale digest, and a correctly hashed wrong DNS address must also
+reject process startup.
 
 ## Explicit DNS configuration
 
@@ -34,7 +76,8 @@ subnet `10.0.2.0/24` and its derived DNS endpoint `10.0.2.3`. Setup verifies the
 effective driver, DNS, and child address before adding a persistent containerd
 service override for `--cidr=10.0.2.0/24`. It refuses custom flags it would replace
 and verifies that no other RootlessKit arguments changed after restart.
-The slirp4netns implementation and Lima VM networks are unchanged.
+The slirp4netns driver and Lima VM networks are unchanged; the binary pin includes
+libslirp security fixes.
 
 Workloads explicitly select this DNS address. Nerdctl may list it twice because
 it also prepends RootlessKit's DNS; duplicate entries do not grant extra access.
@@ -87,7 +130,13 @@ The fresh-instance probe passed before and after VM reboot without reinstalling
 policy, including rejection of a correctly hashed policy with the wrong DNS IP
 and successful startup after restoring the valid policy.
 
-The full gate also still requires owned host endpoints, internal relay links,
-interruption/partial-policy cleanup and representative proxy checks.
-Route inspection is not proof of all endpoint behavior. No launcher selector,
-credential migration, production VM setup, or default switch is implemented.
+The nerdctl 2.3.5 / slirp4netns 1.3.5 fixture passed owned-host denial, authorized
+internal relay access, root and restricted-proxy egress, internal IPv6 checks,
+and partial-policy cleanup before and after reboot. The separate live-child
+interruption tests passed during both startup and probing, preserving status 143
+and removing their owned VMs. The four installer tests passed, including checksum
+rejection, interrupted download cleanup, and reuse without another download.
+
+Route inspection is not proof of endpoint behavior for every prohibited range.
+No launcher selector, credential migration, production VM setup, or default
+switch is implemented.

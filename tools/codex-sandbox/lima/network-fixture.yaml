@@ -1,5 +1,5 @@
 # Feasibility fixture only; not a production VM or launcher default.
-# Image and nerdctl bundle pins come from Lima 1.2.1's installed templates.
+# Guest image comes from Lima 1.2.1; bundle digest is the upstream release checksum.
 minimumLimaVersion: 1.2.1
 vmType: vz
 arch: aarch64
@@ -19,10 +19,14 @@ hostResolver:
   enabled: true
   ipv6: false
 propagateProxyEnv: false
+provision:
+# Runs before containerd installation; the fixture preflight rejects a missing transport.
+- mode: dependency
+  file: install-slirp4netns.py
 containerd:
   system: false
   user: true
   archives:
-  - location: https://github.com/containerd/nerdctl/releases/download/v2.1.3/nerdctl-full-2.1.3-linux-arm64.tar.gz
+  - location: https://github.com/containerd/nerdctl/releases/download/v2.3.5/nerdctl-full-2.3.5-linux-arm64.tar.gz
     arch: aarch64
-    digest: sha256:544fa1e518155fcc01a117ea49819d12d96b4dacfb2b62922f9f7956dc9f6dc8
+    digest: sha256:6e4b687f1d138e750a3c8372abc0f81d3d7490b6359c48c0562fc7dfe98859b2
