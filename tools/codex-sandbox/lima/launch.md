@@ -29,6 +29,9 @@ CODEX_SANDBOX_RUNTIME=lima codex-sandbox --help
 CODEX_SANDBOX_RUNTIME=lima codex-sandbox
 ```
 
+Interactive image builds show BuildKit's live terminal progress. Redirected output
+uses plain progress logs.
+
 For a separate test host, also set `CODEX_SANDBOX_LIMA_STATE` to its host-state
 directory. That selection reaches the launcher, shared proxies, and image
 builders. Missing or incompatible state is an error; there is no engine fallback.

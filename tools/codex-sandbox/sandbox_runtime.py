@@ -415,7 +415,11 @@ class Lima(Podman):
             arguments += ["--build-arg", value]
         if target:
             arguments += ["--target", target]
-        self.run([*arguments, context], stdout=sys.stderr)
+        # SSH needs terminal stdin to allocate the guest PTY for BuildKit's
+        # automatic progress display. Other operations must not consume stdin.
+        interactive = sys.stdin.isatty() and sys.stderr.isatty()
+        self.run([*arguments, context], stdout=sys.stderr,
+                 stdin=None if interactive else subprocess.DEVNULL)
         return self.resolve_image(tag)
 
     def container_matches_image(self, container, image):
