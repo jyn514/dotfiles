@@ -2,8 +2,23 @@
 
 The image helper and runtime contracts support Podman and the provisioned Lima
 store. Ordinary sandbox launches and existing repository builders still use
-Podman. Lima sessions remain gated on runtime-bound shared state, credential
-provisioning, trusted relay networks, and full launcher recovery tests.
+Podman. Runtime-bound shared state and the Keychain boot cache are implemented;
+Lima sessions still need launcher integration, non-root credential injection,
+trusted relay networks, and full-session validation.
+
+## Deferred integration prototype
+
+The local jj bookmark `lima-deferred-prototype` (`8d9bfb6b`, based on `1cff23d0`)
+preserves builder migration, per-agent tmpfs credential copies, relay CNI setup,
+volume initialization, and their tests. These additions are outside the active
+implementation lineage until a real launcher caller needs them. Inspect with
+`jj show lima-deferred-prototype` and restore selected files or hunks, then retest.
+
+The last acknowledgement/volume ownership fixes in that checkpoint are untested.
+Credential copies need a lost-acknowledgement cleanup test; volume callers must
+prove ownership before cleanup so a creation collision cannot delete another
+creator's volume. Existing network, image, boot-cache, and recorded-runtime
+checks remain active because they protect established boundaries.
 
 ## Image helper
 
