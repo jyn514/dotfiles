@@ -46,6 +46,25 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_new_launch_clears_inherited_verification_through_cleanup(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        key = "CODEX_SANDBOX_LIMA_VERIFIED"
+        state = SimpleNamespace()
+
+        def initialize(*args):
+            self.assertNotIn(key, os.environ)
+            os.environ[key] = "this-launch"
+
+        def cleanup(_state):
+            self.assertEqual("this-launch", os.environ[key])
+
+        with mock.patch.dict(os.environ, {key: "parent-launch"}), \
+                mock.patch.dict(launcher["main"].__globals__, image_runtime=initialize,
+                    new_state=lambda _: state, execute=lambda _: 0, cleanup=cleanup,
+                    unregister_tmux_pane=lambda _: None):
+            self.assertEqual(0, launcher["main"]([]))
+            self.assertEqual("parent-launch", os.environ[key])
+
     def test_lima_rejects_a_whole_home_container_bind_through_a_symlink(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         with tempfile.TemporaryDirectory() as directory:

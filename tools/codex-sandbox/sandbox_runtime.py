@@ -16,7 +16,7 @@ import tempfile
 import time
 import uuid
 
-from lima.host import Host
+from lima.host import Host, verification_scope
 from network_policy import PROHIBITED_ROUTES
 
 
@@ -315,9 +315,7 @@ class Lima(Podman):
                                  f"buildkit-{self.record['namespace']}/buildkitd.sock")
 
     def verify(self):
-        # This executes only the installed verifier after checking its digest.
-        # Ordinary runtime operations must never repair policy from this checkout.
-        self.host.verify(self.record)
+        self.host.verify_runtime(self.record)
 
     def argv(self, arguments, *, cwd=None):
         self.host.machine(self.record)

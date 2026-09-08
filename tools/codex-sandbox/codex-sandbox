@@ -30,7 +30,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import Lima, Podman, image_runtime, runtime_identity, single_json
+from sandbox_runtime import Lima, Podman, image_runtime, runtime_identity, single_json, verification_scope
 from sandbox_credentials import boot_credential
 
 OUTER_RUNTIME = Podman()
@@ -1554,6 +1554,11 @@ def restart_all_tmux_sessions() -> int:
 
 
 def main(arguments: list[str]) -> int:
+    with verification_scope():
+        return launch(arguments)
+
+
+def launch(arguments: list[str]) -> int:
     global OUTER_RUNTIME
     if arguments == ["restart-all"]:
         try:

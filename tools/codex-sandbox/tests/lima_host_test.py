@@ -1,9 +1,12 @@
 """Host setup rejects aliases, stale ownership, and unsupported bind sources."""
 
 import importlib.util
+import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +27,57 @@ network_spec.loader.exec_module(network)
 
 
 class HostTests(unittest.TestCase):
+    def test_bind_preflight_reuses_verification_but_keeps_guest_access_checks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            instance = host.Host(root)
+            record = {'phase': 'ready', 'shares': [
+                {'location': str(root), 'mountPoint': str(root), 'writable': True}]}
+            with patch.object(instance, 'record', return_value=record), \
+                    patch.object(instance, 'runtime_epoch', return_value=('a', 'b')), \
+                    patch.object(instance, 'verify') as verify_full, \
+                    patch.object(instance, 'guest') as guest, host.verification_scope():
+                for _ in range(2):
+                    self.assertEqual({'source': str(root), 'writable': True},
+                        instance.check_bind(root, writable=True))
+                verify_full.assert_called_once()
+                self.assertEqual(6, guest.call_count, 'cached verification skipped live bind checks')
+                with host.verification_scope():
+                    instance.check_bind(root)
+                self.assertEqual(2, verify_full.call_count)
+
+    def test_runtime_epoch_requires_both_active_services_and_current_vm(self):
+        containerd = 'Id=containerd.service\nActiveState=active\nSubState=running\nInvocationID=' + 'a' * 32
+        buildkit = 'Id=default-buildkit.service\nActiveState=active\nSubState=running\nInvocationID=' + 'b' * 32
+        with tempfile.TemporaryDirectory() as temporary:
+            instance = host.Host(Path(temporary))
+            with patch.object(instance, 'machine') as machine, patch.object(instance, 'guest') as guest:
+                guest.return_value = SimpleNamespace(stdout=buildkit + '\n\n' + containerd)
+                self.assertEqual(('a' * 32, 'b' * 32), instance.runtime_epoch({'namespace': 'default'}))
+                for output in (containerd, containerd + '\n\n' + containerd,
+                        containerd + '\n\n' + buildkit.replace('active', 'inactive'),
+                        containerd + '\n\n' + buildkit.replace('b' * 32, ''),
+                        containerd + '\n\n' + buildkit.replace('running', 'dead')):
+                    guest.return_value.stdout = output
+                    with self.subTest(output=output), self.assertRaises(ValueError):
+                        instance.runtime_epoch({'namespace': 'default'})
+                guest.reset_mock()
+                machine.side_effect = ValueError('replacement VM')
+                with self.assertRaisesRegex(ValueError, 'replacement VM'):
+                    instance.runtime_epoch({'namespace': 'default'})
+                guest.assert_not_called()
+
+    def test_quiet_verification_preserves_failure_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            instance = host.Host(Path(temporary))
+            error = subprocess.CalledProcessError(1, ['verifier'], stderr='policy changed\n')
+            with patch.object(instance, 'machine'), patch.object(instance, 'guest', side_effect=[
+                    SimpleNamespace(stdout='digest verifier'), error]), \
+                    patch.object(host.sys, 'stderr', new_callable=io.StringIO) as stderr:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    instance.verify({'files': {'verify-host.py': 'digest'}}, quiet=True)
+                self.assertEqual('policy changed\n', stderr.getvalue())
+
     def test_default_setup_shares_home_once_including_its_scratch_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary).resolve()

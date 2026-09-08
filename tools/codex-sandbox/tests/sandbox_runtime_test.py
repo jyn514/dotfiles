@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,10 +32,65 @@ def lima():
     backend = object.__new__(runtime.Lima)
     backend.record = {"instance": "sandbox-host-test", "namespace": "default"}
     backend.host = Mock()
+    backend.host.state = Path('/owned-state')
+    backend.host.runtime_epoch.return_value = ('a' * 32, 'b' * 32)
+    backend.host.verify_runtime.side_effect = lambda record: runtime.Host.verify_runtime(backend.host, record)
     return backend
 
 
 class ImageIdentityTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(runtime.verification_scope())
+
+    def test_launch_reuses_verification_across_helpers_but_not_new_launches(self):
+        backend = lima()
+        child = lima()
+        with runtime.verification_scope():
+            backend.verify()
+            inherited = os.environ.copy()
+            backend.verify()
+            with patch.dict(os.environ, inherited, clear=True):
+                child.verify()
+            backend.host.verify.assert_called_once()
+            child.host.verify.assert_not_called()
+            # A nested/new launcher must not accept its parent's receipt.
+            with runtime.verification_scope():
+                child.verify()
+            child.host.verify.assert_called_once()
+
+    def test_service_restart_or_record_change_requires_full_verification(self):
+        backend = lima()
+        with runtime.verification_scope():
+            backend.verify()
+            for epoch in [('c' * 32, 'b' * 32), ('c' * 32, 'd' * 32)]:
+                backend.host.runtime_epoch.return_value = epoch
+                backend.verify()
+            backend.record['generation'] = 'replacement'
+            backend.verify()
+            self.assertEqual(4, backend.host.verify.call_count)
+
+    def test_failed_or_racing_verification_cannot_publish_a_receipt(self):
+        backend = lima()
+        with runtime.verification_scope():
+            backend.host.verify.side_effect = ValueError('policy changed')
+            with self.assertRaisesRegex(ValueError, 'policy changed'):
+                backend.verify()
+            backend.host.verify.side_effect = None
+            backend.host.runtime_epoch.side_effect = [('a', 'b'), ('a', 'c')]
+            with self.assertRaisesRegex(ValueError, 'restarted during verification'):
+                backend.verify()
+            backend.host.runtime_epoch.side_effect = None
+            backend.verify()
+            self.assertEqual(3, backend.host.verify.call_count)
+
+    def test_cached_verification_still_checks_vm_identity(self):
+        backend = lima()
+        with runtime.verification_scope():
+            backend.verify()
+            backend.host.runtime_epoch.side_effect = ValueError('VM identity changed')
+            with self.assertRaisesRegex(ValueError, 'VM identity changed'):
+                backend.verify()
+
     def test_cancelled_router_reconciles_exec_published_after_initial_cleanup_inspection(self):
         backend = lima()
         backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([{"ID": "a" * 64}])))
@@ -189,6 +245,9 @@ class NetworkMembershipTest(unittest.TestCase):
 
 
 class TransportTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(runtime.verification_scope())
+
     def test_recorded_owner_rejects_replacement_vm_namespace_or_policy(self):
         backend = lima()
         backend.host.state = Path("/owned/state")
@@ -243,7 +302,7 @@ class TransportTest(unittest.TestCase):
     def test_missing_vm_fails_before_workload_transport(self):
         with patch.object(runtime, "Host") as host:
             host.return_value.record.return_value = {"phase": "ready"}
-            host.return_value.verify.side_effect = ValueError("recorded VM is missing")
+            host.return_value.verify_runtime.side_effect = ValueError("recorded VM is missing")
             with self.assertRaisesRegex(ValueError, "missing"):
                 runtime.Lima("owned-state")
 

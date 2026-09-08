@@ -32,6 +32,13 @@ CODEX_SANDBOX_RUNTIME=lima codex-sandbox
 Interactive image builds show BuildKit's live terminal progress. Redirected output
 uses plain progress logs.
 
+Each launch fully verifies the VM once and shares that result with its host-side
+image and proxy helpers. Later checks validate VM identity and service activation
+IDs; a VM reboot or containerd/BuildKit restart requires full verification again.
+Successful launch checks are silent; failures still report their diagnostics.
+Policy files and mounts are assumed unchanged within a launch; edits without a
+service restart are checked at the next launch. The result is never saved to disk.
+
 For a separate test host, also set `CODEX_SANDBOX_LIMA_STATE` to its host-state
 directory. That selection reaches the launcher, shared proxies, and image
 builders. Missing or incompatible state is an error; there is no engine fallback.

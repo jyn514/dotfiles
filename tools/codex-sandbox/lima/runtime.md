@@ -69,6 +69,14 @@ and transport exit statuses:
 python3 tools/codex-sandbox/tests/sandbox_runtime_test.py
 ```
 
+For a running provisioned host, check launch-scoped verification reuse across
+real child processes and compare full versus reused check timings without
+changing VM state:
+
+```sh
+python3 tools/codex-sandbox/tests/lima_verification_integration.py --state "$fixture_state"
+```
+
 For an already provisioned disposable instance with a local Alpine-compatible
 base, run:
 

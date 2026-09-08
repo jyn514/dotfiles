@@ -20,8 +20,21 @@ import uuid
 
 SOURCE = Path(__file__).resolve().parent
 GUEST = "/usr/local/share/codex-sandbox"
+VERIFIED_ENV = "CODEX_SANDBOX_LIMA_VERIFIED"
 sys.path.insert(0, str(SOURCE.parent))
 from network_policy import policy_bytes
+
+
+@contextmanager
+def verification_scope():
+    """Start a new launch; only its host-side children may reuse verification."""
+    previous = os.environ.pop(VERIFIED_ENV, None)
+    try:
+        yield
+    finally:
+        os.environ.pop(VERIFIED_ENV, None)
+        if previous is not None:
+            os.environ[VERIFIED_ENV] = previous
 
 
 def command(*args, **kwargs):
@@ -228,12 +241,65 @@ class Host:
         atomic_json(self.record_path, record)
         return record
 
-    def verify(self, record):
+    def verify_runtime(self, record):
+        try:
+            epoch = self.runtime_epoch(record)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            os.environ.pop(VERIFIED_ENV, None)
+            raise
+        receipt = hashlib.sha256(json.dumps(
+            [str(self.state), record, epoch], sort_keys=True).encode()).hexdigest()
+        if os.environ.get(VERIFIED_ENV) == receipt:
+            return
+        os.environ.pop(VERIFIED_ENV, None)
+        # Only host helpers inherit this receipt. A new launcher clears it;
+        # installed policy is trusted to stay unchanged within one launch.
+        self.verify(record, quiet=True)
+        if self.runtime_epoch(record) != epoch:
+            raise ValueError("Lima runtime restarted during verification; retry the launch")
+        os.environ[VERIFIED_ENV] = receipt
+
+    def runtime_epoch(self, record):
+        self.machine(record)
+        services = ("containerd.service", record["namespace"] + "-buildkit.service")
+        output = self.guest(record, "systemctl", "--user", "show", *services,
+            "--property=Id", "--property=ActiveState", "--property=SubState",
+            "--property=InvocationID", capture_output=True, text=True).stdout
+        epochs = {}
+        for block in output.strip().split("\n\n"):
+            properties = {}
+            for line in block.splitlines():
+                key, separator, value = line.partition("=")
+                if not separator or key in properties:
+                    raise ValueError("invalid runtime service status")
+                properties[key] = value
+            name = properties.get("Id")
+            invocation = properties.get("InvocationID", "")
+            if (name not in services or name in epochs or
+                    properties.get("ActiveState") != "active" or
+                    properties.get("SubState") != "running" or
+                    not re.fullmatch(r"[0-9a-f]{32}", invocation) or invocation == "0" * 32):
+                raise ValueError("Lima runtime service is missing or not running")
+            epochs[name] = invocation
+        if set(epochs) != set(services):
+            raise ValueError("missing runtime service status")
+        # systemd assigns fresh invocation IDs on each start, including reboot.
+        return tuple(epochs[name] for name in services)
+
+    def verify(self, record, *, quiet=False):
+        # Execute only the installed verifier after checking its digest;
+        # ordinary launches must never repair policy from this checkout.
         self.machine(record)
         digest = self.guest(record, "sha256sum", GUEST + "/verify-host.py", capture_output=True, text=True).stdout.split()[0]
         if digest != record["files"]["verify-host.py"]:
             raise ValueError("installed verifier changed; refusing to execute it")
-        self.guest(record, "python3", GUEST + "/verify-host.py", input=json.dumps(record).encode())
+        try:
+            self.guest(record, "python3", GUEST + "/verify-host.py",
+                input=json.dumps(record), text=True, capture_output=quiet)
+        except subprocess.CalledProcessError as error:
+            if quiet and error.stderr:
+                print(error.stderr, file=sys.stderr, end="")
+            raise
 
     def start(self):
         record = self.record()
@@ -248,7 +314,7 @@ class Host:
         record = self.record()
         if record["phase"] != "ready":
             raise ValueError("setup is incomplete")
-        self.verify(record)
+        self.verify_runtime(record)
         path = bind_source(record, raw, writable)
         self.guest(record, "test", "-d" if path.is_dir() else "-f", str(path))
         self.guest(record, "test", "-r", str(path))
