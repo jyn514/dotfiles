@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Build or resolve an outer image; stdout contains one local immutable reference."""
+
+import argparse
+from pathlib import Path
+import subprocess
+import sys
+
+from sandbox_runtime import image_runtime
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--provider", choices=("podman", "lima"), default="podman")
+    parser.add_argument("--state", type=Path)
+    sub = parser.add_subparsers(dest="operation", required=True)
+    resolve = sub.add_parser("resolve")
+    resolve.add_argument("reference")
+    build = sub.add_parser("build")
+    build.add_argument("--tag", required=True)
+    build.add_argument("--file", type=Path, required=True)
+    build.add_argument("--build-arg", action="append", default=[])
+    build.add_argument("--target")
+    build.add_argument("context", type=Path)
+    args = parser.parse_args()
+    runtime = image_runtime(args.provider, args.state)
+    if args.operation == "resolve":
+        image = runtime.resolve_image(args.reference)
+    else:
+        image = runtime.build(args.tag, args.file.resolve(strict=True),
+                              args.context.resolve(strict=True),
+                              build_args=args.build_arg, target=args.target)
+    print(image.reference)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, KeyError, OSError, subprocess.SubprocessError) as error:
+        print(f"sandbox image: {error}", file=sys.stderr)
+        sys.exit(1)

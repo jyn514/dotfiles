@@ -84,8 +84,9 @@ it also prepends RootlessKit's DNS; duplicate entries do not grant extra access.
 
 ## Policy ownership
 
-The fixture extracts the launcher's literal `PROHIBITED_ROUTES` without executing
-launcher code. The launcher remains the single CIDR authority until migration.
+The launcher and fixture use [network_policy.py](../network_policy.py) as the
+single CIDR authority. Provisioning snapshots its serialized policy; ordinary
+runtime startup verifies installed files rather than executing checkout policy.
 Trusted installation copies the candidate plugin into `/usr/local/libexec/cni`
 and the versioned policy into `/usr/local/share/codex-sandbox`; neither path is
 mounted into workloads. The generated CNI configuration records the policy's

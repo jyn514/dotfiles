@@ -29,19 +29,16 @@ import threading
 import time
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sandbox_runtime import Podman
+
+OUTER_RUNTIME = Podman()
+
 
 DOTFILES = Path(__file__).resolve().parents[2]
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
-SANDBOX_SUBNET = "10.254.254.0/24"
-SANDBOX_GATEWAY = "10.254.254.1"
-SANDBOX_IP_RANGE = "10.254.254.128/25"
-PROHIBITED_ROUTES = (
-    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
-    "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24",
-    "192.168.0.0/16", "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
-)
 
 
 class LauncherError(Exception):
@@ -119,6 +116,8 @@ def run(
     cwd: Path | None = None, quiet: bool = False, discard_stdout: bool = False,
     stdout_to_stderr: bool = False, input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    if arguments[:1] == ["docker"]:
+        arguments = OUTER_RUNTIME.argv(arguments[1:], cwd=cwd)
     stdout = None
     if capture:
         stdout = subprocess.PIPE
@@ -451,20 +450,10 @@ def ensure_image(state: State, base_image: str) -> str:
 
 
 def ensure_network() -> None:
-    if run(["docker", "network", "exists", SANDBOX_NETWORK], check=False, quiet=True).returncode == 0:
-        return
-    print("Creating sandbox network ...", end="", flush=True)
-    arguments = [
-        "docker", "network", "create", "--ignore", "--subnet", SANDBOX_SUBNET,
-        "--gateway", SANDBOX_GATEWAY, "--ip-range", SANDBOX_IP_RANGE,
-        "--opt", "isolate=true",
-    ]
-    for route in PROHIBITED_ROUTES:
-        arguments += ["--route", f"{route},prohibit"]
-    arguments.append(SANDBOX_NETWORK)
-    if run(arguments, check=False, discard_stdout=True).returncode:
-        raise LauncherError("Could not create the sandbox network")
-    print(" done.")
+    try:
+        OUTER_RUNTIME.ensure_public_network()
+    except subprocess.CalledProcessError as error:
+        raise LauncherError("Could not create the sandbox network") from error
 
 
 def acquire_lock(state: State) -> None:
@@ -1136,7 +1125,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             file=sys.stderr,
         )
     launch_started = time.monotonic()
-    state.agent_process = subprocess.Popen(command, env=agent_environment)
+    state.agent_process = OUTER_RUNTIME.popen(command[1:], env=agent_environment)
     try:
         return state.agent_process.wait()
     except SignalExit as error:

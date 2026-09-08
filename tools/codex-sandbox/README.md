@@ -12,11 +12,17 @@ The outer runtime still uses Podman. The opt-in [Lima network feasibility probe]
 tests container-level restrictions and an explicit DNS allowance in its own disposable VM.
 The separate [Lima host setup](lima/host-setup.md) provisions a dedicated VM and
 checks host shares; launcher selection remains gated on the later migration steps.
+The [runtime/image helper and disposable contracts](lima/runtime.md) exercise both
+stores without enabling Lima sessions. `dev/test --lima` includes the disposable
+Lima host, network, and runtime gate.
 
 - Run from a Git checkout. The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and a `docker`-compatible Podman/Docker CLI. Image builds require network access on first use.
 - Put this repository's `bin/` on `PATH`; `pi` delegates to `codex-sandbox`.
-- Provide `~/.codex/config.toml`. Export `GH_TOKEN` when the agent needs GitHub access.
+- Provide `~/.codex/config.toml`. The launcher injects the Podman secret
+  `codex-github-token` as `GH_TOKEN`; exporting a host `GH_TOKEN` does not provision
+  that secret. Lima credential migration will retain it for rollback and use
+  Keychain persistence with a guest-memory cache for each VM boot.
 - Run inside tmux to use the injected host editor and tmux session restart support.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`. The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.

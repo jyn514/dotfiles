@@ -2,7 +2,6 @@
 """Provision and inspect the dedicated Lima sandbox host; never select a launcher backend."""
 
 import argparse
-import ast
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -21,6 +20,8 @@ import uuid
 
 SOURCE = Path(__file__).resolve().parent
 GUEST = "/usr/local/share/codex-sandbox"
+sys.path.insert(0, str(SOURCE.parent))
+from network_policy import policy_bytes
 
 
 def command(*args, **kwargs):
@@ -63,19 +64,6 @@ def shares(read, write):
                     raise ValueError(f"overlapping shares: {path} and {other}")
             result.append({"location": str(path), "mountPoint": str(path), "writable": writable})
     return sorted(result, key=lambda item: item["location"])
-
-
-def policy_bytes():
-    # Preserve the current launcher's CIDR authority until both providers use
-    # the shared policy owner. Setup snapshots it; startup never imports it.
-    tree = ast.parse((SOURCE.parent / "codex-sandbox").read_text())
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and
-                target.id == "PROHIBITED_ROUTES" for target in node.targets):
-            network = json.loads((SOURCE / "rootless-network.json").read_text())
-            return json.dumps({"version": 2, "ipv6": "disabled", "dns": network["dns"],
-                               "prohibited": ast.literal_eval(node.value)}).encode()
-    raise ValueError("launcher policy owner moved; update setup explicitly")
 
 
 def bind_source(record, raw, writable=False):

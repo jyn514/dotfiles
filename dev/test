@@ -3,15 +3,17 @@ set -eu
 
 jobs=${TEST_JOBS:-8}
 run_containers=0
+run_lima=0
 verbose=0
 
 usage() {
-	echo "usage: $0 [--containers] [--jobs count] [--verbose]" >&2
+	echo "usage: $0 [--containers] [--lima] [--jobs count] [--verbose]" >&2
 }
 
 while [ $# -gt 0 ]; do
 	case $1 in
 		--containers) run_containers=1;;
+		--lima) run_lima=1;;
 		-v|--verbose) verbose=1;;
 		--jobs)
 			shift
@@ -127,6 +129,11 @@ if [ "$run_containers" = 1 ]; then
 	if [ "$failed" = 1 ]; then
 		exit 1
 	fi
+fi
+
+if [ "$run_lima" = 1 ]; then
+	printf 'Running disposable Lima host, network, and runtime integration...\n'
+	python3 tools/codex-sandbox/tests/lima_host_integration.py
 fi
 
 elapsed=$(($(date +%s) - started))

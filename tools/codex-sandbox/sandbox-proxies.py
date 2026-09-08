@@ -20,6 +20,11 @@ import threading
 import time
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sandbox_runtime import Podman
+
+OUTER_RUNTIME = Podman()
+
 
 class ConfigError(Exception):
     pass
@@ -460,8 +465,8 @@ def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
 
 
 def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *arguments], check=True, text=True,
+    return OUTER_RUNTIME.run(
+        list(arguments), check=True, text=True,
         stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
     )
 

@@ -135,11 +135,15 @@ def main():
             endpoint = f"http://host.lima.internal:{server.server_port}/{marker}"
             network.install_probe(instance, endpoint, expected_shares=record["shares"])
             setup.verify(record)
+            runtime_gate = [sys.executable, str(Path(__file__).with_name("runtime_integration.py")),
+                            "--provider", "lima", "--state", str(setup.state), "--base", IMAGE]
+            subprocess.run(runtime_gate, check=True, timeout=300)
             host.command("limactl", "stop", "--tty=false", instance)
             setup.start()
             setup.guest(record, "python3", network.GUEST_PROBE, endpoint)
             setup.verify(record)
-            print("Provisioning, live mounts, protected overlays, network policy, and reboot passed.", flush=True)
+            subprocess.run(runtime_gate, check=True, timeout=300)
+            print("Provisioning, live mounts, protected overlays, network policy, runtime contracts, and reboot passed.", flush=True)
         finally:
             # This command owns only the randomly named fixture, including a
             # VM left behind by incomplete setup. It never selects a shared VM.

@@ -73,6 +73,8 @@ The integration test creates its own named VM and temporary host sources. It
 checks real SIGTERM recovery, interrupted readiness publication, idempotent setup,
 live edits, paths with spaces, a writable checkout beneath
 a read-only parent, protected metadata, hidden overlays, the network fixture,
-and reboot. It deletes its owned VM on exit. Credential migration, actual
+and reboot. It also runs the [runtime contracts](runtime.md) before and after
+reboot, including local base images and host SIGTERM cleanup.
+It deletes its owned VM on exit. Credential migration, actual
 linked-worktree sessions, runtime selection, and the default switch remain later
 gates.

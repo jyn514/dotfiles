@@ -2,7 +2,6 @@
 """Opt-in network feasibility probe; never starts a real sandbox session."""
 
 import argparse
-import ast
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -14,27 +13,14 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from network_policy import policy_bytes as launcher_policy
 GUEST_PROBE = "/usr/local/share/codex-sandbox/fixture/probe.py"
 
 
 def command(*args, **kwargs):
     print("+ " + repr(args), file=sys.stderr, flush=True)
     return subprocess.run(args, check=True, timeout=900, **kwargs)
-
-
-def launcher_policy():
-    # Until cutover, the launcher remains the sole CIDR authority. Parse the
-    # literal without importing launcher code or copying its policy constants.
-    tree = ast.parse((ROOT / "codex-sandbox").read_text())
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == "PROHIBITED_ROUTES"
-            for target in node.targets
-        ):
-            network = json.loads((ROOT / "lima/rootless-network.json").read_text())
-            return json.dumps({"version": 2, "ipv6": "disabled", "dns": network["dns"],
-                               "prohibited": ast.literal_eval(node.value)}).encode()
-    raise ValueError("launcher policy owner moved; update the fixture explicitly")
 
 
 def install_probe(instance, endpoint, *, expected_shares=None):
