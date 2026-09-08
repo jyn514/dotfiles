@@ -166,6 +166,41 @@ class HostTests(unittest.TestCase):
                     instance.start()
                 command.assert_not_called()
 
+    def test_pending_startup_recovers_a_host_agent_without_its_socket(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            instance = host.Host(Path(temporary))
+            def interrupted(*args, **kwargs):
+                if args[1] == "create":
+                    raise OSError("creation interrupted")
+            with patch.object(host, "machines", return_value={}), \
+                    patch.object(host, "command", side_effect=interrupted):
+                with self.assertRaises(OSError):
+                    instance.setup("sandbox-host", [], [])
+            record = instance.record()
+            record["phase"] = "installing"
+            host.atomic_json(instance.record_path, record)
+            stopped = False
+            def recover(*args, **kwargs):
+                nonlocal stopped
+                if args[1] == "stop":
+                    stopped = True
+                elif args[1] == "start":
+                    if not stopped:
+                        raise ValueError("missing host-agent socket")
+                    raise InterruptedError("startup reached after stale-agent cleanup")
+            with patch.object(host, "machines", return_value={"sandbox-host": {}}), \
+                    patch.object(instance, "machine", return_value={"config": {}}), \
+                    patch.object(host, "command", side_effect=recover):
+                with self.assertRaisesRegex(InterruptedError, "startup reached"):
+                    instance.setup("sandbox-host", [], [])
+            self.assertEqual(record["generation"], instance.record()["generation"])
+            with patch.object(host, "machines", return_value={"sandbox-host": {}}), \
+                    patch.object(instance, "machine", side_effect=ValueError("replacement VM")), \
+                    patch.object(host, "command") as command:
+                with self.assertRaisesRegex(ValueError, "replacement VM"):
+                    instance.setup("sandbox-host", [], [])
+                command.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

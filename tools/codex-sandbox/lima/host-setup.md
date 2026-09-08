@@ -54,8 +54,11 @@ this shared VM. A stopped VM's `status` reports configuration identity but canno
 check guest state until it starts.
 
 After interrupted setup, rerun the original `setup` command with the same shares.
-The pending record retains the generation and source snapshot. If the VM was
-deleted after installation began, setup refuses to create a replacement under
+The pending record retains the generation and source snapshot. For an interrupted
+installation, setup force-stops the identity-checked, unpublished VM before
+restarting it. This repairs Lima's possible host-agent PID
+without a socket; ready shared VMs do not take this recovery path.
+If the VM was deleted after installation began, setup refuses to create a replacement under
 that identity. Retain the record for recovery and use a new state directory and
 instance name. No operation deletes other Lima instances or Podman resources.
 

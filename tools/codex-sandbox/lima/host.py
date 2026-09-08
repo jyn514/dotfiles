@@ -146,12 +146,14 @@ class Host:
                (Path(item["location"]).is_relative_to(self.state) and
                 not Path(item["location"]).is_relative_to(scratch)) for item in requested):
             raise ValueError("a share exposes the host control directory")
+        recovering_installation = False
         if self.record_path.exists():
             record = self.record()
             if record["instance"] != instance or record["shares"] != requested:
                 raise ValueError("existing setup has different shares or instance; use a separate state directory")
             if record["phase"] == "ready":
                 return self.start()
+            recovering_installation = record["phase"] == "installing"
         else:
             if instance in machines():
                 raise ValueError("refusing to adopt an existing VM without an ownership record")
@@ -191,6 +193,11 @@ class Host:
         record["config_digest"] = hashlib.sha256(json.dumps(machine["config"], sort_keys=True).encode()).hexdigest()
         record["phase"] = "installing"
         atomic_json(self.record_path, record)
+        if recovering_installation:
+            # SIGTERM can leave Lima's host-agent PID without its socket. This
+            # VM has never published readiness, so no session may depend on it.
+            # Stop only the identity-checked pending VM before retrying startup.
+            command("limactl", "stop", "--force", "--tty=false", instance)
         command("limactl", "start", "--tty=false", instance)
         machine = self.machine(record)
         record["vm_identity"] = hashlib.sha256((Path(machine["dir"]) / "vz-identifier").read_bytes()).hexdigest()
