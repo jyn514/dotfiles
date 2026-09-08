@@ -375,8 +375,7 @@ def publish_main(args: argparse.Namespace) -> int:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
-    for proxy in state.get("proxies", []):
-        validate_live_proxy(OUTER_RUNTIME, proxy, repository_identity(Path(args.repo)), proxy["name"])
+    validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []), repository_identity(Path(args.repo)))
     payload = {
         "version": 2,
         "repository": repository_identity(Path(args.repo)),
@@ -445,11 +444,10 @@ def cached_session_state(
         return None
     if not containers_running(containers):
         return None
-    for proxy in proxies:
-        try:
-            validate_live_proxy(OUTER_RUNTIME, proxy, repository_identity(repo), proxy["name"])
-        except (ValueError, ConfigError, subprocess.SubprocessError):
-            return None
+    try:
+        validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo))
+    except (ValueError, ConfigError, subprocess.SubprocessError):
+        return None
     return state
 
 
@@ -729,6 +727,15 @@ def stop_main(args: argparse.Namespace) -> int:
         if contents.strip():
             stop_state(json.loads(contents))
     return 0
+
+
+def validate_live_proxies(owner, proxies, repository):
+    # Bound SSH concurrency and join every inspection before publication or
+    # failure recovery can change the containers being inspected.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list(executor.map(
+            lambda proxy: validate_live_proxy(owner, proxy, repository, proxy["name"]), proxies,
+        ))
 
 
 def validate_live_proxy(owner, proxy, repository, command):

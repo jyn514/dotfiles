@@ -53,6 +53,9 @@ Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor; otherwise `VISUAL`,
 
 Host editor and Agent Podman relays start in the background, after their private networks are created. Pi reaches them by container DNS name; early use may report a connection error. Zulip also skips its readiness probe. Retry once the service is available. Authentication and repository-command proxies still require readiness checks.
 
+Shared proxy identity checks run two at a time during attach and publication.
+Every check finishes before metadata is published or failure recovery begins.
+
 Background relay failures are reported to stderr and leave Pi running. On exit, the launcher joins relay startup jobs before removing their containers and networks.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals. It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports. The runtime interval includes the whole session; use `CODEX_SANDBOX_TIMING=1 pi --help` for a bounded probe, not a measurement of interactive readiness.

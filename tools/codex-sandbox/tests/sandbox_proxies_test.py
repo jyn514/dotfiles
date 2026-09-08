@@ -10,7 +10,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -268,6 +271,61 @@ class ManifestTest(unittest.TestCase):
         ):
             self.assertEqual(0, sandbox_proxies.finalize_main(args))
         self.assertEqual([("publish", args), ("args", args)], calls)
+
+    def test_publication_checks_proxies_concurrently_before_writing_metadata(self) -> None:
+        state = self.repo / "state.json"
+        state.write_text(json.dumps({"proxies": [
+            {"name": name, "container": name, "image": "immutable"} for name in ("first", "second")]}))
+        manifest = self.repo / "manifest.json"
+        manifest.write_text('{"version":1,"commands":{}}')
+        args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
+                               container_repo=str(self.container_repo))
+        rendezvous = threading.Barrier(2)
+
+        def validate(*_args):
+            self.assertFalse((self.repo / "session.json").exists())
+            rendezvous.wait(timeout=2)
+
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo), \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy", side_effect=validate):
+            self.assertEqual(0, sandbox_proxies.publish_main(args))
+        metadata = json.loads((self.repo / "session.json").read_text())
+        self.assertEqual({"first", "second"}, set(metadata["commands"]))
+
+    def test_failed_publication_waits_for_other_checks_and_keeps_old_metadata(self) -> None:
+        state = self.repo / "state.json"
+        state.write_text(json.dumps({"proxies": [
+            {"name": name, "container": name, "image": "immutable"} for name in ("bad", "slow")]}))
+        manifest = self.repo / "manifest.json"
+        manifest.write_text('{"version":1,"commands":{}}')
+        published = self.repo / "session.json"
+        published.write_text("previous metadata")
+        args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
+                               container_repo=str(self.container_repo))
+        started, failed, release, finished = (threading.Event() for _ in range(4))
+
+        def validate(_owner, proxy, *_args):
+            if proxy["name"] == "bad":
+                self.assertTrue(started.wait(2))
+                failed.set()
+                raise sandbox_proxies.ConfigError("wrong identity")
+            started.set()
+            self.assertTrue(release.wait(2))
+            finished.set()
+
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo), \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy", side_effect=validate), \
+                ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(sandbox_proxies.publish_main, args)
+            try:
+                self.assertTrue(failed.wait(2))
+                self.assertFalse(future.done())
+            finally:
+                release.set()
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "wrong identity"):
+                future.result(timeout=2)
+        self.assertTrue(finished.is_set())
+        self.assertEqual("previous metadata", published.read_text())
 
     def test_local_router_accepts_option_separator(self) -> None:
         self.write({"example": self.command()})
