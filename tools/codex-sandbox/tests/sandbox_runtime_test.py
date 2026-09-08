@@ -130,6 +130,24 @@ class NetworkMembershipTest(unittest.TestCase):
 
 
 class TransportTest(unittest.TestCase):
+    def test_recorded_owner_rejects_replacement_vm_namespace_or_policy(self):
+        backend = lima()
+        backend.host.state = Path("/owned/state")
+        backend.record.update(generation="a" * 32, vm_identity="owned-vm", network_digest="owned-policy")
+        identity = runtime.runtime_identity(backend)
+        with patch.object(runtime, "Lima", return_value=backend):
+            self.assertIs(backend, runtime.recorded_runtime(identity))
+            for key in ("generation", "namespace", "network_digest", "vm_identity"):
+                with self.assertRaisesRegex(ValueError, "owner changed"):
+                    runtime.recorded_runtime({**identity, key: "replacement"})
+
+    def test_missing_runtime_identity_means_legacy_podman_not_current_default(self):
+        with patch.object(runtime, "Lima") as lima_factory:
+            self.assertEqual("podman", runtime.state_runtime({"proxies": []}).provider)
+            with self.assertRaisesRegex(ValueError, "unsupported recorded"):
+                runtime.state_runtime({"runtime": {"provider": "lima"}})
+            lima_factory.assert_not_called()
+
     def test_signal_during_creation_awaits_producer_before_removing_container(self):
         backend = runtime.Podman()
         image = runtime.Image(REFERENCE, CONTENT, CONFIG, LAYER)

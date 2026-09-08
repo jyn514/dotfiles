@@ -21,7 +21,7 @@ import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import Podman
+from sandbox_runtime import Podman, runtime_identity, state_runtime
 
 OUTER_RUNTIME = Podman()
 
@@ -359,18 +359,24 @@ def reset_main(args: argparse.Namespace) -> int:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             metadata = None
-        metadata_path.unlink(missing_ok=True)
         if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
-            stop_state(metadata["state"])
+            stop_state(session_state(metadata))
+        metadata_path.unlink(missing_ok=True)
     return 0
 
 
 def publish_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    owner = runtime_identity(OUTER_RUNTIME)
+    if state.get("runtime", {"provider": "podman"}) != owner:
+        raise ConfigError("cannot publish shared state owned by another runtime")
+    state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
+    for proxy in state.get("proxies", []):
+        validate_live_proxy(OUTER_RUNTIME, proxy, repository_identity(Path(args.repo)), proxy["name"])
     payload = {
-        "version": 1,
+        "version": 2,
         "repository": repository_identity(Path(args.repo)),
         "container_repository": str(container_repository(args.container_repo)),
         "commands": {},
@@ -383,11 +389,23 @@ def publish_main(args: argparse.Namespace) -> int:
     return 0
 
 
+def session_state(metadata):
+    if metadata.get("version") not in (1, 2) or not isinstance(metadata.get("state"), dict):
+        raise ConfigError("unsupported shared-session schema; retain metadata for explicit recovery")
+    state = metadata["state"]
+    if metadata["version"] == 1:
+        if "runtime" in state and state["runtime"] != {"provider": "podman"}:
+            raise ConfigError("legacy session state cannot name a Lima owner")
+    elif "runtime" not in state:
+        raise ConfigError("shared-session metadata is missing its runtime owner")
+    return state
+
+
 def containers_running(containers: list[str]) -> bool:
     if not containers:
         return True
     inspection = subprocess.run(
-        ["docker", "inspect", "--format", "{{.State.Running}}", *containers],
+        OUTER_RUNTIME.argv(["inspect", "--format", "{{.State.Running}}", *containers]),
         check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )
     return inspection.returncode == 0 and inspection.stdout.splitlines() == ["true"] * len(containers)
@@ -396,13 +414,15 @@ def containers_running(containers: list[str]) -> bool:
 def cached_session_state(
     args: argparse.Namespace, repo: Path, metadata: Any, manifest: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if not isinstance(metadata, dict) or metadata.get("version") != 1:
+    if not isinstance(metadata, dict) or metadata.get("version") not in (1, 2):
         return None
     if metadata.get("repository") != repository_identity(repo):
         return None
     if metadata.get("container_repository") != str(container_repository(args.container_repo)):
         return None
-    state = metadata.get("state")
+    state = session_state(metadata)
+    if state.get("runtime", {"provider": "podman"}) != runtime_identity(OUTER_RUNTIME):
+        return None
     cached_manifest = metadata.get("manifest")
     if not isinstance(state, dict) or not isinstance(state.get("proxies"), list):
         return None
@@ -423,6 +443,11 @@ def cached_session_state(
         return None
     if not containers_running(containers):
         return None
+    for proxy in proxies:
+        try:
+            validate_live_proxy(OUTER_RUNTIME, proxy, repository_identity(repo), proxy["name"])
+        except (ValueError, ConfigError, subprocess.SubprocessError):
+            return None
     return state
 
 
@@ -443,7 +468,7 @@ def attach_main(args: argparse.Namespace) -> int:
     if shared:
         raise ConfigError("active proxy session changed or is unavailable; restart after active sandboxes exit")
     if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
-        stop_state(metadata["state"])
+        stop_state(session_state(metadata))
     metadata_path.unlink(missing_ok=True)
     start_main(args)
     return 0
@@ -612,7 +637,7 @@ def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
     images = resolve_images(repo, manifest)
-    state: dict[str, Any] = {"proxies": []}
+    state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
     state_lock = threading.Lock()
@@ -633,6 +658,7 @@ def start_main(args: argparse.Namespace) -> int:
 
 
 def stop_state(state: dict[str, Any]) -> None:
+    owner = state_runtime(state)
     started = time.monotonic()
     containers = []
     auth = state.get("auth")
@@ -644,7 +670,7 @@ def stop_state(state: dict[str, Any]) -> None:
     containers.extend(proxy["container"] for proxy in proxies)
 
     def discard(arguments: list[str]) -> None:
-        subprocess.run(arguments, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        owner.run(arguments[1:], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Podman's forced removal waits for the container stop timeout. Send SIGKILL
     # explicitly, then remove independent containers concurrently.
@@ -652,12 +678,22 @@ def stop_state(state: dict[str, Any]) -> None:
         list(executor.map(lambda container: discard(["docker", "kill", container]), containers))
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         list(executor.map(lambda container: discard(["docker", "rm", container]), containers))
+    if containers:
+        remaining = owner.run(["container", "ls", "--all", "--format", "{{.Names}}"],
+                              capture_output=True).stdout.splitlines()
+        if set(containers).intersection(remaining):
+            raise ConfigError("recorded containers remain after cleanup; retaining recovery metadata")
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
     volumes_started = time.monotonic()
     volumes = set(proxy["volume"] for proxy in proxies)
     with ThreadPoolExecutor(max_workers=max(1, len(volumes))) as executor:
         list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
+    if volumes:
+        remaining = owner.run(["volume", "ls", "--format", "{{.Name}}"],
+                              capture_output=True).stdout.splitlines()
+        if volumes.intersection(remaining):
+            raise ConfigError("recorded volumes remain after cleanup; retaining recovery metadata")
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
 
@@ -669,6 +705,18 @@ def stop_main(args: argparse.Namespace) -> int:
         if contents.strip():
             stop_state(json.loads(contents))
     return 0
+
+
+def validate_live_proxy(owner, proxy, repository, command):
+    labels = owner.run(["inspect", "--format",
+        "{{index .Config.Labels \"dev.codex.sandbox-proxy\"}} "
+        "{{index .Config.Labels \"dev.codex.repository\"}} {{index .Config.Labels \"dev.codex.command\"}}",
+        proxy["container"]], capture_output=True).stdout.strip().split()
+    if labels != ["true", repository, command]:
+        raise ConfigError("active proxy container failed command or repository identity validation")
+    image = owner.inspect_image(proxy["image"])
+    if not owner.container_matches_image(proxy["container"], image):
+        raise ConfigError("active proxy container failed native image identity validation")
 
 
 def route_main(args: argparse.Namespace) -> int:
@@ -688,7 +736,6 @@ def route_main(args: argparse.Namespace) -> int:
             manifest = load_manifest(repo)
             if args.command not in manifest["commands"] and args.command != "zulip":
                 raise ConfigError(f"unknown proxy command: {args.command}")
-            (runtime / "session.json").unlink(missing_ok=True)
             return subprocess.run(local).returncode
         finally:
             lock.close()
@@ -710,7 +757,6 @@ def route_main(args: argparse.Namespace) -> int:
                     manifest = load_manifest(repo)
                     if args.command not in manifest["commands"] and args.command != "zulip":
                         raise ConfigError(f"unknown proxy command: {args.command}")
-                    metadata_path.unlink(missing_ok=True)
                     return subprocess.run(local).returncode
                 finally:
                     lock.close()
@@ -725,16 +771,10 @@ def route_main(args: argparse.Namespace) -> int:
         if args.command == "zulip":
             return subprocess.run(local).returncode
         raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
-    inspection = _docker(
-        "inspect", "--format",
-        "{{.Config.Image}} {{index .Config.Labels \"dev.codex.sandbox-proxy\"}} "
-        "{{index .Config.Labels \"dev.codex.repository\"}} {{index .Config.Labels \"dev.codex.command\"}}",
-        proxy["container"], capture=True,
-    ).stdout.strip().split()
-    if inspection != [proxy["image"], "true", identity, args.command]:
-        raise ConfigError("active proxy container failed identity validation")
+    owner = state_runtime(session_state(metadata))
+    validate_live_proxy(owner, proxy, identity, args.command)
     return subprocess.run(
-        ["docker", "exec", "--interactive", proxy["container"], "/trusted/bin/sandbox-proxy-forward"]
+        owner.argv(["exec", "--interactive", proxy["container"], "/trusted/bin/sandbox-proxy-forward"])
     ).returncode
 
 
@@ -834,10 +874,11 @@ def snapshot_main(args: argparse.Namespace) -> int:
 
 def monitor_main(args: argparse.Namespace) -> int:
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    owner = state_runtime(state)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         result = subprocess.run(
-            ["docker", "inspect", "--format", "{{.State.Running}}", args.agent],
+            owner.argv(["inspect", "--format", "{{.State.Running}}", args.agent]),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         if result.returncode == 0 and result.stdout.strip() == "true":
@@ -857,7 +898,7 @@ def monitor_main(args: argparse.Namespace) -> int:
     try:
         for name, container in containers:
             process = subprocess.Popen(
-                ["docker", "wait", container], text=True,
+                owner.argv(["wait", container]), text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             )
             assert process.stdout is not None
@@ -870,7 +911,7 @@ def monitor_main(args: argparse.Namespace) -> int:
         name = next(iter(names))
         print(f"sandbox proxies: proxy {name} stopped; terminating sandbox", file=sys.stderr)
         subprocess.run(
-            ["docker", "rm", "--force", args.agent],
+            owner.argv(["rm", "--force", args.agent]),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         return 1
@@ -970,7 +1011,7 @@ def main(arguments: list[str] | None = None) -> int:
     try:
         args = parse_args(arguments)
         return args.function(args)
-    except (ConfigError, OSError, subprocess.SubprocessError) as error:
+    except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"sandbox proxies: {error}", file=sys.stderr)
         return 1
 

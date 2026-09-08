@@ -385,3 +385,33 @@ def image_runtime(provider, state=None):
     if provider == "lima":
         return Lima(state or Path.home() / ".local/state/codex-sandbox-lima")
     raise RuntimeError(f"unknown outer runtime: {provider}")
+
+
+def runtime_identity(runtime):
+    if runtime.provider == "podman":
+        return {"provider": "podman"}
+    record = runtime.record
+    return {"provider": "lima", "state": str(runtime.host.state),
+            **{key: record[key] for key in (
+                "instance", "generation", "namespace", "vm_identity", "network_digest")}}
+
+
+def recorded_runtime(identity):
+    if identity == {"provider": "podman"}:
+        return Podman()
+    fields = {"provider", "state", "instance", "generation", "namespace", "vm_identity", "network_digest"}
+    if (not isinstance(identity, dict) or set(identity) != fields or
+            identity.get("provider") != "lima" or
+            not all(isinstance(value, str) and value for value in identity.values()) or
+            not Path(identity["state"]).is_absolute()):
+        raise RuntimeError("unsupported recorded runtime; retain session state for explicit recovery")
+    runtime = Lima(Path(identity["state"]))
+    if runtime_identity(runtime) != identity:
+        raise RuntimeError("recorded Lima owner changed; refusing to touch another VM generation or policy")
+    return runtime
+
+
+def state_runtime(state):
+    # Legacy shared-state files were exclusively Podman. Never reinterpret
+    # absence as the current default, which can change after publication.
+    return recorded_runtime(state.get("runtime", {"provider": "podman"}))

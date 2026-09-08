@@ -278,7 +278,7 @@ class ManifestTest(unittest.TestCase):
             "local": ["--", "/bin/sh", "-c", "exit 7"],
         })
         self.assertEqual(7, sandbox_proxies.route_main(args))
-        self.assertFalse(stale.exists())
+        self.assertTrue(stale.exists(), "local fallback must preserve the recovery record")
 
     def test_local_router_accepts_trusted_zulip_without_repository_manifest(self) -> None:
         self.write()
@@ -548,6 +548,7 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
                 mock.patch.object(sandbox_proxies, "resolve_images") as resolve, \
+                mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
                 mock.patch.object(sandbox_proxies, "containers_running", return_value=True):
             self.assertEqual(0, sandbox_proxies.attach_main(args))
         start.assert_not_called()
@@ -555,6 +556,111 @@ class ManifestTest(unittest.TestCase):
         resolve.assert_not_called()
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
+
+    def test_new_schema_requires_an_explicit_owner_and_legacy_is_podman(self) -> None:
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing its runtime"):
+            sandbox_proxies.session_state({"version": 2, "state": {"proxies": []}})
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "legacy"):
+            sandbox_proxies.session_state({"version": 1, "state": {"runtime": {"provider": "lima"}}})
+
+    def test_reset_retains_recovery_metadata_when_recorded_vm_is_unavailable(self) -> None:
+        self.write()
+        metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
+        contents = json.dumps({"version": 2, "state": {"runtime": {"provider": "lima"}, "proxies": []}})
+        metadata.write_text(contents)
+        with mock.patch.object(sandbox_proxies, "state_runtime", side_effect=ValueError("missing VM")):
+            with self.assertRaisesRegex(ValueError, "missing VM"):
+                sandbox_proxies.reset_main(type("Args", (), {"repo": str(self.repo)}))
+        self.assertEqual(contents, metadata.read_text())
+
+    def test_proxy_cleanup_uses_recorded_owner_when_default_changes(self) -> None:
+        state = {"runtime": {"provider": "podman"}, "proxies": [
+            {"container": "owned-container", "volume": "owned-volume"}]}
+        owner = mock.Mock()
+        owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="")
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME") as current, \
+                mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner) as recorded:
+            sandbox_proxies.stop_state(state)
+        recorded.assert_called_once_with(state)
+        current.run.assert_not_called()
+        self.assertIn(["volume", "rm", "owned-volume"], [call.args[0] for call in owner.run.call_args_list])
+
+    def test_reset_keeps_metadata_when_engine_reports_surviving_resources(self) -> None:
+        self.write()
+        metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
+        state = {"runtime": {"provider": "podman"}, "proxies": [{"container": "survivor", "volume": "owned-volume"}]}
+        contents = json.dumps({"version": 2, "state": state})
+        metadata.write_text(contents)
+        owner = mock.Mock()
+        owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="survivor\n")
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "remain after cleanup"):
+                sandbox_proxies.reset_main(type("Args", (), {"repo": str(self.repo)}))
+        self.assertEqual(contents, metadata.read_text())
+
+    def test_local_fallback_preserves_stale_session_recovery_record(self) -> None:
+        self.write({"example": self.command()})
+        metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
+        contents = json.dumps({"version": 2, "state": {"runtime": {"provider": "lima"}}})
+        metadata.write_text(contents)
+        args = type("Args", (), {"repo": str(self.repo), "command": "example", "local": ["local"]})
+        repository = sandbox_proxies.repository_identity(self.repo)
+        manifest = sandbox_proxies.load_manifest(self.repo)
+        with mock.patch.object(sandbox_proxies, "repository_identity", return_value=repository), \
+                mock.patch.object(sandbox_proxies, "load_manifest", return_value=manifest), \
+                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=subprocess.CompletedProcess([], 7)):
+            self.assertEqual(7, sandbox_proxies.route_main(args))
+        self.assertEqual(contents, metadata.read_text())
+
+    def test_matching_repository_cannot_reuse_another_provider(self) -> None:
+        self.write()
+        manifest = sandbox_proxies.load_manifest(self.repo)
+        metadata = {"version": 2, "repository": sandbox_proxies.repository_identity(self.repo),
+                    "container_repository": str(self.container_repo),
+                    "manifest": sandbox_proxies.serializable_manifest(manifest),
+                    "state": {"runtime": {"provider": "podman"}, "proxies": []}}
+        args = type("Args", (), {"container_repo": str(self.container_repo)})
+        with mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "lima"}), \
+                mock.patch.object(sandbox_proxies, "containers_running") as running:
+            self.assertIsNone(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest))
+        running.assert_not_called()
+
+    def test_route_uses_published_owner_despite_different_current_default(self) -> None:
+        self.write()
+        directory = sandbox_proxies.runtime_directory(self.repo)
+        state = {"runtime": {"provider": "podman"}, "proxies": []}
+        (directory / "session.json").write_text(json.dumps({
+            "version": 2, "repository": sandbox_proxies.repository_identity(self.repo),
+            "state": state, "commands": {"example": {"container": "owned", "image": "immutable"}}}))
+        owner = mock.Mock()
+        repository = sandbox_proxies.repository_identity(self.repo)
+        owner.argv.return_value = ["recorded-engine", "exec", "owned"]
+        args = type("Args", (), {"repo": str(self.repo), "command": "example", "wait": 1, "local": ["local"]})
+        with (directory / "session.lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH)
+            with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME") as current, \
+                    mock.patch.object(sandbox_proxies, "repository_identity", return_value=repository), \
+                    mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner) as recorded, \
+                    mock.patch.object(sandbox_proxies, "validate_live_proxy") as validate, \
+                    mock.patch.object(sandbox_proxies.subprocess, "run", return_value=subprocess.CompletedProcess([], 7)) as run:
+                self.assertEqual(7, sandbox_proxies.route_main(args))
+        recorded.assert_called_once_with(state)
+        self.assertIs(owner, validate.call_args.args[0])
+        current.argv.assert_not_called()
+        self.assertEqual(["recorded-engine", "exec", "owned"], run.call_args.args[0])
+
+    def test_live_identity_requires_native_image_as_well_as_labels(self) -> None:
+        owner = mock.Mock()
+        owner.run.return_value.stdout = "true repository example\n"
+        owner.container_matches_image.return_value = False
+        proxy = {"container": "owned", "image": "immutable"}
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "native image"):
+            sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
+        owner.container_matches_image.return_value = True
+        sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
+        owner.run.return_value.stdout = "true another-repository example\n"
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "repository identity"):
+            sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
 
     def test_exclusive_session_rebuilds_changed_cached_proxies(self) -> None:
         self.write({"example": self.command()})
@@ -677,7 +783,9 @@ class ManifestTest(unittest.TestCase):
             ["docker", "rm", "auth-proxy"],
             ["docker", "rm", "proxy"],
         ], calls[2:4])
-        self.assertEqual([["docker", "volume", "rm", "volume"]], calls[4:])
+        self.assertEqual(["docker", "container", "ls", "--all", "--format", "{{.Names}}"], calls[4])
+        self.assertEqual(["docker", "volume", "rm", "volume"], calls[5])
+        self.assertEqual(["docker", "volume", "ls", "--format", "{{.Name}}"], calls[6])
 
     def test_image_resolution_normalizes_bare_sha256_hash(self) -> None:
         digest = "0" * 64

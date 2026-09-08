@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import lima_network_integration as network
 import credential_integration as credentials
+import session_owner_integration as sessions
 
 
 spec = importlib.util.spec_from_file_location("lima_host", network.ROOT / "lima/host.py")
@@ -140,10 +141,12 @@ def main():
                             "--provider", "lima", "--state", str(setup.state), "--base", IMAGE]
             subprocess.run(runtime_gate, check=True, timeout=300)
             previous_credential = credentials.exercise(setup.state, IMAGE)
+            sessions.exercise(credentials.Lima(setup.state), IMAGE)
             host.command("limactl", "stop", "--tty=false", instance)
             setup.start()
             credentials.reject_previous_boot(setup.state, previous_credential)
             credentials.exercise(setup.state, IMAGE)
+            sessions.exercise(credentials.Lima(setup.state), IMAGE)
             setup.guest(record, "python3", network.GUEST_PROBE, endpoint)
             setup.verify(record)
             subprocess.run(runtime_gate, check=True, timeout=300)

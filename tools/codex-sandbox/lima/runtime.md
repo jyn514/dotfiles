@@ -72,3 +72,25 @@ unrelated `--containers` suites on their existing runtime.
 These tests do not establish full-session equivalence: PTY/Ctrl-C behavior,
 launcher build interruption, VM loss during a session, shared-service reuse,
 credentials, host editor, and Agent Podman relays remain later gates.
+
+## Shared-session ownership
+
+New publications use session schema 2 and record the outer runtime in shared
+state. Lima ownership includes the host-state locator, instance, generation,
+hardware identity, namespace, and network digest. Schema 1 is explicitly Podman;
+schema 2 without an owner is rejected.
+
+The repository coordination lock remains shared across providers. A launcher
+cannot reuse another runtime's session. Routing, monitoring, and cleanup resolve
+the recorded owner, regardless of the current default; a missing or changed Lima
+owner stops recovery without discarding its metadata. Reset removes metadata only
+after successful engine listings confirm the recorded containers and volumes are
+absent. Local command fallback preserves stale records for the next recovery.
+
+Proxy publication, reuse, and command routing verify repository/command labels
+and native image identity. Displayed image names alone do not establish identity.
+This ownership preparation does not enable Lima launches or change image builders.
+
+`tests/session_owner_integration.py --provider podman --base alpine:3.22` checks
+native proxy identity and recorded-owner cleanup using owned resources. The
+disposable Lima host gate runs the same checks before and after reboot.
