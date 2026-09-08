@@ -177,7 +177,9 @@ class ImageIdentityTest(unittest.TestCase):
     def test_rejects_image_changed_during_registration(self):
         backend = lima()
         image = runtime.Image("example:mutable", CONTENT, CONFIG, LAYER)
-        backend.inspect_image = Mock(side_effect=[image, replace(image, config="sha256:" + "4" * 64)])
+        backend.inspect_image = Mock(side_effect=[image,
+            subprocess.CalledProcessError(1, ["inspect", "missing"]),
+            replace(image, config="sha256:" + "4" * 64)])
         backend.register_reference = Mock()
         with self.assertRaisesRegex(runtime.RuntimeError, "changed during"):
             backend.resolve_image(image.reference)
@@ -186,10 +188,61 @@ class ImageIdentityTest(unittest.TestCase):
     def test_local_from_alias_must_match_registered_descriptor(self):
         backend = lima()
         image = runtime.Image("example:mutable", CONTENT, CONFIG, LAYER)
-        backend.inspect_image = Mock(side_effect=[image, image, image, replace(image, content="sha256:" + "4" * 64)])
+        backend.inspect_image = Mock(side_effect=[image,
+            subprocess.CalledProcessError(1, ["inspect", "missing"]),
+            image, image, replace(image, content="sha256:" + "4" * 64)])
         backend.register_reference = Mock()
         with self.assertRaisesRegex(runtime.RuntimeError, "local FROM"):
             backend.resolve_image(image.reference)
+
+    def test_cached_image_resolution_does_not_republish_verified_names(self):
+        backend = lima()
+        tag = "localhost/codex-sandbox:sha256-" + CONTENT.removeprefix("sha256:")
+        immutable = tag + "@" + CONTENT
+        images = {name: runtime.Image(name, CONTENT, CONFIG, LAYER)
+                  for name in ("example:mutable", immutable, tag)}
+        backend.inspect_image = Mock(side_effect=images.__getitem__)
+        backend.register_reference = Mock(side_effect=AssertionError("cache hit must not publish"))
+        self.assertEqual(images[immutable], backend.resolve_image("example:mutable"))
+        self.assertEqual(set(images), {call.args[0] for call in backend.inspect_image.call_args_list})
+        backend.host.guest.assert_not_called()
+
+    def test_cached_names_cannot_hide_different_image_identity(self):
+        tag = "localhost/codex-sandbox:sha256-" + CONTENT.removeprefix("sha256:")
+        immutable = tag + "@" + CONTENT
+        for alias in (immutable, tag):
+            for field in ("content", "config", "rootfs"):
+                with self.subTest(alias=alias, field=field):
+                    backend = lima()
+                    images = {name: runtime.Image(name, CONTENT, CONFIG, LAYER)
+                              for name in ("example:mutable", immutable, tag)}
+                    images[alias] = replace(images[alias], **{field: "sha256:" + "4" * 64})
+                    backend.inspect_image = Mock(side_effect=images.__getitem__)
+                    backend.register_reference = Mock(side_effect=AssertionError("must not repair a collision"))
+                    with self.assertRaisesRegex(runtime.RuntimeError, "registration differs"):
+                        backend.resolve_image("example:mutable")
+
+    def test_missing_from_tag_is_published_without_replacing_canonical_image(self):
+        backend = lima()
+        tag = "localhost/codex-sandbox:sha256-" + CONTENT.removeprefix("sha256:")
+        immutable = tag + "@" + CONTENT
+        canonical = runtime.Image(immutable, CONTENT, CONFIG, LAYER)
+        images = {"example:mutable": replace(canonical, reference="example:mutable"),
+                  immutable: canonical}
+
+        def inspect(name):
+            if name not in images:
+                raise subprocess.CalledProcessError(1, ["inspect", name])
+            return images[name]
+
+        def register(source, target):
+            images.setdefault(target, replace(images[source], reference=target))
+
+        backend.inspect_image = inspect
+        backend.register_reference = register
+        self.assertEqual(canonical, backend.resolve_image("example:mutable"))
+        self.assertIs(canonical, images[immutable])
+        self.assertEqual(replace(canonical, reference=tag), images[tag])
 
     def test_same_rootfs_does_not_make_a_mutable_tag_an_immutable_identity(self):
         backend = lima()

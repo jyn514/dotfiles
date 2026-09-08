@@ -357,6 +357,18 @@ class Lima(Podman):
         image = self.inspect_image(reference)
         local_tag = "localhost/codex-sandbox:sha256-" + image.content.removeprefix("sha256:")
         immutable = local_tag + "@" + image.content
+        expected = (image.content, image.config, image.rootfs)
+        # Warm launches need both registered names, but no new publication.
+        # Check full native identity: a matching name alone is not authority.
+        for alias in (immutable, local_tag):
+            try:
+                existing = self.inspect_image(alias)
+            except subprocess.CalledProcessError:
+                break
+            if (existing.content, existing.config, existing.rootfs) != expected:
+                raise RuntimeError("existing image registration differs from image")
+        else:
+            return Image(immutable, *expected)
         # A computed digest reference is not necessarily registered in containerd.
         # Tag locally, then verify the registration before it can reach run/FROM.
         # BuildKit 0.31 resolves canonical references through their tagged name,
@@ -368,7 +380,6 @@ class Lima(Podman):
             # publication. Never overwrite a canonical name another session uses.
             self.register_reference(image.reference, staging)
             staged = self.inspect_image(staging)
-            expected = (image.content, image.config, image.rootfs)
             if (staged.content, staged.config, staged.rootfs) != expected:
                 raise RuntimeError("image changed during immutable-reference registration")
             self.register_reference(staging, immutable)

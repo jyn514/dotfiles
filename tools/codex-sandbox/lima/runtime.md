@@ -53,10 +53,13 @@ manifest or index digest. These values are provider-specific; do not pass a
 Podman configuration ID to nerdctl or assume a reference belongs to both stores.
 
 BuildKit 0.31.2 resolves a canonical `FROM` through its tag before checking the
-digest. The helper snapshots the source under a private registration, verifies it,
+digest. When the canonical reference and its tag already exist, the helper checks
+their native content, config, and root filesystem identities and reuses them
+without writing tags.
+Otherwise it snapshots the source under a private registration, verifies it,
 and publishes canonical and content-derived tag registrations without overwriting
-existing names. A bare registered `repo@digest` runs locally but
-can still trigger a registry request in `FROM`. The returned reference supports
+existing names. Conflicting identities are errors. A bare registered `repo@digest`
+runs locally but can still trigger a registry request in `FROM`. The returned reference supports
 both uses, and workload execution specifies `--pull=never`.
 
 ## Runtime contract tests
