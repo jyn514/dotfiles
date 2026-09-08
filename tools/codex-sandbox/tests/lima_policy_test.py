@@ -109,6 +109,26 @@ class PolicyFailureTests(unittest.TestCase):
 
 
 class NetworkPinTests(unittest.TestCase):
+    def test_matching_pin_does_not_restart_a_live_daemon(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dropin = root / ".config/systemd/user/containerd.service.d/sandbox-dns.conf"
+            dropin.parent.mkdir(parents=True)
+            dropin.write_text('[Service]\nEnvironment="CONTAINERD_ROOTLESS_ROOTLESSKIT_FLAGS=--cidr=10.0.2.0/24"\n')
+            before = ["rootlesskit", "--net=slirp4netns", "--disable-host-loopback",
+                      "--state-dir=/run/owned", "--cidr=10.0.2.0/24"]
+            def run(*args):
+                if args == ("rootlesskit", "--help"):
+                    return "--cidr"
+                if args[0] == "rootlessctl":
+                    return json.dumps({"networkDriver": {"driver": "slirp4netns", "dns": ["10.0.2.3"],
+                                                          "childIP": "10.0.2.100"}})
+                self.fail(f"matching live pin attempted a mutation: {args}")
+            with patch.object(pin.sys, "argv", ["pin", str(SOURCE.with_name("rootless-network.json"))]), \
+                    patch.object(pin, "daemon_state", return_value=(before, {})), \
+                    patch.object(pin, "run", side_effect=run), patch.object(pin.Path, "home", return_value=root):
+                pin.main()
+
     def test_incompatible_state_is_rejected_before_writing_configuration(self):
         cases = [({"CONTAINERD_ROOTLESS_ROOTLESSKIT_FLAGS": "--mtu=1500"}, "10.0.2.3", "custom"),
                  ({}, "10.0.3.3", "effective")]

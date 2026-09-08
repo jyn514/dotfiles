@@ -1,12 +1,14 @@
 #!/usr/bin/python3
-"""Pin the existing RootlessKit CIDR in an owned, idle feasibility VM."""
+"""Pin the existing RootlessKit CIDR in an owned, idle Lima VM."""
 
 import ipaddress
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -33,7 +35,7 @@ def main():
     subnet = ipaddress.IPv4Network(network["cidr"])
     # This change pins the existing default; it must not select another network.
     if str(subnet) != "10.0.2.0/24" or str(subnet.network_address + 3) != network["dns"]:
-        raise ValueError("fixture must preserve the existing slirp4netns subnet and DNS")
+        raise ValueError("setup must preserve the existing slirp4netns subnet and DNS")
     if "--cidr" not in run("rootlesskit", "--help"):
         raise RuntimeError("installed RootlessKit lacks explicit CIDR configuration")
     before, environment = daemon_state()
@@ -56,8 +58,21 @@ def main():
     content = '[Service]\nEnvironment="CONTAINERD_ROOTLESS_ROOTLESSKIT_FLAGS=' + cidr_flag + '"\n'
     if dropin.exists() and dropin.read_text() != content:
         raise RuntimeError("refusing to overwrite a different DNS pin")
+    if dropin.exists() and before.count(cidr_flag) == 1:
+        # Repeated provisioning must not bounce a matching daemon or trip
+        # systemd's restart limit. Effective state was checked above.
+        print(json.dumps({"rootlesskit_arguments": before, "dns": network["dns"]}), flush=True)
+        return
     dropin.parent.mkdir(parents=True, exist_ok=True)
-    dropin.write_text(content)
+    descriptor, temporary = tempfile.mkstemp(dir=dropin.parent, prefix=".sandbox-dns-")
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, dropin)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     run("systemctl", "--user", "daemon-reload")
     run("systemctl", "--user", "restart", "containerd.service")
     after, _ = daemon_state()
