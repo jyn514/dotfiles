@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import signal
 import stat
 import subprocess
 import sys
@@ -407,7 +408,7 @@ def containers_running(containers: list[str]) -> bool:
         return True
     inspection = subprocess.run(
         OUTER_RUNTIME.argv(["inspect", "--format", "{{.State.Running}}", *containers]),
-        check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        check=False, text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )
     return inspection.returncode == 0 and inspection.stdout.splitlines() == ["true"] * len(containers)
 
@@ -503,7 +504,7 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
 def proxy_logs(container: str) -> str:
     result = subprocess.run(
         OUTER_RUNTIME.argv(["logs", "--tail", "200", container]), check=False, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
     return result.stdout.strip()
 
@@ -900,7 +901,7 @@ def monitor_main(args: argparse.Namespace) -> int:
     while time.monotonic() < deadline:
         result = subprocess.run(
             owner.argv(["inspect", "--format", "{{.State.Running}}", args.agent]),
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         if result.returncode == 0 and result.stdout.strip() == "true":
             break
@@ -916,11 +917,19 @@ def monitor_main(args: argparse.Namespace) -> int:
     ]
     waits: list[tuple[str, subprocess.Popen[str]]] = []
     selector = selectors.DefaultSelector()
+
+    def terminate(signum: int, _frame: Any) -> None:
+        raise SystemExit(128 + signum)
+
+    signals = (signal.SIGTERM, signal.SIGHUP)
+    previous_handlers = {signum: signal.signal(signum, terminate) for signum in signals}
     try:
         for name, container in containers:
+            # Lima's multiplexed SSH master reads inherited stdin even for
+            # `wait`. Competing reads from Pi's TTY can block every SSH channel.
             process = subprocess.Popen(
                 owner.argv(["wait", container]), text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             )
             assert process.stdout is not None
             waits.append((name, process))
@@ -933,17 +942,24 @@ def monitor_main(args: argparse.Namespace) -> int:
         print(f"sandbox proxies: proxy {name} stopped; terminating sandbox", file=sys.stderr)
         subprocess.run(
             owner.argv(["rm", "--force", args.agent]),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         return 1
     finally:
+        # Repeated shutdown requests must not interrupt child reaping.
+        for signum in signals:
+            signal.signal(signum, signal.SIG_IGN)
         selector.close()
-        for _, process in waits:
-            process.terminate()
-        for _, process in waits:
-            process.wait()
-            if process.stdout is not None:
-                process.stdout.close()
+        try:
+            for _, process in waits:
+                process.terminate()
+            for _, process in waits:
+                process.wait()
+                if process.stdout is not None:
+                    process.stdout.close()
+        finally:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
 
 
 def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:

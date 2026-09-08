@@ -121,7 +121,8 @@ def run(
     cwd: Path | None = None, quiet: bool = False, discard_stdout: bool = False,
     stdout_to_stderr: bool = False, input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    if arguments[:1] == ["docker"]:
+    engine_command = arguments[:1] == ["docker"]
+    if engine_command:
         arguments = OUTER_RUNTIME.argv(arguments[1:], cwd=cwd)
     stdout = None
     if capture:
@@ -132,6 +133,7 @@ def run(
         stdout = sys.stderr
     result = subprocess.run(
         arguments, cwd=cwd, check=False, text=True, input=input_text,
+        stdin=subprocess.DEVNULL if engine_command and input_text is None else None,
         stdout=stdout,
         stderr=subprocess.DEVNULL if quiet else None,
     )
@@ -499,7 +501,7 @@ def acquire_lock(state: State) -> None:
         "python3", str(PROXY_HELPER), "hold-lock", "--repo", str(state.repository),
         "--ready", str(state.lock_ready), "--coordinated", str(state.lock_coordinated),
         "--release", str(state.lock_release), "--parent-pid", str(os.getpid()),
-    ])
+    ], stdin=subprocess.DEVNULL)
     while True:
         if state.lock_ready.exists():
             return
@@ -997,7 +999,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     state.monitor_process = subprocess.Popen([
         "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
         "--agent", state.codex_container,
-    ])
+    ], stdin=subprocess.DEVNULL)
     git_layout = run([
         "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
         "--git-dir", "--git-common-dir",

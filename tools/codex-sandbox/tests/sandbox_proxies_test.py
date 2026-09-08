@@ -763,6 +763,56 @@ class ManifestTest(unittest.TestCase):
                     ["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0],
                 )
 
+    def test_standalone_monitor_never_passes_agent_input_to_engine_children(self) -> None:
+        state = self.repo / "monitor-state.json"
+        state.write_text(json.dumps({"proxies": [{"name": "proxy", "container": "proxy"}]}))
+        log = self.repo / "monitor-input.jsonl"
+        result = subprocess.run([
+            sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")),
+            "monitor", str(state)], input="reserved for the agent", text=True,
+            capture_output=True, timeout=10,
+            env={**os.environ, "MONITOR_INPUT_LOG": str(log)})
+        self.assertEqual(1, result.returncode, result.stderr)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual({"inspect", "wait", "rm"}, {call["operation"] for call in calls})
+        self.assertTrue(all(call["input"] == "" for call in calls), calls)
+
+    def test_terminated_monitor_reaps_its_wait_children(self) -> None:
+        state = self.repo / "monitor-state.json"
+        state.write_text(json.dumps({"proxies": [{"name": "proxy", "container": "proxy"}]}))
+        log = self.repo / "monitor-input.jsonl"
+        process = subprocess.Popen([
+            sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")),
+            "monitor", str(state)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            env={**os.environ, "MONITOR_INPUT_LOG": str(log), "MONITOR_STAY_RUNNING": "1"})
+        children = []
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if log.exists():
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    children = [call["pid"] for call in calls if call["operation"] == "wait"]
+                    if len(children) == 2:
+                        break
+                time.sleep(0.01)
+            self.assertEqual(2, len(children))
+            process.terminate()
+            process.wait(timeout=5)
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertNotIn("rm", [call["operation"] for call in calls])
+            for child in children:
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child, 0)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            for child in children:
+                try:
+                    os.kill(child, 15)
+                except ProcessLookupError:
+                    pass
+
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {
             "auth": {"container": "auth-proxy", "key": "secret"},

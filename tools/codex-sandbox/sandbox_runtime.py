@@ -162,7 +162,7 @@ class Podman:
         # cover creation that succeeds remotely but fails before Popen returns.
         try:
             argv = self.workload_argv(image, ["--name", name, *arguments], command, operation="create")
-            creation = subprocess.Popen(argv, stdout=subprocess.DEVNULL)
+            creation = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             status = creation.wait()
             if status:
                 raise subprocess.CalledProcessError(status, argv)
