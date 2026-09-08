@@ -54,6 +54,8 @@ Use `diff-check`, never `git diff --check`; the latter may not be installed.
 
 When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
 
+When comparing toolchains, alternate sequential trials on the real workload, include artifact finalization, and exclude setup runs with unequal cache state.
+
 To view remote source, use `git clone --depth 1` into a temporary directory, not `gh api`.
 
 ### Shell command construction
