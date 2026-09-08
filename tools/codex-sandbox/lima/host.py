@@ -148,7 +148,7 @@ class Host:
             generation = uuid.uuid4().hex
             snapshot = self.state / "source"
             private_directory(snapshot)
-            for name in ("install-slirp4netns.py", "pin-rootless-network.py", "public-only", "rootless-network.json", "verify-host.py", "configure-network.py", "mount-shares.py"):
+            for name in ("install-slirp4netns.py", "pin-rootless-network.py", "public-only", "rootless-network.json", "verify-host.py", "configure-network.py", "mount-shares.py", "boot-credential.py"):
                 shutil.copyfile(SOURCE / name, snapshot / name)
             (snapshot / "network-policy.json").write_bytes(policy_bytes())
             template = (SOURCE / "network-fixture.yaml").read_text()
@@ -197,7 +197,7 @@ class Host:
             self.guest(record, "sudo", "python3", temporary + "/mount-shares.py", input=json.dumps(record).encode())
             self.guest(record, "python3", temporary + "/pin-rootless-network.py", temporary + "/rootless-network.json")
             self.guest(record, "sudo", "install", "-d", "-m", "755", GUEST)
-            for name in ("network-policy.json", "rootless-network.json", "verify-host.py"):
+            for name in ("network-policy.json", "rootless-network.json", "verify-host.py", "boot-credential.py"):
                 self.guest(record, "sudo", "install", "-m", "644", temporary + "/" + name, GUEST + "/" + name)
             self.guest(record, "sudo", "install", "-m", "755", temporary + "/public-only", "/usr/local/libexec/cni/public-only")
             self.guest(record, "python3", temporary + "/configure-network.py")

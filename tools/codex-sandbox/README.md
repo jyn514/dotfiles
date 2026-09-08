@@ -21,8 +21,9 @@ Lima host, network, and runtime gate.
 - Put this repository's `bin/` on `PATH`; `pi` delegates to `codex-sandbox`.
 - Provide `~/.codex/config.toml`. The launcher injects the Podman secret
   `codex-github-token` as `GH_TOKEN`; exporting a host `GH_TOKEN` does not provision
-  that secret. Lima credential migration will retain it for rollback and use
-  Keychain persistence with a guest-memory cache for each VM boot.
+  that secret. The opt-in [Lima credential helper](lima/credentials.md) imports it
+  into Keychain and retains the Podman secret for rollback; guest caching lasts
+  one VM boot.
 - Run inside tmux to use the injected host editor and tmux session restart support.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`. The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.

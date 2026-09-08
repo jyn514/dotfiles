@@ -75,6 +75,10 @@ live edits, paths with spaces, a writable checkout beneath
 a read-only parent, protected metadata, hidden overlays, the network fixture,
 and reboot. It also runs the [runtime contracts](runtime.md) before and after
 reboot, including local base images and host SIGTERM cleanup.
-It deletes its owned VM on exit. Credential migration, actual
-linked-worktree sessions, runtime selection, and the default switch remain later
-gates.
+It also exercises dummy boot credentials before and after reboot, then deletes
+its owned VM. Actual linked-worktree sessions, runtime selection, production
+credential migration, and the default switch remain later gates.
+
+New hosts also install the [boot credential cache](credentials.md) helper.
+Hosts provisioned before that helper was included require a new owned instance;
+ordinary startup never installs new executable code from the checkout.
