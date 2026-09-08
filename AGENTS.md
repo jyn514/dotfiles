@@ -62,6 +62,7 @@ Pull requests should state the user-visible change, list commands run, note plat
 ## Security & Configuration Tips
 
 When repairing VM configuration, also update its host-owned setup source so the repair survives recreation.
+When authentication scopes change, detect and invalidate persisted credentials that lack the required scopes.
 
 Do not commit secrets, tokens, private hostnames, or machine-local paths unless they are already intentionally tracked.
 Be careful with `global/` changes: they may be copied with elevated privileges.
