@@ -405,8 +405,9 @@ class Lima(Podman):
 
     def build(self, tag, dockerfile, context, *, build_args=(), target=None):
         self.verify()
-        context = self.host.check_bind(context)["source"]
-        dockerfile = self.host.check_bind(dockerfile)["source"]
+        context_bind, dockerfile_bind = self.host.check_binds([(context, False), (dockerfile, False)])
+        context = context_bind["source"]
+        dockerfile = dockerfile_bind["source"]
         arguments = ["build", "--buildkit-host", self.buildkit_address,
                      "--pull=false", "--file", dockerfile, "--tag", tag]
         for value in build_args:

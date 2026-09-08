@@ -81,6 +81,30 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 with self.assertRaisesRegex(launcher["LauncherError"], "whole home"):
                     launcher["preflight_lima"](state)
             backend.host.check_bind.assert_not_called()
+            backend.host.check_binds.assert_not_called()
+
+    def test_lima_preflight_submits_all_mount_permissions_in_one_batch(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            repository = home / "src/project"
+            repository.mkdir(parents=True)
+            (home / ".codex").mkdir()
+            (home / ".codex/config.toml").touch()
+            state = SimpleNamespace(home=home, repository=repository, skills_source=repository,
+                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_podman=None)
+            backend = mock.Mock()
+            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
+                                 _secure_codex_auth_directory=lambda _: None):
+                launcher["preflight_lima"](state)
+            backend.host.check_bind.assert_not_called()
+            backend.host.check_binds.assert_called_once()
+            sources = backend.host.check_binds.call_args.args[0]
+            self.assertIn((repository, True), sources)
+            self.assertIn((repository, False), sources)
+            self.assertIn((home / ".codex/config.toml", False), sources)
+            for name in ("sessions", "npm", "git"):
+                self.assertIn((home / ".pi/agent" / name, True), sources)
 
     def test_preserves_repository_path_beneath_home_source_root(self) -> None:
         function = runpy.run_path(str(LAUNCHER))["container_repository_path"]

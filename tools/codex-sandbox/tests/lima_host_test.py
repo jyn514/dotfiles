@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -24,9 +25,63 @@ mount_spec.loader.exec_module(mounts)
 network_spec = importlib.util.spec_from_file_location("configure_network", SOURCE.with_name("configure-network.py"))
 network = importlib.util.module_from_spec(network_spec)
 network_spec.loader.exec_module(network)
+bind_spec = importlib.util.spec_from_file_location("check_binds", SOURCE.with_name("check-binds.py"))
+binds = importlib.util.module_from_spec(bind_spec)
+bind_spec.loader.exec_module(binds)
 
 
 class HostTests(unittest.TestCase):
+    def test_guest_batch_checks_final_entry_type_access_and_content(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            file = directory / "config"
+            file.write_text("original")
+            first = {"source": str(directory), "kind": "directory", "writable": False}
+            last = {"source": str(file), "kind": "file", "writable": True,
+                    "sha256": host.hashlib.sha256(b"original").hexdigest()}
+            binds.check_binds([first, last])
+            for changed, message in (({**last, "kind": "directory"}, "not a directory"),
+                    ({**last, "sha256": "0" * 64}, "differs from the host"),
+                    ({**last, "source": str(directory / "missing")}, "not a file")):
+                with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                    binds.check_binds([first, changed])
+            for denied, message in ((host.os.R_OK, "not readable"), (host.os.W_OK, "not writable")):
+                with patch.object(binds.os, "access", side_effect=lambda path, mode:
+                        not (path == file and mode == denied)):
+                    with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                        binds.check_binds([first, last])
+
+    def test_batch_preserves_duplicate_permissions_and_rejects_invalid_final_source_before_ssh(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            shared = root / "shared"
+            shared.mkdir()
+            file = shared / "literal ' $() name"
+            file.write_text("matching contents")
+            instance = host.Host(root)
+            record = {"phase": "ready", "shares": [
+                {"location": str(shared), "writable": True}]}
+
+            def guest(_record, *args, **kwargs):
+                return subprocess.run([sys.executable, *args[1:]], check=True, **kwargs)
+
+            with patch.object(instance, "record", return_value=record), \
+                    patch.object(instance, "verify_runtime"), \
+                    patch.object(instance, "guest", side_effect=guest) as transport:
+                self.assertEqual([
+                    {"source": str(file), "writable": False},
+                    {"source": str(shared), "writable": True},
+                    {"source": str(file), "writable": True}],
+                    instance.check_binds([(file, False), (shared, True), (file, True)]))
+                transport.assert_called_once()
+                transport.reset_mock()
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    instance.check_binds([(shared, True), (root, False)])
+                transport.assert_not_called()
+                transport.side_effect = subprocess.CalledProcessError(255, ["ssh"])
+                with self.assertRaises(subprocess.CalledProcessError):
+                    instance.check_binds([(file, False)])
+
     def test_bind_preflight_reuses_verification_but_keeps_guest_access_checks(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
@@ -41,7 +96,7 @@ class HostTests(unittest.TestCase):
                     self.assertEqual({'source': str(root), 'writable': True},
                         instance.check_bind(root, writable=True))
                 verify_full.assert_called_once()
-                self.assertEqual(6, guest.call_count, 'cached verification skipped live bind checks')
+                self.assertEqual(2, guest.call_count, 'each bind needs one live guest batch')
                 with host.verification_scope():
                     instance.check_bind(root)
                 self.assertEqual(2, verify_full.call_count)

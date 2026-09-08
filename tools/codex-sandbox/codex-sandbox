@@ -1305,10 +1305,8 @@ def preflight_lima(state: State) -> None:
     for path in [*writable, *readable]:
         if home.is_relative_to(path.resolve(strict=True)):
             raise LauncherError(f"refusing to mount the whole home directory into a container: {path}")
-    for path in writable:
-        OUTER_RUNTIME.host.check_bind(path, writable=True)
-    for path in readable:
-        OUTER_RUNTIME.host.check_bind(path)
+    OUTER_RUNTIME.host.check_binds([
+        *((path, True) for path in writable), *((path, False) for path in readable)])
 
 
 def cleanup_resource(label: str, arguments: list[str]) -> bool:

@@ -311,20 +311,32 @@ class Host:
         return record
 
     def check_bind(self, raw, writable=False):
+        return self.check_binds([(raw, writable)])[0]
+
+    def check_binds(self, sources):
         record = self.record()
         if record["phase"] != "ready":
             raise ValueError("setup is incomplete")
+        bindings = []
+        for raw, writable in sources:
+            path = bind_source(record, raw, writable)
+            binding = {"source": str(path), "writable": writable,
+                       "kind": "directory" if path.is_dir() else "file"}
+            if binding["kind"] == "file":
+                with path.open("rb") as stream:
+                    binding["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
+            bindings.append(binding)
         self.verify_runtime(record)
-        path = bind_source(record, raw, writable)
-        self.guest(record, "test", "-d" if path.is_dir() else "-f", str(path))
-        self.guest(record, "test", "-r", str(path))
-        if writable:
-            self.guest(record, "test", "-w", str(path))
-        if path.is_file():
-            actual = self.guest(record, "sha256sum", str(path), capture_output=True, text=True).stdout.split()[0]
-            if hashlib.sha256(path.read_bytes()).hexdigest() != actual:
-                raise ValueError(f"guest bind source differs from the host: {path}")
-        return {"source": str(path), "writable": writable}
+        # This read-only client helper travels with the host launcher; installed
+        # VM policy remains pinned and is verified separately above.
+        try:
+            self.guest(record, "python3", "-c", (SOURCE / "check-binds.py").read_text(),
+                input=json.dumps(bindings), text=True, capture_output=True)
+        except subprocess.CalledProcessError as error:
+            if error.stderr:
+                print(error.stderr, file=sys.stderr, end="")
+            raise
+        return [{"source": item["source"], "writable": item["writable"]} for item in bindings]
 
     def stop(self):
         record = self.record()

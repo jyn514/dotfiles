@@ -70,8 +70,8 @@ python3 tools/codex-sandbox/tests/sandbox_runtime_test.py
 ```
 
 For a running provisioned host, check launch-scoped verification reuse across
-real child processes and compare full versus reused check timings without
-changing VM state:
+real child processes and compare full versus reused check timings. The fixture
+also checks an owned batch of bind sources and removes its temporary files:
 
 ```sh
 python3 tools/codex-sandbox/tests/lima_verification_integration.py --state "$fixture_state"

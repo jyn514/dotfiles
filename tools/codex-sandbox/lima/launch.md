@@ -38,6 +38,8 @@ IDs; a VM reboot or containerd/BuildKit restart requires full verification again
 Successful launch checks are silent; failures still report their diagnostics.
 Policy files and mounts are assumed unchanged within a launch; edits without a
 service restart are checked at the next launch. The result is never saved to disk.
+Mount preflight checks all sources in one guest request, preserving each source's
+type, read/write access, and file-content checks.
 
 For a separate test host, also set `CODEX_SANDBOX_LIMA_STATE` to its host-state
 directory. That selection reaches the launcher, shared proxies, and image

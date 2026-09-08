@@ -1,9 +1,12 @@
-"""Read-only verification reuse checks against an already provisioned Lima host."""
+"""Verification reuse and owned bind checks against an already provisioned Lima host."""
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 from unittest.mock import patch
 
@@ -56,6 +59,27 @@ def main():
                 runtime.host.check_bind(source)
             reused_binds = time.monotonic() - start
             assert not verified, 'bind preflight repeated full verification'
+            with tempfile.TemporaryDirectory(dir=runtime.host.state / 'scratch') as temporary:
+                directory = Path(temporary)
+                file = directory / "literal ' $() name"
+                file.write_text('batch content')
+                bindings = runtime.host.check_binds([(directory, True), (file, False), (file, True)])
+                assert [item['writable'] for item in bindings] == [True, False, True]
+                # The host normally supplies matching hashes. Deliberately
+                # send a wrong final hash to exercise failure in the real guest.
+                source = (Path(__file__).resolve().parents[1] / 'lima/check-binds.py').read_text()
+                request = [
+                    {'source': str(directory), 'kind': 'directory', 'writable': True},
+                    {'source': str(file), 'kind': 'file', 'writable': False,
+                     'sha256': hashlib.sha256(b'different content').hexdigest()},
+                ]
+                try:
+                    runtime.guest(['python3', '-c', source], input=json.dumps(request),
+                        text=True, capture_output=True)
+                except subprocess.CalledProcessError as error:
+                    assert 'differs from the host' in error.stderr
+                else:
+                    raise AssertionError('guest accepted an invalid final bind')
             subprocess.run([sys.executable, str(Path(__file__).resolve()),
                 '--state', str(args.state), '--child'], check=True)
             # New/nested launches discard the receipt inherited from a parent.
