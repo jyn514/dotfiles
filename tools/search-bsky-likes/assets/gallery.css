@@ -1,0 +1,56 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 90rem;
+  padding: 1.5rem;
+}
+
+header {
+  margin-bottom: 1.5rem;
+}
+
+h1,
+header p {
+  margin: 0.25rem 0;
+}
+
+main {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+
+article {
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+article a {
+  color: inherit;
+  display: block;
+  height: 100%;
+  text-decoration: none;
+}
+
+article a:hover {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+img {
+  aspect-ratio: 1 / 1;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+article p {
+  line-height: 1.4;
+  margin: 0;
+  padding: 1rem;
+  white-space: pre-wrap;
+}

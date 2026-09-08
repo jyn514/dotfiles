@@ -35,6 +35,12 @@ type StoreData = {
   sessions: Record<string, NodeSavedSession>;
 };
 
+type GalleryPost = {
+  url: string;
+  text: string;
+  embed: unknown;
+};
+
 type StoreSection = keyof StoreData;
 
 let pendingWrite = Promise.resolve();
@@ -193,12 +199,64 @@ async function restoreOrAuthorize() {
   return authorize();
 }
 
+async function showGallery(posts: GalleryPost[]): Promise<void> {
+  const assetDirectory = new URL("../assets/", import.meta.url);
+  const [html, script, style] = await Promise.all([
+    readFile(new URL("gallery.html", assetDirectory)),
+    readFile(new URL("gallery.js", assetDirectory)),
+    readFile(new URL("gallery.css", assetDirectory)),
+  ]);
+  const postsJson = Buffer.from(JSON.stringify(posts));
+  const assets = new Map([
+    ["/", { contentType: "text/html; charset=utf-8", body: html }],
+    ["/gallery.js", { contentType: "text/javascript; charset=utf-8", body: script }],
+    ["/gallery.css", { contentType: "text/css; charset=utf-8", body: style }],
+    ["/posts.json", { contentType: "application/json", body: postsJson }],
+  ]);
+  let shutdownScheduled = false;
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    const asset = assets.get(pathname);
+    if (!asset) {
+      response.writeHead(404).end("Not found\n");
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": asset.contentType,
+      "content-length": asset.body.length,
+      "cache-control": "no-store",
+    });
+    response.end(asset.body);
+    if (pathname === "/posts.json" && !shutdownScheduled) {
+      shutdownScheduled = true;
+      setTimeout(() => server.close(), 10_000).unref();
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("Could not determine gallery port");
+  }
+  const url = new URL(`http://127.0.0.1:${address.port}/`);
+  console.error(`Opening ${posts.length} posts at ${url.href}`);
+  openBrowser(url);
+}
+
 async function main(): Promise<void> {
   const session = await restoreOrAuthorize();
   const agent = new Agent(session);
   let postsScanned = 0;
   let likesFound = 0;
   let cursor: string | undefined;
+  const likedPosts: GalleryPost[] = [];
 
   do {
     const page = await agent.getAuthorFeed({
@@ -213,7 +271,10 @@ async function main(): Promise<void> {
       if (post.author.handle !== TARGET || !post.viewer?.like) continue;
       if (!AppBskyFeedPost.isRecord(post.record)) continue;
       const rkey = post.uri.slice(post.uri.lastIndexOf("/") + 1);
-      console.log(`https://bsky.app/profile/${post.author.did}/post/${rkey}`);
+      const url = `https://bsky.app/profile/${post.author.did}/post/${rkey}`;
+      console.log(url);
+      const text = typeof post.record.text === "string" ? post.record.text : "";
+      likedPosts.push({ url, text, embed: post.embed });
       likesFound += 1;
     }
 
@@ -223,6 +284,8 @@ async function main(): Promise<void> {
     );
     cursor = page.data.cursor;
   } while (cursor);
+
+  await showGallery(likedPosts);
 }
 
 await main();
