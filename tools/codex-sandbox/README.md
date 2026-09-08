@@ -8,13 +8,11 @@ The launcher mounts `~/src` read-only at `/src`, then overlays the active reposi
 
 ## Prerequisites and setup
 
-The outer runtime still uses Podman. The opt-in [Lima network feasibility probe](lima/README.md)
-tests container-level restrictions and an explicit DNS allowance in its own disposable VM.
-The separate [Lima host setup](lima/host-setup.md) provisions a dedicated VM and
-checks host shares; launcher selection remains gated on the later migration steps.
-The [runtime/image helper and disposable contracts](lima/runtime.md) exercise both
-stores without enabling Lima sessions. `dev/test --lima` includes the disposable
-Lima host, network, and runtime gate.
+Podman remains the default outer runtime. [Opt-in Lima launches](lima/launch.md)
+use a separately provisioned VM, Keychain boot credentials, and runtime-aware
+image builders. The [network fixture](lima/README.md) and
+[runtime contracts](lima/runtime.md) preserve the container boundaries;
+`dev/test --lima` includes the disposable host, network, and runtime gate.
 
 - Run from a Git checkout. The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and a `docker`-compatible Podman/Docker CLI. Image builds require network access on first use.

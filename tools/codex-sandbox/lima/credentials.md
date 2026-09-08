@@ -41,9 +41,15 @@ python3 tools/codex-sandbox/sandbox_credentials.py invalidate
 ```
 
 Invalidation removes the current cache file; it does not revoke tokens already
-received by running containers. Lima agent integration must use a read-only mount
-and load `GH_TOKEN` inside the agent, keeping the token out of persistent
-containerd environment metadata. Reusable Codex/Zulip credentials remain separate.
+received by running containers.
+
+The Lima launcher mounts the boot-cache file read-only. Its trusted entrypoint
+uses the agent's existing container-local sudo permission to read that file,
+exports `GH_TOKEN`, and executes Pi as the original non-root user. The token stays
+out of persistent containerd environment metadata; reusable Codex/Zulip
+credentials remain separate. There are no
+per-agent credential copies or additional credential cleanup operations. This
+does not grant access to the guest filesystem outside declared mounts.
 
 The cache is outside host shares, with directory mode `0700` and file mode `0600`.
 Preparation refuses guests with active swap, because tmpfs can otherwise page to disk.

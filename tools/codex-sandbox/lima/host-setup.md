@@ -2,7 +2,8 @@
 
 This opt-in setup requires Apple Silicon macOS, Python 3, and Lima 1.2.1.
 It creates `sandbox-host` with four CPUs, 4 GiB memory, and a 64 GiB disk, using
-the [validated stack](stack-review.md). It does not enable Lima in the launcher.
+the [validated stack](stack-review.md). Select Lima explicitly after setup using
+the [launch guide](launch.md).
 
 ## Set up and inspect
 
@@ -76,9 +77,9 @@ a read-only parent, protected metadata, hidden overlays, the network fixture,
 and reboot. It also runs the [runtime contracts](runtime.md) before and after
 reboot, including local base images and host SIGTERM cleanup.
 It also exercises dummy boot credentials before and after reboot, then deletes
-its owned VM. Actual linked-worktree sessions, runtime selection, production
+its owned VM. Actual linked-worktree sessions, production
 credential migration, and the default switch remain later gates.
 
-New hosts also install the [boot credential cache](credentials.md) helper.
-Hosts provisioned before that helper was included require a new owned instance;
+New hosts install the [boot credential cache](credentials.md) and relay-network helpers.
+Hosts provisioned before these helpers were included require a new owned instance;
 ordinary startup never installs new executable code from the checkout.

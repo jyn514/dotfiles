@@ -78,7 +78,7 @@ The validated source remains fixed for the session.
 The outer launcher starts the agent and its proxies as sibling containers:
 
 ```text
-outer Docker or Podman daemon
+outer container-engine daemon
 |
 +-- jj-proxy
 |   +-- repository metadata read-write
@@ -161,7 +161,7 @@ The modes are `read-write`, `read-only`, and `hidden`.
 An omitted proxy mode inherits the proxy's read-only repository view, while an omitted agent mode inherits the agent's ordinary repository view and protected-metadata overlays.
 Writable proxy authority must be declared per path; one mount does not make its parent or siblings writable.
 The launcher establishes all declared views before the agent starts and applies an agent restriction to every untrusted agent container in the session.
-An image command may create a declared source before returning its image hash; otherwise the launcher rejects a missing source rather than silently omitting its mount.
+An image command may create a declared source before returning its image reference; otherwise the launcher rejects a missing source rather than silently omitting its mount.
 
 The launcher passes `argv` directly to process execution, never through a shell, and resolves its executable only through the proxy's fixed trusted `PATH`; manifest arguments cannot name absolute container binary paths.
 The manifest starts one fixed server; its image owns the server and protocol policy, while the matching agent-side shim owns the client.
@@ -170,9 +170,10 @@ For `bb-bug`, the immutable image contains both the socket server and the truste
 
 `image-command` is an argument array that the launcher executes before the agent starts.
 Like `.agents/sandbox/base-image`, the command may inspect the trusted startup checkout, build an image from its current sources, pull an existing image by tag or digest, or reuse a cached build.
-It prints exactly one resolved image hash on standard output and sends progress or diagnostics to standard error.
-The launcher rejects an empty, malformed, or multi-line result and starts the proxy by the returned immutable image hash rather than by a mutable tag.
-An image builder that needs stronger reproducibility may also pin and verify an OCI digest.
+It prints exactly one immutable image reference on standard output and sends progress or diagnostics to standard error.
+The launcher rejects an empty, malformed, or multi-line result and starts the proxy by that reference.
+Podman uses a configuration digest; Lima uses a locally registered canonical reference with a verified native content descriptor.
+Builders use `sandbox-image` in the selected outer store; a Podman image ID cannot stand in for a Lima image.
 
 A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
 The forwarding client uses the configured path while it exists and otherwise falls back to the default path.
@@ -243,16 +244,17 @@ Before discovering or starting proxies, the launcher acquires an exclusive host-
 If session metadata exists, the launcher attaches its agent to the recorded socket volumes and uses the already validated manifest snapshot.
 Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
-After required repository-command proxies become ready, the launcher atomically publishes session metadata containing the repository identity and each manifest command's immutable proxy container ID and resolved image hash.
+After required repository-command proxies become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, and each manifest command's proxy container identity and immutable image reference.
+Lima ownership includes the VM generation, namespace, hardware identity, and network-policy digest; legacy metadata belongs to Podman.
 The optional trusted Zulip proxy starts without a readiness probe; an early request may fail and be retried after its socket becomes available.
 The metadata contains no command-specific protocol version or request fields.
 
-A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and Podman invocation for every manifest command.
+A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every manifest command.
 A host-side `bb bug` shim gives it the `bug` manifest key, framed request, and local bridge entrypoint.
 The router chooses one path:
 
-+ If it acquires the host lock, remove stale session metadata, run the local bridge with the human's authority, then release the lock
-+ If the launcher holds the lock and valid metadata exists, use `podman exec` or the equivalent daemon API to run a fixed immutable byte-forwarding client in the recorded proxy container
++ If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
++ If the launcher holds the lock and valid metadata exists, use the recorded runtime's `exec` operation to run a fixed immutable byte-forwarding client in the recorded proxy container
 + If the lock is held without metadata, wait for metadata or lock release, then retry
 
 A command-specific host shim invokes the same router directly:
@@ -268,9 +270,9 @@ The request and response remain on standard input and output.
 
 Every proxy image contains that launcher-owned client at one conventional absolute path.
 The router sends the framed request to the client's standard input; the client connects to the conventional in-VM Unix socket and copies the framed response to standard output without interpreting either message.
-The router validates the container's launcher-owned session labels, resolved image hash, and repository identity before invoking the fixed client, and never executes a manifest- or caller-selected command through `podman exec`.
+The router validates the container's launcher-owned session labels, native image identity, and repository identity before invoking the fixed client, and never executes a manifest- or caller-selected command through the outer runtime.
 Only the trusted host router receives outer-daemon access; neither the agent nor a proxy container receives it.
-Failure of Podman execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
+Failure of outer-runtime execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
 
 The host kernel releases a launcher's shared session lock when it exits or is killed because the lock belongs to its open file descriptor, not recorded PID data.
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
@@ -388,7 +390,7 @@ The launcher performs these steps:
 + Resolve and validate the repository and protected paths
 + Acquire the repository's host session lock
 + Read and validate the trusted manifest
-+ Run every proxy image command and validate its resolved image hash
++ Run every proxy image command and validate its immutable image reference
 + Create session-specific socket volumes and container names
 + Start each configured proxy with its declared mounts and limits
 + Wait for required repository-command sockets to become ready; skip the optional Zulip readiness probe
@@ -412,7 +414,7 @@ Long-lived command and authentication proxies amortize image startup without sha
 
 - The agent cannot modify `.git`, `.jj`, or `.agents/sandbox` directly, through an alternate path, or through a sibling metadata proxy
 - Editing ordinary working-tree files remains possible
-- The generic host router runs `bb bug` locally while it owns the host lock and uses Podman to reach the proxy while a sandbox launcher owns that lock
+- The generic host router runs `bb bug` locally while it owns the host lock and uses the recorded runtime to reach the proxy while a sandbox launcher owns that lock
 - Proxied reads and writes work without giving the agent access to `.git/git-bug` or queue control state
 - `--body-file` contents cross the proxy as bounded standard input, and the proxy never opens the supplied path
 - `bb bug push` and `bb bug raw` are rejected by the proxy, and push remains a maintainer-only command
@@ -427,13 +429,13 @@ Long-lived command and authentication proxies amortize image startup without sha
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
 - Modified working-tree copies of `bb.edn`, bridge source, git-bug, or proxy scripts do not affect trusted execution
 - An invalid or ambiguous image-command result fails before a proxy starts
-- A mutable tag used by an image builder resolves to one immutable image hash for the running session
+- A mutable tag used by an image builder resolves to one immutable image reference for the running session
 - Editing proxy source after startup does not rebuild, replace, or otherwise change the running proxy
 - Concurrent drain requests execute serially
 - Local human bridge execution cannot overlap a sandbox session
 - Human commands during a sandbox session reach the same serialized proxy path as agent commands through the fixed in-container client
 - Launcher crash or termination releases the host lock, and a later command removes stale session metadata safely
-- Podman, client, or proxy-container failure does not permit local fallback while the launcher still owns the host lock
+- Runtime, client, or proxy-container failure does not permit local fallback while the launcher still owns the host lock
 - Direct metadata deletion fails while proxy-mediated issue updates succeed
 - Malformed and oversized socket or queue requests fail without wedging the proxy
 - Timeout, disconnect, and forced termination leave no descendants and permit a later successful drain

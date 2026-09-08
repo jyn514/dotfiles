@@ -35,6 +35,65 @@ def lima():
 
 
 class ImageIdentityTest(unittest.TestCase):
+    def test_cancelled_router_reconciles_exec_published_after_initial_cleanup_inspection(self):
+        backend = lima()
+        backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([{"ID": "a" * 64}])))
+        process = Mock()
+        process.poll.return_value = None
+        listings = iter(["", '42 exec_id:"codex-forward-owned"\n', ""])
+        killed = []
+
+        def guest(arguments, **kwargs):
+            if "kill" in arguments:
+                killed.append(arguments)
+                process.poll.return_value = 143
+                return SimpleNamespace(stdout="")
+            # Cancel before the first startup inspection has published an exec.
+            if not guest.cancelled:
+                guest.cancelled = True
+                raise SystemExit(143)
+            return SimpleNamespace(stdout=next(listings))
+
+        guest.cancelled = False
+        backend.guest = guest
+        with patch.object(runtime.subprocess, "Popen", return_value=process), \
+                patch.object(runtime.uuid, "uuid4", return_value=SimpleNamespace(hex="owned")), \
+                patch.object(runtime.time, "sleep"):
+            with self.assertRaises(SystemExit) as result:
+                backend.forward_proxy("proxy")
+        self.assertEqual(143, result.exception.code)
+        self.assertEqual(1, len(killed))
+        self.assertEqual(["--exec-id", "codex-forward-owned", "a" * 64], killed[0][-3:])
+        process.kill.assert_not_called()
+        process.stdin.close.assert_called_once()
+
+    def test_native_empty_inspection_means_missing_but_malformed_identity_is_fatal(self):
+        backend = lima()
+        backend.run = Mock(return_value=SimpleNamespace(stdout=""))
+        with self.assertRaises(subprocess.CalledProcessError):
+            backend.inspect_image("absent")
+        backend.run.return_value.stdout = "broken-json"
+        with self.assertRaises(json.JSONDecodeError):
+            backend.inspect_image("corrupt")
+
+    def test_volume_create_collision_cannot_initialize_another_creators_volume(self):
+        backend = lima()
+        backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([
+            {"Labels": {"dev.codex.volume-owner": "another-creator"}},
+        ])))
+        backend.guest = Mock()
+        with self.assertRaisesRegex(runtime.RuntimeError, "another creator"):
+            backend.initialize_volume("collision", 501, 20, "this-creator")
+        backend.guest.assert_not_called()
+
+    def test_replaced_vm_cannot_receive_container_removal(self):
+        backend = lima()
+        backend.host.machine.side_effect = ValueError("recorded VM identity changed")
+        with patch.object(runtime.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "identity changed"):
+                backend.terminate("previous-generation-container")
+        run.assert_not_called()
+
     def test_registered_aliases_preserve_the_requested_runnable_reference(self):
         backend = lima()
         backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([
@@ -210,11 +269,12 @@ class TransportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "policy changed"):
             backend.workload_argv(runtime.Image(REFERENCE, CONTENT, CONFIG, LAYER), [])
 
-    def test_unintegrated_lima_relay_creation_is_not_an_unrestricted_network(self):
+    def test_old_lima_hosts_cannot_create_unprotected_relays(self):
         backend = lima()
+        backend.record["files"] = {}
         backend.run = Mock()
         for internal in (True, False):
-            with self.assertRaisesRegex(runtime.RuntimeError, "not integrated"):
+            with self.assertRaisesRegex(runtime.RuntimeError, "trusted relay"):
                 backend.create_relay_network("owned", internal=internal)
         backend.run.assert_not_called()
 

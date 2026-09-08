@@ -4,16 +4,15 @@ set -eu
 DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
 cd "$DOTFILES"
 
-sources=$(mktemp)
-hashes=$(mktemp)
-trap 'rm -f "$sources" "$hashes"' EXIT HUP INT TERM
-find tools/zulip-proxy -type f -print | LC_ALL=C sort > "$sources"
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+sources="$temporary/sources"
+hashes="$temporary/hashes"
+find tools/zulip-proxy -type f -print > "$sources"
+LC_ALL=C sort -o "$sources" "$sources"
 git hash-object --stdin-paths < "$sources" > "$hashes"
-cache_key=$(/usr/bin/paste -d ' ' "$sources" "$hashes" | git hash-object --stdin)
+/usr/bin/paste -d ' ' "$sources" "$hashes" > "$temporary/combined"
+cache_key=$(git hash-object --stdin < "$temporary/combined")
 image="zulip-proxy:$cache_key"
-if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
-	printf 'Building Zulip proxy image %s ...\n' "$image" >&2
-	docker build -f tools/zulip-proxy/Dockerfile --tag "$image" . >&2
-	image_id=$(docker image inspect --format '{{.Id}}' "$image")
-fi
-printf 'sha256:%s\n' "${image_id#sha256:}"
+tools/codex-sandbox/sandbox-image build --if-missing \
+	--file tools/zulip-proxy/Dockerfile --tag "$image" .

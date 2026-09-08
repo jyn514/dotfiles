@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+# Only the file read elevates. The agent already has container-local sudo;
+# its command keeps the image's non-root UID and receives no VM authority.
+GH_TOKEN=$(sudo -n cat /run/secrets/github-token)
+test -n "$GH_TOKEN"
+export GH_TOKEN
+exec "$@"

@@ -53,7 +53,7 @@ def main():
     if os.environ.get("SANDBOX_GENERATION") != record["generation"]:
         raise ValueError("guest generation differs from the host record")
     base = Path("/usr/local/share/codex-sandbox")
-    for name in ("network-policy.json", "rootless-network.json", "verify-host.py", "public-only", "boot-credential.py"):
+    for name in ("network-policy.json", "rootless-network.json", "verify-host.py", "public-only", "boot-credential.py", "relay-network.py"):
         path = Path("/usr/local/libexec/cni/public-only") if name == "public-only" else base / name
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:

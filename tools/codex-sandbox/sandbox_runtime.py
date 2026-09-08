@@ -8,9 +8,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 from lima.host import Host
@@ -69,6 +72,14 @@ class Podman:
     """Keep the existing docker-compatible host entrypoint during migration."""
 
     provider = "podman"
+    host_address = "host.docker.internal"
+
+    def builder_image(self, reference):
+        return digest(reference)
+
+    def forward_proxy(self, container):
+        return subprocess.run(self.argv([
+            "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"])).returncode
 
     def argv(self, arguments, *, cwd=None):
         return ["docker", *arguments]
@@ -76,6 +87,8 @@ class Podman:
     def run(self, arguments, *, cwd=None, **kwargs):
         kwargs.setdefault("check", True)
         kwargs.setdefault("text", True)
+        if isinstance(self, Lima) and "input" not in kwargs:
+            kwargs.setdefault("stdin", subprocess.DEVNULL)
         return subprocess.run(self.argv(arguments, cwd=cwd), cwd=cwd, **kwargs)
 
     def popen(self, arguments, *, cwd=None, **kwargs):
@@ -209,6 +222,87 @@ class Podman:
 
 class Lima(Podman):
     provider = "lima"
+    host_address = "host.lima.internal"
+
+    def builder_image(self, reference):
+        if not re.fullmatch(r"localhost/codex-sandbox:sha256-([0-9a-f]{64})@sha256:\1", reference):
+            raise RuntimeError("Lima image builder must use sandbox-image in the selected store")
+        self.inspect_image(reference)
+        return reference
+
+    def forward_proxy(self, container):
+        raw = single_json(self.run(["inspect", "--mode=native", container], capture_output=True).stdout)
+        container_id = raw["ID"]
+        if not re.fullmatch(r"[0-9a-f]{64}", container_id):
+            raise RuntimeError("proxy returned an invalid native container ID")
+        exec_id = "codex-forward-" + uuid.uuid4().hex
+        ctr = ["containerd-rootless-setuptool.sh", "nsenter", "--", "ctr",
+               "--namespace", self.record["namespace"], "tasks"]
+        command = ["limactl", "shell", "--workdir", "/tmp", self.record["instance"],
+                   *ctr, "exec", "--exec-id", exec_id, container_id,
+                   "/trusted/bin/sandbox-proxy-forward"]
+        def interrupted(signum, _frame):
+            raise SystemExit(128 + signum)
+
+        signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+        handlers = {signum: signal.signal(signum, interrupted) for signum in signals}
+        process = None
+        try:
+            process = subprocess.Popen(command, stdin=subprocess.PIPE)
+            # Containerd's CLI can observe EOF before registering its stdin
+            # closer. A live exec PID proves startup reached that registration;
+            # only then forward bytes and EOF, without changing proxy framing.
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    return process.returncode
+                listing = self.guest([*ctr, "ps", container_id], capture_output=True,
+                                     text=True, timeout=10).stdout
+                if re.search(r'(?m)^[1-9][0-9]*\s+exec_id:"' + re.escape(exec_id) + r'"\s*$', listing):
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError("proxy exec did not publish its native process identity")
+            try:
+                shutil.copyfileobj(sys.stdin.buffer, process.stdin)
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+            return process.wait()
+        finally:
+            for signum in signals:
+                signal.signal(signum, signal.SIG_IGN)
+            try:
+                # A dead SSH transport does not prove its guest exec exited.
+                self.host.machine(self.record)
+                deadline = time.monotonic() + 10
+                while True:
+                    # Cancellation can precede publication. Keep looking while
+                    # the startup producer can still create the guest exec.
+                    settled = process is None or process.poll() is not None
+                    listing = self.guest([*ctr, "ps", container_id], capture_output=True,
+                                         text=True, timeout=10).stdout
+                    if re.search(r'(?m)^[1-9][0-9]*\s+exec_id:"' + re.escape(exec_id) + r'"\s*$', listing):
+                        self.guest([*ctr, "kill", "--signal", "SIGKILL", "--exec-id", exec_id,
+                                    container_id], timeout=10)
+                    elif settled:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f"guest exec did not settle: {container_id}/{exec_id}")
+                    time.sleep(0.05)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+                print(f"proxy exec cleanup failed: {error}", file=sys.stderr)
+            finally:
+                if process is not None:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    try:
+                        process.stdin.close()
+                    except BrokenPipeError:
+                        pass
+                for signum, handler in handlers.items():
+                    signal.signal(signum, handler)
 
     def __init__(self, state):
         self.host = Host(state)
@@ -226,6 +320,7 @@ class Lima(Podman):
         self.host.verify(self.record)
 
     def argv(self, arguments, *, cwd=None):
+        self.host.machine(self.record)
         directory = "/tmp" if cwd is None else str(self.host.check_bind(cwd)["source"])
         return ["limactl", "shell", "--workdir", directory, self.record["instance"],
                 "env", *["-u" + name for name in (*PROXY_ENV, *ENGINE_ENV)],
@@ -236,8 +331,13 @@ class Lima(Podman):
         return self.host.guest(self.record, *arguments, **kwargs)
 
     def inspect_image(self, reference):
-        items = json.loads(self.run(["image", "inspect", "--mode=native", reference],
-                                   capture_output=True).stdout)
+        arguments = ["image", "inspect", "--mode=native", reference]
+        output = self.run(arguments, capture_output=True).stdout
+        # Nerdctl 2.3.5 native inspect exits zero with no output for a missing
+        # image. Treat only that result as absence; malformed identity is fatal.
+        if not output.strip():
+            raise subprocess.CalledProcessError(1, arguments, stderr="image is absent")
+        items = json.loads(output)
         if not isinstance(items, list) or not items:
             raise RuntimeError("image inspection returned no native image")
         # Nerdctl returns every registered alias of the requested image.
@@ -375,8 +475,27 @@ class Lima(Podman):
     def ensure_public_network(self):
         self.verify()
 
-    def create_relay_network(self, name, *, internal):
-        raise RuntimeError("Lima relay network provisioning is not integrated; use the isolated network fixture")
+    def create_relay_network(self, name, *, internal, owner=None):
+        self.verify()
+        if "relay-network.py" not in self.record["files"] or self.record["namespace"] != "default":
+            raise RuntimeError("Lima host lacks trusted relay provisioning; provision a new host")
+        self.guest(["python3", "/usr/local/share/codex-sandbox/relay-network.py", name,
+                    "internal" if internal else "egress", owner], stdout=subprocess.DEVNULL)
+
+    def initialize_volume(self, name, uid, gid, owner):
+        self.run(["volume", "create", "--label", "dev.codex.volume-owner=" + owner, name],
+                 stdout=subprocess.DEVNULL)
+        volume = single_json(self.run(["volume", "inspect", name], capture_output=True).stdout)
+        if volume.get("Labels", {}).get("dev.codex.volume-owner") != owner:
+            raise RuntimeError("refusing to initialize another creator's volume")
+        path = Path(volume["Mountpoint"])
+        if not path.is_absolute() or path.name != "_data" or path.parent.name != name:
+            raise RuntimeError("volume returned an unexpected guest mountpoint")
+        # Nerdctl copies image-directory ownership onto an empty volume at its
+        # first real mount. A marker prevents that copy from undoing this UID.
+        enter = ["containerd-rootless-setuptool.sh", "nsenter", "--"]
+        self.guest([*enter, "touch", str(path / ".codex-initialized")], timeout=30)
+        self.guest([*enter, "chown", f"{uid}:{gid}", str(path)], timeout=30)
 
 
 def image_runtime(provider, state=None):

@@ -1,17 +1,17 @@
 # Exercise outer runtime operations
 
 The image helper and runtime contracts support Podman and the provisioned Lima
-store. Ordinary sandbox launches and existing repository builders still use
-Podman. Runtime-bound shared state and the Keychain boot cache are implemented;
-Lima sessions still need launcher integration, non-root credential injection,
-trusted relay networks, and full-session validation.
+store. Podman remains the default; [opt-in Lima launches](launch.md) use the same
+runtime as their image builders. Full daily-use validation and rollback precede
+the default switch.
 
 ## Deferred integration prototype
 
 The local jj bookmark `lima-deferred-prototype` (`8d9bfb6b`, based on `1cff23d0`)
 preserves builder migration, per-agent tmpfs credential copies, relay CNI setup,
-volume initialization, and their tests. These additions are outside the active
-implementation lineage until a real launcher caller needs them. Inspect with
+volume initialization, and their tests. The launcher now uses the builder, relay,
+and volume operations with ownership-aware cleanup; per-agent credential copies
+remain deferred because the entrypoint can read the boot cache directly. Inspect with
 `jj show lima-deferred-prototype` and restore selected files or hunks, then retest.
 
 The last acknowledgement/volume ownership fixes in that checkpoint are untested.
@@ -31,8 +31,10 @@ tools/codex-sandbox/sandbox-image --provider lima resolve localhost/example:test
 ```
 
 Use `--state DIRECTORY` before the operation for a separately provisioned host.
-`--provider podman` selects the existing host `docker` entrypoint; it is the
-helper's default. No operation starts a VM, changes the launcher's provider,
+`--provider podman` selects the existing host `docker` entrypoint. The helper
+defaults to `CODEX_SANDBOX_RUNTIME`, or Podman when unset;
+`CODEX_SANDBOX_LIMA_STATE` selects its host-state directory.
+No operation starts a VM, changes the launcher's provider,
 transfers images between stores, or silently pulls a missing image during
 resolution. BuildKit may fetch Dockerfile bases that are not local.
 
@@ -40,6 +42,10 @@ Successful stdout contains exactly one local immutable reference followed by a
 newline. Progress and diagnostics go to stderr; a failed producer exits nonzero.
 `build` accepts repeated `--build-arg KEY=VALUE` and an optional `--target STAGE`.
 The Dockerfile and context must be visible through verified Lima shares.
+`build --if-missing` reuses a content-keyed image. Missing images trigger a build;
+malformed native identity remains an error. Dotfiles' base, Jujutsu, Zulip, and
+authentication proxy builders use this helper through `bin/sandbox-image` or
+its repository path, preserving their content-based cache keys.
 
 Podman returns a configuration digest. Lima returns a registered
 `localhost/codex-sandbox:sha256-HASH@sha256:HASH` reference, with the native
@@ -84,9 +90,17 @@ and runs these contracts before and after reboot alongside the network/share
 gates. `dev/test --lima` runs that gate after repository checks; it leaves the
 unrelated `--containers` suites on their existing runtime.
 
-These tests do not establish full-session equivalence: PTY/Ctrl-C behavior,
-launcher build interruption, VM loss during a session, shared-service reuse,
-credentials, host editor, and Agent Podman relays remain later gates.
+The [launcher fixture](launch.md#exercise-an-owned-host) covers PTY startup,
+shared proxies, dummy boot credentials, and host editing. Ctrl-C, launcher build
+interruption, VM loss during a session, and configured integrations remain
+full-session gates.
+
+Two native CLI behaviors need explicit handling. Nerdctl copies image-directory
+ownership onto empty volumes, so proxy-volume initialization leaves a marker to
+preserve the caller's UID. Containerd can observe stdin EOF before registering
+its closer; host routing waits for a native exec PID before sending input and
+reconciles that exec on cancellation. Inspection commands use closed stdin so
+SSH cannot consume the request itself.
 
 ## Shared-session ownership
 
@@ -104,7 +118,8 @@ absent. Local command fallback preserves stale records for the next recovery.
 
 Proxy publication, reuse, and command routing verify repository/command labels
 and native image identity. Displayed image names alone do not establish identity.
-This ownership preparation does not enable Lima launches or change image builders.
+Launcher cleanup also checks the pinned VM identity and relay/volume creator
+labels before deletion. Failed cleanup retains recovery metadata.
 
 `tests/session_owner_integration.py --provider podman --base alpine:3.22` checks
 native proxy identity and recorded-owner cleanup using owned resources. The

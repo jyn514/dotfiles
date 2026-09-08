@@ -18,10 +18,11 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import Podman, runtime_identity, state_runtime
+from sandbox_runtime import Podman, image_runtime, runtime_identity, single_json, state_runtime
 
 OUTER_RUNTIME = Podman()
 
@@ -480,9 +481,12 @@ def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
         if BARE_IMAGE_RE.fullmatch(output):
             output = "sha256:" + output
-        if result.returncode or not IMAGE_RE.fullmatch(output) or result.stdout.count("\n") > 1:
+        if result.returncode or result.stdout.count("\n") > 1:
             raise ConfigError(f"image-command for {name} did not print exactly one immutable image hash")
-        return name, output
+        try:
+            return name, OUTER_RUNTIME.builder_image(output)
+        except ValueError as error:
+            raise ConfigError(f"image-command for {name}: {error}") from error
 
     commands = manifest["commands"]
     with ThreadPoolExecutor(max_workers=max(1, len(commands))) as executor:
@@ -498,7 +502,7 @@ def _docker(*arguments: str, capture: bool = False) -> subprocess.CompletedProce
 
 def proxy_logs(container: str) -> str:
     result = subprocess.run(
-        ["docker", "logs", "--tail", "200", container], check=False, text=True,
+        OUTER_RUNTIME.argv(["logs", "--tail", "200", container]), check=False, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
     return result.stdout.strip()
@@ -565,12 +569,15 @@ def start_one_proxy(
     volume = f"{args.prefix}-{name}"
     container = f"{args.prefix}-{name}"
     proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
+    if OUTER_RUNTIME.provider == "lima":
+        proxy["volume-owner"] = uuid.uuid4().hex
     with state_lock:
         state["proxies"].append(proxy)
         write_atomic(Path(args.state), json.dumps(state))
-    _docker(
-        "volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume,
-    )
+    if OUTER_RUNTIME.provider == "lima":
+        OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
+    else:
+        _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume)
     container_repo = container_repository(args.container_repo)
     docker_args = [
         "run", "--detach", "--name", container, "--cap-drop=ALL",
@@ -587,6 +594,9 @@ def start_one_proxy(
         "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
     ]
+    if OUTER_RUNTIME.provider == "lima" and command["network"]:
+        network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
+        docker_args += ["--dns", network["dns"]]
     if name == "jj":
         git_dir, common_dir = git_metadata_paths(repo)
         jj_repo = jj_repository_path(repo)
@@ -610,11 +620,14 @@ def start_one_proxy(
         return proxy
     deadline = time.monotonic() + 10
     readiness_error = ""
-    while time.monotonic() < deadline:
+    while (remaining := deadline - time.monotonic()) > 0:
         check = subprocess.run(
-            ["docker", "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"],
+            # Nerdctl can see immediate EOF before registering its stdin
+            # closer. Readiness needs no input, so do not attach stdin there.
+            OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
+                                container, "/trusted/bin/sandbox-proxy-forward"]),
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE, text=True,
+            stderr=subprocess.PIPE, text=True, timeout=remaining,
         )
         readiness_error = check.stderr.strip()
         if check.returncode == 0:
@@ -687,6 +700,16 @@ def stop_state(state: dict[str, Any]) -> None:
         print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
     volumes_started = time.monotonic()
     volumes = set(proxy["volume"] for proxy in proxies)
+    for proxy in proxies:
+        if "volume-owner" in proxy:
+            existing = owner.run(["volume", "ls", "--format", "{{.Name}}"],
+                                 capture_output=True).stdout.splitlines()
+            if proxy["volume"] not in existing:
+                continue
+            volume = single_json(owner.run(["volume", "inspect", proxy["volume"]],
+                                           capture_output=True).stdout)
+            if volume.get("Labels", {}).get("dev.codex.volume-owner") != proxy["volume-owner"]:
+                raise ConfigError("volume belongs to another creator; retaining recovery metadata")
     with ThreadPoolExecutor(max_workers=max(1, len(volumes))) as executor:
         list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
     if volumes:
@@ -773,9 +796,7 @@ def route_main(args: argparse.Namespace) -> int:
         raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
     owner = state_runtime(session_state(metadata))
     validate_live_proxy(owner, proxy, identity, args.command)
-    return subprocess.run(
-        owner.argv(["exec", "--interactive", proxy["container"], "/trusted/bin/sandbox-proxy-forward"])
-    ).returncode
+    return owner.forward_proxy(proxy["container"])
 
 
 def finalize_main(args: argparse.Namespace) -> int:
@@ -1008,8 +1029,12 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(arguments: list[str] | None = None) -> int:
+    global OUTER_RUNTIME
     try:
         args = parse_args(arguments)
+        if args.action in {"attach", "start", "publish", "finalize"}:
+            OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"),
+                Path(os.environ["CODEX_SANDBOX_LIMA_STATE"]) if "CODEX_SANDBOX_LIMA_STATE" in os.environ else None)
         return args.function(args)
     except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"sandbox proxies: {error}", file=sys.stderr)

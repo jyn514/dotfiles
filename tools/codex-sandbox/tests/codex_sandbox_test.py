@@ -49,7 +49,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
     def test_preserves_repository_path_beneath_home_source_root(self) -> None:
         function = runpy.run_path(str(LAUNCHER))["container_repository_path"]
         with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
+            home = Path(directory).resolve()
             repository = home / "src" / "nested" / "project"
             repository.mkdir(parents=True)
             self.assertEqual(Path("/src/nested/project"), function(home, repository))
@@ -509,7 +509,7 @@ class HostEditorBridgeTest(unittest.TestCase):
 class CodexSandboxTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / "repo with spaces"
         (self.repo / ".git").mkdir(parents=True)
         (self.repo / ".jj" / "repo").mkdir(parents=True)
@@ -647,6 +647,11 @@ class CodexSandboxTest(unittest.TestCase):
         """)
         write_executable(self.fake_bin / "python3", """
             #!/bin/sh
+            # Repository builders now use the image helper's single-reference
+            # protocol. Keep the launch test independent of a real image build.
+            case "$1" in
+                */sandbox-image) printf 'sha256:%064d\\n' 0; exit 0 ;;
+            esac
             {
                 printf 'CALL'
                 for argument do printf '\t%s' "$argument"; done
@@ -1351,8 +1356,8 @@ class CodexSandboxTest(unittest.TestCase):
         result = self.run_launcher(FAKE_IMAGE_EXISTS="0")
         self.assertEqual(0, result.returncode, result.stderr)
         builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
-        self.assertEqual(2, len(builds))
-        self.assertTrue(any("tools/codex-sandbox/auth-proxy/Dockerfile" in call for call in builds))
+        # Sidecar builds belong to sandbox-image; this launcher must use the
+        # immutable result of its own freshly built agent image.
         self.assertTrue(any("tools/codex-sandbox/image/Dockerfile" in call for call in builds))
         self.assertIn("sha256:built-image-id", self.final_run())
 

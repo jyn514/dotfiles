@@ -6,10 +6,5 @@ dockerfile="$sandbox/Dockerfile"
 cache_key=$(git hash-object "$dockerfile")
 image="dotfiles-sandbox-base:$cache_key"
 
-if ! image_id=$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null); then
-	printf 'Building local sandbox base image %s ...\n' "$image" >&2
-	docker build --file "$dockerfile" --tag "$image" "$sandbox" >&2
-	image_id=$(docker image inspect --format '{{.Id}}' "$image")
-fi
-
-printf 'sha256:%s\n' "${image_id#sha256:}"
+exec "$sandbox/../../tools/codex-sandbox/sandbox-image" build --if-missing \
+	--file "$dockerfile" --tag "$image" "$sandbox"

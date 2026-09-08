@@ -2,6 +2,7 @@
 """Build or resolve an outer image; stdout contains one local immutable reference."""
 
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -11,8 +12,8 @@ from sandbox_runtime import image_runtime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", choices=("podman", "lima"), default="podman")
-    parser.add_argument("--state", type=Path)
+    parser.add_argument("--provider", choices=("podman", "lima"), default=os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
+    parser.add_argument("--state", type=Path, default=os.environ.get("CODEX_SANDBOX_LIMA_STATE"))
     sub = parser.add_subparsers(dest="operation", required=True)
     resolve = sub.add_parser("resolve")
     resolve.add_argument("reference")
@@ -21,12 +22,21 @@ def main():
     build.add_argument("--file", type=Path, required=True)
     build.add_argument("--build-arg", action="append", default=[])
     build.add_argument("--target")
+    build.add_argument("--if-missing", action="store_true")
     build.add_argument("context", type=Path)
     args = parser.parse_args()
     runtime = image_runtime(args.provider, args.state)
     if args.operation == "resolve":
         image = runtime.resolve_image(args.reference)
     else:
+        if args.if_missing:
+            try:
+                image = runtime.resolve_image(args.tag)
+            except subprocess.CalledProcessError:
+                pass
+            else:
+                print(image.reference)
+                return
         image = runtime.build(args.tag, args.file.resolve(strict=True),
                               args.context.resolve(strict=True),
                               build_args=args.build_arg, target=args.target)

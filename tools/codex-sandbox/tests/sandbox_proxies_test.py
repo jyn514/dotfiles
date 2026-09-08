@@ -634,20 +634,19 @@ class ManifestTest(unittest.TestCase):
             "state": state, "commands": {"example": {"container": "owned", "image": "immutable"}}}))
         owner = mock.Mock()
         repository = sandbox_proxies.repository_identity(self.repo)
-        owner.argv.return_value = ["recorded-engine", "exec", "owned"]
+        owner.forward_proxy.return_value = 7
         args = type("Args", (), {"repo": str(self.repo), "command": "example", "wait": 1, "local": ["local"]})
         with (directory / "session.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
             with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME") as current, \
                     mock.patch.object(sandbox_proxies, "repository_identity", return_value=repository), \
                     mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner) as recorded, \
-                    mock.patch.object(sandbox_proxies, "validate_live_proxy") as validate, \
-                    mock.patch.object(sandbox_proxies.subprocess, "run", return_value=subprocess.CompletedProcess([], 7)) as run:
+                    mock.patch.object(sandbox_proxies, "validate_live_proxy") as validate:
                 self.assertEqual(7, sandbox_proxies.route_main(args))
         recorded.assert_called_once_with(state)
         self.assertIs(owner, validate.call_args.args[0])
-        current.argv.assert_not_called()
-        self.assertEqual(["recorded-engine", "exec", "owned"], run.call_args.args[0])
+        current.forward_proxy.assert_not_called()
+        owner.forward_proxy.assert_called_once_with("owned")
 
     def test_live_identity_requires_native_image_as_well_as_labels(self) -> None:
         owner = mock.Mock()
@@ -787,6 +786,25 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(["docker", "volume", "rm", "volume"], calls[5])
         self.assertEqual(["docker", "volume", "ls", "--format", "{{.Name}}"], calls[6])
 
+    def test_cleanup_cannot_delete_a_volume_rejected_during_creation(self) -> None:
+        state = {"proxies": [{"container": "owned-container", "volume": "collision",
+                               "volume-owner": "this-creator"}]}
+        owner = mock.Mock()
+
+        def run(arguments, **kwargs):
+            output = ""
+            if arguments[:2] == ["volume", "ls"]:
+                output = "collision\n"
+            elif arguments[:2] == ["volume", "inspect"]:
+                output = json.dumps([{"Labels": {"dev.codex.volume-owner": "another-creator"}}])
+            return subprocess.CompletedProcess(arguments, 0, stdout=output)
+
+        owner.run.side_effect = run
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "another creator"):
+                sandbox_proxies.stop_state(state)
+        self.assertFalse(any(call.args[0][:2] == ["volume", "rm"]
+                             for call in owner.run.call_args_list))
     def test_image_resolution_normalizes_bare_sha256_hash(self) -> None:
         digest = "0" * 64
         manifest = {"commands": {"example": self.command()}}
