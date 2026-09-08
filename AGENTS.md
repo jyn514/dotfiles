@@ -33,6 +33,7 @@ source generated output only after its producer succeeds, and update persistent 
 Add regression tests for both success and failure paths.
 
 When a simple implementation choice preserves a non-obvious historical constraint, add a brief comment explaining the constraint and why that choice preserves it.
+When presenting many results, choose a review surface suited to the batch rather than repeating the single-item interaction.
 
 For Pi UI extensions, verify documented hooks against the installed implementation and reuse Pi's authoritative providers instead of duplicating resource discovery.
 
