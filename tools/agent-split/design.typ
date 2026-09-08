@@ -1,5 +1,19 @@
-#import "../style.typ": apply-settings, requirement, rationale, status, invariant, open-question, takeaway, example
-#show: apply-settings.with(title: [`agent-jj-split`])
+#set document(title: "Agent-safe patch-level jj split")
+#set page(paper: "us-letter", margin: 1in)
+#set text(size: 10.5pt)
+#set par(justify: true, leading: 0.65em)
+#set heading(numbering: "1.")
+
+#let callout(label, body) = block(above: 0.6em, below: 0.6em)[
+  #strong(label) #body
+]
+#let requirement(body) = callout("Requirement.", body)
+#let rationale(body) = callout("Rationale.", body)
+#let status(body) = callout("Status.", body)
+#let invariant(body) = callout("Invariant.", body)
+#let open-question(body) = callout("Open question.", body)
+#let takeaway(body) = callout("Takeaway.", body)
+#let example(body) = block(inset: (left: 1em), body)
 
 #align(center)[
   #v(3cm)
@@ -179,6 +193,9 @@ bb agent-split target/jj-split/selected.patch -m 'Extract focused change' @
 
 #requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left tree for the touched paths, dry-runs and applies the patch there, and checks that the selected diff is contained in the original `jj diff --git -r <revision>` output.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.]
+
+#requirement[The wrapper snapshots the working copy once before preflight, then passes `--ignore-working-copy` to revision-only Jujutsu queries during preflight and verification.
+The mutating `jj split` command still snapshots normally, so splitting the working-copy commit uses current workspace bytes while non-working revisions retain their stored trees, without making every metadata or tree query rescan unrelated files.]
 
 #requirement[Before invoking `jj split`, the agent and wrapper must ensure no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.
 `target/jj-split/` must be ignored, and any patch or helper path inside the repository must be contained there.

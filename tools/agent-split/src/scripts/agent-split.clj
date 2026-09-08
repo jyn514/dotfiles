@@ -49,6 +49,18 @@
                          (str "\n" (:err result))))))
     result))
 
+(defn- run-jj-read
+  [step & args]
+  (let [opts (when (map? (first args)) (first args))
+        [subcommand & subcommand-args] (if opts (rest args) args)]
+    (if opts
+      (apply run step opts "jj" subcommand "--ignore-working-copy" subcommand-args)
+      (apply run step "jj" subcommand "--ignore-working-copy" subcommand-args))))
+
+(defn- snapshot-workspace! []
+  (run "snapshot safety" "jj" "status" "--no-pager")
+  nil)
+
 (defn- usage! []
   (fail! "Usage" "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [revision]"))
 
@@ -185,7 +197,7 @@
 
 (defn- tree-entry-index [revision]
   (let [template "path ++ \"\\t\" ++ file_type ++ \"\\t\" ++ executable ++ \"\\n\""
-        out (:out (run "preflight" "jj" "file" "list" "-r" revision "-T" template))]
+        out (:out (run-jj-read "preflight" "file" "list" "-r" revision "-T" template))]
     (into {}
           (keep (fn [line]
                   (let [[path type executable] (str/split line #"\t")]
@@ -196,11 +208,9 @@
 
 (defn- write-file-from-revision! [revision path target executable?]
   (fs/create-dirs (fs/parent target))
-  (let [result (process/shell {:out target
-                               :err :string
-                               :shutdown nil
-                               :continue true}
-                              "jj" "file" "show" "-r" revision path)]
+  (let [result (run-jj-read "preflight"
+                            {:out target}
+                            "file" "show" "-r" revision path)]
     (when-not (zero? (:exit result))
       (fail! "preflight" (str "could not materialize " path "\n" (:err result)))))
   (when executable?
@@ -218,8 +228,8 @@
                     (fs/create-dirs (fs/parent target-path))
                     (fs/create-sym-link target-path
                                         (str/trim-newline
-                                         (:out (run "preflight" "jj" "file" "show"
-                                                    "-r" revision path)))))
+                                         (:out (run-jj-read "preflight" "file" "show"
+                                                            "-r" revision path)))))
         (fail! "preflight" (str "unsupported tree entry for " path ": " type))))))
 
 (defn- deleted-symlink-paths [patch-text]
@@ -348,13 +358,13 @@
                  (normalize-diff-paths (diff-output left right) left right))
                 (select-keys
                  (diff-change-index
-                  (:out (run "preflight" "jj" "diff" "--git" "-r" revision)))
+                  (:out (run-jj-read "preflight" "diff" "--git" "-r" revision)))
                  symlink-paths))))
 
 (defn- preflight! [patch-text revision helper-root]
   (validate-patch-paths! patch-text)
   (let [patch-paths (patch-file-paths patch-text)
-        original-patch (:out (run "preflight" "jj" "diff" "--git" "-r" revision))
+        original-patch (:out (run-jj-read "preflight" "diff" "--git" "-r" revision))
         original-paths (patch-file-paths original-patch)
         left-revision (format "(%s)-" revision)
         left (fs/file helper-root "left")
@@ -432,8 +442,8 @@
 (defn- current-operation-id []
   (when-not (sandbox-proxy-dir)
     (str/trim-newline
-     (:out (run "preflight" "jj" "op" "log" "--limit" "1" "--no-graph"
-                "-T" "id.short()")))))
+     (:out (run-jj-read "preflight" "op" "log" "--limit" "1" "--no-graph"
+                        "-T" "id.short()")))))
 
 (defn- restore-operation! [operation-id]
   (when operation-id
@@ -449,21 +459,21 @@
 
 (defn- revision-change-id [revision]
   (str/trim-newline
-   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
-              "-T" change-id-template))))
+   (:out (run-jj-read "preflight" "log" "-r" revision "--no-graph"
+                      "-T" change-id-template))))
 
 (defn- revision-commit-id [revision]
   (str/trim-newline
-   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
-              "-T" commit-id-template))))
+   (:out (run-jj-read "preflight" "log" "-r" revision "--no-graph"
+                      "-T" commit-id-template))))
 
 (defn- revision-description [revision]
   (str/trim-newline
-   (:out (run "preflight" "jj" "log" "-r" revision "--no-graph"
-              "-T" "description"))))
+   (:out (run-jj-read "preflight" "log" "-r" revision "--no-graph"
+                      "-T" "description"))))
 
 (defn- revision-ids [revset template]
-  (->> (:out (run "preflight" "jj" "log" "-r" revset "--no-graph" "-T" template))
+  (->> (:out (run-jj-read "preflight" "log" "-r" revset "--no-graph" "-T" template))
        str/split-lines
        (remove str/blank?)
        vec))
@@ -529,7 +539,7 @@
                     (str "; continue with child " continuation)))))))
 
 (defn- changed-paths [revision]
-  (->> (:out (run "verify" "jj" "diff" "-r" revision "--name-only"))
+  (->> (:out (run-jj-read "verify" "diff" "-r" revision "--name-only"))
        str/split-lines
        (remove str/blank?)
        set))
@@ -547,8 +557,8 @@
                        (diff-output expected-selected-tree actual-selected-tree)
                        expected-selected-tree
                        actual-selected-tree)
-        remaining-diff (:out (run "verify" "jj" "diff" "--from" original-commit
-                                  "--to" remaining-revision "--name-only"))]
+        remaining-diff (:out (run-jj-read "verify" "diff" "--from" original-commit
+                                          "--to" remaining-revision "--name-only"))]
     (cond
       (seq unexpected-paths)
       (str "selected commit changed unexpected paths: "
@@ -605,7 +615,9 @@
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
                      (fail! "preflight" (str "patch file does not exist: " patch)))
-        repo-root (str/trim-newline (:out (run "snapshot safety" "jj" "workspace" "root")))
+        ;; Establish one authoritative preflight snapshot. Revision-only reads reuse it.
+        _ (snapshot-workspace!)
+        repo-root (str/trim-newline (:out (run-jj-read "snapshot safety" "workspace" "root")))
         artifact-root (fs/file repo-root "target" "jj-split")
         _ (fs/create-dirs artifact-root)
         helper-root (fs/create-temp-dir {:dir (temp-root)

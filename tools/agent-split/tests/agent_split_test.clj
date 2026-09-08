@@ -48,6 +48,24 @@
   (is (= "preflight: stale selected content"
          ((ns-resolve (quote scripts.jj-split-patch) (quote failure-text)) "preflight" "stale selected content"))))
 
+(deftest jj-split-patch-snapshots-before-ignoring-the-working-copy
+  (let [run-command (ns-resolve (quote scripts.jj-split-patch) (quote run))
+        run-jj-read (ns-resolve (quote scripts.jj-split-patch) (quote run-jj-read))
+        snapshot-workspace! (ns-resolve (quote scripts.jj-split-patch) (quote snapshot-workspace!))
+        calls (atom [])]
+    (with-redefs-fn {run-command (fn [& args]
+                                   (swap! calls conj args)
+                                   {:out ""})}
+      (fn []
+        (snapshot-workspace!)
+        (run-jj-read "preflight" "log" "-r" "@")
+        (run-jj-read "preflight" {:out "tree.txt"} "file" "show" "-r" "@-" "note.txt")))
+    (is (= '(("snapshot safety" "jj" "status" "--no-pager")
+             ("preflight" "jj" "log" "--ignore-working-copy" "-r" "@")
+             ("preflight" {:out "tree.txt"} "jj" "file" "--ignore-working-copy"
+              "show" "-r" "@-" "note.txt"))
+           @calls))))
+
 (deftest jj-split-patch-parses-json-output-mode
   (is (= {:patch "selected.patch"
           :message "Extract change"

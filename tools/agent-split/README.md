@@ -56,6 +56,7 @@ Run tests or lint appropriate to each newly separated change.
 
 - The patch must contain only changes already present in `jj diff --git -r <revision>`. Never use the tool to introduce new content.
 - Keep patches and helper artifacts outside visible source or under ignored `target/jj-split/`; `jj split` snapshots the working copy before invoking its editor.
+- The wrapper takes one initial snapshot, then runs revision-only preflight and verification queries with `--ignore-working-copy`; the mutating `jj split` retains normal snapshot behavior.
 - Always provide `-m`; interactive patch and description editors are outside this workflow.
 - Do not continue after a failure. Exit `1` means preflight failed before mutation, `2` means `jj split` failed, and `3` means post-split verification failed.
 - For exit `1`, regenerate the patch from the current diff and retry. For exit `2`, inspect `jj status` and `jj op log` before retrying.
