@@ -1,31 +1,24 @@
 # Launch an opt-in Lima sandbox
 
-Podman remains the default. Lima uses the same repository mounts, command proxies,
-host editor, and optional Agent Podman worker, with outer images built in its
-own containerd store. The global `docker` command and worker engine are unchanged.
+Podman remains the default. Lima shares your home with the VM; containers keep
+the launcher's narrow mounts, protected metadata, and isolated credentials.
 
 ## Prepare the host
 
-Follow [host setup](host-setup.md) from a trusted checkout. Share the repository,
-resolved skills directory, persistent Pi directories, and external repository
-metadata writable; share the dotfiles tool checkout and Codex configuration
-read-only unless they are also the working repository. The launcher checks guest
-visibility before building images or creating session resources.
+Run once from dotfiles:
 
-For configured integrations, also share the dedicated Codex authentication
-directory writable and the Agent Podman access directory read-only. Shares are
-directories: if your Zulip credential is directly in your home directory, place
-its regular mode-0600 file in a dedicated shared directory and set
-`CODEX_SANDBOX_ZULIPRC` to that file. The default remains `~/.zuliprc`; symlinked
-credentials are rejected. Do not share the whole home merely to expose one file.
+```sh
+python3 tools/codex-sandbox/lima/host.py setup
+python3 tools/codex-sandbox/sandbox_credentials.py import-podman
+```
 
-New hosts install the relay creator as trusted VM code. Older hosts lacking this
-helper need a new owned instance; launch does not upgrade installed policy from
-the current checkout.
+Setup automatically shares `$HOME` writable with the VM. Adding repositories or
+configuration beneath home needs no VM share update or restart; nothing mounts
+home wholesale into an agent container. Existing narrow test VMs remain separate.
+See [host setup](host-setup.md) for lifecycle and recovery.
 
-Import the existing GitHub secret following [Keychain provisioning](credentials.md).
-The first credential use after each VM boot requires approval; subsequent launches
-reuse the private guest tmpfs cache. Denied approval blocks startup.
+[Keychain](credentials.md) requests **Allow** once per VM boot; do not choose
+**Always Allow**. Later launches reuse the guest tmpfs cache.
 
 ## Select the runtime
 
@@ -57,7 +50,7 @@ or invalidates its boot credential.
 
 ## Exercise an owned host
 
-The integration fixture needs dotfiles shared read-only and an existing writable
+The integration fixture needs dotfiles readable and an existing writable
 test directory. It creates a disposable home/repository, supplies only a dummy
 GitHub credential, checks the non-root entrypoint and protected mounts, and runs
 two real PTY launches. It exercises host and agent Jujutsu routing, router SIGTERM,

@@ -24,6 +24,43 @@ network_spec.loader.exec_module(network)
 
 
 class HostTests(unittest.TestCase):
+    def test_default_setup_shares_home_once_including_its_scratch_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            instance = host.Host(home / ".local/state/sandbox")
+            def stop_after_plan(*args, **kwargs):
+                if args[1] == "create":
+                    raise InterruptedError("plan recorded")
+            with patch.object(host.Path, "home", return_value=home), \
+                    patch.object(host, "machines", return_value={}), \
+                    patch.object(host, "command", side_effect=stop_after_plan):
+                with self.assertRaisesRegex(InterruptedError, "plan recorded"):
+                    instance.setup("sandbox-host")
+            self.assertEqual([{"location": str(home), "mountPoint": str(home), "writable": True}],
+                             instance.record()["shares"])
+            new_repository = home / "src/new-repository"
+            new_repository.mkdir(parents=True)
+            self.assertEqual(new_repository, host.bind_source(instance.record(), new_repository, True))
+
+    def test_default_setup_keeps_external_scratch_without_sharing_its_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            home = root / "home"
+            home.mkdir()
+            instance = host.Host(root / "external-state")
+            def stop_after_plan(*args, **kwargs):
+                if args[1] == "create":
+                    raise InterruptedError("plan recorded")
+            with patch.object(host.Path, "home", return_value=home), \
+                    patch.object(host, "machines", return_value={}), \
+                    patch.object(host, "command", side_effect=stop_after_plan):
+                with self.assertRaisesRegex(InterruptedError, "plan recorded"):
+                    instance.setup("sandbox-host")
+            self.assertEqual({str(home), str(instance.state / "scratch")},
+                             {share["location"] for share in instance.record()["shares"]})
+            with self.assertRaisesRegex(ValueError, "outside"):
+                host.bind_source(instance.record(), instance.state)
+
     def test_changed_native_network_cannot_be_adopted_as_trusted_policy(self):
         # Captured from the pinned 2.3.5 stack's disposable host gate, including
         # its real host-local range encoding. This is native input, not a mock.

@@ -46,6 +46,23 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_lima_rejects_a_whole_home_container_bind_through_a_symlink(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            repository = home / "src/project"
+            repository.mkdir(parents=True)
+            alias = home / "skills-alias"
+            alias.symlink_to(home, target_is_directory=True)
+            state = SimpleNamespace(home=home, repository=repository, skills_source=alias,
+                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_podman=None)
+            backend = mock.Mock()
+            with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
+                                 _secure_codex_auth_directory=lambda _: None):
+                with self.assertRaisesRegex(launcher["LauncherError"], "whole home"):
+                    launcher["preflight_lima"](state)
+            backend.host.check_bind.assert_not_called()
+
     def test_preserves_repository_path_beneath_home_source_root(self) -> None:
         function = runpy.run_path(str(LAUNCHER))["container_repository_path"]
         with tempfile.TemporaryDirectory() as directory:

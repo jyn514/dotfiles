@@ -128,15 +128,22 @@ class Host:
             raise ValueError("VM identity or security configuration differs from the setup record")
         return machine
 
-    def setup(self, instance, read, write):
+    def setup(self, instance, read=None, write=None):
         if not re.fullmatch(r"sandbox-host(?:-[a-z0-9-]+)?", instance):
             raise ValueError("instance must be sandbox-host or sandbox-host-SUFFIX")
         scratch = private_directory(self.state / "scratch")
-        requested = shares(read, [*write, str(scratch)])
-        # The host record and installed source snapshot must never enter shares.
-        if any(self.state.is_relative_to(Path(item["location"])) or
+        home_share = Path.home().resolve(strict=True) if read is None and write is None else None
+        requested = shares([], [home_share]) if home_share is not None else shares(read or [], write or [])
+        if not any(scratch.is_relative_to(Path(item["location"])) and item["writable"] for item in requested):
+            requested = shares([item["location"] for item in requested if not item["writable"]],
+                               [*[item["location"] for item in requested if item["writable"]], scratch])
+        # The normal VM deliberately sees home, including private host state.
+        # Containers still receive only launcher-declared mounts. Explicit test
+        # shares retain the stricter exclusion of their control directories.
+        if any(not (home_share is not None and Path(item["location"]) == home_share) and
+               (self.state.is_relative_to(Path(item["location"])) or
                (Path(item["location"]).is_relative_to(self.state) and
-                not Path(item["location"]).is_relative_to(scratch)) for item in requested):
+                not Path(item["location"]).is_relative_to(scratch))) for item in requested):
             raise ValueError("a share exposes the host control directory")
         recovering_installation = False
         if self.record_path.exists():
@@ -266,8 +273,8 @@ def main():
     sub = parser.add_subparsers(dest="operation", required=True)
     setup = sub.add_parser("setup")
     setup.add_argument("--instance", default="sandbox-host")
-    setup.add_argument("--share-read", action="append", default=[])
-    setup.add_argument("--share-write", action="append", default=[])
+    setup.add_argument("--share-read", action="append", help="override the default home share (test fixtures)")
+    setup.add_argument("--share-write", action="append", help="override the default home share (test fixtures)")
     sub.add_parser("start")
     sub.add_parser("status")
     sub.add_parser("stop")

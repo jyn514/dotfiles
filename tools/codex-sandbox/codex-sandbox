@@ -1301,6 +1301,10 @@ def preflight_lima(state: State) -> None:
         writable.append(state.codex_auth_directory)
     if state.agent_podman is not None:
         readable += [state.agent_podman_key, state.agent_podman_known_hosts]
+    home = state.home.resolve(strict=True)
+    for path in [*writable, *readable]:
+        if home.is_relative_to(path.resolve(strict=True)):
+            raise LauncherError(f"refusing to mount the whole home directory into a container: {path}")
     for path in writable:
         OUTER_RUNTIME.host.check_bind(path, writable=True)
     for path in readable:
