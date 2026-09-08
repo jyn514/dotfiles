@@ -1,0 +1,161 @@
+#!/usr/bin/python3
+"""Experimental chained CNI policy; install a trusted copy, never bind-mount it."""
+
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import stat
+import subprocess
+import sys
+
+
+POLICY = Path("/usr/local/share/codex-sandbox/network-policy.json")
+# Guest root is unmapped inside RootlessKit's user namespace. Compare against
+# the trusted /usr owner rather than assuming guest root is namespace UID 0.
+GUEST_ROOT_UID = Path("/usr").stat().st_uid
+VERSIONS = ["0.4.0", "1.0.0"]
+DNS_TABLE = "1053"
+DNS_PRIORITIES = {"tcp": "1053", "udp": "1054"}
+
+
+def policy_routes(config):
+    metadata = POLICY.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != GUEST_ROOT_UID or metadata.st_mode & 0o022:
+        raise ValueError("policy must be a root-owned regular file without group/other write access")
+    raw = POLICY.read_bytes()
+    if config.get("policyDigest") != hashlib.sha256(raw).hexdigest():
+        raise ValueError("missing or stale network policy digest")
+    policy = json.loads(raw)
+    if policy.get("version") != 2 or policy.get("ipv6") != "disabled":
+        raise ValueError("unsupported network policy")
+    routes = [str(ipaddress.IPv4Network(route)) for route in policy["prohibited"]]
+    if not routes or len(routes) != len(set(routes)):
+        raise ValueError("empty or duplicate prohibited routes")
+    dns = str(ipaddress.IPv4Address(policy["dns"]))
+    if not any(ipaddress.IPv4Address(dns) in ipaddress.IPv4Network(route) for route in routes):
+        raise ValueError("DNS exception must lie inside a prohibited range")
+    return routes, dns
+
+
+def verify_resolver(dns):
+    # With --detach-netns, the daemon's resolv.conf is not the workload's DNS
+    # configuration. Query the same authoritative API nerdctl uses instead.
+    state_dir = os.environ.get("ROOTLESSKIT_STATE_DIR")
+    if not state_dir or not Path(state_dir).is_absolute():
+        raise ValueError("RootlessKit state directory is missing")
+    result = subprocess.run(
+        ["/usr/local/bin/rootlessctl", "--socket", str(Path(state_dir) / "api.sock"), "info", "--json"],
+        check=True, capture_output=True, text=True, timeout=10,
+    )
+    network = json.loads(result.stdout).get("networkDriver", {})
+    if network.get("driver") != "slirp4netns" or network.get("dns") != [dns]:
+        raise ValueError("RootlessKit resolver differs from pinned DNS address")
+
+
+def in_namespace(*arguments):
+    namespace = os.environ.get("CNI_NETNS")
+    if not namespace or not Path(namespace).is_absolute():
+        raise ValueError("CNI_NETNS must identify a network namespace")
+    return subprocess.run(
+        ["/usr/bin/nsenter", "--net=" + namespace, "--", *arguments],
+        check=True, capture_output=True, text=True, timeout=10,
+    ).stdout
+
+
+def check_routes(routes):
+    actual = json.loads(in_namespace("/usr/sbin/ip", "-j", "-4", "route", "show", "type", "prohibit"))
+    if not set(routes).issubset({route.get("dst") for route in actual}):
+        raise ValueError("incomplete prohibited routes")
+    for interface in ("all", "default"):
+        value = in_namespace("/usr/sbin/sysctl", "-n", f"net.ipv6.conf.{interface}.disable_ipv6")
+        if value.strip() != "1":
+            raise ValueError("IPv6 policy not installed")
+
+
+def default_route():
+    routes = json.loads(in_namespace("/usr/sbin/ip", "-j", "-4", "route", "show", "default"))
+    if len(routes) != 1 or not routes[0].get("gateway") or not routes[0].get("dev"):
+        raise ValueError("DNS allowance requires one unambiguous default gateway")
+    return str(ipaddress.IPv4Address(routes[0]["gateway"])), routes[0]["dev"]
+
+
+def check_dns(dns, gateway, interface):
+    rules = json.loads(in_namespace("/usr/sbin/ip", "-j", "-4", "rule", "show"))
+    owned = [rule for rule in rules if str(rule.get("table")) == DNS_TABLE
+             or str(rule.get("priority")) in DNS_PRIORITIES.values()]
+    expected = [{"priority": int(priority), "src": "all", "dst": dns,
+                 "ipproto": protocol, "dport": 53, "table": DNS_TABLE}
+                for protocol, priority in DNS_PRIORITIES.items()]
+    if owned != expected:
+        raise ValueError(f"DNS policy routing selectors differ from TCP/UDP port 53: {owned!r}")
+    for protocol in DNS_PRIORITIES:
+        route = json.loads(in_namespace("/usr/sbin/ip", "-j", "-4", "route", "get", dns,
+                                       "ipproto", protocol, "dport", "53"))
+        if len(route) != 1 or route[0].get("gateway") != gateway or route[0].get("dev") != interface:
+            raise ValueError("DNS allowance uses the wrong gateway")
+        # Prove the exception is not a general host route, even on a later CHECK.
+        try:
+            in_namespace("/usr/sbin/ip", "-4", "route", "get", dns,
+                         "ipproto", protocol, "dport", "54")
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 2 or "Permission denied" not in error.stderr:
+                raise
+        else:
+            raise ValueError("non-DNS traffic bypasses the prohibited route")
+
+
+def allow_dns(dns, gateway, interface):
+    rules = json.loads(in_namespace("/usr/sbin/ip", "-j", "-4", "rule", "show"))
+    if any(str(rule.get("table")) == DNS_TABLE or str(rule.get("priority")) in DNS_PRIORITIES.values()
+           for rule in rules):
+        check_dns(dns, gateway, interface)
+        return
+    in_namespace("/usr/sbin/ip", "-4", "route", "replace", "table", DNS_TABLE,
+                 dns + "/32", "via", gateway, "dev", interface, "onlink")
+    for protocol, priority in DNS_PRIORITIES.items():
+        in_namespace("/usr/sbin/ip", "-4", "rule", "add", "priority", priority,
+                     "to", dns + "/32", "ipproto", protocol, "dport", "53", "lookup", DNS_TABLE)
+
+
+def main():
+    command = os.environ.get("CNI_COMMAND")
+    if command == "VERSION":
+        return {"cniVersion": "1.0.0", "supportedVersions": VERSIONS}
+    # Keep restrictions until namespace destruction, including failed ADD cleanup.
+    # Removing routes on one attachment's DEL could expose another attachment.
+    if command == "DEL":
+        return None
+    config = json.load(sys.stdin)
+    if config.get("cniVersion") not in VERSIONS:
+        raise ValueError("unsupported CNI version")
+    if command not in ("ADD", "CHECK"):
+        raise ValueError("unsupported CNI command")
+    routes, dns = policy_routes(config)
+    verify_resolver(dns)
+    result = config.get("prevResult")
+    if not isinstance(result, dict) or not result.get("interfaces") or not result.get("ips"):
+        raise ValueError("public-only must follow an interface/IPAM plugin")
+    if command == "ADD":
+        for interface in ("all", "default"):
+            in_namespace("/usr/sbin/sysctl", "-w", f"net.ipv6.conf.{interface}.disable_ipv6=1")
+        for route in routes:
+            in_namespace("/usr/sbin/ip", "-4", "route", "replace", "prohibit", route)
+        gateway, interface = default_route()
+        allow_dns(dns, gateway, interface)
+    check_routes(routes)
+    gateway, interface = default_route()
+    check_dns(dns, gateway, interface)
+    return result if command == "ADD" else None
+
+
+if __name__ == "__main__":
+    try:
+        result = main()
+        if result is not None:
+            print(json.dumps(result))
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(json.dumps({"cniVersion": "1.0.0", "code": 7,
+                          "msg": "public-only policy failed", "details": str(error)}))
+        raise SystemExit(1)

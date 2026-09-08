@@ -1,0 +1,28 @@
+# Feasibility fixture only; not a production VM or launcher default.
+# Image and nerdctl bundle pins come from Lima 1.2.1's installed templates.
+minimumLimaVersion: 1.2.1
+vmType: vz
+arch: aarch64
+cpus: 2
+memory: 2GiB
+disk: 12GiB
+images:
+# Ubuntu's archive serves HTTP; the mandatory digest authenticates the bytes.
+- location: http://cloud-images-archive.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-arm64.img
+  arch: aarch64
+  digest: sha256:bbecbb88100ee65497927ed0da247ba15af576a8855004182cf3c87265e25d35
+mounts: []
+ssh:
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+hostResolver:
+  enabled: true
+  ipv6: false
+propagateProxyEnv: false
+containerd:
+  system: false
+  user: true
+  archives:
+  - location: https://github.com/containerd/nerdctl/releases/download/v2.1.3/nerdctl-full-2.1.3-linux-arm64.tar.gz
+    arch: aarch64
+    digest: sha256:544fa1e518155fcc01a117ea49819d12d96b4dacfb2b62922f9f7956dc9f6dc8

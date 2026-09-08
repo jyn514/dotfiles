@@ -8,6 +8,9 @@ The launcher mounts `~/src` read-only at `/src`, then overlays the active reposi
 
 ## Prerequisites and setup
 
+The outer runtime still uses Podman. The opt-in [Lima network feasibility probe](lima/README.md)
+tests container-level restrictions and an explicit DNS allowance in its own disposable VM.
+
 - Run from a Git checkout. The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and a `docker`-compatible Podman/Docker CLI. Image builds require network access on first use.
 - Put this repository's `bin/` on `PATH`; `pi` delegates to `codex-sandbox`.
