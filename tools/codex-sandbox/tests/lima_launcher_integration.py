@@ -105,6 +105,9 @@ def exercise(state, work):
                         stdout=subprocess.DEVNULL)
             try:
                 before = runtime.run(["network", "inspect", "--mode=native", network], capture_output=True).stdout
+                print("\nEXPECTED FAILURE: rejecting a relay network owned by another creator.\n"
+                      "The following traceback and retained-recovery warnings are part of this check.",
+                      file=sys.stderr, flush=True)
                 try:
                     launcher["prepare_editor_relay"](collision)
                 except subprocess.CalledProcessError:
@@ -120,6 +123,8 @@ def exercise(state, work):
                     collision.proxy_state.unlink(missing_ok=True)
                 if collision.recovery_record is not None:
                     collision.recovery_record.unlink(missing_ok=True)
+            print("PASS: the conflicting network survived; fixture resources and recovery record removed.\n",
+                  file=sys.stderr, flush=True)
             base = subprocess.run([str(sandbox / "base-image")], env=environment, cwd=repo,
                                   check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
             agent = launcher["ensure_image"](launcher["new_state"](["--help"]), base)
@@ -151,9 +156,14 @@ def exercise(state, work):
                 metadata = runtime.run(["inspect", "--mode=native", probe_name],
                                        capture_output=True).stdout
                 assert "owned-dummy-github-token" not in metadata
-            for _ in range(2):
+            print("\nThe next checks reuse an existing proxy volume; nerdctl may warn that it already exists.",
+                  file=sys.stderr, flush=True)
+            for launch in range(1, 3):
+                print(f"\nSTARTUP CHECK {launch}/2: Pi's help screen is the expected output.",
+                      file=sys.stderr, flush=True)
                 terminal_run([sys.executable, str(ROOT / "codex-sandbox"), "--help"],
                              environment, repo / "nested")
+                print(f"PASS: PTY launch {launch}/2 exited successfully.", file=sys.stderr, flush=True)
                 assert boot_credential(runtime, retrieve=lambda: (_ for _ in ()).throw(
                     AssertionError("session exit discarded the boot cache"))) == cache
                 metadata_path, = (home / "runtime/codex-sandbox-proxies").glob("*/session.json")
@@ -215,11 +225,11 @@ def exercise(state, work):
                         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxies/jj,readonly",
                         "--entrypoint", "/tools/jj-proxy/client"], ["status"]) as process:
                     assert process.wait(timeout=30) == 0
-            print("Two real PTY launches reused the boot credential and shared proxies.", flush=True)
         finally:
             subprocess.run([sys.executable, str(ROOT / "sandbox-proxies.py"), "reset", "--repo", str(repo)],
                            env=environment, check=True, timeout=120)
             boot_credential(runtime, invalidate=True)
+    print("PASS: all Lima launcher checks and cleanup completed; dummy boot credential invalidated.", flush=True)
 
 
 if __name__ == "__main__":

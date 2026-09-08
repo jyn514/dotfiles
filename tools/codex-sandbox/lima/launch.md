@@ -69,6 +69,12 @@ python3 tools/codex-sandbox/tests/lima_launcher_integration.py \
   --state /path/to/test-host-state --work /path/to/shared-test-directory
 ```
 
+The fixture labels its deliberate relay-collision traceback and cleanup warnings
+as `EXPECTED FAILURE`, explains nerdctl's existing-volume warnings, and announces
+the two expected Pi help screens. A successful run ends with `PASS: all Lima
+launcher checks and cleanup completed; dummy boot credential invalidated.` and
+exit status zero; an earlier passing check does not establish overall success.
+
 This opt-in path precedes the macOS default switch. External-repository migration,
 configured integration smoke tests, full interruption/recovery validation, and
 rollback remain cutover gates.
