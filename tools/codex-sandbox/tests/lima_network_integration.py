@@ -37,15 +37,18 @@ def launcher_policy():
     raise ValueError("launcher policy owner moved; update the fixture explicitly")
 
 
-def install_probe(instance, endpoint):
+def install_probe(instance, endpoint, *, expected_shares=None):
     def guest(*args, **kwargs):
         return command("limactl", "shell", "--workdir", "/tmp", instance, *args, **kwargs)
 
     result = command("limactl", "list", "--json", instance, capture_output=True, text=True)
     machine = json.loads(result.stdout)
     config = machine["config"]
-    if config.get("mounts") or config["ssh"].get("forwardAgent") or config["containerd"].get("system"):
-        raise ValueError("fixture must have no shares, SSH forwarding, or system containerd")
+    actual_shares = [{key: mount.get(key, False) for key in ("location", "mountPoint", "writable")}
+                     for mount in config.get("mounts", [])]
+    if (sorted(actual_shares, key=lambda item: item["location"]) != (expected_shares or []) or
+            config["ssh"].get("forwardAgent") or config["containerd"].get("system")):
+        raise ValueError("fixture has unexpected shares, SSH forwarding, or system containerd")
     guest("slirp4netns", "--version")
     scratch = guest("mktemp", "-d", "/tmp/sandbox-policy.XXXXXXXX", capture_output=True, text=True).stdout.strip()
     for name, content in (("public-only", (ROOT / "lima/public-only").read_bytes()),
