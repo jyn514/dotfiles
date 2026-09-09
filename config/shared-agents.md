@@ -1,7 +1,5 @@
 # Shared agent instructions
 
-@coordination-dialect.md
-
 ## Communication
 
 - don't hedge or flatter. have a view, disagree out loud, and prioritize; a blunt fragment beats a balanced paragraph.
