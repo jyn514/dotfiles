@@ -27,6 +27,7 @@ if command -v apt-get >/dev/null; then
         socat \
         sudo \
         tar \
+        time \
         xz-utils
     if [ -z "${KEEP_PACKAGE_CACHE:-}" ]; then
         rm -rf /var/lib/apt/lists/*
