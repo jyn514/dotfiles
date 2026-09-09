@@ -32,6 +32,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, verification_scope
 from sandbox_credentials import boot_credential
+from source_view import source_mounts
 
 OUTER_RUNTIME = Podman()
 
@@ -1137,7 +1138,8 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={DOTFILES / 'config/codex.toml'},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/codex-developer-instructions.md'},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/breq.md'},dst=/home/codex/.codex/breq.md,readonly",
-        "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
+        *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
+                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
         "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
         "--workdir", str(state.container_working_directory),
         *[

@@ -10,6 +10,13 @@ existing sessions to apply it.
 
 The launcher mounts `~/src` read-only at `/src`, then overlays the active repository writable at the same relative path when it is beneath `~/src`—for example, `~/src/dotfiles` becomes `/src/dotfiles`. Repositories outside `~/src` use `/src/repository`. The selected path is also the agent and proxy working directory.
 
+For external worktrees whose mountpoints are missing beneath `/src`, the launcher
+stages those directories in temporary sandbox state and binds the existing source
+subtrees read-only. This also accommodates linked Git metadata without creating
+placeholder directories under `~/src`.
+When this staging is needed, new entries in staged parent directories appear on
+the next launch; the contents of bound subtrees remain live.
+
 ## Prerequisites and setup
 
 Podman remains the default outer runtime. [Opt-in Lima launches](lima/launch.md)
