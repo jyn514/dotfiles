@@ -4,6 +4,10 @@
 
 `codex-sandbox` launches Pi in a disposable agent container. Launcher-owned sibling services provide narrowly scoped access to protected repository operations, Codex authentication, the host editor, optional Zulip, and optional Agent Podman. The agent can write the working tree, but Git, Jujutsu, sandbox policy, and reusable credentials remain outside its direct authority.
 
+Agent containers drop `NET_RAW` on every backend, including after container-local
+sudo. Sidecars drop all capabilities. This takes effect on new launches; restart
+existing sessions to apply it.
+
 The launcher mounts `~/src` read-only at `/src`, then overlays the active repository writable at the same relative path when it is beneath `~/src`—for example, `~/src/dotfiles` becomes `/src/dotfiles`. Repositories outside `~/src` use `/src/repository`. The selected path is also the agent and proxy working directory.
 
 ## Prerequisites and setup

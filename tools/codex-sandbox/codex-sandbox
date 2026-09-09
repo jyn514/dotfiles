@@ -1097,6 +1097,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
 
     command = [
         "docker", "run", "--name", state.codex_container, "-it",
+        "--cap-drop=NET_RAW",
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
            "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)

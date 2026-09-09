@@ -1474,6 +1474,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
         self.assertNotIn("--cap-drop=ALL", run)
+        self.assertIn("--cap-drop=NET_RAW", run)
         self.assertNotIn("--security-opt=no-new-privileges", run)
         self.assertNotIn("native Linux sandboxing", result.stderr)
 
