@@ -164,7 +164,9 @@ class Host:
             if record["instance"] != instance or record["shares"] != requested:
                 raise ValueError("existing setup has different shares or instance; use a separate state directory")
             if record["phase"] == "ready":
-                return self.start()
+                record = self.start()
+                self.configure_ssh(record)
+                return record
             recovering_installation = record["phase"] == "installing"
         else:
             if instance in machines():
@@ -236,10 +238,17 @@ class Host:
                 if not primary_failure:
                     raise
                 print(f"Guest staging cleanup failed: {error}", file=sys.stderr)
+        self.configure_ssh(record)
         self.verify(record)
         record["phase"] = "ready"
         atomic_json(self.record_path, record)
         return record
+
+    def configure_ssh(self, record):
+        # Explicit setup owns this update; ordinary launch verification never
+        # edits guest SSH policy or disconnects another session.
+        self.machine(record)
+        self.guest(record, "sudo", "python3", input=(SOURCE / "configure-ssh.py").read_bytes())
 
     def verify_runtime(self, record):
         try:

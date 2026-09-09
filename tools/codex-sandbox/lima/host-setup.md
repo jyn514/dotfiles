@@ -17,6 +17,10 @@ python3 tools/codex-sandbox/lima/host.py status
 python3 tools/codex-sandbox/lima/host.py check-bind --write "$HOME/src/dotfiles"
 ```
 
+Setup sets SSH `MaxSessions` to 20 and reloads the listener after validating the
+effective configuration. Rerun setup to apply this to an existing VM; active SSH
+connections stay open and retain their old limit until they reconnect.
+
 This trusts the VM with home access, including host configuration and control
 state. Containers retain the launcher's existing narrow mounts, read-only metadata,
 and hidden policy overlays; whole-home container binds are rejected.
