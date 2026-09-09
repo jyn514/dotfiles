@@ -301,6 +301,26 @@ class TransportTest(unittest.TestCase):
     def setUp(self):
         self.enterContext(runtime.verification_scope())
 
+    def test_failed_pre_start_supervision_cleans_created_container_without_attaching(self):
+        backend = runtime.Podman()
+        backend.workload_argv = Mock(return_value=["owned-create"])
+        backend.popen = Mock()
+        backend.terminate = Mock()
+        creation = Mock()
+        creation.wait.return_value = 0
+
+        def supervise():
+            creation.wait.assert_called()
+            backend.popen.assert_not_called()
+            raise ValueError("supervision failed")
+
+        with patch.object(runtime.subprocess, "Popen", return_value=creation):
+            with self.assertRaisesRegex(ValueError, "supervision failed"):
+                with backend.workload(None, "owned", [], before_start=supervise):
+                    self.fail("unsupervised container reached attachment")
+        backend.popen.assert_not_called()
+        backend.terminate.assert_called_once_with("owned")
+
     def test_recorded_owner_rejects_replacement_vm_namespace_or_policy(self):
         backend = lima()
         backend.host.state = Path("/owned/state")

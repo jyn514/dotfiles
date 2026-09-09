@@ -992,14 +992,28 @@ def report_container_timing(state: State) -> None:
         print("Sandbox container timing: unavailable", file=sys.stderr)
 
 
+def wait_for_monitored_agent(state: State) -> int:
+    while True:
+        try:
+            return state.agent_process.wait(timeout=0.1)
+        except subprocess.TimeoutExpired:
+            status = state.monitor_process.poll()
+            if status is not None and status != 0:
+                raise LauncherError("proxy supervision failed; terminating sandbox")
+
+
 def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
-    state.monitor_process = subprocess.Popen([
-        "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
-        "--agent", state.codex_container,
-    ], stdin=subprocess.DEVNULL)
+    def start_monitor() -> None:
+        state.monitor_process = subprocess.Popen([
+            "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
+            "--agent", state.codex_container,
+        ], stdin=subprocess.DEVNULL)
+
+    if not isinstance(OUTER_RUNTIME, Lima):
+        start_monitor()
     git_layout = run([
         "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
         "--git-dir", "--git-common-dir",
@@ -1162,12 +1176,13 @@ def run_agent(state: State, arguments: list[str]) -> int:
         image_index = command.index(state.image)
         # Keep create and attach under the runtime's existing producer ownership.
         # The session key may persist with this container; the GitHub token may not.
+        # Create first so lost supervision can remove an existing container.
         with OUTER_RUNTIME.environment_file({"CODEX_SANDBOX_EDITOR_TOKEN": state.host_editor.token}) as environment:
             with OUTER_RUNTIME.workload(OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
                     ["--interactive", "--tty", *command[5:image_index], *environment],
-                    command[image_index + 1:]) as process:
+                    command[image_index + 1:], before_start=start_monitor) as process:
                 state.agent_process = process
-                result = process.wait()
+                result = wait_for_monitored_agent(state)
             state.codex_container_created = False
         return result
     state.agent_process = OUTER_RUNTIME.popen(command[1:], env=agent_environment)

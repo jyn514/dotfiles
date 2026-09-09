@@ -154,7 +154,7 @@ class Podman:
         self.run(["rm", "--force", container], stdout=subprocess.DEVNULL, timeout=30)
 
     @contextmanager
-    def workload(self, image, name, arguments, command=(), **kwargs):
+    def workload(self, image, name, arguments, command=(), *, before_start=None, **kwargs):
         """Own one uniquely named workload and await its transport on every exit."""
         process = None
         creation = None
@@ -166,6 +166,8 @@ class Podman:
             status = creation.wait()
             if status:
                 raise subprocess.CalledProcessError(status, argv)
+            if before_start is not None:
+                before_start()
             attach = ["start", "--attach"]
             if "--interactive" in arguments or "-i" in arguments:
                 attach.append("--interactive")
@@ -327,6 +329,47 @@ class Lima(Podman):
 
     def guest(self, arguments, **kwargs):
         return self.host.guest(self.record, *arguments, **kwargs)
+
+    def monitor(self, containers):
+        self.host.machine(self.record)
+        source = Path(__file__).with_name("sandbox_monitor.py").read_text()
+        argv = ["limactl", "shell", "--workdir", "/tmp", self.record["instance"],
+                "env", *["-u" + name for name in (*PROXY_ENV, *ENGINE_ENV)],
+                "python3", "-c", source, self.record["namespace"], json.dumps(containers)]
+
+        def terminate(signum, _frame):
+            raise SystemExit(128 + signum)
+
+        signals = (signal.SIGTERM, signal.SIGHUP)
+        previous = {signum: signal.signal(signum, terminate) for signum in signals}
+        process = None
+        try:
+            # This private pipe carries cancellation, never Pi's terminal input.
+            # Unannounced EOF means lost supervision and fails closed in guest.
+            process = subprocess.Popen(argv, stdin=subprocess.PIPE)
+            status = process.wait()
+            if status:
+                # Also cover a guest interpreter crash, before its own cleanup.
+                self.run(["rm", "--force", containers[0][1]], capture_output=True)
+            return status
+        finally:
+            for signum in signals:
+                signal.signal(signum, signal.SIG_IGN)
+            try:
+                if process is not None:
+                    try:
+                        process.stdin.write(b"q")
+                        process.stdin.close()
+                    except BrokenPipeError:
+                        pass
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+            finally:
+                for signum, handler in previous.items():
+                    signal.signal(signum, handler)
 
     def inspect_image(self, reference):
         arguments = ["image", "inspect", "--mode=native", reference]

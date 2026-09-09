@@ -810,7 +810,7 @@ class ManifestTest(unittest.TestCase):
                             os.close(self.write_fd)
                             self.write_fd = -1
 
-                    def wait(self) -> int:
+                    def wait(self, **_kwargs) -> int:
                         return 0
 
                 with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=running) as run, \
@@ -870,6 +870,48 @@ class ManifestTest(unittest.TestCase):
                     os.kill(child, 15)
                 except ProcessLookupError:
                     pass
+
+    def test_guest_monitor_distinguishes_cancellation_from_lost_supervision(self) -> None:
+        for cancel in (False, True):
+            with self.subTest(cancel=cancel):
+                log = self.repo / f"guest-monitor-{cancel}.jsonl"
+                process = subprocess.Popen([
+                    sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")), "guest"],
+                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    env={**os.environ, "MONITOR_INPUT_LOG": str(log), "MONITOR_STAY_RUNNING": "1"})
+                children = []
+                try:
+                    deadline = time.monotonic() + 5
+                    while time.monotonic() < deadline:
+                        if log.exists():
+                            calls = [json.loads(line) for line in log.read_text().splitlines()]
+                            children = [call["pid"] for call in calls if call["operation"] == "wait"]
+                            if len(children) == 2:
+                                break
+                        time.sleep(0.01)
+                    self.assertEqual(2, len(children))
+                    if cancel:
+                        process.stdin.write(b"q")
+                    process.stdin.close()
+                    process.wait(timeout=5)
+                    self.assertEqual(143 if cancel else 1, process.returncode, process.stderr.read())
+                    calls = [json.loads(line) for line in log.read_text().splitlines()]
+                    self.assertEqual(not cancel, any(call["operation"] == "rm" for call in calls))
+                    self.assertTrue(all(call["input"] == "" for call in calls))
+                    for child in children:
+                        with self.assertRaises(ProcessLookupError):
+                            os.kill(child, 0)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    process.stdin.close()
+                    process.stderr.close()
+                    for child in children:
+                        try:
+                            os.kill(child, 15)
+                        except ProcessLookupError:
+                            pass
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {

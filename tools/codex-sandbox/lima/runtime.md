@@ -64,6 +64,14 @@ both uses, and workload execution specifies `--pull=never`.
 
 ## Runtime contract tests
 
+The monitor fixture creates only disposable containers from an already local
+image containing `sleep`. It checks agent exit, proxy failure, deliberate
+cancellation, lost supervision, and SSH transport failure, including wait cleanup:
+
+```sh
+python3 tools/codex-sandbox/tests/lima_monitor_integration.py --image LOCAL_IMAGE
+```
+
 The unit suite checks alias disagreement, registration races, snapshot ancestry,
 live CNI allocation ownership, private environment staging, missing VM/policy,
 and transport exit statuses:

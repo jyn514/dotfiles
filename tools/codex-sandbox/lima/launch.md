@@ -36,6 +36,10 @@ Background runtime helpers do not read terminal input. If upgrading from the
 version where Lima keystrokes stalled, exit existing sandbox sessions and relaunch
 to replace their monitors; no VM restart is needed.
 
+Each Lima session uses one SSH channel for its guest-side proxy monitor, plus
+the agent attachment. The monitor reaps its local container waits on exit;
+loss of supervision terminates the agent. Relaunch existing sessions to use it.
+
 Each launch fully verifies the VM once and shares that result with its host-side
 image and proxy helpers. Later checks validate VM identity and service activation
 IDs; a VM reboot or containerd/BuildKit restart requires full verification again.

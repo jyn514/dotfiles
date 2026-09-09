@@ -28,4 +28,6 @@ else:
             return [sys.executable, str(Path(__file__).resolve()), "engine", *arguments]
 
     module.state_runtime = lambda _: Engine()
+    if sys.argv[1] == "guest":
+        raise SystemExit(module.monitor(Engine().argv, [("agent", "agent"), ("proxy", "proxy")], parent_fd=0))
     raise SystemExit(module.main(["monitor", "--state", sys.argv[2], "--agent", "agent"]))

@@ -11,8 +11,6 @@ import json
 import os
 from pathlib import Path
 import re
-import selectors
-import signal
 import stat
 import subprocess
 import sys
@@ -23,7 +21,8 @@ import uuid
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import Podman, image_runtime, runtime_identity, single_json, state_runtime
+from sandbox_monitor import monitor
+from sandbox_runtime import Lima, Podman, image_runtime, runtime_identity, single_json, state_runtime
 
 OUTER_RUNTIME = Podman()
 
@@ -904,69 +903,14 @@ def snapshot_main(args: argparse.Namespace) -> int:
 def monitor_main(args: argparse.Namespace) -> int:
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     owner = state_runtime(state)
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        result = subprocess.run(
-            owner.argv(["inspect", "--format", "{{.State.Running}}", args.agent]),
-            text=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        )
-        if result.returncode == 0 and result.stdout.strip() == "true":
-            break
-        time.sleep(0.05)
-    else:
-        raise ConfigError("agent container did not start while proxy monitor was waiting")
     containers = [("agent", args.agent)]
     auth = state.get("auth")
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
         containers.append(("auth", auth["container"]))
-    containers += [
-        (proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])
-    ]
-    waits: list[tuple[str, subprocess.Popen[str]]] = []
-    selector = selectors.DefaultSelector()
-
-    def terminate(signum: int, _frame: Any) -> None:
-        raise SystemExit(128 + signum)
-
-    signals = (signal.SIGTERM, signal.SIGHUP)
-    previous_handlers = {signum: signal.signal(signum, terminate) for signum in signals}
-    try:
-        for name, container in containers:
-            # Lima's multiplexed SSH master reads inherited stdin even for
-            # `wait`. Competing reads from Pi's TTY can block every SSH channel.
-            process = subprocess.Popen(
-                owner.argv(["wait", container]), text=True,
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            )
-            assert process.stdout is not None
-            waits.append((name, process))
-            selector.register(process.stdout, selectors.EVENT_READ, name)
-        ready = selector.select()
-        names = {key.data for key, _ in ready}
-        if "agent" in names:
-            return 0
-        name = next(iter(names))
-        print(f"sandbox proxies: proxy {name} stopped; terminating sandbox", file=sys.stderr)
-        subprocess.run(
-            owner.argv(["rm", "--force", args.agent]),
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        return 1
-    finally:
-        # Repeated shutdown requests must not interrupt child reaping.
-        for signum in signals:
-            signal.signal(signum, signal.SIG_IGN)
-        selector.close()
-        try:
-            for _, process in waits:
-                process.terminate()
-            for _, process in waits:
-                process.wait()
-                if process.stdout is not None:
-                    process.stdout.close()
-        finally:
-            for signum, handler in previous_handlers.items():
-                signal.signal(signum, handler)
+    containers += [(proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])]
+    if isinstance(owner, Lima):
+        return owner.monitor(containers)
+    return monitor(owner.argv, containers)
 
 
 def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:

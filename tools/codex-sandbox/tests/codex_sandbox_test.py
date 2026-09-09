@@ -181,6 +181,15 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
+    def test_agent_wait_rejects_supervisor_loss_during_startup(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        agent = mock.Mock()
+        agent.wait.side_effect = subprocess.TimeoutExpired("owned-agent", 0.1)
+        monitor = mock.Mock()
+        monitor.poll.return_value = -9
+        with self.assertRaisesRegex(launcher["LauncherError"], "supervision failed"):
+            launcher["wait_for_monitored_agent"](SimpleNamespace(agent_process=agent, monitor_process=monitor))
+
     def test_signal_during_image_build_waits_before_proxy_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         main = launcher["main"]
