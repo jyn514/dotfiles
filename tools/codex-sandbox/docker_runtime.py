@@ -17,6 +17,13 @@ from lima.docker_host import DockerHost
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
 
 
+class BuildError(subprocess.CalledProcessError):
+    """BuildKit already printed diagnostics; retain argv only for programmatic inspection."""
+
+    def __str__(self):
+        return f'sandbox image build failed (exit {self.returncode}); see BuildKit output above'
+
+
 def stop_build(process):
     """Drain the owned Buildx group even after its Docker wrapper exits."""
     def running():
@@ -140,7 +147,7 @@ class Docker(VMRuntime):
             try:
                 status = process.wait(timeout=1800)
                 if status:
-                    raise subprocess.CalledProcessError(status, command)
+                    raise BuildError(status, command)
                 return json.loads(metadata.read_text())
             except BaseException:
                 # The Docker CLI spawns a Buildx plugin. Cancellation owns both

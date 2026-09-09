@@ -48,11 +48,19 @@ def read_calls(path: Path) -> list[list[str]]:
 class ContainerRepositoryPathTest(unittest.TestCase):
     def test_captured_startup_failure_is_visible(self):
         launcher = runpy.run_path(str(LAUNCHER))
-        failure = subprocess.CalledProcessError(1, ['buildx', 'bake'], stderr='invalid Bake target\n')
-        with mock.patch.dict(launcher['launch'].__globals__, {'image_runtime': mock.Mock(side_effect=failure)}), \
-                mock.patch('sys.stderr', new_callable=io.StringIO) as diagnostics:
-            self.assertEqual(launcher['launch']([]), 1)
-        self.assertIn('invalid Bake target', diagnostics.getvalue())
+        from docker_runtime import BuildError
+        cases = [
+            (subprocess.CalledProcessError(1, ['buildx', 'bake'], stderr='invalid Bake target\n'),
+             'invalid Bake target\n'),
+            (BuildError(7, ['/private/client', '--host', 'unix:///private/socket', 'buildx', 'bake']),
+             'error: sandbox image build failed (exit 7); see BuildKit output above\n'),
+        ]
+        for failure, expected in cases:
+            with self.subTest(expected=expected), \
+                    mock.patch.dict(launcher['launch'].__globals__, {'image_runtime': mock.Mock(side_effect=failure)}), \
+                    mock.patch('sys.stderr', new_callable=io.StringIO) as diagnostics:
+                self.assertEqual(launcher['launch']([]), failure.returncode)
+            self.assertEqual(expected, diagnostics.getvalue())
 
     def test_new_launch_clears_inherited_verification_through_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

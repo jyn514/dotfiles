@@ -62,6 +62,8 @@ Startup collects the base, agent, authentication, and command-proxy builds into
 one `docker buildx bake` invocation with one interactive progress display.
 BuildKit checks its cache on every launch. The base feeds the agent through a
 Bake target dependency; existing tags never substitute for checking changed inputs.
+On failure, BuildKit prints the failed step and the launcher adds a short build
+failure summary, preserving the exit status without dumping its internal command.
 
 Repositories provide `.agents/sandbox/docker-bake.hcl` with a `base` target.
 Paths resolve from the repository root.

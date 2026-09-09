@@ -55,6 +55,24 @@ class DockerRuntimeTest(unittest.TestCase):
                         except ProcessLookupError:
                             pass
 
+    def test_failed_build_reports_operation_without_dumping_client_configuration(self):
+        runtime = backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'scratch').mkdir()
+            runtime.host.state = root
+            runtime.argv = Mock(return_value=['/usr/bin/env', '-uDOCKER_HOST', '/private/client',
+                                              '--host', 'unix:///private/socket', 'buildx', 'bake'])
+            process = Mock()
+            process.wait.return_value = 7
+            with patch('subprocess.Popen', return_value=process), patch('docker_runtime.stop_build') as stop:
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    runtime.bake({'base': {'context': str(root)}})
+            self.assertEqual(raised.exception.returncode, 7)
+            self.assertEqual(str(raised.exception),
+                             'sandbox image build failed (exit 7); see BuildKit output above')
+            stop.assert_called_once_with(process)
+
     def test_cleanup_cannot_mutate_an_unverified_engine(self):
         runtime = backend()
         runtime.host.verify_runtime.side_effect = ValueError('engine identity changed')
