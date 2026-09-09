@@ -4,6 +4,9 @@ The image helper and runtime contracts support Podman and the provisioned Lima
 store. Podman remains the default; [opt-in Lima launches](launch.md) use the same
 runtime as their image builders. Full daily-use validation and rollback precede
 the default switch.
+The [rootless Docker prototype](docker.md) selects `--provider lima-docker` and
+`CODEX_SANDBOX_DOCKER_STATE`; its host API accepts build contexts outside VM shares.
+It returns local `repo:tag@sha256:HASH` references and uses a separate image store.
 
 ## Deferred integration prototype
 

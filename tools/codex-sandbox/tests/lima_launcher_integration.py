@@ -24,7 +24,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from sandbox_credentials import boot_credential
-from sandbox_runtime import Lima
+from sandbox_runtime import image_runtime
 
 
 def terminal_run(command, environment, cwd):
@@ -66,8 +66,9 @@ def terminal_run(command, environment, cwd):
         os.close(master)
 
 
-def exercise(state, work):
-    runtime = Lima(state)
+def exercise(state, work, provider='lima'):
+    runtime = image_runtime(provider, state)
+    native = ['--mode=native'] if provider == 'lima' else []
     with tempfile.TemporaryDirectory(prefix="launcher-", dir=work) as temporary:
         home = Path(temporary)
         repo = home / "src/dotfiles"
@@ -87,7 +88,8 @@ def exercise(state, work):
         (home / "runtime").mkdir(mode=0o700)
         environment = {**os.environ, "HOME": str(home), "XDG_RUNTIME_DIR": str(home / "runtime"),
             "LIMA_HOME": os.environ.get("LIMA_HOME", str(Path.home() / ".lima")),
-            "CODEX_SANDBOX_RUNTIME": "lima", "CODEX_SANDBOX_LIMA_STATE": str(state),
+            "CODEX_SANDBOX_RUNTIME": provider, "CODEX_SANDBOX_LIMA_STATE": str(state),
+            "CODEX_SANDBOX_DOCKER_STATE": str(state),
             "CODEX_SANDBOX_AUTH_DIR": str(auth),
             "AGENT_PODMAN_ACCESS_DIR": str(home / "no-worker"), "CODEX_SANDBOX_TIMING": "1"}
         for name in ("TMUX", "TMUX_PANE", "GH_TOKEN", "GITHUB_TOKEN"):
@@ -104,7 +106,7 @@ def exercise(state, work):
             runtime.run(["network", "create", "--label", "dev.codex.relay-owner=" + "0" * 32, network],
                         stdout=subprocess.DEVNULL)
             try:
-                before = runtime.run(["network", "inspect", "--mode=native", network], capture_output=True).stdout
+                before = runtime.run(["network", "inspect", *native, network], capture_output=True).stdout
                 print("\nEXPECTED FAILURE: rejecting a relay network owned by another creator.\n"
                       "The following traceback and retained-recovery warnings are part of this check.",
                       file=sys.stderr, flush=True)
@@ -115,7 +117,7 @@ def exercise(state, work):
                 else:
                     raise AssertionError("relay creator adopted an existing network")
                 launcher["cleanup"](collision)
-                after = runtime.run(["network", "inspect", "--mode=native", network], capture_output=True).stdout
+                after = runtime.run(["network", "inspect", *native, network], capture_output=True).stdout
                 assert before == after, "failed creation changed or deleted the existing relay network"
             finally:
                 runtime.run(["network", "rm", network], stdout=subprocess.DEVNULL)
@@ -153,7 +155,7 @@ def exercise(state, work):
                     "--entrypoint", "/opt/agent-tools/bin/with-github-token"],
                     ["python3", "/probe.py"]) as process:
                 assert process.wait(timeout=60) == 0
-                metadata = runtime.run(["inspect", "--mode=native", probe_name],
+                metadata = runtime.run(["inspect", *native, probe_name],
                                        capture_output=True).stdout
                 assert "owned-dummy-github-token" not in metadata
             print("\nThe next checks reuse an existing proxy volume; nerdctl may warn that it already exists.",
@@ -186,17 +188,28 @@ def exercise(state, work):
                         env=environment, input=struct.pack(">I", len(request)) + request,
                         stdout=subprocess.PIPE, check=True, timeout=30).stdout
                     proxy = next(proxy for proxy in metadata["state"]["proxies"] if proxy["name"] == "jj")
-                    container = json.loads(runtime.run(["inspect", "--mode=native", proxy["container"]],
-                        capture_output=True).stdout)[0]["ID"]
-                    listing = ["containerd-rootless-setuptool.sh", "nsenter", "--", "ctr",
-                               "--namespace", "default", "tasks", "ps", container]
+                    if provider == 'lima':
+                        container = json.loads(runtime.run(["inspect", *native, proxy["container"]],
+                            capture_output=True).stdout)[0]["ID"]
+                        listing = ["containerd-rootless-setuptool.sh", "nsenter", "--", "ctr",
+                                   "--namespace", "default", "tasks", "ps", container]
+                        tasks_now = lambda: runtime.guest(listing, capture_output=True, text=True, timeout=10).stdout
+                        active = lambda tasks: bool(re.search(r'exec_id:"codex-forward-', tasks))
+                    else:
+                        tasks_now = lambda: runtime.run(['ps', '-a', '--filter', 'name=codex-forward-',
+                                                        '--format', '{{.Names}}'], capture_output=True).stdout
+                        active = lambda tasks: bool(tasks.strip())
                     stalled = subprocess.Popen(route, env=environment, stdin=subprocess.PIPE,
                                                stdout=subprocess.DEVNULL)
                     try:
+                        # Cancellation must also cover a request already being
+                        # forwarded, not just an exec waiting for its first byte.
+                        stalled.stdin.write(struct.pack('>I', len(request)) + request[:8])
+                        stalled.stdin.flush()
                         deadline = time.monotonic() + 15
                         while time.monotonic() < deadline:
-                            tasks = runtime.guest(listing, capture_output=True, text=True, timeout=10).stdout
-                            if re.search(r'exec_id:"codex-forward-', tasks):
+                            tasks = tasks_now()
+                            if active(tasks):
                                 break
                             assert stalled.poll() is None, "router exited before registering its exec"
                             time.sleep(0.1)
@@ -204,8 +217,10 @@ def exercise(state, work):
                             raise AssertionError("router never registered its exec")
                         stalled.terminate()
                         assert stalled.wait(timeout=30) == 143
-                        tasks = runtime.guest(listing, capture_output=True, text=True, timeout=10).stdout
-                        assert 'exec_id:"codex-forward-' not in tasks, "terminated router left a guest exec"
+                        deadline = time.monotonic() + 10
+                        while active(tasks_now()) and time.monotonic() < deadline:
+                            time.sleep(0.1)
+                        assert not active(tasks_now()), "terminated router left a guest exec"
                         assert runtime.run(["inspect", "--format", "{{.State.Running}}", proxy["container"]],
                                            capture_output=True).stdout.strip() == "true"
                     finally:
@@ -236,5 +251,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
+    parser.add_argument("--provider", choices=('lima', 'lima-docker'), default='lima')
     args = parser.parse_args()
-    exercise(args.state.resolve(), args.work.resolve())
+    exercise(args.state.resolve(), args.work.resolve(), args.provider)

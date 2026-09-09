@@ -87,6 +87,7 @@ def main():
     from sandbox_runtime import image_runtime
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--provider', choices=('lima', 'lima-docker'), default='lima')
     parser.add_argument("--state", type=Path)
     parser.add_argument("operation", choices=("import-podman", "prepare", "invalidate"))
     args = parser.parse_args()
@@ -94,7 +95,7 @@ def main():
         import_podman_token()
         print("Imported GitHub token into Keychain; Podman rollback secret retained.")
     else:
-        boot_credential(image_runtime("lima", args.state), invalidate=args.operation == "invalidate")
+        boot_credential(image_runtime(args.provider, args.state), invalidate=args.operation == "invalidate")
         print("Guest boot credential " + ("invalidated." if args.operation == "invalidate" else "ready."))
 
 

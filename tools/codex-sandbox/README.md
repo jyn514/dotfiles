@@ -13,6 +13,8 @@ use a separately provisioned VM, Keychain boot credentials, and runtime-aware
 image builders. The [network fixture](lima/README.md) and
 [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
+The separate [rootless Docker prototype](lima/docker.md) uses Docker's forwarded
+API socket and has its own opt-in setup and validation commands.
 
 - Run from a Git checkout. The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and a `docker`-compatible Podman/Docker CLI. Image builds require network access on first use.

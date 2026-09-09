@@ -22,7 +22,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_monitor import monitor
-from sandbox_runtime import Lima, Podman, image_runtime, runtime_identity, single_json, state_runtime
+from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, single_json, state_runtime
 
 OUTER_RUNTIME = Podman()
 
@@ -514,7 +514,7 @@ def proxy_repository_mount_args(
     if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
         repository_mode = ""
     arguments = [
-        "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},{OUTER_RUNTIME.nonrecursive_bind}",
     ]
     if name == "jj":
         for source, target in jj_proxy_metadata_mounts(repo, container_repo):
@@ -567,12 +567,12 @@ def start_one_proxy(
     volume = f"{args.prefix}-{name}"
     container = f"{args.prefix}-{name}"
     proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
-    if OUTER_RUNTIME.provider == "lima":
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         proxy["volume-owner"] = uuid.uuid4().hex
     with state_lock:
         state["proxies"].append(proxy)
         write_atomic(Path(args.state), json.dumps(state))
-    if OUTER_RUNTIME.provider == "lima":
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
     else:
         _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume)
@@ -592,7 +592,7 @@ def start_one_proxy(
         "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
     ]
-    if OUTER_RUNTIME.provider == "lima" and command["network"]:
+    if isinstance(OUTER_RUNTIME, VMRuntime) and command["network"]:
         network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
         docker_args += ["--dns", network["dns"]]
     if name == "jj":
@@ -908,7 +908,7 @@ def monitor_main(args: argparse.Namespace) -> int:
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
         containers.append(("auth", auth["container"]))
     containers += [(proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])]
-    if isinstance(owner, Lima):
+    if isinstance(owner, VMRuntime):
         return owner.monitor(containers)
     return monitor(owner.argv, containers)
 
@@ -1000,8 +1000,7 @@ def main(arguments: list[str] | None = None) -> int:
     try:
         args = parse_args(arguments)
         if args.action in {"attach", "start", "publish", "finalize"}:
-            OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"),
-                Path(os.environ["CODEX_SANDBOX_LIMA_STATE"]) if "CODEX_SANDBOX_LIMA_STATE" in os.environ else None)
+            OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
         return args.function(args)
     except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"sandbox proxies: {error}", file=sys.stderr)

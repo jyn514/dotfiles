@@ -23,6 +23,7 @@ except OSError:
     pass
 else:
     raise AssertionError("repository metadata overlay is writable")
-assert "nameserver 10.0.2.3" in Path("/etc/resolv.conf").read_text()
+# Docker uses its embedded resolver, forwarding to the verified upstream;
+# nerdctl writes that upstream directly. Both must resolve public names.
 assert socket.getaddrinfo("example.com", 443)
 print("Non-root credential injection, writable checkout, protected metadata, and DNS passed.")

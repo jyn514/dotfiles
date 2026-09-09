@@ -98,6 +98,9 @@ def machines():
 
 
 class Host:
+    provider = "lima"
+    containerd_user = True
+
     def __init__(self, state):
         self.state = private_directory(Path(state).expanduser().absolute()).resolve()
         self.record_path = self.state / "host.json"
@@ -110,7 +113,8 @@ class Host:
 
     def record(self):
         record = json.loads(self.record_path.read_text())
-        if record.get("schema") != 1 or not re.fullmatch(r"sandbox-host(?:-[a-z0-9-]+)?", record["instance"]):
+        if (record.get("schema") != 1 or record.get("provider", "lima") != self.provider or
+                not re.fullmatch(r"sandbox-host(?:-[a-z0-9-]+)?", record["instance"])):
             raise ValueError("unsupported sandbox host record")
         return record
 
@@ -137,7 +141,7 @@ class Host:
         if (config.get("env", {}).get("SANDBOX_GENERATION") != record["generation"] or
                 sorted(actual, key=lambda item: item["location"]) != record["shares"] or
                 config["ssh"].get("forwardAgent") or config["containerd"].get("system") or
-                not config["containerd"].get("user")):
+                bool(config["containerd"].get("user")) != self.containerd_user):
             raise ValueError("VM identity or security configuration differs from the setup record")
         return machine
 

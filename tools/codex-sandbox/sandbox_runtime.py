@@ -73,6 +73,7 @@ class Podman:
 
     provider = "podman"
     host_address = "host.docker.internal"
+    nonrecursive_bind = 'bind-nonrecursive=true'
 
     def builder_image(self, reference):
         return digest(reference)
@@ -87,7 +88,7 @@ class Podman:
     def run(self, arguments, *, cwd=None, **kwargs):
         kwargs.setdefault("check", True)
         kwargs.setdefault("text", True)
-        if isinstance(self, Lima) and "input" not in kwargs:
+        if isinstance(self, VMRuntime) and "input" not in kwargs:
             kwargs.setdefault("stdin", subprocess.DEVNULL)
         return subprocess.run(self.argv(arguments, cwd=cwd), cwd=cwd, **kwargs)
 
@@ -99,13 +100,13 @@ class Podman:
         for name, value in values.items():
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or any(c in value for c in "\0\r\n"):
                 raise RuntimeError("environment data cannot be represented in an env file")
-        directory = self.host.state / "scratch" if isinstance(self, Lima) else None
+        directory = self.host.state / "scratch" if isinstance(self, VMRuntime) else None
         descriptor, name = tempfile.mkstemp(prefix="environment-", dir=directory)
         try:
             with os.fdopen(descriptor, "w") as stream:
                 for key, value in values.items():
                     stream.write(key + "=" + value + "\n")
-            if isinstance(self, Lima):
+            if isinstance(self, VMRuntime):
                 self.host.check_bind(name)
             yield ["--env-file", name]
         finally:
@@ -228,7 +229,24 @@ class Podman:
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
 
 
-class Lima(Podman):
+class VMRuntime(Podman):
+    """Shared host mounts, boot credentials, and recorded VM ownership."""
+
+    def verify(self):
+        self.host.verify_runtime(self.record)
+
+    def guest(self, arguments, **kwargs):
+        return self.host.guest(self.record, *arguments, **kwargs)
+
+    def monitor(self, containers):
+        from sandbox_monitor import monitor
+        return monitor(self.argv, containers)
+
+    def agent_command(self, image, arguments):
+        return ["pi", "--offline", "--approve", *arguments]
+
+
+class Lima(VMRuntime):
     provider = "lima"
     host_address = "host.lima.internal"
 
@@ -341,9 +359,6 @@ class Lima(Podman):
         self.buildkit_address = (f"unix:///run/user/{machine['config']['user']['uid']}/"
                                  f"buildkit-{self.record['namespace']}/buildkitd.sock")
 
-    def verify(self):
-        self.host.verify_runtime(self.record)
-
     def argv(self, arguments, *, cwd=None):
         self.host.machine(self.record)
         directory = "/tmp" if cwd is None else str(self.host.check_bind(cwd)["source"])
@@ -351,9 +366,6 @@ class Lima(Podman):
                 "env", *["-u" + name for name in (*PROXY_ENV, *ENGINE_ENV)],
                 "nerdctl", "--address", "/run/containerd/containerd.sock",
                 "--namespace", self.record["namespace"], *arguments]
-
-    def guest(self, arguments, **kwargs):
-        return self.host.guest(self.record, *arguments, **kwargs)
 
     def monitor(self, containers):
         self.host.machine(self.record)
@@ -579,12 +591,19 @@ class Lima(Podman):
         self.guest([*enter, "touch", str(path / ".codex-initialized")], timeout=30)
         self.guest([*enter, "chown", f"{uid}:{gid}", str(path)], timeout=30)
 
+    def relay_owner(self, name):
+        network = single_json(self.run(['network', 'inspect', '--mode=native', name], capture_output=True).stdout)
+        return network['CNI'].get('nerdctlLabels', {}).get('dev.codex.relay-owner')
+
 
 def image_runtime(provider, state=None):
     if provider == "podman":
         return Podman()
     if provider == "lima":
-        return Lima(state or Path.home() / ".local/state/codex-sandbox-lima")
+        return Lima(state or os.environ.get('CODEX_SANDBOX_LIMA_STATE') or Path.home() / ".local/state/codex-sandbox-lima")
+    if provider == 'lima-docker':
+        from docker_runtime import Docker
+        return Docker(state or os.environ.get('CODEX_SANDBOX_DOCKER_STATE') or Path.home() / '.local/state/codex-sandbox-docker')
     raise RuntimeError(f"unknown outer runtime: {provider}")
 
 
@@ -592,21 +611,25 @@ def runtime_identity(runtime):
     if runtime.provider == "podman":
         return {"provider": "podman"}
     record = runtime.record
-    return {"provider": "lima", "state": str(runtime.host.state),
-            **{key: record[key] for key in (
-                "instance", "generation", "namespace", "vm_identity", "network_digest")}}
+    fields = ('instance', 'generation', 'namespace', 'vm_identity', 'network_digest')
+    if runtime.provider == 'lima-docker':
+        fields += ('engine_id', 'network_id')
+    return {"provider": runtime.provider, "state": str(runtime.host.state),
+            **{key: record[key] for key in fields}}
 
 
 def recorded_runtime(identity):
     if identity == {"provider": "podman"}:
         return Podman()
     fields = {"provider", "state", "instance", "generation", "namespace", "vm_identity", "network_digest"}
+    if isinstance(identity, dict) and identity.get('provider') == 'lima-docker':
+        fields |= {'engine_id', 'network_id'}
     if (not isinstance(identity, dict) or set(identity) != fields or
-            identity.get("provider") != "lima" or
+            identity.get("provider") not in ('lima', 'lima-docker') or
             not all(isinstance(value, str) and value for value in identity.values()) or
             not Path(identity["state"]).is_absolute()):
         raise RuntimeError("unsupported recorded runtime; retain session state for explicit recovery")
-    runtime = Lima(Path(identity["state"]))
+    runtime = image_runtime(identity['provider'], Path(identity["state"]))
     if runtime_identity(runtime) != identity:
         raise RuntimeError("recorded Lima owner changed; refusing to touch another VM generation or policy")
     return runtime

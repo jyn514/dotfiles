@@ -30,7 +30,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import Lima, Podman, image_runtime, runtime_identity, single_json, verification_scope
+from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, verification_scope
 from sandbox_credentials import boot_credential
 
 OUTER_RUNTIME = Podman()
@@ -136,6 +136,7 @@ def run(
         stdin=subprocess.DEVNULL if engine_command and input_text is None else None,
         stdout=stdout,
         stderr=subprocess.DEVNULL if quiet else None,
+        timeout=30 if engine_command and OUTER_RUNTIME.provider == 'lima-docker' else None,
     )
     if check and result.returncode:
         raise subprocess.CalledProcessError(result.returncode, arguments)
@@ -169,18 +170,18 @@ def temporary_file() -> Path:
 
 
 def scratch_directory() -> Path | None:
-    return OUTER_RUNTIME.host.state / "scratch" if isinstance(OUTER_RUNTIME, Lima) else None
+    return OUTER_RUNTIME.host.state / "scratch" if isinstance(OUTER_RUNTIME, VMRuntime) else None
 
 
 def proxy_flags() -> list[str]:
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
         return ["--dns", network["dns"]]
     return ["--http-proxy=false"]
 
 
 def create_relay_network(state: State, name: str, *, internal: bool) -> None:
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         OUTER_RUNTIME.create_relay_network(name, internal=internal, owner=state.resource_owner)
     else:
         run(["docker", "network", "create", *(["--internal"] if internal else []),
@@ -453,7 +454,7 @@ def resolve_sidecar_image() -> str:
 
 def ensure_image(state: State, base_image: str) -> str:
     image = f"codex-sandbox:{image_cache_key(state, base_image)}"
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         try:
             return OUTER_RUNTIME.resolve_image(image).reference
         except subprocess.CalledProcessError:
@@ -576,7 +577,7 @@ def prepare_editor_relay(state: State) -> list[str]:
     return [
         "--network", state.editor_link_network,
         "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.editor_relay_container}:2223",
-        *([] if isinstance(OUTER_RUNTIME, Lima) else ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
+        *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
 
 
@@ -591,13 +592,13 @@ def start_editor_relay(state: State) -> None:
         "--network", state.editor_egress_network,
         "--network", state.editor_link_network, *proxy_flags(),
         "--pids-limit", "32", "--memory", "64m", "--cpus", "0.25",
-        *([] if isinstance(OUTER_RUNTIME, Lima) else ["--add-host", "host.docker.internal:host-gateway"]),
+        *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
         f"TCP4-LISTEN:{relay_port},fork,reuseaddr",
         f"TCP4:{OUTER_RUNTIME.host_address}:{state.host_editor.port}",
     ], discard_stdout=True)
     def address(network):
-        if isinstance(OUTER_RUNTIME, Lima):
+        if isinstance(OUTER_RUNTIME, VMRuntime):
             return OUTER_RUNTIME.network_address(state.editor_relay_container, network)
         return run(["docker", "inspect", "--format",
             f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
@@ -650,7 +651,7 @@ def codex_sidecar_arguments(container: str, key: str) -> list[str]:
 
 
 def codex_sidecar_has_sandbox_network(container: str) -> bool:
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         try:
             OUTER_RUNTIME.network_address(container, SANDBOX_NETWORK)
             return True
@@ -1010,9 +1011,9 @@ def run_agent(state: State, arguments: list[str]) -> int:
         state.monitor_process = subprocess.Popen([
             "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
             "--agent", state.codex_container,
-        ], stdin=subprocess.DEVNULL)
+        ], stdin=subprocess.DEVNULL, start_new_session=OUTER_RUNTIME.provider == 'lima-docker')
 
-    if not isinstance(OUTER_RUNTIME, Lima):
+    if not isinstance(OUTER_RUNTIME, VMRuntime):
         start_monitor()
     git_layout = run([
         "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
@@ -1098,7 +1099,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "docker", "run", "--name", state.codex_container, "-it",
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
-           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, Lima)
+           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
           else ["--secret", "codex-github-token,type=env,target=GH_TOKEN"]),
         "--env", "JJ_AGENT=pi",
         *(["--env", "PI_TIMING=1"] if timing else []),
@@ -1133,14 +1134,14 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "--mount", f"type=bind,src={DOTFILES / 'config/codex-developer-instructions.md'},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={DOTFILES / 'config/breq.md'},dst=/home/codex/.codex/breq.md,readonly",
         "--mount", f"type=bind,src={state.home / 'src'},dst=/src,readonly",
-        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},bind-nonrecursive=true",
+        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
         "--workdir", str(state.container_working_directory),
         *[
             item
             for target in repository_aliases
             for item in (
                 "--mount",
-                f"type=bind,src={state.repository},dst={target},readonly,bind-nonrecursive=true",
+                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
             )
         ],
         *[
@@ -1172,7 +1173,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
             file=sys.stderr,
         )
     launch_started = time.monotonic()
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         image_index = command.index(state.image)
         # Keep create and attach under the runtime's existing producer ownership.
         # The session key may persist with this container; the GitHub token may not.
@@ -1232,7 +1233,7 @@ def execute(state: State) -> int:
 
     phase("repository validation", lambda: validate_repository(state))
     phase("skill staging", lambda: stage_skills(state))
-    if isinstance(OUTER_RUNTIME, Lima):
+    if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
@@ -1243,7 +1244,7 @@ def execute(state: State) -> int:
                 "base image resolution",
                 lambda: run([str(builder)], capture=True, cwd=state.repository).stdout.strip(),
             )
-            if isinstance(OUTER_RUNTIME, Lima):
+            if isinstance(OUTER_RUNTIME, VMRuntime):
                 base_image = OUTER_RUNTIME.builder_image(base_image)
         else:
             base_image = "node:24-alpine3.22"
@@ -1282,8 +1283,8 @@ def execute(state: State) -> int:
         sidecar_arguments = proxy_future.result()
         state.image = model_future.result()
         arguments = [*editor_arguments, *relay_arguments, state.image,
-            *(["pi", "--offline", "--approve"] if isinstance(OUTER_RUNTIME, Lima) else []),
-            *state.codex_arguments]
+            *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
+              if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]
         system = run(["uname", "-s"], capture=True).stdout.strip()
         if system == "Linux":
             print(
@@ -1398,15 +1399,13 @@ def cleanup(state: State) -> None:
             ["docker", "network", "rm", state.editor_egress_network],
         ))
     def remove_network(item):
-        if isinstance(OUTER_RUNTIME, Lima):
+        if isinstance(OUTER_RUNTIME, VMRuntime):
             try:
                 existing = OUTER_RUNTIME.run(["network", "ls", "--format", "{{.Name}}"],
                                              capture_output=True).stdout.splitlines()
                 if item[1][-1] not in existing:
                     return True
-                network = single_json(OUTER_RUNTIME.run(
-                    ["network", "inspect", "--mode=native", item[1][-1]], capture_output=True).stdout)
-                if network["CNI"].get("nerdctlLabels", {}).get("dev.codex.relay-owner") != state.resource_owner:
+                if OUTER_RUNTIME.relay_owner(item[1][-1]) != state.resource_owner:
                     raise LauncherError("relay network belongs to another creator")
             except (LauncherError, ValueError, OSError, subprocess.SubprocessError) as error:
                 print(f"warning: {item[0]} retained: {error}", file=sys.stderr)
@@ -1415,7 +1414,7 @@ def cleanup(state: State) -> None:
 
     with ThreadPoolExecutor(max_workers=max(1, len(networks))) as executor:
         network_results = list(executor.map(remove_network, networks))
-    keep_scratch = isinstance(OUTER_RUNTIME, Lima) and not all([*container_results, *network_results])
+    keep_scratch = isinstance(OUTER_RUNTIME, VMRuntime) and not all([*container_results, *network_results])
     if keep_scratch:
         state.recovery_record = temporary_file()
         recovery = {"runtime": runtime_identity(OUTER_RUNTIME),
@@ -1457,7 +1456,21 @@ def cleanup(state: State) -> None:
     def wait_process(item: tuple[str, subprocess.Popen[bytes]]) -> None:
         name, process = item
         process_started = time.monotonic()
-        process.wait()
+        if (name == 'proxy monitor' and OUTER_RUNTIME.provider == 'lima-docker' and
+                process.poll() in (None, -signal.SIGKILL)):
+            # The Docker API waits are host children. Reap their entire owned
+            # group even if SIGKILL prevented the monitor's finally block.
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+        else:
+            process.wait()
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             print(f"Sandbox cleanup: {name}={time.monotonic() - process_started:.2f}s", file=sys.stderr)
 
@@ -1605,8 +1618,7 @@ def launch(arguments: list[str]) -> int:
         raise SignalExit(signum)
 
     try:
-        OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"),
-            Path(os.environ["CODEX_SANDBOX_LIMA_STATE"]) if "CODEX_SANDBOX_LIMA_STATE" in os.environ else None)
+        OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
         proxy_entrypoint.cache_clear()
         state = new_state(arguments)
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
