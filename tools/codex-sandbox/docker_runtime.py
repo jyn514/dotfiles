@@ -1,15 +1,42 @@
 """Rootless Docker operations through the owned Lima-forwarded engine socket."""
 
 import hashlib
+import json
+import os
 from pathlib import Path
 import re
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
+import time
 import uuid
 
 from lima.docker_host import DockerHost
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
+
+
+def stop_build(process):
+    """Drain the owned Buildx group even after its Docker wrapper exits."""
+    def running():
+        listing = subprocess.run(['ps', '-axo', 'pgid=,stat='], check=True,
+                                 capture_output=True, text=True, timeout=5).stdout
+        return any(fields[0] == str(process.pid) and not fields[1].startswith('Z')
+                   for line in listing.splitlines() if len(fields := line.split()) == 2)
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        if not running():
+            break
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            break
+        deadline = time.monotonic() + 3
+        while running() and time.monotonic() < deadline:
+            time.sleep(0.05)
+    process.wait(timeout=5)
+    if running():
+        raise RuntimeError('Buildx processes did not stop; retain build diagnostics')
 
 
 class Docker(VMRuntime):
@@ -34,7 +61,7 @@ class Docker(VMRuntime):
             self.verify()
         ambient = (*PROXY_ENV, 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG',
                    'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'DOCKER_API_VERSION',
-                   'BUILDX_BUILDER', 'BUILDKIT_HOST')
+                   'BUILDX_BUILDER', 'BUILDKIT_HOST', 'BUILDX_BAKE_FILE_RELATIVE_PATHS')
         return ['/usr/bin/env', *['-u' + name for name in ambient], self.record['client'],
                 '--config', str(self.host.state / 'client'), '--host', 'unix://' + self.record['socket'],
                 *arguments]
@@ -54,13 +81,15 @@ class Docker(VMRuntime):
                 raise RuntimeError('Docker image reference differs from its repository digest')
             immutable = reference
         elif candidates:
-            immutable = sorted(candidates)[0]
+            repository = reference.rsplit(':', 1)[0] if ':' in reference.rsplit('/', 1)[-1] else reference
+            matching = [candidate for candidate in candidates if candidate.rsplit('@', 1)[0] == repository]
+            immutable = sorted(matching or candidates)[0]
             # BuildKit's local resolver needs the tag as well as the digest.
             # The digest still pins content if that tag later moves.
             repository, content = immutable.rsplit('@', 1)
             tags = [tag for tag in raw.get('RepoTags', []) if tag.rsplit(':', 1)[0] == repository]
             if tags:
-                immutable = sorted(tags)[0] + '@' + content
+                immutable = (reference if reference in tags else sorted(tags)[0]) + '@' + content
         else:
             raise RuntimeError('Docker image has no repository digest; rebuild with sandbox-image')
         content = digest(immutable.rsplit('@', 1)[1])
@@ -81,6 +110,53 @@ class Docker(VMRuntime):
             arguments += ['--target', target]
         self.run([*arguments, str(context)], stdout=sys.stderr, timeout=1800)
         return self.resolve_image(tag)
+
+    def bake_targets(self, definition, targets, *, cwd):
+        """Let Buildx resolve HCL variables, inheritance, and dependencies."""
+        result = self.run(['buildx', 'bake', '--file', str(definition), '--print', *targets],
+                          cwd=cwd, capture_output=True)
+        return json.loads(result.stdout)['target']
+
+    def bake(self, targets, *, cwd=None):
+        self.verify()
+        with tempfile.TemporaryDirectory(prefix='bake-', dir=self.host.state / 'scratch') as directory:
+            definition = Path(directory) / 'build.json'
+            metadata = Path(directory) / 'result.json'
+            definition.write_text(json.dumps({'target': targets, 'group': {'default': {'targets': list(targets)}}}))
+            reads = set()
+            for target in targets.values():
+                context = target.get('context', '.')
+                if '://' not in context and not context.startswith('git@'):
+                    context = (Path(cwd or Path.cwd()) / context).resolve()
+                    reads.update((str(context), str((context / target.get('dockerfile', 'Dockerfile')).parent)))
+                for value in target.get('contexts', {}).values():
+                    if not value.startswith(('target:', 'docker-image:', 'git@')) and '://' not in value:
+                        reads.add(str((Path(cwd or Path.cwd()) / value).resolve()))
+            command = self.argv(['buildx', 'bake', '--builder', 'default', '--file', str(definition),
+                                 *['--allow=fs.read=' + path for path in sorted(reads)],
+                                 '--set=*.output=type=docker', '--provenance=false', '--metadata-file', str(metadata)])
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=sys.stderr,
+                                       start_new_session=True, cwd=cwd)
+            try:
+                status = process.wait(timeout=1800)
+                if status:
+                    raise subprocess.CalledProcessError(status, command)
+                return json.loads(metadata.read_text())
+            except BaseException:
+                # The Docker CLI spawns a Buildx plugin. Cancellation owns both
+                # processes, not just the wrapper returned by Popen.
+                handlers = ({signum: signal.signal(signum, signal.SIG_IGN)
+                             for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+                            if threading.current_thread() is threading.main_thread() else {})
+                try:
+                    try:
+                        stop_build(process)
+                    except (OSError, ValueError, subprocess.SubprocessError) as error:
+                        print(f'Buildx cleanup incomplete: {error}', file=sys.stderr)
+                finally:
+                    for signum, handler in handlers.items():
+                        signal.signal(signum, handler)
+                raise
 
     def workload_argv(self, image, arguments, command=(), *, cwd=None, operation='run'):
         self.verify()

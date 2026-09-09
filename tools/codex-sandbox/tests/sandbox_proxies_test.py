@@ -27,6 +27,20 @@ SPEC.loader.exec_module(sandbox_proxies)
 
 
 class ManifestTest(unittest.TestCase):
+    def test_prepared_images_are_verified_without_rerunning_builders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prepared = Path(directory) / 'images.json'
+            prepared.write_text(json.dumps({'example': 'image@sha256:prepared'}))
+            owner = mock.Mock()
+            owner.builder_image.side_effect = lambda value: value
+            with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner), mock.patch('subprocess.run') as run:
+                images = sandbox_proxies.resolve_images(Path(directory), {'commands': {'example': {}}}, prepared)
+                self.assertEqual(images, {'example': 'image@sha256:prepared'})
+                owner.builder_image.assert_called_once_with('image@sha256:prepared')
+                run.assert_not_called()
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, 'manifest'):
+                    sandbox_proxies.resolve_images(Path(directory), {'commands': {}}, prepared)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.repo = Path(self.temporary.name)
@@ -71,6 +85,19 @@ class ManifestTest(unittest.TestCase):
         self.write({"example": self.command()})
         manifest = sandbox_proxies.load_manifest(self.repo)
         self.assertEqual(["example-proxy", "serve"], manifest["commands"]["example"]["argv"])
+
+    def test_bake_target_survives_manifest_normalization(self):
+        command = self.command(**{'image-target': 'bb-bug'})
+        for legacy in (True, False):
+            if not legacy:
+                command.pop('image-command')
+            self.write({'bug': command})
+            manifest = sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))
+            self.assertEqual(manifest['commands']['bug']['image-target'], 'bb-bug')
+        command['image-target'] = '../outside'
+        self.write({'bug': command})
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, 'image-target'):
+            sandbox_proxies.load_manifest(self.repo)
 
     def test_accepts_proxy_only_writable_repository_mount(self) -> None:
         self.write({"example": self.command(mounts=[{

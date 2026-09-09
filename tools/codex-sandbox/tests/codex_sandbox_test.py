@@ -46,6 +46,14 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_captured_startup_failure_is_visible(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        failure = subprocess.CalledProcessError(1, ['buildx', 'bake'], stderr='invalid Bake target\n')
+        with mock.patch.dict(launcher['launch'].__globals__, {'image_runtime': mock.Mock(side_effect=failure)}), \
+                mock.patch('sys.stderr', new_callable=io.StringIO) as diagnostics:
+            self.assertEqual(launcher['launch']([]), 1)
+        self.assertIn('invalid Bake target', diagnostics.getvalue())
+
     def test_new_launch_clears_inherited_verification_through_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         key = "CODEX_SANDBOX_LIMA_VERIFIED"
@@ -181,6 +189,37 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
+    def test_docker_startup_consumes_one_batch_before_any_container_start(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))['execute']
+        with tempfile.TemporaryDirectory() as directory:
+            state = SimpleNamespace(repository=Path(directory), agent_podman=None,
+                                    codex_arguments=[], deferred_signal=None)
+            prepared = Path(directory) / 'images.json'
+            replacements = {name: mock.Mock(return_value=[]) for name in (
+                'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
+                'acquire_lock', 'prepare_editor_relay', 'start_editor_relay')}
+            def attach(_state):
+                self.assertEqual({'jj': 'proxy@digest'}, json.loads(state.prepared_images.read_text()))
+                self.assertEqual('auth@digest', state.sidecar_image)
+                return []
+            replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker'),
+                temporary_file=lambda: prepared, attach_proxies=attach,
+                ensure_image=mock.Mock(side_effect=AssertionError('second agent build')),
+                resolve_sidecar_image=mock.Mock(side_effect=AssertionError('second auth build')),
+                run=mock.Mock(return_value=SimpleNamespace(stdout='Darwin')),
+                run_agent=mock.Mock(return_value=0))
+            with mock.patch.dict(execute.__globals__, replacements), \
+                    mock.patch('sandbox_build.prepare_launch', return_value=(
+                        'agent@digest', 'auth@digest', {'jj': 'proxy@digest'})) as batch:
+                self.assertEqual(0, execute(state))
+                batch.assert_called_once()
+                self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
+                batch.side_effect = ValueError('build failed')
+                replacements['run_agent'].reset_mock()
+                with self.assertRaisesRegex(ValueError, 'build failed'):
+                    execute(state)
+                replacements['run_agent'].assert_not_called()
+
     def test_agent_wait_rejects_supervisor_loss_during_startup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         agent = mock.Mock()

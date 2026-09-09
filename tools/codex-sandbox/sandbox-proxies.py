@@ -144,11 +144,16 @@ def load_manifest_file(path: Path) -> dict[str, Any]:
     for name, raw in data["commands"].items():
         if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             raise ConfigError(f"invalid proxy command name: {name!r}")
-        if not isinstance(raw, dict) or set(raw) != COMMAND_FIELDS:
+        if (not isinstance(raw, dict) or not set(raw) <= COMMAND_FIELDS | {'image-target'} or
+                not COMMAND_FIELDS - {'image-command'} <= set(raw) or
+                not {'image-command', 'image-target'} & set(raw)):
             raise ConfigError(f"command {name} has missing or unknown fields")
-        image_command = _string_array(raw["image-command"], f"command {name} image-command")
+        image_command = _string_array(raw.get("image-command", []), f"command {name} image-command")
+        if 'image-target' in raw and (not isinstance(raw['image-target'], str) or
+                                      not NAME_RE.fullmatch(raw['image-target'])):
+            raise ConfigError(f"command {name} has invalid image-target")
         argv = _string_array(raw["argv"], f"command {name} argv")
-        if not image_command or not argv or argv[0].startswith("/"):
+        if (not image_command and 'image-target' not in raw) or not argv or argv[0].startswith("/"):
             raise ConfigError(f"command {name} requires non-empty commands with a PATH-resolved argv")
         workdir = _plain_relative(raw["workdir"], f"command {name} workdir", allow_dot=True)
         if not isinstance(raw["network"], bool) or not isinstance(raw["mounts"], list):
@@ -473,8 +478,19 @@ def attach_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def resolve_images(repo: Path, manifest: dict[str, Any]) -> dict[str, str]:
+def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[str, str]:
+    if prepared is not None:
+        images = json.loads(Path(prepared).read_text())
+        if (not isinstance(images, dict) or set(images) != set(manifest['commands']) or
+                not all(isinstance(image, str) for image in images.values())):
+            raise ConfigError('prepared images do not match the proxy manifest')
+        return {name: OUTER_RUNTIME.builder_image(image) for name, image in images.items()}
+    if OUTER_RUNTIME.provider == 'lima-docker':
+        from sandbox_build import prepare_proxies
+        return prepare_proxies(OUTER_RUNTIME, repo, manifest, Path(__file__).resolve().parents[2])
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
+        if not command.get('image-command'):
+            raise ConfigError(f"proxy {name} requires image-command for {OUTER_RUNTIME.provider}")
         result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
         if BARE_IMAGE_RE.fullmatch(output):
@@ -647,7 +663,7 @@ def start_one_proxy(
 def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     manifest = load_manifest_file(Path(args.manifest))
-    images = resolve_images(repo, manifest)
+    images = resolve_images(repo, manifest, getattr(args, 'images', None))
     state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
@@ -943,6 +959,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     attach.add_argument("--auth-enabled", action="store_true")
     attach.add_argument("--network", required=True)
     attach.add_argument("--manifest", required=True)
+    attach.add_argument('--images')
     attach.add_argument("--zuliprc")
     attach.set_defaults(function=attach_main)
     reset = sub.add_parser("reset")
@@ -977,6 +994,7 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     start.add_argument("--helper-image", required=True)
     start.add_argument("--network", required=True)
     start.add_argument("--manifest", required=True)
+    start.add_argument('--images')
     start.add_argument("--zuliprc")
     start.set_defaults(function=start_main)
     stop = sub.add_parser("stop")

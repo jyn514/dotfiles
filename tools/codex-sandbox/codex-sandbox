@@ -85,6 +85,7 @@ class State:
     image: str = ""
     sidecar_image: str = ""
     manifest: Path | None = None
+    prepared_images: Path | None = None
     proxy_state: Path | None = None
     proxy_args: Path | None = None
     lock_ready: Path | None = None
@@ -522,6 +523,8 @@ def attach_proxies(state: State) -> list[str]:
         ]
         if state.zuliprc is not None:
             arguments += ["--zuliprc", str(state.zuliprc)]
+        if state.prepared_images is not None:
+            arguments += ['--images', str(state.prepared_images)]
         auth_directory = _secure_codex_auth_directory(state)
         if auth_directory is not None:
             arguments.append("--auth-enabled")
@@ -1238,7 +1241,16 @@ def execute(state: State) -> int:
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
+    batched = OUTER_RUNTIME.provider == 'lima-docker'
+    if batched:
+        from sandbox_build import prepare_launch
+        state.image, state.sidecar_image, proxy_images = phase('image builds',
+            lambda: prepare_launch(OUTER_RUNTIME, state, DOTFILES))
+        state.prepared_images = temporary_file()
+        state.prepared_images.write_text(json.dumps(proxy_images))
     def model_image() -> str:
+        if batched:
+            return state.image
         builder = state.repository / ".agents/sandbox/base-image"
         if builder.is_file() and os.access(builder, os.X_OK):
             base_image = phase(
@@ -1260,7 +1272,8 @@ def execute(state: State) -> int:
     # Keep these jobs owned until session exit so cleanup cannot race creation.
     with startup_workers(state, max_workers=6) as executor:
         model_future = executor.submit(model_image)
-        sidecar_future = executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
+        sidecar_future = executor.submit(phase, "sidecar image resolution",
+            lambda: state.sidecar_image if batched else resolve_sidecar_image())
         network_future = executor.submit(phase, "network setup", ensure_network)
         lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
         editor_future = executor.submit(
@@ -1479,7 +1492,7 @@ def cleanup(state: State) -> None:
         list(executor.map(wait_process, processes))
     timing("proxy processes")
     for path in (
-        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask,
+        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask, state.prepared_images,
         state.lock_ready, state.lock_coordinated, state.lock_release,
     ):
         if path is not None and not keep_scratch:
@@ -1632,6 +1645,10 @@ def launch(arguments: list[str]) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as error:
+        diagnostic = error.stderr
+        if isinstance(diagnostic, bytes):
+            diagnostic = diagnostic.decode(errors='replace')
+        print(diagnostic.rstrip() if diagnostic else f'error: {error}', file=sys.stderr)
         return error.returncode
     except OSError as error:
         print(f"error: {error}", file=sys.stderr)

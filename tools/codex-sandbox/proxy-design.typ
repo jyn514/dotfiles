@@ -112,7 +112,8 @@ Networking is disabled unless the manifest declares it and the command requires 
 `.agents/sandbox/proxy-commands.json` declares named proxies and their fixed execution policy.
 The launcher also injects trusted built-in commands from its own installation checkout; repository-local declarations may add names but cannot replace a trusted command.
 The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
-The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
+The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `image-target`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
+At least one image selector is required: `image-command` for Podman or nerdctl, and `image-target` for rootless Docker. A command may provide both to support all backends.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:
 
@@ -168,7 +169,9 @@ The manifest starts one fixed server; its image owns the server and protocol pol
 The launcher provides the conventional socket volume and waits for readiness but remains unaware of Flower's request schema and argument grammar.
 For `bb-bug`, the immutable image contains both the socket server and the trusted bridge entrypoint.
 
-`image-command` is an argument array that the launcher executes before the agent starts.
+For rootless Docker, `image-target` names a target in the repository's `.agents/sandbox/docker-bake.hcl`, evaluated from the repository root. The file also defines the `base` target used by the agent. The launcher composes these targets with its trusted images into one Bake build, publishes only to its local engine, and verifies output digests before starting containers.
+
+For Podman and nerdctl, `image-command` is an argument array that the launcher executes before the agent starts.
 Like `.agents/sandbox/base-image`, the command may inspect the trusted startup checkout, build an image from its current sources, pull an existing image by tag or digest, or reuse a cached build.
 It prints exactly one immutable image reference on standard output and sends progress or diagnostics to standard error.
 The launcher rejects an empty, malformed, or multi-line result and starts the proxy by that reference.

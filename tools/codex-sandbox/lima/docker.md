@@ -58,8 +58,32 @@ internal relay links cannot route between sessions. Host-facing relays have
 separate egress networks. Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.
 
-Image builds use the forwarded Docker socket and preserve interactive BuildKit
-progress. Returned references retain both tag and digest because BuildKit needs
+Startup collects the base, agent, authentication, and command-proxy builds into
+one `docker buildx bake` invocation with one interactive progress display.
+BuildKit checks its cache on every launch. The base feeds the agent through a
+Bake target dependency; existing tags never substitute for checking changed inputs.
+
+Repositories provide `.agents/sandbox/docker-bake.hcl` with a `base` target.
+Paths resolve from the repository root.
+Command proxies select targets through `image-target` in `proxy-commands.json`.
+Use `contexts = { sandbox-base = "target:base" }` and
+`args = { BASE_IMAGE = "sandbox-base" }` for a proxy Dockerfile derived from the base.
+Buildx resolves HCL variables, inheritance, and target dependencies.
+
+The file also works independently, from the repository root:
+
+```sh
+docker buildx bake -f .agents/sandbox/docker-bake.hcl --load base
+```
+
+The launcher replaces output tags with private local tags, loads into its verified
+engine, disables cache exports, and checks output digests before starting containers.
+Repository exporters cannot publish images or caches during launch.
+Podman and nerdctl continue to use `base-image` and `image-command`; keep those
+builders when a repository supports both interfaces. A missing Docker Bake
+definition for an existing builder fails with a migration error.
+
+Returned references retain both tag and digest because BuildKit needs
 the tag to resolve a local base; execution uses the verified configuration ID
 with pulling disabled. Custom image entrypoints survive credential injection.
 
@@ -100,5 +124,7 @@ python3 tools/codex-sandbox/tests/docker_policy_integration.py \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/docker_monitor_integration.py \
   --state /private/tmp/docker-sandbox-test/state --image IMAGE_REFERENCE
+python3 tools/codex-sandbox/tests/bake_integration.py \
+  --state /private/tmp/docker-sandbox-test/state
 limactl delete --force sandbox-host-docker-test
 ```

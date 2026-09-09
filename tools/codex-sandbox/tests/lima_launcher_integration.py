@@ -15,6 +15,7 @@ import runpy
 import re
 import secrets
 import select
+import shutil
 import subprocess
 import struct
 import sys
@@ -78,6 +79,9 @@ def exercise(state, work, provider='lima'):
         # Use the real builder through an executable fixture with its own file
         # as argv[0], so its relative Dockerfile lookup stays in dotfiles.
         (sandbox / "base-image").symlink_to(Path(__file__).with_name("lima_fixture_base_image.py"))
+        if provider == 'lima-docker':
+            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/docker-bake.hcl', sandbox / 'docker-bake.hcl')
+            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/Dockerfile', sandbox / 'Dockerfile')
         (home / ".agents/skills").mkdir(parents=True)
         (home / ".codex").mkdir()
         (home / ".codex/config.toml").write_text("")

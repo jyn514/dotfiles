@@ -2,7 +2,10 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import signal
 import sys
 import tempfile
 import unittest
@@ -27,6 +30,31 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_bake_failure_reaps_plugin_after_wrapper_already_exited(self):
+        for status in ('0', '1'):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'scratch').mkdir()
+                pidfile = root / 'pid'
+                runtime = backend()
+                runtime.host.state = root
+                runtime.argv = Mock(return_value=[sys.executable, str(ROOT / 'tests/bake_orphan_fixture.py'),
+                                                 str(pidfile), status])
+                try:
+                    with self.assertRaises((FileNotFoundError, subprocess.CalledProcessError)):
+                        runtime.bake({'test': {'context': str(root), 'dockerfile': str(root / 'Dockerfile')}})
+                    pid = pidfile.read_text()
+                    listing = subprocess.run(['ps', '-axo', 'pid=,stat='], check=True,
+                                             capture_output=True, text=True).stdout.splitlines()
+                    self.assertFalse(any(fields[0] == pid and not fields[1].startswith('Z')
+                                         for line in listing if len(fields := line.split()) == 2))
+                finally:
+                    if pidfile.exists():
+                        try:
+                            os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+
     def test_cleanup_cannot_mutate_an_unverified_engine(self):
         runtime = backend()
         runtime.host.verify_runtime.side_effect = ValueError('engine identity changed')
@@ -65,6 +93,15 @@ class DockerRuntimeTest(unittest.TestCase):
         reference = runtime.inspect_image('agent:built').reference
         self.assertEqual(reference, 'agent:built@' + content)
         self.assertEqual(runtime.inspect_image(reference).reference, reference)
+
+    def test_image_reference_preserves_requested_repository_and_tag(self):
+        runtime = backend()
+        content = 'sha256:' + '1' * 64
+        runtime.run = Mock(return_value=Mock(stdout=json.dumps([
+            {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['codex-sandbox-bake:temporary', 'codex-sandbox:cache'],
+             'RepoDigests': ['codex-sandbox-bake@' + content, 'codex-sandbox@' + content],
+             'RootFS': {'Layers': ['sha256:' + '3' * 64]}}])))
+        self.assertEqual(runtime.inspect_image('codex-sandbox:cache').reference, 'codex-sandbox:cache@' + content)
 
     def test_explicit_shares_do_not_add_home_or_expose_control_state(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -7,6 +7,8 @@ the default switch.
 The [rootless Docker prototype](docker.md) selects `--provider lima-docker` and
 `CODEX_SANDBOX_DOCKER_STATE`; its host API accepts build contexts outside VM shares.
 It returns local `repo:tag@sha256:HASH` references and uses a separate image store.
+Docker startup [composes native Bake targets](docker.md), sharing one
+progress renderer across the base, agent, and proxy targets.
 
 ## Deferred integration prototype
 
