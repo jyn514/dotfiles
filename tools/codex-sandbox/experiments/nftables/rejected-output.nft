@@ -1,0 +1,35 @@
+# UNSAFE negative control: this candidate leaks routed egress traffic.
+# The runner substitutes validated policy addresses.
+table inet codex_sandbox {
+    set prohibited {
+        type ipv4_addr
+        flags interval
+        elements = { @PROHIBITED@ }
+    }
+    chain input {
+        type filter hook input priority -10; policy accept;
+        iifname { "cs-public", "csl*" } counter reject
+        iifname "cse*" meta nfproto ipv6 counter reject
+    }
+    chain forward {
+        type filter hook forward priority -10; policy accept;
+        iifname { "cs-public", "csl*", "cse*" } meta nfproto ipv6 counter reject
+        iifname "cs-public" oifname "cs-public" return
+        iifname "cs-public" ip daddr @DNS@ meta l4proto { tcp, udp } th dport 53 return
+        iifname "cs-public" ip daddr @prohibited counter reject
+        iifname "cse*" oifname { "cs-public", "csl*" } counter reject
+    }
+}
+
+table bridge codex_sandbox {
+    chain input {
+        type filter hook input priority -10; policy accept;
+        # Bridged packets use the forward hook; these are entering the IP stack.
+        meta ibrname "csl*" ether type ip counter drop
+    }
+    chain output {
+        type filter hook output priority -10; policy accept;
+        # This never matches: bridge output has no input device.
+        meta iifname "cse*" counter drop
+    }
+}

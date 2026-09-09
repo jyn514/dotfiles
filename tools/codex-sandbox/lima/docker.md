@@ -98,6 +98,9 @@ This is not yet a default-backend recommendation. Long-running interactive Pi,
 20 simultaneous sessions, raw-packet attacks, and optional Agent Podman/Zulip
 integration still need Docker-specific validation.
 
+The separate [nftables experiment](../experiments/nftables/README.md) tests a
+smaller packet policy without changing this backend's installed firewall.
+
 ## Disposable validation
 
 Use an otherwise idle test VM: the policy test deliberately restarts Docker
