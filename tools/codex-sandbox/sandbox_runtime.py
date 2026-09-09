@@ -375,7 +375,7 @@ class Lima(Podman):
             status = process.wait()
             if status:
                 # Also cover a guest interpreter crash, before its own cleanup.
-                self.run(["rm", "--force", containers[0][1]], capture_output=True)
+                self.run(["rm", "--force", containers[0][1]], capture_output=True, timeout=10)
             return status
         finally:
             for signum in signals:

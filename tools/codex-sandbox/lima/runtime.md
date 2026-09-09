@@ -64,6 +64,8 @@ both uses, and workload execution specifies `--pull=never`.
 
 Successful container creation omits nerdctl's existing-volume notice for named
 mounts. Other warnings and all failed-creation diagnostics remain visible.
+An agent-wait error is lost supervision, not a completed agent; both backends
+terminate the agent in that case. Lima bounds its fallback removal to ten seconds.
 
 ## Runtime contract tests
 

@@ -67,6 +67,13 @@ def monitor(argv, containers, parent_fd=None):
                 return 143
             names = {"supervisor connection"}
         if "agent" in names:
+            agent = waits[0][1]
+            try:
+                output, _ = agent.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                return stop_agent("agent wait stalled")
+            if agent.returncode or not output.strip().isdecimal() or not 0 <= int(output.strip()) <= 255:
+                return stop_agent("agent wait failed")
             return 0
         name = next(iter(names))
         return stop_agent(f"proxy {name} stopped")
