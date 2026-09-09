@@ -14,6 +14,7 @@ import time
 import uuid
 
 from lima.docker_host import DockerHost
+from lima.docker_client import verify_buildx
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
 
 
@@ -88,8 +89,17 @@ class Docker(VMRuntime):
     def client_argv(self, arguments):
         ambient = (*PROXY_ENV, 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG',
                    'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'DOCKER_API_VERSION',
-                   'BUILDX_BUILDER', 'BUILDKIT_HOST', 'BUILDX_BAKE_FILE_RELATIVE_PATHS')
-        return ['/usr/bin/env', *['-u' + name for name in ambient], self.record['client'],
+                   'BUILDX_BUILDER', 'BUILDX_CONFIG', 'BUILDKIT_HOST', 'BUILDX_BAKE_FILE_RELATIVE_PATHS',
+                   'DOCKER_CLI_PLUGIN_ORIGINAL_CLI_COMMAND', 'DOCKER_CLI_PLUGIN_SOCKET')
+        environment = ['/usr/bin/env', *['-u' + name for name in ambient]]
+        if arguments[0] == 'buildx':
+            # Invoke the recorded binary directly: Docker's plugin search can
+            # otherwise select a Homebrew upgrade or an ambient plugin path.
+            return [*environment, 'DOCKER_HOST=unix://' + self.record['socket'],
+                    'DOCKER_CONFIG=' + str(self.host.state / 'client'),
+                    'BUILDX_CONFIG=' + str(self.host.state / 'client/buildx-state'),
+                    str(verify_buildx(self.host.state)), *arguments[1:]]
+        return [*environment, self.record['client'],
                 '--config', str(self.host.state / 'client'), '--host', 'unix://' + self.record['socket'],
                 *arguments]
 

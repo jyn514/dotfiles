@@ -14,6 +14,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lima.host import Host, SOURCE, GUEST, atomic_json, command, machines, private_directory, shares
 from network_policy import policy_bytes
+from lima.docker_client import pin_buildx
 
 
 class DockerHost(Host):
@@ -51,7 +52,8 @@ class DockerHost(Host):
             if not command(str(client), '--version', capture_output=True, text=True).stdout.startswith('Docker version '):
                 raise ValueError('the prototype requires the real Docker CLI, not the Podman alias')
             config = private_directory(self.state / 'client')
-            atomic_json(config / 'config.json', {'cliPluginsExtraDirs': ['/opt/homebrew/lib/docker/cli-plugins']})
+            atomic_json(config / 'config.json', {})
+            pin_buildx(self.state)
             snapshot = private_directory(self.state / 'source')
             inputs = {'boot-credential.py': SOURCE / 'boot-credential.py',
                       'mount-shares.py': SOURCE / 'mount-shares.py',
@@ -169,7 +171,7 @@ def main():
     setup.add_argument('--share-read', action='append')
     setup.add_argument('--share-write', action='append')
     setup.add_argument('--client', type=Path)
-    for name in ('start', 'stop', 'status'):
+    for name in ('start', 'stop', 'status', 'pin-buildx'):
         sub.add_parser(name)
     args = parser.parse_args()
     host = DockerHost(args.state)
@@ -179,6 +181,10 @@ def main():
         elif args.operation == 'status':
             record = host.record()
             host.verify_runtime(record)
+        elif args.operation == 'pin-buildx':
+            host.record()
+            print(pin_buildx(host.state))
+            return
         else:
             record = getattr(host, args.operation)()
         print(json.dumps(record))

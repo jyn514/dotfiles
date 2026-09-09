@@ -18,6 +18,20 @@ It shares your home directory with the VM; containers retain the launcher's
 narrow mounts. Docker's real Homebrew executable is recorded explicitly, so
 the existing `docker` → Podman alias need not change.
 
+Setup copies host Buildx v0.37.0 into private state. Builds verify its SHA-256 and
+invoke it directly with the recorded Docker socket and private builder settings;
+Homebrew upgrades and plugin discovery cannot replace it. For a VM created before
+host Buildx pinning, run this once from dotfiles (no VM restart):
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py pin-buildx
+```
+
+Use the same command to repair a missing or changed copy, after installing the
+supported Buildx version; add `--state DIRECTORY` before `pin-buildx` for a
+non-default VM. An unavailable or altered pinned binary blocks builds rather
+than falling back to another plugin.
+
 State defaults to `~/.local/state/codex-sandbox-docker`. For another instance,
 pass `--state DIRECTORY` before `setup` and `--instance sandbox-host-docker-NAME`
 after it, then set `CODEX_SANDBOX_DOCKER_STATE=DIRECTORY` for launches and builders.
