@@ -1,5 +1,5 @@
-# Prototype only: bridge-nf-call-iptables/ip6tables must both remain zero.
-# The runner substitutes validated policy addresses.
+# bridge-nf-call-iptables/ip6tables must both remain zero in this namespace.
+# nftables.py substitutes validated addresses from network-policy.json.
 destroy table inet codex_sandbox
 destroy table bridge codex_sandbox
 table inet codex_sandbox {

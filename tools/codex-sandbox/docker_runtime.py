@@ -223,6 +223,10 @@ class Docker(VMRuntime):
         if internal:
             arguments += ['--internal']
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
+        # Docker can change bridge traversal without changing its service epoch,
+        # so the cached verification receipt cannot cover network creation.
+        if self.record.get('firewall') == 'nftables':
+            self.guest(['python3', '/usr/local/share/codex-sandbox/docker-policy.py', 'check-bridges'])
 
     def relay_owner(self, name):
         network = single_json(self.run(['network', 'inspect', name], capture_output=True).stdout)

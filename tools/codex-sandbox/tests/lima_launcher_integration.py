@@ -1,4 +1,4 @@
-"""Run the real launcher twice with a disposable home and a dummy boot credential.
+"""Test real launcher startup, interactive input, and cleanup with dummy credentials.
 
 Requires a provisioned test host sharing dotfiles read-only and --work writable.
 The caller owns host teardown; this test owns its repository and session reset.
@@ -20,6 +20,7 @@ import subprocess
 import struct
 import sys
 import tempfile
+import termios
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,12 +29,14 @@ from sandbox_credentials import boot_credential
 from sandbox_runtime import image_runtime
 
 
-def terminal_run(command, environment, cwd):
+def terminal_run(command, environment, cwd, *, interactive=False):
     master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 28, 100, 0, 0))
     process = subprocess.Popen(command, env=environment, cwd=cwd,
                                stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
     output = bytearray()
+    sent_key = interrupted = False
     deadline = time.monotonic() + 1200
     try:
         while time.monotonic() < deadline:
@@ -49,12 +52,20 @@ def terminal_run(command, environment, cwd):
                 output.extend(block)
                 sys.stdout.buffer.write(block)
                 sys.stdout.buffer.flush()
+                if interactive and not sent_key and b'__SANDBOX_PI_READY__' in output:
+                    os.write(master, b'nft-key-probe')
+                    sent_key = True
+                if interactive and not interrupted and b'__SANDBOX_PI_KEY__' in output:
+                    process.terminate()
+                    interrupted = True
             elif process.poll() is not None:
                 break
         else:
             raise TimeoutError("real Lima launcher exceeded its test deadline")
         status = process.wait(timeout=30)
-        assert status == 0, f"launcher exited {status}"
+        assert status == (143 if interactive else 0), f"launcher exited {status}"
+        if interactive:
+            assert sent_key and interrupted, 'Pi never accepted interactive input'
         assert b"owned-dummy-github-token" not in output, "credential escaped into terminal output"
     finally:
         if process.poll() is None:
@@ -75,6 +86,7 @@ def exercise(state, work, provider='lima'):
         repo = home / "src/dotfiles"
         sandbox = repo / ".agents/sandbox"
         sandbox.mkdir(parents=True)
+        shutil.copyfile(Path(__file__).with_name('pi_startup_observer.js'), sandbox / 'observer.js')
         (repo / "nested").mkdir()
         # Use the real builder through an executable fixture with its own file
         # as argv[0], so its relative Dockerfile lookup stays in dotfiles.
@@ -244,6 +256,9 @@ def exercise(state, work, provider='lima'):
                         "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxies/jj,readonly",
                         "--entrypoint", "/tools/jj-proxy/client"], ["status"]) as process:
                     assert process.wait(timeout=30) == 0
+            print('STARTUP CHECK: interactive Pi session, key delivery, and cancellation.', flush=True)
+            terminal_run([sys.executable, str(ROOT / 'codex-sandbox'), '--offline', '--approve', '--no-session',
+                          '-e', '../.agents/sandbox/observer.js'], environment, repo / 'nested', interactive=True)
         finally:
             subprocess.run([sys.executable, str(ROOT / "sandbox-proxies.py"), "reset", "--repo", str(repo)],
                            env=environment, check=True, timeout=120)

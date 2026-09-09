@@ -48,15 +48,29 @@ Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.
 ## Prototype boundaries
 
 Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and slirp4netns 1.3.5 are
-pinned in setup. Docker packages come from Docker's signed Ubuntu repository;
+pinned in setup, along with Ubuntu nftables 1.0.9-1ubuntu0.1.
+Docker packages come from Docker's signed Ubuntu repository;
 the signing key and Ubuntu image have pinned SHA-256 digests. Rootful Docker's
 service and socket are masked before package installation.
 
-The rootless service installs bridge filtering on every activation before
+New VMs use native nftables tables for sandbox filtering; Docker retains its
+iptables backend for networking and NAT. Existing VMs keep their pinned policy.
+Use a new instance and state directory to adopt nftables.
+
+The rootless service installs filtering atomically on every activation before
 systemd reports it ready. Agent traffic rejects private destinations and IPv6;
 internal relay links cannot route between sessions. Host-facing relays have
 separate egress networks. Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.
+
+The root-owned daemon configuration enables `userland-proxy` and ICC. Both
+bridge IP traversal sysctls stay zero inside RootlessKit's network namespace;
+native bridge and IP hooks distinguish bridged traffic from routed traffic.
+Verification compares complete native JSON against the recorded policy compiled
+in a temporary namespace, rejects ICC-disabled networks, and checks both sysctls.
+Relay creation checks the sysctls again, since network creation can change them
+without changing the daemon's verification receipt. Do not apply these settings
+to an arbitrary Docker installation: they change inter-container filtering.
 
 Startup collects the base, agent, authentication, and command-proxy builds into
 one `docker buildx bake` invocation with one interactive progress display.
@@ -95,17 +109,18 @@ through Docker's ordinary container API; Docker has no individual exec-kill API.
 This adds container startup cost to host-routed commands.
 
 This is not yet a default-backend recommendation. Long-running interactive Pi,
-20 simultaneous sessions, raw-packet attacks, and optional Agent Podman/Zulip
+20 simultaneous sessions, and optional Agent Podman/Zulip
 integration still need Docker-specific validation.
 
-The separate [nftables experiment](../experiments/nftables/README.md) tests a
-smaller packet policy without changing this backend's installed firewall.
+The [nftables differential probes](../experiments/nftables/README.md) retain
+the historical policy and a rejected alternative as regression controls.
 
 ## Disposable validation
 
 Use an otherwise idle test VM: the policy test deliberately restarts Docker
-and injects a failed policy activation. Both tests own their temporary resources;
-the caller owns VM teardown. The launcher fixture uses dummy credentials.
+and injects a failed policy activation. Tests own their temporary resources;
+the caller owns VM teardown. The launcher fixture uses dummy credentials and
+checks interactive Pi input and cancellation as well as proxy requests.
 
 ```sh
 mkdir -p /private/tmp/docker-sandbox-test/work
@@ -129,6 +144,9 @@ python3 tools/codex-sandbox/tests/docker_policy_integration.py \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/docker_monitor_integration.py \
   --state /private/tmp/docker-sandbox-test/state --image IMAGE_REFERENCE
+python3 tools/codex-sandbox/tests/docker_raw_network_integration.py \
+  --state /private/tmp/docker-sandbox-test/state \
+  --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/bake_integration.py \
   --state /private/tmp/docker-sandbox-test/state
 limactl delete --force sandbox-host-docker-test

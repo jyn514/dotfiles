@@ -8,6 +8,8 @@ import subprocess
 import signal
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from docker_runtime import Docker
 from lima.docker_host import DockerHost
+from lima.docker import nftables
 from sandbox_runtime import RuntimeError
 
 spec = importlib.util.spec_from_file_location('docker_policy', ROOT / 'lima/docker/policy.py')
@@ -135,17 +138,62 @@ class DockerRuntimeTest(unittest.TestCase):
 
 
 class FirewallTest(unittest.TestCase):
-    def test_selector_order_is_irrelevant_but_rule_order_and_coverage_are_not(self):
-        expected = [['-i', 'cs-public', '-d', '10.0.0.0/8', '-j', 'REJECT'],
-                    ['-i', 'csl+', '-j', 'REJECT']]
-        lines = ['-A CS-FORWARD -d 10.0.0.0/8 -i cs-public -j REJECT --reject-with icmp-port-unreachable',
-                 '-A CS-FORWARD -i csl+ -j REJECT']
-        with patch.object(policy, 'run', return_value='\n'.join(lines)):
-            policy.check_chain([], 'iptables', 'CS-FORWARD', expected)
-        for changed in (lines[:1], lines[::-1], [*lines, '-A CS-FORWARD -j ACCEPT']):
-            with self.subTest(changed=changed), patch.object(policy, 'run', return_value='\n'.join(changed)):
-                with self.assertRaisesRegex(ValueError, 'differs'):
-                    policy.check_chain([], 'iptables', 'CS-FORWARD', expected)
+    def test_reference_cancellation_reaps_child_after_wrapper_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pidfile = Path(directory) / 'pid'
+            done = threading.Event()
+
+            def cancel():
+                while not done.wait(0.01):
+                    if pidfile.exists() and pidfile.read_text().strip():
+                        os.kill(os.getpid(), signal.SIGTERM)
+                        return
+
+            thread = threading.Thread(target=cancel)
+            thread.start()
+            started = time.monotonic()
+            try:
+                with patch.object(nftables, 'run', return_value='owned-origin'):
+                    with self.assertRaisesRegex(Exception, 'verification interrupted'):
+                        nftables.reference([sys.executable, str(ROOT / 'tests/bake_orphan_fixture.py'),
+                                            str(pidfile), '0'], 'unused')
+                self.assertLess(time.monotonic() - started, 5)
+                pid = pidfile.read_text()
+                listing = subprocess.run(['ps', '-axo', 'pid=,stat='], check=True,
+                                         capture_output=True, text=True).stdout.splitlines()
+                self.assertFalse(any(fields[0] == pid and not fields[1].startswith('Z')
+                                     for line in listing if len(fields := line.split()) == 2))
+            finally:
+                done.set()
+                thread.join()
+                if pidfile.exists():
+                    try:
+                        os.kill(int(pidfile.read_text()), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+    def test_native_rule_order_and_coverage_survive_normalization(self):
+        rules = [{'rule': {'family': 'inet', 'table': 'codex_sandbox', 'chain': 'forward',
+                           'expr': [expression]}} for expression in ({'return': None}, {'reject': None})]
+        canonical = lambda entries: nftables.canonical(json.dumps({'nftables': entries}))
+        self.assertEqual(canonical(rules), canonical([
+            {'metainfo': {'version': '1.0.9'}},
+            *[{'rule': {**entry['rule'], 'handle': index}} for index, entry in enumerate(rules)]]))
+        for changed in (rules[:1], rules[::-1], [*rules, rules[0]],
+                        [{'rule': {**rules[0]['rule'], 'expr': [{'accept': None}]}}, rules[1]]):
+            with self.subTest(changed=changed):
+                self.assertNotEqual(canonical(rules), canonical(changed))
+
+    def test_unrecorded_native_helper_is_rejected_before_execution(self):
+        files = {'nftables.py', 'network.nft', 'docker-daemon.json', 'network-policy.json'}
+        for missing in files:
+            record = {'generation': 'test', 'firewall': 'nftables',
+                      'files': dict.fromkeys(files - {missing}, 'digest')}
+            with self.subTest(missing=missing), patch.object(policy.os, 'getuid', return_value=1000), \
+                    patch.dict(os.environ, SANDBOX_GENERATION='test'), patch.object(policy, 'firewall') as install:
+                with self.assertRaisesRegex(ValueError, 'not recorded'):
+                    policy.verify(record)
+                install.assert_not_called()
 
     def test_rootless_service_is_not_ready_during_post_start_policy_install(self):
         host = object.__new__(DockerHost)

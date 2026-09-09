@@ -6,7 +6,6 @@ import http.client
 import json
 import os
 from pathlib import Path
-import shlex
 import socket
 import stat
 import subprocess
@@ -14,8 +13,6 @@ import sys
 
 BASE = Path('/usr/local/share/codex-sandbox')
 PUBLIC = 'cs-public'
-LINK = 'csl+'
-EGRESS = 'cse+'
 
 
 def run(*args, **kwargs):
@@ -45,98 +42,17 @@ def rootless_info():
         connection.close()
 
 
-def rules(policy, ipv6=False):
-    incoming = [['-i', bridge, '-j', 'REJECT'] for bridge in (PUBLIC, LINK)]
-    if ipv6:
-        return incoming + [['-i', EGRESS, '-j', 'REJECT']], [
-            ['-i', bridge, '-j', 'REJECT'] for bridge in (PUBLIC, LINK, EGRESS)]
-    # Internal relay traffic is allowed only while bridged, never routed to
-    # another link. Interface identity also survives forged source addresses.
-    forwarding = [
-        ['-i', LINK, '-m', 'physdev', '--physdev-is-bridged', '-j', 'RETURN'],
-        ['-i', LINK, '-j', 'REJECT'],
-        ['-i', PUBLIC, '-o', PUBLIC, '-j', 'RETURN'],
-        ['-i', EGRESS, '-o', PUBLIC, '-j', 'REJECT'],
-        ['-i', EGRESS, '-o', LINK, '-j', 'REJECT'],
-        ['-i', EGRESS, '-o', EGRESS, '-m', 'physdev', '--physdev-is-bridged', '-j', 'RETURN'],
-        ['-i', EGRESS, '-o', EGRESS, '-j', 'REJECT'],
-    ]
-    for protocol in ('tcp', 'udp'):
-        forwarding.append(['-i', PUBLIC, '-d', policy['dns'] + '/32',
-                           '-p', protocol, '-m', protocol, '--dport', '53', '-j', 'RETURN'])
-    forwarding += [['-i', PUBLIC, '-d', destination, '-j', 'REJECT']
-                   for destination in policy['prohibited']]
-    return incoming, forwarding
-
-
-def canonical(rule):
-    # iptables-save makes the default REJECT response explicit.
-    if '--reject-with' in rule:
-        index = rule.index('--reject-with')
-        if rule[index + 1] not in ('icmp-port-unreachable', 'icmp6-port-unreachable'):
-            raise ValueError('unexpected firewall rejection mode')
-        rule = rule[:index] + rule[index + 2:]
-    # iptables prints selectors in its own order, e.g. destination before
-    # input interface. Compare complete option groups, retaining duplicates.
-    groups = []
-    index = 0
-    while index < len(rule):
-        size = 1 if rule[index] == '--physdev-is-bridged' else 2
-        groups.append(tuple(rule[index:index + size]))
-        index += size
-    return tuple(sorted(groups))
-
-
-def check_chain(prefix, tool, chain, expected):
-    actual = [canonical(shlex.split(line)[2:]) for line in
-              run(*prefix, tool, '-S', chain).splitlines() if line.startswith('-A ')]
-    if actual != [canonical(entry) for entry in expected]:
-        raise ValueError(f'{tool} {chain} differs from sandbox policy')
-
-
 def firewall(install=False):
-    policy = json.loads((BASE / 'network-policy.json').read_text())
-    if policy['version'] != 2 or policy['ipv6'] != 'disabled':
-        raise ValueError('unsupported sandbox policy')
-    prefix = namespace()
-    for knob in ('bridge-nf-call-iptables', 'bridge-nf-call-ip6tables'):
-        if run(*prefix, 'sysctl', '-n', 'net.bridge.' + knob).strip() != '1':
-            raise ValueError('bridge filtering must be enabled before Docker starts')
-    for tool, ipv6 in (('iptables', False), ('ip6tables', True)):
-        incoming, forwarding = rules(policy, ipv6)
-        chains = {'CS-INPUT': incoming, 'CS-FORWARD': forwarding}
-        if install:
-            existing = subprocess.run([*prefix, tool, '-S', 'DOCKER-USER'],
-                                      capture_output=True, timeout=30)
-            if existing.returncode:
-                run(*prefix, tool, '-N', 'DOCKER-USER')
-            jumps = run(*prefix, tool, '-S', 'FORWARD').splitlines()
-            if '-A FORWARD -j DOCKER-USER' not in jumps:
-                run(*prefix, tool, '-I', 'FORWARD', '1', '-j', 'DOCKER-USER')
-            content = ['*filter', *[f':{name} - [0:0]' for name in chains]]
-            for chain, entries in chains.items():
-                content.extend(shlex.join(['-A', chain, *entry]) for entry in entries)
-            content.append('COMMIT')
-            run(*prefix, tool + '-restore', '--noflush', input='\n'.join(content) + '\n')
-            for parent, child in (('INPUT', 'CS-INPUT'), ('DOCKER-USER', 'CS-FORWARD')):
-                entries = run(*prefix, tool, '-S', parent).splitlines()
-                jump = f'-A {parent} -j {child}'
-                if jump in entries:
-                    run(*prefix, tool, '-D', parent, '-j', child)
-                run(*prefix, tool, '-I', parent, '1', '-j', child)
-        for chain, entries in chains.items():
-            check_chain(prefix, tool, chain, entries)
-        for parent, child in (('INPUT', 'CS-INPUT'), ('DOCKER-USER', 'CS-FORWARD'),
-                              ('FORWARD', 'DOCKER-USER')):
-            entries = [line for line in run(*prefix, tool, '-S', parent).splitlines()
-                       if line.startswith('-A ')]
-            if not entries or entries[0] != f'-A {parent} -j {child}':
-                raise ValueError('sandbox firewall jump is not first')
+    import nftables
+    nftables.firewall(namespace(), install=install)
 
 
 def verify(record):
     if os.getuid() == 0 or os.environ.get('SANDBOX_GENERATION') != record['generation']:
         raise ValueError('Docker guest identity changed')
+    required = {'nftables.py', 'network.nft', 'docker-daemon.json', 'network-policy.json'}
+    if record.get('firewall') != 'nftables' or not required.issubset(record['files']):
+        raise ValueError('Docker nftables policy files are not recorded')
     for name, digest in record['files'].items():
         path = BASE / name
         info = path.lstat()
@@ -167,6 +83,9 @@ def verify(record):
             effective.get('driver') != 'slirp4netns' or effective.get('dns') != ['10.0.2.3'] or
             effective.get('childIP') != '10.0.2.100'):
         raise ValueError('Docker rootless network driver or resolver changed')
+    if record.get('firewall') == 'nftables':
+        if arguments[-2:] != ['/usr/bin/dockerd-rootless.sh', '--config-file=' + str(BASE / 'docker-daemon.json')]:
+            raise ValueError('Docker is not using the pinned sandbox daemon configuration')
     for index, share in enumerate(record['shares']):
         mounted = json.loads(run('findmnt', '--json', '--target', share['mountPoint'],
                                  '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS'))['filesystems']
@@ -182,5 +101,8 @@ if __name__ == '__main__':
         firewall(install=True)
     elif sys.argv[1:] == ['check']:
         verify(json.load(sys.stdin))
+    elif sys.argv[1:] == ['check-bridges']:
+        import nftables
+        nftables.check_bridges(namespace())
     else:
         raise SystemExit('expected install or check')

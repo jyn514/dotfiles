@@ -1,0 +1,10 @@
+{
+  "iptables": true,
+  "ip6tables": true,
+  "ipv6": false,
+  "live-restore": false,
+  "dns": ["10.0.2.3"],
+  "firewall-backend": "iptables",
+  "userland-proxy": true,
+  "icc": true
+}

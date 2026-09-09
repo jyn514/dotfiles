@@ -23,6 +23,7 @@ def main():
     parser.add_argument('--port', type=int, default=18765)
     parser.add_argument('--mac')
     parser.add_argument('--source', default='203.0.113.99')
+    parser.add_argument('--timeout', type=float, default=0.7)
     args = parser.parse_args()
     if args.mode == 'hold':
         print('ready', flush=True)
@@ -32,7 +33,7 @@ def main():
     if args.mode == 'listen':
         with socket.socket(family, socket.SOCK_DGRAM) as server:
             server.bind((args.address or '0.0.0.0', args.port))
-            server.settimeout(0.7)
+            server.settimeout(args.timeout)
             print('ready', flush=True)
             try:
                 data, _ = server.recvfrom(1024)

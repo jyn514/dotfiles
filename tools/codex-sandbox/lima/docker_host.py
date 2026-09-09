@@ -42,6 +42,8 @@ class DockerHost(Host):
                 raise ValueError('Docker setup identity changed; use a separate state directory')
             if record['phase'] == 'ready':
                 return self.start()
+            if record.get('firewall') != 'nftables':
+                raise ValueError('old Docker setup is incomplete; provision a new instance and state directory')
         else:
             if instance in machines():
                 raise ValueError('refusing to adopt an existing Docker VM')
@@ -57,7 +59,10 @@ class DockerHost(Host):
                       'rootless-network.json': SOURCE / 'rootless-network.json',
                       'docker-policy.py': SOURCE / 'docker/policy.py',
                       'docker-install.py': SOURCE / 'docker/install.py',
-                      'docker-user.py': SOURCE / 'docker/configure-user.py'}
+                      'docker-user.py': SOURCE / 'docker/configure-user.py',
+                      'nftables.py': SOURCE / 'docker/nftables.py',
+                      'network.nft': SOURCE / 'docker/network.nft',
+                      'docker-daemon.json': SOURCE / 'docker/daemon.json'}
             for name, source in inputs.items():
                 shutil.copyfile(source, snapshot / name)
             (snapshot / 'network-policy.json').write_bytes(policy_bytes())
@@ -80,7 +85,7 @@ class DockerHost(Host):
             atomic_json(self.state / 'host.yaml', template)
             command('limactl', 'validate', str(self.state / 'host.yaml'))
             record = {'schema': 1, 'provider': self.provider, 'phase': 'creating',
-                      'instance': instance, 'namespace': 'default', 'generation': generation,
+                      'instance': instance, 'namespace': 'default', 'generation': generation, 'firewall': 'nftables',
                       'shares': requested, 'client': str(client),
                       'template_digest': hashlib.sha256((self.state / 'host.yaml').read_bytes()).hexdigest(),
                       'network_digest': hashlib.sha256(policy_bytes()).hexdigest(),

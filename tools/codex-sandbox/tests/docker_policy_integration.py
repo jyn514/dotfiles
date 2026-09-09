@@ -51,6 +51,7 @@ def main():
         probe(egress, 'allow', endpoint)
         probe('codex-public-only', 'deny', endpoint)
         probe('codex-public-only', 'public', '-')
+        probe('codex-public-only', 'dns-tcp', '10.0.2.3')
         with ExitStack() as stack:
             # Docker's host network is not its detached bridge namespace.
             # Own a transient guest unit there as the positive control for
@@ -71,7 +72,43 @@ def main():
             probe(link, 'allow', address + ':18765')
             probe(other, 'deny', address + ':18765')
             probe('codex-public-only', 'deny', address + ':18765')
+            public_peer = prefix + '-public-peer'
+            stack.enter_context(runtime.workload(image, public_peer,
+                ['--network', 'codex-public-only', '--entrypoint', 'python3'],
+                ['-m', 'http.server', '18765']))
+            probe('codex-public-only', 'allow', runtime.network_address(public_peer, 'codex-public-only') + ':18765')
         print('PASS: public DNS/HTTP, private-host denial, internal-link isolation, IPv6 denial', flush=True)
+        if runtime.record.get('firewall') == 'nftables':
+            namespace = ['dockerd-rootless-setuptool.sh', 'nsenter', '--', 'nsenter',
+                         f'--net=/run/user/{uid}/dockerd-rootless/netns', '--']
+            try:
+                runtime.guest([*namespace, 'nft', 'flush', 'chain', 'inet', 'codex_sandbox', 'forward'])
+                try:
+                    runtime.host.verify(runtime.record)
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    raise AssertionError('modified native rules were accepted')
+            finally:
+                runtime.guest(['python3', GUEST + '/docker-policy.py', 'install'])
+                runtime.host.verify(runtime.record)
+            print('PASS: native verifier rejects changed rule expressions and accepts restored policy', flush=True)
+            unready = prefix + '-unready'
+            owner = uuid.uuid4().hex
+            networks.append(unready)
+            try:
+                runtime.guest([*namespace, 'sysctl', '-qw', 'net.bridge.bridge-nf-call-iptables=1'])
+                try:
+                    runtime.create_relay_network(unready, internal=True, owner=owner)
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    raise AssertionError('network became ready after bridge traversal changed')
+                assert runtime.relay_owner(unready) == owner, 'failed readiness lost cleanup ownership'
+            finally:
+                runtime.guest(['python3', GUEST + '/docker-policy.py', 'install'])
+                runtime.host.verify(runtime.record)
+            print('PASS: post-create check rejects changed sysctls and retains network ownership', flush=True)
         old_epoch = runtime.host.runtime_epoch(runtime.record)
         sleeper = prefix + '-restart'
         runtime.run(['run', '-d', '--name', sleeper, '--network', 'none', '--entrypoint', 'sleep', image.config, '300'],

@@ -32,7 +32,7 @@ def main():
     # Mask before package installation: package postinst may start rootful Docker.
     run('systemctl', 'mask', 'docker.service', 'docker.socket')
     run('apt-get', 'update')
-    run('apt-get', 'install', '-y', 'uidmap', 'dbus-user-session', 'iptables',
+    run('apt-get', 'install', '-y', 'uidmap', 'dbus-user-session', 'iptables', 'nftables=1.0.9-1ubuntu0.1',
         'docker-ce=' + VERSION, 'docker-ce-cli=' + VERSION,
         'docker-ce-rootless-extras=' + VERSION,
         'containerd.io=2.3.5-1~ubuntu.24.04~noble',

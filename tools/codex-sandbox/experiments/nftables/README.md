@@ -1,7 +1,7 @@
-# Prototype native nftables isolation
+# Native nftables differential probes
 
-Experimental packet-policy replacement; the launcher and VM provisioner do not
-use it. Docker keeps its iptables backend. `policy.nft` owns two tables:
+New Lima-Docker VMs install [network.nft](../../lima/docker/network.nft).
+Docker keeps its iptables backend. The sandbox owns two native tables:
 `inet codex_sandbox` filters routed and host-bound traffic; `bridge codex_sandbox`
 blocks IPv6 within sandbox bridges. Address substitutions use `network_policy.py`.
 
@@ -25,8 +25,8 @@ limactl shell --workdir /tmp sandbox-host-docker python3 \
 The first command creates fresh Linux network namespaces with no external
 interface. It changes rules, routes and sysctls only there; child processes own
 the peer namespaces. It runs the same packet cases without filtering, with the
-existing policy, and with the candidate. The 26 cases cover public/private access,
-UDP DNS, gateway access, relay isolation, IPv6, and forged Ethernet packets that
+historical `legacy_policy.py`, and with the installed policy source. The 26 cases
+cover public/private access, UDP DNS, gateway access, relay isolation, IPv6, and forged Ethernet packets that
 distinguish bridging from same-link routing. It also checks atomic replacement
 failure and repeat installation. Positive controls prevent unroutable fixtures
 from masquerading as successful denials.
@@ -42,17 +42,15 @@ network creation leaves both sysctls at zero. Creating an `icc=false` network
 re-enables IPv4 bridge filtering. The probe stops its daemon and removes its
 temporary state on exit.
 
-## Migration boundary
+## Runtime boundary
 
-This is a packet-policy prototype, not a replacement for runtime verification.
-Before deployment, pin and verify `userland-proxy=true`, reject `icc=false`
-networks, and verify both sysctls after network creation and daemon activation.
+These probes complement [runtime verification and container tests](../../lima/docker.md#disposable-validation).
+Provisioning pins `userland-proxy=true`, rejects `icc=false`
+networks, and verifies both sysctls after network creation and daemon activation.
 Docker can otherwise restore bridge traversal and break legitimate relay traffic.
 Do not disable bridge traversal on an arbitrary Docker installation: it can
 change inter-container filtering and published-port behavior.
 
-A migration still needs installed-policy verification using nftables JSON,
-provisioning snapshots, restart/failure coverage, and full launcher tests with
-actual containers. The private-daemon probe tests network creation, not those
-container, NAT or lifecycle behaviors; TCP DNS and public same-bridge traffic
-also need coverage. Keep the existing firewall until those checks pass.
+The private-daemon probe tests network creation. The runtime tests separately
+cover native JSON verification, restart and failed activation, TCP DNS,
+same-bridge traffic, forged packets, and interactive Pi launch and cleanup.

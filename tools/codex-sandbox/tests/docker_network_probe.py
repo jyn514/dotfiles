@@ -1,12 +1,24 @@
 """Network assertions inside an owned Docker test container."""
 
 import socket
+import struct
 import sys
 import time
 from urllib.request import ProxyHandler, build_opener
 
 mode, target = sys.argv[1:]
-if mode == 'public':
+if mode == 'dns-tcp':
+    query = (struct.pack('!HHHHHH', 0x5342, 0x0100, 1, 0, 0, 0) +
+             b'\x07example\x03com\0' + struct.pack('!HH', 1, 1))
+    with socket.create_connection((target, 53), timeout=5) as connection:
+        connection.sendall(struct.pack('!H', len(query)) + query)
+        stream = connection.makefile('rb')
+        size, = struct.unpack('!H', stream.read(2))
+        response = stream.read(size)
+        assert len(response) == size and size >= 12
+        identity, flags, _, answers, _, _ = struct.unpack('!HHHHHH', response[:12])
+        assert identity == 0x5342 and flags & 0x8000 and flags & 15 == 0 and answers
+elif mode == 'public':
     assert socket.getaddrinfo('example.com', 80)
     with build_opener(ProxyHandler({})).open('http://example.com', timeout=10) as response:
         assert response.status == 200

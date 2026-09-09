@@ -20,6 +20,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT))
 from network_policy import policy_bytes
 from docker_runtime import stop_build
+from lima.docker.nftables import source
 
 
 def ignore_cancellation():
@@ -112,7 +113,7 @@ def probe(sender, receiver, address, *, port=18765, mac=None, source=None):
 
 
 def old_policy(policy):
-    spec = importlib.util.spec_from_file_location('old_policy', ROOT / 'lima/docker/policy.py')
+    spec = importlib.util.spec_from_file_location('old_policy', HERE / 'legacy_policy.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     for tool, ipv6 in (('iptables', False), ('ip6tables', True)):
@@ -123,6 +124,8 @@ def old_policy(policy):
 
 
 def candidate(policy, name='policy.nft'):
+    if name == 'policy.nft':
+        return source(policy)
     # Addresses come from the same policy bytes as provisioning; validate before
     # substituting into the separate nft language source.
     networks = ', '.join(str(ipaddress.IPv4Network(value)) for value in policy['prohibited'])
