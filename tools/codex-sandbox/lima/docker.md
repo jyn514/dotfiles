@@ -45,6 +45,13 @@ Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
 Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.
 
+After sessions have exited, recover their shared proxies with
+`python3 tools/codex-sandbox/sandbox-proxies.py reset --repo /path/to/repository`
+from the dotfiles checkout. Cleanup verifies the
+recorded VM, socket, and rootless engine identity even when installed policy is
+damaged; it cannot launch workloads or repair the firewall. An unavailable or
+replaced engine leaves recovery metadata intact.
+
 ## Prototype boundaries
 
 Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and slirp4netns 1.3.5 are
@@ -144,6 +151,9 @@ python3 tools/codex-sandbox/tests/docker_policy_integration.py \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/docker_monitor_integration.py \
   --state /private/tmp/docker-sandbox-test/state --image IMAGE_REFERENCE
+python3 tools/codex-sandbox/tests/docker_recovery_integration.py \
+  --state /private/tmp/docker-sandbox-test/state \
+  --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/docker_raw_network_integration.py \
   --state /private/tmp/docker-sandbox-test/state \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE

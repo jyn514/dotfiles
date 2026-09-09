@@ -51,21 +51,41 @@ class Docker(VMRuntime):
     host_address = 'host.lima.internal'
     nonrecursive_bind = 'bind-recursive=disabled'
 
-    def __init__(self, state):
+    def __init__(self, state, *, recovery=False):
         self.host = DockerHost(state)
         self.record = self.host.record()
+        self.recovery = recovery
         if self.record['phase'] != 'ready':
             raise RuntimeError('Docker prototype setup is incomplete')
+        self.verify_identity()
+        if not recovery:
+            self.verify()
+
+    def verify_identity(self):
+        """Recovery needs the same engine, even when its admission policy is broken."""
         machine = self.host.machine(self.record)
         if self.record['socket'] != str(Path(machine['dir']) / 'sock/docker.sock'):
             raise RuntimeError('Docker socket differs from recorded VM')
-        self.verify()
+        result = subprocess.run(self.client_argv(['info', '--format', '{{json .}}']),
+                                check=True, capture_output=True, text=True, timeout=10)
+        info = json.loads(result.stdout)
+        if info['ID'] != self.record['engine_id'] or 'name=rootless' not in info['SecurityOptions']:
+            raise RuntimeError('Docker engine identity changed; refusing recovery')
 
     def argv(self, arguments, *, cwd=None):
         self.host.machine(self.record)
-        if (arguments[0] in ('run', 'create', 'start', 'rm', 'kill', 'stop', 'exec', 'wait') or
-                arguments[0] in ('network', 'volume') and arguments[1] in ('create', 'rm', 'connect', 'disconnect')):
+        cleanup = (arguments[0] in ('inspect', 'ps', 'info', 'wait', 'rm', 'kill', 'stop') or
+                   tuple(arguments[:2]) in (('container', 'ls'), ('network', 'ls'), ('network', 'inspect'),
+                                           ('network', 'rm'), ('volume', 'ls'), ('volume', 'inspect'), ('volume', 'rm')))
+        if cleanup:
+            self.verify_identity()
+        elif self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        else:
             self.verify()
+        return self.client_argv(arguments)
+
+    def client_argv(self, arguments):
         ambient = (*PROXY_ENV, 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG',
                    'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH', 'DOCKER_API_VERSION',
                    'BUILDX_BUILDER', 'BUILDKIT_HOST', 'BUILDX_BAKE_FILE_RELATIVE_PATHS')

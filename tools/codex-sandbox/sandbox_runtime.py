@@ -618,7 +618,7 @@ def runtime_identity(runtime):
             **{key: record[key] for key in fields}}
 
 
-def recorded_runtime(identity):
+def recorded_runtime(identity, *, recovery=False):
     if identity == {"provider": "podman"}:
         return Podman()
     fields = {"provider", "state", "instance", "generation", "namespace", "vm_identity", "network_digest"}
@@ -629,13 +629,17 @@ def recorded_runtime(identity):
             not all(isinstance(value, str) and value for value in identity.values()) or
             not Path(identity["state"]).is_absolute()):
         raise RuntimeError("unsupported recorded runtime; retain session state for explicit recovery")
-    runtime = image_runtime(identity['provider'], Path(identity["state"]))
+    if recovery and identity['provider'] == 'lima-docker':
+        from docker_runtime import Docker
+        runtime = Docker(Path(identity['state']), recovery=True)
+    else:
+        runtime = image_runtime(identity['provider'], Path(identity["state"]))
     if runtime_identity(runtime) != identity:
         raise RuntimeError("recorded Lima owner changed; refusing to touch another VM generation or policy")
     return runtime
 
 
-def state_runtime(state):
+def state_runtime(state, *, recovery=False):
     # Legacy shared-state files were exclusively Podman. Never reinterpret
     # absence as the current default, which can change after publication.
-    return recorded_runtime(state.get("runtime", {"provider": "podman"}))
+    return recorded_runtime(state.get("runtime", {"provider": "podman"}), recovery=recovery)

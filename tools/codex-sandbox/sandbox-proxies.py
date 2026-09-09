@@ -685,7 +685,7 @@ def start_main(args: argparse.Namespace) -> int:
 
 
 def stop_state(state: dict[str, Any]) -> None:
-    owner = state_runtime(state)
+    owner = state_runtime(state, recovery=True)
     started = time.monotonic()
     containers = []
     auth = state.get("auth")

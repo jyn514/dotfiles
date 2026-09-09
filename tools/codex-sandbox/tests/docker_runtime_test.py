@@ -29,6 +29,7 @@ def backend():
     runtime = object.__new__(Docker)
     runtime.host = Mock(state=Path('/owned'))
     runtime.record = {'client': '/real/docker', 'socket': '/owned/docker.sock'}
+    runtime.recovery = False
     return runtime
 
 
@@ -78,6 +79,7 @@ class DockerRuntimeTest(unittest.TestCase):
 
     def test_cleanup_cannot_mutate_an_unverified_engine(self):
         runtime = backend()
+        runtime.verify_identity = Mock(side_effect=ValueError('engine identity changed'))
         runtime.host.verify_runtime.side_effect = ValueError('engine identity changed')
         for command in (['rm', '-f', 'agent'], ['network', 'rm', 'link'],
                         ['volume', 'rm', 'proxy'], ['exec', 'proxy', 'command']):
@@ -85,6 +87,24 @@ class DockerRuntimeTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'engine identity'):
                     runtime.run(command)
                 run.assert_not_called()
+
+    def test_policy_damage_blocks_admission_but_not_identity_checked_cleanup(self):
+        runtime = backend()
+        runtime.verify_identity = Mock()
+        runtime.host.verify_runtime.side_effect = ValueError('damaged firewall')
+        for command in (['rm', '-f', 'owned'], ['network', 'rm', 'owned'], ['volume', 'rm', 'owned']):
+            with self.subTest(command=command), patch('subprocess.run') as run:
+                runtime.run(command)
+                run.assert_called_once()
+        for command in (['run', 'image'], ['exec', 'owned', 'command'], ['network', 'create', 'new']):
+            with self.subTest(command=command), patch('subprocess.run') as run:
+                with self.assertRaisesRegex(ValueError, 'damaged firewall'):
+                    runtime.run(command)
+                run.assert_not_called()
+        runtime.recovery = True
+        runtime.host.verify_runtime.side_effect = None
+        with self.assertRaisesRegex(RuntimeError, 'cleanup only'):
+            runtime.argv(['run', 'image'])
 
     def test_credential_wrapper_preserves_image_entrypoint_and_default_command(self):
         runtime = backend()

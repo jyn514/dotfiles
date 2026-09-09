@@ -666,7 +666,7 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME") as current, \
                 mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner) as recorded:
             sandbox_proxies.stop_state(state)
-        recorded.assert_called_once_with(state)
+        recorded.assert_called_once_with(state, recovery=True)
         current.run.assert_not_called()
         self.assertIn(["volume", "rm", "owned-volume"], [call.args[0] for call in owner.run.call_args_list])
 
