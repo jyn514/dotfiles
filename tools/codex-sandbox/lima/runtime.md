@@ -62,6 +62,9 @@ existing names. Conflicting identities are errors. A bare registered `repo@diges
 runs locally but can still trigger a registry request in `FROM`. The returned reference supports
 both uses, and workload execution specifies `--pull=never`.
 
+Successful container creation omits nerdctl's existing-volume notice for named
+mounts. Other warnings and all failed-creation diagnostics remain visible.
+
 ## Runtime contract tests
 
 The monitor fixture creates only disposable containers from an already local

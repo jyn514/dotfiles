@@ -1,6 +1,7 @@
 """Native identity and transport regressions at the outer-runtime boundary."""
 
 from dataclasses import replace
+import io
 import json
 import os
 from pathlib import Path
@@ -39,6 +40,22 @@ def lima():
 
 
 class ImageIdentityTest(unittest.TestCase):
+    def test_lima_creation_hides_only_successful_existing_volume_notice(self):
+        notice = 'time="2026-09-09T09:13:27+02:00" level=warning msg="volume \\"proxy-jj\\" already exists and will be returned as-is"\n'
+        warning = 'time="now" level=warning msg="another warning"\n'
+        fatal = 'time="now" level=fatal msg="creation failed"\n'
+        for fails in (False, True):
+            with self.subTest(fails=fails), patch.object(sys, "stderr", io.StringIO()) as output:
+                try:
+                    with lima().creation_diagnostics() as diagnostics:
+                        diagnostics.write(notice + warning + (fatal if fails else ""))
+                        diagnostics.flush()
+                        if fails:
+                            raise subprocess.CalledProcessError(1, ["create"])
+                except subprocess.CalledProcessError:
+                    self.assertTrue(fails)
+                self.assertEqual(output.getvalue(), notice + warning + fatal if fails else warning)
+
     def setUp(self):
         self.enterContext(runtime.verification_scope())
 

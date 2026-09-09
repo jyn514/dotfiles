@@ -154,6 +154,10 @@ class Podman:
         self.run(["rm", "--force", container], stdout=subprocess.DEVNULL, timeout=30)
 
     @contextmanager
+    def creation_diagnostics(self):
+        yield None
+
+    @contextmanager
     def workload(self, image, name, arguments, command=(), *, before_start=None, **kwargs):
         """Own one uniquely named workload and await its transport on every exit."""
         process = None
@@ -162,10 +166,12 @@ class Podman:
         # cover creation that succeeds remotely but fails before Popen returns.
         try:
             argv = self.workload_argv(image, ["--name", name, *arguments], command, operation="create")
-            creation = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            status = creation.wait()
-            if status:
-                raise subprocess.CalledProcessError(status, argv)
+            with self.creation_diagnostics() as diagnostics:
+                creation = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                            stdout=subprocess.DEVNULL, stderr=diagnostics)
+                status = creation.wait()
+                if status:
+                    raise subprocess.CalledProcessError(status, argv)
             if before_start is not None:
                 before_start()
             attach = ["start", "--attach"]
@@ -225,6 +231,25 @@ class Podman:
 class Lima(Podman):
     provider = "lima"
     host_address = "host.lima.internal"
+
+    @contextmanager
+    def creation_diagnostics(self):
+        # Nerdctl's named-mount path calls CreateWithoutLock even for an
+        # existing volume. Keep named mounts and suppress only that notice.
+        completed = False
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as output:
+            try:
+                yield output
+                completed = True
+            finally:
+                output.seek(0)
+                for line in output:
+                    if completed and re.fullmatch(
+                        r'time="[^"]+" level=warning msg="volume \\"[a-zA-Z0-9][a-zA-Z0-9_.-]*'
+                        r'\\" already exists and will be returned as-is"\n?', line
+                    ):
+                        continue
+                    sys.stderr.write(line)
 
     def builder_image(self, reference):
         if not re.fullmatch(r"localhost/codex-sandbox:sha256-([0-9a-f]{64})@sha256:\1", reference):
