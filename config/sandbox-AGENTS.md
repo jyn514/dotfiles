@@ -6,5 +6,8 @@
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
 - Most `/home/codex/.pi/agent` state is private and disposable. Sessions and package stores persist, while staged configuration is read-only; edit its tracked source and start a new sandbox session to refresh startup-loaded state.
 - `/home/codex/.agents/skills` is writable and host-backed. Shared and sandbox instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
-- Public network access may work, but host and private-network services are blocked except through designated relays or proxies. Proxy capabilities are fixed at session startup; direct failure does not authorize another route.
+- Host and private-network services are blocked except through designated relays or proxies. Proxy capabilities are fixed at session startup; direct failure does not authorize another route.
+- Public network acccess is allowed, but must be READ-ONLY unless explicitly authorized by a human.
+  Be considerate of others and do not hammer expensive network endpoints.
 - Root, `sudo`, and the exposed `docker` or `podman` command do not grant access to the outer container daemon or sibling proxy containers.
+  You may use `sudo` to install user-wide tools.
