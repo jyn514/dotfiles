@@ -32,7 +32,8 @@ from sandbox_credentials import boot_credential
 from sandbox_runtime import image_runtime
 
 
-def terminal_run(command, environment, cwd, *, interactive=False, ready_barrier=None, hold_seconds=0):
+def terminal_run(command, environment, cwd, *, interactive=False, ready_barrier=None, hold_seconds=0,
+                 proxy_requests=0):
     started = time.monotonic()
     ready_at = key_at = None
     master, slave = pty.openpty()
@@ -77,6 +78,9 @@ def terminal_run(command, environment, cwd, *, interactive=False, ready_barrier=
         assert status == (143 if interactive else 0), f"launcher exited {status}"
         if interactive:
             assert sent_key and interrupted, 'Pi never accepted interactive input'
+            if proxy_requests:
+                assert b'__SANDBOX_PROXY_WORK_DONE__' in output, 'proxy workload did not finish before cancellation'
+                assert b'__SANDBOX_PROXY_WORK_FAILED__' not in output, 'proxy workload failed'
             print('\nTERMINAL TIMING ' + json.dumps({
                 'ready_seconds': ready_at - started,
                 'key_delivery_seconds': key_at - key_sent_at,
@@ -122,7 +126,8 @@ def fixture_home(work):
         shutil.rmtree(home)
 
 
-def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessions=1, hold_seconds=0):
+def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessions=1, hold_seconds=0,
+             proxy_requests=0):
     runtime = image_runtime(provider, state)
     native = ['--mode=native'] if provider == 'lima' else []
     def resources():
@@ -144,6 +149,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
         sandbox = repo / ".agents/sandbox"
         sandbox.mkdir(parents=True)
         shutil.copyfile(Path(__file__).with_name('pi_startup_observer.js'), sandbox / 'observer.js')
+        (sandbox / 'observer-workload.json').write_text(json.dumps({'requests': proxy_requests}))
         (repo / "nested").mkdir()
         # Use the real builder through an executable fixture with its own file
         # as argv[0], so its relative Dockerfile lookup stays in dotfiles.
@@ -327,7 +333,8 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                     barrier = threading.Barrier(concurrent_sessions)
                     with ThreadPoolExecutor(max_workers=concurrent_sessions) as executor:
                         futures = [executor.submit(terminal_run, command, environment, repo / 'nested',
-                                   interactive=True, ready_barrier=barrier, hold_seconds=hold_seconds)
+                                   interactive=True, ready_barrier=barrier, hold_seconds=hold_seconds,
+                                   proxy_requests=proxy_requests)
                                    for _ in range(concurrent_sessions)]
                         for future in futures:
                             future.result()
@@ -354,6 +361,10 @@ if __name__ == "__main__":
     parser.add_argument('--concurrent-sessions', type=int, choices=range(1, 21), default=1, metavar='1..20')
     parser.add_argument('--hold-seconds', type=int, choices=range(0, 601), default=30, metavar='0..600',
                         help='hold concurrent sessions after all report readiness, before sending keys')
+    parser.add_argument('--proxy-requests', type=int, choices=range(0, 101), default=0, metavar='0..100',
+                        help='JJ status requests per concurrent session; must finish within the hold interval')
     args = parser.parse_args()
+    if args.proxy_requests and args.concurrent_sessions < 2:
+        parser.error('--proxy-requests requires at least two concurrent sessions')
     exercise(args.state.resolve(), args.work.resolve(), args.provider, args.interactive_runs,
-             args.concurrent_sessions, args.hold_seconds)
+             args.concurrent_sessions, args.hold_seconds, args.proxy_requests)

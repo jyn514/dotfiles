@@ -173,6 +173,10 @@ concurrency check. Each Pi must reach its observer hook before any receives the
 key probe; all remain open for the hold interval, then each is cancelled and
 cleaned up. This covers idle concurrent sessions, not large-tree or subagent
 load. Start with two sessions and monitor host file-table headroom before scaling.
+Add `--proxy-requests 20` to run twenty sequential `jj status` requests inside
+each concurrent Pi session. All requests must succeed before the hold interval
+ends; increase `--hold-seconds` to set that budget. This exercises shared proxies
+without model calls, but does not substitute for large-tree or subagent load.
 Failed launcher fixtures retain their directory and print its path for diagnosis
 and recovery; successful fixtures remove it. Docker fixtures require container,
 network and volume identities to return to their initial sets after cleanup;
