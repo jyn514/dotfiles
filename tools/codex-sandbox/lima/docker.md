@@ -165,6 +165,9 @@ This is not yet a default-backend recommendation. Long-running interactive Pi,
 20 simultaneous sessions, and optional Agent Podman/Zulip
 integration still need Docker-specific validation.
 
+The [backend review](docker-review.md) records compatibility gaps and
+maintenance findings at revision `b4930191`.
+
 The [nftables differential probes](../experiments/nftables/README.md) retain
 the historical policy and a rejected alternative as regression controls.
 
