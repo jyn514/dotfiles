@@ -27,6 +27,17 @@ SPEC.loader.exec_module(sandbox_proxies)
 
 
 class ManifestTest(unittest.TestCase):
+    def test_embedded_helper_keeps_the_callers_runtime(self):
+        owner = mock.Mock()
+        action = mock.Mock(return_value=7)
+        args = SimpleNamespace(action='attach', function=action)
+        with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME'), \
+                mock.patch.object(sandbox_proxies, 'parse_args', return_value=args), \
+                mock.patch.object(sandbox_proxies, 'image_runtime', side_effect=AssertionError('reinitialized')):
+            self.assertEqual(sandbox_proxies.main([], runtime=owner), 7)
+            self.assertIs(sandbox_proxies.OUTER_RUNTIME, owner)
+            action.assert_called_once_with(args)
+
     def test_prepared_images_are_verified_without_rerunning_builders(self):
         with tempfile.TemporaryDirectory() as directory:
             prepared = Path(directory) / 'images.json'
@@ -737,15 +748,18 @@ class ManifestTest(unittest.TestCase):
         owner.forward_proxy.assert_called_once_with("owned")
 
     def test_live_identity_requires_native_image_as_well_as_labels(self) -> None:
-        owner = mock.Mock()
-        owner.run.return_value.stdout = "true repository example\n"
-        owner.container_matches_image.return_value = False
+        owner = sandbox_proxies.Podman()
+        owner.inspect_image = mock.Mock(return_value=SimpleNamespace(config='sha256:expected'))
+        raw = {'Image': 'sha256:another', 'Config': {'Labels': {
+            'dev.codex.sandbox-proxy': 'true', 'dev.codex.repository': 'repository',
+            'dev.codex.command': 'example'}}}
+        owner.run = mock.Mock(side_effect=lambda *a, **kw: SimpleNamespace(stdout=json.dumps([raw])))
         proxy = {"container": "owned", "image": "immutable"}
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "native image"):
             sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
-        owner.container_matches_image.return_value = True
+        raw['Image'] = 'sha256:expected'
         sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
-        owner.run.return_value.stdout = "true another-repository example\n"
+        raw['Config']['Labels']['dev.codex.repository'] = 'another-repository'
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "repository identity"):
             sandbox_proxies.validate_live_proxy(owner, proxy, "repository", "example")
 

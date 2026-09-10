@@ -187,7 +187,8 @@ class ProxyHelperTest(unittest.TestCase):
         with mock.patch.dict(helper.__globals__, proxy_module=lambda: SimpleNamespace(main=entrypoint)), \
                 mock.patch("subprocess.run", side_effect=AssertionError("unexpected process")):
             self.assertEqual(0, helper("snapshot", "--repo", "example").returncode)
-            entrypoint.assert_called_once_with(["snapshot", "--repo", "example"])
+            entrypoint.assert_called_once_with(["snapshot", "--repo", "example"],
+                                               runtime=helper.__globals__["OUTER_RUNTIME"])
             entrypoint.return_value = 1
             with self.assertRaises(subprocess.CalledProcessError):
                 helper("snapshot", "--repo", "example")
@@ -244,9 +245,15 @@ class BackgroundRelayTest(unittest.TestCase):
                 'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
             builders = mock.Mock(return_value={
                 'base': SimpleNamespace(stdout='base@digest'), 'auth': SimpleNamespace(stdout='auth@digest')})
+            network_started = threading.Event()
+            replacements['ensure_network'].side_effect = network_started.set
+            def resolve_images(*args, **kwargs):
+                self.assertTrue(network_started.wait(2), 'image checks serialized network preparation')
+                return {}
+            resolver = mock.Mock(side_effect=resolve_images)
             replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker',
                 run_builders=builders, builder_image=lambda output: output),
-                proxy_module=lambda: SimpleNamespace(resolve_images=mock.Mock(return_value={})),
+                proxy_module=lambda: SimpleNamespace(resolve_images=resolver),
                 temporary_file=lambda: repository / 'images.json',
                 ensure_image=mock.Mock(return_value='agent@digest'),
                 resolve_sidecar_image=mock.Mock(return_value='auth@digest'),
@@ -257,6 +264,13 @@ class BackgroundRelayTest(unittest.TestCase):
                 replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
                 self.assertEqual(set(builders.call_args.args[0]), {'base', 'auth'})
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
+                resolver.side_effect = ValueError('image validation failed')
+                replacements['attach_proxies'].reset_mock()
+                replacements['run_agent'].reset_mock()
+                with self.assertRaisesRegex(ValueError, 'image validation failed'):
+                    execute(state)
+                replacements['attach_proxies'].assert_not_called()
+                replacements['run_agent'].assert_not_called()
                 replacements['ensure_image'].side_effect = ValueError('build failed')
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'build failed'):

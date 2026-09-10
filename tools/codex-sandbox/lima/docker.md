@@ -80,6 +80,11 @@ Service-readiness queries reuse Lima's generated SSH configuration directly;
 each query still checks the VM identity and Docker service invocation ID.
 Guest commands also use that SSH configuration, retaining Lima's login shell
 and `/tmp` working directory. Credential transfers remain on stdin.
+In-process proxy helpers reuse the launcher's runtime. Proxy labels and image
+identity come from one live container inspection; Docker operations still
+check the recorded VM and engine as before.
+After builds finish, read-only image checks overlap network preparation;
+proxy attachment waits for both.
 Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
 Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.

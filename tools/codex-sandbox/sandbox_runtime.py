@@ -129,12 +129,17 @@ class Podman:
         self.run([*arguments, str(context)], stdout=sys.stderr)
         return self.resolve_image(tag)
 
-    def container_matches_image(self, container, image):
-        raw = single_json(self.run(["inspect", container], capture_output=True).stdout)
-        return "sha256:" + raw["Image"].removeprefix("sha256:") == image.config
+    def inspect_container(self, container):
+        return single_json(self.run(["inspect", container], capture_output=True).stdout)
+
+    def container_matches_image(self, container, image, *, labels=None):
+        raw = self.inspect_container(container)
+        actual = raw.get("Config", {}).get("Labels") or {}
+        return (all(actual.get(key) == value for key, value in (labels or {}).items()) and
+                "sha256:" + raw["Image"].removeprefix("sha256:") == image.config)
 
     def network_address(self, container, network):
-        raw = single_json(self.run(["inspect", container], capture_output=True).stdout)
+        raw = self.inspect_container(container)
         entry = raw["NetworkSettings"]["Networks"].get(network)
         if not entry or not entry.get("IPAddress"):
             raise RuntimeError(f"container is not attached to {network}")
@@ -512,7 +517,11 @@ class Lima(VMRuntime):
                  stdin=None if interactive else subprocess.DEVNULL)
         return self.resolve_image(tag)
 
-    def container_matches_image(self, container, image):
+    def container_matches_image(self, container, image, *, labels=None):
+        if labels:
+            actual = self.inspect_container(container).get("Config", {}).get("Labels") or {}
+            if any(actual.get(key) != value for key, value in labels.items()):
+                return False
         raw = single_json(self.run(["inspect", "--mode=native", container], capture_output=True).stdout)
         if raw["Image"] != image.reference:
             return False

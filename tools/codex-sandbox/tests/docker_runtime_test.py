@@ -35,6 +35,45 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_relay_creation_checks_readiness_then_bridge_policy(self):
+        runtime = backend()
+        runtime.record['firewall'] = 'nftables'
+        events = []
+        runtime.verify = Mock(side_effect=lambda: events.append('ready'))
+        runtime.client_argv = lambda arguments: arguments
+        runtime.guest = Mock(side_effect=lambda *a, **kw: events.append('bridge policy'))
+        with patch('subprocess.run', side_effect=lambda *a, **kw: events.append('create')) as run:
+            runtime.create_relay_network('owned', internal=True, owner='a' * 32)
+            self.assertEqual(events, ['ready', 'create', 'bridge policy'])
+            events.clear()
+            run.reset_mock()
+            runtime.verify.side_effect = ValueError('not ready')
+            with self.assertRaisesRegex(ValueError, 'not ready'):
+                runtime.create_relay_network('owned', internal=True, owner='a' * 32)
+            run.assert_not_called()
+            self.assertEqual(events, [])
+
+    def test_container_identity_uses_one_live_snapshot_for_labels_and_image(self):
+        runtime = backend()
+        runtime.verify_identity = Mock()
+        image = Mock(config='sha256:expected')
+        raw = {'Image': image.config, 'Config': {'Image': 'untrusted-tag', 'Labels': {'owner': 'ours'}}}
+        with patch('docker_runtime.inspect_docker', return_value=raw) as inspect:
+            self.assertTrue(runtime.container_matches_image('owned', image, labels={'owner': 'ours'}))
+            runtime.verify_identity.assert_called_once_with()
+            inspect.assert_called_once_with('/owned/docker.sock', '/containers/owned/json',
+                                            ['docker', 'inspect', 'owned'])
+            raw['Config']['Labels']['owner'] = 'another'
+            self.assertFalse(runtime.container_matches_image('owned', image, labels={'owner': 'ours'}))
+            raw['Config']['Labels']['owner'] = 'ours'
+            raw['Image'] = 'sha256:another'
+            self.assertFalse(runtime.container_matches_image('owned', image, labels={'owner': 'ours'}))
+            inspect.reset_mock()
+            runtime.verify_identity.side_effect = ValueError('engine replaced')
+            with self.assertRaisesRegex(ValueError, 'engine replaced'):
+                runtime.inspect_container('owned')
+            inspect.assert_not_called()
+
     def test_independent_builders_overlap_and_keep_their_own_output(self):
         runtime = backend()
         with tempfile.TemporaryDirectory() as directory:
@@ -204,10 +243,10 @@ class DockerRuntimeTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'cleanup only'):
             runtime.argv(['run', 'image'])
 
-    def test_credential_wrapper_preserves_image_entrypoint_and_default_command(self):
+    @patch('docker_runtime.inspect_docker')
+    def test_credential_wrapper_preserves_image_entrypoint_and_default_command(self, query):
         runtime = backend()
-        runtime.run = Mock(return_value=Mock(stdout=json.dumps([
-            {'Config': {'Entrypoint': ['/custom-agent', '--offline'], 'Cmd': ['default']}}])))
+        query.return_value = {'Config': {'Entrypoint': ['/custom-agent', '--offline'], 'Cmd': ['default']}}
         self.assertEqual(runtime.agent_command('image', []), ['/custom-agent', '--offline', 'default'])
         self.assertEqual(runtime.agent_command('image', ['request']), ['/custom-agent', '--offline', 'request'])
 

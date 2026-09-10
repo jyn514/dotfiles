@@ -760,15 +760,11 @@ def validate_live_proxies(owner, proxies, repository):
 
 
 def validate_live_proxy(owner, proxy, repository, command):
-    labels = owner.run(["inspect", "--format",
-        "{{index .Config.Labels \"dev.codex.sandbox-proxy\"}} "
-        "{{index .Config.Labels \"dev.codex.repository\"}} {{index .Config.Labels \"dev.codex.command\"}}",
-        proxy["container"]], capture_output=True).stdout.strip().split()
-    if labels != ["true", repository, command]:
-        raise ConfigError("active proxy container failed command or repository identity validation")
     image = owner.inspect_image(proxy["image"])
-    if not owner.container_matches_image(proxy["container"], image):
-        raise ConfigError("active proxy container failed native image identity validation")
+    if not owner.container_matches_image(proxy["container"], image, labels={
+            "dev.codex.sandbox-proxy": "true", "dev.codex.repository": repository,
+            "dev.codex.command": command}):
+        raise ConfigError("active proxy container failed command, repository identity, or native image validation")
 
 
 def route_main(args: argparse.Namespace) -> int:
@@ -1019,11 +1015,13 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(arguments)
 
 
-def main(arguments: list[str] | None = None) -> int:
+def main(arguments: list[str] | None = None, *, runtime=None) -> int:
     global OUTER_RUNTIME
     try:
         args = parse_args(arguments)
-        if args.action in {"attach", "start", "publish", "finalize"}:
+        if runtime is not None:
+            OUTER_RUNTIME = runtime
+        elif args.action in {"attach", "start", "publish", "finalize"}:
             OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
         return args.function(args)
     except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:

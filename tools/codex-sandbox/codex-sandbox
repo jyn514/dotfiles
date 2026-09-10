@@ -165,7 +165,8 @@ def proxy_module():
 def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     # Short operations share the launcher's interpreter; lock/monitor lifetimes
     # remain separate processes so they can supervise and outlive these calls.
-    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments], proxy_module().main(list(arguments)))
+    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments],
+        proxy_module().main(list(arguments), runtime=OUTER_RUNTIME))
     if check:
         result.check_returncode()
     return result
@@ -1288,12 +1289,6 @@ def execute(state: State) -> int:
         base_image = (OUTER_RUNTIME.builder_image(built['base'].stdout.strip())
                       if 'base' in built else 'node:24-alpine3.22')
         state.image = phase('model image resolution', lambda: ensure_image(state, base_image))
-        state.sidecar_image = OUTER_RUNTIME.builder_image(built['auth'].stdout.strip())
-        images = phase('proxy image resolution', lambda: proxy_module().resolve_images(
-            state.repository, manifest,
-            builder_results={name: built['proxy:' + name] for name in manifest['commands']}))
-        state.prepared_images = temporary_file()
-        state.prepared_images.write_text(json.dumps(images))
 
     def optional_relay(name: str, action: Callable[[], object]) -> None:
         try:
@@ -1305,7 +1300,12 @@ def execute(state: State) -> int:
     with startup_workers(state, max_workers=6) as executor:
         model_future = executor.submit(lambda: state.image if prepared else model_image())
         sidecar_future = executor.submit(phase, "sidecar image resolution",
-            lambda: state.sidecar_image if prepared else resolve_sidecar_image())
+            lambda: OUTER_RUNTIME.builder_image(built['auth'].stdout.strip()) if prepared else resolve_sidecar_image())
+        # Docker builds have finished. Read-only image checks overlap network
+        # preparation, but attach must wait for their immutable references.
+        images_future = executor.submit(phase, 'proxy image resolution',
+            lambda: proxy_module().resolve_images(state.repository, manifest,
+                builder_results={name: built['proxy:' + name] for name in manifest['commands']})) if prepared else None
         network_future = executor.submit(phase, "network setup", ensure_network)
         lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
         editor_future = executor.submit(
@@ -1318,6 +1318,10 @@ def execute(state: State) -> int:
         state.sidecar_image = sidecar_future.result()
         network_future.result()
         lock_future.result()
+        if images_future is not None:
+            images = images_future.result()
+            state.prepared_images = temporary_file()
+            state.prepared_images.write_text(json.dumps(images))
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
         )

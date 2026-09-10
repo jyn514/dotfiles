@@ -110,12 +110,15 @@ class Docker(VMRuntime):
         kwargs.setdefault('timeout', 30)
         return super().run(arguments, **kwargs)
 
-    def inspect_image(self, reference):
+    def image_metadata(self, reference):
         if self.recovery:
             raise RuntimeError('Docker recovery permits inspection and cleanup only')
         self.verify()
-        raw = inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
-                             ['docker', 'image', 'inspect', reference])
+        return inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
+                              ['docker', 'image', 'inspect', reference])
+
+    def inspect_image(self, reference):
+        raw = self.image_metadata(reference)
         config = digest(raw['Id'])
         candidates = raw.get('RepoDigests') or []
         if '@' in reference:
@@ -138,6 +141,11 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker image has no repository digest; rebuild with sandbox-image')
         content = digest(immutable.rsplit('@', 1)[1])
         return Image(immutable, content, config, chain_id(raw['RootFS']['Layers']))
+
+    def inspect_container(self, container):
+        self.verify_identity()
+        return inspect_docker(self.record['socket'], '/containers/' + quote(container, safe='') + '/json',
+                              ['docker', 'inspect', container])
 
     def builder_image(self, reference):
         if '@sha256:' not in reference and not re.fullmatch(r'sha256:[0-9a-f]{64}', reference):
@@ -332,7 +340,7 @@ class Docker(VMRuntime):
         return self.argv([operation, '--pull=never', *arguments, image.config, *command], cwd=cwd)
 
     def agent_command(self, image, arguments):
-        config = single_json(self.run(['image', 'inspect', image], capture_output=True).stdout)['Config']
+        config = self.image_metadata(image)['Config']
         entrypoint = config.get('Entrypoint') or []
         command = list(arguments) if arguments else config.get('Cmd') or []
         if not isinstance(entrypoint, list) or not isinstance(command, list) or not entrypoint + command:
@@ -376,7 +384,6 @@ class Docker(VMRuntime):
         self.verify()
 
     def create_relay_network(self, name, *, internal, owner=None):
-        self.verify()
         if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
             raise RuntimeError('invalid Docker relay owner')
         bridge = ('csl' if internal else 'cse') + hashlib.sha256(name.encode()).hexdigest()[:10]
@@ -384,6 +391,8 @@ class Docker(VMRuntime):
                      '--opt', 'com.docker.network.bridge.name=' + bridge]
         if internal:
             arguments += ['--internal']
+        # run/argv verifies immediately before creation; an earlier check here
+        # would repeat the same VM and service audit for this one operation.
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
         # Docker can change bridge traversal without changing its service epoch,
         # so the cached verification receipt cannot cover network creation.
