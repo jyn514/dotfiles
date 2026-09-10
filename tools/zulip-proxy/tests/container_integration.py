@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -11,6 +12,7 @@ from pathlib import Path
 import shutil
 import ssl
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,11 +22,18 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[3]
 IMAGE_BUILDER = ROOT / ".agents" / "sandbox" / "zulip-proxy-image"
 CLIENT = ROOT / "tools" / "zulip-proxy" / "client"
+RUNTIME = None
+
+
+def invoke(arguments, **options):
+    if RUNTIME is not None and arguments[0] == 'docker':
+        arguments = RUNTIME.argv(arguments[1:])
+    return subprocess.run(arguments, **options)
 
 
 def run(arguments: list[str], **options) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(arguments, check=True, **options)
+        return invoke(arguments, check=True, **options)
     except subprocess.CalledProcessError as error:
         stderr = error.stderr
         if isinstance(stderr, bytes):
@@ -103,8 +112,18 @@ def generate_certificate(directory: Path) -> tuple[Path, Path]:
 
 
 def main() -> None:
-    if shutil.which("docker") is None or shutil.which("openssl") is None:
-        raise SystemExit("docker and openssl are required")
+    global RUNTIME
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--docker-state', type=Path)
+    args = parser.parse_args()
+    if args.docker_state:
+        sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
+        from docker_runtime import Docker
+        RUNTIME = Docker(args.docker_state.resolve())
+        os.environ['CODEX_SANDBOX_RUNTIME'] = 'lima-docker'
+        os.environ['CODEX_SANDBOX_DOCKER_STATE'] = str(RUNTIME.host.state)
+    if shutil.which("openssl") is None or (RUNTIME is None and shutil.which("docker") is None):
+        raise SystemExit("openssl and a selected container runtime are required")
     image = run(
         [str(IMAGE_BUILDER)], cwd=ROOT, text=True, stdout=subprocess.PIPE,
     ).stdout.strip()
@@ -114,7 +133,7 @@ def main() -> None:
     server = None
     thread = None
     try:
-        with tempfile.TemporaryDirectory() as temporary:
+        with tempfile.TemporaryDirectory(dir=RUNTIME.host.state / 'scratch' if RUNTIME else None) as temporary:
             directory = Path(temporary)
             certificate, key = generate_certificate(directory)
             server = ThreadingHTTPServer(("0.0.0.0", 0), ZulipHandler)
@@ -135,16 +154,22 @@ def main() -> None:
             )
             zuliprc.chmod(0o600)
 
-            run(["docker", "volume", "create", volume], stdout=subprocess.DEVNULL)
-            run([
-                "docker", "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/sh",
-                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-                image, "-c", "chmod 1777 /run/sandbox-proxy",
-            ], stdout=subprocess.DEVNULL)
+            if RUNTIME:
+                # Production seeds the volume before mounting it: Docker can
+                # overwrite permissions when copying into an empty volume.
+                RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), suffix)
+            else:
+                run(["docker", "volume", "create", volume], stdout=subprocess.DEVNULL)
+                run([
+                    "docker", "run", "--rm", "--user", "0:0", "--entrypoint", "/bin/chmod",
+                    "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+                    image, "1777", "/run/sandbox-proxy",
+                ], stdout=subprocess.DEVNULL)
             run([
                 "docker", "run", "--detach", "--name", proxy,
                 "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-                "--user", "65532:65532", "--add-host=host.docker.internal:host-gateway",
+                "--user", f"{os.getuid()}:{os.getgid()}" if RUNTIME else "65532:65532",
+                *([] if RUNTIME else ["--add-host=host.docker.internal:host-gateway"]),
                 "--entrypoint", "zulip-proxy",
                 "--env", "SSL_CERT_FILE=/run/secrets/test-ca.pem",
                 "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
@@ -154,7 +179,7 @@ def main() -> None:
             ], stdout=subprocess.DEVNULL)
 
             for _ in range(100):
-                ready = subprocess.run([
+                ready = invoke([
                     "docker", "run", "--rm", "--entrypoint", "/usr/bin/test",
                     "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy,readonly",
                     image, "-S", "/run/sandbox-proxy/socket",
@@ -163,7 +188,7 @@ def main() -> None:
                     break
                 time.sleep(0.1)
             else:
-                logs = subprocess.run(
+                logs = invoke(
                     ["docker", "logs", proxy], text=True, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                 ).stdout
@@ -200,11 +225,11 @@ def main() -> None:
             server.server_close()
         if thread is not None:
             thread.join(timeout=2)
-        subprocess.run(
+        invoke(
             ["docker", "rm", "--force", proxy],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        subprocess.run(
+        invoke(
             ["docker", "volume", "rm", volume],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )

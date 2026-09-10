@@ -68,6 +68,16 @@ The end-to-end test builds the real image and requires Docker, OpenSSL, host-gat
 python3 tools/zulip-proxy/tests/container_integration.py
 ```
 
+For a provisioned Lima-Docker test VM, use its explicit state:
+
+```sh
+python3 tools/zulip-proxy/tests/container_integration.py --docker-state /path/to/test/state
+```
+
+This uses the pinned client, VM-shared scratch directory and production volume
+initialization. Both modes use dummy credentials and a local HTTPS server, and
+remove their test containers and volume. The VM must share this checkout.
+
 ## Design and reference
 
 The authoritative [sandbox command proxy design](../codex-sandbox/proxy-design.typ) defines the generic proxy lifecycle, including isolation and host coordination.
