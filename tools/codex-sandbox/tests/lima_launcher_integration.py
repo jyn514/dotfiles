@@ -125,6 +125,19 @@ def fixture_home(work):
 def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessions=1, hold_seconds=0):
     runtime = image_runtime(provider, state)
     native = ['--mode=native'] if provider == 'lima' else []
+    def resources():
+        return {
+            kind: set(runtime.run(arguments, capture_output=True).stdout.splitlines())
+            for kind, arguments in (
+                ('containers', ['ps', '-a', '--no-trunc', '--format', '{{.ID}}']),
+                ('networks', ['network', 'ls', '--no-trunc', '--format', '{{.ID}}']),
+                ('volumes', ['volume', 'ls', '--format', '{{.Name}}']),
+            )
+        }
+
+    # Compare identities, not counts: deleting another workload must not hide
+    # a leaked relay. Images are deliberately retained for subsequent tests.
+    baseline = resources() if provider == 'lima-docker' else None
     with fixture_home(work) as temporary:
         home = Path(temporary)
         repo = home / "src/dotfiles"
@@ -322,6 +335,12 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
             subprocess.run([sys.executable, str(ROOT / "sandbox-proxies.py"), "reset", "--repo", str(repo)],
                            env=environment, check=True, timeout=120)
             boot_credential(runtime, invalidate=True)
+        if baseline is not None:
+            remaining = resources()
+            changes = {kind: {'added': sorted(remaining[kind] - original),
+                              'removed': sorted(original - remaining[kind])}
+                       for kind, original in baseline.items() if remaining[kind] != original}
+            assert not changes, f'launcher cleanup changed the resource baseline: {changes}'
     print("PASS: all Lima launcher checks and cleanup completed; dummy boot credential invalidated.", flush=True)
 
 

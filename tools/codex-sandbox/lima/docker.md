@@ -174,7 +174,10 @@ key probe; all remain open for the hold interval, then each is cancelled and
 cleaned up. This covers idle concurrent sessions, not large-tree or subagent
 load. Start with two sessions and monitor host file-table headroom before scaling.
 Failed launcher fixtures retain their directory and print its path for diagnosis
-and recovery; successful fixtures remove it.
+and recovery; successful fixtures remove it. Docker fixtures require container,
+network and volume identities to return to their initial sets after cleanup;
+images remain cached. Run them in a disposable VM without concurrent external
+resource changes, which would invalidate that comparison.
 
 ```sh
 mkdir -p /private/tmp/docker-sandbox-test/work
