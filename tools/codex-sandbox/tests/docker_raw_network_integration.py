@@ -40,7 +40,10 @@ def main():
     def container(suffix, network):
         name = prefix + '-' + suffix
         containers.append(name)
+        # Attack controls need effective NET_RAW even when the supplied image
+        # defaults to a non-root user. Ordinary sandbox containers drop it.
         runtime.run(['run', '-d', '--name', name, '--network', network,
+                     '--user', '0:0',
                      '--cap-drop=ALL', '--cap-add=NET_RAW', '--memory=64m', '--pids-limit=16',
                      '--mount', f'type=bind,src={ROOT / "experiments/nftables/packet.py"},dst=/packet.py,readonly',
                      '--entrypoint', 'sleep', image.config, '300'], stdout=subprocess.DEVNULL)
@@ -58,7 +61,7 @@ def main():
             runtime.run(['exec', sender['name'], 'python3', '/packet.py', 'send',
                          '--address', receiver['ip'], '--mac', sender['gateway_mac'] if routed else receiver['mac'],
                          '--source', str(ipaddress.IPv4Address(sender['ip']) + 99) if forged else sender['ip']],
-                        capture_output=True)
+                        stdout=subprocess.DEVNULL)
             status = listener.wait(timeout=5)
             assert status == (0 if expected else 1), (sender, receiver, routed, forged, expected, status)
         finally:
