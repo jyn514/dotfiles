@@ -14,7 +14,7 @@ import time
 import uuid
 
 from lima.docker_host import DockerHost
-from lima.docker_client import verify_buildx
+from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
 
 
@@ -99,7 +99,7 @@ class Docker(VMRuntime):
                     'DOCKER_CONFIG=' + str(self.host.state / 'client'),
                     'BUILDX_CONFIG=' + str(self.host.state / 'client/buildx-state'),
                     str(verify_buildx(self.host.state)), *arguments[1:]]
-        return [*environment, self.record['client'],
+        return [*environment, docker_client(self.host.state, self.record),
                 '--config', str(self.host.state / 'client'), '--host', 'unix://' + self.record['socket'],
                 *arguments]
 

@@ -14,7 +14,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lima.host import Host, SOURCE, GUEST, atomic_json, command, machines, private_directory, shares
 from network_policy import policy_bytes
-from lima.docker_client import pin_buildx
+from lima.docker_client import pin_buildx, pin_docker
 
 
 class DockerHost(Host):
@@ -54,6 +54,7 @@ class DockerHost(Host):
             config = private_directory(self.state / 'client')
             atomic_json(config / 'config.json', {})
             pin_buildx(self.state)
+            client_artifact = pin_docker(self.state, client)
             snapshot = private_directory(self.state / 'source')
             inputs = {'boot-credential.py': SOURCE / 'boot-credential.py',
                       'mount-shares.py': SOURCE / 'mount-shares.py',
@@ -88,7 +89,7 @@ class DockerHost(Host):
             command('limactl', 'validate', str(self.state / 'host.yaml'))
             record = {'schema': 1, 'provider': self.provider, 'phase': 'creating',
                       'instance': instance, 'namespace': 'default', 'generation': generation, 'firewall': 'nftables',
-                      'shares': requested, 'client': str(client),
+                      'shares': requested, 'client': str(client), 'client_artifact': client_artifact,
                       'template_digest': hashlib.sha256((self.state / 'host.yaml').read_bytes()).hexdigest(),
                       'network_digest': hashlib.sha256(policy_bytes()).hexdigest(),
                       'files': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -173,6 +174,8 @@ def main():
     setup.add_argument('--client', type=Path)
     for name in ('start', 'stop', 'status', 'pin-buildx'):
         sub.add_parser(name)
+    pin = sub.add_parser('pin-client')
+    pin.add_argument('--source', type=Path, default=Path('/opt/homebrew/bin/docker'))
     args = parser.parse_args()
     host = DockerHost(args.state)
     with host.locked():
@@ -185,6 +188,10 @@ def main():
             host.record()
             print(pin_buildx(host.state))
             return
+        elif args.operation == 'pin-client':
+            record = host.record()
+            record['client_artifact'] = pin_docker(host.state, args.source)
+            atomic_json(host.record_path, record)
         else:
             record = getattr(host, args.operation)()
         print(json.dumps(record))

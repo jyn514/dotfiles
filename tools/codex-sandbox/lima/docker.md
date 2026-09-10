@@ -15,8 +15,21 @@ CODEX_SANDBOX_RUNTIME=lima-docker pi
 
 Setup creates `sandbox-host-docker` with 4 CPUs, 4 GiB RAM, and a 64 GiB disk.
 It shares your home directory with the VM; containers retain the launcher's
-narrow mounts. Docker's real Homebrew executable is recorded explicitly, so
-the existing `docker` → Podman alias need not change.
+narrow mounts. Setup copies the real Homebrew Docker CLI 29.8.0 into private
+state, so Homebrew cleanup and the `docker` → Podman alias cannot replace it.
+
+For existing state, or to repair a missing or altered private CLI, run:
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py pin-client
+```
+
+This validates the copied executable and atomically records its digest without
+restarting the VM or changing engine identity. It works even if the previously
+recorded Cellar path has disappeared. Install Docker 29.8.0 first; an explicit
+`--source PATH` after `pin-client` selects another copy of that version. For
+non-default state, pass `--state DIRECTORY` before `pin-client`. Missing or
+modified pins fail with a repair command; they never fall back to PATH.
 
 Setup copies host Buildx v0.37.0 into private state. Builds verify its SHA-256 and
 invoke it directly with the recorded Docker socket and private builder settings;

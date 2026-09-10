@@ -28,7 +28,7 @@ spec.loader.exec_module(policy)
 def backend():
     runtime = object.__new__(Docker)
     runtime.host = Mock(state=Path('/owned'))
-    runtime.record = {'client': '/real/docker', 'socket': '/owned/docker.sock'}
+    runtime.record = {'client': sys.executable, 'socket': '/owned/docker.sock'}
     runtime.recovery = False
     return runtime
 
