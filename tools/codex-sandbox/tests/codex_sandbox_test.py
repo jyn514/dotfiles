@@ -46,6 +46,17 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_network_verification_failure_retains_captured_diagnostic(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        failure = subprocess.CalledProcessError(255, ['/private/client'], stderr=b'SSH session refused\n')
+        runtime = mock.Mock()
+        runtime.ensure_public_network.side_effect = failure
+        with mock.patch.dict(launcher['ensure_network'].__globals__, {'OUTER_RUNTIME': runtime}):
+            with self.assertRaisesRegex(launcher['LauncherError'],
+                                        'Sandbox network setup failed .*SSH session refused') as raised:
+                launcher['ensure_network']()
+        self.assertNotIn('/private/client', str(raised.exception))
+
     def test_captured_startup_failure_is_visible(self):
         launcher = runpy.run_path(str(LAUNCHER))
         from docker_runtime import BuildError

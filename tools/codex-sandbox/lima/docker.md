@@ -112,6 +112,8 @@ BuildKit checks its cache on every launch. The base feeds the agent through a
 Bake target dependency; existing tags never substitute for checking changed inputs.
 On failure, BuildKit prints the failed step and the launcher adds a short build
 failure summary, preserving the exit status without dumping its internal command.
+Network setup failures include the captured runtime diagnostic and exit status;
+on Lima-Docker this step verifies the provisioned network rather than creating it.
 
 Repositories provide `.agents/sandbox/docker-bake.hcl` with a `base` target.
 Paths resolve from the repository root.

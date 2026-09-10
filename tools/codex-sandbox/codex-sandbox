@@ -489,7 +489,13 @@ def ensure_network() -> None:
     try:
         OUTER_RUNTIME.ensure_public_network()
     except subprocess.CalledProcessError as error:
-        raise LauncherError("Could not create the sandbox network") from error
+        detail = error.stderr or ''
+        if isinstance(detail, bytes):
+            detail = detail.decode(errors='replace')
+        message = f"Sandbox network setup failed (exit {error.returncode})"
+        if detail.strip():
+            message += ': ' + detail.strip()
+        raise LauncherError(message) from error
 
 
 def acquire_lock(state: State) -> None:
