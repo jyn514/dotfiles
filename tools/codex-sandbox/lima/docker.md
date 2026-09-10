@@ -17,6 +17,10 @@ Setup creates `sandbox-host-docker` with 4 CPUs, 4 GiB RAM, and a 64 GiB disk.
 It shares your home directory with the VM; containers retain the launcher's
 narrow mounts. Setup copies the real Homebrew Docker CLI 29.8.0 into private
 state, so Homebrew cleanup and the `docker` → Podman alias cannot replace it.
+New VMs allocate `/24` bridge networks from `172.16.0.0/12` and configure twenty
+SSH sessions per connection. Docker's default address pools otherwise run out
+before twenty sandboxes can each allocate their two editor networks. Existing
+VMs retain their pinned daemon configuration until explicitly migrated.
 
 For existing state, or to repair a missing or altered private CLI, run:
 
@@ -164,6 +168,13 @@ the probe, not that Pi finished rendering. These are warm-launch measurements
 after the fixture builds its images, not a concurrency test.
 `PROXY TIMING` records measure complete host-routed JJ status requests, including
 router startup and cancellation-safe forwarding-container overhead.
+Use `--concurrent-sessions 20 --hold-seconds 60` for a bounded shared-repository
+concurrency check. Each Pi must reach its observer hook before any receives the
+key probe; all remain open for the hold interval, then each is cancelled and
+cleaned up. This covers idle concurrent sessions, not large-tree or subagent
+load. Start with two sessions and monitor host file-table headroom before scaling.
+Failed launcher fixtures retain their directory and print its path for diagnosis
+and recovery; successful fixtures remove it.
 
 ```sh
 mkdir -p /private/tmp/docker-sandbox-test/work

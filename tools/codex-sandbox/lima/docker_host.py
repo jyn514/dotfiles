@@ -115,6 +115,7 @@ class DockerHost(Host):
         record['vm_identity'] = hashlib.sha256((Path(machine['dir']) / 'vz-identifier').read_bytes()).hexdigest()
         record['socket'] = str(Path(machine['dir']) / 'sock/docker.sock')
         atomic_json(self.record_path, record)
+        self.configure_ssh(record)
         staging = self.guest(record, 'mktemp', '-d', capture_output=True, text=True).stdout.strip()
         try:
             self.guest(record, 'sudo', 'mkdir', '-p', GUEST)

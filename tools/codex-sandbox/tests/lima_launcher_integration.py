@@ -5,6 +5,8 @@ The caller owns host teardown; this test owns its repository and session reset.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import errno
 import fcntl
 import json
@@ -21,6 +23,7 @@ import struct
 import sys
 import tempfile
 import termios
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +32,7 @@ from sandbox_credentials import boot_credential
 from sandbox_runtime import image_runtime
 
 
-def terminal_run(command, environment, cwd, *, interactive=False):
+def terminal_run(command, environment, cwd, *, interactive=False, ready_barrier=None, hold_seconds=0):
     started = time.monotonic()
     ready_at = key_at = None
     master, slave = pty.openpty()
@@ -56,6 +59,10 @@ def terminal_run(command, environment, cwd, *, interactive=False):
                 sys.stdout.buffer.flush()
                 if interactive and not sent_key and b'__SANDBOX_PI_READY__' in output:
                     ready_at = time.monotonic()
+                    if ready_barrier is not None:
+                        ready_barrier.wait(timeout=180)
+                        time.sleep(hold_seconds)
+                    key_sent_at = time.monotonic()
                     os.write(master, b'nft-key-probe')
                     sent_key = True
                 if interactive and not interrupted and b'__SANDBOX_PI_KEY__' in output:
@@ -72,25 +79,53 @@ def terminal_run(command, environment, cwd, *, interactive=False):
             assert sent_key and interrupted, 'Pi never accepted interactive input'
             print('\nTERMINAL TIMING ' + json.dumps({
                 'ready_seconds': ready_at - started,
-                'key_delivery_seconds': key_at - ready_at,
+                'key_delivery_seconds': key_at - key_sent_at,
                 'cancellation_seconds': time.monotonic() - key_at,
             }), flush=True)
         assert b"owned-dummy-github-token" not in output, "credential escaped into terminal output"
     finally:
+        if ready_barrier is not None and key_at is None:
+            ready_barrier.abort()
         if process.poll() is None:
             process.terminate()
+            # On a failed barrier, keep consuming the PTY while the launcher
+            # reports cleanup. Otherwise a full terminal buffer can block it
+            # until our timeout kills it and strands relay containers.
+            deadline = time.monotonic() + 30
+            while process.poll() is None and time.monotonic() < deadline:
+                if select.select([master], [], [], 0.1)[0]:
+                    try:
+                        block = os.read(master, 65536)
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                    else:
+                        sys.stdout.buffer.write(block)
+                        sys.stdout.buffer.flush()
             try:
-                process.wait(timeout=30)
+                process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
         os.close(master)
 
 
-def exercise(state, work, provider='lima', interactive_runs=1):
+@contextmanager
+def fixture_home(work):
+    home = Path(tempfile.mkdtemp(prefix='launcher-', dir=work))
+    try:
+        yield home
+    except BaseException:
+        print(f'Failed launcher fixture retained at {home}', file=sys.stderr, flush=True)
+        raise
+    else:
+        shutil.rmtree(home)
+
+
+def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessions=1, hold_seconds=0):
     runtime = image_runtime(provider, state)
     native = ['--mode=native'] if provider == 'lima' else []
-    with tempfile.TemporaryDirectory(prefix="launcher-", dir=work) as temporary:
+    with fixture_home(work) as temporary:
         home = Path(temporary)
         repo = home / "src/dotfiles"
         sandbox = repo / ".agents/sandbox"
@@ -271,8 +306,18 @@ def exercise(state, work, provider='lima', interactive_runs=1):
                     assert process.wait(timeout=30) == 0
             print('STARTUP CHECK: interactive Pi session, key delivery, and cancellation.', flush=True)
             for _ in range(interactive_runs):
-                terminal_run([sys.executable, str(ROOT / 'codex-sandbox'), '--offline', '--approve', '--no-session',
-                              '-e', '../.agents/sandbox/observer.js'], environment, repo / 'nested', interactive=True)
+                command = [sys.executable, str(ROOT / 'codex-sandbox'), '--offline', '--approve', '--no-session',
+                           '-e', '../.agents/sandbox/observer.js']
+                if concurrent_sessions == 1:
+                    terminal_run(command, environment, repo / 'nested', interactive=True)
+                else:
+                    barrier = threading.Barrier(concurrent_sessions)
+                    with ThreadPoolExecutor(max_workers=concurrent_sessions) as executor:
+                        futures = [executor.submit(terminal_run, command, environment, repo / 'nested',
+                                   interactive=True, ready_barrier=barrier, hold_seconds=hold_seconds)
+                                   for _ in range(concurrent_sessions)]
+                        for future in futures:
+                            future.result()
         finally:
             subprocess.run([sys.executable, str(ROOT / "sandbox-proxies.py"), "reset", "--repo", str(repo)],
                            env=environment, check=True, timeout=120)
@@ -287,5 +332,9 @@ if __name__ == "__main__":
     parser.add_argument("--provider", choices=('lima', 'lima-docker'), default='lima')
     parser.add_argument('--interactive-runs', type=int, choices=range(1, 21), default=1,
                         metavar='1..20', help='repeat sequential interactive launches for warm timings')
+    parser.add_argument('--concurrent-sessions', type=int, choices=range(1, 21), default=1, metavar='1..20')
+    parser.add_argument('--hold-seconds', type=int, choices=range(0, 601), default=30, metavar='0..600',
+                        help='hold concurrent sessions after all report readiness, before sending keys')
     args = parser.parse_args()
-    exercise(args.state.resolve(), args.work.resolve(), args.provider, args.interactive_runs)
+    exercise(args.state.resolve(), args.work.resolve(), args.provider, args.interactive_runs,
+             args.concurrent_sessions, args.hold_seconds)

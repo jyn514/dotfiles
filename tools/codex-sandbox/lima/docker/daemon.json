@@ -4,6 +4,7 @@
   "ipv6": false,
   "live-restore": false,
   "dns": ["10.0.2.3"],
+  "default-address-pools": [{"base": "172.16.0.0/12", "size": 24}],
   "firewall-backend": "iptables",
   "userland-proxy": true,
   "icc": true
