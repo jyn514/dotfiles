@@ -169,35 +169,35 @@ class DockerRuntimeTest(unittest.TestCase):
         self.assertEqual(runtime.agent_command('image', []), ['/custom-agent', '--offline', 'default'])
         self.assertEqual(runtime.agent_command('image', ['request']), ['/custom-agent', '--offline', 'request'])
 
-    def test_image_digest_must_belong_to_inspected_content(self):
+    @patch('docker_runtime.inspect_docker')
+    def test_image_digest_must_belong_to_inspected_content(self, query):
         runtime = backend()
         content = 'sha256:' + '1' * 64
         config = 'sha256:' + '2' * 64
         layer = 'sha256:' + '3' * 64
-        runtime.run = Mock(return_value=Mock(stdout=json.dumps([
-            {'Id': config, 'RepoDigests': ['agent@' + content], 'RootFS': {'Layers': [layer]}}])))
+        query.return_value = {'Id': config, 'RepoDigests': ['agent@' + content], 'RootFS': {'Layers': [layer]}}
         image = runtime.inspect_image('agent:tag')
         self.assertEqual((image.reference, image.config), ('agent@' + content, config))
         with self.assertRaisesRegex(RuntimeError, 'differs'):
             runtime.inspect_image('other@' + content)
 
-    def test_local_base_keeps_its_tag_and_digest_for_buildkit(self):
+    @patch('docker_runtime.inspect_docker')
+    def test_local_base_keeps_its_tag_and_digest_for_buildkit(self, query):
         runtime = backend()
         content = 'sha256:' + '1' * 64
-        runtime.run = Mock(return_value=Mock(stdout=json.dumps([
-            {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['agent:built'],
-             'RepoDigests': ['agent@' + content], 'RootFS': {'Layers': ['sha256:' + '3' * 64]}}])))
+        query.return_value = {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['agent:built'],
+                             'RepoDigests': ['agent@' + content], 'RootFS': {'Layers': ['sha256:' + '3' * 64]}}
         reference = runtime.inspect_image('agent:built').reference
         self.assertEqual(reference, 'agent:built@' + content)
         self.assertEqual(runtime.inspect_image(reference).reference, reference)
 
-    def test_image_reference_preserves_requested_repository_and_tag(self):
+    @patch('docker_runtime.inspect_docker')
+    def test_image_reference_preserves_requested_repository_and_tag(self, query):
         runtime = backend()
         content = 'sha256:' + '1' * 64
-        runtime.run = Mock(return_value=Mock(stdout=json.dumps([
-            {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['codex-sandbox-bake:temporary', 'codex-sandbox:cache'],
+        query.return_value = {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['codex-sandbox-bake:temporary', 'codex-sandbox:cache'],
              'RepoDigests': ['codex-sandbox-bake@' + content, 'codex-sandbox@' + content],
-             'RootFS': {'Layers': ['sha256:' + '3' * 64]}}])))
+             'RootFS': {'Layers': ['sha256:' + '3' * 64]}}
         self.assertEqual(runtime.inspect_image('codex-sandbox:cache').reference, 'codex-sandbox:cache@' + content)
 
     def test_explicit_shares_do_not_add_home_or_expose_control_state(self):

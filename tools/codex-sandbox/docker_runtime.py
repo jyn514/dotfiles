@@ -14,7 +14,9 @@ import tempfile
 import threading
 import time
 import uuid
+from urllib.parse import quote
 
+from lima.docker_api import inspect as inspect_docker
 from lima.docker_host import DockerHost
 from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
@@ -69,9 +71,7 @@ class Docker(VMRuntime):
         machine = self.host.machine(self.record)
         if self.record['socket'] != str(Path(machine['dir']) / 'sock/docker.sock'):
             raise RuntimeError('Docker socket differs from recorded VM')
-        result = subprocess.run(self.client_argv(['info', '--format', '{{json .}}']),
-                                check=True, capture_output=True, text=True, timeout=10)
-        info = json.loads(result.stdout)
+        info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
         if info['ID'] != self.record['engine_id'] or 'name=rootless' not in info['SecurityOptions']:
             raise RuntimeError('Docker engine identity changed; refusing recovery')
 
@@ -110,7 +110,11 @@ class Docker(VMRuntime):
         return super().run(arguments, **kwargs)
 
     def inspect_image(self, reference):
-        raw = single_json(self.run(['image', 'inspect', reference], capture_output=True).stdout)
+        if self.recovery:
+            raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        self.verify()
+        raw = inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
+                             ['docker', 'image', 'inspect', reference])
         config = digest(raw['Id'])
         candidates = raw.get('RepoDigests') or []
         if '@' in reference:

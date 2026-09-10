@@ -145,6 +145,8 @@ On Lima-Docker this step verifies the provisioned network rather than creating i
 Returned references retain both tag and digest because BuildKit needs
 the tag to resolve a local base; execution uses the verified configuration ID
 with pulling disabled. Custom image entrypoints survive credential injection.
+Engine and image metadata use direct reads from the recorded Docker socket;
+ambient Docker contexts and HTTP proxy settings do not select another engine.
 
 Monitor waits use host Docker clients. Each host-routed proxy request uses a
 temporary container with only the proxy socket volume, allowing cancellation
