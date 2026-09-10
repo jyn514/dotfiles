@@ -74,7 +74,7 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker engine identity changed; refusing recovery')
 
     def argv(self, arguments, *, cwd=None):
-        self.host.machine(self.record)
+        # Both verification paths check the VM; do not query limactl twice.
         cleanup = (arguments[0] in ('inspect', 'ps', 'info', 'wait', 'rm', 'kill', 'stop') or
                    tuple(arguments[:2]) in (('container', 'ls'), ('network', 'ls'), ('network', 'inspect'),
                                            ('network', 'rm'), ('volume', 'ls'), ('volume', 'inspect'), ('volume', 'rm')))
@@ -196,7 +196,6 @@ class Docker(VMRuntime):
                 raise
 
     def workload_argv(self, image, arguments, command=(), *, cwd=None, operation='run'):
-        self.verify()
         return self.argv([operation, '--pull=never', *arguments, image.config, *command], cwd=cwd)
 
     def agent_command(self, image, arguments):
