@@ -559,14 +559,14 @@ class ManifestTest(unittest.TestCase):
         stop.assert_called_once_with(state)
         self.assertFalse(metadata.exists())
 
-    def test_lock_holders_share_one_repository_session(self) -> None:
+    def test_joiners_do_not_serialize_validation_of_published_session(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
         metadata = runtime / "session.json"
         processes = []
         controls = []
         try:
-            for index in range(2):
+            for index in range(3):
                 ready = self.repo / f"ready-{index}"
                 coordinated = self.repo / f"coordinated-{index}"
                 release = self.repo / f"release-{index}"
@@ -588,7 +588,8 @@ class ManifestTest(unittest.TestCase):
                         "state": {"proxies": []}, "commands": {},
                         "manifest": {"version": 1, "commands": {}},
                     }), encoding="utf-8")
-                coordinated.touch()
+                    coordinated.touch()
+                self.assertEqual('new\n' if index == 0 else 'shared\n', ready.read_text())
 
             controls[0][2].touch()
             self.assertEqual(0, processes[0].wait(timeout=2))
@@ -596,6 +597,8 @@ class ManifestTest(unittest.TestCase):
             controls[1][2].touch()
             self.assertEqual(0, processes[1].wait(timeout=2))
             self.assertTrue(metadata.exists())
+            controls[2][2].touch()
+            self.assertEqual(0, processes[2].wait(timeout=2))
         finally:
             for _, coordinated, release in controls:
                 coordinated.touch()

@@ -341,7 +341,9 @@ def lock_main(args: argparse.Namespace) -> int:
             shared = False
             fcntl.flock(session, fcntl.LOCK_SH)
         Path(args.ready).write_text("shared\n" if shared else "new\n", encoding="utf-8")
-        while not Path(args.coordinated).exists() and os.getppid() == args.parent_pid:
+        # Joiners only read published state. Their lifetime lock prevents reset;
+        # only the first publisher needs to serialize setup and publication.
+        while not shared and not Path(args.coordinated).exists() and os.getppid() == args.parent_pid:
             time.sleep(0.1)
         fcntl.flock(coordination, fcntl.LOCK_UN)
         while not Path(args.release).exists() and os.getppid() == args.parent_pid:

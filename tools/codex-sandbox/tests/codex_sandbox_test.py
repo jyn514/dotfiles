@@ -46,6 +46,26 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_only_first_session_publishes_shared_proxy_state(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        finalize = launcher['finalize_proxy_session']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ready, output = root / 'ready', root / 'args'
+            state = SimpleNamespace(lock_ready=ready, repository=root,
+                                    container_repository=Path('/src/repo'),
+                                    proxy_state=root / 'state', manifest=root / 'manifest')
+            def helper(operation, *arguments):
+                output.write_text('--read-only\n')
+            for status, operation in (('shared', 'agent-args'), ('new', 'finalize')):
+                with self.subTest(status=status):
+                    ready.write_text(status + '\n')
+                    with mock.patch.dict(finalize.__globals__, {
+                            'temporary_file': lambda: output,
+                            'helper': mock.Mock(side_effect=helper)}) as scope:
+                        self.assertEqual(['--read-only'], finalize(state))
+                        self.assertEqual(operation, scope['helper'].call_args.args[0])
+
     def test_network_verification_failure_retains_captured_diagnostic(self):
         launcher = runpy.run_path(str(LAUNCHER))
         failure = subprocess.CalledProcessError(255, ['/private/client'], stderr=b'SSH session refused\n')

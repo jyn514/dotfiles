@@ -105,6 +105,10 @@ Record whether images and shared required proxies were already warm, plus host/V
 
 The launcher preserves the agent's exit status and attempts to remove its containers, relays, networks, temporary files, and—after the final attached session exits—shared proxies. `SIGINT`, `SIGHUP`, and `SIGTERM` also trigger cleanup.
 
+The first session serializes proxy creation and publication. Joining sessions
+validate the published proxies concurrently while holding lifetime locks that
+prevent reset or replacement; a join cannot rewrite shared metadata.
+
 - If startup reports invalid repository metadata or sandbox policy, repair the named path; do not bypass the validation.
 - If authentication is disabled, run `codex-sandbox auth login`, then start a new sandbox.
 - If Agent Podman reports an SSH handshake `EOF`, inspect the relay log before restarting the sandbox. A relay that accepts the sandbox connection but reports `host.docker.internal:<port>: Connection refused` means the Agent Podman machine is stopped; run `tools/agent-podman/start.sh` on the host. See [Agent Podman recovery](../agent-podman/README.md#recovery).

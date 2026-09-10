@@ -789,8 +789,11 @@ def stage_skills(state: State) -> None:
 
 def finalize_proxy_session(state: State) -> list[str]:
     state.proxy_args = temporary_file()
+    # A shared join validated an existing publication under its lifetime lock;
+    # it must not rewrite that publication after releasing coordination.
+    operation = 'agent-args' if state.lock_ready.read_text().strip() == 'shared' else 'finalize'
     helper(
-        "finalize", "--repo", str(state.repository),
+        operation, "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
         "--state", str(state.proxy_state), "--output", str(state.proxy_args),
         "--manifest", str(state.manifest),
