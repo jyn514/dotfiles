@@ -1273,12 +1273,25 @@ def execute(state: State) -> int:
 
     prepared = OUTER_RUNTIME.provider == 'lima-docker'
     if prepared:
-        # Keep cancellable builders on the signal-owning thread. No container
-        # startup worker should be joined while an image builder is still running.
-        state.image = model_image()
-        state.sidecar_image = phase('sidecar image resolution', resolve_sidecar_image)
+        # Supervise independent builders together on the signal-owning thread;
+        # no container workers start until cancellation has no builds to drain.
+        manifest = json.loads(state.manifest.read_text())
+        base = state.repository / '.agents/sandbox/base-image'
+        builders = {'auth': ([str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')], DOTFILES)}
+        if base.is_file() and os.access(base, os.X_OK):
+            builders['base'] = ([str(base)], state.repository)
+        for name, command in manifest['commands'].items():
+            if not command.get('image-command'):
+                raise LauncherError(f'proxy {name} requires image-command for lima-docker')
+            builders['proxy:' + name] = (command['image-command'], state.repository)
+        built = phase('image builders', lambda: OUTER_RUNTIME.run_builders(builders))
+        base_image = (OUTER_RUNTIME.builder_image(built['base'].stdout.strip())
+                      if 'base' in built else 'node:24-alpine3.22')
+        state.image = phase('model image resolution', lambda: ensure_image(state, base_image))
+        state.sidecar_image = OUTER_RUNTIME.builder_image(built['auth'].stdout.strip())
         images = phase('proxy image resolution', lambda: proxy_module().resolve_images(
-            state.repository, json.loads(state.manifest.read_text())))
+            state.repository, manifest,
+            builder_results={name: built['proxy:' + name] for name in manifest['commands']}))
         state.prepared_images = temporary_file()
         state.prepared_images.write_text(json.dumps(images))
 

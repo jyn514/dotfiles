@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import signal
 import subprocess
 import sys
@@ -188,6 +189,69 @@ class Docker(VMRuntime):
         finally:
             if process.stdout is not None:
                 process.stdout.close()
+
+    def run_builders(self, builders):
+        """Supervise independent image builders on the signal-owning thread."""
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError('image builders require the signal-owning thread')
+        environment = {**self.builder_environment(), 'CODEX_SANDBOX_BUILDER_GROUP': '1'}
+        pending = iter(builders.items())
+        active = {}
+        owned = []
+        results = {}
+        deadline = time.monotonic() + 1800
+        with selectors.DefaultSelector() as selector:
+            try:
+                while len(results) < len(builders):
+                    while len(active) < 4:
+                        item = next(pending, None)
+                        if item is None:
+                            break
+                        name, (command, cwd) = item
+                        process = subprocess.Popen(command, cwd=cwd, env=environment,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, start_new_session=True)
+                        owned.append(process)
+                        active[name] = (process, bytearray(), command)
+                        selector.register(process.stdout, selectors.EVENT_READ, name)
+                    for key, _ in selector.select(timeout=0.01):
+                        chunk = os.read(key.fd, 65536)
+                        if chunk:
+                            active[key.data][1].extend(chunk)
+                        else:
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                    for name, (process, output, command) in list(active.items()):
+                        status = process.poll()
+                        if status is None:
+                            continue
+                        if status:
+                            raise BuildError(status, command)
+                        # A successful wrapper may leave a child writing its
+                        # reference. Like communicate(), wait for pipe EOF too.
+                        if not process.stdout.closed:
+                            continue
+                        stdout = output.decode(process.stdout.encoding).replace('\r\n', '\n').replace('\r', '\n')
+                        results[name] = subprocess.CompletedProcess(command, status, stdout)
+                        del active[name]
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired('sandbox image builders', 1800)
+                return results
+            except BaseException:
+                handlers = {signum: signal.signal(signum, signal.SIG_IGN)
+                            for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+                try:
+                    for process in owned:
+                        try:
+                            stop_build(process)
+                        except (OSError, ValueError, subprocess.SubprocessError) as error:
+                            print(f'Buildx cleanup incomplete: {error}', file=sys.stderr)
+                finally:
+                    for signum, handler in handlers.items():
+                        signal.signal(signum, handler)
+                raise
+            finally:
+                for process in owned:
+                    process.stdout.close()
 
     @contextmanager
     def build_output(self):

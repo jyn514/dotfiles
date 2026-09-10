@@ -35,14 +35,51 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_independent_builders_overlap_and_keep_their_own_output(self):
+        runtime = backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command = [sys.executable, str(ROOT / 'tests/builder_barrier_fixture.py'), str(root)]
+            results = runtime.run_builders({'first': ([*command, 'first', 'second'], root),
+                                            'second': ([*command, 'second', 'first'], root)})
+            self.assertEqual({name: result.stdout for name, result in results.items()},
+                             {'first': 'first\n', 'second': 'second\n'})
+
+    def test_successful_builder_waits_for_child_to_finish_its_reference(self):
+        runtime = backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command = [sys.executable, str(ROOT / 'tests/builder_barrier_fixture.py'), str(root)]
+            results = runtime.run_builders({'first': ([*command, 'child-first', 'second'], root),
+                                            'second': ([*command, 'second', 'child-first'], root)})
+            self.assertEqual(results['first'].stdout, 'child-first\n')
+            self.assertEqual(results['second'].stdout, 'second\n')
+
+    def test_failed_builder_stops_its_running_peer_before_returning(self):
+        runtime = backend()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            command = [sys.executable, str(ROOT / 'tests/builder_barrier_fixture.py'), str(root)]
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
+                runtime.run_builders({'first': ([*command, 'fail', 'wait'], root),
+                                      'second': ([*command, 'wait', 'fail'], root)})
+            self.assertEqual(failure.exception.returncode, 7)
+            pid = (root / 'wait').read_text()
+            listing = subprocess.run(['ps', '-axo', 'pid=,stat='], check=True,
+                                     capture_output=True, text=True).stdout.splitlines()
+            self.assertFalse(any(fields[0] == pid and not fields[1].startswith('Z')
+                                 for line in listing if len(fields := line.split()) == 2))
+
     def test_cancel_builder_stops_nested_build_and_lock_waiter(self):
         class Cancelled(Exception):
             pass
-        for waiting in (False, True):
-            with self.subTest(waiting=waiting), tempfile.TemporaryDirectory() as directory:
+        for waiting, batched in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(waiting=waiting, batched=batched), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 runtime = backend()
                 runtime.host.state = root
+                sibling = root / 'sibling'
+                sibling.mkdir()
                 with (root / 'build-output.lock').open('a') as lock:
                     if waiting:
                         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -51,7 +88,8 @@ class DockerRuntimeTest(unittest.TestCase):
                     def interrupt():
                         deadline = time.monotonic() + 5
                         while not done.wait(0.01) and time.monotonic() < deadline:
-                            if marker.exists() and marker.read_text():
+                            if (marker.exists() and marker.read_text() and
+                                    (not batched or (sibling / 'child').exists())):
                                 os.kill(os.getpid(), signal.SIGTERM)
                                 return
                     def cancelled(signum, frame):
@@ -62,12 +100,16 @@ class DockerRuntimeTest(unittest.TestCase):
                     started = time.monotonic()
                     try:
                         with self.assertRaisesRegex(Cancelled, 'builder cancelled'):
-                            runtime.run_builder([sys.executable, str(ROOT / 'tests/builder_cancel_fixture.py'),
-                                                 'build', str(root)])
+                            command = [sys.executable, str(ROOT / 'tests/builder_cancel_fixture.py'), 'build']
+                            if batched:
+                                runtime.run_builders({'first': ([*command, str(root)], root),
+                                                      'second': ([*command, str(sibling)], sibling)})
+                            else:
+                                runtime.run_builder([*command, str(root)])
                         self.assertLess(time.monotonic() - started, 5)
                         listing = subprocess.run(['ps', '-axo', 'pid=,stat='], capture_output=True,
                                                  text=True, check=True).stdout.splitlines()
-                        for path in (root / 'ready', root / 'child'):
+                        for path in (root / 'ready', root / 'child', sibling / 'ready', sibling / 'child'):
                             if path.exists():
                                 pid = path.read_text()
                                 self.assertFalse(any(fields[0] == pid and not fields[1].startswith('Z')

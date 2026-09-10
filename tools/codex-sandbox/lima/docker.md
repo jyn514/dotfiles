@@ -132,6 +132,7 @@ an image ID as `BASE_IMAGE`, the adapter resolves it to a local tag plus digest:
 BuildKit otherwise treats the ID as a registry image name.
 
 Actual builds serialize their native progress displays across launches.
+Independent image builders run up to four at a time within a launch.
 Each launch finishes its builders before starting container workers, so
 cancellation can stop the owned builder process group before cleanup.
 Warm launches produce no build transcript.

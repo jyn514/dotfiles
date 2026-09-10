@@ -480,7 +480,7 @@ def attach_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[str, str]:
+def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None, *, builder_results=None) -> dict[str, str]:
     if prepared is not None:
         images = json.loads(Path(prepared).read_text())
         if (not isinstance(images, dict) or set(images) != set(manifest['commands']) or
@@ -490,7 +490,9 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
         if not command.get('image-command'):
             raise ConfigError(f"proxy {name} requires image-command for {OUTER_RUNTIME.provider}")
-        if OUTER_RUNTIME.provider == 'lima-docker':
+        if builder_results is not None:
+            result = builder_results[name]
+        elif OUTER_RUNTIME.provider == 'lima-docker':
             result = OUTER_RUNTIME.run_builder(command['image-command'], cwd=repo)
         else:
             result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)

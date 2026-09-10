@@ -242,7 +242,10 @@ class BackgroundRelayTest(unittest.TestCase):
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
-            replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker'),
+            builders = mock.Mock(return_value={
+                'base': SimpleNamespace(stdout='base@digest'), 'auth': SimpleNamespace(stdout='auth@digest')})
+            replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker',
+                run_builders=builders, builder_image=lambda output: output),
                 proxy_module=lambda: SimpleNamespace(resolve_images=mock.Mock(return_value={})),
                 temporary_file=lambda: repository / 'images.json',
                 ensure_image=mock.Mock(return_value='agent@digest'),
@@ -252,13 +255,18 @@ class BackgroundRelayTest(unittest.TestCase):
             with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
                 replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
-                replacements['resolve_sidecar_image'].assert_called_once()
+                self.assertEqual(set(builders.call_args.args[0]), {'base', 'auth'})
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
                 replacements['ensure_image'].side_effect = ValueError('build failed')
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'build failed'):
                     execute(state)
                 replacements['run_agent'].assert_not_called()
+                builders.side_effect = ValueError('builder batch failed')
+                replacements['ensure_network'].reset_mock()
+                with self.assertRaisesRegex(ValueError, 'builder batch failed'):
+                    execute(state)
+                replacements['ensure_network'].assert_not_called()
 
     def test_agent_wait_rejects_supervisor_loss_during_startup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
