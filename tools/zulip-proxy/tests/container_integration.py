@@ -44,8 +44,12 @@ def run(arguments: list[str], **options) -> subprocess.CompletedProcess:
 
 class ZulipHandler(BaseHTTPRequestHandler):
     request_error: str | None = None
+    reject_credentials = False
 
     def do_GET(self) -> None:
+        if type(self).reject_credentials:
+            self.send_error(401, 'fixture rejected credentials')
+            return
         try:
             parsed = urlsplit(self.path)
             query = parse_qs(parsed.query)
@@ -198,7 +202,7 @@ def main() -> None:
                 "https://rust-lang.zulipchat.com/#narrow/channel/456-secret/"
                 "topic/private.2Ftopic/near/789"
             )
-            result = run([
+            message_command = [
                 "docker", "run", "--rm", "--user", "65532:65532",
                 "--entrypoint", "/src/client",
                 "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
@@ -206,7 +210,8 @@ def main() -> None:
                 "--mount", f"type=bind,src={CLIENT},dst=/src/client,readonly",
                 image, narrow, "--after", "2026-03-01", "--before", "2026-04-01",
                 "--format", "jsonl",
-            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            ]
+            result = run(message_command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             messages = [json.loads(line) for line in result.stdout.splitlines()]
             assert messages == [{"id": 789, "content": "container integration"}]
             result = run([
@@ -219,6 +224,12 @@ def main() -> None:
             ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             assert json.loads(result.stdout) == {"name": "private/topic", "max_id": 789}
             assert ZulipHandler.request_error is None, ZulipHandler.request_error
+            ZulipHandler.reject_credentials = True
+            rejected = invoke(message_command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert rejected.returncode != 0, 'upstream authentication failure reported success'
+            assert not rejected.stdout.strip(), 'authentication failure returned a transcript'
+            assert 'test-key' not in rejected.stderr, 'authentication error exposed credentials'
+            ZulipHandler.reject_credentials = False
     finally:
         if server is not None:
             server.shutdown()

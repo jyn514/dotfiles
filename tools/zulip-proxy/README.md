@@ -77,6 +77,8 @@ python3 tools/zulip-proxy/tests/container_integration.py --docker-state /path/to
 This uses the pinned client, VM-shared scratch directory and production volume
 initialization. Both modes use dummy credentials and a local HTTPS server, and
 remove their test containers and volume. The VM must share this checkout.
+The fixture checks message/topic requests and rejects upstream authentication
+failure without emitting a transcript or leaking the dummy credential.
 
 ## Design and reference
 
