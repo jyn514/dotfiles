@@ -18,6 +18,11 @@ cargo build --locked --manifest-path tools/jj-proxy/Cargo.toml
 docker build -f tools/jj-proxy/Dockerfile -t jj-proxy .
 ```
 
+Sandbox startup uses `.agents/sandbox/jj-proxy-image`, which reuses a tag keyed
+by the Dockerfile's copied inputs. Local Cargo artifacts and test output do not
+change that key. Keep the builder's input list aligned with Dockerfile `COPY`
+instructions when adding image sources.
+
 The sandbox launcher must validate all metadata indirections, create the private socket volume, mount the repository and metadata as specified by the design, set `JJ_PROXY_REPO`, `JJ_PROXY_GIT_DIR`, `JJ_PROXY_COMMON_DIR`, and `JJ_PROXY_JJ_REPO`, and wait for readiness before starting the agent. A manually started proxy without those mounts is not protected.
 
 The agent-side `jj` wrapper needs `SANDBOX_PROXY_DIR`; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
