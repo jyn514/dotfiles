@@ -155,6 +155,13 @@ Use an otherwise idle test VM: the policy test deliberately restarts Docker
 and injects a failed policy activation. Tests own their temporary resources;
 the caller owns VM teardown. The launcher fixture uses dummy credentials and
 checks interactive Pi input and cancellation as well as proxy requests.
+Add `--interactive-runs 5` to repeat sequential launches and emit `TERMINAL TIMING`
+JSON records for readiness, key delivery and cancellation. Readiness means the
+observer's session-start hook fired; key delivery means its stdin listener saw
+the probe, not that Pi finished rendering. These are warm-launch measurements
+after the fixture builds its images, not a concurrency test.
+`PROXY TIMING` records measure complete host-routed JJ status requests, including
+router startup and cancellation-safe forwarding-container overhead.
 
 ```sh
 mkdir -p /private/tmp/docker-sandbox-test/work

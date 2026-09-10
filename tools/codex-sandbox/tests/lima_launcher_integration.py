@@ -30,6 +30,8 @@ from sandbox_runtime import image_runtime
 
 
 def terminal_run(command, environment, cwd, *, interactive=False):
+    started = time.monotonic()
+    ready_at = key_at = None
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 28, 100, 0, 0))
     process = subprocess.Popen(command, env=environment, cwd=cwd,
@@ -53,9 +55,11 @@ def terminal_run(command, environment, cwd, *, interactive=False):
                 sys.stdout.buffer.write(block)
                 sys.stdout.buffer.flush()
                 if interactive and not sent_key and b'__SANDBOX_PI_READY__' in output:
+                    ready_at = time.monotonic()
                     os.write(master, b'nft-key-probe')
                     sent_key = True
                 if interactive and not interrupted and b'__SANDBOX_PI_KEY__' in output:
+                    key_at = time.monotonic()
                     process.terminate()
                     interrupted = True
             elif process.poll() is not None:
@@ -66,6 +70,11 @@ def terminal_run(command, environment, cwd, *, interactive=False):
         assert status == (143 if interactive else 0), f"launcher exited {status}"
         if interactive:
             assert sent_key and interrupted, 'Pi never accepted interactive input'
+            print('\nTERMINAL TIMING ' + json.dumps({
+                'ready_seconds': ready_at - started,
+                'key_delivery_seconds': key_at - ready_at,
+                'cancellation_seconds': time.monotonic() - key_at,
+            }), flush=True)
         assert b"owned-dummy-github-token" not in output, "credential escaped into terminal output"
     finally:
         if process.poll() is None:
@@ -78,7 +87,7 @@ def terminal_run(command, environment, cwd, *, interactive=False):
         os.close(master)
 
 
-def exercise(state, work, provider='lima'):
+def exercise(state, work, provider='lima', interactive_runs=1):
     runtime = image_runtime(provider, state)
     native = ['--mode=native'] if provider == 'lima' else []
     with tempfile.TemporaryDirectory(prefix="launcher-", dir=work) as temporary:
@@ -200,9 +209,13 @@ def exercise(state, work, provider='lima'):
                     fcntl.flock(lock, fcntl.LOCK_SH)
                     route = [sys.executable, str(ROOT / "sandbox-proxies.py"),
                         "route", "--repo", str(repo), "--command", "jj", "--", "false"]
+                    route_started = time.monotonic()
                     response = subprocess.run(route,
                         env=environment, input=struct.pack(">I", len(request)) + request,
                         stdout=subprocess.PIPE, check=True, timeout=30).stdout
+                    print('PROXY TIMING ' + json.dumps({
+                        'jj_status_seconds': time.monotonic() - route_started,
+                    }), flush=True)
                     proxy = next(proxy for proxy in metadata["state"]["proxies"] if proxy["name"] == "jj")
                     if provider == 'lima':
                         container = json.loads(runtime.run(["inspect", *native, proxy["container"]],
@@ -257,8 +270,9 @@ def exercise(state, work, provider='lima'):
                         "--entrypoint", "/tools/jj-proxy/client"], ["status"]) as process:
                     assert process.wait(timeout=30) == 0
             print('STARTUP CHECK: interactive Pi session, key delivery, and cancellation.', flush=True)
-            terminal_run([sys.executable, str(ROOT / 'codex-sandbox'), '--offline', '--approve', '--no-session',
-                          '-e', '../.agents/sandbox/observer.js'], environment, repo / 'nested', interactive=True)
+            for _ in range(interactive_runs):
+                terminal_run([sys.executable, str(ROOT / 'codex-sandbox'), '--offline', '--approve', '--no-session',
+                              '-e', '../.agents/sandbox/observer.js'], environment, repo / 'nested', interactive=True)
         finally:
             subprocess.run([sys.executable, str(ROOT / "sandbox-proxies.py"), "reset", "--repo", str(repo)],
                            env=environment, check=True, timeout=120)
@@ -271,5 +285,7 @@ if __name__ == "__main__":
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--provider", choices=('lima', 'lima-docker'), default='lima')
+    parser.add_argument('--interactive-runs', type=int, choices=range(1, 21), default=1,
+                        metavar='1..20', help='repeat sequential interactive launches for warm timings')
     args = parser.parse_args()
-    exercise(args.state.resolve(), args.work.resolve(), args.provider)
+    exercise(args.state.resolve(), args.work.resolve(), args.provider, args.interactive_runs)
