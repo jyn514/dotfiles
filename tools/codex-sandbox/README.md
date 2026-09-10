@@ -40,7 +40,7 @@ API socket and has its own opt-in setup and validation commands.
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may provide executable `.agents/sandbox/base-image` and a version 1 `.agents/sandbox/proxy-commands.json`. The `lima-docker` backend instead reads a [standard Bake file with a `base` target](lima/docker.md), and proxies select an `image-target` from that file. Repositories without extra command proxies may omit the manifest. These files are trusted startup policy, not agent configuration.
+A repository may provide executable `.agents/sandbox/base-image` and a version 1 `.agents/sandbox/proxy-commands.json`. All backends use these builders and their existing cache keys; [Lima-Docker routes their Docker commands to its recorded engine](lima/docker.md). Repositories without extra command proxies may omit the manifest. These files are trusted startup policy, not agent configuration.
 
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead. Other images use the standalone Bun executable.
 

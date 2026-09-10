@@ -1,6 +1,7 @@
 """Rootless Docker identity, command preservation, and firewall regressions."""
 
 import importlib.util
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,61 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_cancel_builder_stops_nested_build_and_lock_waiter(self):
+        class Cancelled(Exception):
+            pass
+        for waiting in (False, True):
+            with self.subTest(waiting=waiting), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                runtime = backend()
+                runtime.host.state = root
+                with (root / 'build-output.lock').open('a') as lock:
+                    if waiting:
+                        fcntl.flock(lock, fcntl.LOCK_EX)
+                    marker = root / ('ready' if waiting else 'child')
+                    done = threading.Event()
+                    def interrupt():
+                        deadline = time.monotonic() + 5
+                        while not done.wait(0.01) and time.monotonic() < deadline:
+                            if marker.exists() and marker.read_text():
+                                os.kill(os.getpid(), signal.SIGTERM)
+                                return
+                    def cancelled(signum, frame):
+                        raise Cancelled('builder cancelled')
+                    handler = signal.signal(signal.SIGTERM, cancelled)
+                    thread = threading.Thread(target=interrupt)
+                    thread.start()
+                    started = time.monotonic()
+                    try:
+                        with self.assertRaisesRegex(Cancelled, 'builder cancelled'):
+                            runtime.run_builder([sys.executable, str(ROOT / 'tests/builder_cancel_fixture.py'),
+                                                 'build', str(root)])
+                        self.assertLess(time.monotonic() - started, 5)
+                        listing = subprocess.run(['ps', '-axo', 'pid=,stat='], capture_output=True,
+                                                 text=True, check=True).stdout.splitlines()
+                        for path in (root / 'ready', root / 'child'):
+                            if path.exists():
+                                pid = path.read_text()
+                                self.assertFalse(any(fields[0] == pid and not fields[1].startswith('Z')
+                                                     for line in listing if len(fields := line.split()) == 2))
+                    finally:
+                        done.set()
+                        thread.join()
+                        signal.signal(signal.SIGTERM, handler)
+
+    def test_builder_base_image_ids_resolve_locally_without_rewriting_other_arguments(self):
+        runtime = backend()
+        image = 'sha256:' + 'a' * 64
+        runtime.inspect_image = Mock(return_value=Mock(reference='base:key@sha256:manifest'))
+        arguments = ['buildx', 'build', '--build-arg', 'BASE_IMAGE=' + image,
+                     '--build-arg=BASE_IMAGE=' + image, '--build-arg', 'OTHER=' + image,
+                     '--build-arg', 'BASE_IMAGE=alpine:3.22', '.']
+        expected = [*arguments]
+        expected[3] = 'BASE_IMAGE=base:key@sha256:manifest'
+        expected[4] = '--build-arg=BASE_IMAGE=base:key@sha256:manifest'
+        self.assertEqual(runtime.builder_arguments(arguments), expected)
+        self.assertEqual(arguments[3], 'BASE_IMAGE=' + image)
+
     def test_bake_failure_reaps_plugin_after_wrapper_already_exited(self):
         for status in ('0', '1'):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:

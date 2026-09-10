@@ -110,34 +110,31 @@ Relay creation checks the sysctls again, since network creation can change them
 without changing the daemon's verification receipt. Do not apply these settings
 to an arbitrary Docker installation: they change inter-container filtering.
 
-Startup collects the base, agent, authentication, and command-proxy builds into
-one `docker buildx bake` invocation with one interactive progress display.
-BuildKit checks its cache on every launch. The base feeds the agent through a
-Bake target dependency; existing tags never substitute for checking changed inputs.
-On failure, BuildKit prints the failed step and the launcher adds a short build
-failure summary, preserving the exit status without dumping its internal command.
-Network setup failures include the captured runtime diagnostic and exit status;
-on Lima-Docker this step verifies the provisioned network rather than creating it.
+Startup uses the existing executable `.agents/sandbox/base-image` and each
+proxy's `image-command`, just like Podman. Builders own their input keys and
+build-if-missing decisions. A changed key selects a new tag; an existing tag
+skips the build entirely. The launcher retains its existing agent key, which
+includes copied sources, base image identity, UID, GID, and terminal type.
+No additional cache manifest or Bake definition is required.
 
-Repositories provide `.agents/sandbox/docker-bake.hcl` with a `base` target.
-Paths resolve from the repository root.
-Command proxies select targets through `image-target` in `proxy-commands.json`.
-Use `contexts = { sandbox-base = "target:base" }` and
-`args = { BASE_IMAGE = "sandbox-base" }` for a proxy Dockerfile derived from the base.
-Buildx resolves HCL variables, inheritance, and target dependencies.
+Builder subprocesses receive a private `docker` adapter on PATH. It uses the
+recorded engine and pinned clients, ignoring ambient Docker contexts and the
+host's Podman alias. `docker build` invokes pinned Buildx directly, loading its
+output locally. Builders may return a local `sha256:` image ID or a repository
+digest; the launcher verifies it in that engine. For existing builders that pass
+an image ID as `BASE_IMAGE`, the adapter resolves it to a local tag plus digest:
+BuildKit otherwise treats the ID as a registry image name.
 
-The file also works independently, from the repository root:
+Actual builds serialize their native progress displays across launches.
+Each launch finishes its builders before starting container workers, so
+cancellation can stop the owned builder process group before cleanup.
+Warm launches produce no build transcript.
+On failure, BuildKit prints its diagnostic and the launcher preserves failure
+status. Repository Bake files remain available for manual builds, but startup
+uses `image-command`; `image-target` annotations do not select startup images.
 
-```sh
-docker buildx bake -f .agents/sandbox/docker-bake.hcl --load base
-```
-
-The launcher replaces output tags with private local tags, loads into its verified
-engine, disables cache exports, and checks output digests before starting containers.
-Repository exporters cannot publish images or caches during launch.
-Podman and nerdctl continue to use `base-image` and `image-command`; keep those
-builders when a repository supports both interfaces. A missing Docker Bake
-definition for an existing builder fails with a migration error.
+Network setup failures include the runtime diagnostic and exit status.
+On Lima-Docker this step verifies the provisioned network rather than creating it.
 
 Returned references retain both tag and digest because BuildKit needs
 the tag to resolve a local base; execution uses the verified configuration ID
@@ -212,6 +209,8 @@ python3 tools/codex-sandbox/tests/docker_raw_network_integration.py \
   --state /private/tmp/docker-sandbox-test/state \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/bake_integration.py \
+  --state /private/tmp/docker-sandbox-test/state
+python3 tools/codex-sandbox/tests/builder_integration.py \
   --state /private/tmp/docker-sandbox-test/state
 limactl delete --force sandbox-host-docker-test
 ```

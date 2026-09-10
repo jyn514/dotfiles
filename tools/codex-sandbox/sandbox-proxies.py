@@ -487,13 +487,13 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[
                 not all(isinstance(image, str) for image in images.values())):
             raise ConfigError('prepared images do not match the proxy manifest')
         return {name: OUTER_RUNTIME.builder_image(image) for name, image in images.items()}
-    if OUTER_RUNTIME.provider == 'lima-docker':
-        from sandbox_build import prepare_proxies
-        return prepare_proxies(OUTER_RUNTIME, repo, manifest, Path(__file__).resolve().parents[2])
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
         if not command.get('image-command'):
             raise ConfigError(f"proxy {name} requires image-command for {OUTER_RUNTIME.provider}")
-        result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
+        if OUTER_RUNTIME.provider == 'lima-docker':
+            result = OUTER_RUNTIME.run_builder(command['image-command'], cwd=repo)
+        else:
+            result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
         if BARE_IMAGE_RE.fullmatch(output):
             output = "sha256:" + output
@@ -505,6 +505,8 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[
             raise ConfigError(f"image-command for {name}: {error}") from error
 
     commands = manifest["commands"]
+    if OUTER_RUNTIME.provider == 'lima-docker':
+        return dict(resolve(*item) for item in commands.items())
     with ThreadPoolExecutor(max_workers=max(1, len(commands))) as executor:
         return dict(executor.map(lambda item: resolve(*item), commands.items()))
 

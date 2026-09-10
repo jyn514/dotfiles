@@ -113,7 +113,7 @@ Networking is disabled unless the manifest declares it and the command requires 
 The launcher also injects trusted built-in commands from its own installation checkout; repository-local declarations may add names but cannot replace a trusted command.
 The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
 The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `image-target`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
-At least one image selector is required: `image-command` for Podman or nerdctl, and `image-target` for rootless Docker. A command may provide both to support all backends.
+All backends use `image-command`. An `image-target` annotation may remain for manual Bake workflows, but does not select the startup image.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:
 
@@ -169,14 +169,14 @@ The manifest starts one fixed server; its image owns the server and protocol pol
 The launcher provides the conventional socket volume and waits for readiness but remains unaware of Flower's request schema and argument grammar.
 For `bb-bug`, the immutable image contains both the socket server and the trusted bridge entrypoint.
 
-For rootless Docker, `image-target` names a target in the repository's `.agents/sandbox/docker-bake.hcl`, evaluated from the repository root. The file also defines the `base` target used by the agent. The launcher composes these targets with its trusted images into one Bake build, publishes only to its local engine, and verifies output digests before starting containers.
+Rootless Docker uses the same executable builders and input-keyed build-if-missing contract. Their `docker` calls use the recorded engine and pinned clients. Builders may return a local image ID or repository digest, verified in that engine before use. Local IDs passed as `BASE_IMAGE` become tag-plus-digest references for BuildKit. Actual builds serialize native progress across launches. Each launch finishes its builders before starting container workers, retaining cancellation ownership of builder process groups. No additional cache manifest is required.
 
-For Podman and nerdctl, `image-command` is an argument array that the launcher executes before the agent starts.
+`image-command` is an argument array that the launcher executes before the agent starts.
 Like `.agents/sandbox/base-image`, the command may inspect the trusted startup checkout, build an image from its current sources, pull an existing image by tag or digest, or reuse a cached build.
 It prints exactly one immutable image reference on standard output and sends progress or diagnostics to standard error.
 The launcher rejects an empty, malformed, or multi-line result and starts the proxy by that reference.
 Podman uses a configuration digest; Lima uses a locally registered canonical reference with a verified native content descriptor.
-Builders use `sandbox-image` in the selected outer store; a Podman image ID cannot stand in for a Lima image.
+Images must belong to the selected outer store; a Podman image ID cannot stand in for a Lima image.
 
 A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
 The forwarding client uses the configured path while it exists and otherwise falls back to the default path.

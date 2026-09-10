@@ -122,7 +122,13 @@ def run(
     arguments: list[str], *, check: bool = True, capture: bool = False,
     cwd: Path | None = None, quiet: bool = False, discard_stdout: bool = False,
     stdout_to_stderr: bool = False, input_text: str | None = None,
+    builder: bool = False,
 ) -> subprocess.CompletedProcess[str]:
+    if builder and OUTER_RUNTIME.provider == 'lima-docker':
+        result = OUTER_RUNTIME.run_builder(arguments, cwd=cwd, capture=capture)
+        if check:
+            result.check_returncode()
+        return result
     engine_command = arguments[:1] == ["docker"]
     if engine_command:
         arguments = OUTER_RUNTIME.argv(arguments[1:], cwd=cwd)
@@ -146,20 +152,20 @@ def run(
 
 
 @cache
-def proxy_entrypoint() -> Callable[[list[str]], int]:
+def proxy_module():
     # Snapshot loads this on the main thread before concurrent startup begins.
     spec = importlib.util.spec_from_file_location("sandbox_proxies", PROXY_HELPER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.OUTER_RUNTIME = OUTER_RUNTIME
-    return module.main
+    return module
 
 
 def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     # Short operations share the launcher's interpreter; lock/monitor lifetimes
     # remain separate processes so they can supervise and outlive these calls.
-    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments], proxy_entrypoint()(list(arguments)))
+    result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments], proxy_module().main(list(arguments)))
     if check:
         result.check_returncode()
     return result
@@ -449,7 +455,7 @@ def image_cache_key(state: State, base_image: str) -> str:
 
 def resolve_sidecar_image() -> str:
     builder = DOTFILES / "tools/codex-sandbox/auth-proxy/image"
-    result = run([str(builder)], capture=True, cwd=DOTFILES)
+    result = run([str(builder)], capture=True, cwd=DOTFILES, builder=True)
     output = result.stdout.strip()
     return OUTER_RUNTIME.builder_image(output)
 
@@ -1252,27 +1258,29 @@ def execute(state: State) -> int:
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
-    batched = OUTER_RUNTIME.provider == 'lima-docker'
-    if batched:
-        from sandbox_build import prepare_launch
-        state.image, state.sidecar_image, proxy_images = phase('image builds',
-            lambda: prepare_launch(OUTER_RUNTIME, state, DOTFILES))
-        state.prepared_images = temporary_file()
-        state.prepared_images.write_text(json.dumps(proxy_images))
     def model_image() -> str:
-        if batched:
-            return state.image
         builder = state.repository / ".agents/sandbox/base-image"
         if builder.is_file() and os.access(builder, os.X_OK):
             base_image = phase(
                 "base image resolution",
-                lambda: run([str(builder)], capture=True, cwd=state.repository).stdout.strip(),
+                lambda: run([str(builder)], capture=True, cwd=state.repository, builder=True).stdout.strip(),
             )
             if isinstance(OUTER_RUNTIME, VMRuntime):
                 base_image = OUTER_RUNTIME.builder_image(base_image)
         else:
             base_image = "node:24-alpine3.22"
         return phase("model image resolution", lambda: ensure_image(state, base_image))
+
+    prepared = OUTER_RUNTIME.provider == 'lima-docker'
+    if prepared:
+        # Keep cancellable builders on the signal-owning thread. No container
+        # startup worker should be joined while an image builder is still running.
+        state.image = model_image()
+        state.sidecar_image = phase('sidecar image resolution', resolve_sidecar_image)
+        images = phase('proxy image resolution', lambda: proxy_module().resolve_images(
+            state.repository, json.loads(state.manifest.read_text())))
+        state.prepared_images = temporary_file()
+        state.prepared_images.write_text(json.dumps(images))
 
     def optional_relay(name: str, action: Callable[[], object]) -> None:
         try:
@@ -1282,9 +1290,9 @@ def execute(state: State) -> int:
 
     # Keep these jobs owned until session exit so cleanup cannot race creation.
     with startup_workers(state, max_workers=6) as executor:
-        model_future = executor.submit(model_image)
+        model_future = executor.submit(lambda: state.image if prepared else model_image())
         sidecar_future = executor.submit(phase, "sidecar image resolution",
-            lambda: state.sidecar_image if batched else resolve_sidecar_image())
+            lambda: state.sidecar_image if prepared else resolve_sidecar_image())
         network_future = executor.submit(phase, "network setup", ensure_network)
         lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
         editor_future = executor.submit(
@@ -1644,7 +1652,7 @@ def launch(arguments: list[str]) -> int:
 
     try:
         OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
-        proxy_entrypoint.cache_clear()
+        proxy_module.cache_clear()
         state = new_state(arguments)
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             previous_handlers[signum] = signal.signal(signum, handle_signal)

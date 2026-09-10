@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Route existing image builders to the launcher's recorded Docker engine."""
+
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from docker_runtime import Docker
+
+try:
+    runtime = Docker(Path(os.environ['CODEX_SANDBOX_DOCKER_STATE']))
+    arguments = sys.argv[1:]
+    if arguments[:1] == ['build']:
+        arguments = ['buildx', 'build', '--builder', 'default', '--load', '--provenance=false', *arguments[1:]]
+    if arguments[:2] == ['buildx', 'build']:
+        with runtime.build_output():
+            result = runtime.run(runtime.builder_arguments(arguments), check=False, timeout=1800)
+        sys.exit(result.returncode)
+    command = runtime.argv(arguments)
+    os.execv(command[0], command)
+except (KeyError, ValueError, OSError, subprocess.SubprocessError) as error:
+    print(f'sandbox Docker builder: {error}', file=sys.stderr)
+    sys.exit(1)

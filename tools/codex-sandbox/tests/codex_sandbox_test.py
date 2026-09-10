@@ -184,7 +184,7 @@ class ProxyHelperTest(unittest.TestCase):
     def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
         helper = runpy.run_path(str(LAUNCHER))["helper"]
         entrypoint = mock.Mock(return_value=0)
-        with mock.patch.dict(helper.__globals__, proxy_entrypoint=lambda: entrypoint), \
+        with mock.patch.dict(helper.__globals__, proxy_module=lambda: SimpleNamespace(main=entrypoint)), \
                 mock.patch("subprocess.run", side_effect=AssertionError("unexpected process")):
             self.assertEqual(0, helper("snapshot", "--repo", "example").returncode)
             entrypoint.assert_called_once_with(["snapshot", "--repo", "example"])
@@ -228,32 +228,33 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
-    def test_docker_startup_consumes_one_batch_before_any_container_start(self) -> None:
+    def test_docker_startup_uses_existing_image_builders(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))['execute']
         with tempfile.TemporaryDirectory() as directory:
-            state = SimpleNamespace(repository=Path(directory), agent_podman=None,
-                                    codex_arguments=[], deferred_signal=None)
-            prepared = Path(directory) / 'images.json'
+            repository = Path(directory)
+            builder = repository / '.agents/sandbox/base-image'
+            builder.parent.mkdir(parents=True)
+            builder.touch(mode=0o755)
+            manifest = repository / 'manifest.json'
+            manifest.write_text('{"commands": {}}')
+            state = SimpleNamespace(repository=repository, agent_podman=None,
+                                    codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
-                'acquire_lock', 'prepare_editor_relay', 'start_editor_relay')}
-            def attach(_state):
-                self.assertEqual({'jj': 'proxy@digest'}, json.loads(state.prepared_images.read_text()))
-                self.assertEqual('auth@digest', state.sidecar_image)
-                return []
+                'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
             replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker'),
-                temporary_file=lambda: prepared, attach_proxies=attach,
-                ensure_image=mock.Mock(side_effect=AssertionError('second agent build')),
-                resolve_sidecar_image=mock.Mock(side_effect=AssertionError('second auth build')),
-                run=mock.Mock(return_value=SimpleNamespace(stdout='Darwin')),
+                proxy_module=lambda: SimpleNamespace(resolve_images=mock.Mock(return_value={})),
+                temporary_file=lambda: repository / 'images.json',
+                ensure_image=mock.Mock(return_value='agent@digest'),
+                resolve_sidecar_image=mock.Mock(return_value='auth@digest'),
+                run=mock.Mock(return_value=SimpleNamespace(stdout='base@digest')),
                 run_agent=mock.Mock(return_value=0))
-            with mock.patch.dict(execute.__globals__, replacements), \
-                    mock.patch('sandbox_build.prepare_launch', return_value=(
-                        'agent@digest', 'auth@digest', {'jj': 'proxy@digest'})) as batch:
+            with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
-                batch.assert_called_once()
+                replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
+                replacements['resolve_sidecar_image'].assert_called_once()
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
-                batch.side_effect = ValueError('build failed')
+                replacements['ensure_image'].side_effect = ValueError('build failed')
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'build failed'):
                     execute(state)

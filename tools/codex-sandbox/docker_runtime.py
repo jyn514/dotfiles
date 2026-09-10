@@ -1,6 +1,8 @@
 """Rootless Docker operations through the owned Lima-forwarded engine socket."""
 
 import hashlib
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -133,9 +135,63 @@ class Docker(VMRuntime):
         return Image(immutable, content, config, chain_id(raw['RootFS']['Layers']))
 
     def builder_image(self, reference):
-        if '@sha256:' not in reference:
-            raise RuntimeError('Docker builders must return sandbox-image repository digests')
+        if '@sha256:' not in reference and not re.fullmatch(r'sha256:[0-9a-f]{64}', reference):
+            raise RuntimeError('Docker builders must return an immutable image ID or repository digest')
         return self.inspect_image(reference).reference
+
+    def builder_environment(self):
+        # Existing builders own their cache keys and call `docker` themselves.
+        # Route those calls to this engine, not the host's Podman alias.
+        return {**os.environ, 'CODEX_SANDBOX_RUNTIME': self.provider,
+                'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state),
+                'PATH': str(Path(__file__).resolve().parent / 'builder-bin') + os.pathsep + os.environ['PATH']}
+
+    def builder_arguments(self, arguments):
+        arguments = list(arguments)
+        for index, argument in enumerate(arguments):
+            # Podman accepts a local config ID in FROM; BuildKit interprets it
+            # as docker.io/library/sha256. Preserve the builder's BASE_IMAGE
+            # contract using the recorded engine's tag plus manifest digest.
+            prefix = '--build-arg=BASE_IMAGE=' if argument.startswith('--build-arg=') else 'BASE_IMAGE='
+            if (argument.startswith(prefix) and
+                    (prefix.startswith('--') or index > 0 and arguments[index - 1] == '--build-arg')):
+                value = argument.removeprefix(prefix)
+                if re.fullmatch(r'sha256:[0-9a-f]{64}', value):
+                    arguments[index] = prefix + self.builder_image(value)
+        return arguments
+
+    def run_builder(self, command, *, cwd=None, capture=True):
+        """Own the executable builder and all of its children until completion."""
+        environment = {**self.builder_environment(), 'CODEX_SANDBOX_BUILDER_GROUP': '1'}
+        process = subprocess.Popen(command, cwd=cwd, env=environment,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if capture else sys.stderr,
+                                   text=True, start_new_session=True)
+        try:
+            stdout, _ = process.communicate(timeout=1800)
+            if process.returncode:
+                stop_build(process)
+            return subprocess.CompletedProcess(command, process.returncode, stdout)
+        except BaseException:
+            handlers = ({signum: signal.signal(signum, signal.SIG_IGN)
+                         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+                        if threading.current_thread() is threading.main_thread() else {})
+            try:
+                stop_build(process)
+            finally:
+                for signum, handler in handlers.items():
+                    signal.signal(signum, handler)
+            raise
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+
+    @contextmanager
+    def build_output(self):
+        # Executable builders can run concurrently. Only an actual build owns
+        # the native renderer; cache-key calculation and image lookup stay parallel.
+        with (self.host.state / 'build-output.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
 
     def build(self, tag, dockerfile, context, *, build_args=(), target=None):
         self.verify()
@@ -145,7 +201,16 @@ class Docker(VMRuntime):
             arguments += ['--build-arg', value]
         if target:
             arguments += ['--target', target]
-        self.run([*arguments, str(context)], stdout=sys.stderr, timeout=1800)
+        with self.build_output():
+            command = self.argv(self.builder_arguments([*arguments, str(context)]))
+            if os.environ.get('CODEX_SANDBOX_BUILDER_GROUP') == '1':
+                # The enclosing executable builder owns this process group.
+                # A nested session would let Buildx escape its cancellation.
+                result = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=sys.stderr, timeout=1800)
+            else:
+                result = self.run_builder(command, capture=False)
+            if result.returncode:
+                raise BuildError(result.returncode, command)
         return self.resolve_image(tag)
 
     def bake_targets(self, definition, targets, *, cwd):
