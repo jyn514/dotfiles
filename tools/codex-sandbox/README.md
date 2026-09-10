@@ -87,6 +87,10 @@ The probe uses the normal launcher and configured extensions in a 30×100 pseudo
 
 Each invocation prints a new log directory and retains one raw terminal log per run. A missing readiness marker or unsuccessful exit fails the probe; `--timeout` defaults to 30 seconds per run, excluding cleanup. On macOS, `/private/tmp` avoids the launcher's path-alias assertion.
 
+With `CODEX_SANDBOX_RUNTIME=lima-docker`, the probe also records startup boundaries in JSON beside each log, including on timeout. Container creation falls between `workload_argv end` and `monitor setup begin`; `popen end` marks the attach client's spawn, and `container entry` marks execution inside the container. The probe mounts diagnostic wrappers and supplies a Node preload through `NODE_OPTIONS` for this run only. Host markers carry their emission time; guest markers use host receipt time and include transport delay. Subtract Pi's own total and the 150ms terminal-drain pause from the Node-preload-to-readiness interval to estimate work before Pi's timer, including early imports.
+
+For stalls, add `PI_STARTUP_PROFILE=1` and `--timeout 90`. Runtime initialization dumps Python stacks every ten seconds while blocked. The probe prints a `target/startup-profile-*` directory containing a Node CPU profile and Node's own elapsed/CPU times at readiness and exit. Profiling begins at the Node preload, adds overhead, and writes its files on normal exit; forced termination can lose the profile. These diagnostics distinguish active CPU work from waiting, but host swap allocation alone does not establish paging during a stall.
+
 Record whether images and shared required proxies were already warm, plus host/VM load. Each run creates fresh agent and optional relay containers, but the probe does not reset caches or shared services. Compare cold and warm samples separately; image builds may need a longer timeout. Do not remove unrelated sessions to manufacture a cold run.
 
 ## Safety and recovery
