@@ -118,11 +118,14 @@ class Host:
             raise ValueError("unsupported sandbox host record")
         return record
 
+    def guest_argv(self, record, *args):
+        return ["limactl", "shell", "--workdir", "/tmp", record["instance"], *args]
+
     def guest(self, record, *args, **kwargs):
         # SSH otherwise consumes the caller's protocol input during inspection.
         if "input" not in kwargs:
             kwargs.setdefault("stdin", subprocess.DEVNULL)
-        return command("limactl", "shell", "--workdir", "/tmp", record["instance"], *args, **kwargs)
+        return command(*self.guest_argv(record, *args), **kwargs)
 
     def machine(self, record):
         machine = machines().get(record["instance"])

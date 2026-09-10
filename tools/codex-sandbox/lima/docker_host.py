@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,17 @@ from lima.docker_client import pin_buildx, pin_docker
 class DockerHost(Host):
     provider = 'lima-docker'
     containerd_user = False
+
+    def guest_argv(self, record, *args):
+        if 'socket' not in record:
+            return super().guest_argv(record, *args)
+        # The socket's VM directory was checked by the caller's runtime audit.
+        # Keep Lima's login shell and quoting without another limactl process.
+        config = Path(record['socket']).parent.parent / 'ssh.config'
+        remote = shlex.join(['sh', '-c', (SOURCE / 'guest-command.sh').read_text(),
+                             'sh', shlex.join([str(arg) for arg in args])])
+        return ['ssh', '-F', str(config), '-T', '-o', 'SendEnv=COLORTERM',
+                '-o', 'LogLevel=ERROR', 'lima-' + record['instance'], remote]
 
     def setup(self, instance='sandbox-host-docker', read=None, write=None, client=None):
         if not re.fullmatch(r'sandbox-host-docker(?:-[a-z0-9-]+)?', instance):

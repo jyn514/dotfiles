@@ -38,8 +38,8 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
     generation = runtime.record["generation"]
     expected = f"/run/user/{uid}/codex-sandbox-credentials/{generation}/{boot}/github-token"
     operation = "invalidate" if invalidate else "ensure"
-    argv = ["limactl", "shell", "--workdir", "/tmp", runtime.record["instance"],
-            "python3", GUEST_HELPER, operation, generation, boot]
+    argv = runtime.host.guest_argv(runtime.record, "python3", GUEST_HELPER,
+                                  operation, generation, boot)
     process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         # The guest holds the cache lock while approval is pending. Other
