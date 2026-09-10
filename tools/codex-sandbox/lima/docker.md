@@ -141,7 +141,8 @@ BuildKit otherwise treats the ID as a registry image name.
 Actual builds serialize their native progress displays across launches.
 Independent image builders run up to four at a time within a launch.
 Each launch finishes its builders before starting container workers, so
-cancellation can stop the owned builder process group before cleanup.
+cancellation stops owned builder groups, including nested native builds and
+output-lock waiters, before cleanup.
 Warm launches produce no build transcript.
 On failure, BuildKit prints its diagnostic and the launcher preserves failure
 status. Repository Bake files remain available for manual builds, but startup
@@ -227,8 +228,6 @@ python3 tools/codex-sandbox/tests/docker_recovery_integration.py \
 python3 tools/codex-sandbox/tests/docker_raw_network_integration.py \
   --state /private/tmp/docker-sandbox-test/state \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
-python3 tools/codex-sandbox/tests/bake_integration.py \
-  --state /private/tmp/docker-sandbox-test/state
 python3 tools/codex-sandbox/tests/builder_integration.py \
   --state /private/tmp/docker-sandbox-test/state
 limactl delete --force sandbox-host-docker-test

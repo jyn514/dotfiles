@@ -19,6 +19,11 @@ wrappers leaving children, and concurrent peer cleanup on the active API.
 Single and concurrent builder runners still duplicate lifecycle ownership;
 consolidation is a separate candidate, not a prerequisite for deleting Bake.
 
+Resolved after review: the unused Bake orchestration and supervisor were removed,
+eliminating that escape path. Failed-wrapper cleanup tests now exercise the
+active single and concurrent builder APIs; nested build and lock-waiter
+cancellation coverage remains. The compatibility findings below are still open.
+
 ## Podman compatibility
 
 - **Wait timeout:** a controlled subprocess probe showed inherited `Docker.wait()`

@@ -3,7 +3,6 @@
 import hashlib
 from contextlib import contextmanager
 import fcntl
-import json
 import os
 from pathlib import Path
 import re
@@ -11,7 +10,6 @@ import selectors
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
@@ -288,53 +286,6 @@ class Docker(VMRuntime):
             if result.returncode:
                 raise BuildError(result.returncode, command)
         return self.resolve_image(tag)
-
-    def bake_targets(self, definition, targets, *, cwd):
-        """Let Buildx resolve HCL variables, inheritance, and dependencies."""
-        result = self.run(['buildx', 'bake', '--file', str(definition), '--print', *targets],
-                          cwd=cwd, capture_output=True)
-        return json.loads(result.stdout)['target']
-
-    def bake(self, targets, *, cwd=None):
-        self.verify()
-        with tempfile.TemporaryDirectory(prefix='bake-', dir=self.host.state / 'scratch') as directory:
-            definition = Path(directory) / 'build.json'
-            metadata = Path(directory) / 'result.json'
-            definition.write_text(json.dumps({'target': targets, 'group': {'default': {'targets': list(targets)}}}))
-            reads = set()
-            for target in targets.values():
-                context = target.get('context', '.')
-                if '://' not in context and not context.startswith('git@'):
-                    context = (Path(cwd or Path.cwd()) / context).resolve()
-                    reads.update((str(context), str((context / target.get('dockerfile', 'Dockerfile')).parent)))
-                for value in target.get('contexts', {}).values():
-                    if not value.startswith(('target:', 'docker-image:', 'git@')) and '://' not in value:
-                        reads.add(str((Path(cwd or Path.cwd()) / value).resolve()))
-            command = self.argv(['buildx', 'bake', '--builder', 'default', '--file', str(definition),
-                                 *['--allow=fs.read=' + path for path in sorted(reads)],
-                                 '--set=*.output=type=docker', '--provenance=false', '--metadata-file', str(metadata)])
-            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=sys.stderr,
-                                       start_new_session=True, cwd=cwd)
-            try:
-                status = process.wait(timeout=1800)
-                if status:
-                    raise BuildError(status, command)
-                return json.loads(metadata.read_text())
-            except BaseException:
-                # The Docker CLI spawns a Buildx plugin. Cancellation owns both
-                # processes, not just the wrapper returned by Popen.
-                handlers = ({signum: signal.signal(signum, signal.SIG_IGN)
-                             for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
-                            if threading.current_thread() is threading.main_thread() else {})
-                try:
-                    try:
-                        stop_build(process)
-                    except (OSError, ValueError, subprocess.SubprocessError) as error:
-                        print(f'Buildx cleanup incomplete: {error}', file=sys.stderr)
-                finally:
-                    for signum, handler in handlers.items():
-                        signal.signal(signum, handler)
-                raise
 
     def workload_argv(self, image, arguments, command=(), *, cwd=None, operation='run'):
         return self.argv([operation, '--pull=never', *arguments, image.config, *command], cwd=cwd)

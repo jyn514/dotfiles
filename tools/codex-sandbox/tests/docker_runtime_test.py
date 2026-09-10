@@ -157,6 +157,14 @@ class DockerRuntimeTest(unittest.TestCase):
                         done.set()
                         thread.join()
                         signal.signal(signal.SIGTERM, handler)
+                        # A failing cancellation assertion must not leave the
+                        # fixture alive, including a child in an escaped session.
+                        for path in (root / 'ready', root / 'child', sibling / 'ready', sibling / 'child'):
+                            if path.exists() and path.read_text():
+                                try:
+                                    os.kill(int(path.read_text()), signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
 
     def test_builder_base_image_ids_resolve_locally_without_rewriting_other_arguments(self):
         runtime = backend()
@@ -171,19 +179,22 @@ class DockerRuntimeTest(unittest.TestCase):
         self.assertEqual(runtime.builder_arguments(arguments), expected)
         self.assertEqual(arguments[3], 'BASE_IMAGE=' + image)
 
-    def test_bake_failure_reaps_plugin_after_wrapper_already_exited(self):
-        for status in ('0', '1'):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+    def test_failed_builder_reaps_plugin_after_wrapper_already_exited(self):
+        for batched in (False, True):
+            with self.subTest(batched=batched), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root / 'scratch').mkdir()
                 pidfile = root / 'pid'
                 runtime = backend()
                 runtime.host.state = root
-                runtime.argv = Mock(return_value=[sys.executable, str(ROOT / 'tests/bake_orphan_fixture.py'),
-                                                 str(pidfile), status])
+                command = [sys.executable, str(ROOT / 'tests/builder_orphan_fixture.py'), str(pidfile), '7']
                 try:
-                    with self.assertRaises((FileNotFoundError, subprocess.CalledProcessError)):
-                        runtime.bake({'test': {'context': str(root), 'dockerfile': str(root / 'Dockerfile')}})
+                    if batched:
+                        with self.assertRaises(subprocess.CalledProcessError) as raised:
+                            runtime.run_builders({'failed': (command, root)})
+                        self.assertEqual(raised.exception.returncode, 7)
+                    else:
+                        result = runtime.run_builder(command, capture=False)
+                        self.assertEqual(result.returncode, 7)
                     pid = pidfile.read_text()
                     listing = subprocess.run(['ps', '-axo', 'pid=,stat='], check=True,
                                              capture_output=True, text=True).stdout.splitlines()
@@ -200,19 +211,16 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime = backend()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'scratch').mkdir()
             runtime.host.state = root
             runtime.argv = Mock(return_value=['/usr/bin/env', '-uDOCKER_HOST', '/private/client',
-                                              '--host', 'unix:///private/socket', 'buildx', 'bake'])
-            process = Mock()
-            process.wait.return_value = 7
-            with patch('subprocess.Popen', return_value=process), patch('docker_runtime.stop_build') as stop:
+                                              '--host', 'unix:///private/socket', 'buildx', 'build'])
+            with patch.object(runtime, 'run_builder', return_value=subprocess.CompletedProcess([], 7)), \
+                    patch.dict(os.environ, {'CODEX_SANDBOX_BUILDER_GROUP': '0'}):
                 with self.assertRaises(subprocess.CalledProcessError) as raised:
-                    runtime.bake({'base': {'context': str(root)}})
+                    runtime.build('test', root / 'Dockerfile', root)
             self.assertEqual(raised.exception.returncode, 7)
             self.assertEqual(str(raised.exception),
                              'sandbox image build failed (exit 7); see BuildKit output above')
-            stop.assert_called_once_with(process)
 
     def test_cleanup_cannot_mutate_an_unverified_engine(self):
         runtime = backend()
@@ -312,7 +320,7 @@ class FirewallTest(unittest.TestCase):
             try:
                 with patch.object(nftables, 'run', return_value='owned-origin'):
                     with self.assertRaisesRegex(Exception, 'verification interrupted'):
-                        nftables.reference([sys.executable, str(ROOT / 'tests/bake_orphan_fixture.py'),
+                        nftables.reference([sys.executable, str(ROOT / 'tests/builder_orphan_fixture.py'),
                                             str(pidfile), '0'], 'unused')
                 self.assertLess(time.monotonic() - started, 5)
                 pid = pidfile.read_text()
