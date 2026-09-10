@@ -146,10 +146,13 @@ class DockerHost(Host):
         return record
 
     def runtime_epoch(self, record):
-        self.machine(record)
-        result = self.guest(record, 'systemctl', '--user', 'show', 'docker.service',
-                            '--property=ActiveState', '--property=SubState', '--property=InvocationID',
-                            capture_output=True, text=True, timeout=10).stdout
+        machine = self.machine(record)
+        # This fixed systemctl query needs no login-shell setup. Reuse Lima's
+        # generated connection settings without starting limactl for every check.
+        result = command('ssh', '-F', machine['sshConfigFile'], '-T', machine['hostname'],
+                         'systemctl', '--user', 'show', 'docker.service',
+                         '--property=ActiveState', '--property=SubState', '--property=InvocationID',
+                         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10).stdout
         values = dict(line.split('=', 1) for line in result.splitlines())
         if (values.get('ActiveState') != 'active' or values.get('SubState') != 'running' or
                 not re.fullmatch(r'[0-9a-f]{32}', values.get('InvocationID', ''))):

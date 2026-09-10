@@ -273,10 +273,26 @@ class FirewallTest(unittest.TestCase):
 
     def test_rootless_service_is_not_ready_during_post_start_policy_install(self):
         host = object.__new__(DockerHost)
-        host.machine = Mock()
-        host.guest = Mock(return_value=Mock(stdout='ActiveState=activating\nSubState=start-post\nInvocationID=' + 'a' * 32))
-        with self.assertRaisesRegex(ValueError, 'readiness'):
-            host.runtime_epoch({})
+        host.machine = Mock(return_value={'sshConfigFile': '/owned/ssh.config', 'hostname': 'lima-owned'})
+        with patch('lima.docker_host.command') as query:
+            query.return_value.stdout = 'ActiveState=activating\nSubState=start-post\nInvocationID=' + 'a' * 32
+            with self.assertRaisesRegex(ValueError, 'readiness'):
+                host.runtime_epoch({})
+            query.return_value.stdout = 'ActiveState=active\nSubState=running\nInvocationID=' + 'b' * 32
+            self.assertEqual('b' * 32, host.runtime_epoch({}))
+            self.assertEqual(('ssh', '-F', '/owned/ssh.config', '-T', 'lima-owned'),
+                             query.call_args.args[:5])
+            query.return_value.stdout = 'ActiveState=active\nSubState=running\nInvocationID='
+            with self.assertRaisesRegex(ValueError, 'readiness'):
+                host.runtime_epoch({})
+            query.side_effect = subprocess.CalledProcessError(255, ['ssh'])
+            with self.assertRaises(subprocess.CalledProcessError):
+                host.runtime_epoch({})
+            query.reset_mock()
+            host.machine.side_effect = ValueError('VM identity changed')
+            with self.assertRaisesRegex(ValueError, 'identity'):
+                host.runtime_epoch({})
+            query.assert_not_called()
 
 
 if __name__ == '__main__':

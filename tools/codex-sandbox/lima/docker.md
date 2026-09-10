@@ -76,6 +76,8 @@ python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
 Launches verify an already running VM; they do not install or repair policy.
+Service-readiness queries reuse Lima's generated SSH configuration directly;
+each query still checks the VM identity and Docker service invocation ID.
 Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
 Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.
