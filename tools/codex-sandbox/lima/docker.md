@@ -33,9 +33,9 @@ restarting the VM or changing engine identity. It works even if the previously
 recorded Cellar path has disappeared. Install Docker 29.8.0 first; an explicit
 `--source PATH` after `pin-client` selects another copy of that version. For
 non-default state, pass `--state DIRECTORY` before `pin-client`. Missing or
-modified pins fail with a repair command; they never fall back to PATH.
+non-executable pins fail with a repair command; they never fall back to PATH.
 
-Setup copies host Buildx v0.37.0 into private state. Builds verify its SHA-256 and
+Setup copies host Buildx v0.37.0 into private state. Builds
 invoke it directly with the recorded Docker socket and private builder settings;
 Homebrew upgrades and plugin discovery cannot replace it. For a VM created before
 host Buildx pinning, run this once from dotfiles (no VM restart):
@@ -46,8 +46,12 @@ python3 tools/codex-sandbox/lima/docker_host.py pin-buildx
 
 Use the same command to repair a missing or changed copy, after installing the
 supported Buildx version; add `--state DIRECTORY` before `pin-buildx` for a
-non-default VM. An unavailable or altered pinned binary blocks builds rather
+non-default VM. An unavailable or non-executable pinned binary blocks builds rather
 than falling back to another plugin.
+
+Docker and Buildx copies are version-checked and hashed during pinning.
+Startup checks their file type, ownership, and permissions without rehashing
+their contents; Homebrew does not manage these private copies.
 
 State defaults to `~/.local/state/codex-sandbox-docker`. For another instance,
 pass `--state DIRECTORY` before `setup` and `--instance sandbox-host-docker-NAME`

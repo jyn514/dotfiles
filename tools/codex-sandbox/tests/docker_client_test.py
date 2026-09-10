@@ -12,7 +12,7 @@ from docker_runtime import Docker
 
 
 class DockerClientTest(unittest.TestCase):
-    def test_docker_pin_survives_source_removal_and_rejects_damage(self):
+    def test_docker_pin_survives_source_removal_and_reports_missing_copy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / 'homebrew-docker'
@@ -30,12 +30,13 @@ class DockerClientTest(unittest.TestCase):
             runtime = object.__new__(Docker)
             runtime.host = Mock(state=root)
             runtime.record = {**record, 'socket': '/owned/docker.sock'}
-            command = runtime.client_argv(['info'])
+            # Startup resolves the private copy without reading its contents.
+            with patch.object(Path, 'read_bytes', side_effect=AssertionError('startup read executable')):
+                command = runtime.client_argv(['info'])
             self.assertIn(str(pinned), command)
             self.assertNotIn(str(source), command)
             self.assertEqual(command[-3:], ['--host', 'unix:///owned/docker.sock', 'info'])
-            pinned.chmod(0o700)
-            pinned.write_bytes(b'changed')
+            pinned.unlink()
             with self.assertRaisesRegex(ValueError, 'pin-client'):
                 docker_client(root, record)
 
@@ -85,9 +86,9 @@ class DockerClientTest(unittest.TestCase):
             source.write_bytes(b'replacement executable')
             self.assertEqual(verify_buildx(root / 'state').read_bytes(), b'original executable')
             source.unlink()
-            self.assertEqual(verify_buildx(root / 'state'), pinned)
-            pinned.chmod(0o700)
-            pinned.write_bytes(b'modified pinned executable')
+            with patch.object(Path, 'read_bytes', side_effect=AssertionError('startup read executable')):
+                self.assertEqual(verify_buildx(root / 'state'), pinned)
+            pinned.unlink()
             with self.assertRaisesRegex(ValueError, 'pin-buildx'):
                 verify_buildx(root / 'state')
 
