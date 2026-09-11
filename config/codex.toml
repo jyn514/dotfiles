@@ -22,6 +22,7 @@ max_depth = 2
 
 [tui]
 auto_recap = false
+whimsy = false
 status_line = ["model-with-reasoning", "branch-changes", "context-used", "five-hour-limit"]
 status_line_use_colors = true
 session_picker_view = "comfortable"
