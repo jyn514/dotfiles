@@ -123,12 +123,17 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/zulip-proxy/client /tools/zulip-p
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /tools/agent-podman/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /opt/agent-tools/bin/woodpecker-cli
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split /tools/agent-split
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/bb /tools/agent-split/bb
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/src /tools/agent-split/src
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 # Keep generated editor, language-server, and tool state out of jj snapshots.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers /libexec/agent-wrappers
+# Package runtime entrypoints only; developer bytecode must not invalidate images.
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
+RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
+    && ln -s ../../tools/jj-proxy/client /libexec/agent-wrappers/jj-proxy-client \
+    && ln -s ../../tools/agent-podman/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli
 ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}

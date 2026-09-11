@@ -8,7 +8,9 @@ temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 sources="$temporary/sources"
 hashes="$temporary/hashes"
-find tools/zulip-proxy -type f -print > "$sources"
+# Match Dockerfile COPY inputs; tests and bytecode never enter this image.
+printf '%s\n' tools/zulip-proxy/Dockerfile tools/zulip-proxy/server.py \
+	tools/zulip-proxy/forward.py > "$sources"
 LC_ALL=C sort -o "$sources" "$sources"
 git hash-object --stdin-paths < "$sources" > "$hashes"
 /usr/bin/paste -d ' ' "$sources" "$hashes" > "$temporary/combined"

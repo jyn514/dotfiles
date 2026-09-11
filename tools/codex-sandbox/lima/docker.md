@@ -164,6 +164,8 @@ Docker calls to Bake declarations before using this backend.
 
 The producer owns input freshness, including added, removed, renamed, and
 edited sources. A checked-in generated Bake file alone cannot establish that.
+Owned image keys cover packaged runtime inputs; tests, documentation, and Python
+bytecode do not belong in the agent or Zulip image inputs.
 The launcher derives private cache tags from resolved target options, platform,
 and actual dependency image IDs. Existing tags skip the build entirely.
 A changed proxy source key rebuilds only the proxy; a changed base identity
