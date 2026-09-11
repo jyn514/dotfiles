@@ -2,13 +2,14 @@
 
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import struct
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -23,6 +24,39 @@ BOOT = "12345678-1234-1234-1234-123456789abc"
 
 
 class BootCredentialTest(unittest.TestCase):
+    def test_guest_path_rejects_wrong_generation_and_noncanonical_names(self):
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
+        self.assertEqual(credentials.credential_path(path, GENERATION), path)
+        for invalid in (None, path + '\n', path.replace(GENERATION, 'b' * 32),
+                        path.replace('/1000/', '/-1/'), path.replace(BOOT, '../elsewhere'),
+                        path.replace(BOOT, 'f' * 36)):
+            with self.subTest(path=invalid), self.assertRaises(ValueError):
+                credentials.credential_path(invalid, GENERATION)
+
+    def test_one_guest_exchange_handles_reuse_transfer_and_failures(self):
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
+        fixture = Path(__file__).with_name('credential_reply_fixture.py')
+        for statuses, changed, fails, retrievals in (
+                (['ready'], False, False, 0),
+                (['missing', 'ready'], False, False, 1),
+                (['missing', 'ready'], True, True, 1),
+                ([], False, True, 0)):
+            with self.subTest(statuses=statuses, changed=changed):
+                replies = [{'status': status, 'path': path} for status in statuses]
+                if changed:
+                    replies[-1]['path'] = path.replace(BOOT, 'f' * 36)
+                runtime = Mock(record={'files': ['boot-credential.py'], 'generation': GENERATION})
+                runtime.guest.side_effect = AssertionError('separate guest query')
+                runtime.host.guest_argv.return_value = [sys.executable, str(fixture), json.dumps(replies)]
+                retrieve = Mock(return_value=b'dummy')
+                if fails:
+                    with self.assertRaises(ValueError):
+                        credentials.boot_credential(runtime, retrieve=retrieve)
+                else:
+                    self.assertEqual(credentials.boot_credential(runtime, retrieve=retrieve), Path(path))
+                self.assertEqual(retrieve.call_count, retrievals)
+                runtime.host.guest_argv.assert_called_once()
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

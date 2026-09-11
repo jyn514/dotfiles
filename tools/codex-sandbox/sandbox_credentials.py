@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import selectors
 import struct
 import subprocess
@@ -11,6 +12,17 @@ from keychain import Keychain, validate_token
 
 
 GUEST_HELPER = "/usr/local/share/codex-sandbox/boot-credential.py"
+GUEST_ENTRYPOINT = Path(__file__).with_name('lima') / 'current-boot-credential.py'
+
+
+def credential_path(value, generation):
+    # The same guest owns UID, boot identity, and the installed cache helper.
+    # Accept only its fixed cache namespace in the requested VM generation.
+    if not isinstance(value, str) or not re.fullmatch(
+            rf'/run/user/[0-9]+/codex-sandbox-credentials/{re.escape(generation)}/'
+            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/github-token', value):
+        raise ValueError('guest credential cache has an invalid identity')
+    return value
 
 
 def import_podman_token(keychain=None):
@@ -30,16 +42,10 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
     runtime.verify()
     if "boot-credential.py" not in runtime.record["files"]:
         raise ValueError("Lima host predates boot credentials; provision a new host before migration")
-    boot = runtime.guest(["cat", "/proc/sys/kernel/random/boot_id"],
-                         capture_output=True, text=True).stdout.strip()
-    uid = runtime.guest(["id", "-u"], capture_output=True, text=True).stdout.strip()
-    if not uid.isdecimal():
-        raise ValueError("guest returned an invalid credential owner")
     generation = runtime.record["generation"]
-    expected = f"/run/user/{uid}/codex-sandbox-credentials/{generation}/{boot}/github-token"
     operation = "invalidate" if invalidate else "ensure"
-    argv = runtime.host.guest_argv(runtime.record, "python3", GUEST_HELPER,
-                                  operation, generation, boot)
+    argv = runtime.host.guest_argv(runtime.record, 'python3', '-c', GUEST_ENTRYPOINT.read_text(),
+                                  GUEST_HELPER, operation, generation)
     process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         # The guest holds the cache lock while approval is pending. Other
@@ -49,8 +55,7 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
             if not selector.select(timeout=600):
                 raise ValueError("timed out waiting for the guest credential cache")
         response = json.loads(process.stdout.readline(4096))
-        if response.get("path") != expected:
-            raise ValueError("guest credential cache has a different boot identity")
+        expected = credential_path(response.get('path'), generation)
         status = response.get("status")
         if status == "missing" and not invalidate:
             token = (retrieve or Keychain().retrieve)()
@@ -80,6 +85,9 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
                 process.kill()
                 process.communicate()
                 print("credential transport did not exit; guest transfer will fail on EOF", file=sys.stderr)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
 
 
 def main():

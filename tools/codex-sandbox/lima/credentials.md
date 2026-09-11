@@ -34,6 +34,12 @@ both the VM generation and kernel boot ID. Concurrent requests share one guest
 lock, held through approval and atomic publication. Reboot discards the cache;
 container exit and session cleanup preserve it.
 
+Each request uses one SSH exchange. A host-owned Python entrypoint discovers
+the current boot inside the guest and invokes the installed helper, which still
+validates that boot and the generation before accessing the cache. The host
+accepts only the returned credential path in that generation's cache namespace;
+this does not require updating the installed helper or restarting the VM.
+
 To require another retrieval for future containers during the same boot:
 
 ```sh
