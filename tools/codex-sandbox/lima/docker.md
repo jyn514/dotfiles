@@ -19,7 +19,7 @@ narrow mounts. Setup copies the real Homebrew Docker CLI 29.8.0 into private
 state, so Homebrew cleanup and the `docker` → Podman alias cannot replace it.
 New VMs allocate `/24` bridge networks from `172.16.0.0/12` and configure twenty
 SSH sessions per connection. Docker's default address pools otherwise run out
-before twenty sandboxes can each allocate their two editor networks. Existing
+before twenty sandboxes can each allocate their two gateway networks. Existing
 VMs retain their pinned daemon configuration until explicitly migrated.
 
 For existing state, or to repair a missing or altered private CLI, run:
@@ -138,8 +138,10 @@ Use a new instance and state directory to adopt nftables.
 
 The rootless service installs filtering atomically on every activation before
 systemd reports it ready. Agent traffic rejects private destinations and IPv6;
-internal relay links cannot route between sessions. Host-facing relays have
-separate egress networks. Docker restarts stop workloads and reinstall filtering;
+internal gateway links cannot route between sessions. Each sandbox gateway has
+one private egress network and fixed editor and optional Podman SSH listeners.
+Neither listener accepts a client-selected destination.
+Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.
 
 The root-owned daemon configuration enables `userland-proxy` and ICC. Both
@@ -223,6 +225,19 @@ The [nftables differential probes](../experiments/nftables/README.md) retain
 the historical policy and a rejected alternative as regression controls.
 The [forwarding findings](forwarding-review.md) preserve the discarded experiments'
 measurements, transport-status difference, adoption rationale, and validation limits.
+
+## Gateway validation
+
+With Agent Podman running and its SSH access configured, test the gateway using
+an existing sandbox agent image (with Python and SSH):
+
+```sh
+python3 tools/codex-sandbox/tests/gateway_integration.py --agent-image IMAGE_REFERENCE
+```
+
+This creates two owned gateways, checks editor and SSH authentication,
+cross-session isolation, upstream refusal, listener failure, and cancellation,
+then removes its resources without resetting the VM or existing sessions.
 
 ## Disposable validation
 

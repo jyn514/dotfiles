@@ -182,7 +182,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
             launcher = runpy.run_path(str(ROOT / "codex-sandbox"))
             launcher["ensure_image"].__globals__["OUTER_RUNTIME"] = runtime
             collision = launcher["new_state"](["--help"])
-            network = collision.editor_link_network
+            network = collision.gateway_link_network
             runtime.run(["network", "create", "--label", "dev.codex.relay-owner=" + "0" * 32, network],
                         stdout=subprocess.DEVNULL)
             try:
@@ -191,7 +191,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                       "The following traceback and retained-recovery warnings are part of this check.",
                       file=sys.stderr, flush=True)
                 try:
-                    launcher["prepare_editor_relay"](collision)
+                    launcher["prepare_gateway"](collision)
                 except subprocess.CalledProcessError:
                     pass
                 else:
@@ -213,11 +213,11 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
             agent = launcher["ensure_image"](launcher["new_state"](["--help"]), base)
             editor = launcher["new_state"](["--help"])
             try:
-                editor_flags = launcher["prepare_editor_relay"](editor)
+                editor_flags = launcher["prepare_gateway"](editor)
                 editor.host_editor._edit = lambda content: content + " edited"
                 editor.sidecar_image = subprocess.run([str(ROOT / "auth-proxy/image")],
                     env=environment, check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
-                launcher["start_editor_relay"](editor)
+                launcher["start_gateway"](editor)
                 with runtime.environment_file({"CODEX_SANDBOX_EDITOR_TOKEN": editor.host_editor.token}) as secret:
                     with runtime.workload(runtime.inspect_image(agent), "editor-probe-" + secrets.token_hex(6), [
                             *editor_flags, *secret,

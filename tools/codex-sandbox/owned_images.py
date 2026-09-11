@@ -22,7 +22,7 @@ def target(command):
 def declaration(requested=('auth', 'jj', 'zulip')):
     sources = {
         'auth': ['tools/codex-sandbox/auth-proxy/Dockerfile',
-                 'tools/codex-sandbox/auth-proxy/server.py'],
+                 'tools/codex-sandbox/auth-proxy/server.py', 'tools/codex-sandbox/gateway.py'],
         'jj': ['tools/jj-proxy/Dockerfile', 'tools/jj-proxy/Cargo.toml',
                'tools/jj-proxy/Cargo.lock', 'tools/jj-proxy/jj.toml',
                'tools/jj-proxy/agent-split-editor', 'config/gitignore',

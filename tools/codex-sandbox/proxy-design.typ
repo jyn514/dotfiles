@@ -405,15 +405,16 @@ The launcher performs these steps:
 + Wait for required repository-command sockets to become ready; skip the optional Zulip readiness probe
 + Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
 + Atomically publish session metadata for the proxy set
-+ Create private networks for the host editor and optional Agent Podman relays; start their containers in background jobs owned by the launcher
++ Create one private link and egress network for the per-sandbox gateway; start its editor and optional Agent Podman listeners in a background job owned by the launcher
 + Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
-+ Join relay startup jobs before cleanup, deferring termination signals during the join
++ Join gateway startup before cleanup, deferring termination signals during the join
 + Detach the agent, then stop the sidecar and proxies and remove session resources after the last attached agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
-The agent addresses editor and Podman relays by their session-specific container DNS names.
-Early requests may fail; relay startup failures are reported without terminating the agent.
-The editor listener rejects all peers until relay address inspection installs its allowlist.
+The agent addresses editor and Podman ports by the gateway's session-specific container DNS name.
+Early requests may fail; gateway startup failures are reported without terminating the agent.
+The host editor rejects all peers until gateway address inspection installs its allowlist.
+Upstream refusal ends only that connection; listener failure stops the gateway.
 Names include the host UID and first launcher PID to prevent collisions.
 
 The launcher may keep a proxy alive for the whole sandbox session.

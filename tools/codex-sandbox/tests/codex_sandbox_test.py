@@ -256,7 +256,7 @@ class BackgroundRelayTest(unittest.TestCase):
                                     codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
-                'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
+                'acquire_lock', 'prepare_gateway', 'start_gateway', 'attach_proxies')}
             prepared = SimpleNamespace(base='base@digest', auth='auth@digest', proxies={'bug': 'bug@digest'})
             def prepare(*args, **kwargs):
                 replacements['ensure_network'].assert_not_called()
@@ -342,7 +342,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 name: mock.Mock(return_value=[])
                 for name in (
                     "validate_repository", "register_tmux_pane", "ensure_network",
-                    "acquire_lock", "prepare_editor_relay", "stage_skills",
+                    "acquire_lock", "prepare_gateway", "stage_skills",
                 )
             }
             replacements.update(
@@ -350,7 +350,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 attach_proxies=attach_proxies,
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
-                start_editor_relay=mock.Mock(),
+                start_gateway=mock.Mock(),
                 run_agent=mock.Mock(side_effect=AssertionError("agent must not start")),
             )
 
@@ -429,14 +429,14 @@ class BackgroundRelayTest(unittest.TestCase):
             replacements = {
                 name: mock.Mock(return_value=[])
                 for name in ("validate_repository", "register_tmux_pane", "ensure_network",
-                             "acquire_lock", "attach_proxies", "prepare_editor_relay",
-                             "prepare_relay", "stage_skills")
+                             "acquire_lock", "attach_proxies", "prepare_gateway",
+                             "stage_skills")
             }
             replacements.update(
                 ensure_image=mock.Mock(return_value="image"),
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
-                start_editor_relay=relay, start_relay=relay, run_agent=agent,
+                start_gateway=relay, run_agent=agent,
             )
 
             def launch():
@@ -457,7 +457,7 @@ class BackgroundRelayTest(unittest.TestCase):
                     thread.join(5)
                 self.assertFalse(thread.is_alive())
                 self.assertEqual([19], result)
-                self.assertEqual(2, output.getvalue().count("injected optional failure"))
+                self.assertEqual(1, output.getvalue().count("injected optional failure"))
 
 
 class AgentSandboxImageTest(unittest.TestCase):
@@ -797,6 +797,11 @@ class CodexSandboxTest(unittest.TestCase):
                 exit 0
             fi
             if [ "$1" = run ]; then
+                if [ "${FAKE_EDITOR_UNREACHABLE:-0}" = 1 ]; then
+                    for argument do
+                        case "$argument" in /trusted/bin/sandbox-gateway) exit 79 ;; esac
+                    done
+                fi
                 case " $* " in
                     *" -it "*)
                         if [ -n "$FAKE_MODEL_STORE_CAPTURE" ]; then
@@ -823,9 +828,6 @@ class CodexSandboxTest(unittest.TestCase):
             fi
             if [ "$1" = rm ] && [ -n "$FAKE_CLEANUP_DELAY" ]; then
                 sleep "$FAKE_CLEANUP_DELAY"
-            fi
-            if [ "$1" = exec ] && [ "${FAKE_EDITOR_UNREACHABLE:-0}" = 1 ]; then
-                case "$2" in codex-host-editor-relay-*) exit 79 ;; esac
             fi
             exit 0
         """)
@@ -1444,7 +1446,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertFalse(any(call[:1] == ["run"] and "-it" in call for call in calls))
         self.assertTrue(any(
             call[:2] == ["rm", "--force"]
-            and any("codex-host-editor-relay-" in item for item in call)
+            and any("codex-gateway-" in item for item in call)
             for call in calls
         ))
 
@@ -1503,7 +1505,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(23, result.returncode, result.stderr)
         docker_log = self.docker_log.read_text(encoding="utf-8")
         self.assertRegex(docker_log, r"rm\t--force\tcodex-sandbox-[0-9]+-[0-9a-f]{12}")
-        self.assertIn("codex-host-editor-relay-", docker_log)
+        self.assertIn("codex-gateway-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
@@ -1582,7 +1584,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(143, process.returncode, (stdout, stderr))
         docker_log = self.docker_log.read_text(encoding="utf-8")
         self.assertRegex(docker_log, r"rm\t--force\tcodex-sandbox-[0-9]+-[0-9a-f]{12}")
-        self.assertIn("codex-host-editor-relay-", docker_log)
+        self.assertIn("codex-gateway-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertIn("hold-lock", actions)
@@ -1603,7 +1605,7 @@ class CodexSandboxTest(unittest.TestCase):
         relay = next(
             call for call in calls
             if call[:2] == ["run", "--detach"]
-            and any("codex-host-editor-relay-" in item for item in call)
+            and any("codex-gateway-" in item for item in call)
         )
         self.assertIn("--cap-drop=ALL", relay)
         self.assertIn("--security-opt=no-new-privileges", relay)
@@ -1612,10 +1614,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("--memory", relay)
         self.assertIn("--cpus", relay)
         self.assertIn("--http-proxy=false", relay)
-        self.assertIn("/usr/bin/socat", relay)
+        self.assertIn("/trusted/bin/sandbox-gateway", relay)
+        self.assertNotIn('--podman-port', relay)
         editor_networks = [
             call for call in calls if call[:2] == ["network", "create"]
-            and any("codex-host-editor-" in item for item in call)
+            and any("codex-gateway-" in item for item in call)
         ]
         self.assertEqual(2, len(editor_networks))
         self.assertTrue(any("--internal" in call for call in editor_networks))
@@ -1627,6 +1630,7 @@ class CodexSandboxTest(unittest.TestCase):
     def test_unreachable_editor_does_not_prevent_agent_startup(self) -> None:
         result = self.run_launcher(FAKE_EDITOR_UNREACHABLE="1")
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('gateway startup failed', result.stderr)
         self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", self.final_run())
 
     def test_agent_podman_relay_is_isolated_and_injected(self) -> None:
@@ -1649,18 +1653,26 @@ class CodexSandboxTest(unittest.TestCase):
         relay_runs = [
             call for call in calls
             if call[:2] == ["run", "--detach"]
-            and any("codex-agent-podman-relay-" in item for item in call)
+            and any("codex-gateway-" in item for item in call)
         ]
         self.assertEqual(1, len(relay_runs))
+        networks = [call for call in calls if call[:2] == ['network', 'create']
+                    and any('codex-gateway-' in item for item in call)]
+        self.assertEqual(len(networks), 2, 'editor and Podman must share one private network pair')
+        self.assertNotIn('--cpus', relay_runs[0], 'editor limits must not throttle Podman')
+        self.assertIn('--editor-port', relay_runs[0])
+        self.assertIn('--podman-port', relay_runs[0])
+        self.assertFalse(any('agent-podman-key' in item or 'EDITOR_TOKEN' in item for item in relay_runs[0]))
         self.assertIn("--cap-drop=ALL", relay_runs[0])
         self.assertIn("--read-only", relay_runs[0])
         self.assertEqual(
             "sha256:" + "0" * 64,
-            relay_runs[0][relay_runs[0].index("/usr/bin/socat") + 1],
+            relay_runs[0][relay_runs[0].index("/trusted/bin/sandbox-gateway") + 1],
         )
         run = self.final_run()
         relay_name = relay_runs[0][relay_runs[0].index("--name") + 1]
         self.assertIn(f"CONTAINER_HOST=ssh://worker@{relay_name}:2222/run/user/501/podman.sock", run)
+        self.assertIn(f'CODEX_SANDBOX_EDITOR_ADDRESS={relay_name}:2223', run)
         self.assertIn(
             f"type=bind,src={access / 'id_ed25519'},dst=/run/secrets/agent-podman-key,readonly",
             run,

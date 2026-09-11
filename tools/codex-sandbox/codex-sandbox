@@ -61,15 +61,12 @@ class State:
     uid: int
     gid: int
     suffix: str
-    relay_link_network: str
-    relay_egress_network: str
-    relay_container: str
+    gateway_link_network: str
+    gateway_egress_network: str
+    gateway_container: str
     codex_container: str
     proxy_prefix: str
     codex_sidecar_container: str
-    editor_link_network: str
-    editor_egress_network: str
-    editor_relay_container: str
     codex_auth_directory: Path
     agent_podman_access: Path
     agent_podman_connection: Path
@@ -77,7 +74,6 @@ class State:
     agent_podman_known_hosts: Path
     host_working_directory: Path
     container_known_hosts: str = "/run/secrets/agent-podman-known-hosts"
-    relay_port: int = 2222
     agent_podman: dict[str, str] | None = None
     repository: Path | None = None
     container_repository: Path | None = None
@@ -101,12 +97,9 @@ class State:
     monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
-    relay_link_created: bool = False
-    relay_egress_created: bool = False
-    relay_container_created: bool = False
-    editor_link_created: bool = False
-    editor_egress_created: bool = False
-    editor_relay_created: bool = False
+    gateway_link_created: bool = False
+    gateway_egress_created: bool = False
+    gateway_container_created: bool = False
     cleaned: bool = False
     joining_workers: bool = False
     deferred_signal: int | None = None
@@ -237,15 +230,12 @@ def new_state(codex_arguments: list[str]) -> State:
         uid=uid,
         gid=os.getgid(),
         suffix=suffix,
-        relay_link_network=f"codex-agent-podman-link-{suffix}",
-        relay_egress_network=f"codex-agent-podman-egress-{suffix}",
-        relay_container=f"codex-agent-podman-relay-{suffix}",
+        gateway_link_network=f"codex-gateway-link-{suffix}",
+        gateway_egress_network=f"codex-gateway-egress-{suffix}",
+        gateway_container=f"codex-gateway-{suffix}",
         codex_container=f"codex-sandbox-{suffix}",
         proxy_prefix=f"codex-command-proxy-{suffix}",
         codex_sidecar_container=f"codex-auth-proxy-{suffix}",
-        editor_link_network=f"codex-host-editor-link-{suffix}",
-        editor_egress_network=f"codex-host-editor-egress-{suffix}",
-        editor_relay_container=f"codex-host-editor-relay-{suffix}",
         codex_auth_directory=Path(os.environ.get(
             "CODEX_SANDBOX_AUTH_DIR", home / ".codex-sandbox-auth",
         )),
@@ -549,81 +539,59 @@ def attach_proxies(state: State) -> list[str]:
         state.lock_coordinated.touch()
 
 
-def prepare_relay(state: State) -> list[str]:
-    values = state.agent_podman
-    state.relay_link_created = True
-    create_relay_network(state, state.relay_link_network, internal=True)
-    state.relay_egress_created = True
-    create_relay_network(state, state.relay_egress_network, internal=False)
-    container_host = (
-        f"ssh://{values['AGENT_PODMAN_SSH_USER']}@{state.relay_container}:"
-        f"{state.relay_port}/{values['SOCKET_PATH']}"
-    )
-    return [
-        "--network", state.relay_link_network,
-        "--env", f"CONTAINER_HOST={container_host}",
-        "--env", f"CONTAINER_SSHKEY={values['CONTAINER_SSHKEY']}",
-        "--env", f"AGENT_PODMAN_KNOWN_HOSTS={state.container_known_hosts}",
-        "--mount", f"type=bind,src={state.agent_podman_key},dst={values['CONTAINER_SSHKEY']},readonly",
-        "--mount", f"type=bind,src={state.agent_podman_known_hosts},dst={state.container_known_hosts},readonly",
-    ]
-
-
-def start_relay(state: State) -> None:
-    values = state.agent_podman
-    # A failed run may still create a container; cleanup owns the name either way.
-    state.relay_container_created = True
-    run([
-        "docker", "run", "--detach", "--name", state.relay_container,
-        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--network", state.relay_egress_network,
-        "--network", state.relay_link_network, *proxy_flags(),
-        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
-        f"TCP4-LISTEN:{state.relay_port},fork,reuseaddr",
-        f"TCP4:{OUTER_RUNTIME.host_address}:{values['AGENT_PODMAN_SSH_PORT']}",
-    ], discard_stdout=True)
-
-
-def prepare_editor_relay(state: State) -> list[str]:
-    state.editor_link_created = True
-    create_relay_network(state, state.editor_link_network, internal=True)
-    state.editor_egress_created = True
-    create_relay_network(state, state.editor_egress_network, internal=False)
+def prepare_gateway(state: State) -> list[str]:
+    state.gateway_link_created = True
+    create_relay_network(state, state.gateway_link_network, internal=True)
+    state.gateway_egress_created = True
+    create_relay_network(state, state.gateway_egress_network, internal=False)
     state.host_editor = HostEditorBridge()
     state.host_editor.start()
-    return [
-        "--network", state.editor_link_network,
-        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.editor_relay_container}:2223",
+    arguments = [
+        "--network", state.gateway_link_network,
+        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223",
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
+    if state.agent_podman is not None:
+        values = state.agent_podman
+        arguments += [
+            "--env", f"CONTAINER_HOST=ssh://{values['AGENT_PODMAN_SSH_USER']}@{state.gateway_container}:2222/{values['SOCKET_PATH']}",
+            "--env", f"CONTAINER_SSHKEY={values['CONTAINER_SSHKEY']}",
+            "--env", f"AGENT_PODMAN_KNOWN_HOSTS={state.container_known_hosts}",
+            "--mount", f"type=bind,src={state.agent_podman_key},dst={values['CONTAINER_SSHKEY']},readonly",
+            "--mount", f"type=bind,src={state.agent_podman_known_hosts},dst={state.container_known_hosts},readonly",
+        ]
+    return arguments
 
 
-def start_editor_relay(state: State) -> None:
+def start_gateway(state: State) -> None:
     assert state.host_editor is not None
     assert state.host_editor.port is not None
-    relay_port = 2223
-    state.editor_relay_created = True
+    # Failed creation may still leave a container; cleanup owns the name now.
+    state.gateway_container_created = True
     run([
-        "docker", "run", "--detach", "--name", state.editor_relay_container,
+        "docker", "run", "--detach", "--name", state.gateway_container,
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--network", state.editor_egress_network,
-        "--network", state.editor_link_network, *proxy_flags(),
-        "--pids-limit", "32", "--memory", "64m", "--cpus", "0.25",
+        "--network", state.gateway_egress_network,
+        "--network", state.gateway_link_network, *proxy_flags(),
+        # Preserve the editor-only limits without throttling Podman build traffic.
+        *([] if state.agent_podman is not None else
+          ["--pids-limit", "32", "--memory", "64m", "--cpus", "0.25"]),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
-        "--entrypoint", "/usr/bin/socat", state.sidecar_image, "-d", "-d",
-        f"TCP4-LISTEN:{relay_port},fork,reuseaddr",
-        f"TCP4:{OUTER_RUNTIME.host_address}:{state.host_editor.port}",
+        "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
+        "--host", OUTER_RUNTIME.host_address, "--editor-port", str(state.host_editor.port),
+        *(["--podman-port", state.agent_podman['AGENT_PODMAN_SSH_PORT']]
+          if state.agent_podman is not None else []),
     ], discard_stdout=True)
     def address(network):
         if isinstance(OUTER_RUNTIME, VMRuntime):
-            return OUTER_RUNTIME.network_address(state.editor_relay_container, network)
+            return OUTER_RUNTIME.network_address(state.gateway_container, network)
         return run(["docker", "inspect", "--format",
             f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
-            state.editor_relay_container], capture=True).stdout.strip()
-    relay_ip = address(state.editor_link_network)
-    egress_ip = address(state.editor_egress_network)
+            state.gateway_container], capture=True).stdout.strip()
+    relay_ip = address(state.gateway_link_network)
+    egress_ip = address(state.gateway_egress_network)
     if not relay_ip or not egress_ip:
-        raise LauncherError("host editor relay has incomplete network addresses")
+        raise LauncherError("gateway has incomplete network addresses")
     state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
 
@@ -1297,12 +1265,8 @@ def execute(state: State) -> int:
         sidecar_future = None if prepared else executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
         network_future = executor.submit(phase, "network setup", ensure_network)
         lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
-        editor_future = executor.submit(
-            phase, "host editor network setup", lambda: prepare_editor_relay(state),
-        )
-        relay_future = (
-            executor.submit(phase, "Podman network setup", lambda: prepare_relay(state))
-            if state.agent_podman is not None else None
+        gateway_future = executor.submit(
+            phase, "gateway network setup", lambda: prepare_gateway(state),
         )
         state.sidecar_image = prepared.auth if prepared else sidecar_future.result()
         network_future.result()
@@ -1313,15 +1277,12 @@ def execute(state: State) -> int:
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
         )
-        editor_arguments = editor_future.result()
-        executor.submit(optional_relay, "host editor relay startup", lambda: start_editor_relay(state))
-        relay_arguments = relay_future.result() if relay_future else []
-        if relay_future:
-            executor.submit(optional_relay, "Podman relay startup", lambda: start_relay(state))
+        gateway_arguments = gateway_future.result()
+        executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         sidecar_arguments = proxy_future.result()
         if model_future is not None:
             state.image = model_future.result()
-        arguments = [*editor_arguments, *relay_arguments, state.image,
+        arguments = [*gateway_arguments, state.image,
             *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
               if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]
         system = run(["uname", "-s"], capture=True).stdout.strip()
@@ -1402,40 +1363,25 @@ def cleanup(state: State) -> None:
             f"Codex container {state.codex_container}",
             ["docker", "rm", "--force", state.codex_container],
         ))
-    if state.relay_container_created:
+    if state.gateway_container_created:
         containers.append((
-            f"relay container {state.relay_container}",
-            ["docker", "rm", "--force", state.relay_container],
-        ))
-    if state.editor_relay_created:
-        containers.append((
-            f"host editor relay container {state.editor_relay_container}",
-            ["docker", "rm", "--force", state.editor_relay_container],
+            f"gateway container {state.gateway_container}",
+            ["docker", "rm", "--force", state.gateway_container],
         ))
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         container_results = list(executor.map(lambda item: cleanup_resource(*item), containers))
     timing("containers")
 
     networks = []
-    if state.relay_link_created:
+    if state.gateway_link_created:
         networks.append((
-            f"relay network {state.relay_link_network}",
-            ["docker", "network", "rm", state.relay_link_network],
+            f"gateway network {state.gateway_link_network}",
+            ["docker", "network", "rm", state.gateway_link_network],
         ))
-    if state.relay_egress_created:
+    if state.gateway_egress_created:
         networks.append((
-            f"relay network {state.relay_egress_network}",
-            ["docker", "network", "rm", state.relay_egress_network],
-        ))
-    if state.editor_link_created:
-        networks.append((
-            f"host editor link network {state.editor_link_network}",
-            ["docker", "network", "rm", state.editor_link_network],
-        ))
-    if state.editor_egress_created:
-        networks.append((
-            f"host editor egress network {state.editor_egress_network}",
-            ["docker", "network", "rm", state.editor_egress_network],
+            f"gateway network {state.gateway_egress_network}",
+            ["docker", "network", "rm", state.gateway_egress_network],
         ))
     def remove_network(item):
         if isinstance(OUTER_RUNTIME, VMRuntime):

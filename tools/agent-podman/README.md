@@ -78,7 +78,8 @@ The forwarded port exposes only authenticated guest SSH; it does not expose an u
 
 ## Recovery
 
-The sandbox reaches the machine through a per-session `socat` relay.
+The sandbox reaches the machine through its gateway's fixed SSH listener,
+sharing the gateway container and networks with the host editor.
 If the machine stops, the relay may continue accepting TCP connections while its upstream host port refuses them.
 SSH then closes before presenting a server banner, and Podman reports a handshake `EOF` rather than saying that the machine is stopped.
 
@@ -89,7 +90,7 @@ Confirm the failure at the authoritative boundaries before changing credentials:
 podman info
 
 # On the host: the relay log names a refused host.docker.internal port.
-podman logs --tail 100 <agent-podman-relay-container>
+podman logs --tail 100 <codex-gateway-container>
 ```
 
 When the relay's upstream port is refused, start the existing machine from the dotfiles checkout:

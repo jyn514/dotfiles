@@ -86,8 +86,9 @@ otherwise `VISUAL`, `EDITOR`, then `vi` is used.
 The dotfiles profile selects `config/nvim-host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim-shared.lua`;
 normal Neovim loads the same shared behavior before its IDE configuration.
 
-Host editor and Agent Podman relays start in the background, after their private networks are created.
-Pi reaches them by container DNS name;
+Each sandbox has one gateway for the host editor and, when configured, Agent Podman.
+It starts in the background after its private link and egress networks are created.
+Pi reaches its fixed editor and SSH ports by container DNS name;
 early use may report a connection error.
 Zulip also skips its readiness probe.
 Retry once the service is available.
@@ -96,8 +97,12 @@ Authentication and repository-command proxies still require readiness checks.
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.
 
-Background relay failures are reported to stderr and leave Pi running.
-On exit, the launcher joins relay startup jobs before removing their containers and networks.
+Gateway startup failures are reported to stderr and leave Pi running.
+On exit, the launcher joins gateway startup before removing its container and networks.
+An upstream refusal affects that connection; a listener process failure stops the whole gateway.
+Editor-only gateways retain the editor's CPU, memory, and process limits.
+Podman-enabled gateways have no such limits, preserving build throughput but sharing
+Podman's resource and failure domain with the editor.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals.
 It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports.

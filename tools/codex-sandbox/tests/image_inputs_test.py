@@ -12,6 +12,19 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class ImageInputsTest(unittest.TestCase):
+    def test_gateway_source_invalidates_the_shared_auth_image(self):
+        declaration = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['declaration']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('auth-proxy/Dockerfile', 'auth-proxy/server.py', 'gateway.py'):
+                path = root / 'tools/codex-sandbox' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('original')
+            with patch.dict(declaration.__globals__, ROOT=root):
+                original = declaration(['auth'])['target']['auth']['tags']
+                (root / 'tools/codex-sandbox/gateway.py').write_text('changed listener')
+                self.assertNotEqual(original, declaration(['auth'])['target']['auth']['tags'])
+
     def test_agent_packages_runtime_sources_without_tests_or_bytecode(self):
         sources = runpy.run_path(str(ROOT / 'tools/codex-sandbox/codex-sandbox'))['image_sources']
         with tempfile.TemporaryDirectory() as directory:
