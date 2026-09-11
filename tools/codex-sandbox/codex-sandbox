@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import cache
+import hashlib
 import importlib.util
 import json
 import os
@@ -426,20 +427,18 @@ def image_sources() -> list[Path]:
 
 def image_cache_key(state: State, base_image: str) -> str:
     sources = image_sources()
-    digests = run(
-        ["git", "hash-object", *map(str, sources)], capture=True, cwd=DOTFILES,
-    ).stdout.splitlines()
-    if len(digests) != len(sources):
-        raise LauncherError("Git returned an invalid sandbox image source digest list")
+    # Keep Git blob framing, but hash Docker's exact input bytes rather than
+    # Git clean conversions (such as core.autocrlf). Existing LF keys survive.
+    def blob_digest(value: bytes) -> str:
+        return hashlib.sha1(f"blob {len(value)}\0".encode() + value).hexdigest()
+
+    digests = [blob_digest((DOTFILES / path).read_bytes()) for path in sources]
     lines = [
         f"BASE_IMAGE={base_image}", f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
         f"TERM={state.term}",
         *(f"{path.as_posix()} {digest}" for path, digest in zip(sources, digests, strict=True)),
     ]
-    return run(
-        ["git", "hash-object", "--stdin"], capture=True, cwd=DOTFILES,
-        input_text="\n".join(lines) + "\n",
-    ).stdout.strip()
+    return blob_digest(("\n".join(lines) + "\n").encode())
 
 
 def resolve_sidecar_image() -> str:

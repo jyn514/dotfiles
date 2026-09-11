@@ -52,6 +52,9 @@ through executable `.agents/sandbox/bake`; repository Docker CLI shims are no lo
 Repositories without extra command proxies may omit the manifest.
 These files are trusted startup policy, not agent configuration.
 
+The agent image key hashes source bytes directly, without Git clean filters or
+line-ending normalization, so it tracks the bytes Docker builds.
+
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead.
 Other images use the standalone Bun executable.
 

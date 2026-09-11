@@ -46,6 +46,27 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_image_key_matches_git_blob_hashes_and_tracks_source_changes(self):
+        key = runpy.run_path(str(LAUNCHER))['image_cache_key']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = Path('source')
+            state = SimpleNamespace(uid=501, gid=20, term='xterm')
+            def git_digest(value):
+                return subprocess.run(['git', 'hash-object', '--stdin'], input=value,
+                    capture_output=True, check=True).stdout.decode().strip()
+            previous = None
+            for value in (b'', b'hello\n', b'hello\r\n', b'\xff\0binary'):
+                (root / source).write_bytes(value)
+                expected = git_digest((f'BASE_IMAGE=base\nAGENT_UID=501\nAGENT_GID=20\n'
+                    f'TERM=xterm\nsource {git_digest(value)}\n').encode())
+                with mock.patch.dict(key.__globals__, DOTFILES=root, image_sources=lambda: [source],
+                        run=mock.Mock(side_effect=AssertionError('started a subprocess'))):
+                    actual = key(state, 'base')
+                self.assertEqual(actual, expected)
+                self.assertNotEqual(actual, previous)
+                previous = actual
+
     def test_failed_publication_keeps_coordination_until_cleanup(self):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
         lock = mock.Mock(shared=False)
