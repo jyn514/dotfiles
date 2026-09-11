@@ -1276,27 +1276,14 @@ def execute(state: State) -> int:
             base_image = "node:24-alpine3.22"
         return phase("model image resolution", lambda: ensure_image(state, base_image))
 
-    prepared = OUTER_RUNTIME.provider == 'lima-docker'
-    if prepared:
-        # Supervise independent builders together on the signal-owning thread;
-        # no container workers start until cancellation has no builds to drain.
+    prepared = None
+    if OUTER_RUNTIME.provider == 'lima-docker':
+        # Preparation owns all builder groups before container workers start.
         manifest = json.loads(state.manifest.read_text())
-        base = state.repository / '.agents/sandbox/base-image'
-        builders = {'auth': ([str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')], DOTFILES)}
-        targets = ['base'] if (state.repository / '.agents/sandbox/bake').is_file() else []
-        if base.is_file() and not targets:
-            raise LauncherError('Lima-Docker requires .agents/sandbox/bake instead of executable base-image builds')
-        for name, command in manifest['commands'].items():
-            if command.get('image-target'):
-                targets.append(command['image-target'])
-            elif command.get('image-command'):
-                builders['proxy:' + name] = (command['image-command'], state.repository)
-            else:
-                raise LauncherError(f'proxy {name} requires image-target for lima-docker')
-        baked = phase('Bake image resolution', lambda: OUTER_RUNTIME.bake(state.repository, targets))
-        built = phase('image builders', lambda: OUTER_RUNTIME.run_builders(builders))
-        base_image = baked.get('base', 'node:24-alpine3.22')
-        state.image = phase('model image resolution', lambda: ensure_image(state, base_image))
+        prepared = phase('image preparation', lambda: OUTER_RUNTIME.prepare_images(
+            state.repository, manifest['commands'], include_base=True,
+            auth_builder=([str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')], DOTFILES)))
+        state.image = phase('model image resolution', lambda: ensure_image(state, prepared.base))
 
     def optional_relay(name: str, action: Callable[[], object]) -> None:
         try:
@@ -1306,15 +1293,8 @@ def execute(state: State) -> int:
 
     # Keep these jobs owned until session exit so cleanup cannot race creation.
     with startup_workers(state, max_workers=6) as executor:
-        model_future = executor.submit(lambda: state.image if prepared else model_image())
-        sidecar_future = executor.submit(phase, "sidecar image resolution",
-            lambda: OUTER_RUNTIME.builder_image(built['auth'].stdout.strip()) if prepared else resolve_sidecar_image())
-        # Docker builds have finished. Read-only image checks overlap network
-        # preparation, but attach must wait for their immutable references.
-        images_future = executor.submit(phase, 'proxy image resolution',
-            lambda: proxy_module().resolve_images(state.repository, manifest,
-                builder_results={name: built['proxy:' + name] for name, command in manifest['commands'].items()
-                                 if not command.get('image-target')}, baked_images=baked)) if prepared else None
+        model_future = None if prepared else executor.submit(model_image)
+        sidecar_future = None if prepared else executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
         network_future = executor.submit(phase, "network setup", ensure_network)
         lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
         editor_future = executor.submit(
@@ -1324,13 +1304,12 @@ def execute(state: State) -> int:
             executor.submit(phase, "Podman network setup", lambda: prepare_relay(state))
             if state.agent_podman is not None else None
         )
-        state.sidecar_image = sidecar_future.result()
+        state.sidecar_image = prepared.auth if prepared else sidecar_future.result()
         network_future.result()
         lock_future.result()
-        if images_future is not None:
-            images = images_future.result()
+        if prepared is not None:
             state.prepared_images = temporary_file()
-            state.prepared_images.write_text(json.dumps(images))
+            state.prepared_images.write_text(json.dumps(prepared.proxies))
         proxy_future = executor.submit(
             phase, "proxy startup", lambda: attach_proxies(state),
         )
@@ -1340,7 +1319,8 @@ def execute(state: State) -> int:
         if relay_future:
             executor.submit(optional_relay, "Podman relay startup", lambda: start_relay(state))
         sidecar_arguments = proxy_future.result()
-        state.image = model_future.result()
+        if model_future is not None:
+            state.image = model_future.result()
         arguments = [*editor_arguments, *relay_arguments, state.image,
             *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
               if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]

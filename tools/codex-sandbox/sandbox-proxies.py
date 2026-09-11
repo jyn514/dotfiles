@@ -488,28 +488,19 @@ def attach_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None, *, builder_results=None,
-                   baked_images=None) -> dict[str, str]:
+def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[str, str]:
     if prepared is not None:
         images = json.loads(Path(prepared).read_text())
         if (not isinstance(images, dict) or set(images) != set(manifest['commands']) or
                 not all(isinstance(image, str) for image in images.values())):
             raise ConfigError('prepared images do not match the proxy manifest')
         return {name: OUTER_RUNTIME.builder_image(image) for name, image in images.items()}
-    if OUTER_RUNTIME.provider == 'lima-docker' and baked_images is None:
-        targets = [command['image-target'] for command in manifest['commands'].values() if command.get('image-target')]
-        baked_images = OUTER_RUNTIME.bake(repo, targets) if targets else {}
+    if OUTER_RUNTIME.provider == 'lima-docker':
+        return OUTER_RUNTIME.prepare_images(repo, manifest['commands']).proxies
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
-        if baked_images is not None and command.get('image-target'):
-            return name, OUTER_RUNTIME.builder_image(baked_images[command['image-target']])
-        if builder_results is not None:
-            result = builder_results[name]
-        elif not command.get('image-command'):
+        if not command.get('image-command'):
             raise ConfigError(f"proxy {name} uses Bake targets; select CODEX_SANDBOX_RUNTIME=lima-docker")
-        elif OUTER_RUNTIME.provider == 'lima-docker':
-            result = OUTER_RUNTIME.run_builder(command['image-command'], cwd=repo)
-        else:
-            result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
+        result = subprocess.run(command["image-command"], cwd=repo, text=True, stdout=subprocess.PIPE)
         output = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
         if BARE_IMAGE_RE.fullmatch(output):
             output = "sha256:" + output
@@ -521,8 +512,6 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None, *, build
             raise ConfigError(f"image-command for {name}: {error}") from error
 
     commands = manifest["commands"]
-    if OUTER_RUNTIME.provider == 'lima-docker':
-        return dict(resolve(*item) for item in commands.items())
     with ThreadPoolExecutor(max_workers=max(1, len(commands))) as executor:
         return dict(executor.map(lambda item: resolve(*item), commands.items()))
 

@@ -1,7 +1,9 @@
 """Rootless Docker operations through the owned Lima-forwarded engine socket."""
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 import fcntl
 import os
 from pathlib import Path
@@ -26,6 +28,13 @@ class BuildError(subprocess.CalledProcessError):
 
     def __str__(self):
         return f'sandbox image build failed (exit {self.returncode}); see BuildKit output above'
+
+
+@dataclass(frozen=True)
+class PreparedImages:
+    base: str | None
+    auth: str | None
+    proxies: dict[str, str]
 
 
 def stop_build(process):
@@ -163,6 +172,41 @@ class Docker(VMRuntime):
     def bake(self, repo, targets):
         from bake import resolve
         return resolve(self, repo, targets)
+
+    def prepare_images(self, repo, commands, *, include_base=False, auth_builder=None):
+        """Resolve launch images once, before container workers may start."""
+        repo = Path(repo)
+        targets = ['base'] if include_base and (repo / '.agents/sandbox/bake').is_file() else []
+        if include_base and (repo / '.agents/sandbox/base-image').is_file() and not targets:
+            raise RuntimeError('Lima-Docker requires .agents/sandbox/bake instead of executable base-image builds')
+        builders = {'auth': auth_builder} if auth_builder is not None else {}
+        for name, command in commands.items():
+            if command.get('image-target'):
+                targets.append(command['image-target'])
+            elif command.get('image-command'):
+                builders['proxy:' + name] = (command['image-command'], repo)
+            else:
+                raise RuntimeError(f'proxy {name} requires image-target for lima-docker')
+        baked = self.bake(repo, targets)
+        built = self.run_builders(builders)
+        def resolve_builder(item):
+            name, result = item
+            output = result.stdout.removesuffix('\n')
+            if re.fullmatch(r'[0-9a-f]{64}', output):
+                output = 'sha256:' + output
+            if result.returncode or '\n' in output:
+                raise RuntimeError(f'image-command for {name} did not print exactly one immutable image hash')
+            return name, self.builder_image(output)
+        # Admission checks query Lima and the guest service. Keep these read-only
+        # checks parallel even though preparation publishes one combined result.
+        with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
+            resolved = dict(workers.map(resolve_builder, built.items()))
+        # Bake already resolved these references in this engine. Only serialized
+        # references crossing into the proxy subprocess need another inspection.
+        proxies = {name: baked[command['image-target']] if command.get('image-target')
+                   else resolved['proxy:' + name] for name, command in commands.items()}
+        return PreparedImages(baked.get('base', 'node:24-alpine3.22') if include_base else None,
+                              resolved.get('auth'), proxies)
 
     def run_builder(self, command, *, cwd=None, capture=True):
         """Return one builder's status, optionally capturing its image reference."""

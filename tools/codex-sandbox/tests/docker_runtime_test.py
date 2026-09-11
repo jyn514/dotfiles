@@ -36,6 +36,44 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_preparation_reuses_bake_references_and_validates_executable_results_once(self):
+        runtime = backend()
+        runtime.bake = Mock(return_value={'base': 'base@digest', 'bug': 'bug@digest'})
+        auth = 'sha256:' + 'a' * 64
+        helper = 'sha256:' + 'b' * 64
+        runtime.run_builders = Mock(return_value={
+            'auth': subprocess.CompletedProcess(['auth'], 0, auth + '\n'),
+            'proxy:jj': subprocess.CompletedProcess(['jj'], 0, helper + '\n')})
+        rendezvous = threading.Barrier(2)
+        def inspect(value):
+            rendezvous.wait(timeout=2)
+            return value
+        runtime.builder_image = Mock(side_effect=inspect)
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            (repo / '.agents/sandbox').mkdir(parents=True)
+            (repo / '.agents/sandbox/bake').touch()
+            prepared = runtime.prepare_images(repo, {
+                'bug': {'image-target': 'bug'}, 'jj': {'image-command': ['jj']}},
+                include_base=True, auth_builder=(['auth'], repo))
+        self.assertEqual(prepared.base, 'base@digest')
+        self.assertEqual(prepared.auth, auth)
+        self.assertEqual(prepared.proxies, {'bug': 'bug@digest', 'jj': helper})
+        self.assertCountEqual([call.args[0] for call in runtime.builder_image.call_args_list], [auth, helper])
+        runtime.bake.assert_called_once_with(repo, ['base', 'bug'])
+        self.assertEqual(runtime.run_builders.call_args.args[0],
+                         {'auth': (['auth'], repo), 'proxy:jj': (['jj'], repo)})
+
+    def test_preparation_rejects_multiline_builder_output(self):
+        runtime = backend()
+        runtime.bake = Mock(return_value={})
+        runtime.run_builders = Mock(return_value={
+            'proxy:jj': subprocess.CompletedProcess(['jj'], 0, 'sha256:' + 'a' * 64 + '\n\n')})
+        runtime.builder_image = Mock()
+        with self.assertRaisesRegex(ValueError, 'exactly one immutable image hash'):
+            runtime.prepare_images(Path('/unused'), {'jj': {'image-command': ['jj']}})
+        runtime.builder_image.assert_not_called()
+
     def test_relay_creation_checks_readiness_then_bridge_policy(self):
         runtime = backend()
         runtime.record['firewall'] = 'nftables'

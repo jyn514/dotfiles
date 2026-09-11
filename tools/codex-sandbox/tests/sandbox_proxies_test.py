@@ -97,20 +97,25 @@ class ManifestTest(unittest.TestCase):
         manifest = sandbox_proxies.load_manifest(self.repo)
         self.assertEqual(["example-proxy", "serve"], manifest["commands"]["example"]["argv"])
 
-    def test_docker_resolves_bake_targets_together_and_reuses_prepared_results(self) -> None:
+    def test_docker_prepares_once_and_revalidates_serialized_references(self) -> None:
         owner = mock.Mock(provider='lima-docker')
-        owner.bake.return_value = {'first': 'first@sha256:one', 'second': 'second@sha256:two'}
+        images = {'one': 'first@sha256:one', 'two': 'second@sha256:two'}
+        owner.prepare_images.return_value = SimpleNamespace(proxies=images)
         owner.builder_image.side_effect = lambda value: value
         manifest = {'commands': {'one': {'image-target': 'first'}, 'two': {'image-target': 'second'}}}
         with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner):
-            images = sandbox_proxies.resolve_images(self.repo, manifest)
-            self.assertEqual(images, {'one': 'first@sha256:one', 'two': 'second@sha256:two'})
-            owner.bake.assert_called_once_with(self.repo, ['first', 'second'])
-            owner.bake.reset_mock()
-            self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest,
-                            builder_results={}, baked_images=owner.bake.return_value), images)
-            owner.bake.assert_not_called()
-            owner.run_builder.assert_not_called()
+            self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest), images)
+            owner.prepare_images.assert_called_once_with(self.repo, manifest['commands'])
+            owner.builder_image.assert_not_called()
+            prepared = self.repo / 'images.json'
+            prepared.write_text(json.dumps(images))
+            owner.prepare_images.reset_mock()
+            self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest, prepared), images)
+            self.assertEqual(owner.builder_image.call_count, 2)
+            owner.prepare_images.assert_not_called()
+            owner.builder_image.side_effect = ValueError('engine changed')
+            with self.assertRaisesRegex(ValueError, 'engine changed'):
+                sandbox_proxies.resolve_images(self.repo, manifest, prepared)
 
     def test_bake_target_survives_manifest_normalization(self):
         command = self.command(**{'image-target': 'bb-bug'})

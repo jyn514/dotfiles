@@ -167,6 +167,10 @@ Actual builds serialize their native progress displays across launches.
 Independent targets in a ready dependency layer build together.
 Each launch finishes its builds before starting container workers; the existing
 builder supervisor owns declaration, metadata, and build subprocesses.
+Docker preparation returns one base/auth/proxy image result before container
+workers start. Bake references are reused within that process; serialized proxy
+references are verified again in the receiving process against its engine.
+Independent executable-image checks run concurrently within preparation.
 Warm launches produce no build transcript. Build failures preserve BuildKit's
 diagnostic and failure status. No additional cache manifest is required.
 

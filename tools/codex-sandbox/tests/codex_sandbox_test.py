@@ -257,17 +257,14 @@ class BackgroundRelayTest(unittest.TestCase):
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
-            builders = mock.Mock(return_value={'auth': SimpleNamespace(stdout='auth@digest')})
-            bake = mock.Mock(return_value={'base': 'base@digest', 'bb-bug': 'bug@digest'})
-            network_started = threading.Event()
-            replacements['ensure_network'].side_effect = network_started.set
-            def resolve_images(*args, **kwargs):
-                self.assertTrue(network_started.wait(2), 'image checks serialized network preparation')
-                return {}
-            resolver = mock.Mock(side_effect=resolve_images)
+            prepared = SimpleNamespace(base='base@digest', auth='auth@digest', proxies={'bug': 'bug@digest'})
+            def prepare(*args, **kwargs):
+                replacements['ensure_network'].assert_not_called()
+                replacements['attach_proxies'].assert_not_called()
+                return prepared
+            preparation = mock.Mock(side_effect=prepare)
             replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker',
-                run_builders=builders, bake=bake, builder_image=lambda output: output),
-                proxy_module=lambda: SimpleNamespace(resolve_images=resolver),
+                prepare_images=preparation),
                 temporary_file=lambda: repository / 'images.json',
                 ensure_image=mock.Mock(return_value='agent@digest'),
                 resolve_sidecar_image=mock.Mock(return_value='auth@digest'),
@@ -276,23 +273,24 @@ class BackgroundRelayTest(unittest.TestCase):
             with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
                 replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
-                self.assertEqual(set(builders.call_args.args[0]), {'auth'})
-                bake.assert_called_once_with(repository, ['base', 'bb-bug'])
-                self.assertEqual(resolver.call_args.kwargs['baked_images'], bake.return_value)
+                self.assertEqual(json.loads(state.prepared_images.read_text()), prepared.proxies)
+                self.assertEqual(state.sidecar_image, prepared.auth)
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
-                resolver.side_effect = ValueError('image validation failed')
+                preparation.side_effect = ValueError('image validation failed')
                 replacements['attach_proxies'].reset_mock()
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'image validation failed'):
                     execute(state)
                 replacements['attach_proxies'].assert_not_called()
                 replacements['run_agent'].assert_not_called()
+                preparation.side_effect = None
+                preparation.return_value = prepared
                 replacements['ensure_image'].side_effect = ValueError('build failed')
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'build failed'):
                     execute(state)
                 replacements['run_agent'].assert_not_called()
-                builders.side_effect = ValueError('builder batch failed')
+                preparation.side_effect = ValueError('builder batch failed')
                 replacements['ensure_network'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'builder batch failed'):
                     execute(state)
