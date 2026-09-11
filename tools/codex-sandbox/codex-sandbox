@@ -385,6 +385,7 @@ def validate_repository(state: State) -> None:
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
     state.repository = repository
     state.metadata_roots = (jj, jj_repo, *git_roots)
+    proxy_module().use_repository_metadata(repository, tuple(git_roots))
     state.container_repository = container_repository_path(state.home, repository)
     state.container_working_directory = container_working_directory_path(
         repository, state.container_repository, state.host_working_directory,

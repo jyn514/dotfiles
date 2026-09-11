@@ -25,6 +25,7 @@ from sandbox_monitor import monitor
 from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, single_json, state_runtime
 
 OUTER_RUNTIME = Podman()
+REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
 
 
 class ConfigError(Exception):
@@ -247,7 +248,16 @@ def repository_identity(repo: Path) -> str:
     return hashlib.sha256(identity).hexdigest()
 
 
+def use_repository_metadata(repo: Path, paths: tuple[Path, Path]) -> None:
+    """Use the launcher's resolved metadata for this embedded helper's lifetime."""
+    global REPOSITORY_METADATA
+    validate_git_metadata(paths)
+    REPOSITORY_METADATA = (repo.resolve(strict=True), paths)
+
+
 def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
+    if REPOSITORY_METADATA is not None and repo.resolve(strict=True) == REPOSITORY_METADATA[0]:
+        return REPOSITORY_METADATA[1]
     result = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
         check=True, text=True, stdout=subprocess.PIPE,
@@ -256,12 +266,18 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     if len(lines) != 2:
         raise ConfigError("Git returned an invalid metadata layout")
     paths = tuple(Path(line).resolve(strict=True) for line in lines)
+    validate_git_metadata(paths)
+    return paths
+
+
+def validate_git_metadata(paths: tuple[Path, Path]) -> None:
+    if len(paths) != 2:
+        raise ConfigError("Git returned an invalid metadata layout")
     for path in paths:
         if any(character in str(path) for character in (",", "\n", "\r")):
             raise ConfigError("Git metadata path contains a container-mount delimiter")
         if not path.is_dir() or path.is_symlink():
             raise ConfigError(f"Git metadata directory is invalid: {path}")
-    return paths
 
 
 def jj_container_path(repo: Path, host_path: Path, container_repo: Path) -> Path:

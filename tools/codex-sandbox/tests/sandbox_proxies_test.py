@@ -27,6 +27,27 @@ SPEC.loader.exec_module(sandbox_proxies)
 
 
 class ManifestTest(unittest.TestCase):
+    def test_launcher_metadata_is_reused_only_for_its_repository(self):
+        paths = sandbox_proxies.git_metadata_paths(self.repo)
+        identity = sandbox_proxies.repository_identity(self.repo)
+        with mock.patch.object(sandbox_proxies, 'REPOSITORY_METADATA', None):
+            sandbox_proxies.use_repository_metadata(self.repo, paths)
+            with mock.patch.object(sandbox_proxies.subprocess, 'run') as run:
+                self.assertEqual(sandbox_proxies.git_metadata_paths(self.repo), paths)
+                self.assertEqual(sandbox_proxies.repository_identity(self.repo), identity)
+                run.assert_not_called()
+                other = self.repo / 'other'
+                other.mkdir()
+                run.side_effect = RuntimeError('discover other repository')
+                with self.assertRaisesRegex(RuntimeError, 'discover other'):
+                    sandbox_proxies.git_metadata_paths(other)
+
+    def test_supplied_metadata_keeps_mount_delimiter_validation(self):
+        bad = self.repo / 'bad,metadata'
+        bad.mkdir()
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, 'delimiter'):
+            sandbox_proxies.use_repository_metadata(self.repo, (bad, bad))
+
     def test_embedded_helper_keeps_the_callers_runtime(self):
         owner = mock.Mock()
         action = mock.Mock(return_value=7)

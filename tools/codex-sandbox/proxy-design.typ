@@ -392,6 +392,8 @@ A future proxy command with caller-controlled arguments must define a complete a
 == Lifecycle
 
 Short helper calls share the launcher's interpreter and receive explicit argument lists.
+They reuse the Git metadata resolved during repository validation for that launch;
+standalone helper commands still discover their own repository metadata.
 The launcher owns its session and publication locks directly; only the monitor
 retains a separate process lifetime. Lock acquisition runs on the signal-owning
 thread while other startup jobs proceed, so a contended launch can be cancelled.
