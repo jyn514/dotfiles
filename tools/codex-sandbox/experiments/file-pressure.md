@@ -21,3 +21,6 @@ Do not start a large-tree stress run with little host headroom. On September 10,
 2026, pressure had recurred: host usage was 232,331 of 245,760, Docker's VZ
 process held 105,195 descriptors, and its Linux guest reported only 1,984 open
 files. The earlier cache flush was temporary relief, not a durable remedy.
+
+The [September 12 investigation](enfile.md) records recurrence in both Docker
+and Podman, sampled descriptor paths, and a bounded cgroup-reclamation probe.
