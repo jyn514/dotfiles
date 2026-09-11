@@ -1587,7 +1587,7 @@ def restart_all_tmux_sessions() -> int:
         raise LauncherError("tmux has no registered sandbox sessions")
     for registration in registrations:
         remain_on_exit = run([
-            "tmux", "show-options", "-p", "-v", "-t", registration["pane"],
+            "tmux", "show-options", "-A", "-p", "-v", "-t", registration["pane"],
             "remain-on-exit",
         ], capture=True).stdout.strip()
         if remain_on_exit not in {"0", "1", "off", "on"}:

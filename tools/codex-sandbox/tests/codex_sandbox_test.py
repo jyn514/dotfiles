@@ -1054,6 +1054,9 @@ class CodexSandboxTest(unittest.TestCase):
 
         def fake_run(arguments, **_kwargs):
             calls.append(arguments)
+            # Pane-local lookup is empty when remain-on-exit is inherited.
+            if arguments[:2] == ["tmux", "show-options"] and "-A" not in arguments:
+                return SimpleNamespace(stdout="")
             return SimpleNamespace(stdout="off\n")
 
         function_globals = launcher["restart_all_tmux_sessions"].__globals__
