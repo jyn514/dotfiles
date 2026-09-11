@@ -155,7 +155,8 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
         # as argv[0], so its relative Dockerfile lookup stays in dotfiles.
         (sandbox / "base-image").symlink_to(Path(__file__).with_name("lima_fixture_base_image.py"))
         if provider == 'lima-docker':
-            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/docker-bake.hcl', sandbox / 'docker-bake.hcl')
+            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/bake', sandbox / 'bake')
+            (sandbox / 'bake').chmod(0o755)
             shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/Dockerfile', sandbox / 'Dockerfile')
         (home / ".agents/skills").mkdir(parents=True)
         (home / ".codex").mkdir()
@@ -206,8 +207,9 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                     collision.recovery_record.unlink(missing_ok=True)
             print("PASS: the conflicting network survived; fixture resources and recovery record removed.\n",
                   file=sys.stderr, flush=True)
-            base = subprocess.run([str(sandbox / "base-image")], env=environment, cwd=repo,
-                                  check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
+            base = (runtime.bake(repo, ['base'])['base'] if provider == 'lima-docker' else
+                    subprocess.run([str(sandbox / "base-image")], env=environment, cwd=repo,
+                                   check=True, text=True, stdout=subprocess.PIPE).stdout.strip())
             agent = launcher["ensure_image"](launcher["new_state"](["--help"]), base)
             editor = launcher["new_state"](["--help"])
             try:

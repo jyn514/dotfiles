@@ -229,22 +229,36 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
-    def test_docker_startup_uses_existing_image_builders(self) -> None:
+    def test_bake_only_repository_rejects_podman_before_startup_effects(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))['execute']
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
-            builder = repository / '.agents/sandbox/base-image'
+            producer = repository / '.agents/sandbox/bake'
+            producer.parent.mkdir(parents=True)
+            producer.touch()
+            stage = mock.Mock()
+            with mock.patch.dict(execute.__globals__, OUTER_RUNTIME=SimpleNamespace(provider='podman'),
+                                 validate_repository=mock.Mock(), stage_skills=stage):
+                with self.assertRaisesRegex(execute.__globals__['LauncherError'], 'CODEX_SANDBOX_RUNTIME=lima-docker'):
+                    execute(SimpleNamespace(repository=repository))
+            stage.assert_not_called()
+
+    def test_docker_startup_resolves_bake_targets_before_container_workers(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))['execute']
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            builder = repository / '.agents/sandbox/bake'
             builder.parent.mkdir(parents=True)
             builder.touch(mode=0o755)
             manifest = repository / 'manifest.json'
-            manifest.write_text('{"commands": {}}')
+            manifest.write_text('{"commands": {"bug": {"image-target": "bb-bug"}}}')
             state = SimpleNamespace(repository=repository, agent_podman=None,
                                     codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_editor_relay', 'start_editor_relay', 'attach_proxies')}
-            builders = mock.Mock(return_value={
-                'base': SimpleNamespace(stdout='base@digest'), 'auth': SimpleNamespace(stdout='auth@digest')})
+            builders = mock.Mock(return_value={'auth': SimpleNamespace(stdout='auth@digest')})
+            bake = mock.Mock(return_value={'base': 'base@digest', 'bb-bug': 'bug@digest'})
             network_started = threading.Event()
             replacements['ensure_network'].side_effect = network_started.set
             def resolve_images(*args, **kwargs):
@@ -252,7 +266,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 return {}
             resolver = mock.Mock(side_effect=resolve_images)
             replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker',
-                run_builders=builders, builder_image=lambda output: output),
+                run_builders=builders, bake=bake, builder_image=lambda output: output),
                 proxy_module=lambda: SimpleNamespace(resolve_images=resolver),
                 temporary_file=lambda: repository / 'images.json',
                 ensure_image=mock.Mock(return_value='agent@digest'),
@@ -262,7 +276,9 @@ class BackgroundRelayTest(unittest.TestCase):
             with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
                 replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
-                self.assertEqual(set(builders.call_args.args[0]), {'base', 'auth'})
+                self.assertEqual(set(builders.call_args.args[0]), {'auth'})
+                bake.assert_called_once_with(repository, ['base', 'bb-bug'])
+                self.assertEqual(resolver.call_args.kwargs['baked_images'], bake.return_value)
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
                 resolver.side_effect = ValueError('image validation failed')
                 replacements['attach_proxies'].reset_mock()

@@ -46,6 +46,7 @@ class DockerApiTest(unittest.TestCase):
                             inspect(path, '/images/missing/json', command)
                     self.assertEqual(failure.exception.cmd, command)
                     self.assertEqual(failure.exception.stderr, 'No such image: missing')
+                    self.assertEqual(failure.exception.status, 404)
                     self.assertEqual(requests, ['/info', '/images/missing/json'])
                 finally:
                     server.shutdown()

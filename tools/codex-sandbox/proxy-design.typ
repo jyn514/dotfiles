@@ -113,7 +113,7 @@ Networking is disabled unless the manifest declares it and the command requires 
 The launcher also injects trusted built-in commands from its own installation checkout; repository-local declarations may add names but cannot replace a trusted command.
 The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
 The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `image-target`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
-All backends use `image-command`. An `image-target` annotation may remain for manual Bake workflows, but does not select the startup image.
+Lima-Docker prefers `image-target`, naming a target in the repository's fresh Bake declaration. Other backends require `image-command`; trusted dotfiles image commands remain supported on Docker without a Docker CLI shim.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:
 
@@ -122,7 +122,7 @@ A representative first manifest is:
   "version": 1,
   "commands": {
     "bug": {
-      "image-command": [".agents/sandbox/bb-bug-image"],
+      "image-target": "bb-bug",
       "argv": ["bb-bug-proxy", "serve"],
       "workdir": ".",
       "network": false,
@@ -169,7 +169,9 @@ The manifest starts one fixed server; its image owns the server and protocol pol
 The launcher provides the conventional socket volume and waits for readiness but remains unaware of Flower's request schema and argument grammar.
 For `bb-bug`, the immutable image contains both the socket server and the trusted bridge entrypoint.
 
-Rootless Docker uses the same executable builders and input-keyed build-if-missing contract. Their `docker` calls use the recorded engine and pinned clients. Builders may return a local image ID or repository digest, verified in that engine before use. Local IDs passed as `BASE_IMAGE` become tag-plus-digest references for BuildKit. Actual builds serialize native progress across launches. Each launch finishes its builders before starting container workers, retaining cancellation ownership of builder process groups. No additional cache manifest is required.
+Rootless Docker runs `.agents/sandbox/bake` in the repository root to obtain fresh Bake HCL or JSON, then resolves requested targets through pinned Buildx `bake --print` for the recorded engine's platform. The conventional `base` target supplies the agent base; each repository proxy selects its `image-target`. The producer owns source-input hashes in target tags. The launcher hashes resolved target options and actual dependency configuration IDs into private cache tags, skipping builds whose tags already exist. Named `target:` contexts become verified local tag-plus-digest image contexts after their dependencies resolve. Build output remains serialized across launches, and the existing builder supervisor owns cancellation through completion before container workers start. No separate cache manifest or Docker CLI shim is used.
+
+The supported Bake subset is local contexts and Dockerfiles, string arguments and labels, input-keyed tags, an optional build stage, one engine-matching platform, and named target dependencies. External outputs and unsupported build options fail before any build. The fresh producer must reflect source additions, deletions, renames, and content changes; parsing a stale checked-in Bake file does not establish freshness.
 
 `image-command` is an argument array that the launcher executes before the agent starts.
 Like `.agents/sandbox/base-image`, the command may inspect the trusted startup checkout, build an image from its current sources, pull an existing image by tag or digest, or reuse a cached build.

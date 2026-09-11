@@ -134,30 +134,41 @@ Relay creation checks the sysctls again, since network creation can change them
 without changing the daemon's verification receipt. Do not apply these settings
 to an arbitrary Docker installation: they change inter-container filtering.
 
-Startup uses the existing executable `.agents/sandbox/base-image` and each
-proxy's `image-command`, just like Podman. Builders own their input keys and
-build-if-missing decisions. A changed key selects a new tag; an existing tag
-skips the build entirely. The launcher retains its existing agent key, which
-includes copied sources, base image identity, UID, GID, and terminal type.
-No additional cache manifest or Bake definition is required.
+Lima-Docker reads repository images from an executable `.agents/sandbox/bake`.
+Run it from the repository root; stdout must contain fresh Docker Bake HCL or
+JSON with source-input hashes in target tags, and diagnostics belong on stderr.
+The launcher passes the declaration to pinned Buildx `bake --print`, selecting
+the recorded engine's platform through `BUILDPLATFORM`. No build runs during
+metadata resolution.
 
-Builder subprocesses receive a private `docker` adapter on PATH. It uses the
-recorded engine and pinned clients, ignoring ambient Docker contexts and the
-host's Podman alias. `docker build` invokes pinned Buildx directly, loading its
-output locally. Builders may return a local `sha256:` image ID or a repository
-digest; the launcher verifies it in that engine. For existing builders that pass
-an image ID as `BASE_IMAGE`, the adapter resolves it to a local tag plus digest:
-BuildKit otherwise treats the ID as a registry image name.
+The `base` target supplies the agent base. Repository proxy manifests select
+targets with `image-target`; when both fields exist, Docker prefers that target.
+Trusted dotfiles auth, JJ, and Zulip builders still use `sandbox-image` directly.
+The Docker CLI shim has been removed: repository builders must migrate their
+Docker calls to Bake declarations before using this backend.
+
+The producer owns input freshness, including added, removed, renamed, and
+edited sources. A checked-in generated Bake file alone cannot establish that.
+The launcher derives private cache tags from resolved target options, platform,
+and actual dependency image IDs. Existing tags skip the build entirely.
+A changed proxy source key rebuilds only the proxy; a changed base identity
+also invalidates its dependent targets. Manual Bake tags remain separate from
+these launcher-owned tags.
+
+Supported declarations use local contexts and Dockerfiles, string build
+arguments and labels, input-keyed tags, an optional build stage, a single
+engine-matching platform, and named `target:` contexts. Unsupported options,
+cycles, missing dependencies, and external outputs fail before any build.
+Dockerfiles resolve relative to their contexts. Missing targets build through
+pinned Bake with local image output; resolved dependencies use verified local
+tag-plus-digest contexts instead of rewriting `BASE_IMAGE` CLI arguments.
 
 Actual builds serialize their native progress displays across launches.
-Independent image builders run up to four at a time within a launch.
-Each launch finishes its builders before starting container workers, so
-cancellation stops owned builder groups, including nested native builds and
-output-lock waiters, before cleanup.
-Warm launches produce no build transcript.
-On failure, BuildKit prints its diagnostic and the launcher preserves failure
-status. Repository Bake files remain available for manual builds, but startup
-uses `image-command`; `image-target` annotations do not select startup images.
+Independent targets in a ready dependency layer build together.
+Each launch finishes its builds before starting container workers; the existing
+builder supervisor owns declaration, metadata, and build subprocesses.
+Warm launches produce no build transcript. Build failures preserve BuildKit's
+diagnostic and failure status. No additional cache manifest is required.
 
 Network setup failures include the runtime diagnostic and exit status.
 On Lima-Docker this step verifies the provisioned network rather than creating it.

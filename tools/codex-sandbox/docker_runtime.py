@@ -151,25 +151,18 @@ class Docker(VMRuntime):
         return self.inspect_image(reference).reference
 
     def builder_environment(self):
-        # Existing builders own their cache keys and call `docker` themselves.
-        # Route those calls to this engine, not the host's Podman alias.
         return {**os.environ, 'CODEX_SANDBOX_RUNTIME': self.provider,
-                'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state),
-                'PATH': str(Path(__file__).resolve().parent / 'builder-bin') + os.pathsep + os.environ['PATH']}
+                'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state)}
 
-    def builder_arguments(self, arguments):
-        arguments = list(arguments)
-        for index, argument in enumerate(arguments):
-            # Podman accepts a local config ID in FROM; BuildKit interprets it
-            # as docker.io/library/sha256. Preserve the builder's BASE_IMAGE
-            # contract using the recorded engine's tag plus manifest digest.
-            prefix = '--build-arg=BASE_IMAGE=' if argument.startswith('--build-arg=') else 'BASE_IMAGE='
-            if (argument.startswith(prefix) and
-                    (prefix.startswith('--') or index > 0 and arguments[index - 1] == '--build-arg')):
-                value = argument.removeprefix(prefix)
-                if re.fullmatch(r'sha256:[0-9a-f]{64}', value):
-                    arguments[index] = prefix + self.builder_image(value)
-        return arguments
+    def build_platform(self):
+        self.verify_identity()
+        info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
+        arch = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(info['Architecture'], info['Architecture'])
+        return info['OSType'] + '/' + arch
+
+    def bake(self, repo, targets):
+        from bake import resolve
+        return resolve(self, repo, targets)
 
     def run_builder(self, command, *, cwd=None, capture=True):
         """Return one builder's status, optionally capturing its image reference."""
@@ -267,7 +260,7 @@ class Docker(VMRuntime):
         if target:
             arguments += ['--target', target]
         with self.build_output():
-            command = self.argv(self.builder_arguments([*arguments, str(context)]))
+            command = self.argv([*arguments, str(context)])
             if os.environ.get('CODEX_SANDBOX_BUILDER_GROUP') == '1':
                 # The enclosing executable builder owns this process group.
                 # A nested session would let Buildx escape its cancellation.

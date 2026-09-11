@@ -97,6 +97,21 @@ class ManifestTest(unittest.TestCase):
         manifest = sandbox_proxies.load_manifest(self.repo)
         self.assertEqual(["example-proxy", "serve"], manifest["commands"]["example"]["argv"])
 
+    def test_docker_resolves_bake_targets_together_and_reuses_prepared_results(self) -> None:
+        owner = mock.Mock(provider='lima-docker')
+        owner.bake.return_value = {'first': 'first@sha256:one', 'second': 'second@sha256:two'}
+        owner.builder_image.side_effect = lambda value: value
+        manifest = {'commands': {'one': {'image-target': 'first'}, 'two': {'image-target': 'second'}}}
+        with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner):
+            images = sandbox_proxies.resolve_images(self.repo, manifest)
+            self.assertEqual(images, {'one': 'first@sha256:one', 'two': 'second@sha256:two'})
+            owner.bake.assert_called_once_with(self.repo, ['first', 'second'])
+            owner.bake.reset_mock()
+            self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest,
+                            builder_results={}, baked_images=owner.bake.return_value), images)
+            owner.bake.assert_not_called()
+            owner.run_builder.assert_not_called()
+
     def test_bake_target_survives_manifest_normalization(self):
         command = self.command(**{'image-target': 'bb-bug'})
         for legacy in (True, False):

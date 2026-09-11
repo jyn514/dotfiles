@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Print current sandbox build inputs in Docker Bake's JSON format."""
+
+import hashlib
+import json
+from pathlib import Path
+
+sandbox = Path(__file__).resolve().parent
+key = hashlib.sha256((sandbox / 'Dockerfile').read_bytes()).hexdigest()
+print(json.dumps({'variable': {'BUILDPLATFORM': {'default': 'linux/arm64'}},
+                  'target': {'base': {'context': '.agents/sandbox', 'dockerfile': 'Dockerfile',
+                                      'tags': ['dotfiles-sandbox-base:' + key],
+                                      'platforms': ['${BUILDPLATFORM}']}}}))

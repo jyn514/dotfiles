@@ -20,5 +20,4 @@ else:
     runtime.host = SimpleNamespace(state=root)
     runtime.verify = lambda: None
     runtime.argv = lambda arguments: [sys.executable, __file__, 'child', directory]
-    runtime.builder_arguments = lambda arguments: arguments
     runtime.build('unused', root / 'Dockerfile', root)

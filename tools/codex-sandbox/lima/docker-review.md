@@ -69,7 +69,8 @@ reasonable metadata adapter, not a Docker SDK replacement. Keep it narrow.
 The nftables implementation owns sandbox isolation policy while delegating
 compilation and execution to nftables; deleting it requires equivalent isolation.
 
-The `builder-bin/docker` adapter is a partial CLI compatibility layer. Prefer the
-existing `sandbox-image` build/resolve interface for owned builders rather than
-expanding that parser. Bake orchestration delegates HCL parsing to Buildx, but
-duplicates target composition and process supervision for an unused launch path.
+Resolved after review: the Docker CLI adapter was removed. Repository images
+now use fresh Bake declarations resolved by pinned `bake --print`; private cache
+tags include source keys and actual dependency identities. Missing targets build
+through the existing supervisor. Owned dotfiles builders retain `sandbox-image`.
+The abandoned Bake supervisor remains deleted.

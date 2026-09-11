@@ -6,6 +6,12 @@ import socket
 import subprocess
 
 
+class APIError(subprocess.CalledProcessError):
+    def __init__(self, status, command, message):
+        super().__init__(1, command, stderr=message)
+        self.status = status
+
+
 def inspect(socket_path, path, command):
     connection = http.client.HTTPConnection('localhost', timeout=10)
     connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -18,7 +24,7 @@ def inspect(socket_path, path, command):
         if not isinstance(data, dict):
             raise ValueError('Docker inspection did not return an object')
         if response.status != 200:
-            raise subprocess.CalledProcessError(1, command, stderr=data.get('message', str(response.status)))
+            raise APIError(response.status, command, data.get('message', str(response.status)))
         return data
     finally:
         connection.close()

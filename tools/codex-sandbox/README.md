@@ -46,8 +46,9 @@ The separate [rootless Docker prototype](lima/docker.md) uses Docker's forwarded
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
 A repository may provide executable `.agents/sandbox/base-image` and a version 1 `.agents/sandbox/proxy-commands.json`.
-All backends use these builders and their existing cache keys;
-[Lima-Docker routes their Docker commands to its recorded engine](lima/docker.md).
+Podman and nerdctl use these executable builders and their existing cache keys.
+[Lima-Docker uses fresh Bake declarations and `image-target` selections](lima/docker.md)
+through executable `.agents/sandbox/bake`; repository Docker CLI shims are no longer supported.
 Repositories without extra command proxies may omit the manifest.
 These files are trusted startup policy, not agent configuration.
 

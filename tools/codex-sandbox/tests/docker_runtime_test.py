@@ -187,18 +187,13 @@ class DockerRuntimeTest(unittest.TestCase):
                                 except ProcessLookupError:
                                     pass
 
-    def test_builder_base_image_ids_resolve_locally_without_rewriting_other_arguments(self):
+    def test_build_platform_comes_from_the_recorded_engine(self):
         runtime = backend()
-        image = 'sha256:' + 'a' * 64
-        runtime.inspect_image = Mock(return_value=Mock(reference='base:key@sha256:manifest'))
-        arguments = ['buildx', 'build', '--build-arg', 'BASE_IMAGE=' + image,
-                     '--build-arg=BASE_IMAGE=' + image, '--build-arg', 'OTHER=' + image,
-                     '--build-arg', 'BASE_IMAGE=alpine:3.22', '.']
-        expected = [*arguments]
-        expected[3] = 'BASE_IMAGE=base:key@sha256:manifest'
-        expected[4] = '--build-arg=BASE_IMAGE=base:key@sha256:manifest'
-        self.assertEqual(runtime.builder_arguments(arguments), expected)
-        self.assertEqual(arguments[3], 'BASE_IMAGE=' + image)
+        runtime.verify_identity = Mock()
+        with patch('docker_runtime.inspect_docker', return_value={'OSType': 'linux', 'Architecture': 'aarch64'}) as info:
+            self.assertEqual(runtime.build_platform(), 'linux/arm64')
+            info.assert_called_once_with('/owned/docker.sock', '/info', ['docker', 'info'])
+            runtime.verify_identity.assert_called_once_with()
 
     def test_failed_builder_reaps_plugin_after_wrapper_already_exited(self):
         for batched in (False, True):
