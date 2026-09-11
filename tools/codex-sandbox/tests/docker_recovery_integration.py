@@ -38,12 +38,13 @@ def main():
                          '--entrypoint', 'sleep', image.config, '300'])
         runtime.guest(['sudo', 'tee', policy], input=b'{}', stdout=subprocess.DEVNULL)
         with verification_scope():
+            admitted = Docker(args.state)
             try:
-                Docker(args.state)
+                admitted.host.doctor(admitted.record)
             except subprocess.CalledProcessError:
                 pass
             else:
-                raise AssertionError('damaged policy admitted a new runtime')
+                raise AssertionError('doctor accepted damaged policy')
         recovery = Docker(args.state, recovery=True)
         for command in (['run', image.config], ['exec', unrelated, 'true'], ['network', 'create', 'forbidden']):
             try:
@@ -87,7 +88,7 @@ def main():
         runtime.run(['volume', 'rm', volume], check=False, capture_output=True)
         runtime.run(['network', 'rm', network], check=False, capture_output=True)
         with verification_scope():
-            runtime.verify()
+            runtime.host.doctor(runtime.record)
 
 
 if __name__ == '__main__':

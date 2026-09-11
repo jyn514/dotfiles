@@ -75,16 +75,31 @@ python3 tools/codex-sandbox/lima/docker_host.py stop
 python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
-Launches verify an already running VM; they do not install or repair policy.
-Service-readiness queries reuse Lima's generated SSH configuration directly;
-each query still checks the VM identity and Docker service invocation ID.
+Launches check the recorded engine identity and service readiness; they do not
+audit, install, or repair policy. The Docker service installs its firewall in
+`ExecStartPost`; failed installation prevents the service becoming ready.
+Ordinary operations trust that admitted runtime. Cleanup still checks engine
+identity before removing resources, including when policy is damaged.
+
+Setup performs the full configuration audit. To check for configuration drift
+explicitly, run:
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py doctor
+```
+
+Pass `--state DIRECTORY` before `doctor` for a non-default VM. The command checks
+installed policy files, rootless Docker configuration, network rules, and shares;
+it reports failures without repairing them. Out-of-band configuration changes
+are an operator responsibility: run `doctor` after making them. `status` and
+`start` check readiness without the full audit.
+
+Service-readiness queries reuse Lima's generated SSH configuration directly.
 Guest commands also use that SSH configuration, retaining Lima's login shell
 and `/tmp` working directory. Credential transfers remain on stdin.
 In-process proxy helpers reuse the launcher's runtime. Proxy labels and image
-identity come from one live container inspection; Docker operations still
-check the recorded VM and engine as before.
-After builds finish, read-only image checks overlap network preparation;
-proxy attachment waits for both.
+identity come from one live container inspection. Image preparation completes
+before network workers start; independent image checks run concurrently.
 Host-routed commands use a private Unix-socket forward per cached proxy on Lima's
 existing SSH master. The transport creates no per-request container or SSH process;
 the router still performs its runtime and proxy identity checks.
@@ -128,10 +143,10 @@ live restore and workload restart policies are disabled.
 The root-owned daemon configuration enables `userland-proxy` and ICC. Both
 bridge IP traversal sysctls stay zero inside RootlessKit's network namespace;
 native bridge and IP hooks distinguish bridged traffic from routed traffic.
-Verification compares complete native JSON against the recorded policy compiled
+The setup/doctor audit compares complete native JSON against the recorded policy compiled
 in a temporary namespace, rejects ICC-disabled networks, and checks both sysctls.
 Relay creation checks the sysctls again, since network creation can change them
-without changing the daemon's verification receipt. Do not apply these settings
+after service activation. Do not apply these settings
 to an arbitrary Docker installation: they change inter-container filtering.
 
 Lima-Docker reads repository images from an executable `.agents/sandbox/bake`.

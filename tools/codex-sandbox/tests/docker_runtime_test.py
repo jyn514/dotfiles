@@ -36,6 +36,60 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_machine_lookup_leaves_configuration_drift_to_the_audit(self):
+        host = object.__new__(DockerHost)
+        machine = {'config': {}}
+        host.machine_identity = Mock(return_value=machine)
+        record = {'config_digest': 'different configuration'}
+        self.assertIs(host.machine(record), machine)
+        with self.assertRaisesRegex(ValueError, 'configuration changed'):
+            host.verify(record)
+
+    def test_new_runtime_checks_identity_and_readiness_once(self):
+        host = Mock()
+        host.record.return_value = {'phase': 'ready'}
+        with patch('docker_runtime.DockerHost', return_value=host), patch.object(Docker, 'verify_identity') as identity:
+            Docker(Path('/owned'))
+            identity.assert_called_once_with()
+            host.verify_runtime.assert_called_once_with(host.record.return_value)
+            host.verify.assert_not_called()
+            host.verify_runtime.side_effect = ValueError('readiness has not completed')
+            with self.assertRaisesRegex(ValueError, 'readiness'):
+                Docker(Path('/owned'))
+            host.verify_runtime.reset_mock()
+            Docker(Path('/owned'), recovery=True)
+            host.verify_runtime.assert_not_called()
+
+    def test_ready_host_does_not_audit_policy_until_doctor(self):
+        host = object.__new__(DockerHost)
+        host.state = Path('/owned')
+        host.runtime_epoch = Mock(return_value='a' * 32)
+        host.verify = Mock()
+        host.verify_runtime({})
+        host.verify.assert_not_called()
+        host.doctor({})
+        host.verify.assert_called_once_with({})
+        host.verify.side_effect = ValueError('policy drift')
+        host.verify_runtime({})
+        with self.assertRaisesRegex(ValueError, 'policy drift'):
+            host.doctor({})
+        host.verify.side_effect = None
+        host.runtime_epoch.side_effect = ['a' * 32, 'b' * 32]
+        with self.assertRaisesRegex(ValueError, 'restarted during doctor'):
+            host.doctor({})
+
+    def test_admitted_runtime_does_not_recheck_service_for_commands_or_metadata(self):
+        runtime = backend()
+        runtime.verify = Mock(side_effect=AssertionError('repeated service check'))
+        runtime.verify_identity = Mock(side_effect=AssertionError('repeated identity check'))
+        runtime.client_argv = lambda arguments: arguments
+        for command in (['run', 'image'], ['exec', 'owned', 'command'], ['network', 'create', 'new'],
+                        ['inspect', 'owned'], ['wait', 'owned']):
+            self.assertEqual(runtime.argv(command), command)
+        with patch('docker_runtime.inspect_docker', return_value={}):
+            self.assertEqual(runtime.image_metadata('image'), {})
+            self.assertEqual(runtime.inspect_container('owned'), {})
+
     def test_preparation_reuses_bake_references_and_validates_executable_results_once(self):
         runtime = backend()
         runtime.bake = Mock(return_value={'base': 'base@digest', 'bug': 'bug@digest'})
@@ -74,7 +128,7 @@ class DockerRuntimeTest(unittest.TestCase):
             runtime.prepare_images(Path('/unused'), {'jj': {'image-command': ['jj']}})
         runtime.builder_image.assert_not_called()
 
-    def test_relay_creation_checks_readiness_then_bridge_policy(self):
+    def test_relay_creation_checks_new_bridge_without_repeating_admission(self):
         runtime = backend()
         runtime.record['firewall'] = 'nftables'
         events = []
@@ -83,14 +137,8 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.guest = Mock(side_effect=lambda *a, **kw: events.append('bridge policy'))
         with patch('subprocess.run', side_effect=lambda *a, **kw: events.append('create')) as run:
             runtime.create_relay_network('owned', internal=True, owner='a' * 32)
-            self.assertEqual(events, ['ready', 'create', 'bridge policy'])
-            events.clear()
-            run.reset_mock()
-            runtime.verify.side_effect = ValueError('not ready')
-            with self.assertRaisesRegex(ValueError, 'not ready'):
-                runtime.create_relay_network('owned', internal=True, owner='a' * 32)
-            run.assert_not_called()
-            self.assertEqual(events, [])
+            self.assertEqual(events, ['create', 'bridge policy'])
+            runtime.verify.assert_not_called()
 
     def test_container_identity_uses_one_live_snapshot_for_labels_and_image(self):
         runtime = backend()
@@ -99,7 +147,7 @@ class DockerRuntimeTest(unittest.TestCase):
         raw = {'Image': image.config, 'Config': {'Image': 'untrusted-tag', 'Labels': {'owner': 'ours'}}}
         with patch('docker_runtime.inspect_docker', return_value=raw) as inspect:
             self.assertTrue(runtime.container_matches_image('owned', image, labels={'owner': 'ours'}))
-            runtime.verify_identity.assert_called_once_with()
+            runtime.verify_identity.assert_not_called()
             inspect.assert_called_once_with('/owned/docker.sock', '/containers/owned/json',
                                             ['docker', 'inspect', 'owned'])
             raw['Config']['Labels']['owner'] = 'another'
@@ -108,6 +156,7 @@ class DockerRuntimeTest(unittest.TestCase):
             raw['Image'] = 'sha256:another'
             self.assertFalse(runtime.container_matches_image('owned', image, labels={'owner': 'ours'}))
             inspect.reset_mock()
+            runtime.recovery = True
             runtime.verify_identity.side_effect = ValueError('engine replaced')
             with self.assertRaisesRegex(ValueError, 'engine replaced'):
                 runtime.inspect_container('owned')
@@ -231,7 +280,7 @@ class DockerRuntimeTest(unittest.TestCase):
         with patch('docker_runtime.inspect_docker', return_value={'OSType': 'linux', 'Architecture': 'aarch64'}) as info:
             self.assertEqual(runtime.build_platform(), 'linux/arm64')
             info.assert_called_once_with('/owned/docker.sock', '/info', ['docker', 'info'])
-            runtime.verify_identity.assert_called_once_with()
+            runtime.verify_identity.assert_not_called()
 
     def test_failed_builder_reaps_plugin_after_wrapper_already_exited(self):
         for batched in (False, True):
@@ -281,15 +330,16 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.verify_identity = Mock(side_effect=ValueError('engine identity changed'))
         runtime.host.verify_runtime.side_effect = ValueError('engine identity changed')
         for command in (['rm', '-f', 'agent'], ['network', 'rm', 'link'],
-                        ['volume', 'rm', 'proxy'], ['exec', 'proxy', 'command']):
+                        ['volume', 'rm', 'proxy']):
             with self.subTest(command=command), patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'engine identity'):
                     runtime.run(command)
                 run.assert_not_called()
 
-    def test_policy_damage_blocks_admission_but_not_identity_checked_cleanup(self):
+    def test_recovery_allows_only_identity_checked_inspection_and_cleanup(self):
         runtime = backend()
         runtime.verify_identity = Mock()
+        runtime.recovery = True
         runtime.host.verify_runtime.side_effect = ValueError('damaged firewall')
         for command in (['rm', '-f', 'owned'], ['network', 'rm', 'owned'], ['volume', 'rm', 'owned']):
             with self.subTest(command=command), patch('subprocess.run') as run:
@@ -297,7 +347,7 @@ class DockerRuntimeTest(unittest.TestCase):
                 run.assert_called_once()
         for command in (['run', 'image'], ['exec', 'owned', 'command'], ['network', 'create', 'new']):
             with self.subTest(command=command), patch('subprocess.run') as run:
-                with self.assertRaisesRegex(ValueError, 'damaged firewall'):
+                with self.assertRaisesRegex(ValueError, 'cleanup only'):
                     runtime.run(command)
                 run.assert_not_called()
         runtime.recovery = True

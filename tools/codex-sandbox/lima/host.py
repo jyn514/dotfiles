@@ -127,7 +127,7 @@ class Host:
             kwargs.setdefault("stdin", subprocess.DEVNULL)
         return command(*self.guest_argv(record, *args), **kwargs)
 
-    def machine(self, record):
+    def machine_identity(self, record):
         machine = machines().get(record["instance"])
         if machine is None:
             raise ValueError("recorded VM is missing; rerun setup only for unfinished creation")
@@ -135,6 +135,10 @@ class Host:
             identity = hashlib.sha256((Path(machine["dir"]) / "vz-identifier").read_bytes()).hexdigest()
             if identity != record["vm_identity"]:
                 raise ValueError("VM hardware identity changed after setup")
+        return machine
+
+    def machine(self, record):
+        machine = self.machine_identity(record)
         config = machine["config"]
         digest = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
         if record.get("config_digest", digest) != digest:

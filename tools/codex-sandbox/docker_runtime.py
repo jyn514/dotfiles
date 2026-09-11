@@ -84,16 +84,17 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker engine identity changed; refusing recovery')
 
     def argv(self, arguments, *, cwd=None):
-        # Both verification paths check the VM; do not query limactl twice.
         cleanup = (arguments[0] in ('inspect', 'ps', 'info', 'wait', 'rm', 'kill', 'stop') or
                    tuple(arguments[:2]) in (('container', 'ls'), ('network', 'ls'), ('network', 'inspect'),
                                            ('network', 'rm'), ('volume', 'ls'), ('volume', 'inspect'), ('volume', 'rm')))
-        if cleanup:
-            self.verify_identity()
-        elif self.recovery:
+        destructive_cleanup = (arguments[0] in ('rm', 'kill', 'stop') or
+                               tuple(arguments[:2]) in (('network', 'rm'), ('volume', 'rm')))
+        if self.recovery and not cleanup:
             raise RuntimeError('Docker recovery permits inspection and cleanup only')
-        else:
-            self.verify()
+        if self.recovery or destructive_cleanup:
+            self.verify_identity()
+        # Construction admits this runtime once. Ordinary commands trust the
+        # controlled service; cleanup must still target the recorded engine.
         return self.client_argv(arguments)
 
     def client_argv(self, arguments):
@@ -120,7 +121,6 @@ class Docker(VMRuntime):
     def image_metadata(self, reference):
         if self.recovery:
             raise RuntimeError('Docker recovery permits inspection and cleanup only')
-        self.verify()
         return inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
                               ['docker', 'image', 'inspect', reference])
 
@@ -150,7 +150,8 @@ class Docker(VMRuntime):
         return Image(immutable, content, config, chain_id(raw['RootFS']['Layers']))
 
     def inspect_container(self, container):
-        self.verify_identity()
+        if self.recovery:
+            self.verify_identity()
         return inspect_docker(self.record['socket'], '/containers/' + quote(container, safe='') + '/json',
                               ['docker', 'inspect', container])
 
@@ -164,7 +165,6 @@ class Docker(VMRuntime):
                 'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state)}
 
     def build_platform(self):
-        self.verify_identity()
         info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
         arch = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(info['Architecture'], info['Architecture'])
         return info['OSType'] + '/' + arch
@@ -197,8 +197,8 @@ class Docker(VMRuntime):
             if result.returncode or '\n' in output:
                 raise RuntimeError(f'image-command for {name} did not print exactly one immutable image hash')
             return name, self.builder_image(output)
-        # Admission checks query Lima and the guest service. Keep these read-only
-        # checks parallel even though preparation publishes one combined result.
+        # Keep independent image reads parallel even though preparation
+        # publishes one combined result.
         with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
             resolved = dict(workers.map(resolve_builder, built.items()))
         # Bake already resolved these references in this engine. Only serialized
@@ -296,7 +296,6 @@ class Docker(VMRuntime):
             yield
 
     def build(self, tag, dockerfile, context, *, build_args=(), target=None):
-        self.verify()
         arguments = ['buildx', 'build', '--builder', 'default', '--load', '--provenance=false',
                      '--file', str(dockerfile), '--tag', tag]
         for value in build_args:
@@ -360,7 +359,8 @@ class Docker(VMRuntime):
         return forward(self.proxy_forward_record(container)['owner'])
 
     def ensure_public_network(self):
-        self.verify()
+        # Setup owns this network; service activation installs its firewall.
+        pass
 
     def create_relay_network(self, name, *, internal, owner=None):
         if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
@@ -370,11 +370,9 @@ class Docker(VMRuntime):
                      '--opt', 'com.docker.network.bridge.name=' + bridge]
         if internal:
             arguments += ['--internal']
-        # run/argv verifies immediately before creation; an earlier check here
-        # would repeat the same VM and service audit for this one operation.
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
-        # Docker can change bridge traversal without changing its service epoch,
-        # so the cached verification receipt cannot cover network creation.
+        # New bridges change traversal after service activation; validate the
+        # topology created by this operation even in an admitted runtime.
         if self.record.get('firewall') == 'nftables':
             self.guest(['python3', '/usr/local/share/codex-sandbox/docker-policy.py', 'check-bridges'])
 

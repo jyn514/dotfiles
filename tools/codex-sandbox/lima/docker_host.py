@@ -22,6 +22,10 @@ class DockerHost(Host):
     provider = 'lima-docker'
     containerd_user = False
 
+    def machine(self, record):
+        """Runtime lookup checks identity; setup/doctor owns configuration drift."""
+        return self.machine_identity(record)
+
     def guest_argv(self, record, *args):
         if 'socket' not in record:
             return super().guest_argv(record, *args)
@@ -54,7 +58,9 @@ class DockerHost(Host):
             if record['instance'] != instance or record['shares'] != requested:
                 raise ValueError('Docker setup identity changed; use a separate state directory')
             if record['phase'] == 'ready':
-                return self.start()
+                record = self.start()
+                self.doctor(record)
+                return record
             if record.get('firewall') != 'nftables':
                 raise ValueError('old Docker setup is incomplete; provision a new instance and state directory')
         else:
@@ -152,9 +158,29 @@ class DockerHost(Host):
         if network['Labels'].get('dev.codex.generation') != record['generation']:
             raise ValueError('Docker public network belongs to another creator')
         record['network_id'] = network['Id']
-        self.verify(record)
+        self.doctor(record)
         record['phase'] = 'ready'
         atomic_json(self.record_path, record)
+        return record
+
+    def verify_runtime(self, record):
+        # This controlled VM installs its firewall in ExecStartPost. Admission
+        # needs service readiness; configuration drift belongs to setup/doctor.
+        self.runtime_epoch(record)
+
+    def doctor(self, record):
+        epoch = self.runtime_epoch(record)
+        self.verify(record)
+        if self.runtime_epoch(record) != epoch:
+            raise ValueError('Docker restarted during doctor; retry the audit')
+
+    def start(self):
+        record = self.record()
+        if record['phase'] != 'ready':
+            raise ValueError('setup is incomplete; rerun setup with the same shares')
+        self.machine(record)
+        command('limactl', 'start', '--tty=false', record['instance'])
+        self.verify_runtime(record)
         return record
 
     def runtime_epoch(self, record):
@@ -172,7 +198,7 @@ class DockerHost(Host):
         return values['InvocationID']
 
     def verify(self, record, *, quiet=False):
-        self.machine(record)
+        super().machine(record)
         installed = self.guest(record, 'sha256sum', GUEST + '/docker-policy.py', capture_output=True, text=True).stdout.split()[0]
         if installed != record['files']['docker-policy.py']:
             raise ValueError('installed Docker verifier changed')
@@ -188,7 +214,7 @@ def main():
     setup.add_argument('--share-read', action='append')
     setup.add_argument('--share-write', action='append')
     setup.add_argument('--client', type=Path)
-    for name in ('start', 'stop', 'status', 'pin-buildx'):
+    for name in ('start', 'stop', 'status', 'doctor', 'pin-buildx'):
         sub.add_parser(name)
     pin = sub.add_parser('pin-client')
     pin.add_argument('--source', type=Path, default=Path('/opt/homebrew/bin/docker'))
@@ -200,6 +226,9 @@ def main():
         elif args.operation == 'status':
             record = host.record()
             host.verify_runtime(record)
+        elif args.operation == 'doctor':
+            record = host.record()
+            host.doctor(record)
         elif args.operation == 'pin-buildx':
             host.record()
             print(pin_buildx(host.state))
