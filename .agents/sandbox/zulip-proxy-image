@@ -1,20 +1,5 @@
 #!/bin/sh
 set -eu
 
-DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
-cd "$DOTFILES"
-
-temporary=$(mktemp -d)
-trap 'rm -rf "$temporary"' EXIT HUP INT TERM
-sources="$temporary/sources"
-hashes="$temporary/hashes"
-# Match Dockerfile COPY inputs; tests and bytecode never enter this image.
-printf '%s\n' tools/zulip-proxy/Dockerfile tools/zulip-proxy/server.py \
-	tools/zulip-proxy/forward.py > "$sources"
-LC_ALL=C sort -o "$sources" "$sources"
-git hash-object --stdin-paths < "$sources" > "$hashes"
-/usr/bin/paste -d ' ' "$sources" "$hashes" > "$temporary/combined"
-cache_key=$(git hash-object --stdin < "$temporary/combined")
-image="zulip-proxy:$cache_key"
-tools/codex-sandbox/sandbox-image build --if-missing \
-	--file tools/zulip-proxy/Dockerfile --tag "$image" .
+root=$(CDPATH= cd -- "$(dirname -- "$(realpath -- "$0")")/../.." && pwd -P)
+exec python3 "$root/tools/codex-sandbox/owned_images.py" zulip

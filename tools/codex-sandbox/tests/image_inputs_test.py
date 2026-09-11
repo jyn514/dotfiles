@@ -40,6 +40,7 @@ class ImageInputsTest(unittest.TestCase):
             shutil.copy2(ROOT / '.agents/sandbox/zulip-proxy-image', builder)
             image = root / 'tools/codex-sandbox/sandbox-image'
             image.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', image.parent / 'owned_images.py')
             shutil.copyfile(Path(__file__).parent / 'fixtures/image-tag.py', image)
             image.chmod(0o755)
             for name in ('Dockerfile', 'server.py', 'forward.py'):

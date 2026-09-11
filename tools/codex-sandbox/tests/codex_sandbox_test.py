@@ -834,7 +834,7 @@ class CodexSandboxTest(unittest.TestCase):
             # Repository builders now use the image helper's single-reference
             # protocol. Keep the launch test independent of a real image build.
             case "$1" in
-                */sandbox-image) printf 'sha256:%064d\\n' 0; exit 0 ;;
+                */owned_images.py|*/sandbox-image) printf 'sha256:%064d\\n' 0; exit 0 ;;
             esac
             {
                 printf 'CALL'

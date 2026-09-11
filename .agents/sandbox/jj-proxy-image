@@ -1,22 +1,5 @@
 #!/bin/sh
 set -eu
 
-DOTFILES="$(dirname -- "$(dirname -- "$(realpath -- "$0")")")/.."
-cd "$DOTFILES"
-
-temporary=$(mktemp -d)
-trap 'rm -rf "$temporary"' EXIT HUP INT TERM
-sources="$temporary/sources"
-hashes="$temporary/hashes"
-# Match Dockerfile COPY inputs; target/ and test output must not invalidate images.
-find tools/jj-proxy/src -type f -print > "$sources"
-printf '%s\n' tools/jj-proxy/Dockerfile tools/jj-proxy/Cargo.toml \
-	tools/jj-proxy/Cargo.lock tools/jj-proxy/jj.toml \
-	tools/jj-proxy/agent-split-editor config/gitignore >> "$sources"
-LC_ALL=C sort -o "$sources" "$sources"
-git hash-object --stdin-paths < "$sources" > "$hashes"
-/usr/bin/paste -d ' ' "$sources" "$hashes" > "$temporary/combined"
-cache_key=$(git hash-object --stdin < "$temporary/combined")
-image="jj-proxy:$cache_key"
-tools/codex-sandbox/sandbox-image build --if-missing \
-	--file tools/jj-proxy/Dockerfile --tag "$image" .
+root=$(CDPATH= cd -- "$(dirname -- "$(realpath -- "$0")")/../.." && pwd -P)
+exec python3 "$root/tools/codex-sandbox/owned_images.py" jj

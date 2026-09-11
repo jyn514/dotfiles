@@ -18,6 +18,7 @@ class ImageBuilderTest(unittest.TestCase):
             shutil.copy2(ROOT / '.agents/sandbox/jj-proxy-image', builder)
             helper = root / 'tools/codex-sandbox/sandbox-image'
             helper.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', helper.parent / 'owned_images.py')
             shutil.copyfile(ROOT / 'tools/codex-sandbox/tests/fixtures/print-builder-arguments.sh', helper)
             helper.chmod(0o755)
             for name in ('Dockerfile', 'Cargo.toml', 'Cargo.lock', 'src/main.rs', 'jj.toml', 'agent-split-editor'):

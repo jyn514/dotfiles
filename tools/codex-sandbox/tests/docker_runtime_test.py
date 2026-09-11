@@ -36,6 +36,21 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_owned_helpers_use_installed_declaration_without_executable_builders(self):
+        import owned_images
+        runtime = backend()
+        runtime.bake = Mock(return_value={'jj': 'repository-image'})
+        runtime.run_builders = Mock(return_value={})
+        command = next(path for path, name in owned_images.COMMANDS.items() if name == 'jj')
+        with patch('bake.resolve', return_value={'jj': 'installed-image'}) as resolve:
+            prepared = runtime.prepare_images(Path('/repository'), {
+                'trusted': {'image-command': [command]}, 'untrusted': {'image-target': 'jj'}})
+        self.assertEqual(prepared.proxies, {'trusted': 'installed-image', 'untrusted': 'repository-image'})
+        self.assertEqual(resolve.call_args.args[:3], (runtime, owned_images.ROOT, ['jj']))
+        runtime.run_builders.assert_called_once_with({})
+        self.assertIsNone(owned_images.target([command, 'extra']))
+        self.assertIsNone(owned_images.target(['.agents/sandbox/jj-proxy-image']))
+
     def test_machine_lookup_leaves_configuration_drift_to_the_audit(self):
         host = object.__new__(DockerHost)
         machine = {'config': {}}

@@ -188,6 +188,13 @@ class Docker(VMRuntime):
             else:
                 raise RuntimeError(f'proxy {name} requires image-target for lima-docker')
         baked = self.bake(repo, targets)
+        from bake import resolve
+        import owned_images
+        owned = {name: owned_images.target(command) for name, (command, _) in builders.items()
+                 if owned_images.target(command) is not None}
+        helpers = resolve(self, owned_images.ROOT, list(owned.values()),
+                          declaration=owned_images.declaration(owned.values())) if owned else {}
+        builders = {name: builder for name, builder in builders.items() if name not in owned}
         built = self.run_builders(builders)
         def resolve_builder(item):
             name, result = item
@@ -201,6 +208,7 @@ class Docker(VMRuntime):
         # publishes one combined result.
         with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
             resolved = dict(workers.map(resolve_builder, built.items()))
+        resolved.update({name: helpers[target] for name, target in owned.items()})
         # Bake already resolved these references in this engine. Only serialized
         # references crossing into the proxy subprocess need another inspection.
         proxies = {name: baked[command['image-target']] if command.get('image-target')

@@ -55,7 +55,7 @@ def target_graph(metadata, requested, platform):
     return sorter
 
 
-def resolve(runtime, repo, requested):
+def resolve(runtime, repo, requested, *, declaration=None):
     """One fresh declaration, one engine, and one immutable result per target."""
     repo = Path(repo).resolve()
     requested = list(dict.fromkeys(requested))
@@ -63,20 +63,24 @@ def resolve(runtime, repo, requested):
         return {}
     if any(not re.fullmatch(r'[A-Za-z0-9_-]+', name) for name in requested):
         raise RuntimeError('invalid Bake target name')
-    producer = repo / '.agents/sandbox/bake'
-    if not producer.is_file():
-        raise RuntimeError(f'{producer} must emit a fresh Bake declaration with input-keyed tags')
-    source = runtime.run_builder([str(producer)], cwd=repo)
-    source.check_returncode()
+    if declaration is None:
+        producer = repo / '.agents/sandbox/bake'
+        if not producer.is_file():
+            raise RuntimeError(f'{producer} must emit a fresh Bake declaration with input-keyed tags')
+        result = runtime.run_builder([str(producer)], cwd=repo)
+        result.check_returncode()
+        source = result.stdout
+    else:
+        source = json.dumps(declaration)
     platform = runtime.build_platform()
     with tempfile.TemporaryDirectory(prefix='sandbox-bake-') as directory:
         try:
-            json.loads(source.stdout)
+            json.loads(source)
             suffix = 'json'
         except json.JSONDecodeError:
             suffix = 'hcl'
         definition = Path(directory) / ('docker-bake.' + suffix)
-        definition.write_text(source.stdout)
+        definition.write_text(source)
         printed = runtime.run_builder(runtime.argv([
             'buildx', 'bake', '--builder', 'default', '--print', '--progress=quiet', '--file', str(definition),
             '--var', 'BUILDPLATFORM=' + platform, *requested]), cwd=repo)

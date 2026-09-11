@@ -2,11 +2,4 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd -P)
-cd "$root"
-hashes=$(git hash-object \
-	tools/codex-sandbox/auth-proxy/Dockerfile \
-	tools/codex-sandbox/auth-proxy/server.py)
-cache_key=$(printf '%s\n' "$hashes" | git hash-object --stdin)
-image="codex-auth-proxy:$cache_key"
-exec tools/codex-sandbox/sandbox-image build --if-missing \
-	--file tools/codex-sandbox/auth-proxy/Dockerfile --tag "$image" .
+exec python3 "$root/tools/codex-sandbox/owned_images.py" auth

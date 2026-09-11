@@ -158,7 +158,10 @@ metadata resolution.
 
 The `base` target supplies the agent base. Repository proxy manifests select
 targets with `image-target`; when both fields exist, Docker prefers that target.
-Trusted dotfiles auth, JJ, and Zulip builders still use `sandbox-image` directly.
+The installed auth, JJ, and Zulip helpers share a fresh Bake declaration and the
+launcher's admitted runtime. Their compatibility commands use the same source
+keys with `sandbox-image` on other backends. Repository targets cannot replace
+the installed helpers.
 The Docker CLI shim has been removed: repository builders must migrate their
 Docker calls to Bake declarations before using this backend.
 
