@@ -272,6 +272,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                     }), flush=True)
                     proxy = next(proxy for proxy in metadata["state"]["proxies"] if proxy["name"] == "jj")
                     if provider == 'lima':
+                        stalled_route = route
                         container = json.loads(runtime.run(["inspect", *native, proxy["container"]],
                             capture_output=True).stdout)[0]["ID"]
                         listing = ["containerd-rootless-setuptool.sh", "nsenter", "--", "ctr",
@@ -279,10 +280,13 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                         tasks_now = lambda: runtime.guest(listing, capture_output=True, text=True, timeout=10).stdout
                         active = lambda tasks: bool(re.search(r'exec_id:"codex-forward-', tasks))
                     else:
-                        tasks_now = lambda: runtime.run(['ps', '-a', '--filter', 'name=codex-forward-',
-                                                        '--format', '{{.Names}}'], capture_output=True).stdout
-                        active = lambda tasks: bool(tasks.strip())
-                    stalled = subprocess.Popen(route, env=environment, stdin=subprocess.PIPE,
+                        ready = home / 'forwarding-request-sent'
+                        ready.unlink(missing_ok=True)
+                        stalled_route = [sys.executable, str(ROOT / 'tests/proxy_route_fixture.py'),
+                                         str(ready), *route[2:]]
+                        tasks_now = ready.exists
+                        active = bool
+                    stalled = subprocess.Popen(stalled_route, env=environment, stdin=subprocess.PIPE,
                                                stdout=subprocess.DEVNULL)
                     try:
                         # Cancellation must also cover a request already being
@@ -294,16 +298,22 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                             tasks = tasks_now()
                             if active(tasks):
                                 break
-                            assert stalled.poll() is None, "router exited before registering its exec"
+                            assert stalled.poll() is None, "router exited before opening its connection"
                             time.sleep(0.1)
                         else:
-                            raise AssertionError("router never registered its exec")
+                            raise AssertionError("router never opened its connection")
                         stalled.terminate()
                         assert stalled.wait(timeout=30) == 143
-                        deadline = time.monotonic() + 10
-                        while active(tasks_now()) and time.monotonic() < deadline:
-                            time.sleep(0.1)
-                        assert not active(tasks_now()), "terminated router left a guest exec"
+                        if provider == 'lima':
+                            deadline = time.monotonic() + 10
+                            while active(tasks_now()) and time.monotonic() < deadline:
+                                time.sleep(0.1)
+                            assert not active(tasks_now()), "terminated router retained its connection"
+                        else:
+                            recovered = subprocess.run(route, env=environment,
+                                input=struct.pack('>I', len(request)) + request,
+                                stdout=subprocess.PIPE, check=True, timeout=5).stdout
+                            assert recovered == response, 'request after cancellation changed'
                         assert runtime.run(["inspect", "--format", "{{.State.Running}}", proxy["container"]],
                                            capture_output=True).stdout.strip() == "true"
                     finally:

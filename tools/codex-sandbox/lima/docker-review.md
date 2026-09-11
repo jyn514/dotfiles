@@ -4,6 +4,9 @@ Reviewed revision `b4930191` on 2026-09-10. The backend is viable as an opt-in
 prototype; simplify process ownership before further startup optimization.
 This review does not establish full Podman parity.
 
+The [process ownership design](../process-ownership.typ) records the subsequent
+cancellation audit, reproduced failures, and proposed cleanup boundaries.
+
 ## Cancellation and abandoned orchestration
 
 `Docker.bake()` always starts a new session, even inside `run_builder()`.
@@ -22,7 +25,7 @@ consolidation is a separate candidate, not a prerequisite for deleting Bake.
 Resolved after review: the unused Bake orchestration and supervisor were removed,
 eliminating that escape path. Failed-wrapper cleanup tests now exercise the
 active single and concurrent builder APIs; nested build and lock-waiter
-cancellation coverage remains. The compatibility findings below are still open.
+cancellation coverage remains. The image-identity and wait findings below remain open.
 
 ## Podman compatibility
 
@@ -38,6 +41,12 @@ cancellation coverage remains. The compatibility findings below are still open.
   per request; Podman uses `exec`. This adds latency but gives each request a
   cancellable container lifetime. Plain Docker `exec` would lose that guarantee.
   Measure complete routed commands before choosing another transport.
+
+Resolved after review: Lima-Docker now registers one Unix-socket forward per
+cached proxy on Lima's SSH master. Requests own only their connections; recovery
+state owns listener and guest-alias cleanup. See the updated
+[proxy contract](../proxy-design.typ) for transport-status semantics and the
+[forwarding findings](forwarding-review.md) for measurements and validation limits.
 
 The first two differences were reproduced without a VM. The forwarding difference
 was established by reading both implementations; no comparative timing was taken

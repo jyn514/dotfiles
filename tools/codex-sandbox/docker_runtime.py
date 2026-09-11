@@ -298,10 +298,9 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker image has no supported agent command')
         return [*entrypoint, *command]
 
-    def forward_proxy(self, container):
-        # Docker has no exec-kill API. Give each routed request a container
-        # lifetime, so cancellation needs neither guest PIDs nor ctr internals.
-        proxy = single_json(self.run(['inspect', container], capture_output=True).stdout)
+    def proxy_forward_record(self, container, owner=None):
+        from lima.proxy_socket import directory
+        proxy = self.inspect_container(container)
         environment = dict(value.split('=', 1) for value in proxy['Config']['Env'])
         socket = Path(environment.get('SANDBOX_PROXY_SOCKET', '/run/sandbox-proxy/socket'))
         mounts = [mount for mount in proxy['Mounts'] if mount['Type'] == 'volume' and
@@ -309,27 +308,28 @@ class Docker(VMRuntime):
         if len(mounts) != 1:
             raise RuntimeError('proxy socket must belong to one owned volume')
         mount = mounts[0]
-        arguments = ['--interactive', '--network', 'none', '--read-only', '--cap-drop', 'ALL',
-                     '--memory', '64m', '--pids-limit', '16', '--cpus', '0.25',
-                     '--ulimit', 'nofile=64:64',
-                     '--security-opt', 'no-new-privileges',
-                     '--user', proxy['Config']['User'] or '0',
-                     '--env', 'SANDBOX_PROXY_SOCKET=' + str(socket),
-                     '--mount', f"type=volume,src={mount['Name']},dst={mount['Destination']},readonly",
-                     '--entrypoint', '/trusted/bin/sandbox-proxy-forward']
-        image = self.inspect_image(proxy['Image'])
-        def interrupted(signum, _frame):
-            for pending in signals:
-                signal.signal(pending, signal.SIG_IGN)
-            raise SystemExit(128 + signum)
-        signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-        handlers = {signum: signal.signal(signum, interrupted) for signum in signals}
-        try:
-            with self.workload(image, 'codex-forward-' + uuid.uuid4().hex, arguments) as process:
-                return process.wait()
-        finally:
-            for signum, handler in handlers.items():
-                signal.signal(signum, handler)
+        volume = single_json(self.run(['volume', 'inspect', mount['Name']], capture_output=True).stdout)
+        recorded_owner = volume.get('Labels', {}).get('dev.codex.volume-owner')
+        if owner is not None and owner != recorded_owner:
+            raise RuntimeError('proxy socket volume owner changed')
+        directory(recorded_owner)  # Validate before deriving a local capability path.
+        root = Path(volume['Mountpoint'])
+        relative = socket.relative_to(mount['Destination'])
+        if not root.is_absolute() or root.name != '_data' or root.parent.name != mount['Name'] or '..' in relative.parts:
+            raise RuntimeError('unexpected proxy socket mountpoint')
+        return {'owner': recorded_owner, 'target': str(root / relative)}
+
+    def start_proxy_forward(self, record):
+        from lima.proxy_forward import start
+        start(self, record)
+
+    def stop_proxy_forward(self, record):
+        from lima.proxy_forward import stop
+        stop(self, record)
+
+    def forward_proxy(self, container):
+        from lima.proxy_forward import forward
+        return forward(self.proxy_forward_record(container)['owner'])
 
     def ensure_public_network(self):
         self.verify()

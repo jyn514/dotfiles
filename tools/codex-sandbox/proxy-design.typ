@@ -178,7 +178,7 @@ The launcher rejects an empty, malformed, or multi-line result and starts the pr
 Podman uses a configuration digest; Lima uses a locally registered canonical reference with a verified native content descriptor.
 Images must belong to the selected outer store; a Podman image ID cannot stand in for a Lima image.
 
-A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for host routing.
+A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for readiness checks and runtimes that use container execution for host routing.
 The forwarding client uses the configured path while it exists and otherwise falls back to the default path.
 
 The image command and everything it loads from `.agents/sandbox` are trusted manifest support code.
@@ -257,7 +257,7 @@ A host-side `bb bug` shim gives it the `bug` manifest key, framed request, and l
 The router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
-+ If the launcher holds the lock and valid metadata exists, use the recorded runtime's `exec` operation to run a fixed immutable byte-forwarding client in the recorded proxy container
++ If the launcher holds the lock and valid metadata exists, use the recorded runtime's transport to the validated proxy socket
 + If the lock is held without metadata, wait for metadata or lock release, then retry
 
 A command-specific host shim invokes the same router directly:
@@ -272,10 +272,14 @@ sandbox-proxy-route \
 The request and response remain on standard input and output.
 
 Every proxy image contains that launcher-owned client at one conventional absolute path.
-The router sends the framed request to the client's standard input; the client connects to the conventional in-VM Unix socket and copies the framed response to standard output without interpreting either message.
-The router validates the container's launcher-owned session labels, native image identity, and repository identity before invoking the fixed client, and never executes a manifest- or caller-selected command through the outer runtime.
+Podman and Lima-containerd send the framed request to that client's standard input; it connects to the in-VM Unix socket and copies the response without interpreting either message.
+Lima-Docker connects directly through a session-owned Unix-socket forward on Lima's existing SSH master. Its host transport copies request bytes, shuts down the write side at input EOF, and copies response bytes until EOF. Command-specific shims and servers own framing, size limits, deadlines, and application status; the transport does not parse messages. A zero transport status reports stream completion, not command success or a valid response; callers must reject missing or malformed response frames. SSH may deliver EOF where a container client reported a remote socket reset.
+The router validates the container's launcher-owned session labels, native image identity, and repository identity before opening either transport, and never executes a manifest- or caller-selected command through the outer runtime.
 Only the trusted host router receives outer-daemon access; neither the agent nor a proxy container receives it.
 Failure of outer-runtime execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
+
+For Lima-Docker, each proxy's recovery state records its volume owner and guest socket target before registration. A private short guest alias avoids Unix-socket path limits; a private host listener is registered with OpenSSH's `-O forward`. Both live as long as the cached proxy, including intervals without an attached agent. Requests own only their connections: terminating a router closes its connection without stopping the SSH master or other requests. This does not promise cancellation of work the server already accepted.
+Cleanup cancels the recorded listener with `-O cancel`, removes the matching guest alias, then removes proxy containers and volumes. A failed cancellation retains recovery state unless the listener refuses connections, as after master replacement. Cached sessions lacking forwarding records or a live host listener are rebuilt when exclusive; shared joins require active sessions to exit first.
 
 The host kernel releases a launcher's shared session lock when it exits or is killed because the lock belongs to its open file descriptor, not recorded PID data.
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.

@@ -85,6 +85,17 @@ identity come from one live container inspection; Docker operations still
 check the recorded VM and engine as before.
 After builds finish, read-only image checks overlap network preparation;
 proxy attachment waits for both.
+Host-routed commands use a private Unix-socket forward per cached proxy on Lima's
+existing SSH master. The transport creates no per-request container or SSH process;
+the router still performs its runtime and proxy identity checks.
+The shared proxy state owns listener registration and short guest aliases;
+reset removes both. Cancelling a router closes its connection, without promising
+cancellation of a command already accepted by the server.
+
+After upgrading from forwarding containers, exit existing sandboxes before
+launching again so their cached proxies can be rebuilt. If Lima's SSH master
+restarts during a session, exit and relaunch; the next exclusive launch replaces
+stale listeners. No VM recreation is needed for this forwarding change.
 Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
 Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.
@@ -157,10 +168,8 @@ with pulling disabled. Custom image entrypoints survive credential injection.
 Engine and image metadata use direct reads from the recorded Docker socket;
 ambient Docker contexts and HTTP proxy settings do not select another engine.
 
-Monitor waits use host Docker clients. Each host-routed proxy request uses a
-temporary container with only the proxy socket volume, allowing cancellation
-through Docker's ordinary container API; Docker has no individual exec-kill API.
-This adds container startup cost to host-routed commands.
+Monitor waits use host Docker clients. Proxy requests use the session-owned
+socket transport described above; they do not use Docker exec cancellation.
 
 This is not yet a default-backend recommendation. Long-running interactive Pi,
 20 simultaneous sessions, and optional Agent Podman/Zulip
@@ -171,8 +180,17 @@ maintenance findings at revision `b4930191`.
 
 The [nftables differential probes](../experiments/nftables/README.md) retain
 the historical policy and a rejected alternative as regression controls.
+The [forwarding findings](forwarding-review.md) preserve the discarded experiments'
+measurements, transport-status difference, adoption rationale, and validation limits.
 
 ## Disposable validation
+
+`tests/docker_forwarding_integration.py` accepts `--state`, `--repo`, and
+`--image`. Supply an owned disposable colocated repository containing Paracress's
+bug manifest and an empty `.agent-git-bug` directory, plus its cached bug image;
+never supply a working repository. It checks manifest mounts, normal and malformed
+responses, TERM/KILL cancellation, long socket paths, cached-session admission,
+and stale-listener cleanup without restarting the VM or touching other sessions.
 
 Use an otherwise idle test VM: the policy test deliberately restarts Docker
 and injects a failed policy activation. Tests own their temporary resources;
@@ -184,7 +202,7 @@ observer's session-start hook fired; key delivery means its stdin listener saw
 the probe, not that Pi finished rendering. These are warm-launch measurements
 after the fixture builds its images, not a concurrency test.
 `PROXY TIMING` records measure complete host-routed JJ status requests, including
-router startup and cancellation-safe forwarding-container overhead.
+router startup, identity checks, and the session's SSH socket transport.
 Use `--concurrent-sessions 20 --hold-seconds 60` for a bounded shared-repository
 concurrency check. Each Pi must reach its observer hook before any receives the
 key probe; all remain open for the hold interval, then each is cancelled and

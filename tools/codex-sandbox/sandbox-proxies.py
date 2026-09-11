@@ -452,7 +452,15 @@ def cached_session_state(
         return None
     try:
         validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo))
-    except (ValueError, ConfigError, subprocess.SubprocessError):
+        if OUTER_RUNTIME.provider == 'lima-docker':
+            from lima.proxy_forward import check
+            for proxy in proxies:
+                if not proxy.get('volume-owner'):
+                    return None
+                if proxy.get('forwarding') != OUTER_RUNTIME.proxy_forward_record(proxy['container'], proxy.get('volume-owner')):
+                    return None
+                check(proxy['forwarding']['owner'])
+    except (ValueError, OSError, ConfigError, subprocess.SubprocessError):
         return None
     return state
 
@@ -634,6 +642,13 @@ def start_one_proxy(
     docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
     docker_args += [images[name], *command["argv"][1:]]
     _docker(*docker_args)
+    if OUTER_RUNTIME.provider == 'lima-docker':
+        forwarding = OUTER_RUNTIME.proxy_forward_record(container, proxy['volume-owner'])
+        # Persist recovery authority before either host or guest publication.
+        with state_lock:
+            proxy['forwarding'] = forwarding
+            write_atomic(Path(args.state), json.dumps(state))
+        OUTER_RUNTIME.start_proxy_forward(forwarding)
     # Optional Zulip access can report an unready socket on first use.
     # Required repository-command proxies still gate session publication below.
     if name == "zulip":
@@ -700,6 +715,11 @@ def stop_state(state: dict[str, Any]) -> None:
     proxies = list(reversed([
         *state.get("proxies", []), *state.get("retired-proxies", []),
     ]))
+    for proxy in proxies:
+        if 'forwarding' in proxy:
+            if owner.provider != 'lima-docker' or proxy['forwarding']['owner'] != proxy.get('volume-owner'):
+                raise ConfigError('proxy forwarding recovery owner changed')
+            owner.stop_proxy_forward(proxy['forwarding'])
     containers.extend(proxy["container"] for proxy in proxies)
 
     def discard(arguments: list[str]) -> None:
