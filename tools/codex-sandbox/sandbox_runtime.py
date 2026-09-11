@@ -74,6 +74,7 @@ class Podman:
     provider = "podman"
     host_address = "host.docker.internal"
     nonrecursive_bind = 'bind-nonrecursive=true'
+    environment_file_in_guest = False
 
     def builder_image(self, reference):
         return digest(reference)
@@ -100,13 +101,13 @@ class Podman:
         for name, value in values.items():
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or any(c in value for c in "\0\r\n"):
                 raise RuntimeError("environment data cannot be represented in an env file")
-        directory = self.host.state / "scratch" if isinstance(self, VMRuntime) else None
+        directory = self.host.state / "scratch" if self.environment_file_in_guest else None
         descriptor, name = tempfile.mkstemp(prefix="environment-", dir=directory)
         try:
             with os.fdopen(descriptor, "w") as stream:
                 for key, value in values.items():
                     stream.write(key + "=" + value + "\n")
-            if isinstance(self, VMRuntime):
+            if self.environment_file_in_guest:
                 self.host.check_bind(name)
             yield ["--env-file", name]
         finally:
@@ -253,6 +254,8 @@ class VMRuntime(Podman):
 
 class Lima(VMRuntime):
     provider = "lima"
+    # nerdctl reads the file in the guest; Docker and Podman read it on the host.
+    environment_file_in_guest = True
     host_address = "host.lima.internal"
 
     @contextmanager

@@ -58,6 +58,8 @@ pass `--state DIRECTORY` before `setup` and `--instance sandbox-host-docker-NAME
 after it, then set `CODEX_SANDBOX_DOCKER_STATE=DIRECTORY` for launches and builders.
 Explicit `--share-read PATH` / `--share-write PATH` options replace home sharing;
 setup adds its private scratch share automatically.
+Docker environment files are private host temporary files, read by the host
+client and deleted after use. They require no guest share or guest bind check.
 
 The existing [Keychain credential](credentials.md) is reused and cached once per
 boot of this VM. If it has not been imported, run the documented `import-podman`

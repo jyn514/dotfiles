@@ -36,6 +36,21 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_environment_file_needs_no_guest_share_and_is_private_until_cleanup(self):
+        runtime = backend()
+        runtime.host.check_bind.side_effect = AssertionError('host file checked in guest')
+        with self.assertRaisesRegex(ValueError, 'launch failed'):
+            with runtime.environment_file({'TOKEN': 'literal $value'}) as arguments:
+                path = Path(arguments[1])
+                self.assertFalse(path.is_relative_to(runtime.host.state))
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(path.read_text(), 'TOKEN=literal $value\n')
+                raise ValueError('launch failed')
+        self.assertFalse(path.exists())
+        with self.assertRaisesRegex(RuntimeError, 'cannot be represented'):
+            with runtime.environment_file({'TOKEN': 'line\nbreak'}):
+                self.fail('invalid environment staged')
+
     def test_owned_helpers_use_installed_declaration_without_executable_builders(self):
         import owned_images
         runtime = backend()

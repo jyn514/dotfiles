@@ -9,6 +9,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import unittest
+import tempfile
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -388,6 +389,18 @@ class TransportTest(unittest.TestCase):
         with self.assertRaises(runtime.RuntimeError):
             with runtime.Podman().environment_file({"TERM": "xterm\nGH_TOKEN=injected"}):
                 self.fail("invalid environment published")
+
+    def test_nerdctl_environment_file_remains_guest_visible(self):
+        backend = lima()
+        with tempfile.TemporaryDirectory() as temporary:
+            backend.host.state = Path(temporary)
+            scratch = backend.host.state / 'scratch'
+            scratch.mkdir()
+            with backend.environment_file({'TERM': 'xterm'}) as arguments:
+                path = Path(arguments[1])
+                self.assertEqual(path.parent, scratch)
+                backend.host.check_bind.assert_called_once_with(str(path))
+            self.assertFalse(path.exists())
 
     def test_missing_vm_fails_before_workload_transport(self):
         with patch.object(runtime, "Host") as host:
