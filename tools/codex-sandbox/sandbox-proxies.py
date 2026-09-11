@@ -319,39 +319,6 @@ def runtime_directory(repo: Path) -> Path:
     return path
 
 
-def lock_main(args: argparse.Namespace) -> int:
-    runtime = runtime_directory(Path(args.repo))
-    coordination_path = runtime / "coordination.lock"
-    session_path = runtime / "session.lock"
-    with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
-        while True:
-            try:
-                fcntl.flock(coordination, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if os.getppid() != args.parent_pid:
-                    return 0
-                time.sleep(0.1)
-        try:
-            fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            shared = True
-            fcntl.flock(session, fcntl.LOCK_SH)
-        else:
-            shared = False
-            fcntl.flock(session, fcntl.LOCK_SH)
-        Path(args.ready).write_text("shared\n" if shared else "new\n", encoding="utf-8")
-        # Joiners only read published state. Their lifetime lock prevents reset;
-        # only the first publisher needs to serialize setup and publication.
-        while not shared and not Path(args.coordinated).exists() and os.getppid() == args.parent_pid:
-            time.sleep(0.1)
-        fcntl.flock(coordination, fcntl.LOCK_UN)
-        while not Path(args.release).exists() and os.getppid() == args.parent_pid:
-            time.sleep(0.1)
-        fcntl.flock(session, fcntl.LOCK_UN)
-    return 0
-
-
 def reset_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
     coordination_path = runtime / "coordination.lock"
@@ -475,7 +442,7 @@ def cached_session_state(
 def attach_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     runtime = runtime_directory(repo)
-    shared = Path(args.session).read_text(encoding="utf-8").strip() == "shared"
+    shared = args.shared
     metadata_path = runtime / "session.json"
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -968,17 +935,10 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     snapshot.add_argument("--zulip-image-command")
     snapshot.add_argument("--zuliprc")
     snapshot.set_defaults(function=snapshot_main)
-    lock = sub.add_parser("hold-lock")
-    lock.add_argument("--repo", required=True)
-    lock.add_argument("--ready", required=True)
-    lock.add_argument("--coordinated", required=True)
-    lock.add_argument("--release", required=True)
-    lock.add_argument("--parent-pid", required=True, type=int)
-    lock.set_defaults(function=lock_main)
     attach = sub.add_parser("attach")
     attach.add_argument("--repo", required=True)
     attach.add_argument("--container-repo", required=True)
-    attach.add_argument("--session", required=True)
+    attach.add_argument("--shared", action="store_true")
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
     attach.add_argument("--helper-image", required=True)

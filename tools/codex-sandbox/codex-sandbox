@@ -32,6 +32,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, verification_scope
 from sandbox_credentials import boot_credential
+from proxy_session import SessionLock
 from source_view import source_mounts
 
 OUTER_RUNTIME = Podman()
@@ -83,17 +84,14 @@ class State:
     sidecar_image: str = ""
     manifest: Path | None = None
     prepared_images: Path | None = None
+    proxy_lock: SessionLock | None = None
     proxy_state: Path | None = None
     proxy_args: Path | None = None
-    lock_ready: Path | None = None
-    lock_coordinated: Path | None = None
-    lock_release: Path | None = None
     skills_tmp: Path | None = None
     skills_source: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
     host_editor: HostEditorBridge | None = None
-    lock_process: subprocess.Popen[bytes] | None = None
     monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
@@ -156,8 +154,8 @@ def proxy_module():
 
 
 def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    # Short operations share the launcher's interpreter; lock/monitor lifetimes
-    # remain separate processes so they can supervise and outlive these calls.
+    # Short operations share the launcher's interpreter; the monitor remains a
+    # separate process so it can supervise and outlive these calls.
     result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments],
         proxy_module().main(list(arguments), runtime=OUTER_RUNTIME))
     if check:
@@ -497,46 +495,30 @@ def ensure_network() -> None:
 
 def acquire_lock(state: State) -> None:
     state.proxy_state = temporary_file()
-    state.lock_ready = temporary_file()
-    state.lock_coordinated = temporary_file()
-    state.lock_release = temporary_file()
-    state.lock_ready.unlink()
-    state.lock_coordinated.unlink()
-    state.lock_release.unlink()
-    state.lock_process = subprocess.Popen([
-        "python3", str(PROXY_HELPER), "hold-lock", "--repo", str(state.repository),
-        "--ready", str(state.lock_ready), "--coordinated", str(state.lock_coordinated),
-        "--release", str(state.lock_release), "--parent-pid", str(os.getpid()),
-    ], stdin=subprocess.DEVNULL)
-    while True:
-        if state.lock_ready.exists():
-            return
-        if state.lock_process.poll() is not None:
-            raise LauncherError("Could not join the sandbox proxy session")
-        time.sleep(0.05)
+    state.proxy_lock = SessionLock(proxy_module().runtime_directory(state.repository))
 
 
 def attach_proxies(state: State) -> list[str]:
-    try:
-        arguments = [
-            "attach", "--repo", str(state.repository),
-            "--container-repo", str(state.container_repository),
-            "--prefix", state.proxy_prefix, "--session", str(state.lock_ready),
-            "--state", str(state.proxy_state), "--helper-image", state.sidecar_image,
-            "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
-        ]
-        if state.zuliprc is not None:
-            arguments += ["--zuliprc", str(state.zuliprc)]
-        if state.prepared_images is not None:
-            arguments += ['--images', str(state.prepared_images)]
-        auth_directory = _secure_codex_auth_directory(state)
-        if auth_directory is not None:
-            arguments.append("--auth-enabled")
-        helper(*arguments)
-        sidecar_arguments = attach_codex_sidecar(state, auth_directory)
-        return [*sidecar_arguments, *finalize_proxy_session(state)]
-    finally:
-        state.lock_coordinated.touch()
+    arguments = [
+        "attach", "--repo", str(state.repository),
+        "--container-repo", str(state.container_repository),
+        "--prefix", state.proxy_prefix,
+        *(["--shared"] if state.proxy_lock.shared else []),
+        "--state", str(state.proxy_state), "--helper-image", state.sidecar_image,
+        "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
+    ]
+    if state.zuliprc is not None:
+        arguments += ["--zuliprc", str(state.zuliprc)]
+    if state.prepared_images is not None:
+        arguments += ['--images', str(state.prepared_images)]
+    auth_directory = _secure_codex_auth_directory(state)
+    if auth_directory is not None:
+        arguments.append("--auth-enabled")
+    helper(*arguments)
+    sidecar_arguments = attach_codex_sidecar(state, auth_directory)
+    result = [*sidecar_arguments, *finalize_proxy_session(state)]
+    state.proxy_lock.release_coordination()
+    return result
 
 
 def prepare_gateway(state: State) -> list[str]:
@@ -766,7 +748,7 @@ def finalize_proxy_session(state: State) -> list[str]:
     state.proxy_args = temporary_file()
     # A shared join validated an existing publication under its lifetime lock;
     # it must not rewrite that publication after releasing coordination.
-    operation = 'agent-args' if state.lock_ready.read_text().strip() == 'shared' else 'finalize'
+    operation = 'agent-args' if state.proxy_lock.shared else 'finalize'
     helper(
         operation, "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
@@ -1264,13 +1246,12 @@ def execute(state: State) -> int:
         model_future = None if prepared else executor.submit(model_image)
         sidecar_future = None if prepared else executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
         network_future = executor.submit(phase, "network setup", ensure_network)
-        lock_future = executor.submit(phase, "proxy lock", lambda: acquire_lock(state))
         gateway_future = executor.submit(
             phase, "gateway network setup", lambda: prepare_gateway(state),
         )
+        phase("proxy lock", lambda: acquire_lock(state))
         state.sidecar_image = prepared.auth if prepared else sidecar_future.result()
         network_future.result()
-        lock_future.result()
         if prepared is not None:
             state.prepared_images = temporary_file()
             state.prepared_images.write_text(json.dumps(prepared.proxies))
@@ -1428,13 +1409,11 @@ def cleanup(state: State) -> None:
             elapsed = int(time.monotonic() - removal_started)
             print(f"warning: Cleaning up private Pi state {state.pi_agent_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("Pi state")
-    if state.lock_coordinated is not None:
-        state.lock_coordinated.touch()
-    if state.lock_release is not None:
-        state.lock_release.touch()
+    if state.proxy_lock is not None:
+        state.proxy_lock.close()
     processes = [
         (name, process)
-        for name, process in (("proxy lock", state.lock_process), ("proxy monitor", state.monitor_process))
+        for name, process in (("proxy monitor", state.monitor_process),)
         if process is not None
     ]
 
@@ -1464,7 +1443,6 @@ def cleanup(state: State) -> None:
     timing("proxy processes")
     for path in (
         state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask, state.prepared_images,
-        state.lock_ready, state.lock_coordinated, state.lock_release,
     ):
         if path is not None and not keep_scratch:
             path.unlink(missing_ok=True)

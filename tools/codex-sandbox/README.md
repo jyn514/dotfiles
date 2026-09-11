@@ -96,6 +96,10 @@ Authentication and repository-command proxies still require readiness checks.
 
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.
+The launcher holds the session lock directly until cleanup. The first launcher
+also holds coordination until publication succeeds; shared joiners validate
+concurrently. Failed publication retains coordination through cleanup, and a
+launch waiting for another publisher can be cancelled.
 
 Gateway startup failures are reported to stderr and leave Pi running.
 On exit, the launcher joins gateway startup before removing its container and networks.

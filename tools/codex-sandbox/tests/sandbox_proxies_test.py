@@ -561,19 +561,6 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "may not override"):
             sandbox_proxies.snapshot_main(args)
 
-    def test_lock_holder_exits_when_launcher_owner_is_absent(self) -> None:
-        self.write()
-        ready = self.repo / "ready"
-        coordinated = self.repo / "coordinated"
-        release = self.repo / "release"
-        result = subprocess.run([
-            sys.executable, str(MODULE_PATH), "hold-lock", "--repo", str(self.repo),
-            "--ready", str(ready), "--coordinated", str(coordinated),
-            "--release", str(release), "--parent-pid", "1",
-        ], timeout=2)
-        self.assertEqual(0, result.returncode)
-        self.assertTrue(ready.exists())
-
     def test_reset_stops_and_forgets_persistent_session(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
@@ -589,55 +576,6 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(0, sandbox_proxies.reset_main(args))
         stop.assert_called_once_with(state)
         self.assertFalse(metadata.exists())
-
-    def test_joiners_do_not_serialize_validation_of_published_session(self) -> None:
-        self.write()
-        runtime = sandbox_proxies.runtime_directory(self.repo)
-        metadata = runtime / "session.json"
-        processes = []
-        controls = []
-        try:
-            for index in range(3):
-                ready = self.repo / f"ready-{index}"
-                coordinated = self.repo / f"coordinated-{index}"
-                release = self.repo / f"release-{index}"
-                process = subprocess.Popen([
-                    sys.executable, str(MODULE_PATH), "hold-lock", "--repo", str(self.repo),
-                    "--ready", str(ready), "--coordinated", str(coordinated),
-                    "--release", str(release), "--parent-pid", str(os.getpid()),
-                ])
-                processes.append(process)
-                controls.append((ready, coordinated, release))
-                deadline = time.monotonic() + 2
-                while not ready.exists() and time.monotonic() < deadline:
-                    time.sleep(0.01)
-                self.assertTrue(ready.exists())
-                if index == 0:
-                    metadata.write_text(json.dumps({
-                        "version": 1,
-                        "repository": sandbox_proxies.repository_identity(self.repo),
-                        "state": {"proxies": []}, "commands": {},
-                        "manifest": {"version": 1, "commands": {}},
-                    }), encoding="utf-8")
-                    coordinated.touch()
-                self.assertEqual('new\n' if index == 0 else 'shared\n', ready.read_text())
-
-            controls[0][2].touch()
-            self.assertEqual(0, processes[0].wait(timeout=2))
-            self.assertTrue(metadata.exists())
-            controls[1][2].touch()
-            self.assertEqual(0, processes[1].wait(timeout=2))
-            self.assertTrue(metadata.exists())
-            controls[2][2].touch()
-            self.assertEqual(0, processes[2].wait(timeout=2))
-        finally:
-            for _, coordinated, release in controls:
-                coordinated.touch()
-                release.touch()
-            for process in processes:
-                if process.poll() is None:
-                    process.terminate()
-                    process.wait(timeout=2)
 
     def test_attach_reuses_published_proxy_state_and_manifest(self) -> None:
         self.write({"example": self.command()})
@@ -658,11 +596,9 @@ class ManifestTest(unittest.TestCase):
         state = self.repo / "attached-state"
         manifest = self.repo / "attached-manifest"
         manifest.write_text(json.dumps(shared_manifest), encoding="utf-8")
-        session = self.repo / "attached-session"
-        session.write_text("shared\n", encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
-            "session": str(session), "state": str(state), "manifest": str(manifest),
+            "shared": True, "state": str(state), "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
@@ -827,11 +763,9 @@ class ManifestTest(unittest.TestCase):
             "repository": sandbox_proxies.repository_identity(self.repo),
             "state": old_state, "manifest": {"version": 1, "commands": {}},
         }), encoding="utf-8")
-        session = self.repo / "session"
-        session.write_text("new\n", encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
-            "session": str(session), "state": str(self.repo / "state"),
+            "shared": False, "state": str(self.repo / "state"),
             "manifest": str(self.repo / "manifest"),
         })
         Path(args.manifest).write_text(json.dumps(
@@ -851,13 +785,11 @@ class ManifestTest(unittest.TestCase):
             "repository": sandbox_proxies.repository_identity(self.repo),
             "state": {"proxies": []}, "manifest": {"version": 1, "commands": {"old": {}}},
         }), encoding="utf-8")
-        session = self.repo / "session"
-        session.write_text("shared\n", encoding="utf-8")
         manifest = self.repo / "manifest"
         manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
-            "session": str(session), "state": str(self.repo / "state"),
+            "shared": True, "state": str(self.repo / "state"),
             "manifest": str(manifest),
         })
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "restart after active"):
@@ -865,13 +797,11 @@ class ManifestTest(unittest.TestCase):
 
     def test_attach_does_not_replace_invalid_active_session(self) -> None:
         self.write()
-        session = self.repo / "attached-session"
-        session.write_text("shared\n", encoding="utf-8")
         manifest = self.repo / "manifest"
         manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
-            "session": str(session), "state": str(self.repo / "state"),
+            "shared": True, "state": str(self.repo / "state"),
             "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start:

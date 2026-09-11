@@ -392,7 +392,9 @@ A future proxy command with caller-controlled arguments must define a complete a
 == Lifecycle
 
 Short helper calls share the launcher's interpreter and receive explicit argument lists.
-The lock holder and monitor retain separate process lifetimes.
+The launcher owns its session and publication locks directly; only the monitor
+retains a separate process lifetime. Lock acquisition runs on the signal-owning
+thread while other startup jobs proceed, so a contended launch can be cancelled.
 
 The launcher performs these steps:
 

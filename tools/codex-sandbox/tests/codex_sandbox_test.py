@@ -46,20 +46,34 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_failed_publication_keeps_coordination_until_cleanup(self):
+        attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
+        lock = mock.Mock(shared=False)
+        state = SimpleNamespace(proxy_lock=lock, repository=Path('/repo'),
+            container_repository=Path('/src/repo'), proxy_prefix='proxy', proxy_state=Path('/state'),
+            sidecar_image='image', manifest=Path('/manifest'), zuliprc=None, prepared_images=None)
+        with mock.patch.dict(attach.__globals__, helper=mock.Mock(),
+                _secure_codex_auth_directory=mock.Mock(return_value=None),
+                attach_codex_sidecar=mock.Mock(return_value=[]),
+                finalize_proxy_session=mock.Mock(side_effect=ValueError('publication failed'))):
+            with self.assertRaisesRegex(ValueError, 'publication failed'):
+                attach(state)
+        lock.release_coordination.assert_not_called()
+
     def test_only_first_session_publishes_shared_proxy_state(self):
         launcher = runpy.run_path(str(LAUNCHER))
         finalize = launcher['finalize_proxy_session']
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            ready, output = root / 'ready', root / 'args'
-            state = SimpleNamespace(lock_ready=ready, repository=root,
+            output = root / 'args'
+            state = SimpleNamespace(proxy_lock=SimpleNamespace(shared=False), repository=root,
                                     container_repository=Path('/src/repo'),
                                     proxy_state=root / 'state', manifest=root / 'manifest')
             def helper(operation, *arguments):
                 output.write_text('--read-only\n')
             for status, operation in (('shared', 'agent-args'), ('new', 'finalize')):
                 with self.subTest(status=status):
-                    ready.write_text(status + '\n')
+                    state.proxy_lock.shared = status == 'shared'
                     with mock.patch.dict(finalize.__globals__, {
                             'temporary_file': lambda: output,
                             'helper': mock.Mock(side_effect=helper)}) as scope:
@@ -859,14 +873,6 @@ class CodexSandboxTest(unittest.TestCase):
                     output=$(value_for --output "$@")
                     printf '%s\n' '{"version":1,"commands":{"jj":{}}}' > "$output"
                     ;;
-                hold-lock)
-                    ready=$(value_for --ready "$@")
-                    coordinated=$(value_for --coordinated "$@")
-                    release=$(value_for --release "$@")
-                    printf '%s\n' "${FAKE_SESSION:-new}" > "$ready"
-                    while [ ! -e "$coordinated" ]; do sleep 0.01; done
-                    while [ ! -e "$release" ]; do sleep 0.01; done
-                    ;;
                 attach)
                     state=$(value_for --state "$@")
                     if [ -n "$FAKE_PROXY_STATE" ]; then
@@ -1508,7 +1514,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("codex-gateway-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
-        self.assertIn("hold-lock", actions)
+        self.assertNotIn("hold-lock", actions)
 
     def test_timing_names_its_boundary_and_uses_the_full_cleanup_interval(self) -> None:
         builder = self.repo / ".agents" / "sandbox" / "base-image"
@@ -1587,7 +1593,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("codex-gateway-", docker_log)
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
-        self.assertIn("hold-lock", actions)
+        self.assertNotIn("hold-lock", actions)
 
     def test_non_linux_omits_native_linux_restrictions(self) -> None:
         result = self.run_launcher(FAKE_UNAME="Darwin")

@@ -1,6 +1,7 @@
 """Run launcher integration tests with proxy lifecycle calls at a fake boundary."""
 
 from pathlib import Path
+import os
 import runpy
 import subprocess
 import sys
@@ -16,4 +17,14 @@ def helper(*arguments: str, check: bool = True):
 
 
 launcher["main"].__globals__["helper"] = helper
+acquire = launcher['acquire_lock']
+
+def acquire_lock(state):
+    acquire(state)
+    # The sidecar fixtures supply an existing publication through FAKE_PROXY_STATE.
+    if os.environ.get('FAKE_SESSION') == 'shared':
+        state.proxy_lock.shared = True
+        state.proxy_lock.release_coordination()
+
+launcher['main'].__globals__['acquire_lock'] = acquire_lock
 raise SystemExit(launcher["main"](sys.argv[1:]))
