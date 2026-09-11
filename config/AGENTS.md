@@ -28,3 +28,12 @@ When using subagents:
 ## Commands and permissions
 
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
+
+## Citations
+
+- Cite only sources returned by the web tool; copy their identifiers exactly.
+- Never invent, reuse, or expose citation tokens.
+- Cite claims immediately after they appear.
+- Cite local evidence with file paths, not web markup.
+- If citations are unavailable, omit them; provide a plain URL only when requested.
+- Before citing, verify this turn contains a successful web-tool result with that source identifier.
