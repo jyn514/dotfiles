@@ -744,6 +744,38 @@ class ManifestTest(unittest.TestCase):
             self.assertIsNone(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest))
         running.assert_not_called()
 
+    def test_docker_cached_proxy_reuses_one_live_snapshot_and_rejects_stopped_container(self):
+        self.write({'example': self.command()})
+        manifest = sandbox_proxies.load_manifest(self.repo)
+        identity = sandbox_proxies.repository_identity(self.repo)
+        proxy = {'name': 'example', 'container': 'container', 'image': 'immutable',
+                 'volume-owner': 'owner', 'forwarding': {'owner': 'owner', 'target': '/socket'}}
+        state = {'runtime': {'provider': 'lima-docker'}, 'proxies': [proxy]}
+        metadata = {'version': 2, 'repository': identity, 'container_repository': str(self.container_repo),
+                    'manifest': sandbox_proxies.serializable_manifest(manifest), 'state': state}
+        args = type('Args', (), {'container_repo': str(self.container_repo)})
+        owner = mock.Mock(provider='lima-docker')
+        snapshot = {'State': {'Running': True}}
+        owner.inspect_container.return_value = snapshot
+        owner.container_matches_image.return_value = True
+        owner.proxy_forward_record.return_value = proxy['forwarding']
+        with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner), \
+                mock.patch.object(sandbox_proxies, 'runtime_identity', return_value=state['runtime']), \
+                mock.patch.object(sandbox_proxies, 'containers_running', side_effect=AssertionError('duplicate inspect')), \
+                mock.patch('lima.proxy_forward.check') as check:
+            self.assertEqual(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest), state)
+            owner.inspect_container.assert_called_once_with('container')
+            self.assertIs(owner.container_matches_image.call_args.kwargs['snapshot'], snapshot)
+            self.assertIs(owner.proxy_forward_record.call_args.kwargs['snapshot'], snapshot)
+            check.assert_called_once_with('owner')
+            owner.container_matches_image.return_value = False
+            self.assertIsNone(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest))
+            owner.container_matches_image.return_value = True
+            owner.proxy_forward_record.return_value = {'owner': 'changed'}
+            self.assertIsNone(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest))
+            snapshot['State']['Running'] = False
+            self.assertIsNone(sandbox_proxies.cached_session_state(args, self.repo, metadata, manifest))
+
     def test_route_uses_published_owner_despite_different_current_default(self) -> None:
         self.write()
         directory = sandbox_proxies.runtime_directory(self.repo)

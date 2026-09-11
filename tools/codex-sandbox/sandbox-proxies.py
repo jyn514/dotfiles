@@ -448,16 +448,23 @@ def cached_session_state(
     containers = [proxy.get("container") for proxy in proxies]
     if any(not isinstance(container, str) or not container for container in containers):
         return None
-    if not containers_running(containers):
-        return None
     try:
-        validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo))
+        snapshots = None
+        if OUTER_RUNTIME.provider == 'lima-docker':
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                snapshots = dict(zip(containers, executor.map(OUTER_RUNTIME.inspect_container, containers)))
+            if not all(raw.get('State', {}).get('Running') is True for raw in snapshots.values()):
+                return None
+        elif not containers_running(containers):
+            return None
+        validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo), snapshots=snapshots)
         if OUTER_RUNTIME.provider == 'lima-docker':
             from lima.proxy_forward import check
             for proxy in proxies:
                 if not proxy.get('volume-owner'):
                     return None
-                if proxy.get('forwarding') != OUTER_RUNTIME.proxy_forward_record(proxy['container'], proxy.get('volume-owner')):
+                if proxy.get('forwarding') != OUTER_RUNTIME.proxy_forward_record(
+                        proxy['container'], proxy.get('volume-owner'), snapshot=snapshots[proxy['container']]):
                     return None
                 check(proxy['forwarding']['owner'])
     except (ValueError, OSError, ConfigError, subprocess.SubprocessError):
@@ -765,18 +772,20 @@ def stop_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def validate_live_proxies(owner, proxies, repository):
+def validate_live_proxies(owner, proxies, repository, *, snapshots=None):
     # Bound SSH concurrency and join every inspection before publication or
     # failure recovery can change the containers being inspected.
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(executor.map(
-            lambda proxy: validate_live_proxy(owner, proxy, repository, proxy["name"]), proxies,
+            lambda proxy: validate_live_proxy(owner, proxy, repository, proxy["name"],
+                **({'snapshot': snapshots[proxy['container']]} if snapshots is not None else {})), proxies,
         ))
 
 
-def validate_live_proxy(owner, proxy, repository, command):
+def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None):
     image = owner.inspect_image(proxy["image"])
-    if not owner.container_matches_image(proxy["container"], image, labels={
+    inspection = {'snapshot': snapshot} if snapshot is not None else {}
+    if not owner.container_matches_image(proxy["container"], image, **inspection, labels={
             "dev.codex.sandbox-proxy": "true", "dev.codex.repository": repository,
             "dev.codex.command": command}):
         raise ConfigError("active proxy container failed command, repository identity, or native image validation")

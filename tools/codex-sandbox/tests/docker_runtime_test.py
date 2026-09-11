@@ -390,6 +390,20 @@ class DockerRuntimeTest(unittest.TestCase):
             runtime.inspect_image('other@' + content)
 
     @patch('docker_runtime.inspect_docker')
+    def test_launch_reuses_immutable_image_metadata_but_refreshes_tags(self, query):
+        runtime = backend()
+        content = 'sha256:' + '1' * 64
+        query.return_value = {'Id': 'sha256:' + '2' * 64, 'RepoTags': ['agent:built'],
+            'RepoDigests': ['agent@' + content], 'RootFS': {'Layers': ['sha256:' + '3' * 64]},
+            'Config': {'Entrypoint': ['pi'], 'Cmd': ['--offline']}}
+        image = runtime.inspect_image('agent:built')
+        self.assertEqual(runtime.inspect_image(image.reference), image)
+        self.assertEqual(runtime.agent_command(image.reference, []), ['pi', '--offline'])
+        query.assert_called_once()
+        runtime.inspect_image('agent:built')
+        self.assertEqual(query.call_count, 2)
+
+    @patch('docker_runtime.inspect_docker')
     def test_local_base_keeps_its_tag_and_digest_for_buildkit(self, query):
         runtime = backend()
         content = 'sha256:' + '1' * 64

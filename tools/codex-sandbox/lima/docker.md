@@ -171,6 +171,10 @@ Owned image keys cover packaged runtime inputs; tests, documentation, and Python
 bytecode do not belong in the agent or Zulip image inputs.
 The launcher derives private cache tags from resolved target options, platform,
 and actual dependency image IDs. Existing tags skip the build entirely.
+Within a launch, immutable image metadata is reused for command selection and
+validation; mutable tags are read afresh. Cached proxies use one live container
+snapshot for running state, identity, and socket mounts, retaining volume-owner
+and forwarding-health checks.
 A changed proxy source key rebuilds only the proxy; a changed base identity
 also invalidates its dependent targets. Manual Bake tags remain separate from
 these launcher-owned tags.

@@ -121,6 +121,11 @@ class Docker(VMRuntime):
     def image_metadata(self, reference):
         if self.recovery:
             raise RuntimeError('Docker recovery permits inspection and cleanup only')
+        # Only immutable references survive within this admitted runtime. Tags
+        # must still be read afresh, including after a build replaces one.
+        cached = getattr(self, '_image_metadata', {})
+        if reference in cached:
+            return cached[reference]
         return inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
                               ['docker', 'image', 'inspect', reference])
 
@@ -147,7 +152,11 @@ class Docker(VMRuntime):
         else:
             raise RuntimeError('Docker image has no repository digest; rebuild with sandbox-image')
         content = digest(immutable.rsplit('@', 1)[1])
-        return Image(immutable, content, config, chain_id(raw['RootFS']['Layers']))
+        image = Image(immutable, content, config, chain_id(raw['RootFS']['Layers']))
+        if not hasattr(self, '_image_metadata'):
+            self._image_metadata = {}
+        self._image_metadata[immutable] = raw
+        return image
 
     def inspect_container(self, container):
         if self.recovery:
@@ -333,9 +342,9 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker image has no supported agent command')
         return [*entrypoint, *command]
 
-    def proxy_forward_record(self, container, owner=None):
+    def proxy_forward_record(self, container, owner=None, *, snapshot=None):
         from lima.proxy_socket import directory
-        proxy = self.inspect_container(container)
+        proxy = self.inspect_container(container) if snapshot is None else snapshot
         environment = dict(value.split('=', 1) for value in proxy['Config']['Env'])
         socket = Path(environment.get('SANDBOX_PROXY_SOCKET', '/run/sandbox-proxy/socket'))
         mounts = [mount for mount in proxy['Mounts'] if mount['Type'] == 'volume' and

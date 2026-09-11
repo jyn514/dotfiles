@@ -132,8 +132,8 @@ class Podman:
     def inspect_container(self, container):
         return single_json(self.run(["inspect", container], capture_output=True).stdout)
 
-    def container_matches_image(self, container, image, *, labels=None):
-        raw = self.inspect_container(container)
+    def container_matches_image(self, container, image, *, labels=None, snapshot=None):
+        raw = self.inspect_container(container) if snapshot is None else snapshot
         actual = raw.get("Config", {}).get("Labels") or {}
         return (all(actual.get(key) == value for key, value in (labels or {}).items()) and
                 "sha256:" + raw["Image"].removeprefix("sha256:") == image.config)
