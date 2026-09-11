@@ -1,6 +1,7 @@
 """Rootless Docker identity, command preservation, and firewall regressions."""
 
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import json
 import os
@@ -93,6 +94,26 @@ class DockerRuntimeTest(unittest.TestCase):
                                             'second': ([*command, 'second', 'child-first'], root)})
             self.assertEqual(results['first'].stdout, 'child-first\n')
             self.assertEqual(results['second'].stdout, 'second\n')
+            result = runtime.run_builder([*command, 'child-single', 'child-single'], cwd=root)
+            self.assertEqual(result.stdout, 'child-single\n')
+
+    def test_single_builder_preserves_capture_streaming_and_status_on_worker_thread(self):
+        runtime = backend()
+        for capture in (False, True):
+            for name, status in (('reference', 0), ('fail', 7)):
+                with self.subTest(capture=capture, status=status), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    command = [sys.executable, str(ROOT / 'tests/builder_barrier_fixture.py'),
+                               str(root), name, name]
+                    with tempfile.TemporaryFile(mode='w+') as stream, \
+                            patch('docker_runtime.sys.stderr', stream), ThreadPoolExecutor() as worker:
+                        result = worker.submit(runtime.run_builder, command, cwd=root, capture=capture).result(timeout=5)
+                        self.assertEqual(result.returncode, status)
+                        self.assertEqual(result.args, command)
+                        output = 'reference\n' if status == 0 else ''
+                        self.assertEqual(result.stdout, output if capture else None)
+                        stream.seek(0)
+                        self.assertEqual(stream.read(), '' if capture else output)
 
     def test_failed_builder_stops_its_running_peer_before_returning(self):
         runtime = backend()

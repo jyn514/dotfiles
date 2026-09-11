@@ -19,13 +19,15 @@ executable `base-image` and `image-command` builders, but retained the alternate
 Bake contract and supervisor. Remove that unused path rather than repairing it.
 Preserve coverage for nested build cancellation, output-lock waiters, failed
 wrappers leaving children, and concurrent peer cleanup on the active API.
-Single and concurrent builder runners still duplicate lifecycle ownership;
-consolidation is a separate candidate, not a prerequisite for deleting Bake.
 
 Resolved after review: the unused Bake orchestration and supervisor were removed,
 eliminating that escape path. Failed-wrapper cleanup tests now exercise the
 active single and concurrent builder APIs; nested build and lock-waiter
-cancellation coverage remains. The image-identity and wait findings below remain open.
+cancellation coverage remains. Single and concurrent builders now share one
+supervisor for process groups, deadlines, output completion, and failure cleanup.
+The single-builder entrypoint retains optional streaming and returns nonzero
+status; batches capture references and stop peers before raising a build failure.
+The image-identity and wait findings below remain open.
 
 ## Podman compatibility
 

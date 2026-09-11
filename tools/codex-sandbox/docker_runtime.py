@@ -172,34 +172,18 @@ class Docker(VMRuntime):
         return arguments
 
     def run_builder(self, command, *, cwd=None, capture=True):
-        """Own the executable builder and all of its children until completion."""
-        environment = {**self.builder_environment(), 'CODEX_SANDBOX_BUILDER_GROUP': '1'}
-        process = subprocess.Popen(command, cwd=cwd, env=environment,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if capture else sys.stderr,
-                                   text=True, start_new_session=True)
-        try:
-            stdout, _ = process.communicate(timeout=1800)
-            if process.returncode:
-                stop_build(process)
-            return subprocess.CompletedProcess(command, process.returncode, stdout)
-        except BaseException:
-            handlers = ({signum: signal.signal(signum, signal.SIG_IGN)
-                         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
-                        if threading.current_thread() is threading.main_thread() else {})
-            try:
-                stop_build(process)
-            finally:
-                for signum, handler in handlers.items():
-                    signal.signal(signum, handler)
-            raise
-        finally:
-            if process.stdout is not None:
-                process.stdout.close()
+        """Return one builder's status, optionally capturing its image reference."""
+        return self._supervise_builders({'builder': (command, cwd)},
+                                       capture=capture, check=False)['builder']
 
     def run_builders(self, builders):
         """Supervise independent image builders on the signal-owning thread."""
         if threading.current_thread() is not threading.main_thread():
             raise RuntimeError('image builders require the signal-owning thread')
+        return self._supervise_builders(builders)
+
+    def _supervise_builders(self, builders, *, capture=True, check=True):
+        """Own builder groups through output completion or failure cleanup."""
         environment = {**self.builder_environment(), 'CODEX_SANDBOX_BUILDER_GROUP': '1'}
         pending = iter(builders.items())
         active = {}
@@ -215,10 +199,12 @@ class Docker(VMRuntime):
                             break
                         name, (command, cwd) = item
                         process = subprocess.Popen(command, cwd=cwd, env=environment,
-                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, start_new_session=True)
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if capture else sys.stderr,
+                            text=True, start_new_session=True)
                         owned.append(process)
                         active[name] = (process, bytearray(), command)
-                        selector.register(process.stdout, selectors.EVENT_READ, name)
+                        if process.stdout is not None:
+                            selector.register(process.stdout, selectors.EVENT_READ, name)
                     for key, _ in selector.select(timeout=0.01):
                         chunk = os.read(key.fd, 65536)
                         if chunk:
@@ -231,20 +217,24 @@ class Docker(VMRuntime):
                         if status is None:
                             continue
                         if status:
-                            raise BuildError(status, command)
+                            if check:
+                                raise BuildError(status, command)
+                            stop_build(process)
                         # A successful wrapper may leave a child writing its
                         # reference. Like communicate(), wait for pipe EOF too.
-                        if not process.stdout.closed:
+                        if process.stdout is not None and not process.stdout.closed:
                             continue
-                        stdout = output.decode(process.stdout.encoding).replace('\r\n', '\n').replace('\r', '\n')
+                        stdout = (output.decode(process.stdout.encoding).replace('\r\n', '\n').replace('\r', '\n')
+                                  if capture else None)
                         results[name] = subprocess.CompletedProcess(command, status, stdout)
                         del active[name]
                     if time.monotonic() >= deadline:
                         raise subprocess.TimeoutExpired('sandbox image builders', 1800)
                 return results
             except BaseException:
-                handlers = {signum: signal.signal(signum, signal.SIG_IGN)
-                            for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+                handlers = ({signum: signal.signal(signum, signal.SIG_IGN)
+                             for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+                            if threading.current_thread() is threading.main_thread() else {})
                 try:
                     for process in owned:
                         try:
@@ -257,7 +247,8 @@ class Docker(VMRuntime):
                 raise
             finally:
                 for process in owned:
-                    process.stdout.close()
+                    if process.stdout is not None:
+                        process.stdout.close()
 
     @contextmanager
     def build_output(self):
