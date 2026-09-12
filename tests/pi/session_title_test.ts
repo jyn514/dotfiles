@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { SessionInfo } from "@earendil-works/pi-coding-agent";
 import sessionTitle, {
   editHistoricSessionTitles,
+  normalizeSessionTitle,
   readSessionTitle,
   resolveReadSessionPath,
   resolveSession,
@@ -32,6 +33,8 @@ describe("historic session title editing", () => {
     expect(resolveSession(sessions, "/sessions/project/one.jsonl").id).toBe("one");
     expect(resolveReadSessionPath("project/one.jsonl", "/sessions"))
       .toBe("/sessions/project/one.jsonl");
+    expect(normalizeSessionTitle(" New\ntitle ")).toBe("New title");
+    expect(normalizeSessionTitle(" \n ")).toBeUndefined();
     expect(sessionTitleContent("One title").text).toBe("Session title: One title");
     expect(sessionTitleContent(undefined).text).toBe("Session title: (untitled)");
     expect(() => resolveSession(sessions, "missing")).toThrow("No saved session");
@@ -155,17 +158,49 @@ describe("historic session title editing", () => {
     });
   });
 
-  test("registers the edit tool and read_session title augmentation", () => {
-    const tools = new Map<string, { description: string; parameters: unknown }>();
+  test("registers current and historic title tools", async () => {
+    type RegisteredTool = {
+      description: string;
+      parameters: unknown;
+      execute: (...args: never[]) => Promise<{
+        content: Array<{ text: string }>;
+        details: { previousTitle?: string; title?: string; changed: boolean };
+      }>;
+    };
+    const tools = new Map<string, RegisteredTool>();
     const events: string[] = [];
+    let currentTitle: string | undefined = "Old title";
     sessionTitle({
-      registerTool(tool: { name: string; description: string; parameters: unknown }) {
+      registerTool(tool: RegisteredTool & { name: string }) {
         tools.set(tool.name, tool);
+      },
+      getSessionName() {
+        return currentTitle;
+      },
+      setSessionName(title: string | undefined) {
+        currentTitle = title;
       },
       on(event: string) {
         events.push(event);
       },
     } as never);
+
+    const currentTool = tools.get("set_current_session_title");
+    expect(currentTool?.description).toContain("authoritative session API");
+    const changed = await currentTool?.execute(undefined as never, {
+      title: " New\ntitle ",
+    } as never);
+    expect(currentTitle).toBe("New title");
+    expect(changed?.details).toEqual({
+      previousTitle: "Old title",
+      title: "New title",
+      changed: true,
+    });
+
+    const unchanged = await currentTool?.execute(undefined as never, {
+      title: "New title",
+    } as never);
+    expect(unchanged?.content[0].text).toBe("Session title unchanged");
     expect(tools.get("edit_session_title")?.description).toContain("validated batch");
     expect(tools.get("edit_session_title")?.parameters).toBeDefined();
     expect(events).toContain("tool_result");

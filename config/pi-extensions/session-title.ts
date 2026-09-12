@@ -68,6 +68,10 @@ export function readSessionTitle(
     .getSessionName()?.trim() || undefined;
 }
 
+export function normalizeSessionTitle(title: string): string | undefined {
+  return title.replace(/[\r\n]+/g, " ").trim() || undefined;
+}
+
 export function sessionTitleContent(title: string | undefined) {
   return { type: "text" as const, text: `Session title: ${title ?? "(untitled)"}` };
 }
@@ -88,7 +92,7 @@ export async function editHistoricSessionTitles(
   const resolved = requests.map((request) => ({
     request,
     session: resolveSession(sessions, request.session),
-    title: request.title.replace(/[\r\n]+/g, " ").trim() || undefined,
+    title: normalizeSessionTitle(request.title),
   }));
   const seenPaths = new Set<string>();
 
@@ -136,10 +140,36 @@ export async function editHistoricSessionTitles(
 
 export default function sessionTitle(pi: ExtensionAPI) {
   pi.registerTool({
+    name: "set_current_session_title",
+    label: "Set Current Session Title",
+    description:
+      "Set or clear the current Pi session title through Pi's authoritative session API. Newlines are replaced with spaces and an empty title clears it.",
+    parameters: Type.Object({
+      title: Type.String({ description: "New title, or an empty string to clear the title" }),
+    }),
+    async execute(_toolCallId, params) {
+      const previousTitle = pi.getSessionName();
+      const title = normalizeSessionTitle(params.title);
+      if (previousTitle?.trim() === title) {
+        return {
+          content: [{ type: "text", text: "Session title unchanged" }],
+          details: { previousTitle, title, changed: false },
+        };
+      }
+
+      pi.setSessionName(title);
+      return {
+        content: [{ type: "text", text: `Session title ${title ? "updated" : "cleared"}` }],
+        details: { previousTitle, title, changed: true },
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "edit_session_title",
     label: "Edit Session Title",
     description:
-      "Set or clear titles for saved historic Pi sessions in one validated batch. Identify each session by its exact session ID or absolute JSONL path. An empty title clears it. The tool refuses active or duplicate sessions, validates all targets before writing, and reports partial application if a write fails.",
+      "Set or clear titles for saved historic Pi sessions in one validated batch. Identify each session by its exact session ID or absolute JSONL path. Use set_current_session_title for the active session. An empty title clears it. The tool refuses active or duplicate sessions, validates all targets before writing, and reports partial application if a write fails.",
     parameters: Type.Object({
       edits: Type.Array(Type.Object({
         session: Type.String({ description: "Exact saved session ID or absolute JSONL path" }),
