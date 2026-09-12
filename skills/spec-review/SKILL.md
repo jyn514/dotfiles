@@ -42,6 +42,11 @@ Separate required outcomes from proposed mechanisms. Require justification for
 each mechanism; do not promote an implementation choice into a constraint when
 evaluating simplifications or alternatives.
 
+Prefer simplicity over exhaustiveness.
+Tools should be reliable, but complexity itself can cause reliability issues.
+Favor designs that "passively" do the right thing rather than needing ongoing interventions.
+Before adding coordination, retries, monitoring, or lifecycle state, test whether changing ownership or batching operations removes the need for that mechanism.
+
 ## Duplication
 
 Give normative behavior one canonical owner and use direct references elsewhere.
