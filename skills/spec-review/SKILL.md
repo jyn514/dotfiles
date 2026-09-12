@@ -42,11 +42,6 @@ Separate required outcomes from proposed mechanisms. Require justification for
 each mechanism; do not promote an implementation choice into a constraint when
 evaluating simplifications or alternatives.
 
-Prefer simplicity over exhaustiveness.
-Tools should be reliable, but complexity itself can cause reliability issues.
-Favor designs that "passively" do the right thing rather than needing ongoing interventions.
-Before adding coordination, retries, monitoring, or lifecycle state, test whether changing ownership or batching operations removes the need for that mechanism.
-
 ## Duplication
 
 Give normative behavior one canonical owner and use direct references elsewhere.
@@ -89,6 +84,11 @@ consumer or implementer, and the smallest useful correction. Separate defects
 from open questions and optional improvements; prioritize design consequences
 over typos and wording. Cite canonical sections or concrete counterexamples
 rather than relying on preference.
+
+Apply the "Principles" section of `architecture-design` when evaluating corrections; use its full procedure when proposing changes to subsystem ownership or interfaces.
+When proposing a new mechanism, first show why deleting a requirement,
+narrowing an existing mechanism, or moving responsibility to its existing owner
+is insufficient.
 
 If no material issue is supported, say so and name the review's limits. Do not
 manufacture findings to fill categories or prescribe a rewrite when a local

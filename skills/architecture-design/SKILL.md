@@ -29,6 +29,17 @@ it does not duplicate their procedures.
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Stop and route elsewhere if the subsystem is unselected or the real task is comparing competing architectures.
 
+## Principles
+
+Avoid unnecessary coupling.
+Interfaces should be narrow, and where possible, declarative.
+Do not mix concerns between two different systems just because it simplifies the current implementation.
+
+Prefer simplicity over exhaustiveness.
+Tools should be reliable, but complexity itself can cause reliability issues.
+Favor designs that "passively" do the right thing rather than needing ongoing interventions.
+Before adding coordination, retries, monitoring, or lifecycle state, test whether changing ownership or batching operations removes the need for that mechanism.
+
 ## Procedure
 
 ### 1. Map the current subsystem
