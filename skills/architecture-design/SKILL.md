@@ -32,7 +32,9 @@ Stop and route elsewhere if the subsystem is unselected or the real task is comp
 ## Principles
 
 Avoid unnecessary coupling.
-Interfaces should be narrow, and where possible, declarative.
+Interfaces should expose the caller’s intent without requiring knowledge of the callee’s implementation.
+Prefer declarative configuration that separates planning from execution.
+Before introducing coordination between systems, ask whether one owner can make the decision and pass a completed result across the boundary.
 Do not mix concerns between two different systems just because it simplifies the current implementation.
 
 Prefer simplicity over exhaustiveness.
