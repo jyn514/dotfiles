@@ -1,7 +1,7 @@
-# Try rootless Docker in Lima
+# Run rootless Docker in Lima
 
-This opt-in prototype uses Docker's host API and BuildKit in a separate VM.
-Podman remains the default. Existing nerdctl/Lima and Podman VMs, images, and
+Lima-Docker is the default sandbox backend. It uses Docker's host API and
+BuildKit in a separate VM. Existing nerdctl/Lima and Podman VMs, images, and
 sessions are not migrated.
 
 From the dotfiles checkout on Apple Silicon macOS:
@@ -9,8 +9,8 @@ From the dotfiles checkout on Apple Silicon macOS:
 ```sh
 brew install lima docker docker-buildx
 python3 tools/codex-sandbox/lima/docker_host.py setup
-CODEX_SANDBOX_RUNTIME=lima-docker codex-sandbox --help
-CODEX_SANDBOX_RUNTIME=lima-docker pi
+codex-sandbox --help
+pi
 ```
 
 Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
@@ -155,7 +155,8 @@ restarts during a session, exit and relaunch; the next exclusive launch replaces
 stale listeners. No VM recreation is needed for this forwarding change.
 Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
-Omit `CODEX_SANDBOX_RUNTIME=lima-docker` to return to the default backend.
+Set `CODEX_SANDBOX_RUNTIME=podman` to use the previous backend; leaving it unset
+selects Lima-Docker. Missing Docker state never triggers an engine fallback.
 
 After sessions have exited, recover their shared proxies with
 `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo /path/to/repository`
@@ -256,7 +257,9 @@ socket transport described above; they do not use Docker exec cancellation.
 
 ## Default readiness
 
-Podman remains the default. Recorded September 10 validation completed twenty
+Lima-Docker became the default by operator decision on September 12. The switch
+accepts the remaining validation limits below; it does not close them.
+Recorded September 10 validation completed twenty
 simultaneous Pi sessions, 400 JJ requests, subsequent input/cancellation, and
 container/network/volume cleanup. This was a small shared repository; it did not
 measure sustained output or input during active large-tree/subagent work.
@@ -277,14 +280,14 @@ need an explicit cold-standby or shared-budget policy.
 New provisioning enables a [reclamation timer](#container-cache-reclamation).
 Its [replay](../experiments/reclaim-timer.md) passed the selected cost and sampled
 headroom criteria; it does not establish a host-wide budget for concurrent VMs.
-Before switching the default, establish a host file-table budget under repeated
+Remaining work: establish a host file-table budget under repeated
 large-tree work and concurrent sessions, and rerun the disposable Docker gates
 against the selected revision. `dev/test --lima` exercises nerdctl, not Docker.
 
 Zulip's Docker fixture passed dummy-credential TLS and upstream-401 cases;
 this does not establish configured end-to-end parity. The gateway has its own
 editor/SSH fixture below. Long-running interactive work, configured Agent
-Podman/Zulip smoke tests, and rollback remain cutover checks.
+Podman/Zulip smoke tests, and rollback remain follow-up validation.
 
 The [backend review](docker-review.md) records compatibility gaps and
 maintenance findings at revision `b4930191`.

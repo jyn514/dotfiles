@@ -1,9 +1,9 @@
 # Lima network feasibility
 
-Podman remains the default. This page describes the nerdctl network fixture;
+Lima-Docker is the default. This page describes the nerdctl network fixture;
 the [host setup](host-setup.md), [credential migration](credentials.md), and
 [opt-in launcher](launch.md) are implemented separately.
-For the Docker backend and its remaining default-switch gates, see
+For Docker setup and its remaining validation limits, see
 [Lima-Docker](docker.md#default-readiness).
 New Docker VMs also enable a
 [container-cache reclamation timer](docker.md#container-cache-reclamation).
@@ -145,4 +145,4 @@ rejection, interrupted download cleanup, and reuse without another download.
 Route inspection is not proof of endpoint behavior for every prohibited range.
 These network results do not establish daily-use readiness. The host and launcher
 have their own integration fixtures; `dev/test --lima` runs the nerdctl host gate,
-not the Docker gates. Neither Lima backend is the default.
+not the Docker gates. The nerdctl backend remains opt-in.

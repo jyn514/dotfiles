@@ -396,6 +396,7 @@ class BackgroundRelayTest(unittest.TestCase):
 
             with mock.patch.dict(
                 main.__globals__,
+                image_runtime=lambda: launcher['Podman'](),
                 new_state=lambda _: state,
                 cleanup=cleanup,
                 unregister_tmux_pane=lambda _: None,
@@ -918,6 +919,7 @@ class CodexSandboxTest(unittest.TestCase):
         environment = os.environ.copy()
         environment.pop("TMUX", None)
         environment.update({
+            "CODEX_SANDBOX_RUNTIME": "podman",  # This fixture supplies a fake Podman CLI.
             "PATH": f"{self.fake_bin}:{environment['PATH']}",
             "HOME": str(self.home),
             "FAKE_REPOSITORY": str(self.repo),

@@ -2,7 +2,6 @@
 """Build or resolve an outer image; stdout contains one local immutable reference."""
 
 import argparse
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -12,7 +11,8 @@ from sandbox_runtime import image_runtime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", choices=("podman", "lima", "lima-docker"), default=os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
+    parser.add_argument("--provider", choices=("podman", "lima", "lima-docker"),
+                        help="override CODEX_SANDBOX_RUNTIME (default: lima-docker)")
     parser.add_argument("--state", type=Path)
     sub = parser.add_subparsers(dest="operation", required=True)
     resolve = sub.add_parser("resolve")

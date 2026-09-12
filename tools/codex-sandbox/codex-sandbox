@@ -1650,7 +1650,7 @@ def launch(arguments: list[str]) -> int:
         raise SignalExit(signum)
 
     try:
-        OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
+        OUTER_RUNTIME = image_runtime()
         proxy_module.cache_clear()
         state = new_state(arguments)
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):

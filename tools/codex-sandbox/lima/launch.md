@@ -1,6 +1,7 @@
 # Launch an opt-in Lima sandbox
 
-Podman remains the default. Lima shares your home with the VM; containers keep
+Lima-Docker is the default; this guide selects the alternative nerdctl backend.
+Lima shares your home with the VM; containers keep
 the launcher's narrow mounts, protected metadata, and isolated credentials.
 
 ## Prepare the host
@@ -88,6 +89,6 @@ the two expected Pi help screens. A successful run ends with `PASS: all Lima
 launcher checks and cleanup completed; dummy boot credential invalidated.` and
 exit status zero; an earlier passing check does not establish overall success.
 
-This opt-in path precedes the macOS default switch. External-repository migration,
+This nerdctl path remains opt-in. External-repository migration,
 configured integration smoke tests, full interruption/recovery validation, and
 rollback remain cutover gates.

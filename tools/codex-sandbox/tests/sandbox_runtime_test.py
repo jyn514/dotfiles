@@ -41,6 +41,20 @@ def lima():
 
 
 class ImageIdentityTest(unittest.TestCase):
+    def test_default_runtime_and_explicit_rollback_selection(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch('docker_runtime.Docker') as docker, \
+                patch.object(runtime, 'Podman') as podman:
+            self.assertIs(runtime.image_runtime(), docker.return_value)
+            with patch.dict(os.environ, CODEX_SANDBOX_RUNTIME='podman'):
+                self.assertIs(runtime.image_runtime(), podman.return_value)
+                self.assertIs(runtime.image_runtime('lima-docker'), docker.return_value)
+            docker.side_effect = ValueError('missing Docker state')
+            podman.reset_mock()
+            with self.assertRaisesRegex(ValueError, 'missing Docker state'):
+                runtime.image_runtime()
+            podman.assert_not_called()
+
     def test_lima_creation_hides_only_successful_existing_volume_notice(self):
         notice = 'time="2026-09-09T09:13:27+02:00" level=warning msg="volume \\"proxy-jj\\" already exists and will be returned as-is"\n'
         warning = 'time="now" level=warning msg="another warning"\n'

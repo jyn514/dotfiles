@@ -1022,7 +1022,7 @@ def main(arguments: list[str] | None = None, *, runtime=None) -> int:
         if runtime is not None:
             OUTER_RUNTIME = runtime
         elif args.action in {"attach", "start", "publish", "finalize"}:
-            OUTER_RUNTIME = image_runtime(os.environ.get("CODEX_SANDBOX_RUNTIME", "podman"))
+            OUTER_RUNTIME = image_runtime()
         return args.function(args)
     except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"sandbox proxies: {error}", file=sys.stderr)

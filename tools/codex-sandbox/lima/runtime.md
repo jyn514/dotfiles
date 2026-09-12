@@ -1,10 +1,9 @@
 # Exercise outer runtime operations
 
-The image helper and runtime contracts support Podman and the provisioned Lima
-store. Podman remains the default; [opt-in Lima launches](launch.md) use the same
-runtime as their image builders. Full daily-use validation and rollback precede
-the default switch.
-The [rootless Docker prototype](docker.md) selects `--provider lima-docker` and
+The image helper and runtime contracts support Podman, nerdctl/Lima, and the
+default [Lima-Docker backend](docker.md). Launches and image builders share the
+same runtime selection; [nerdctl/Lima launches](launch.md) remain opt-in.
+Lima-Docker selects `--provider lima-docker` and
 `CODEX_SANDBOX_DOCKER_STATE`; its host API accepts build contexts outside VM shares.
 It returns local `repo:tag@sha256:HASH` references and uses a separate image store.
 Docker startup [uses the existing keyed image builders](docker.md), skipping
@@ -37,8 +36,9 @@ tools/codex-sandbox/sandbox-image --provider lima resolve localhost/example:test
 
 Use `--state DIRECTORY` before the operation for a separately provisioned host.
 `--provider podman` selects the existing host `docker` entrypoint. The helper
-defaults to `CODEX_SANDBOX_RUNTIME`, or Podman when unset;
-`CODEX_SANDBOX_LIMA_STATE` selects its host-state directory.
+defaults to `CODEX_SANDBOX_RUNTIME`, or `lima-docker` when unset.
+`CODEX_SANDBOX_DOCKER_STATE` selects Docker state;
+`CODEX_SANDBOX_LIMA_STATE` selects nerdctl state.
 No operation starts a VM, changes the launcher's provider,
 transfers images between stores, or silently pulls a missing image during
 resolution. BuildKit may fetch Dockerfile bases that are not local.

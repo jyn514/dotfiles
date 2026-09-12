@@ -47,11 +47,13 @@ its disposable Keychain password is `r2-probe-password`.
 
 ## Prerequisites and setup
 
-Podman remains the default outer runtime.
+Lima-Docker is the default outer runtime (`lima-docker`). Follow the
+[Docker setup guide](lima/docker.md) before launching; missing setup is an error,
+not a fallback to another engine. Set `CODEX_SANDBOX_RUNTIME=podman` for Podman.
 [Opt-in Lima launches](lima/launch.md) use a separately provisioned VM, Keychain boot credentials, and runtime-aware image builders.
 The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
-The separate [rootless Docker prototype](lima/docker.md) uses Docker's forwarded API socket and has its own opt-in setup and validation commands.
+The [rootless Docker backend](lima/docker.md) uses Docker's forwarded API socket and has its own setup and validation commands.
 Its [default-readiness record](lima/docker.md#default-readiness) distinguishes
 passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
 
@@ -62,9 +64,9 @@ passed bounded tests from unresolved host file-table pressure and sustained-work
 - Put this repository's `bin/` on `PATH`;
   `pi` delegates to `codex-sandbox`.
 - Provide `~/.codex/config.toml`.
-  The launcher injects the Podman secret `codex-github-token` as `GH_TOKEN`;
-  exporting a host `GH_TOKEN` does not provision that secret.
-  The opt-in [Lima credential helper](lima/credentials.md) imports it into Keychain and retains the Podman secret for rollback;
+  The [Lima credential helper](lima/credentials.md) imports the Podman secret
+  `codex-github-token` into Keychain for injection as `GH_TOKEN` and retains the
+  Podman secret for rollback; exporting a host `GH_TOKEN` does not provision it.
   guest caching lasts one VM boot.
 - Run inside tmux to use the injected host editor and tmux session restart support.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`.

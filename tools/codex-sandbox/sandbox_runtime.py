@@ -608,7 +608,9 @@ class Lima(VMRuntime):
         return network['CNI'].get('nerdctlLabels', {}).get('dev.codex.relay-owner')
 
 
-def image_runtime(provider, state=None):
+def image_runtime(provider=None, state=None):
+    if provider is None:
+        provider = os.environ.get('CODEX_SANDBOX_RUNTIME', 'lima-docker')
     if provider == "podman":
         return Podman()
     if provider == "lima":
