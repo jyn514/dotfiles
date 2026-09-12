@@ -13,7 +13,8 @@ CODEX_SANDBOX_RUNTIME=lima-docker codex-sandbox --help
 CODEX_SANDBOX_RUNTIME=lima-docker pi
 ```
 
-Setup creates `sandbox-host-docker` with 4 CPUs, 4 GiB RAM, and a 64 GiB disk.
+Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
+Existing VMs retain their resource sizes when setup is rerun.
 It shares your home directory with the VM; containers retain the launcher's
 narrow mounts. Setup copies the real Homebrew Docker CLI 29.8.0 into private
 state, so Homebrew cleanup and the `docker` → Podman alias cannot replace it.

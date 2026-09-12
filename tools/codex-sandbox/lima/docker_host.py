@@ -94,7 +94,7 @@ class DockerHost(Host):
             generation = uuid.uuid4().hex
             template = {
                 'minimumLimaVersion': '1.2.1', 'vmType': 'vz', 'arch': 'aarch64',
-                'cpus': 4, 'memory': '4GiB', 'disk': '64GiB', 'mountType': 'virtiofs', 'mounts': requested,
+                'cpus': 8, 'memory': '8GiB', 'disk': '100GiB', 'mountType': 'virtiofs', 'mounts': requested,
                 'images': [{'location': 'http://cloud-images-archive.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-arm64.img',
                             'arch': 'aarch64', 'digest': 'sha256:bbecbb88100ee65497927ed0da247ba15af576a8855004182cf3c87265e25d35'}],
                 'containerd': {'system': False, 'user': False},
