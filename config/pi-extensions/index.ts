@@ -4,6 +4,7 @@ import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
 import instructionIncludes from "./pi-instruction-includes.ts";
 import notifyWhenSettled from "./pi-notify.ts";
 import promptHistorySearch from "./prompt-history-search.ts";
+import sessionTitle from "./session-title.ts";
 import systemPrompt from "./system-prompt.ts";
 import webSearch from "./pi-web-search.ts";
 
@@ -13,6 +14,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   notifyWhenSettled(pi);
   instructionIncludes(pi);
   promptHistorySearch(pi);
+  sessionTitle(pi);
   systemPrompt(pi);
   webSearch(pi);
 }
