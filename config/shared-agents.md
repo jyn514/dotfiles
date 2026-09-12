@@ -61,7 +61,7 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 
 When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
 
-After creating or substantially rewriting documentation, specifications, prompts, instructions, or skills, invoke `tighten-docs` before completion. Do not apply it to code, generated files, or machine-owned data.
+After creating or substantially rewriting documentation, specifications, prompts, instructions, or skills, apply the `tighten-docs` skill before completion. Do not apply it to code, generated files, or machine-owned data.
 
 ### AGENTS.md files
 

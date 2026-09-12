@@ -1,6 +1,6 @@
 ---
 name: session-closeout
-description: Finish a work session by auditing the whole session, resolving or recording loose ends, reviewing docs/skills/tooling lessons, committing the session's owned changes, and giving the session an accurate title. Use when asked to wrap up or end the session. Use for forgotten-work or docs/skills/tooling reviews only when they are explicitly framed as ending the session. Do not use for an ordinary commit request, audit, or mid-session process review.
+description: Finish a work session by auditing the whole session, resolving or recording loose ends, reviewing docs/skills/tooling lessons, committing the session's owned changes, and setting an accurate title when the harness supports it. Use when asked to wrap up or end the session. Use for forgotten-work or docs/skills/tooling reviews only when they are explicitly framed as ending the session. Do not use for an ordinary commit request, audit, or mid-session process review.
 ---
 
 # Session closeout
@@ -11,7 +11,7 @@ Close the session from the complete record, not merely the latest turn.
 
 Read the original request, major course corrections, decisions, completed work, validation, and unresolved findings. Inspect current repository state and separate owned changes from pre-existing or unrelated work.
 
-An explicit request to wrap up or end the session authorizes and requires committing all changes owned by the session, organized into coherent commits, and authorizes changing the current session title. It does not authorize optional repairs, issue filing, external publication, or inclusion of unrelated work. Obtain separate authority before those actions.
+An explicit request to wrap up or end the session authorizes and requires committing all changes owned by the session, organized into coherent commits. When the harness supports current-session titles, it also authorizes changing the title. It does not authorize optional repairs, issue filing, external publication, or inclusion of unrelated work. Obtain separate authority before those actions.
 
 A request such as “anything we forgot?” or “do you suggest changes to docs/skills/tooling?” initiates closeout only when it is explicitly framed as ending the session. Otherwise treat it as a non-mutating review and do not load this skill. Use `commit-quality`, not this skill, for an ordinary “commit your changes” request.
 
@@ -57,9 +57,9 @@ After each commit, verify the resulting commit identity and message, then inspec
 
 ## 6. Title the session
 
-Every closeout must leave the session with a concise title reflecting its durable purpose or result, including substantial secondary work when one title can do so cleanly. Prefer the final outcome over the opening wording or an abandoned approach; distinguish investigation, design, repair, and implementation accurately.
+When the harness supports current-session titles, leave the session with a concise title reflecting its durable purpose or result, including substantial secondary work when one title can do so cleanly. Prefer the final outcome over the opening wording or an abandoned approach; distinguish investigation, design, repair, and implementation accurately.
 
-Use the harness's supported current-session title mechanism. If title mutation is unavailable or cannot operate on an active session, provide the exact proposed title and state the blocked mechanism; do not edit session storage directly. The explicit closeout request grants authority to change the current title. Verify the applied title when the harness exposes an independent read path.
+Use only the harness's supported current-session title mechanism. If none is exposed or it cannot operate on an active session, skip title mutation without blocking closeout; do not edit session storage directly. Verify the applied title when the harness exposes an independent read path.
 
 ## 7. Report and stop
 
@@ -69,6 +69,6 @@ Report only:
 - verification evidence and its limits;
 - commits created or owned changes left uncommitted;
 - required or recommended follow-ups;
-- the applied session title, or the exact title awaiting application.
+- the applied session title, when supported.
 
-Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, unrelated work to remain protected, and the title to be applied. A commit or title tooling blocker leaves closeout incomplete.
+Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected. When title tooling is supported, the title must also be applied. A commit blocker leaves closeout incomplete.
