@@ -22,12 +22,13 @@ LAYER = "sha256:" + "3" * 64
 REFERENCE = "localhost/codex-sandbox@" + CONTENT
 
 
-def native(name=REFERENCE, content=CONTENT):
+def native(name=REFERENCE, content=CONTENT, architecture="arm64"):
     return {"Image": {"Name": name, "Target": {
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
         "digest": content, "size": 123,
     }}, "ImageConfigDesc": {"digest": CONFIG},
-        "ImageConfig": {"rootfs": {"diff_ids": [LAYER]}}}
+        "ImageConfig": {"os": "linux", "architecture": architecture,
+                        "rootfs": {"diff_ids": [LAYER]}}}
 
 
 def lima():
@@ -41,6 +42,36 @@ def lima():
 
 
 class ImageIdentityTest(unittest.TestCase):
+    def test_builder_environment_binds_selected_podman_and_lima_runtime(self):
+        podman = object.__new__(runtime.Podman)
+        self.assertEqual('podman', podman.builder_environment()['CODEX_SANDBOX_RUNTIME'])
+        backend = lima()
+        environment = backend.builder_environment()
+        self.assertEqual('lima', environment['CODEX_SANDBOX_RUNTIME'])
+        self.assertEqual('/owned-state', environment['CODEX_SANDBOX_LIMA_STATE'])
+
+    def test_podman_builder_rejects_wrong_platform(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(side_effect=[
+            SimpleNamespace(stdout=json.dumps([{
+                "Id": CONTENT, "RootFS": {"Layers": [LAYER]},
+                "Os": "linux", "Architecture": "amd64",
+            }])),
+            SimpleNamespace(stdout="linux/arm64\n"),
+        ])
+        with self.assertRaisesRegex(runtime.RuntimeError, "linux/amd64.*linux/arm64"):
+            backend.verify_builder_image(CONTENT)
+
+    def test_lima_builder_rejects_wrong_platform(self):
+        backend = lima()
+        reference = "localhost/codex-sandbox:sha256-" + "1" * 64 + "@" + CONTENT
+        backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([
+            native(reference, architecture="amd64"),
+        ])))
+        backend.build_platform = Mock(return_value="linux/arm64")
+        with self.assertRaisesRegex(runtime.RuntimeError, "linux/amd64.*linux/arm64"):
+            backend.verify_builder_image(reference)
+
     def test_default_runtime_and_explicit_rollback_selection(self):
         with patch.dict(os.environ, {}, clear=True), \
                 patch('docker_runtime.Docker') as docker, \

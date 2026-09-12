@@ -3,7 +3,9 @@
 import hashlib
 import os
 from pathlib import Path
+import stat
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = {
@@ -11,6 +13,74 @@ COMMANDS = {
     str(ROOT / '.agents/sandbox/jj-proxy-image'): 'jj',
     str(ROOT / '.agents/sandbox/zulip-proxy-image'): 'zulip',
 }
+AGENT_CACHE_CONTRACT = 2
+
+
+def agent_sources(root=ROOT):
+    dockerfile = Path("tools/codex-sandbox/image/Dockerfile")
+    sources = [dockerfile]
+    for line in (root / dockerfile).read_text(encoding="utf-8").splitlines():
+        fields = line.split()
+        if not fields or fields[0] != "COPY" or any(
+            field.startswith("--from=") for field in fields[1:-1]
+        ):
+            continue
+        sources.extend(
+            Path(field) for field in fields[1:-1] if not field.startswith(("--", "<<"))
+        )
+    files = []
+    for source in sources:
+        absolute = root / source
+        if absolute.is_dir():
+            files.extend(
+                path.relative_to(root) for path in absolute.rglob("*")
+                if stat.S_ISREG(path.lstat().st_mode)
+            )
+        elif absolute.is_file():
+            files.append(source)
+    return sorted(set(files), key=lambda path: os.fsencode(path.as_posix()))
+
+
+def agent_cache_key(uid, gid, platform, base, *, root=None):
+    root = ROOT if root is None else root
+    identity = hashlib.sha256()
+    identity.update(f"agent-cache-contract={AGENT_CACHE_CONTRACT}\0".encode())
+    identity.update(f"uid={uid}\0gid={gid}\0platform={platform}\0".encode())
+    identity.update(
+        f"base={base.content}\0{base.config}\0{base.rootfs}\0".encode()
+    )
+    sources = agent_sources() if root == ROOT else agent_sources(root)
+    for path in sources:
+        data = (root / path).read_bytes()
+        identity.update(os.fsencode(path.as_posix()) + b"\0")
+        identity.update(hashlib.sha256(data).digest())
+    return identity.hexdigest()
+
+
+def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
+    if operation not in {"resolve", "refresh", "clean"}:
+        raise ValueError(f"unsupported agent image operation: {operation}")
+    from bake import _capture, _pin_dockerfile
+    with tempfile.TemporaryDirectory(prefix="sandbox-agent-image-") as directory:
+        captured = Path(directory).resolve() / "context"
+        _capture(ROOT, ROOT, captured, hashlib.sha256(), agent_sources())
+        base = runtime.inspect_image(base_reference)
+        _pin_dockerfile(
+            runtime, captured / "tools/codex-sandbox/image/Dockerfile",
+            {"BASE_IMAGE": base.reference}, set(), refresh=operation == "refresh",
+        )
+        tag = "codex-sandbox:" + agent_cache_key(
+            uid, gid, runtime.build_platform(), base, root=captured,
+        )
+        existing = None if operation == "clean" else runtime.image_if_available(tag)
+        if existing is not None:
+            return existing.reference
+        build_options = {"no_cache": True} if operation == "clean" else {}
+        return runtime.build(
+            tag, captured / "tools/codex-sandbox/image/Dockerfile", captured,
+            build_args=[f"AGENT_UID={uid}", f"AGENT_GID={gid}", f"BASE_IMAGE={base.reference}"],
+            **build_options,
+        ).reference
 
 
 def target(command):
@@ -19,7 +89,7 @@ def target(command):
     return COMMANDS.get(command[0]) if len(command) == 1 else None
 
 
-def declaration(requested=('auth', 'jj', 'zulip')):
+def source_paths(requested=('auth', 'jj', 'zulip')):
     sources = {
         'auth': ['tools/codex-sandbox/auth-proxy/Dockerfile',
                  'tools/codex-sandbox/auth-proxy/server.py', 'tools/codex-sandbox/gateway.py'],
@@ -30,10 +100,12 @@ def declaration(requested=('auth', 'jj', 'zulip')):
         'zulip': ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
                   'tools/zulip-proxy/forward.py'],
     }
+    return {name: paths for name, paths in sources.items() if name in requested}
+
+
+def declaration(requested=('auth', 'jj', 'zulip')):
     targets = {}
-    for name, paths in sources.items():
-        if name not in requested:
-            continue
+    for name, paths in source_paths(requested).items():
         key = hashlib.sha256()
         for path in sorted(paths):
             key.update(path.encode() + b'\0')

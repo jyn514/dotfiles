@@ -64,11 +64,11 @@ class ManifestTest(unittest.TestCase):
             prepared = Path(directory) / 'images.json'
             prepared.write_text(json.dumps({'example': 'image@sha256:prepared'}))
             owner = mock.Mock()
-            owner.builder_image.side_effect = lambda value: value
+            owner.verify_builder_image.side_effect = lambda value: SimpleNamespace(reference=value)
             with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner), mock.patch('subprocess.run') as run:
                 images = sandbox_proxies.resolve_images(Path(directory), {'commands': {'example': {}}}, prepared)
                 self.assertEqual(images, {'example': 'image@sha256:prepared'})
-                owner.builder_image.assert_called_once_with('image@sha256:prepared')
+                owner.verify_builder_image.assert_called_once_with('image@sha256:prepared')
                 run.assert_not_called()
                 with self.assertRaisesRegex(sandbox_proxies.ConfigError, 'manifest'):
                     sandbox_proxies.resolve_images(Path(directory), {'commands': {}}, prepared)
@@ -90,7 +90,10 @@ class ManifestTest(unittest.TestCase):
         arguments = ["snapshot", "--repo", str(self.repo), "--output", str(output)]
         with mock.patch.object(sys, "argv", ["caller", "unrelated-argument"]):
             self.assertEqual(0, sandbox_proxies.main(arguments))
-            self.assertEqual({"version": 1, "commands": {}}, json.loads(output.read_text()))
+            self.assertEqual(
+                {"version": 1, "capabilities": {}, "commands": {}},
+                json.loads(output.read_text()),
+            )
             self.assertEqual(["caller", "unrelated-argument"], sys.argv)
             (self.sandbox / "proxy-commands.json").write_text("invalid JSON")
             with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
@@ -118,23 +121,90 @@ class ManifestTest(unittest.TestCase):
         manifest = sandbox_proxies.load_manifest(self.repo)
         self.assertEqual(["example-proxy", "serve"], manifest["commands"]["example"]["argv"])
 
+    def test_version_two_selects_capabilities_and_binds_bake_images(self) -> None:
+        self.sandbox.joinpath("proxy-commands.json").write_text(json.dumps({
+            "version": 2,
+            "capabilities": {"host-editor": True, "flower-r2": False},
+            "images": {
+                "resolver": {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
+                "base": "base",
+            },
+            "commands": {"example": {
+                **self.command(), "image": "example",
+            }},
+        }))
+        data = json.loads(self.sandbox.joinpath("proxy-commands.json").read_text())
+        data["commands"]["example"].pop("image-command")
+        self.sandbox.joinpath("proxy-commands.json").write_text(json.dumps(data))
+
+        manifest = sandbox_proxies.load_manifest(self.repo)
+
+        self.assertTrue(manifest["capabilities"]["host-editor"])
+        self.assertFalse(manifest["capabilities"]["nested-containers"])
+        self.assertEqual("example", manifest["commands"]["example"]["image-target"])
+
+    def test_conventional_bake_file_supplies_policy_without_manifest(self) -> None:
+        bake = self.sandbox / "docker-bake.hcl"
+        bake.write_text('target "base" { context = ".agents/sandbox/base" }\n')
+        output = self.repo / "snapshot.json"
+        arguments = ["snapshot", "--repo", str(self.repo), "--output", str(output)]
+        self.assertEqual(0, sandbox_proxies.main(arguments))
+        manifest = json.loads(output.read_text())
+        self.assertEqual(1, manifest["version"])
+        self.assertEqual({}, manifest["commands"])
+        self.assertEqual("base", manifest["images"]["base"])
+        self.assertEqual(
+            {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
+            manifest["images"]["resolver"],
+        )
+
+    def test_bake_resolver_defaults_to_conventional_file(self) -> None:
+        self.sandbox.joinpath("proxy-commands.json").write_text(json.dumps({
+            "version": 2,
+            "images": {"resolver": {"kind": "bake"}, "base": "base"},
+        }))
+        manifest = sandbox_proxies.load_manifest(self.repo)
+        self.assertEqual(
+            {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
+            manifest["images"]["resolver"],
+        )
+
+    def test_conventional_bake_file_remains_protected_configuration(self) -> None:
+        bake = self.sandbox / "docker-bake.hcl"
+        bake.symlink_to(self.repo / "outside.hcl")
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "symlink"):
+            sandbox_proxies.load_optional_manifest(self.repo)
+
+    def test_version_two_rejects_undeclared_capability_and_command_without_resolver(self) -> None:
+        path = self.sandbox / "proxy-commands.json"
+        path.write_text(json.dumps({"version": 2, "capabilities": {"shell": True}}))
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "capabilities"):
+            sandbox_proxies.load_manifest(self.repo)
+        command = self.command()
+        command.pop("image-command")
+        command["image"] = "example"
+        path.write_text(json.dumps({"version": 2, "commands": {"example": command}}))
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "explicit image resolver"):
+            sandbox_proxies.load_manifest(self.repo)
+
     def test_docker_prepares_once_and_revalidates_serialized_references(self) -> None:
         owner = mock.Mock(provider='lima-docker')
         images = {'one': 'first@sha256:one', 'two': 'second@sha256:two'}
-        owner.prepare_images.return_value = SimpleNamespace(proxies=images)
-        owner.builder_image.side_effect = lambda value: value
+        preparation = mock.Mock(return_value=SimpleNamespace(proxies=images))
+        owner.verify_builder_image.side_effect = lambda value: SimpleNamespace(reference=value)
         manifest = {'commands': {'one': {'image-target': 'first'}, 'two': {'image-target': 'second'}}}
-        with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner):
+        with mock.patch.object(sandbox_proxies, 'OUTER_RUNTIME', owner), \
+                mock.patch('image_resolver.prepare_launch_images', preparation):
             self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest), images)
-            owner.prepare_images.assert_called_once_with(self.repo, manifest['commands'])
-            owner.builder_image.assert_not_called()
+            preparation.assert_called_once_with(owner, self.repo, manifest['commands'])
+            owner.verify_builder_image.assert_not_called()
             prepared = self.repo / 'images.json'
             prepared.write_text(json.dumps(images))
-            owner.prepare_images.reset_mock()
+            preparation.reset_mock()
             self.assertEqual(sandbox_proxies.resolve_images(self.repo, manifest, prepared), images)
-            self.assertEqual(owner.builder_image.call_count, 2)
-            owner.prepare_images.assert_not_called()
-            owner.builder_image.side_effect = ValueError('engine changed')
+            self.assertEqual(owner.verify_builder_image.call_count, 2)
+            preparation.assert_not_called()
+            owner.verify_builder_image.side_effect = ValueError('engine changed')
             with self.assertRaisesRegex(ValueError, 'engine changed'):
                 sandbox_proxies.resolve_images(self.repo, manifest, prepared)
 
@@ -353,8 +423,11 @@ class ManifestTest(unittest.TestCase):
 
     def test_publication_checks_proxies_concurrently_before_writing_metadata(self) -> None:
         state = self.repo / "state.json"
+        images = {name: "immutable" for name in ("first", "second")}
         state.write_text(json.dumps({"proxies": [
-            {"name": name, "container": name, "image": "immutable"} for name in ("first", "second")]}))
+            {"name": name, "container": name, "image": image} for name, image in images.items()],
+            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": "helper",
+                         "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
         manifest.write_text('{"version":1,"commands":{}}')
         args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
@@ -373,8 +446,11 @@ class ManifestTest(unittest.TestCase):
 
     def test_failed_publication_waits_for_other_checks_and_keeps_old_metadata(self) -> None:
         state = self.repo / "state.json"
+        images = {name: "immutable" for name in ("bad", "slow")}
         state.write_text(json.dumps({"proxies": [
-            {"name": name, "container": name, "image": "immutable"} for name in ("bad", "slow")]}))
+            {"name": name, "container": name, "image": image} for name, image in images.items()],
+            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": "helper",
+                         "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
         manifest.write_text('{"version":1,"commands":{}}')
         published = self.repo / "session.json"
@@ -604,24 +680,37 @@ class ManifestTest(unittest.TestCase):
         shared_state = {"proxies": [{
             "name": "example", "volume": "shared-example", "container": "shared-example",
             "image": "sha256:" + "0" * 64,
-        }]}
+        }], "auth": {"container": "shared-auth", "image": "helper"}}
         shared_manifest = sandbox_proxies.serializable_manifest(
             sandbox_proxies.load_manifest(self.repo)
         )
+        accepted = {"manifest": shared_manifest, "source-present": True,
+                    "images": {"agent": "agent", "helper": "helper",
+                               "proxies": {"example": "sha256:" + "0" * 64}},
+                    "parameters": {"uid": 501, "gid": 20}}
+        shared_state["runtime"] = {"provider": "podman"}
         (runtime / "session.json").write_text(json.dumps({
-            "version": 1,
+            "version": 3,
             "repository": sandbox_proxies.repository_identity(self.repo),
             "container_repository": str(self.container_repo),
-            "commands": {}, "state": shared_state, "manifest": shared_manifest,
+            "commands": {}, "state": shared_state, "accepted": accepted,
         }), encoding="utf-8")
         state = self.repo / "attached-state"
         manifest = self.repo / "attached-manifest"
-        manifest.write_text(json.dumps(shared_manifest), encoding="utf-8")
+        manifest.write_text("checkout policy must not be read", encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
             "shared": True, "state": str(state), "manifest": str(manifest),
+            "uid": 501, "gid": 20, "agent_image": "agent", "helper_image": "helper",
         })
-        with mock.patch.object(sandbox_proxies, "start_main") as start, \
+        owner = mock.Mock(provider="podman")
+        owner.builder_image.side_effect = lambda image: "builder:" + image
+        owner.inspect_image.return_value = "inspected-helper"
+        owner.verify_builder_image.return_value = "inspected-helper"
+        owner.container_matches_image.return_value = True
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
+                mock.patch.object(sandbox_proxies, "start_main") as start, \
                 mock.patch.object(sandbox_proxies, "publish_main") as publish, \
                 mock.patch.object(sandbox_proxies, "resolve_images") as resolve, \
                 mock.patch.object(sandbox_proxies, "validate_live_proxy"), \
@@ -630,8 +719,16 @@ class ManifestTest(unittest.TestCase):
         start.assert_not_called()
         publish.assert_not_called()
         resolve.assert_not_called()
+        owner.container_matches_image.assert_called_once_with("shared-auth", "inspected-helper")
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
+
+        owner.container_matches_image.reset_mock()
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
+                mock.patch.object(sandbox_proxies, "containers_running", return_value=False):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unhealthy authentication"):
+                sandbox_proxies.accepted_session(args, self.repo, json.loads((runtime / "session.json").read_text()))
 
     def test_new_schema_requires_an_explicit_owner_and_legacy_is_podman(self) -> None:
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing its runtime"):
@@ -826,139 +923,9 @@ class ManifestTest(unittest.TestCase):
             "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start:
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "changed or is unavailable"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "lacks accepted policy and images"):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
-
-    def test_proxy_monitor_removes_agent_when_shared_service_stops(self) -> None:
-        cases = (
-            ({"proxies": [{
-                "name": "example", "container": "proxy", "volume": "volume",
-                "image": "sha256:" + "0" * 64,
-            }]}, "proxy"),
-            ({"proxies": [], "auth": {"container": "auth-proxy", "key": "secret"}}, "auth-proxy"),
-        )
-        running = subprocess.CompletedProcess([], 0, stdout="true\n")
-        for contents, stopped in cases:
-            with self.subTest(stopped=stopped):
-                state = self.repo / "state"
-                state.write_text(json.dumps(contents), encoding="utf-8")
-
-                class WaitProcess:
-                    def __init__(self, arguments: list[str], **_: object) -> None:
-                        read_fd, self.write_fd = os.pipe()
-                        self.stdout = os.fdopen(read_fd, "r", encoding="utf-8")
-                        if arguments[-1] == stopped:
-                            os.close(self.write_fd)
-                            self.write_fd = -1
-
-                    def terminate(self) -> None:
-                        if self.write_fd != -1:
-                            os.close(self.write_fd)
-                            self.write_fd = -1
-
-                    def wait(self, **_kwargs) -> int:
-                        return 0
-
-                with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=running) as run, \
-                        mock.patch.object(sandbox_proxies.subprocess, "Popen", WaitProcess):
-                    args = type("Args", (), {"state": str(state), "agent": "agent"})
-                    self.assertEqual(1, sandbox_proxies.monitor_main(args))
-                self.assertEqual(
-                    ["docker", "rm", "--force", "agent"], run.call_args_list[-1].args[0],
-                )
-
-    def test_standalone_monitor_never_passes_agent_input_to_engine_children(self) -> None:
-        state = self.repo / "monitor-state.json"
-        state.write_text(json.dumps({"proxies": [{"name": "proxy", "container": "proxy"}]}))
-        log = self.repo / "monitor-input.jsonl"
-        result = subprocess.run([
-            sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")),
-            "monitor", str(state)], input="reserved for the agent", text=True,
-            capture_output=True, timeout=10,
-            env={**os.environ, "MONITOR_INPUT_LOG": str(log)})
-        self.assertEqual(1, result.returncode, result.stderr)
-        calls = [json.loads(line) for line in log.read_text().splitlines()]
-        self.assertEqual({"inspect", "wait", "rm"}, {call["operation"] for call in calls})
-        self.assertTrue(all(call["input"] == "" for call in calls), calls)
-
-    def test_terminated_monitor_reaps_its_wait_children(self) -> None:
-        state = self.repo / "monitor-state.json"
-        state.write_text(json.dumps({"proxies": [{"name": "proxy", "container": "proxy"}]}))
-        log = self.repo / "monitor-input.jsonl"
-        process = subprocess.Popen([
-            sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")),
-            "monitor", str(state)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            env={**os.environ, "MONITOR_INPUT_LOG": str(log), "MONITOR_STAY_RUNNING": "1"})
-        children = []
-        try:
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if log.exists():
-                    calls = [json.loads(line) for line in log.read_text().splitlines()]
-                    children = [call["pid"] for call in calls if call["operation"] == "wait"]
-                    if len(children) == 2:
-                        break
-                time.sleep(0.01)
-            self.assertEqual(2, len(children))
-            process.terminate()
-            process.wait(timeout=5)
-            calls = [json.loads(line) for line in log.read_text().splitlines()]
-            self.assertNotIn("rm", [call["operation"] for call in calls])
-            for child in children:
-                with self.assertRaises(ProcessLookupError):
-                    os.kill(child, 0)
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.wait()
-            for child in children:
-                try:
-                    os.kill(child, 15)
-                except ProcessLookupError:
-                    pass
-
-    def test_guest_monitor_distinguishes_cancellation_from_lost_supervision(self) -> None:
-        for cancel in (False, True):
-            with self.subTest(cancel=cancel):
-                log = self.repo / f"guest-monitor-{cancel}.jsonl"
-                process = subprocess.Popen([
-                    sys.executable, str(Path(__file__).with_name("monitor_stdin_fixture.py")), "guest"],
-                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    env={**os.environ, "MONITOR_INPUT_LOG": str(log), "MONITOR_STAY_RUNNING": "1"})
-                children = []
-                try:
-                    deadline = time.monotonic() + 5
-                    while time.monotonic() < deadline:
-                        if log.exists():
-                            calls = [json.loads(line) for line in log.read_text().splitlines()]
-                            children = [call["pid"] for call in calls if call["operation"] == "wait"]
-                            if len(children) == 2:
-                                break
-                        time.sleep(0.01)
-                    self.assertEqual(2, len(children))
-                    if cancel:
-                        process.stdin.write(b"q")
-                    process.stdin.close()
-                    process.wait(timeout=5)
-                    self.assertEqual(143 if cancel else 1, process.returncode, process.stderr.read())
-                    calls = [json.loads(line) for line in log.read_text().splitlines()]
-                    self.assertEqual(not cancel, any(call["operation"] == "rm" for call in calls))
-                    self.assertTrue(all(call["input"] == "" for call in calls))
-                    for child in children:
-                        with self.assertRaises(ProcessLookupError):
-                            os.kill(child, 0)
-                finally:
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait()
-                    process.stdin.close()
-                    process.stderr.close()
-                    for child in children:
-                        try:
-                            os.kill(child, 15)
-                        except ProcessLookupError:
-                            pass
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {

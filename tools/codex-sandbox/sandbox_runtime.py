@@ -79,6 +79,36 @@ class Podman:
     def builder_image(self, reference):
         return digest(reference)
 
+    def verify_builder_image(self, reference):
+        immutable = self.builder_image(reference)
+        raw = single_json(self.run(["image", "inspect", reference], capture_output=True).stdout)
+        architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(
+            raw.get('Architecture'), raw.get('Architecture'),
+        )
+        actual = f"{raw.get('Os')}/{architecture}"
+        expected = self.build_platform()
+        if actual != expected:
+            raise RuntimeError(
+                f'Podman builder image uses {actual}, expected admitted engine platform {expected}'
+            )
+        return self.inspect_image(immutable)
+
+    def build_platform(self):
+        result = self.run(
+            ["info", "--format", "{{.OSType}}/{{.Architecture}}"],
+            capture_output=True,
+        ).stdout.strip()
+        if not re.fullmatch(r"linux/(?:amd64|arm64)", result):
+            raise RuntimeError("runtime returned an unsupported build platform")
+        return result
+
+    def builder_environment(self):
+        return {**os.environ, 'CODEX_SANDBOX_RUNTIME': self.provider}
+
+    def upstream_image(self, reference):
+        self.run(["pull", "--quiet", reference], stdout=subprocess.DEVNULL)
+        return self.inspect_image(reference).reference
+
     def forward_proxy(self, container):
         return subprocess.run(self.argv([
             "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"])).returncode
@@ -121,12 +151,27 @@ class Podman:
     def resolve_image(self, reference):
         return self.inspect_image(reference)
 
-    def build(self, tag, dockerfile, context, *, build_args=(), target=None):
+    def image_if_available(self, reference):
+        result = self.run(
+            ["image", "exists", reference], check=False,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        if result.returncode == 0:
+            return self.inspect_image(reference)
+        if result.returncode == 1:
+            return None
+        raise subprocess.CalledProcessError(
+            result.returncode, result.args, stderr=result.stderr,
+        )
+
+    def build(self, tag, dockerfile, context, *, build_args=(), target=None, no_cache=False):
         arguments = ["build", "--jobs", "4", "--file", str(dockerfile), "--tag", tag]
         for value in build_args:
             arguments += ["--build-arg", value]
         if target:
             arguments += ["--target", target]
+        if no_cache:
+            arguments.append("--no-cache")
         self.run([*arguments, str(context)], stdout=sys.stderr)
         return self.resolve_image(tag)
 
@@ -244,10 +289,6 @@ class VMRuntime(Podman):
     def guest(self, arguments, **kwargs):
         return self.host.guest(self.record, *arguments, **kwargs)
 
-    def monitor(self, containers):
-        from sandbox_monitor import monitor
-        return monitor(self.argv, containers)
-
     def agent_command(self, image, arguments):
         return ["pi", "--offline", "--approve", *arguments]
 
@@ -257,6 +298,10 @@ class Lima(VMRuntime):
     # nerdctl reads the file in the guest; Docker and Podman read it on the host.
     environment_file_in_guest = True
     host_address = "host.lima.internal"
+
+    def builder_environment(self):
+        return {**super().builder_environment(),
+                'CODEX_SANDBOX_LIMA_STATE': str(self.host.state)}
 
     @contextmanager
     def creation_diagnostics(self):
@@ -282,6 +327,20 @@ class Lima(VMRuntime):
             raise RuntimeError("Lima image builder must use sandbox-image in the selected store")
         self.inspect_image(reference)
         return reference
+
+    def verify_builder_image(self, reference):
+        image = self.inspect_image(self.builder_image(reference))
+        actual = getattr(self, '_image_platforms', {}).get(image.reference)
+        expected = self.build_platform()
+        if actual != expected:
+            raise RuntimeError(
+                f'Lima builder image uses {actual}, expected admitted engine platform {expected}'
+            )
+        return image
+
+    def upstream_image(self, reference):
+        self.run(["pull", reference], stdout=subprocess.DEVNULL)
+        return self.resolve_image(reference).reference
 
     def forward_proxy(self, container):
         raw = single_json(self.run(["inspect", "--mode=native", container], capture_output=True).stdout)
@@ -375,47 +434,6 @@ class Lima(VMRuntime):
                 "nerdctl", "--address", "/run/containerd/containerd.sock",
                 "--namespace", self.record["namespace"], *arguments]
 
-    def monitor(self, containers):
-        self.host.machine(self.record)
-        source = Path(__file__).with_name("sandbox_monitor.py").read_text()
-        argv = ["limactl", "shell", "--workdir", "/tmp", self.record["instance"],
-                "env", *["-u" + name for name in (*PROXY_ENV, *ENGINE_ENV)],
-                "python3", "-c", source, self.record["namespace"], json.dumps(containers)]
-
-        def terminate(signum, _frame):
-            raise SystemExit(128 + signum)
-
-        signals = (signal.SIGTERM, signal.SIGHUP)
-        previous = {signum: signal.signal(signum, terminate) for signum in signals}
-        process = None
-        try:
-            # This private pipe carries cancellation, never Pi's terminal input.
-            # Unannounced EOF means lost supervision and fails closed in guest.
-            process = subprocess.Popen(argv, stdin=subprocess.PIPE)
-            status = process.wait()
-            if status:
-                # Also cover a guest interpreter crash, before its own cleanup.
-                self.run(["rm", "--force", containers[0][1]], capture_output=True, timeout=10)
-            return status
-        finally:
-            for signum in signals:
-                signal.signal(signum, signal.SIG_IGN)
-            try:
-                if process is not None:
-                    try:
-                        process.stdin.write(b"q")
-                        process.stdin.close()
-                    except BrokenPipeError:
-                        pass
-                    try:
-                        process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-            finally:
-                for signum, handler in previous.items():
-                    signal.signal(signum, handler)
-
     def inspect_image(self, reference):
         arguments = ["image", "inspect", "--mode=native", reference]
         output = self.run(arguments, capture_output=True).stdout
@@ -437,9 +455,17 @@ class Lima(VMRuntime):
             raise RuntimeError("image target is not a supported content descriptor")
         if "@" in reference and reference.rsplit("@", 1)[1] != target["digest"]:
             raise RuntimeError("image name digest differs from its descriptor")
-        return Image(raw["Image"]["Name"], digest(target["digest"]),
-                     digest(raw["ImageConfigDesc"]["digest"]),
-                     chain_id(raw["ImageConfig"]["rootfs"]["diff_ids"]))
+        image = Image(raw["Image"]["Name"], digest(target["digest"]),
+                      digest(raw["ImageConfigDesc"]["digest"]),
+                      chain_id(raw["ImageConfig"]["rootfs"]["diff_ids"]))
+        config = raw["ImageConfig"]
+        architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(
+            config.get('architecture'), config.get('architecture'),
+        )
+        if not hasattr(self, '_image_platforms'):
+            self._image_platforms = {}
+        self._image_platforms[image.reference] = f"{config.get('os')}/{architecture}"
+        return image
 
     def resolve_image(self, reference):
         image = self.inspect_image(reference)
@@ -490,6 +516,14 @@ class Lima(VMRuntime):
                     raise
                 print(f"image staging cleanup failed: {error}", file=sys.stderr)
 
+    def image_if_available(self, reference):
+        try:
+            return self.inspect_image(reference)
+        except subprocess.CalledProcessError as error:
+            if error.stderr == "image is absent":
+                return None
+            raise
+
     def register_reference(self, source, target):
         # nerdctl tag may fetch missing content. The local image-service
         # operation only registers an existing descriptor in this namespace.
@@ -502,7 +536,7 @@ class Lima(VMRuntime):
             # its full descriptor. Other errors remain errors if it is absent.
             self.inspect_image(target)
 
-    def build(self, tag, dockerfile, context, *, build_args=(), target=None):
+    def build(self, tag, dockerfile, context, *, build_args=(), target=None, no_cache=False):
         self.verify()
         context_bind, dockerfile_bind = self.host.check_binds([(context, False), (dockerfile, False)])
         context = context_bind["source"]
@@ -513,6 +547,8 @@ class Lima(VMRuntime):
             arguments += ["--build-arg", value]
         if target:
             arguments += ["--target", target]
+        if no_cache:
+            arguments.append("--no-cache")
         # SSH needs terminal stdin to allocate the guest PTY for BuildKit's
         # automatic progress display. Other operations must not consume stdin.
         interactive = sys.stdin.isatty() and sys.stderr.isatty()

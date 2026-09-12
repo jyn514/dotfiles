@@ -1,9 +1,7 @@
 """Rootless Docker operations through the owned Lima-forwarded engine socket."""
 
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass
 import fcntl
 import os
 from pathlib import Path
@@ -17,7 +15,7 @@ import time
 import uuid
 from urllib.parse import quote
 
-from lima.docker_api import inspect as inspect_docker
+from lima.docker_api import APIError, inspect as inspect_docker
 from lima.docker_host import DockerHost
 from lima.docker_client import verify_buildx, docker_client
 from sandbox_runtime import VMRuntime, Image, RuntimeError, chain_id, digest, single_json, PROXY_ENV
@@ -28,13 +26,6 @@ class BuildError(subprocess.CalledProcessError):
 
     def __str__(self):
         return f'sandbox image build failed (exit {self.returncode}); see BuildKit output above'
-
-
-@dataclass(frozen=True)
-class PreparedImages:
-    base: str | None
-    auth: str | None
-    proxies: dict[str, str]
 
 
 def stop_build(process):
@@ -158,6 +149,14 @@ class Docker(VMRuntime):
         self._image_metadata[immutable] = raw
         return image
 
+    def image_if_available(self, reference):
+        try:
+            return self.inspect_image(reference)
+        except APIError as error:
+            if error.status == 404:
+                return None
+            raise
+
     def inspect_container(self, container):
         if self.recovery:
             self.verify_identity()
@@ -169,6 +168,20 @@ class Docker(VMRuntime):
             raise RuntimeError('Docker builders must return an immutable image ID or repository digest')
         return self.inspect_image(reference).reference
 
+    def verify_builder_image(self, reference):
+        image = self.inspect_image(self.builder_image(reference))
+        raw = self.image_metadata(image.reference)
+        architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(
+            raw.get('Architecture'), raw.get('Architecture'),
+        )
+        actual = f"{raw.get('Os')}/{architecture}"
+        expected = self.build_platform()
+        if actual != expected:
+            raise RuntimeError(
+                f'Docker builder image uses {actual}, expected admitted engine platform {expected}'
+            )
+        return image
+
     def builder_environment(self):
         return {**os.environ, 'CODEX_SANDBOX_RUNTIME': self.provider,
                 'CODEX_SANDBOX_DOCKER_STATE': str(self.host.state)}
@@ -178,52 +191,21 @@ class Docker(VMRuntime):
         arch = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(info['Architecture'], info['Architecture'])
         return info['OSType'] + '/' + arch
 
-    def bake(self, repo, targets):
-        from bake import resolve
-        return resolve(self, repo, targets)
+    def upstream_image(self, reference):
+        result = self.run_builder(self.argv([
+            'buildx', 'imagetools', 'inspect', '--builder', 'default',
+            '--format', '{{.Manifest.Digest}}', reference,
+        ]))
+        result.check_returncode()
+        value = result.stdout.strip()
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', value):
+            raise RuntimeError('registry inspection returned an invalid image digest')
+        repository = reference.split('@', 1)[0].rsplit(':', 1)[0] if ':' in reference.rsplit('/', 1)[-1] else reference.split('@', 1)[0]
+        return repository + '@' + value
 
-    def prepare_images(self, repo, commands, *, include_base=False, auth_builder=None):
-        """Resolve launch images once, before container workers may start."""
-        repo = Path(repo)
-        targets = ['base'] if include_base and (repo / '.agents/sandbox/bake').is_file() else []
-        if include_base and (repo / '.agents/sandbox/base-image').is_file() and not targets:
-            raise RuntimeError('Lima-Docker requires .agents/sandbox/bake instead of executable base-image builds')
-        builders = {'auth': auth_builder} if auth_builder is not None else {}
-        for name, command in commands.items():
-            if command.get('image-target'):
-                targets.append(command['image-target'])
-            elif command.get('image-command'):
-                builders['proxy:' + name] = (command['image-command'], repo)
-            else:
-                raise RuntimeError(f'proxy {name} requires image-target for lima-docker')
-        baked = self.bake(repo, targets)
+    def bake(self, repo, targets, *, file=None, operation='resolve'):
         from bake import resolve
-        import owned_images
-        owned = {name: owned_images.target(command) for name, (command, _) in builders.items()
-                 if owned_images.target(command) is not None}
-        helpers = resolve(self, owned_images.ROOT, list(owned.values()),
-                          declaration=owned_images.declaration(owned.values())) if owned else {}
-        builders = {name: builder for name, builder in builders.items() if name not in owned}
-        built = self.run_builders(builders)
-        def resolve_builder(item):
-            name, result = item
-            output = result.stdout.removesuffix('\n')
-            if re.fullmatch(r'[0-9a-f]{64}', output):
-                output = 'sha256:' + output
-            if result.returncode or '\n' in output:
-                raise RuntimeError(f'image-command for {name} did not print exactly one immutable image hash')
-            return name, self.builder_image(output)
-        # Keep independent image reads parallel even though preparation
-        # publishes one combined result.
-        with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
-            resolved = dict(workers.map(resolve_builder, built.items()))
-        resolved.update({name: helpers[target] for name, target in owned.items()})
-        # Bake already resolved these references in this engine. Only serialized
-        # references crossing into the proxy subprocess need another inspection.
-        proxies = {name: baked[command['image-target']] if command.get('image-target')
-                   else resolved['proxy:' + name] for name, command in commands.items()}
-        return PreparedImages(baked.get('base', 'node:24-alpine3.22') if include_base else None,
-                              resolved.get('auth'), proxies)
+        return resolve(self, repo, targets, file=file, operation=operation)
 
     def run_builder(self, command, *, cwd=None, capture=True):
         """Return one builder's status, optionally capturing its image reference."""
@@ -312,13 +294,15 @@ class Docker(VMRuntime):
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
 
-    def build(self, tag, dockerfile, context, *, build_args=(), target=None):
+    def build(self, tag, dockerfile, context, *, build_args=(), target=None, no_cache=False):
         arguments = ['buildx', 'build', '--builder', 'default', '--load', '--provenance=false',
                      '--file', str(dockerfile), '--tag', tag]
         for value in build_args:
             arguments += ['--build-arg', value]
         if target:
             arguments += ['--target', target]
+        if no_cache:
+            arguments.append('--no-cache')
         with self.build_output():
             command = self.argv([*arguments, str(context)])
             if os.environ.get('CODEX_SANDBOX_BUILDER_GROUP') == '1':

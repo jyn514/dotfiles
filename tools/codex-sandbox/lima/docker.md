@@ -194,12 +194,10 @@ Relay creation checks the sysctls again, since network creation can change them
 after service activation. Do not apply these settings
 to an arbitrary Docker installation: they change inter-container filtering.
 
-Lima-Docker reads repository images from an executable `.agents/sandbox/bake`.
-Run it from the repository root; stdout must contain fresh Docker Bake HCL or
-JSON with source-input hashes in target tags, and diagnostics belong on stderr.
-The launcher passes the declaration to pinned Buildx `bake --print`, selecting
-the recorded engine's platform through `BUILDPLATFORM`. No build runs during
-metadata resolution.
+Lima-Docker reads repository images from the version 2 resolver declared in
+`.agents/sandbox/proxy-commands.json`. The bundled Bake resolver evaluates its
+declared file with pinned Buildx, captures complete local inputs, and assigns
+private content identities; repository tags do not control reuse.
 
 The `base` target supplies the agent base. Repository proxy manifests select
 targets with `image-target`; when both fields exist, Docker prefers that target.
@@ -210,8 +208,8 @@ the installed helpers.
 The Docker CLI shim has been removed: repository builders must migrate their
 Docker calls to Bake declarations before using this backend.
 
-The producer owns input freshness, including added, removed, renamed, and
-edited sources. A checked-in generated Bake file alone cannot establish that.
+The resolver owns input freshness, including added, removed, renamed, and edited
+sources, file modes, symlinks, named contexts, and immutable upstream pins.
 Owned image keys cover packaged runtime inputs; tests, documentation, and Python
 bytecode do not belong in the agent or Zulip image inputs.
 The launcher derives private cache tags from resolved target options, platform,
@@ -356,7 +354,7 @@ python3 tools/codex-sandbox/tests/lima_launcher_integration.py \
   --work /private/tmp/docker-sandbox-test/work
 CODEX_SANDBOX_RUNTIME=lima-docker \
 CODEX_SANDBOX_DOCKER_STATE=/private/tmp/docker-sandbox-test/state \
-  .agents/sandbox/base-image
+  python3 tools/codex-sandbox/tests/lima_fixture_base_image.py
 ```
 
 Pass that last command's image reference to the restart test:
@@ -365,8 +363,6 @@ Pass that last command's image reference to the restart test:
 python3 tools/codex-sandbox/tests/docker_policy_integration.py \
   --state /private/tmp/docker-sandbox-test/state \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE
-python3 tools/codex-sandbox/tests/docker_monitor_integration.py \
-  --state /private/tmp/docker-sandbox-test/state --image IMAGE_REFERENCE
 python3 tools/codex-sandbox/tests/docker_recovery_integration.py \
   --state /private/tmp/docker-sandbox-test/state \
   --disposable-instance sandbox-host-docker-test --image IMAGE_REFERENCE

@@ -1,7 +1,9 @@
 """Launcher capability publication and failure ownership, without Keychain UI."""
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import runpy
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -25,7 +27,10 @@ class KeychainLauncherTest(unittest.TestCase):
                 mock.patch('pathlib.Path.is_file', return_value=True):
             arguments = self.start(self.state)
         self.assertEqual(len(calls), 2)
-        self.assertEqual([kw['internal'] for _, kw in calls], [True, False])
+        self.assertEqual(dict((name, kw['internal']) for name, kw in calls), {
+            'codex-keychain-link-owned-test': True,
+            'codex-keychain-egress-owned-test': False,
+        })
         self.assertIn('CODEX_SANDBOX_KEYCHAIN_ADDRESS=10.0.0.2:2224', arguments)
         self.assertIn('CODEX_SANDBOX_KEYCHAIN_TOKEN', arguments)
         self.assertNotIn('capability', str(run.call_args_list))
@@ -54,6 +59,38 @@ class KeychainLauncherTest(unittest.TestCase):
             self.assertEqual(self.start(self.state), [])
         self.assertEqual(self.state.keychain_networks, [])
         self.assertIsNone(self.state.host_keychain)
+
+    def test_failed_network_waits_for_concurrent_creation_before_cleanup(self):
+        egress_started = threading.Event()
+        link_failed = threading.Event()
+        release_egress = threading.Event()
+        egress_finished = threading.Event()
+
+        def create(state, name, *, internal):
+            self.assertEqual(len(state.keychain_networks), 2)
+            if internal:
+                self.assertTrue(egress_started.wait(2))
+                link_failed.set()
+                raise OSError('network creation failed')
+            egress_started.set()
+            self.assertTrue(release_egress.wait(2))
+            egress_finished.set()
+
+        bridge = mock.Mock()
+        with mock.patch.dict(self.start.__globals__, create_relay_network=create,
+                HostKeychainBridge=bridge), mock.patch('sys.platform', 'darwin'), \
+                mock.patch('pathlib.Path.is_file', return_value=True), \
+                ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(self.start, self.state)
+            try:
+                self.assertTrue(link_failed.wait(2))
+                self.assertFalse(result.done())
+            finally:
+                release_egress.set()
+            self.assertEqual(result.result(timeout=2), [])
+        self.assertTrue(egress_finished.is_set())
+        bridge.assert_not_called()
+        self.assertEqual(len(self.state.keychain_networks), 2)
 
 
 if __name__ == '__main__':

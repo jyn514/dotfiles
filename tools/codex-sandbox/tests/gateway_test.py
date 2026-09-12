@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import gateway
@@ -28,6 +28,18 @@ class GatewayTest(unittest.TestCase):
         self.assertIsNotNone(children[0].poll())
         with self.assertRaises(ProcessLookupError):
             os.killpg(children[0].pid, 0)
+
+    def test_nested_listener_does_not_require_editor(self):
+        child = Mock(pid=12, returncode=None)
+        with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
+                patch.object(gateway.os, 'wait', return_value=(12, 0)), \
+                patch.object(gateway.os, 'killpg'):
+            self.assertEqual(1, gateway.serve('host.lima.internal', podman_port=22))
+        self.assertIn('TCP4-LISTEN:2222,fork,reuseaddr', spawn.call_args.args[0])
+
+    def test_empty_gateway_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'at least one listener'):
+            gateway.serve('host.lima.internal')
 
 
 if __name__ == '__main__':

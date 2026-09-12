@@ -8,7 +8,6 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import cache
-import hashlib
 import importlib.util
 import json
 import os
@@ -36,6 +35,8 @@ from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
 from source_view import source_mounts
 from keychain_bridge import HostKeychainBridge
+from image_resolver import prepare_launch_images
+from owned_images import resolve_agent
 
 OUTER_RUNTIME = Podman()
 
@@ -97,7 +98,6 @@ class State:
     host_keychain: HostKeychainBridge | None = None
     keychain_networks: list[str] = field(default_factory=list)
     keychain_container: str | None = None
-    monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
     gateway_link_created: bool = False
@@ -112,6 +112,8 @@ class State:
     metadata_roots: tuple[Path, ...] = ()
     resource_owner: str = field(default_factory=lambda: secrets.token_hex(16))
     recovery_record: Path | None = None
+    capabilities: frozenset[str] = frozenset()
+    policy_source_present: bool = False
 
 
 def run(
@@ -159,8 +161,7 @@ def proxy_module():
 
 
 def helper(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    # Short operations share the launcher's interpreter; the monitor remains a
-    # separate process so it can supervise and outlive these calls.
+    # Short operations share the launcher's interpreter.
     result = subprocess.CompletedProcess([str(PROXY_HELPER), *arguments],
         proxy_module().main(list(arguments), runtime=OUTER_RUNTIME))
     if check:
@@ -248,7 +249,6 @@ def new_state(codex_arguments: list[str]) -> State:
         agent_podman_known_hosts=access / "known_hosts.sandbox",
         host_working_directory=Path.cwd().resolve(strict=True),
     )
-    load_agent_podman(state)
     return state
 
 
@@ -394,9 +394,12 @@ def validate_repository(state: State) -> None:
     state.container_working_directory = container_working_directory_path(
         repository, state.container_repository, state.host_working_directory,
     )
+
+
+def load_repository_policy(state: State) -> None:
     state.manifest = temporary_file()
     snapshot_arguments = [
-        "snapshot", "--repo", str(repository), "--output", str(state.manifest),
+        "snapshot", "--repo", str(state.repository), "--output", str(state.manifest),
         "--jj-image-command", str(DOTFILES / ".agents/sandbox/jj-proxy-image"),
     ]
     zuliprc = Path(os.environ.get("CODEX_SANDBOX_ZULIPRC", state.home / ".zuliprc"))
@@ -406,44 +409,18 @@ def validate_repository(state: State) -> None:
             "--zulip-image-command", str(DOTFILES / ".agents/sandbox/zulip-proxy-image"),
             "--zuliprc", str(zuliprc),
         ]
+    state.policy_source_present = (
+        state.repository / ".agents" / "sandbox" / "proxy-commands.json"
+    ).is_file() or (
+        state.repository / ".agents" / "sandbox" / "docker-bake.hcl"
+    ).is_file()
     helper(*snapshot_arguments)
-
-
-def image_sources() -> list[Path]:
-    dockerfile = Path("tools/codex-sandbox/image/Dockerfile")
-    sources = [dockerfile]
-    for line in (DOTFILES / dockerfile).read_text(encoding="utf-8").splitlines():
-        fields = line.split()
-        if not fields or fields[0] != "COPY" or any(field.startswith("--from=") for field in fields[1:-1]):
-            continue
-        sources.extend(Path(field) for field in fields[1:-1] if not field.startswith(("--", "<<")))
-    files: list[Path] = []
-    for source in sources:
-        absolute = DOTFILES / source
-        if absolute.is_dir():
-            files.extend(
-                path.relative_to(DOTFILES) for path in absolute.rglob("*")
-                if stat.S_ISREG(path.lstat().st_mode)
-            )
-        elif absolute.is_file():
-            files.append(source)
-    return sorted(set(files), key=lambda path: os.fsencode(path.as_posix()))
-
-
-def image_cache_key(state: State, base_image: str) -> str:
-    sources = image_sources()
-    # Keep Git blob framing, but hash Docker's exact input bytes rather than
-    # Git clean conversions (such as core.autocrlf). Existing LF keys survive.
-    def blob_digest(value: bytes) -> str:
-        return hashlib.sha1(f"blob {len(value)}\0".encode() + value).hexdigest()
-
-    digests = [blob_digest((DOTFILES / path).read_bytes()) for path in sources]
-    lines = [
-        f"BASE_IMAGE={base_image}", f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
-        f"TERM={state.term}",
-        *(f"{path.as_posix()} {digest}" for path, digest in zip(sources, digests, strict=True)),
-    ]
-    return blob_digest(("\n".join(lines) + "\n").encode())
+    snapshot = json.loads(state.manifest.read_text(encoding="utf-8"))
+    state.capabilities = frozenset(
+        name for name, selected in snapshot.get("capabilities", {}).items() if selected
+    )
+    if "nested-containers" in state.capabilities:
+        load_agent_podman(state)
 
 
 def resolve_sidecar_image() -> str:
@@ -451,37 +428,6 @@ def resolve_sidecar_image() -> str:
     result = run([str(builder)], capture=True, cwd=DOTFILES, builder=True)
     output = result.stdout.strip()
     return OUTER_RUNTIME.builder_image(output)
-
-
-def ensure_image(state: State, base_image: str) -> str:
-    image = f"codex-sandbox:{image_cache_key(state, base_image)}"
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        try:
-            return OUTER_RUNTIME.resolve_image(image).reference
-        except subprocess.CalledProcessError:
-            return OUTER_RUNTIME.build(image, DOTFILES / "tools/codex-sandbox/image/Dockerfile",
-                DOTFILES, build_args=[f"AGENT_UID={state.uid}", f"AGENT_GID={state.gid}",
-                    f"TERM={state.term}", f"BASE_IMAGE={base_image}"]).reference
-    if run(["docker", "image", "inspect", image], check=False, quiet=True).returncode == 0:
-        return image
-    print(f"Building docker image {image} ...", end="", file=sys.stderr, flush=True)
-    iidfile = temporary_file()
-    try:
-        run([
-            "docker", "build", "--jobs", "4",
-            "-f", "tools/codex-sandbox/image/Dockerfile",
-            "--build-arg", f"AGENT_UID={state.uid}",
-            "--build-arg", f"AGENT_GID={state.gid}",
-            "--build-arg", f"TERM={state.term}", "--iidfile", str(iidfile),
-            "--tag", image, "--build-arg", f"BASE_IMAGE={base_image}", ".",
-        ], cwd=DOTFILES, stdout_to_stderr=True)
-        built = iidfile.read_text(encoding="utf-8").strip()
-        if not built:
-            raise LauncherError("Docker did not report the built sandbox image ID")
-    finally:
-        iidfile.unlink(missing_ok=True)
-    print(" done.", file=sys.stderr)
-    return built
 
 
 def ensure_network() -> None:
@@ -502,14 +448,43 @@ def acquire_lock(state: State) -> None:
     state.proxy_lock = SessionLock(proxy_module().runtime_directory(state.repository))
 
 
+def load_accepted_session(state: State) -> None:
+    state.manifest = temporary_file()
+    state.prepared_images = temporary_file()
+    accepted = temporary_file()
+    try:
+        helper(
+            "join", "--repo", str(state.repository),
+            "--container-repo", str(state.container_repository),
+            "--state", str(state.proxy_state), "--manifest", str(state.manifest),
+            "--images", str(state.prepared_images), "--accepted", str(accepted),
+            "--uid", str(state.uid), "--gid", str(state.gid),
+        )
+        policy = json.loads(state.manifest.read_text(encoding="utf-8"))
+        values = json.loads(accepted.read_text(encoding="utf-8"))
+    finally:
+        accepted.unlink(missing_ok=True)
+    state.capabilities = frozenset(
+        name for name, selected in policy.get("capabilities", {}).items() if selected
+    )
+    state.policy_source_present = values["source-present"]
+    state.image = values["agent-image"]
+    state.sidecar_image = values["helper-image"] or ""
+    if "nested-containers" in state.capabilities:
+        load_agent_podman(state)
+
+
 def attach_proxies(state: State) -> list[str]:
     arguments = [
         "attach", "--repo", str(state.repository),
         "--container-repo", str(state.container_repository),
         "--prefix", state.proxy_prefix,
         *(["--shared"] if state.proxy_lock.shared else []),
-        "--state", str(state.proxy_state), "--helper-image", state.sidecar_image,
+        "--state", str(state.proxy_state),
+        *(["--helper-image", state.sidecar_image] if state.sidecar_image else []),
         "--network", SANDBOX_NETWORK, "--manifest", str(state.manifest),
+        "--agent-image", state.image, "--uid", str(state.uid), "--gid", str(state.gid),
+        *(["--source-present"] if state.policy_source_present else []),
     ]
     if state.zuliprc is not None:
         arguments += ["--zuliprc", str(state.zuliprc)]
@@ -526,18 +501,25 @@ def attach_proxies(state: State) -> list[str]:
 
 
 def prepare_gateway(state: State) -> list[str]:
+    capabilities = getattr(state, "capabilities", frozenset({"host-editor", "nested-containers"}))
+    editor = "host-editor" in capabilities
+    nested = "nested-containers" in capabilities and state.agent_podman is not None
+    if not editor and not nested:
+        return []
     state.gateway_link_created = True
     create_relay_network(state, state.gateway_link_network, internal=True)
     state.gateway_egress_created = True
     create_relay_network(state, state.gateway_egress_network, internal=False)
-    state.host_editor = HostEditorBridge()
-    state.host_editor.start()
+    if editor:
+        state.host_editor = HostEditorBridge()
+        state.host_editor.start()
     arguments = [
         "--network", state.gateway_link_network,
-        "--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223",
-        *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
+        *(["--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223"] if editor else []),
+        *([] if isinstance(OUTER_RUNTIME, VMRuntime) or not editor else
+          ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
-    if state.agent_podman is not None:
+    if nested:
         values = state.agent_podman
         arguments += [
             "--env", f"CONTAINER_HOST=ssh://{values['AGENT_PODMAN_SSH_USER']}@{state.gateway_container}:2222/{values['SOCKET_PATH']}",
@@ -550,8 +532,10 @@ def prepare_gateway(state: State) -> list[str]:
 
 
 def start_gateway(state: State) -> None:
-    assert state.host_editor is not None
-    assert state.host_editor.port is not None
+    editor_port = state.host_editor.port if state.host_editor is not None else None
+    podman_port = (state.agent_podman or {}).get("AGENT_PODMAN_SSH_PORT")
+    if editor_port is None and podman_port is None:
+        raise LauncherError("gateway requires at least one selected listener")
     # Failed creation may still leave a container; cleanup owns the name now.
     state.gateway_container_created = True
     run([
@@ -560,13 +544,13 @@ def start_gateway(state: State) -> None:
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
         # Preserve the editor-only limits without throttling Podman build traffic.
-        *([] if state.agent_podman is not None else
+        *([] if podman_port is not None else
           ["--pids-limit", "32", "--memory", "64m", "--cpus", "0.25"]),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
-        "--host", OUTER_RUNTIME.host_address, "--editor-port", str(state.host_editor.port),
-        *(["--podman-port", state.agent_podman['AGENT_PODMAN_SSH_PORT']]
-          if state.agent_podman is not None else []),
+        "--host", OUTER_RUNTIME.host_address,
+        *(["--editor-port", str(editor_port)] if editor_port is not None else []),
+        *(["--podman-port", podman_port] if podman_port is not None else []),
     ], discard_stdout=True)
     def address(network):
         if isinstance(OUTER_RUNTIME, VMRuntime):
@@ -578,7 +562,8 @@ def start_gateway(state: State) -> None:
     egress_ip = address(state.gateway_egress_network)
     if not relay_ip or not egress_ip:
         raise LauncherError("gateway has incomplete network addresses")
-    state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
+    if state.host_editor is not None:
+        state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
 
 
@@ -590,9 +575,14 @@ def start_keychain(state: State) -> list[str]:
     egress = f'codex-keychain-egress-{state.suffix}'
     container = f'codex-keychain-{state.suffix}'
     try:
-        for name, internal in ((link, True), (egress, False)):
-            state.keychain_networks.append(name)
-            create_relay_network(state, name, internal=internal)
+        state.keychain_networks.extend((link, egress))
+        # Register both owners first and join both workers even on failure, so
+        # cleanup cannot race a network that is still being created.
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            networks = [executor.submit(create_relay_network, state, name, internal=internal)
+                        for name, internal in ((link, True), (egress, False))]
+            for network in networks:
+                network.result()
         bridge = state.host_keychain = HostKeychainBridge()
         bridge.start()
         state.keychain_container = container
@@ -1020,28 +1010,24 @@ def report_container_timing(state: State) -> None:
         print("Sandbox container timing: unavailable", file=sys.stderr)
 
 
-def wait_for_monitored_agent(state: State) -> int:
-    while True:
-        try:
-            return state.agent_process.wait(timeout=0.1)
-        except subprocess.TimeoutExpired:
-            status = state.monitor_process.poll()
-            if status is not None and status != 0:
-                raise LauncherError("proxy supervision failed; terminating sandbox")
+def wait_for_agent(state: State) -> int:
+    try:
+        return state.agent_process.wait()
+    except SignalExit as error:
+        if state.agent_process.poll() is None:
+            state.agent_process.send_signal(error.signum)
+            try:
+                state.agent_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                state.agent_process.kill()
+                state.agent_process.wait()
+        raise
 
 
 def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
-    def start_monitor() -> None:
-        state.monitor_process = subprocess.Popen([
-            "python3", str(PROXY_HELPER), "monitor", "--state", str(state.proxy_state),
-            "--agent", state.codex_container,
-        ], stdin=subprocess.DEVNULL, start_new_session=OUTER_RUNTIME.provider == 'lima-docker')
-
-    if not isinstance(OUTER_RUNTIME, VMRuntime):
-        start_monitor()
     git_layout = run([
         "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
         "--git-dir", "--git-common-dir",
@@ -1130,6 +1116,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
            "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
           else ["--secret", "codex-github-token,type=env,target=GH_TOKEN"]),
         "--env", "JJ_AGENT=pi",
+        "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
         "--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions",
@@ -1192,13 +1179,18 @@ def run_agent(state: State, arguments: list[str]) -> int:
         ],
         *arguments,
     ]
-    agent_environment = os.environ.copy()
-    assert state.host_editor is not None
-    agent_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
-    bridge_environment = {"CODEX_SANDBOX_EDITOR_TOKEN": state.host_editor.token}
+    reserved = {
+        "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",
+        "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
+        "CONTAINER_HOST", "CONTAINER_SSHKEY", "AGENT_PODMAN_KNOWN_HOSTS",
+    }
+    agent_environment = {key: value for key, value in os.environ.items() if key not in reserved}
+    bridge_environment: dict[str, str] = {}
+    if state.host_editor is not None:
+        bridge_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
     if state.host_keychain is not None:
         bridge_environment['CODEX_SANDBOX_KEYCHAIN_TOKEN'] = state.host_keychain.token
-        agent_environment.update(bridge_environment)
+    agent_environment.update(bridge_environment)
     if timing:
         print(
             f"Sandbox launch setup: {time.monotonic() - setup_started:.2f}s; "
@@ -1214,23 +1206,14 @@ def run_agent(state: State, arguments: list[str]) -> int:
         with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
             with OUTER_RUNTIME.workload(OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
                     ["--interactive", "--tty", *command[5:image_index], *environment],
-                    command[image_index + 1:], before_start=start_monitor) as process:
+                    command[image_index + 1:]) as process:
                 state.agent_process = process
-                result = wait_for_monitored_agent(state)
+                result = wait_for_agent(state)
             state.codex_container_created = False
         return result
     state.agent_process = OUTER_RUNTIME.popen(command[1:], env=agent_environment)
     try:
-        return state.agent_process.wait()
-    except SignalExit as error:
-        if state.agent_process.poll() is None:
-            state.agent_process.send_signal(error.signum)
-            try:
-                state.agent_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                state.agent_process.kill()
-                state.agent_process.wait()
-        raise
+        return wait_for_agent(state)
     finally:
         if timing:
             print(f"Sandbox docker run: {time.monotonic() - launch_started:.2f}s", file=sys.stderr)
@@ -1265,15 +1248,24 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
-    if (OUTER_RUNTIME.provider != 'lima-docker' and
-            (state.repository / '.agents/sandbox/bake').is_file() and
-            not (state.repository / '.agents/sandbox/base-image').is_file()):
-        raise LauncherError('repository uses Bake images; select CODEX_SANDBOX_RUNTIME=lima-docker')
+    phase("proxy lock", lambda: acquire_lock(state))
+    if state.proxy_lock.shared:
+        phase("accepted session discovery", lambda: load_accepted_session(state))
+    else:
+        phase("repository policy", lambda: load_repository_policy(state))
+        if (OUTER_RUNTIME.provider != 'lima-docker' and
+                (state.repository / '.agents/sandbox/bake').is_file() and
+                not (state.repository / '.agents/sandbox/base-image').is_file()):
+            raise LauncherError('repository uses Bake images; select CODEX_SANDBOX_RUNTIME=lima-docker')
     phase("skill staging", lambda: stage_skills(state))
     if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
+    sidecar_selected = bool(
+        getattr(state, "capabilities", {"host-editor", "nested-containers"})
+        or _secure_codex_auth_directory(state)
+    )
     def model_image() -> str:
         builder = state.repository / ".agents/sandbox/base-image"
         if builder.is_file() and os.access(builder, os.X_OK):
@@ -1285,16 +1277,25 @@ def execute(state: State) -> int:
                 base_image = OUTER_RUNTIME.builder_image(base_image)
         else:
             base_image = "node:24-alpine3.22"
-        return phase("model image resolution", lambda: ensure_image(state, base_image))
+        return phase(
+            "model image resolution",
+            lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, base_image),
+        )
 
     prepared = None
-    if OUTER_RUNTIME.provider == 'lima-docker':
+    if OUTER_RUNTIME.provider == 'lima-docker' and not state.proxy_lock.shared:
         # Preparation owns all builder groups before container workers start.
         manifest = json.loads(state.manifest.read_text())
-        prepared = phase('image preparation', lambda: OUTER_RUNTIME.prepare_images(
-            state.repository, manifest['commands'], include_base=True,
-            auth_builder=([str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')], DOTFILES)))
-        state.image = phase('model image resolution', lambda: ensure_image(state, prepared.base))
+        prepared = phase('image preparation', lambda: prepare_launch_images(
+            OUTER_RUNTIME, state.repository, manifest['commands'], include_base=True,
+            auth_builder=(([
+                str(DOTFILES / 'tools/codex-sandbox/auth-proxy/image')
+            ], DOTFILES) if sidecar_selected else None),
+            image_policy=manifest.get('images')))
+        state.image = phase(
+            'model image resolution',
+            lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, prepared.base),
+        )
 
     def optional_relay(name: str, action: Callable[[], object]) -> None:
         try:
@@ -1304,15 +1305,19 @@ def execute(state: State) -> int:
 
     # Keep these jobs owned until session exit so cleanup cannot race creation.
     with startup_workers(state, max_workers=6) as executor:
-        model_future = None if prepared else executor.submit(model_image)
-        sidecar_future = None if prepared else executor.submit(phase, "sidecar image resolution", resolve_sidecar_image)
+        model_future = (None if prepared or state.proxy_lock.shared else executor.submit(model_image))
+        sidecar_future = (None if prepared or state.proxy_lock.shared or not sidecar_selected else
+                          executor.submit(phase, "sidecar image resolution", resolve_sidecar_image))
         network_future = executor.submit(phase, "network setup", ensure_network)
         gateway_future = executor.submit(
             phase, "gateway network setup", lambda: prepare_gateway(state),
         )
-        phase("proxy lock", lambda: acquire_lock(state))
-        state.sidecar_image = prepared.auth if prepared else sidecar_future.result()
-        keychain_future = executor.submit(phase, 'Keychain relay startup', lambda: start_keychain(state))
+        if not state.proxy_lock.shared:
+            state.sidecar_image = prepared.auth if prepared else (
+                sidecar_future.result() if sidecar_future is not None else ""
+            )
+        keychain_future = (executor.submit(phase, 'Keychain relay startup', lambda: start_keychain(state))
+                           if "flower-r2" in getattr(state, "capabilities", {"flower-r2"}) else None)
         network_future.result()
         if prepared is not None:
             state.prepared_images = temporary_file()
@@ -1321,11 +1326,14 @@ def execute(state: State) -> int:
             phase, "proxy startup", lambda: attach_proxies(state),
         )
         gateway_arguments = gateway_future.result()
-        executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
+        selected = getattr(state, "capabilities", {"host-editor", "nested-containers"})
+        if {"host-editor", "nested-containers"}.intersection(selected):
+            executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         sidecar_arguments = proxy_future.result()
         if model_future is not None:
             state.image = model_future.result()
-        arguments = [*gateway_arguments, *keychain_future.result(), state.image,
+        keychain_arguments = keychain_future.result() if keychain_future is not None else []
+        arguments = [*gateway_arguments, *keychain_arguments, state.image,
             *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
               if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]
         system = run(["uname", "-s"], capture=True).stdout.strip()
@@ -1459,8 +1467,6 @@ def cleanup(state: State) -> None:
             "shared-state": str(state.proxy_state)}
         state.recovery_record.write_text(json.dumps(recovery))
         print(f"Lima cleanup incomplete; recovery state retained at {state.recovery_record}", file=sys.stderr)
-        if state.monitor_process is not None and state.monitor_process.poll() is None:
-            state.monitor_process.terminate()
     timing("networks")
     if state.skills_tmp is not None and not keep_scratch:
         removal_started = time.monotonic()
@@ -1480,36 +1486,6 @@ def cleanup(state: State) -> None:
     timing("Pi state")
     if state.proxy_lock is not None:
         state.proxy_lock.close()
-    processes = [
-        (name, process)
-        for name, process in (("proxy monitor", state.monitor_process),)
-        if process is not None
-    ]
-
-    def wait_process(item: tuple[str, subprocess.Popen[bytes]]) -> None:
-        name, process = item
-        process_started = time.monotonic()
-        if (name == 'proxy monitor' and OUTER_RUNTIME.provider == 'lima-docker' and
-                process.poll() in (None, -signal.SIGKILL)):
-            # The Docker API waits are host children. Reap their entire owned
-            # group even if SIGKILL prevented the monitor's finally block.
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
-        else:
-            process.wait()
-        if os.environ.get("CODEX_SANDBOX_TIMING"):
-            print(f"Sandbox cleanup: {name}={time.monotonic() - process_started:.2f}s", file=sys.stderr)
-
-    with ThreadPoolExecutor(max_workers=max(1, len(processes))) as executor:
-        list(executor.map(wait_process, processes))
-    timing("proxy processes")
     for path in (
         state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask, state.prepared_images,
     ):

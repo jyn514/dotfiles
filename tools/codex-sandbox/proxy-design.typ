@@ -5,7 +5,11 @@
 
 = Sandbox command proxies
 
-*Status:* Implemented.
+*Status:* Proxy isolation and transports implemented; capability selection and
+image resolution and request-failure isolation follow the selected, not-yet-implemented
+#link("launcher-interface.typ")[launcher interface], including its selected
+version 2 JSON configuration and loader boundary. Manifest examples below
+describe the implemented version 1 wire format.
 
 == Objective
 
@@ -43,7 +47,7 @@ The agent is authorized to submit arbitrary supported model requests and therefo
 This authority is intentional and distinct from possession of the reusable upstream credential.
 
 Proxy manifests under `.agents/sandbox/` are trusted repository configuration.
-The launcher accepts their command, image-builder, mount, and environment declarations without a built-in capability allowlist, so the repository and its manifest authors must be trusted before startup.
+The configuration loader accepts repository command, resolver, and mount declarations without a built-in command allowlist, so the repository and its manifest authors must be trusted before startup. It returns validated policy and a bound resolver to the launcher; it does not execute image resolution while loading policy.
 The read-only mount protects that accepted policy from the running agent; it does not authenticate its source.
 
 Trusted proxy images, their fixed entrypoints, and any code copied into them are also part of the trusted computing base.
@@ -51,7 +55,7 @@ A proxy must not load executable code from the agent-writable working tree.
 
 == Protected sandbox configuration
 
-Sandbox-owned repository configuration lives under:
+Implemented sandbox-owned repository configuration lives under:
 
 ```text
 .agents/sandbox/
@@ -69,9 +73,8 @@ The launcher mounts the repository normally and then overlays `.agents/sandbox` 
 Every sibling container with a read-write view of the working tree must receive the same nested read-only overlay.
 Without it, a metadata proxy could change the host copy as a side effect of `restore`, `undo`, checkout, or another working-copy operation even though the agent's own path is read-only.
 
-The launcher resolves and validates the repository root and `.agents/sandbox` before starting any container.
-It rejects a missing directory, symlinked components, unexpected metadata indirection, and hard-linked manifest or executable files reachable through an agent-writable mount.
-The validated source remains fixed for the session.
+At the first launch of a shared session, the loader resolves and validates the repository root and any existing `.agents/sandbox` before starting containers. An absent configuration file or directory selects the installed defaults described by the launcher interface; an existing invalid path is an error. Reject symlinked components, unexpected metadata indirection, and hard-linked manifest or executable files reachable through an agent-writable mount.
+When the directory is absent, no configuration overlay is needed: the accepted default policy remains fixed for the session, and configuration created by the agent is never loaded on a join. A later session must accept it through trusted startup. When the directory exists, retain its nested read-only overlay even if the configuration file is absent. The accepted configuration source, including its absence, remains fixed for the session.
 
 == Architecture
 
@@ -107,13 +110,16 @@ Each proxy image is read-only, non-root, capability-free, and uses `no-new-privi
 The launcher supplies explicit container-level PID, memory, CPU, filesystem, and file-descriptor limits.
 Networking is disabled unless the manifest declares it and the command requires it.
 
-== Manifest
+== Implemented manifest and selected replacement
 
 `.agents/sandbox/proxy-commands.json` declares named proxies and their fixed execution policy.
 The launcher also injects trusted built-in commands from its own installation checkout; repository-local declarations may add names but cannot replace a trusted command.
 The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
-The stable version 1 interface comprises `version`, `commands`, and each command's `image-command`, `image-target`, `argv`, `workdir`, `network`, and `mounts` fields, including the mount fields and modes below.
-Lima-Docker prefers `image-target`, naming a target in the repository's fresh Bake declaration. Other backends require `image-command`; trusted dotfiles image commands remain supported on Docker without a Docker CLI shim.
+The temporary version 1 image adapter comprises `image-command`, `image-target`,
+`argv`, `workdir`, `network`, and `mounts`. The
+#link("launcher-interface.typ")[version 2 launcher interface] now owns repository
+syntax and optional capability selection; resolver lifecycle migration remains open.
+The fixed execution and mount policies below apply through either path.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:
 
@@ -154,7 +160,7 @@ Repositories that need no additional command proxies may omit the manifest or pr
 The launcher implicitly mounts the validated repository read-only at its common repository path and overlays `.agents/sandbox` read-only; the manifest cannot omit or weaken either protection.
 `workdir`, mount sources, and mount targets are relative to the repository root unless the schema explicitly defines a launcher-owned source.
 The launcher resolves targets beneath its container repository path, so the manifest does not depend on an absolute path such as `/src/work`.
-The launcher rejects unknown fields, unsupported schema versions, malformed paths, escaping paths, duplicate targets, and configurations that would hide the proxy executable or socket.
+The configuration loader rejects unknown fields, unsupported schema versions, malformed paths, escaping paths, duplicate targets, and configurations that would hide the proxy executable or socket. The launcher receives validated execution policy rather than manifest fields.
 
 `mounts` grants additional or overriding views without command-specific launcher knowledge.
 Each entry names a source, repository-relative target, and the access mode seen by the proxy and agent containers.
@@ -162,36 +168,32 @@ The modes are `read-write`, `read-only`, and `hidden`.
 An omitted proxy mode inherits the proxy's read-only repository view, while an omitted agent mode inherits the agent's ordinary repository view and protected-metadata overlays.
 Writable proxy authority must be declared per path; one mount does not make its parent or siblings writable.
 The launcher establishes all declared views before the agent starts and applies an agent restriction to every untrusted agent container in the session.
-An image command may create a declared source before returning its image reference; otherwise the launcher rejects a missing source rather than silently omitting its mount.
+A project resolver may create a declared source before returning its image reference; otherwise the launcher rejects a missing source rather than silently omitting its mount.
 
 The launcher passes `argv` directly to process execution, never through a shell, and resolves its executable only through the proxy's fixed trusted `PATH`; manifest arguments cannot name absolute container binary paths.
 The manifest starts one fixed server; its image owns the server and protocol policy, while the matching agent-side shim owns the client.
 The launcher provides the conventional socket volume and waits for readiness but remains unaware of Flower's request schema and argument grammar.
 For `bb-bug`, the immutable image contains both the socket server and the trusted bridge entrypoint.
 
-Rootless Docker runs `.agents/sandbox/bake` in the repository root to obtain fresh Bake HCL or JSON, then resolves requested targets through pinned Buildx `bake --print` for the recorded engine's platform. The conventional `base` target supplies the agent base; each repository proxy selects its `image-target`. The producer owns source-input hashes in target tags. The launcher hashes resolved target options and actual dependency configuration IDs into private cache tags, skipping builds whose tags already exist. Named `target:` contexts become verified local tag-plus-digest image contexts after their dependencies resolve. Build output remains serialized across launches, and the existing builder supervisor owns cancellation through completion before container workers start. No separate cache manifest or Docker CLI shim is used.
-
-The supported Bake subset is local contexts and Dockerfiles, string arguments and labels, input-keyed tags, an optional build stage, one engine-matching platform, and named target dependencies. External outputs and unsupported build options fail before any build. The fresh producer must reflect source additions, deletions, renames, and content changes; parsing a stale checked-in Bake file does not establish freshness.
-
-`image-command` is an argument array that the launcher executes before the agent starts.
-Like `.agents/sandbox/base-image`, the command may inspect the trusted startup checkout, build an image from its current sources, pull an existing image by tag or digest, or reuse a cached build.
-It prints exactly one immutable image reference on standard output and sends progress or diagnostics to standard error.
-The launcher rejects an empty, malformed, or multi-line result and starts the proxy by that reference.
-Podman uses a configuration digest; Lima uses a locally registered canonical reference with a verified native content descriptor.
-Images must belong to the selected outer store; a Podman image ID cannot stand in for a Lima image.
+Image resolution follows #link("launcher-interface.typ")[the launcher interface].
+The loader binds declaration details behind the resolver interface. The launcher
+selects capabilities first and, at shared-session creation, invokes only their required resolvers,
+and verifies immutable results in the admitted engine before starting consumers.
+The #link("bake-resolver.typ")[bundled Bake resolver] owns its input capture and
+cache policy; project resolvers own their existing image lifecycle.
 
 A proxy image starts the fixed server named by `argv`, binds the path in `SANDBOX_PROXY_SOCKET` (defaulting to `/run/sandbox-proxy/socket`) only after initialization succeeds, and provides the fixed byte-forwarding client at `/trusted/bin/sandbox-proxy-forward` for readiness checks and runtimes that use container execution for host routing.
 The forwarding client uses the configured path while it exists and otherwise falls back to the default path.
 
-The image command and everything it loads from `.agents/sandbox` are trusted manifest support code.
-It runs before each agent attaches to the repository session.
-When its immutable image changes, the launcher starts a replacement on a temporary socket in the existing volume, waits for readiness, and atomically renames that socket over the default path.
-Existing connections retain their open socket inode; new connections reach the replacement.
-The old container remains as a retired generation until session cleanup so monitors belonging to existing agents are not broken.
+The selected resolver and all executable inputs it loads are trusted startup support code.
+It resolves freshness at shared-session creation, with shared dependencies resolved once.
+Starting another sandbox for the same checkout joins the existing shared session. Joins use its accepted configuration and immutable images without reading changed sandbox configuration or invoking image resolvers. The launcher verifies recorded images and live services before attaching; invalid recorded state fails only the join.
+Configuration and source changes take effect at the next trusted startup after the final attached agent exits. Per-agent instructions, skills, and extensions remain reloadable through `/reload`.
+There is no live replacement: one server retains ownership of command serialization, sockets, and shared state for the session.
 
 == Socket protocol
 
-Each active proxy generation is published at `/run/sandbox-proxy/socket` in its session-specific volume.
+Each proxy is published at `/run/sandbox-proxy/socket` in its session-specific volume.
 The agent mounts that volume read-only at `/run/sandbox-proxies/<command>/`, which permits connection to the existing socket but prevents replacing it.
 The launcher sets the generic `SANDBOX_PROXY_DIR=/run/sandbox-proxies` environment variable in the agent and derives `<command>` from the manifest key.
 A command-specific shim constructs its socket path from that directory and its known manifest key; the launcher needs no command-specific environment variable or protocol configuration.
@@ -246,7 +248,7 @@ The directory contains stable `coordination.lock` and `session.lock` files plus 
 The runtime directory is outside the repository and is not mounted into the agent container.
 
 Before discovering or starting proxies, the launcher acquires an exclusive host-kernel advisory lock on `coordination.lock`, then takes a shared lock on `session.lock` for the complete sandbox session.
-If session metadata exists, the launcher attaches its agent to the recorded socket volumes and uses the already validated manifest snapshot.
+If a live shared session exists, the launcher validates its recorded state and attaches using the accepted configuration, image set, and socket volumes as specified by the launcher interface. It does not compare against current repository declarations. Per-launch relays retain separate resources and tokens under the accepted opt-ins and current host authorization.
 Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
 After required repository-command proxies become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, and each manifest command's proxy container identity and immutable image reference.
@@ -287,7 +289,7 @@ The host kernel releases a launcher's shared session lock when it exits or is ki
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
 Success proves it was the final holder, so it removes the shared proxies and metadata; failure leaves them available to the remaining sessions.
 After a crash or reboot, successful exclusive session-lock acquisition proves that any remaining metadata is stale and safe to clean before local execution or replacement.
-If a proxy container dies, every attached launcher marks the command unavailable and terminates its own agent.
+If a command proxy or provider sidecar becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and an unhealthy shared session cannot accept new agents. Recovery requires attached agents to exit before shared services restart.
 
 Any number of launchers may share one checkout's proxy set.
 Linked worktrees retain distinct repository identities and proxy sets.
@@ -321,7 +323,7 @@ The key is readable by the agent and intentionally grants only the model-request
 This prevents unrelated containers on the shared sandbox network from using the sidecar.
 
 The sidecar follows the existing proxy-container lifecycle and hardening: an independently built Alpine-based immutable image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the shared proxy session.
-Its image is also used only as the socket-promotion helper; neither role inherits the customizable model image base.
+Its image does not inherit the customizable model image base.
 Concurrent agent containers in that session reuse one sidecar and session key, as they reuse the Jujutsu proxy.
 The Codex authentication directory is its only writable host mount.
 Pi continues to use `openai-codex-responses` with only `baseUrl` and the placeholder API key changed.
@@ -394,28 +396,29 @@ A future proxy command with caller-controlled arguments must define a complete a
 Short helper calls share the launcher's interpreter and receive explicit argument lists.
 They reuse the Git metadata resolved during repository validation for that launch;
 standalone helper commands still discover their own repository metadata.
-The launcher owns its session and publication locks directly; only the monitor
-retains a separate process lifetime. Lock acquisition runs on the signal-owning
+The launcher owns its session and publication locks directly. Lock acquisition runs on the signal-owning
 thread while other startup jobs proceed, so a contended launch can be cancelled.
 
-The launcher performs these steps:
+The first launch creates the shared session with these steps. Joins instead validate and reuse its accepted configuration, image set, shared services, and metadata, then prepare their selected per-launch relays and start an agent; they neither resolve images nor republish shared state.
 
 + Resolve and validate the repository and protected paths
 + Acquire the repository's host session lock
 + Read and validate the trusted manifest
-+ Run every proxy image command and validate its immutable image reference
++ Select the fixed launch capability set
++ Resolve only selected consumers' images and dependencies through the launcher interface; validate immutable references in the admitted engine
 + Create session-specific socket volumes and container names
 + Start each configured proxy with its declared mounts and limits
 + Wait for required repository-command sockets to become ready; skip the optional Zulip readiness probe
 + Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
 + Atomically publish session metadata for the proxy set
-+ Create one private link and egress network for the per-sandbox gateway; start its editor and optional Agent Podman listeners in a background job owned by the launcher
++ When host editing or nested container access is selected, create the per-sandbox gateway networks and start only its selected listeners in a launcher-owned background job
++ When Flower R2 access is selected, prepare its separate relay using the readiness and consent rules in #link("r2-keychain-relay-design.typ")[the R2 specification]
 + Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
-+ Join gateway startup before cleanup, deferring termination signals during the join
++ Join all selected relay startup jobs before cleanup, deferring termination signals during the join
 + Detach the agent, then stop the sidecar and proxies and remove session resources after the last attached agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
-The agent addresses editor and Podman ports by the gateway's session-specific container DNS name.
+When selected, the agent addresses editor and Podman ports by the gateway's session-specific container DNS name.
 Early requests may fail; gateway startup failures are reported without terminating the agent.
 The host editor rejects all peers until gateway address inspection installs its allowlist.
 Upstream refusal ends only that connection; listener failure stops the gateway.
@@ -442,8 +445,11 @@ Long-lived command and authentication proxies amortize image startup without sha
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
 - Modified working-tree copies of `bb.edn`, bridge source, git-bug, or proxy scripts do not affect trusted execution
-- An invalid or ambiguous image-command result fails before a proxy starts
-- A mutable tag used by an image builder resolves to one immutable image reference for the running session
+- An invalid, ambiguous, unavailable, or wrong-platform resolver result fails before its consumer starts
+- Resolver freshness, sharing, refresh, and capability omission satisfy the launcher interface's acceptance checks
+- Joins reuse accepted configuration and images without running resolvers, even after sandbox configuration or source edits; existing agents, sockets, and services remain untouched
+- `/reload` updates per-agent instructions, skills, and extensions without reloading sandbox configuration or shared proxies
+- Loss of a command proxy or provider sidecar reports request failures without terminating attached agents or falling back to local privileged execution or direct provider credentials
 - Editing proxy source after startup does not rebuild, replace, or otherwise change the running proxy
 - Concurrent drain requests execute serially
 - Local human bridge execution cannot overlap a sandbox session

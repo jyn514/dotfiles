@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Delegate the disposable repository's base-image command to dotfiles."""
+"""Build the disposable repository's base through the installed image helper."""
 
 import os
 from pathlib import Path
 
-builder = Path(__file__).resolve().parents[3] / ".agents/sandbox/base-image"
-os.execv(builder, [str(builder)])
+root = Path(__file__).resolve().parents[3]
+builder = root / "tools/codex-sandbox/sandbox-image"
+dockerfile = root / ".agents/sandbox/Dockerfile"
+os.execv(builder, [
+    str(builder), "build", "--file", str(dockerfile),
+    "--tag", "dotfiles-sandbox-fixture:local", str(dockerfile.parent),
+])

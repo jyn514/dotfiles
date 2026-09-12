@@ -141,6 +141,5 @@ WORKDIR /workspace
 RUN --network=none if [ -e /etc/alpine-release ]; then pi --offline --help >/dev/null; fi
 
 ENV COLORTERM=truecolor
-ARG TERM=xterm-256color
-ENV TERM=${TERM}
+ENV TERM=xterm-256color
 ENTRYPOINT ["pi", "--offline", "--approve"]

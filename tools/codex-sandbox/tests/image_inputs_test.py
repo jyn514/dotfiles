@@ -26,7 +26,7 @@ class ImageInputsTest(unittest.TestCase):
                 self.assertNotEqual(original, declaration(['auth'])['target']['auth']['tags'])
 
     def test_agent_packages_runtime_sources_without_tests_or_bytecode(self):
-        sources = runpy.run_path(str(ROOT / 'tools/codex-sandbox/codex-sandbox'))['image_sources']
+        sources = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['agent_sources']
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dockerfile = root / 'tools/codex-sandbox/image/Dockerfile'
@@ -40,7 +40,7 @@ class ImageInputsTest(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('fixture')
-            with patch.dict(sources.__globals__, DOTFILES=root):
+            with patch.dict(sources.__globals__, ROOT=root):
                 selected = set(map(str, sources()))
             self.assertTrue(set(runtime) <= selected)
             self.assertFalse(set(noise) & selected)

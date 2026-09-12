@@ -46,33 +46,35 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
-    def test_image_key_matches_git_blob_hashes_and_tracks_source_changes(self):
-        key = runpy.run_path(str(LAUNCHER))['image_cache_key']
+    def test_agent_image_key_tracks_sources_platform_parameters_and_actual_base(self):
+        key = runpy.run_path(str(TOOL / "owned_images.py"))["agent_cache_key"]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = Path('source')
-            state = SimpleNamespace(uid=501, gid=20, term='xterm')
-            def git_digest(value):
-                return subprocess.run(['git', 'hash-object', '--stdin'], input=value,
-                    capture_output=True, check=True).stdout.decode().strip()
+            base = SimpleNamespace(content="sha256:" + "a" * 64,
+                                   config="sha256:" + "b" * 64,
+                                   rootfs="sha256:" + "c" * 64)
             previous = None
             for value in (b'', b'hello\n', b'hello\r\n', b'\xff\0binary'):
                 (root / source).write_bytes(value)
-                expected = git_digest((f'BASE_IMAGE=base\nAGENT_UID=501\nAGENT_GID=20\n'
-                    f'TERM=xterm\nsource {git_digest(value)}\n').encode())
-                with mock.patch.dict(key.__globals__, DOTFILES=root, image_sources=lambda: [source],
-                        run=mock.Mock(side_effect=AssertionError('started a subprocess'))):
-                    actual = key(state, 'base')
-                self.assertEqual(actual, expected)
+                with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
+                    actual = key(501, 20, "linux/arm64", base)
                 self.assertNotEqual(actual, previous)
                 previous = actual
+            with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
+                self.assertNotEqual(actual, key(502, 20, "linux/arm64", base))
+                self.assertNotEqual(actual, key(501, 20, "linux/amd64", base))
+                changed = SimpleNamespace(**{**vars(base), "config": "sha256:" + "d" * 64})
+                self.assertNotEqual(actual, key(501, 20, "linux/arm64", changed))
 
     def test_failed_publication_keeps_coordination_until_cleanup(self):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
         lock = mock.Mock(shared=False)
         state = SimpleNamespace(proxy_lock=lock, repository=Path('/repo'),
             container_repository=Path('/src/repo'), proxy_prefix='proxy', proxy_state=Path('/state'),
-            sidecar_image='image', manifest=Path('/manifest'), zuliprc=None, prepared_images=None)
+            sidecar_image='image', image='agent', uid=501, gid=20,
+            policy_source_present=True, manifest=Path('/manifest'), zuliprc=None,
+            prepared_images=None)
         with mock.patch.dict(attach.__globals__, helper=mock.Mock(),
                 _secure_codex_auth_directory=mock.Mock(return_value=None),
                 attach_codex_sidecar=mock.Mock(return_value=[]),
@@ -264,6 +266,44 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
+    def test_session_authority_precedes_policy_loading(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        state = SimpleNamespace(repository=Path("/unused"))
+        observed = []
+
+        def acquire(value):
+            observed.append("lock")
+            value.proxy_lock = SimpleNamespace(shared=False)
+
+        def load(value):
+            self.assertIs(value, state)
+            observed.append("policy")
+            raise RuntimeError("stop after ordering proof")
+
+        with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
+                             acquire_lock=acquire, load_repository_policy=load):
+            with self.assertRaisesRegex(RuntimeError, "ordering proof"):
+                execute(state)
+        self.assertEqual(["lock", "policy"], observed)
+
+    def test_shared_session_loads_accepted_authority_without_repository_policy(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        state = SimpleNamespace(repository=Path("/unused"))
+
+        def acquire(value):
+            value.proxy_lock = SimpleNamespace(shared=True)
+
+        def accepted(_value):
+            raise RuntimeError("stop after accepted authority")
+
+        policy = mock.Mock(side_effect=AssertionError("join read repository policy"))
+        with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
+                             acquire_lock=acquire, load_accepted_session=accepted,
+                             load_repository_policy=policy):
+            with self.assertRaisesRegex(RuntimeError, "accepted authority"):
+                execute(state)
+        policy.assert_not_called()
+
     def test_bake_only_repository_rejects_podman_before_startup_effects(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))['execute']
         with tempfile.TemporaryDirectory() as directory:
@@ -272,8 +312,11 @@ class BackgroundRelayTest(unittest.TestCase):
             producer.parent.mkdir(parents=True)
             producer.touch()
             stage = mock.Mock()
+            acquire = mock.Mock(side_effect=lambda state: setattr(
+                state, 'proxy_lock', SimpleNamespace(shared=False)))
             with mock.patch.dict(execute.__globals__, OUTER_RUNTIME=SimpleNamespace(provider='podman'),
-                                 validate_repository=mock.Mock(), stage_skills=stage):
+                                 validate_repository=mock.Mock(), acquire_lock=acquire,
+                                 load_repository_policy=mock.Mock(), stage_skills=stage):
                 with self.assertRaisesRegex(execute.__globals__['LauncherError'], 'CODEX_SANDBOX_RUNTIME=lima-docker'):
                     execute(SimpleNamespace(repository=repository))
             stage.assert_not_called()
@@ -287,11 +330,14 @@ class BackgroundRelayTest(unittest.TestCase):
             builder.touch(mode=0o755)
             manifest = repository / 'manifest.json'
             manifest.write_text('{"commands": {"bug": {"image-target": "bb-bug"}}}')
-            state = SimpleNamespace(repository=repository, agent_podman=None,
+            state = SimpleNamespace(repository=repository, agent_podman=None, uid=501, gid=20,
                                     codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
                 'acquire_lock', 'prepare_gateway', 'start_gateway', 'start_keychain', 'attach_proxies')}
+            replacements['acquire_lock'].side_effect = lambda value: setattr(
+                value, 'proxy_lock', SimpleNamespace(shared=False))
+            replacements['load_repository_policy'] = mock.Mock()
             prepared = SimpleNamespace(base='base@digest', auth='auth@digest', proxies={'bug': 'bug@digest'})
             def prepare(*args, **kwargs):
                 replacements['ensure_network'].assert_not_called()
@@ -299,15 +345,17 @@ class BackgroundRelayTest(unittest.TestCase):
                 return prepared
             preparation = mock.Mock(side_effect=prepare)
             replacements.update(OUTER_RUNTIME=SimpleNamespace(provider='lima-docker',
-                prepare_images=preparation),
+                prepare_images=mock.Mock(side_effect=AssertionError('runtime owns no image composition'))),
+                prepare_launch_images=preparation,
                 temporary_file=lambda: repository / 'images.json',
-                ensure_image=mock.Mock(return_value='agent@digest'),
+                resolve_agent=mock.Mock(return_value='agent@digest'),
                 resolve_sidecar_image=mock.Mock(return_value='auth@digest'),
                 run=mock.Mock(return_value=SimpleNamespace(stdout='base@digest')),
                 run_agent=mock.Mock(return_value=0))
             with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
-                replacements['ensure_image'].assert_called_once_with(state, 'base@digest')
+                replacements['resolve_agent'].assert_called_once_with(
+                    replacements['OUTER_RUNTIME'], state.uid, state.gid, 'base@digest')
                 self.assertEqual(json.loads(state.prepared_images.read_text()), prepared.proxies)
                 self.assertEqual(state.sidecar_image, prepared.auth)
                 self.assertIn('agent@digest', replacements['run_agent'].call_args.args[1])
@@ -320,7 +368,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 replacements['run_agent'].assert_not_called()
                 preparation.side_effect = None
                 preparation.return_value = prepared
-                replacements['ensure_image'].side_effect = ValueError('build failed')
+                replacements['resolve_agent'].side_effect = ValueError('build failed')
                 replacements['run_agent'].reset_mock()
                 with self.assertRaisesRegex(ValueError, 'build failed'):
                     execute(state)
@@ -331,15 +379,6 @@ class BackgroundRelayTest(unittest.TestCase):
                     execute(state)
                 replacements['ensure_network'].assert_not_called()
 
-    def test_agent_wait_rejects_supervisor_loss_during_startup(self) -> None:
-        launcher = runpy.run_path(str(LAUNCHER))
-        agent = mock.Mock()
-        agent.wait.side_effect = subprocess.TimeoutExpired("owned-agent", 0.1)
-        monitor = mock.Mock()
-        monitor.poll.return_value = -9
-        with self.assertRaisesRegex(launcher["LauncherError"], "supervision failed"):
-            launcher["wait_for_monitored_agent"](SimpleNamespace(agent_process=agent, monitor_process=monitor))
-
     def test_signal_during_image_build_waits_before_proxy_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         main = launcher["main"]
@@ -349,11 +388,11 @@ class BackgroundRelayTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             state = SimpleNamespace(
-                repository=Path(directory), agent_podman=None, codex_arguments=[],
+                repository=Path(directory), agent_podman=None, uid=501, gid=20, codex_arguments=[],
                 joining_workers=False, deferred_signal=None,
             )
 
-            def ensure_image(_state, _base_image):
+            def resolve_agent(_runtime, _uid, _gid, _base_image):
                 if not build_release.wait(5):
                     raise RuntimeError("test did not release image build")
                 build_finished.set()
@@ -380,8 +419,11 @@ class BackgroundRelayTest(unittest.TestCase):
                     "acquire_lock", "prepare_gateway", "stage_skills",
                 )
             }
+            replacements["acquire_lock"].side_effect = lambda value: setattr(
+                value, "proxy_lock", SimpleNamespace(shared=False))
+            replacements["load_repository_policy"] = mock.Mock()
             replacements.update(
-                ensure_image=ensure_image,
+                resolve_agent=resolve_agent,
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 attach_proxies=attach_proxies,
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
@@ -460,7 +502,7 @@ class BackgroundRelayTest(unittest.TestCase):
             return 19
 
         with tempfile.TemporaryDirectory() as directory:
-            state = SimpleNamespace(repository=Path(directory), agent_podman={}, codex_arguments=[],
+            state = SimpleNamespace(repository=Path(directory), agent_podman={}, uid=501, gid=20, codex_arguments=[],
                                     deferred_signal=None)
             replacements = {
                 name: mock.Mock(return_value=[])
@@ -468,8 +510,11 @@ class BackgroundRelayTest(unittest.TestCase):
                              "acquire_lock", "attach_proxies", "prepare_gateway",
                              "stage_skills", "start_keychain")
             }
+            replacements["acquire_lock"].side_effect = lambda value: setattr(
+                value, "proxy_lock", SimpleNamespace(shared=False))
+            replacements["load_repository_policy"] = mock.Mock()
             replacements.update(
-                ensure_image=mock.Mock(return_value="image"),
+                resolve_agent=mock.Mock(return_value="image"),
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
                 start_gateway=relay, run_agent=agent,
@@ -794,14 +839,23 @@ class CodexSandboxTest(unittest.TestCase):
                 printf '%s\n' 127.0.0.1
                 exit
             fi
+            if [ "$1 $2" = "info --format" ]; then
+                printf '%s\n' linux/arm64
+                exit
+            fi
+            if [ "$1 $2" = "image exists" ]; then
+                [ "${FAKE_IMAGE_EXISTS:-1}" = 1 ] || [ -f "$FAKE_DOCKER_LOG.$3" ]
+                exit
+            fi
             if [ "$1 $2" = "image inspect" ]; then
                 for image do :; done
-                if [ "${FAKE_IMAGE_EXISTS:-1}" != 1 ] && [ ! -f "$FAKE_DOCKER_LOG.$image" ]; then
+                if [ "${FAKE_IMAGE_EXISTS:-1}" != 1 ] && [ "${image#codex-sandbox:}" != "$image" ] && [ ! -f "$FAKE_DOCKER_LOG.$image" ]; then
                     exit 1
                 fi
                 case " $* " in
                     *" --format "*) printf 'sha256:%064d\n' 0; exit 0 ;;
                 esac
+                printf '[{"Id":"sha256:%064d","RootFS":{"Layers":["sha256:%064d"]},"Os":"linux","Architecture":"arm64"}]\n' 0 1
                 exit 0
             fi
             if [ "$1" = build ]; then
@@ -893,7 +947,21 @@ class CodexSandboxTest(unittest.TestCase):
             case "$action" in
                 snapshot)
                     output=$(value_for --output "$@")
-                    printf '%s\n' '{"version":1,"commands":{"jj":{}}}' > "$output"
+                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{}}}' > "$output"
+                    ;;
+                join)
+                    state=$(value_for --state "$@")
+                    manifest=$(value_for --manifest "$@")
+                    images=$(value_for --images "$@")
+                    accepted=$(value_for --accepted "$@")
+                    if [ -n "$FAKE_PROXY_STATE" ]; then
+                        printf '%s\n' "$FAKE_PROXY_STATE" > "$state"
+                    else
+                        printf '%s\n' '{"proxies":[]}' > "$state"
+                    fi
+                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{}}}' > "$manifest"
+                    printf '%s\n' '{"jj":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}' > "$images"
+                    printf '%s\n' '{"source-present":true,"agent-image":"sha256:0000000000000000000000000000000000000000000000000000000000000000","helper-image":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}' > "$accepted"
                     ;;
                 attach)
                     state=$(value_for --state "$@")
@@ -1576,8 +1644,9 @@ class CodexSandboxTest(unittest.TestCase):
         builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
         # Sidecar builds belong to sandbox-image; this launcher must use the
         # immutable result of its own freshly built agent image.
-        self.assertTrue(any("tools/codex-sandbox/image/Dockerfile" in call for call in builds))
-        self.assertIn("sha256:built-image-id", self.final_run())
+        self.assertTrue(any(any(argument.endswith("tools/codex-sandbox/image/Dockerfile")
+                                for argument in call) for call in builds))
+        self.assertIn("sha256:" + "0" * 64, self.final_run())
 
     def test_network_failure_stops_before_proxy_and_agent_start(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0", FAKE_NETWORK_CREATE_FAIL="1")

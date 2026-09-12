@@ -1,4 +1,16 @@
 {
-  "version": 1,
+  "version": 2,
+  "capabilities": {
+    "host-editor": true,
+    "nested-containers": true,
+    "flower-r2": false
+  },
+  "images": {
+    "resolver": {
+      "kind": "bake",
+      "file": ".agents/sandbox/docker-bake.hcl"
+    },
+    "base": "base"
+  },
   "commands": {}
 }

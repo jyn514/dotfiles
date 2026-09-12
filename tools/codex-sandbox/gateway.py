@@ -14,10 +14,14 @@ def port(value):
     return number
 
 
-def serve(host, editor_port, podman_port=None):
-    listeners = [(2223, editor_port)]
+def serve(host, editor_port=None, podman_port=None):
+    listeners = []
+    if editor_port is not None:
+        listeners.append((2223, editor_port))
     if podman_port is not None:
         listeners.append((2222, podman_port))
+    if not listeners:
+        raise ValueError('at least one listener is required')
     children = []
 
     def interrupted(signum, _frame):
@@ -59,9 +63,11 @@ def serve(host, editor_port, podman_port=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, choices=('host.lima.internal', 'host.docker.internal'))
-    parser.add_argument('--editor-port', required=True, type=port)
+    parser.add_argument('--editor-port', type=port)
     parser.add_argument('--podman-port', type=port)
     args = parser.parse_args()
+    if args.editor_port is None and args.podman_port is None:
+        parser.error('at least one listener is required')
     return serve(args.host, args.editor_port, args.podman_port)
 
 

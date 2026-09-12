@@ -18,9 +18,10 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from docker_runtime import Docker
+from image_resolver import ResolverError, prepare_launch_images
 from lima.docker_host import DockerHost
 from lima.docker import nftables
-from sandbox_runtime import RuntimeError
+from sandbox_runtime import Image, RuntimeError
 
 spec = importlib.util.spec_from_file_location('docker_policy', ROOT / 'lima/docker/policy.py')
 policy = importlib.util.module_from_spec(spec)
@@ -36,6 +37,30 @@ def backend():
 
 
 class DockerRuntimeTest(unittest.TestCase):
+    def test_upstream_image_returns_registry_digest_and_rejects_bad_output(self):
+        runtime = backend()
+        runtime.argv = lambda arguments: arguments
+        digest = 'sha256:' + 'a' * 64
+        runtime.run_builder = Mock(return_value=subprocess.CompletedProcess([], 0, digest + '\n'))
+        self.assertEqual('registry.example/team/image@' + digest,
+                         runtime.upstream_image('registry.example/team/image:tag'))
+        runtime.run_builder.return_value = subprocess.CompletedProcess([], 0, 'mutable\n')
+        with self.assertRaisesRegex(RuntimeError, 'invalid image digest'):
+            runtime.upstream_image('image:tag')
+
+    @patch('docker_runtime.inspect_docker')
+    def test_builder_image_rejects_wrong_platform_before_use(self, query):
+        runtime = backend()
+        content = 'sha256:' + '1' * 64
+        query.return_value = {
+            'Id': 'sha256:' + '2' * 64, 'RepoDigests': ['agent@' + content],
+            'RootFS': {'Layers': ['sha256:' + '3' * 64]},
+            'Os': 'linux', 'Architecture': 'amd64',
+        }
+        runtime.build_platform = Mock(return_value='linux/arm64')
+        with self.assertRaisesRegex(RuntimeError, 'linux/amd64.*linux/arm64'):
+            runtime.verify_builder_image('agent@' + content)
+
     def test_environment_file_needs_no_guest_share_and_is_private_until_cleanup(self):
         runtime = backend()
         runtime.host.check_bind.side_effect = AssertionError('host file checked in guest')
@@ -58,7 +83,7 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.run_builders = Mock(return_value={})
         command = next(path for path, name in owned_images.COMMANDS.items() if name == 'jj')
         with patch('bake.resolve', return_value={'jj': 'installed-image'}) as resolve:
-            prepared = runtime.prepare_images(Path('/repository'), {
+            prepared = prepare_launch_images(runtime, Path('/repository'), {
                 'trusted': {'image-command': [command]}, 'untrusted': {'image-target': 'jj'}})
         self.assertEqual(prepared.proxies, {'trusted': 'installed-image', 'untrusted': 'repository-image'})
         self.assertEqual(resolve.call_args.args[:3], (runtime, owned_images.ROOT, ['jj']))
@@ -132,18 +157,23 @@ class DockerRuntimeTest(unittest.TestCase):
         def inspect(value):
             rendezvous.wait(timeout=2)
             return value
-        runtime.builder_image = Mock(side_effect=inspect)
+        runtime.verify_builder_image = Mock(side_effect=lambda value: Image(
+            inspect(value), value, value, value,
+        ))
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             (repo / '.agents/sandbox').mkdir(parents=True)
             (repo / '.agents/sandbox/bake').touch()
-            prepared = runtime.prepare_images(repo, {
+            prepared = prepare_launch_images(runtime, repo, {
                 'bug': {'image-target': 'bug'}, 'jj': {'image-command': ['jj']}},
                 include_base=True, auth_builder=(['auth'], repo))
         self.assertEqual(prepared.base, 'base@digest')
         self.assertEqual(prepared.auth, auth)
         self.assertEqual(prepared.proxies, {'bug': 'bug@digest', 'jj': helper})
-        self.assertCountEqual([call.args[0] for call in runtime.builder_image.call_args_list], [auth, helper])
+        self.assertCountEqual(
+            [call.args[0] for call in runtime.verify_builder_image.call_args_list],
+            [auth, helper],
+        )
         runtime.bake.assert_called_once_with(repo, ['base', 'bug'])
         self.assertEqual(runtime.run_builders.call_args.args[0],
                          {'auth': (['auth'], repo), 'proxy:jj': (['jj'], repo)})
@@ -153,10 +183,10 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.bake = Mock(return_value={})
         runtime.run_builders = Mock(return_value={
             'proxy:jj': subprocess.CompletedProcess(['jj'], 0, 'sha256:' + 'a' * 64 + '\n\n')})
-        runtime.builder_image = Mock()
-        with self.assertRaisesRegex(ValueError, 'exactly one immutable image hash'):
-            runtime.prepare_images(Path('/unused'), {'jj': {'image-command': ['jj']}})
-        runtime.builder_image.assert_not_called()
+        runtime.verify_builder_image = Mock()
+        with self.assertRaisesRegex(ResolverError, 'one immutable image hash'):
+            prepare_launch_images(runtime, Path('/unused'), {'jj': {'image-command': ['jj']}})
+        runtime.verify_builder_image.assert_not_called()
 
     def test_relay_creation_checks_new_bridge_without_repeating_admission(self):
         runtime = backend()

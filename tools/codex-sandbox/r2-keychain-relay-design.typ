@@ -107,7 +107,10 @@ This bounds concurrent work and prevents an application queue of prompts; it doe
 
 `codex-sandbox` should declare this as a host bridge reached through a restricted relay container, not as a sibling command-proxy container. At startup it should:
 
-+ enable the bridge only on macOS when `/usr/bin/security` exists;
++ enable the bridge only when Flower R2 access is selected under
+  #link("launcher-interface.typ")[the launcher capability contract], on macOS
+  when `/usr/bin/security` exists; selection is pending launcher implementation,
+  while the current implementation enables it for every supported macOS launch;
 + create separate private link and egress networks through `create_relay_network`, start the host listener, then start a restricted `socat` relay with all capabilities dropped, no-new-privileges, a read-only filesystem, and explicit PID, memory, and CPU limits;
 + inject only `CODEX_SANDBOX_KEYCHAIN_ADDRESS` (the relay's numeric IPv4 link address and port) and `CODEX_SANDBOX_KEYCHAIN_TOKEN` into the agent container;
 + install the relay's link and egress addresses into the host listener's peer allowlist before accepting requests;

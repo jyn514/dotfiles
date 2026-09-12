@@ -21,7 +21,6 @@ import uuid
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_monitor import monitor
 from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, single_json, state_runtime
 
 OUTER_RUNTIME = Podman()
@@ -37,6 +36,8 @@ IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 BARE_IMAGE_RE = re.compile(r"^[0-9a-f]{64}$")
 MODES = {"read-only", "read-write", "hidden"}
 COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
+V2_COMMAND_FIELDS = {"image", "argv", "workdir", "network", "mounts"}
+CAPABILITIES = {"host-editor", "nested-containers", "flower-r2"}
 MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
 
 
@@ -88,6 +89,12 @@ def validate_repository(repo: Path) -> Path:
             raise ConfigError(f"protected sandbox directory is missing or symlinked: {current}")
     manifest_path = sandbox / "proxy-commands.json"
     _regular_unlinked(manifest_path, "proxy manifest")
+    validate_sandbox_tree(sandbox)
+    repository_identity(repo)
+    return repo
+
+
+def validate_sandbox_tree(sandbox: Path) -> None:
     for root, directories, files in os.walk(sandbox, followlinks=False):
         for entry in [*directories, *files]:
             candidate = Path(root) / entry
@@ -96,14 +103,19 @@ def validate_repository(repo: Path) -> Path:
                 raise ConfigError(f"protected sandbox configuration contains a symlink: {candidate}")
             if candidate.is_file() and stat.st_nlink != 1:
                 raise ConfigError(f"protected sandbox configuration contains a hard link: {candidate}")
-    repository_identity(repo)
-    return repo
 
 
 def load_manifest(repo: Path) -> dict[str, Any]:
-    repo = validate_repository(repo)
-    path = repo / ".agents" / "sandbox" / "proxy-commands.json"
-    return load_manifest_file(path)
+    repo = repo.resolve(strict=True)
+    sandbox = optional_sandbox_directory(repo)
+    if sandbox is None:
+        raise ConfigError("protected sandbox directory is missing")
+    path = sandbox / "proxy-commands.json"
+    _regular_unlinked(path, "proxy manifest")
+    validate_sandbox_tree(sandbox)
+    repository_identity(repo)
+    bake = sandbox / "docker-bake.hcl"
+    return load_manifest_file(path, default_bake=bake.is_file())
 
 
 def optional_sandbox_directory(repo: Path) -> Path | None:
@@ -122,39 +134,102 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
     repository_identity(repo)
     sandbox = optional_sandbox_directory(repo)
     if sandbox is None:
-        return {"version": 1, "commands": {}}
+        return {"version": 2, "capabilities": {}, "commands": {}}
     path = sandbox / "proxy-commands.json"
     if path.is_symlink():
         raise ConfigError(f"proxy manifest must not be symlinked: {path}")
     if not path.exists():
-        return {"version": 1, "commands": {}}
+        bake = sandbox / "docker-bake.hcl"
+        if not bake.exists():
+            validate_sandbox_tree(sandbox)
+            return {"version": 2, "capabilities": {}, "commands": {}}
+        _regular_unlinked(bake, "default Bake resolver")
+        validate_sandbox_tree(sandbox)
+        return load_manifest_file(None, default_bake=True)
     return load_manifest(repo)
 
 
-def load_manifest_file(path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
-    except (UnicodeError, json.JSONDecodeError) as error:
-        raise ConfigError(f"invalid proxy manifest: {error}") from error
-    if not isinstance(data, dict) or set(data) != {"version", "commands"}:
-        raise ConfigError("proxy manifest must contain exactly version and commands")
-    if data["version"] != 1 or not isinstance(data["commands"], dict):
-        raise ConfigError("proxy manifest must use version 1 and an object of commands")
+def load_manifest_file(path: Path | None, *, default_bake: bool = False) -> dict[str, Any]:
+    if path is None:
+        data = {"version": 2, "commands": {}}
+    else:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+        except (UnicodeError, json.JSONDecodeError) as error:
+            raise ConfigError(f"invalid proxy manifest: {error}") from error
+    if not isinstance(data, dict) or "version" not in data:
+        raise ConfigError("proxy manifest must contain a version")
+    version = data["version"]
+    if version == 1:
+        if not set(data) <= {"version", "commands", "capabilities", "images"} or "commands" not in data:
+            raise ConfigError("version 1 proxy manifest has missing or unknown fields")
+        capabilities = data.get("capabilities", {})
+        images = data.get("images")
+        if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
+                not all(isinstance(value, bool) for value in capabilities.values())):
+            raise ConfigError("proxy manifest has invalid capabilities")
+    elif version == 2:
+        if not set(data) <= {"version", "capabilities", "images", "commands"}:
+            raise ConfigError("version 2 proxy manifest has unknown fields")
+        capabilities = data.get("capabilities", {})
+        if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
+                not all(isinstance(value, bool) for value in capabilities.values())):
+            raise ConfigError("proxy manifest has invalid capabilities")
+        capabilities = {name: capabilities.get(name, False) for name in sorted(CAPABILITIES)}
+        images = data.get("images")
+        if default_bake and images is None:
+            images = {
+                "resolver": {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
+                "base": "base",
+            }
+        if images is not None:
+            if not isinstance(images, dict) or set(images) != {"resolver", "base"}:
+                raise ConfigError("proxy manifest images must contain exactly resolver and base")
+            resolver = images["resolver"]
+            if not isinstance(resolver, dict) or resolver.get("kind") not in {"bake", "command"}:
+                raise ConfigError("proxy manifest has an invalid image resolver")
+            if resolver["kind"] == "bake":
+                if not set(resolver) <= {"kind", "file"}:
+                    raise ConfigError("Bake resolver may contain only kind and file")
+                resolver = {
+                    "kind": "bake",
+                    "file": resolver.get("file", ".agents/sandbox/docker-bake.hcl"),
+                }
+                _plain_relative(resolver["file"], "Bake resolver file")
+                images = {**images, "resolver": resolver}
+            else:
+                if set(resolver) != {"kind", "argv"}:
+                    raise ConfigError("command resolver must contain exactly kind and argv")
+                _string_array(resolver["argv"], "command resolver argv")
+            if not isinstance(images["base"], str) or not NAME_RE.fullmatch(images["base"]):
+                raise ConfigError("proxy manifest has an invalid base image name")
+    else:
+        raise ConfigError(f"unsupported proxy manifest version: {version!r}")
+    raw_commands = data.get("commands", {})
+    if not isinstance(raw_commands, dict):
+        raise ConfigError("proxy manifest commands must be an object")
     commands: dict[str, Any] = {}
     targets: set[str] = set()
-    for name, raw in data["commands"].items():
+    for name, raw in raw_commands.items():
         if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             raise ConfigError(f"invalid proxy command name: {name!r}")
-        if (not isinstance(raw, dict) or not set(raw) <= COMMAND_FIELDS | {'image-target'} or
-                not COMMAND_FIELDS - {'image-command'} <= set(raw) or
-                not {'image-command', 'image-target'} & set(raw)):
+        allowed = COMMAND_FIELDS | {'image-target'} if version == 1 else V2_COMMAND_FIELDS
+        required = COMMAND_FIELDS - {'image-command'} if version == 1 else V2_COMMAND_FIELDS
+        if (not isinstance(raw, dict) or not set(raw) <= allowed or not required <= set(raw) or
+                (version == 1 and not {'image-command', 'image-target'} & set(raw))):
             raise ConfigError(f"command {name} has missing or unknown fields")
         image_command = _string_array(raw.get("image-command", []), f"command {name} image-command")
+        if version == 2:
+            if images is None:
+                raise ConfigError(f"command {name} requires an explicit image resolver")
+            if not isinstance(raw["image"], str) or not NAME_RE.fullmatch(raw["image"]):
+                raise ConfigError(f"command {name} has an invalid image name")
         if 'image-target' in raw and (not isinstance(raw['image-target'], str) or
                                       not NAME_RE.fullmatch(raw['image-target'])):
             raise ConfigError(f"command {name} has invalid image-target")
         argv = _string_array(raw["argv"], f"command {name} argv")
-        if (not image_command and 'image-target' not in raw) or not argv or argv[0].startswith("/"):
+        has_image = 'image-target' in raw if version == 1 else 'image' in raw
+        if (not image_command and not has_image) or not argv or argv[0].startswith("/"):
             raise ConfigError(f"command {name} requires non-empty commands with a PATH-resolved argv")
         workdir = _plain_relative(raw["workdir"], f"command {name} workdir", allow_dot=True)
         if not isinstance(raw["network"], bool) or not isinstance(raw["mounts"], list):
@@ -183,8 +258,16 @@ def load_manifest_file(path: Path) -> dict[str, Any]:
             local_targets.add(target)
             targets.add(target)
             mounts.append({"source": source, "target": target, "proxy": proxy_mode, "agent": agent_mode})
-        commands[name] = {**raw, "image-command": image_command, "argv": argv, "workdir": workdir, "mounts": mounts}
-    return {"version": 1, "commands": commands}
+        normalized = {**raw, "image-command": image_command, "argv": argv, "workdir": workdir, "mounts": mounts}
+        if version == 2:
+            normalized["image-target"] = normalized.pop("image")
+        commands[name] = normalized
+    result = {"version": version, "commands": commands}
+    if version == 2 or capabilities:
+        result["capabilities"] = capabilities
+    if images is not None:
+        result["images"] = images
+    return result
 
 
 def write_atomic(path: Path, content: str) -> None:
@@ -201,7 +284,8 @@ def write_atomic(path: Path, content: str) -> None:
 
 
 def serializable_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
-    result = {"version": 1, "commands": {}}
+    result = {key: manifest[key] for key in ("version", "capabilities", "images") if key in manifest}
+    result["commands"] = {}
     for name, command in manifest["commands"].items():
         mounts = []
         for mount in command["mounts"]:
@@ -210,7 +294,11 @@ def serializable_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
                 if mount[mode] is not None:
                     item[mode] = mount[mode]
             mounts.append(item)
-        result["commands"][name] = {**command, "mounts": mounts}
+        serialized = {**command, "mounts": mounts}
+        if manifest.get("version") == 2 and "image-target" in serialized:
+            serialized["image"] = serialized.pop("image-target")
+            serialized.pop("image-command", None)
+        result["commands"][name] = serialized
     return result
 
 
@@ -365,13 +453,30 @@ def publish_main(args: argparse.Namespace) -> int:
     state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
     validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []), repository_identity(Path(args.repo)))
+    launch = state.pop("accepted", None)
+    if not isinstance(launch, dict) or set(launch) != {
+        "source-present", "agent-image", "helper-image", "parameters", "proxy-images",
+    }:
+        raise ConfigError("shared state is missing accepted launch authority")
+    proxy_images = launch["proxy-images"]
+    if proxy_images != {proxy["name"]: proxy["image"] for proxy in state.get("proxies", [])}:
+        raise ConfigError("published proxy images differ from accepted launch images")
     payload = {
-        "version": 2,
+        "version": 3,
         "repository": repository_identity(Path(args.repo)),
         "container_repository": str(container_repository(args.container_repo)),
         "commands": {},
         "state": state,
-        "manifest": serializable_manifest(manifest),
+        "accepted": {
+            "manifest": serializable_manifest(manifest),
+            "source-present": launch["source-present"],
+            "images": {
+                "agent": launch["agent-image"],
+                "helper": launch["helper-image"],
+                "proxies": proxy_images,
+            },
+            "parameters": launch["parameters"],
+        },
     }
     for proxy in state.get("proxies", []):
         payload["commands"][proxy["name"]] = {"container": proxy["container"], "image": proxy["image"]}
@@ -380,7 +485,7 @@ def publish_main(args: argparse.Namespace) -> int:
 
 
 def session_state(metadata):
-    if metadata.get("version") not in (1, 2) or not isinstance(metadata.get("state"), dict):
+    if metadata.get("version") not in (1, 2, 3) or not isinstance(metadata.get("state"), dict):
         raise ConfigError("unsupported shared-session schema; retain metadata for explicit recovery")
     state = metadata["state"]
     if metadata["version"] == 1:
@@ -455,6 +560,114 @@ def cached_session_state(
     return state
 
 
+def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(metadata, dict) or metadata.get("version") != 3:
+        raise ConfigError("active session lacks accepted policy and images; restart after active sandboxes exit")
+    if metadata.get("repository") != repository_identity(repo):
+        raise ConfigError("active session belongs to another repository")
+    if metadata.get("container_repository") != str(container_repository(args.container_repo)):
+        raise ConfigError("active session uses another container repository")
+    state = session_state(metadata)
+    if state.get("runtime") != runtime_identity(OUTER_RUNTIME):
+        raise ConfigError("active session uses another runtime provider")
+    accepted = metadata.get("accepted")
+    if not isinstance(accepted, dict) or set(accepted) != {
+        "manifest", "source-present", "images", "parameters",
+    }:
+        raise ConfigError("active session has invalid accepted authority")
+    manifest = accepted["manifest"]
+    images = accepted["images"]
+    parameters = accepted["parameters"]
+    if (not isinstance(accepted["source-present"], bool) or
+            not isinstance(manifest, dict) or not isinstance(images, dict) or
+            set(images) != {"agent", "helper", "proxies"} or
+            not isinstance(images["proxies"], dict) or
+            set(images["proxies"]) != set(manifest.get("commands", {})) or
+            not isinstance(images["agent"], str) or not images["agent"] or
+            images["helper"] is not None and (
+                not isinstance(images["helper"], str) or not images["helper"]
+            ) or not all(isinstance(value, str) and value for value in images["proxies"].values()) or
+            parameters != {"uid": args.uid, "gid": args.gid}):
+        raise ConfigError("active session has invalid accepted images or image-bound parameters")
+    if (getattr(args, "agent_image", images["agent"]) != images["agent"] or
+            getattr(args, "helper_image", images["helper"]) != images["helper"]):
+        raise ConfigError("active session image selection changed before attachment")
+    proxies = state.get("proxies")
+    if not isinstance(proxies, list) or {
+        proxy.get("name") for proxy in proxies if isinstance(proxy, dict)
+    } != set(manifest["commands"]):
+        raise ConfigError("active session proxy state does not match accepted policy")
+    if {proxy["name"]: proxy.get("image") for proxy in proxies} != images["proxies"]:
+        raise ConfigError("active session proxy images do not match accepted images")
+    auth = state.get("auth")
+    if auth is not None and (images["helper"] is None or not isinstance(auth, dict) or
+                             auth.get("image") != images["helper"]):
+        raise ConfigError("active session helper image does not match accepted images")
+    try:
+        OUTER_RUNTIME.verify_builder_image(images["agent"])
+        helper_image = None
+        if images["helper"] is not None:
+            helper_image = OUTER_RUNTIME.verify_builder_image(images["helper"])
+        for image in images["proxies"].values():
+            OUTER_RUNTIME.verify_builder_image(image)
+        if auth is not None:
+            if not isinstance(auth.get("container"), str) or helper_image is None:
+                raise ConfigError("active session has invalid authentication state")
+            if OUTER_RUNTIME.provider == "lima-docker":
+                auth_snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
+                if (auth_snapshot.get("State", {}).get("Running") is not True or
+                        not OUTER_RUNTIME.container_matches_image(
+                            auth["container"], helper_image, snapshot=auth_snapshot,
+                        )):
+                    raise ConfigError("active session has an unhealthy authentication service")
+            elif (not containers_running([auth["container"]]) or
+                  not OUTER_RUNTIME.container_matches_image(auth["container"], helper_image)):
+                raise ConfigError("active session has an unhealthy authentication service")
+        containers = [proxy["container"] for proxy in proxies]
+        snapshots = None
+        if OUTER_RUNTIME.provider == "lima-docker":
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                snapshots = dict(zip(containers, executor.map(OUTER_RUNTIME.inspect_container, containers)))
+            if not all(snapshot.get("State", {}).get("Running") is True for snapshot in snapshots.values()):
+                raise ConfigError("active session has a stopped proxy")
+        elif not containers_running(containers):
+            raise ConfigError("active session has a stopped proxy")
+        validate_live_proxies(
+            OUTER_RUNTIME, proxies, repository_identity(repo), snapshots=snapshots,
+        )
+        if OUTER_RUNTIME.provider == "lima-docker":
+            from lima.proxy_forward import check
+            for proxy in proxies:
+                forwarding = proxy.get("forwarding")
+                if not proxy.get("volume-owner") or forwarding != OUTER_RUNTIME.proxy_forward_record(
+                    proxy["container"], proxy["volume-owner"], snapshot=snapshots[proxy["container"]],
+                ):
+                    raise ConfigError("active session proxy forwarding changed")
+                check(forwarding["owner"])
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        raise ConfigError(f"active session image or service validation failed: {error}") from error
+    return state, accepted
+
+
+def join_main(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve()
+    path = runtime_directory(repo) / "session.json"
+    try:
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as error:
+        raise ConfigError("active session metadata is unavailable") from error
+    state, accepted = accepted_session(args, repo, metadata)
+    write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
+    write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
+    write_atomic(Path(args.images), json.dumps(accepted["images"]["proxies"], sort_keys=True))
+    write_atomic(Path(args.accepted), json.dumps({
+        "source-present": accepted["source-present"],
+        "agent-image": accepted["images"]["agent"],
+        "helper-image": accepted["images"]["helper"],
+    }, sort_keys=True))
+    return 0
+
+
 def attach_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     runtime = runtime_directory(repo)
@@ -464,13 +677,16 @@ def attach_main(args: argparse.Namespace) -> int:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         metadata = None
+    if shared:
+        state, accepted = accepted_session(args, repo, metadata)
+        write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
+        write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
+        return 0
     current_manifest = load_manifest_file(Path(args.manifest))
     state = cached_session_state(args, repo, metadata, current_manifest)
     if state is not None:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         return 0
-    if shared:
-        raise ConfigError("active proxy session changed or is unavailable; restart after active sandboxes exit")
     if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
         stop_state(session_state(metadata))
     metadata_path.unlink(missing_ok=True)
@@ -484,9 +700,28 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[
         if (not isinstance(images, dict) or set(images) != set(manifest['commands']) or
                 not all(isinstance(image, str) for image in images.values())):
             raise ConfigError('prepared images do not match the proxy manifest')
-        return {name: OUTER_RUNTIME.builder_image(image) for name, image in images.items()}
+        return {
+            name: OUTER_RUNTIME.verify_builder_image(image).reference
+            for name, image in images.items()
+        }
     if OUTER_RUNTIME.provider == 'lima-docker':
-        return OUTER_RUNTIME.prepare_images(repo, manifest['commands']).proxies
+        from image_resolver import prepare_launch_images
+        options = ({"image_policy": manifest["images"]} if "images" in manifest else {})
+        return prepare_launch_images(OUTER_RUNTIME, repo, manifest['commands'], **options).proxies
+    policy = manifest.get("images")
+    if policy is not None:
+        resolver = policy["resolver"]
+        if resolver["kind"] != "command":
+            raise ConfigError(
+                f"bundled Bake resolver is unavailable for {OUTER_RUNTIME.provider}"
+            )
+        from image_resolver import ResolverError, resolve_command
+        bindings = {name: command["image-target"] for name, command in manifest["commands"].items()}
+        try:
+            resolved = resolve_command(OUTER_RUNTIME, repo, resolver["argv"], set(bindings.values()))
+        except ResolverError as error:
+            raise ConfigError(str(error)) from error
+        return {name: resolved[target].reference for name, target in bindings.items()}
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
         if not command.get('image-command'):
             raise ConfigError(f"proxy {name} uses Bake targets; select CODEX_SANDBOX_RUNTIME=lima-docker")
@@ -671,6 +906,14 @@ def start_main(args: argparse.Namespace) -> int:
     manifest = load_manifest_file(Path(args.manifest))
     images = resolve_images(repo, manifest, getattr(args, 'images', None))
     state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
+    if getattr(args, "agent_image", None) is not None:
+        state["accepted"] = {
+            "source-present": args.source_present,
+            "agent-image": args.agent_image,
+            "helper-image": args.helper_image,
+            "parameters": {"uid": args.uid, "gid": args.gid},
+            "proxy-images": images,
+        }
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
     state_lock = threading.Lock()
@@ -884,6 +1127,9 @@ def inspect_main(args: argparse.Namespace) -> int:
 
 def snapshot_main(args: argparse.Namespace) -> int:
     manifest = serializable_manifest(load_optional_manifest(Path(args.repo)))
+    # Snapshots are launcher-owned normalized policy. Version 1 command image
+    # bindings keep installed helpers distinct from repository declarations.
+    manifest["version"] = 1
     if args.jj_image_command:
         builder = Path(args.jj_image_command)
         if not builder.is_absolute():
@@ -925,19 +1171,6 @@ def snapshot_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def monitor_main(args: argparse.Namespace) -> int:
-    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
-    owner = state_runtime(state)
-    containers = [("agent", args.agent)]
-    auth = state.get("auth")
-    if isinstance(auth, dict) and isinstance(auth.get("container"), str):
-        containers.append(("auth", auth["container"]))
-    containers += [(proxy["name"], proxy["container"]) for proxy in state.get("proxies", [])]
-    if isinstance(owner, VMRuntime):
-        return owner.monitor(containers)
-    return monitor(owner.argv, containers)
-
-
 def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="action", required=True)
@@ -951,17 +1184,31 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     snapshot.add_argument("--zulip-image-command")
     snapshot.add_argument("--zuliprc")
     snapshot.set_defaults(function=snapshot_main)
+    join = sub.add_parser("join")
+    join.add_argument("--repo", required=True)
+    join.add_argument("--container-repo", required=True)
+    join.add_argument("--state", required=True)
+    join.add_argument("--manifest", required=True)
+    join.add_argument("--images", required=True)
+    join.add_argument("--accepted", required=True)
+    join.add_argument("--uid", type=int, required=True)
+    join.add_argument("--gid", type=int, required=True)
+    join.set_defaults(function=join_main)
     attach = sub.add_parser("attach")
     attach.add_argument("--repo", required=True)
     attach.add_argument("--container-repo", required=True)
     attach.add_argument("--shared", action="store_true")
     attach.add_argument("--prefix", required=True)
     attach.add_argument("--state", required=True)
-    attach.add_argument("--helper-image", required=True)
+    attach.add_argument("--helper-image")
     attach.add_argument("--auth-enabled", action="store_true")
     attach.add_argument("--network", required=True)
     attach.add_argument("--manifest", required=True)
     attach.add_argument('--images')
+    attach.add_argument("--agent-image")
+    attach.add_argument("--uid", type=int)
+    attach.add_argument("--gid", type=int)
+    attach.add_argument("--source-present", action="store_true")
     attach.add_argument("--zuliprc")
     attach.set_defaults(function=attach_main)
     reset = sub.add_parser("reset")
@@ -993,10 +1240,14 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     start.add_argument("--container-repo", required=True)
     start.add_argument("--prefix", required=True)
     start.add_argument("--state", required=True)
-    start.add_argument("--helper-image", required=True)
+    start.add_argument("--helper-image")
     start.add_argument("--network", required=True)
     start.add_argument("--manifest", required=True)
     start.add_argument('--images')
+    start.add_argument("--agent-image")
+    start.add_argument("--uid", type=int)
+    start.add_argument("--gid", type=int)
+    start.add_argument("--source-present", action="store_true")
     start.add_argument("--zuliprc")
     start.set_defaults(function=start_main)
     stop = sub.add_parser("stop")
@@ -1008,10 +1259,6 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     route.add_argument("--wait", type=float, default=10.0)
     route.add_argument("local", nargs=argparse.REMAINDER)
     route.set_defaults(function=route_main)
-    monitor = sub.add_parser("monitor")
-    monitor.add_argument("--state", required=True)
-    monitor.add_argument("--agent", required=True)
-    monitor.set_defaults(function=monitor_main)
     return parser.parse_args(arguments)
 
 
@@ -1021,7 +1268,7 @@ def main(arguments: list[str] | None = None, *, runtime=None) -> int:
         args = parse_args(arguments)
         if runtime is not None:
             OUTER_RUNTIME = runtime
-        elif args.action in {"attach", "start", "publish", "finalize"}:
+        elif args.action in {"attach", "join", "start", "publish", "finalize"}:
             OUTER_RUNTIME = image_runtime()
         return args.function(args)
     except (ConfigError, ValueError, OSError, subprocess.SubprocessError) as error:

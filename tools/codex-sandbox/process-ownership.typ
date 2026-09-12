@@ -55,30 +55,15 @@ it was not reproduced against a stalled production readiness query.
 
 `sandbox_runtime.py`, `workload()`, creates and attaches through subprocesses
 without allocating private groups. Its timeout fallbacks kill the creation or
-attachment PID. The Lima overrides of `forward_proxy()` and `monitor()` also
-kill only their local transport PID after their remote cleanup attempts.
+attachment PID. Lima's `forward_proxy()` also kills its local transport PID
+after its remote cleanup attempt.
 
 These paths can invoke `limactl` and SSH descendants. They need ownership of
 local transport shutdown, but this review did not reproduce each failure in a
-live VM. Preserve container removal, guest exec-ID cleanup, and the monitor's
-graceful control-pipe message when changing local process management.
-
-=== Monitor wait clients: reproduced with a wrapping client
-
-`sandbox_monitor.py`, `monitor()`, terminates wait clients by PID and waits only
-for their leaders. The real monitor function, supplied a disposable wrapping
-client, exited with status 143 while that client's child survived.
-
-Current Docker wait clients are invoked directly. This proves the monitor
-abstraction does not supervise descendants; it does not establish a leak from
-ordinary native Docker waits. Decide whether the monitor owns one group for its
-whole tree or each wait has a separate owner before changing those spawns.
-
-=== Existing group cleanup: incomplete liveness check
-
-`codex-sandbox`, `cleanup()`'s `wait_process()`, already signals the Docker
-monitor group. It escalates to SIGKILL only when waiting for the leader times
-out, and skips group cleanup for leaders that exited with other statuses.
+live VM. Preserve container removal and guest exec-ID cleanup when changing
+local process management. The former sibling monitor was removed: the launcher
+now waits directly for the agent, while shared-service failures remain request
+failures and reject later attachments.
 
 A local probe with an exited leader and a child ignoring SIGTERM reproduced
 the faulty assumption: signalling the group and successfully waiting for its
@@ -91,7 +76,7 @@ after wrapper exit and supplies a starting point for this behavior.
 `tests/lima_launcher_integration.py`, `terminal_run()`, creates a private session
 but its emergency fallback kills only the launcher PID. Final cleanup should
 drain owned groups even after their leaders exit. Separately owned nested
-builder and monitor sessions still need their own cleanup owners.
+builder sessions still need their own cleanup owners.
 
 Keep deliberate single-PID signals in tests that simulate loss of a supervisor
 or transport. Broadcasting those test signals would hide the failure being
@@ -109,8 +94,8 @@ For a noninteractive operation that needs group ownership:
   PID its group ID and prevents shutdown signals from reaching the caller.
 + Register ownership before waiting or publishing the process to another worker.
   Nested work stays in that group unless a separate owner is responsible for it.
-+ Attempt protocol-specific graceful shutdown first: close credential input,
-  send the monitor's control message, or remove the owned remote workload.
++ Attempt protocol-specific graceful shutdown first: close credential input or
+  remove the owned remote workload.
 + On cancellation or timeout, signal the owned group with SIGTERM, then SIGKILL
   after a bounded grace period if live members remain. Inspect group membership
   independently of `Popen.poll()` and `wait()`; an exited leader is not completion.
@@ -168,7 +153,7 @@ JJ server. Command cancellation requires a separate protocol design.
 
 == Implementation order and acceptance
 
-First repair the credential transport's bounded cleanup and the monitor group's
+First repair the credential transport's bounded cleanup and remaining groups'
 leader-independent drain. Then migrate noninteractive runtime transports to the
 same ownership rule. Treat wrapper cooperation and interactive job control as
 separate changes; do not couple this repair to replacing proxy forwarding.

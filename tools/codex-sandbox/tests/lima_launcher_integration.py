@@ -151,13 +151,18 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
         shutil.copyfile(Path(__file__).with_name('pi_startup_observer.js'), sandbox / 'observer.js')
         (sandbox / 'observer-workload.json').write_text(json.dumps({'requests': proxy_requests}))
         (repo / "nested").mkdir()
-        # Use the real builder through an executable fixture with its own file
-        # as argv[0], so its relative Dockerfile lookup stays in dotfiles.
-        (sandbox / "base-image").symlink_to(Path(__file__).with_name("lima_fixture_base_image.py"))
         if provider == 'lima-docker':
-            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/bake', sandbox / 'bake')
-            (sandbox / 'bake').chmod(0o755)
+            shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/docker-bake.hcl', sandbox / 'docker-bake.hcl')
             shutil.copyfile(ROOT.parents[1] / '.agents/sandbox/Dockerfile', sandbox / 'Dockerfile')
+            (sandbox / 'proxy-commands.json').write_text(json.dumps({
+                'version': 2, 'capabilities': {},
+                'images': {'resolver': {'kind': 'bake', 'file': '.agents/sandbox/docker-bake.hcl'},
+                           'base': 'base'},
+                'commands': {},
+            }))
+        else:
+            # The containerd integration retains the documented version 1 adapter.
+            (sandbox / "base-image").symlink_to(Path(__file__).with_name("lima_fixture_base_image.py"))
         (home / ".agents/skills").mkdir(parents=True)
         (home / ".codex").mkdir()
         (home / ".codex/config.toml").write_text("")
@@ -180,7 +185,6 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
         cache = boot_credential(runtime, retrieve=lambda: b"owned-dummy-github-token")
         try:
             launcher = runpy.run_path(str(ROOT / "codex-sandbox"))
-            launcher["ensure_image"].__globals__["OUTER_RUNTIME"] = runtime
             collision = launcher["new_state"](["--help"])
             network = collision.gateway_link_network
             runtime.run(["network", "create", "--label", "dev.codex.relay-owner=" + "0" * 32, network],
@@ -207,10 +211,12 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                     collision.recovery_record.unlink(missing_ok=True)
             print("PASS: the conflicting network survived; fixture resources and recovery record removed.\n",
                   file=sys.stderr, flush=True)
-            base = (runtime.bake(repo, ['base'])['base'] if provider == 'lima-docker' else
+            base = (runtime.bake(repo, ['base'], file='.agents/sandbox/docker-bake.hcl')['base']
+                    if provider == 'lima-docker' else
                     subprocess.run([str(sandbox / "base-image")], env=environment, cwd=repo,
                                    check=True, text=True, stdout=subprocess.PIPE).stdout.strip())
-            agent = launcher["ensure_image"](launcher["new_state"](["--help"]), base)
+            state = launcher["new_state"](["--help"])
+            agent = launcher["resolve_agent"](runtime, state.uid, state.gid, base)
             editor = launcher["new_state"](["--help"])
             try:
                 editor_flags = launcher["prepare_gateway"](editor)

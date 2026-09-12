@@ -1,12 +1,27 @@
 #!/usr/bin/env python3
-"""Build or resolve an outer image; stdout contains one local immutable reference."""
+"""Build, resolve, refresh, or clean images in the admitted outer engine."""
 
 import argparse
+import importlib.util
+import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 
 from sandbox_runtime import image_runtime
+from image_resolver import resolve_policy
+from owned_images import declaration, resolve_agent, source_paths, ROOT
+
+
+def policy_module():
+    path = Path(__file__).with_name('sandbox-proxies.py')
+    spec = importlib.util.spec_from_file_location('sandbox_image_policy', path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError('cannot load sandbox image policy')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def main():
@@ -24,8 +39,46 @@ def main():
     build.add_argument("--target")
     build.add_argument("--if-missing", action="store_true")
     build.add_argument("context", type=Path)
+    for operation in ('refresh', 'clean'):
+        lifecycle = sub.add_parser(operation)
+        lifecycle.add_argument('--repo', type=Path, default=Path.cwd())
+        lifecycle.add_argument('images', nargs='*')
     args = parser.parse_args()
     runtime = image_runtime(args.provider, args.state)
+    if args.operation in {'refresh', 'clean'}:
+        repo = args.repo.resolve(strict=True)
+        manifest = policy_module().load_manifest(repo)
+        policy = manifest.get('images')
+        if policy is None:
+            raise ValueError('refresh and clean require a version 2 image resolver')
+        requested = set(args.images)
+        all_images = not requested
+        declared = {policy['base'], *[
+            command['image-target'] for command in manifest['commands'].values()
+            if command.get('image-target')
+        ]}
+        if not requested:
+            requested = declared
+        if not requested <= declared:
+            raise ValueError('requested image is not declared by repository policy')
+        images = resolve_policy(runtime, repo, policy, requested, operation=args.operation)
+        results = {name: image.reference for name, image in images.items()}
+        if all_images:
+            from bake import resolve as resolve_bake
+            helpers = ('auth', 'jj', 'zulip')
+            results.update({
+                'helper:' + name: reference
+                for name, reference in resolve_bake(
+                    runtime, ROOT, helpers, declaration=declaration(helpers),
+                    captures=source_paths(helpers), operation=args.operation,
+                ).items()
+            })
+            results['agent'] = resolve_agent(
+                runtime, os.getuid(), os.getgid(), images[policy['base']].reference,
+                operation=args.operation,
+            )
+        print(json.dumps(dict(sorted(results.items())), sort_keys=True))
+        return
     if args.operation == "resolve":
         image = runtime.resolve_image(args.reference)
     else:

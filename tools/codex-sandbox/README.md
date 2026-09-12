@@ -22,7 +22,12 @@ the contents of bound subtrees remain live.
 
 ## Flower R2 Keychain access
 
-On macOS, new launches expose a separate, session-authenticated Keychain relay
+The [launcher interface](launcher-interface.typ) makes optional services explicit.
+Version 2 configuration, capability gating, bounded project-command transport,
+captured image inputs, explicit refresh and clean rebuild, and accepted-policy/image
+joins are implemented.
+
+On macOS, launches selecting `flower-r2` expose a separate, session-authenticated Keychain relay
 through `CODEX_SANDBOX_KEYCHAIN_ADDRESS` and `CODEX_SANDBOX_KEYCHAIN_TOKEN`.
 It accepts only `flower-r2/read`, reading accounts `access-key` then `secret-key`
 under service `dev.jyn.flower.r2` with `/usr/bin/security`.
@@ -36,6 +41,8 @@ Explicit R2 environment credentials bypass the relay, and unavailable relay
 credentials skip optional upload without failing CI.
 The Keychain listener, token, container, and networks belong to the launch and are
 cleaned up independently of the editor/Podman gateway.
+The two relay networks are created concurrently; startup waits for both workers
+before publishing the capability or handling a creation failure.
 
 Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and
 dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py`
@@ -68,17 +75,25 @@ passed bounded tests from unresolved host file-table pressure and sustained-work
   `codex-github-token` into Keychain for injection as `GH_TOKEN` and retains the
   Podman secret for rollback; exporting a host `GH_TOKEN` does not provision it.
   guest caching lasts one VM boot.
-- Run inside tmux to use the injected host editor and tmux session restart support.
+- Run inside tmux to use tmux session restart support. Repositories select host editing separately.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`.
   The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may provide executable `.agents/sandbox/base-image` and a version 1 `.agents/sandbox/proxy-commands.json`.
-Podman and nerdctl use these executable builders and their existing cache keys.
-[Lima-Docker uses fresh Bake declarations and `image-target` selections](lima/docker.md)
-through executable `.agents/sandbox/bake`; repository Docker CLI shims are no longer supported.
-Repositories without extra command proxies may omit the manifest.
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select
+`host-editor`, `nested-containers`, and `flower-r2` independently. Missing keys are disabled.
+Version 2 images declare one Bake file or project-command resolver and bind command
+and base image names. Resolver commands receive the versioned JSON contract in
+[the launcher interface](launcher-interface.typ) and run against the admitted engine.
+The Bake resolver captures complete local contexts, assigns private content keys,
+and pins mutable upstream images by provider and platform.
+When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver
+with base target `base`; a repository needing no capabilities or command proxies can
+omit `proxy-commands.json`. An explicit image resolver overrides this convention.
+Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported
+for external repositories. This repository uses the version 2 bundled Bake resolver;
+repository Docker CLI shims are no longer supported.
 These files are trusted startup policy, not agent configuration.
 
 The agent image key hashes source bytes directly, without Git clean filters or
@@ -110,8 +125,16 @@ pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
 codex-sandbox auth login        # create/update dedicated sandbox OAuth state
 codex-sandbox restart-all       # restart registered sessions; run inside tmux
+tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
+tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images without build cache
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
+
+`refresh` queries mutable `FROM` and named image-context references, then
+rebuilds identities affected
+by changed pins; it retains BuildKit caches. `clean` retains the current pins but
+passes `--no-cache`. Neither command changes images accepted by a live shared session
+or publishes registry images.
 
 Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor;
 otherwise `VISUAL`, `EDITOR`, then `vi` is used.
@@ -167,8 +190,8 @@ A missing readiness marker or unsuccessful exit fails the probe;
 On macOS, `/private/tmp` avoids the launcher's path-alias assertion.
 
 With `CODEX_SANDBOX_RUNTIME=lima-docker`, the probe also records startup boundaries in JSON beside each log, including on timeout.
-Container creation falls between `workload_argv end` and `monitor setup begin`;
-`popen end` marks the attach client's spawn, and `container entry` marks execution inside the container.
+Container creation follows `workload_argv end`; `popen end` marks the attach
+client's spawn, and `container entry` marks execution inside the container.
 The probe mounts diagnostic wrappers and supplies a Node preload through `NODE_OPTIONS` for this run only.
 Host markers carry their emission time;
 guest markers use host receipt time and include transport delay.
@@ -203,8 +226,9 @@ Do not remove unrelated sessions to manufacture a cold run.
   Agent Podman, when configured, is exposed through a separate SSH relay rather than the outer daemon.
 - On native Linux, dropped capabilities and `no-new-privileges` disable effective sudo elevation.
   A Podman Machine preserves container sudo without weakening host isolation.
-- Proxy and authentication failures fail closed;
-  they do not fall back to privileged local execution or mounting credentials in the agent.
+- Proxy and authentication failures fail closed and surface as request failures.
+  They do not terminate an existing agent or fall back to privileged local execution
+  or credentials mounted in the agent. New attachments reject an unhealthy session.
 
 ### Failure recovery
 

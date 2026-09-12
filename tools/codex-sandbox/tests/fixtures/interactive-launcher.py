@@ -62,7 +62,7 @@ def benchmark(state, arguments):
     original_workload = runtime.workload
     @contextmanager
     def workload(*args, before_start=None, **kwargs):
-        callback = measured('monitor setup', before_start) if before_start else None
+        callback = measured('before start', before_start) if before_start else None
         with original_workload(*args, before_start=callback, **kwargs) as process:
             yield process
     runtime.workload = workload

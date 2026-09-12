@@ -33,13 +33,10 @@ CODEX_SANDBOX_RUNTIME=lima codex-sandbox
 Interactive image builds show BuildKit's live terminal progress. Redirected output
 uses plain progress logs.
 
-Background runtime helpers do not read terminal input. If upgrading from the
-version where Lima keystrokes stalled, exit existing sandbox sessions and relaunch
-to replace their monitors; no VM restart is needed.
-
-Each Lima session uses one SSH channel for its guest-side proxy monitor, plus
-the agent attachment. The monitor reaps its local container waits on exit;
-loss of supervision terminates the agent. Relaunch existing sessions to use it.
+Background runtime helpers do not read terminal input. The launcher waits for the
+agent attachment directly. A shared-service failure makes later requests fail and
+causes new attachments to reject the unhealthy session; it does not terminate an
+already running agent.
 
 Each launch fully verifies the VM once and shares that result with its host-side
 image and proxy helpers. Later checks validate VM identity and service activation
