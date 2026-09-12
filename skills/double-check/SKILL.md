@@ -1,11 +1,11 @@
 ---
 name: double-check
-description: Audit just-completed implementation or refactor work before claiming it is done or closing its issue. Use when acceptance, specification match, tests, migrations, or loose ends must be checked; do not trigger for read-only exploration or early progress reports.
+description: Audit completed implementation or refactor work before claiming it is done or closing its issue. Use after the owned edits are complete when acceptance, specification match, tests, migrations, or loose ends must be checked. It may be consulted earlier only to define completion evidence; do not run the audit for read-only exploration or early progress reports.
 ---
 
 # Double-check your work
 
-Audit completion against evidence, not confidence.
+Audit completion against evidence, not confidence. Run the full procedure after the owned edits are complete; before then, use only the original request and governing specification to identify evidence the eventual audit must require.
 
 ## Read First
 

@@ -1,6 +1,6 @@
 ---
 name: implementation-plan
-description: Create or review a concrete, repository-specific implementation plan for a selected change. Use when asked to plan coding work, save a plan, break work into logical commits, identify affected files and tests, or make an existing plan implementation-ready. Do not use to choose among materially different architectures; use design deliberation first when the design itself remains uncertain.
+description: Create or review a concrete, repository-specific implementation plan for a selected change. Use for requests such as “create a plan,” “show me a plan; do not implement,” “what are the next steps?” after investigation, saving a plan, identifying affected files and tests, or breaking work into logical commits. Do not use to choose among materially different architectures, directly create the selected design's implementation artifact, or execute an existing plan.
 ---
 
 # Implementation Plan
@@ -40,6 +40,7 @@ Save plans in the requested format and location. Otherwise follow repository con
 ## Constraints
 
 - Do not edit implementation files unless implementation was also requested.
+- A request to create the selected design's artifact or execute agreed work is implementation, not a request for another plan.
 - Give effort ranges only with evidence and dominant assumptions.
 - Make cancellation, cleanup, output ownership, compatibility, and error precedence explicit.
 - Review existing facilities before proposing a dependency.

@@ -1,9 +1,11 @@
 ---
 name: technical-docs
-description: Create, edit, or review technical documentation using jyn's documentation conventions. Use whenever documentation is a material deliverable, including READMEs, tutorials, how-to guides, reference pages, explanations, specifications, and design documents, or when a code change requires documentation. For information architecture, consolidation, splits, renames, archives, or navigation, use reorganize-docs.
+description: Create, edit, or review technical documentation using jyn's documentation conventions. Use when asked to document something or when READMEs, tutorials, how-to guides, reference pages, explanations, specifications, design documents, or required documentation for a code change are material deliverables. Do not use for resumes, general editorial or blog review, or skill authoring when a dedicated skill owns the artifact. Use reorganize-docs for information architecture, consolidation, splits, renames, archives, or navigation.
 ---
 
 # Technical Documentation
+
+Use the narrower owning skill for specialized artifacts such as skills, and apply this skill only when technical-document structure or reader needs remain material.
 
 Organize documentation around the reader's need. Use [Diátaxis](https://diataxis.fr/) and keep its four forms distinct:
 

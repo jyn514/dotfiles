@@ -1,13 +1,13 @@
 ---
 name: boundary-declaration
-description: Declare ownership, side-effect, representation, lifecycle, and API boundaries before implementation. Use after selecting a design or when unclear boundaries could permit invalid states, duplicated authority, or leaking assumptions.
+description: Declare ownership, side-effect, representation, lifecycle, and API boundaries at the transition from a selected design to specification finalization, delegation, planning, or implementation. Use once when unclear boundaries could permit invalid states, duplicated authority, or leaking assumptions. Do not reactivate for routine continuation unless a later decision changes those boundaries.
 ---
 
 # boundary-declaration
 
 ## Purpose
 
-Before implementation, state the chosen design's important ownership, effect, and representation boundaries in a form that can constrain later work.
+At the first transition from a chosen design into specification finalization, delegation, planning, or implementation, state its important ownership, effect, and representation boundaries in a form that can constrain later work. Reuse that declaration during routine continuation; revise it only when a later decision changes a boundary.
 
 ## Inputs
 
