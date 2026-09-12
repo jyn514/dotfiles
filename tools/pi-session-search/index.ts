@@ -573,7 +573,8 @@ export default function (pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use search_sessions when the user references prior conversations or asks if a topic was discussed before.",
 			"Pass a focused `query` (substring or `/regex/flags`). Narrow with `cwd` if you know which project.",
-			"After a promising hit, call read_session with the returned `sessionFile` (and optionally `aroundTimestamp`) to pull more context.",
+			"When investigating past tool usage, search for the exact tool name or distinctive argument with `includeToolCalls: true`.",
+			"Treat search hits as candidates, not complete evidence. For promising hits, read surrounding context using `read_session` on the returned `sessionFile` (and optionally `aroundTimestamp`) and deduplicate repeated hits from the same session or coherent task.",
 		],
 		parameters: Type.Object({
 			query: Type.String({
@@ -597,7 +598,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			includeToolCalls: Type.Optional(
-				Type.Boolean({ description: "Also search assistant tool-call names/arguments. Default false." }),
+				Type.Boolean({ description: "Also search assistant tool-call names/arguments. Use with a focused query when investigating past tool usage. Default false." }),
 			),
 			maxResults: Type.Optional(
 				Type.Integer({
