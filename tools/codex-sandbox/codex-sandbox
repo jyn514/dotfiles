@@ -35,6 +35,7 @@ from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, 
 from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
 from source_view import source_mounts
+from keychain_bridge import HostKeychainBridge
 
 OUTER_RUNTIME = Podman()
 
@@ -93,6 +94,9 @@ class State:
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
     host_editor: HostEditorBridge | None = None
+    host_keychain: HostKeychainBridge | None = None
+    keychain_networks: list[str] = field(default_factory=list)
+    keychain_container: str | None = None
     monitor_process: subprocess.Popen[bytes] | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
@@ -576,6 +580,59 @@ def start_gateway(state: State) -> None:
         raise LauncherError("gateway has incomplete network addresses")
     state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
+
+
+def start_keychain(state: State) -> list[str]:
+    """Publish a separate, optional fixed R2 capability after relay readiness."""
+    if sys.platform != 'darwin' or not Path('/usr/bin/security').is_file():
+        return []
+    link = f'codex-keychain-link-{state.suffix}'
+    egress = f'codex-keychain-egress-{state.suffix}'
+    container = f'codex-keychain-{state.suffix}'
+    try:
+        for name, internal in ((link, True), (egress, False)):
+            state.keychain_networks.append(name)
+            create_relay_network(state, name, internal=internal)
+        bridge = state.host_keychain = HostKeychainBridge()
+        bridge.start()
+        state.keychain_container = container
+        run([
+            'docker', 'run', '--detach', '--name', container,
+            '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
+            '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
+            '--network', egress, '--network', link, *proxy_flags(),
+            *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
+              ['--add-host', 'host.docker.internal:host-gateway']),
+            '--entrypoint', '/usr/bin/socat', state.sidecar_image,
+            '-T', '260', 'TCP4-LISTEN:2224,fork,reuseaddr',
+            f'TCP4:{OUTER_RUNTIME.host_address}:{bridge.port}',
+        ], discard_stdout=True)
+        peers = set()
+        link_address = None
+        for network in (link, egress):
+            if isinstance(OUTER_RUNTIME, VMRuntime):
+                address = OUTER_RUNTIME.network_address(container, network)
+            else:
+                address = run(['docker', 'inspect', '--format',
+                    f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
+                    container], capture=True).stdout.strip()
+            if not address:
+                raise LauncherError('Keychain relay has incomplete network addresses')
+            peers.add(address)
+            if network == link:
+                link_address = address
+        # VM host forwarding can present loopback, as for the editor gateway.
+        bridge.allow_peers(peers | {'127.0.0.1'})
+        return ['--network', link, '--env', f'CODEX_SANDBOX_KEYCHAIN_ADDRESS={link_address}:2224',
+                *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
+                  ['--env', 'CODEX_SANDBOX_KEYCHAIN_TOKEN'])]
+    except (OSError, ValueError, LauncherError, subprocess.SubprocessError):
+        if state.host_keychain is not None:
+            state.host_keychain.stop()
+            state.host_keychain = None
+        # Partial resources stay registered with the normal owner-checked cleanup.
+        print('warning: Keychain relay unavailable', file=sys.stderr)
+        return []
 
 
 def _secure_codex_auth_directory(state: State) -> Path | None:
@@ -1138,6 +1195,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
     agent_environment = os.environ.copy()
     assert state.host_editor is not None
     agent_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
+    bridge_environment = {"CODEX_SANDBOX_EDITOR_TOKEN": state.host_editor.token}
+    if state.host_keychain is not None:
+        bridge_environment['CODEX_SANDBOX_KEYCHAIN_TOKEN'] = state.host_keychain.token
+        agent_environment.update(bridge_environment)
     if timing:
         print(
             f"Sandbox launch setup: {time.monotonic() - setup_started:.2f}s; "
@@ -1150,7 +1211,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         # Keep create and attach under the runtime's existing producer ownership.
         # The session key may persist with this container; the GitHub token may not.
         # Create first so lost supervision can remove an existing container.
-        with OUTER_RUNTIME.environment_file({"CODEX_SANDBOX_EDITOR_TOKEN": state.host_editor.token}) as environment:
+        with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
             with OUTER_RUNTIME.workload(OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
                     ["--interactive", "--tty", *command[5:image_index], *environment],
                     command[image_index + 1:], before_start=start_monitor) as process:
@@ -1251,6 +1312,7 @@ def execute(state: State) -> int:
         )
         phase("proxy lock", lambda: acquire_lock(state))
         state.sidecar_image = prepared.auth if prepared else sidecar_future.result()
+        keychain_future = executor.submit(phase, 'Keychain relay startup', lambda: start_keychain(state))
         network_future.result()
         if prepared is not None:
             state.prepared_images = temporary_file()
@@ -1263,7 +1325,7 @@ def execute(state: State) -> int:
         sidecar_arguments = proxy_future.result()
         if model_future is not None:
             state.image = model_future.result()
-        arguments = [*gateway_arguments, state.image,
+        arguments = [*gateway_arguments, *keychain_future.result(), state.image,
             *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
               if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]
         system = run(["uname", "-s"], capture=True).stdout.strip()
@@ -1337,8 +1399,13 @@ def cleanup(state: State) -> None:
         previous = now
     if state.host_editor is not None:
         state.host_editor.stop()
+    if state.host_keychain is not None:
+        state.host_keychain.stop()
     timing("host editor")
     containers = []
+    if state.keychain_container is not None:
+        containers.append((f'Keychain relay {state.keychain_container}',
+                           ['docker', 'rm', '--force', state.keychain_container]))
     if state.codex_container_created:
         containers.append((
             f"Codex container {state.codex_container}",
@@ -1354,6 +1421,8 @@ def cleanup(state: State) -> None:
     timing("containers")
 
     networks = []
+    for name in state.keychain_networks:
+        networks.append((f'Keychain network {name}', ['docker', 'network', 'rm', name]))
     if state.gateway_link_created:
         networks.append((
             f"gateway network {state.gateway_link_network}",

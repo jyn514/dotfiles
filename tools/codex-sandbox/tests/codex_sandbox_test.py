@@ -291,7 +291,7 @@ class BackgroundRelayTest(unittest.TestCase):
                                     codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
-                'acquire_lock', 'prepare_gateway', 'start_gateway', 'attach_proxies')}
+                'acquire_lock', 'prepare_gateway', 'start_gateway', 'start_keychain', 'attach_proxies')}
             prepared = SimpleNamespace(base='base@digest', auth='auth@digest', proxies={'bug': 'bug@digest'})
             def prepare(*args, **kwargs):
                 replacements['ensure_network'].assert_not_called()
@@ -465,7 +465,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 name: mock.Mock(return_value=[])
                 for name in ("validate_repository", "register_tmux_pane", "ensure_network",
                              "acquire_lock", "attach_proxies", "prepare_gateway",
-                             "stage_skills")
+                             "stage_skills", "start_keychain")
             }
             replacements.update(
                 ensure_image=mock.Mock(return_value="image"),

@@ -20,6 +20,31 @@ This also accommodates linked Git metadata without creating placeholder director
 When this staging is needed, new entries in staged parent directories appear on the next launch;
 the contents of bound subtrees remain live.
 
+## Flower R2 Keychain access
+
+On macOS, new launches expose a separate, session-authenticated Keychain relay
+through `CODEX_SANDBOX_KEYCHAIN_ADDRESS` and `CODEX_SANDBOX_KEYCHAIN_TOKEN`.
+It accepts only `flower-r2/read`, reading accounts `access-key` then `secret-key`
+under service `dev.jyn.flower.r2` with `/usr/bin/security`.
+Configure both items to confirm access; choosing Always Allow can defeat repeated prompts.
+An approved read discloses reusable credentials to the untrusted sandbox.
+The relay keeps no credential cache and returns the pair only if both reads succeed.
+
+Flower's local CI client consumes the framed protocol in
+[the relay design](r2-keychain-relay-design.typ); there is no credential-printing command.
+Explicit R2 environment credentials bypass the relay, and unavailable relay
+credentials skip optional upload without failing CI.
+The Keychain listener, token, container, and networks belong to the launch and are
+cleaned up independently of the editor/Podman gateway.
+
+Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and
+dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py`
+for launcher tests.
+The opt-in `python3 tools/codex-sandbox/tests/keychain_integration_relay.py` exercises
+dummy credentials through disposable containers on the existing Docker VM.
+The interactive consent probe is `python3 tools/codex-sandbox/tests/r2_keychain_consent_probe.py`;
+its disposable Keychain password is `r2-probe-password`.
+
 ## Prerequisites and setup
 
 Podman remains the default outer runtime.
