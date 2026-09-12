@@ -44,7 +44,7 @@ RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
-ARG PI_REVISION=9bf3cc9efb983887c6da07f6f9afecbbfcf85d83
+ARG PI_REVISION=3494fab85edf935b33d9dffdf05ef8672ef5aa2a
 RUN printf '%s\n' "${PI_REVISION}" > /REVISION
 RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
 RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
@@ -60,10 +60,7 @@ RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
     && npm run hydrate:pinned-model-data --prefix /opt/agent-pi/src \
     && chmod -R a+rX packages/ai/src/providers/data \
     && npm run build:offline --prefix /opt/agent-pi/src \
-    && bun build --compile --no-compile-autoload-bunfig \
-        ./packages/coding-agent/dist/bun/cli.js \
-        ./packages/coding-agent/src/utils/image-resize-worker.ts \
-        --outfile packages/coding-agent/dist/pi \
+    &&  node scripts/build-coding-agent-binary.mjs --outfile packages/coding-agent/dist/pi \
     && npm --prefix packages/coding-agent run copy-binary-assets \
     && mkdir -p /opt/agent-pi/standalone \
     && cp -a packages/coding-agent/dist/. /opt/agent-pi/standalone/
