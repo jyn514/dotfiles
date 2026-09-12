@@ -1,4 +1,8 @@
+FROM oven/bun:1.3.14 AS bun
+
 FROM node:24-alpine3.22
+
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 RUN apk add --no-cache \
       cargo python3 py3-pip \
