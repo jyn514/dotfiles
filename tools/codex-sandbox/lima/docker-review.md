@@ -2,7 +2,9 @@
 
 Reviewed revision `b4930191` on 2026-09-10. The backend is viable as an opt-in
 prototype; simplify process ownership before further startup optimization.
-This review does not establish full Podman parity.
+This historical review does not establish full Podman parity. The
+[current readiness section](docker.md#default-readiness) tracks later evidence
+and remaining default-switch gates.
 
 The [process ownership design](../process-ownership.typ) records the subsequent
 cancellation audit, reproduced failures, and proposed cleanup boundaries.
@@ -52,8 +54,9 @@ state owns listener and guest-alias cleanup. See the updated
 
 The first two differences were reproduced without a VM. The forwarding difference
 was established by reading both implementations; no comparative timing was taken
-for this review. Long-running Pi, twenty-session load, and optional Agent
-Podman/Zulip parity remain validation gates in [the backend guide](docker.md).
+for this review. Later bounded twenty-session and Zulip fixture results are
+recorded in [the backend guide](docker.md#default-readiness); sustained workload
+and configured-integration parity remain open.
 Policy updates also require a fresh VM and state directory.
 
 ## Ownership and existing tools

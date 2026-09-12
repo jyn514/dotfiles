@@ -68,6 +68,8 @@ def verify(record):
     if (info['ServerVersion'] != '29.8.0' or 'name=rootless' not in info['SecurityOptions'] or
             info['LiveRestoreEnabled'] or info['ID'] != record['engine_id']):
         raise ValueError('Docker engine identity or security configuration changed')
+    if 'docker-reclaim.py' in record['files']:
+        verify_reclamation(info)
     network = json.loads(run('docker', 'network', 'inspect', 'codex-public-only'))[0]
     if (network['Id'] != record['network_id'] or network['Driver'] != 'bridge' or
             network['Internal'] or network['EnableIPv6'] or
@@ -94,6 +96,33 @@ def verify(record):
                 ('rw' if share['writable'] else 'ro') not in mounted[0]['options'].split(',')):
             raise ValueError('Docker VM share differs from recorded virtiofs mount')
     firewall()
+
+
+def verify_reclamation(info):
+    if info.get('CgroupDriver') != 'systemd' or info.get('CgroupVersion') != '2':
+        raise ValueError('sandbox reclamation requires the systemd cgroup v2 driver')
+    units = Path.home() / '.config/systemd/user'
+    for name in ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer'):
+        if (units / name).read_bytes() != (BASE / name).read_bytes():
+            raise ValueError(f'installed reclaim unit changed: {name}')
+        properties = dict(line.split('=', 1) for line in run(
+            'systemctl', '--user', 'show', name, '--property=FragmentPath,DropInPaths').splitlines())
+        if properties != {'FragmentPath': str(units / name), 'DropInPaths': ''}:
+            raise ValueError(f'reclaim unit overridden: {name}')
+    dropin = units / 'docker.service.d/sandbox.conf'
+    if dropin.read_bytes() != (BASE / 'docker-service.conf').read_bytes():
+        raise ValueError('Docker service cgroup policy changed')
+    docker = dict(line.split('=', 1) for line in run(
+        'systemctl', '--user', 'show', 'docker.service',
+        '--property=DropInPaths,Requires,After').splitlines())
+    if (docker['DropInPaths'] != str(dropin) or
+            any('sandbox.slice' not in docker[key].split() for key in ('Requires', 'After'))):
+        raise ValueError('Docker service slice dependency overridden')
+    group = run('systemctl', '--user', 'show', 'sandbox.slice',
+                '--property=ControlGroup', '--value').strip()
+    expected = f'/user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/sandbox.slice'
+    if group != expected or not (Path('/sys/fs/cgroup') / group[1:] / 'memory.reclaim').exists():
+        raise ValueError('sandbox reclaim parent is unavailable')
 
 
 if __name__ == '__main__':

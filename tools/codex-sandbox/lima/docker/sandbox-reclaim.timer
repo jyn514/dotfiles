@@ -1,0 +1,21 @@
+[Unit]
+Description=Periodically reclaim sandbox container caches
+# Default Before=timers.target cycles through basic.target back to Docker.
+# Docker supplies startup ordering; retain the normal shutdown boundary.
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+BindsTo=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Timer]
+# Retain a full interval after a slow job.
+OnActiveSec=30s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+WakeSystem=no
+Persistent=no
+
+[Install]
+WantedBy=docker.service

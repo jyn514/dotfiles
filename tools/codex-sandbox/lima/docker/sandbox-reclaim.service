@@ -1,0 +1,15 @@
+[Unit]
+Description=Reclaim a sandbox container cache batch
+Requisite=docker.service
+After=docker.service sandbox.slice
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Restart=no
+KillMode=control-group
+TimeoutStartSec=10s
+TimeoutStopSec=5s
+# Calibrated with the replay recorded in experiments/reclaim-timer.md.
+ExecStart=/usr/bin/python3 /usr/local/share/codex-sandbox/docker-reclaim.py --bytes 33554432

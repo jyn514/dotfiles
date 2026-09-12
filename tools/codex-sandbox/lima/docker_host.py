@@ -83,7 +83,11 @@ class DockerHost(Host):
                       'docker-user.py': SOURCE / 'docker/configure-user.py',
                       'nftables.py': SOURCE / 'docker/nftables.py',
                       'network.nft': SOURCE / 'docker/network.nft',
-                      'docker-daemon.json': SOURCE / 'docker/daemon.json'}
+                      'docker-daemon.json': SOURCE / 'docker/daemon.json',
+                      'docker-service.conf': SOURCE / 'docker/docker-service.conf',
+                      'docker-reclaim.py': SOURCE / 'docker/reclaim.py',
+                      **{name: SOURCE / 'docker' / name for name in
+                         ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer')}}
             for name, source in inputs.items():
                 shutil.copyfile(source, snapshot / name)
             (snapshot / 'network-policy.json').write_bytes(policy_bytes())
@@ -159,6 +163,11 @@ class DockerHost(Host):
             raise ValueError('Docker public network belongs to another creator')
         record['network_id'] = network['Id']
         self.doctor(record)
+        if 'docker-reclaim.py' in record['files']:
+            # Only first provisioning reaches here. Ready-state setup returns
+            # above, preserving an operator's disabled timer during repair.
+            self.guest(record, 'systemctl', '--user', 'enable', '--now',
+                       'sandbox-reclaim.timer', timeout=30)
         record['phase'] = 'ready'
         atomic_json(self.record_path, record)
         return record
@@ -204,6 +213,43 @@ class DockerHost(Host):
             raise ValueError('installed Docker verifier changed')
         self.guest(record, 'python3', GUEST + '/docker-policy.py', 'check', input=json.dumps(record), text=True)
 
+    def reclaim_status(self, record):
+        if 'docker-reclaim.py' not in record['files']:
+            return {'state': 'not-installed'}
+        output = self.guest(record, 'systemctl', '--user', 'show',
+                            'sandbox-reclaim.timer', 'sandbox-reclaim.service',
+                            '--property=Id,LoadState,ActiveState,SubState,UnitFileState,Result,'
+                            'ExecMainStatus,NextElapseUSecMonotonic,LastTriggerUSec',
+                            capture_output=True, text=True).stdout
+        units = {}
+        for block in output.strip().split('\n\n'):
+            values = dict(line.split('=', 1) for line in block.splitlines())
+            units[values.pop('Id')] = values
+        return units
+
+    def reclaim(self, operation):
+        record = self.record()
+        self.machine(record)
+        if 'docker-reclaim.py' not in record['files']:
+            raise ValueError('reclamation is not installed; use a new VM/state generation')
+        if operation not in ('once', 'enable', 'disable'):
+            raise ValueError('expected once, enable, or disable')
+        if operation == 'disable':
+            # Recovery remains available when Docker is stopped or unready.
+            self.guest(record, 'systemctl', '--user', 'disable', '--now', 'sandbox-reclaim.timer')
+            self.guest(record, 'systemctl', '--user', 'stop', 'sandbox-reclaim.service', timeout=30)
+            installed = self.guest(record, 'sha256sum', GUEST + '/docker-reclaim.py',
+                                   capture_output=True, text=True).stdout.split()[0]
+            if installed != record['files']['docker-reclaim.py']:
+                raise ValueError('installed reclaim helper changed; cannot confirm idle')
+            self.guest(record, 'python3', GUEST + '/docker-reclaim.py', '--check-idle', timeout=10)
+        else:
+            self.doctor(record)
+            arguments = (['enable', '--now', 'sandbox-reclaim.timer'] if operation == 'enable'
+                         else ['start', 'sandbox-reclaim.service'])
+            self.guest(record, 'systemctl', '--user', *arguments, timeout=30)
+        return {**record, 'reclamation': self.reclaim_status(record)}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -218,6 +264,8 @@ def main():
         sub.add_parser(name)
     pin = sub.add_parser('pin-client')
     pin.add_argument('--source', type=Path, default=Path('/opt/homebrew/bin/docker'))
+    reclaim = sub.add_parser('reclaim', help='run, enable, or disable guest cache reclamation')
+    reclaim.add_argument('action', choices=('once', 'enable', 'disable'), nargs='?', default='once')
     args = parser.parse_args()
     host = DockerHost(args.state)
     with host.locked():
@@ -226,9 +274,13 @@ def main():
         elif args.operation == 'status':
             record = host.record()
             host.verify_runtime(record)
+            record = {**record, 'reclamation': host.reclaim_status(record)}
         elif args.operation == 'doctor':
             record = host.record()
             host.doctor(record)
+            record = {**record, 'reclamation': host.reclaim_status(record)}
+        elif args.operation == 'reclaim':
+            record = host.reclaim(args.action)
         elif args.operation == 'pin-buildx':
             host.record()
             print(pin_buildx(host.state))

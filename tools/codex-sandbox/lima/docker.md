@@ -77,6 +77,45 @@ python3 tools/codex-sandbox/lima/docker_host.py stop
 python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
+## Container cache reclamation
+
+New VMs put containers under a persistent `sandbox.slice`. A guest systemd
+timer can reclaim one cache batch every 30 seconds after the previous job
+finishes, including after the last container exits. The batch is 32 MiB, with
+1-second timer accuracy, a 10-second execution timeout, and a 5-second stop timeout.
+New VM generations enable the timer after their provisioning audit succeeds;
+these settings are experimental, not a proven host-descriptor budget.
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py reclaim once
+python3 tools/codex-sandbox/lima/docker_host.py reclaim enable
+python3 tools/codex-sandbox/lima/docker_host.py reclaim disable
+python3 tools/codex-sandbox/lima/docker_host.py status
+python3 tools/codex-sandbox/lima/docker_host.py doctor
+```
+
+`enable` restores periodic reclaim; `disable` stops the timer and job and
+checks that no worker still holds the reclaim lock. Disablement survives Docker
+restart, VM reboot, and setup repair. An unsettled worker is reported as an
+error; do not delete its lock file. Inspection reports timer enablement, next
+activation, and the last job result. Job success means a reclaim request ran,
+not that host descriptor pressure was resolved; partial reclaim is normal.
+For guest diagnostics use `sudo journalctl _SYSTEMD_USER_UNIT=sandbox-reclaim.service`
+inside the selected VM (the guest user may lack journal read permission).
+
+Containers keep running, and may reload evicted data. The timer neither measures
+host pressure nor prevents ENFILE when active demand outruns reclamation.
+Daemon/BuildKit caches are outside the container slice. The
+[replay results](../experiments/reclaim-timer.md) record a 6% median slowdown;
+the [specification](../reclaim-before-exhaustion.typ) defines the ownership and lifecycle rules.
+
+Existing VMs keep their immutable provisioning snapshots and report reclamation
+as `not-installed`. Use a new `--state` directory and `--instance` to adopt this
+layout, then recreate containers there. A scheduled VM stop clears earlier cache
+ownership; setup does not move live containers or rewrite old policy hashes.
+
+## Runtime policy checks
+
 Launches check the recorded engine identity and service readiness; they do not
 audit, install, or repair policy. The Docker service installs its firewall in
 `ExecStartPost`; failed installation prevents the service becoming ready.
@@ -214,9 +253,37 @@ ambient Docker contexts and HTTP proxy settings do not select another engine.
 Monitor waits use host Docker clients. Proxy requests use the session-owned
 socket transport described above; they do not use Docker exec cancellation.
 
-This is not yet a default-backend recommendation. Long-running interactive Pi,
-20 simultaneous sessions, and optional Agent Podman/Zulip
-integration still need Docker-specific validation.
+## Default readiness
+
+Podman remains the default. Recorded September 10 validation completed twenty
+simultaneous Pi sessions, 400 JJ requests, subsequent input/cancellation, and
+container/network/volume cleanup. This was a small shared repository; it did not
+measure sustained output or input during active large-tree/subagent work.
+Policy restart/failure and raw-packet isolation probes also passed. These are
+historical results, not a rerun against every subsequent launcher change.
+See the [validation record](../../../notes/lima-docker-remaining-gaps.md#2-validate-sustained-concurrency-and-failure-cleanup).
+
+Host-wide `ENFILE` recurred during real work, with many descriptors retained by
+the VirtioFS VM processes and few open guest files. No durable pressure remedy
+is installed. See the [incident record](../../../notes/virtiofs-file-table-pressure.md)
+and [September 12 investigation](../experiments/enfile.md): cgroup reclamation
+released retained descriptors in an owned fixture, but sustained recovery is
+not yet validated. Use the [bounded sampler](../experiments/file-pressure.md)
+to measure current headroom.
+The [cause investigation](../experiments/enfile-causes.md) also found substantial
+retention in Podman and nerdctl VMs with no running containers; rollback engines
+need an explicit cold-standby or shared-budget policy.
+New provisioning enables a [reclamation timer](#container-cache-reclamation).
+Its [replay](../experiments/reclaim-timer.md) passed the selected cost and sampled
+headroom criteria; it does not establish a host-wide budget for concurrent VMs.
+Before switching the default, establish a host file-table budget under repeated
+large-tree work and concurrent sessions, and rerun the disposable Docker gates
+against the selected revision. `dev/test --lima` exercises nerdctl, not Docker.
+
+Zulip's Docker fixture passed dummy-credential TLS and upstream-401 cases;
+this does not establish configured end-to-end parity. The gateway has its own
+editor/SSH fixture below. Long-running interactive work, configured Agent
+Podman/Zulip smoke tests, and rollback remain cutover checks.
 
 The [backend review](docker-review.md) records compatibility gaps and
 maintenance findings at revision `b4930191`.

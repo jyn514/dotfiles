@@ -1,7 +1,9 @@
 # Lima fixture stack review
 
 The network fixture pins nerdctl-full 2.3.5 and slirp4netns 1.3.5 for arm64.
-The production VM and launcher integration remain unimplemented.
+This records the network fixture review on 2026-09-08. Subsequent
+[host provisioning](host-setup.md) and [launcher integration](launch.md) are
+implemented; their validation is separate from the results below.
 
 ## Release provenance and authority
 
@@ -69,5 +71,6 @@ status 143 and removing their owned VMs.
 All four installer tests and 11 existing policy/fixture tests passed. Disabling
 the verifier made both checksum regression tests fail. Native Lima template
 validation and `diff-check` passed; only the pre-existing `ferrocene` instance
-remained after cleanup. Production VM shares, runtime integration, credential
-migration, and cutover still require their later plan gates.
+remained after cleanup. This run did not test VM shares, runtime integration,
+credential migration, or cutover. See the linked host and launcher guides for
+the later implementations and their fixtures.

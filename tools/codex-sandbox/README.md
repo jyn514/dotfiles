@@ -27,6 +27,8 @@ Podman remains the default outer runtime.
 The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
 The separate [rootless Docker prototype](lima/docker.md) uses Docker's forwarded API socket and has its own opt-in setup and validation commands.
+Its [default-readiness record](lima/docker.md#default-readiness) distinguishes
+passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
 
 - Run from a Git checkout.
   The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.

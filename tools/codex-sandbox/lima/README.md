@@ -1,8 +1,12 @@
 # Lima network feasibility
 
-The outer runtime remains Podman. This opt-in prototype tests container-level
-network restrictions for a possible Lima migration; it is not a production
-provisioning tool.
+Podman remains the default. This page describes the nerdctl network fixture;
+the [host setup](host-setup.md), [credential migration](credentials.md), and
+[opt-in launcher](launch.md) are implemented separately.
+For the Docker backend and its remaining default-switch gates, see
+[Lima-Docker](docker.md#default-readiness).
+New Docker VMs also enable a
+[container-cache reclamation timer](docker.md#container-cache-reclamation).
 
 The 2.3.5 bundle omits slirp4netns. Lima's dependency hook installs a checksum-pinned
 slirp4netns 1.3.5 before containerd setup; see the
@@ -116,7 +120,7 @@ invisible to the plugin. `/usr/local/share` remains visible. Guest-root ownershi
 is compared with `/usr` ownership because guest root is unmapped in RootlessKit's
 user namespace.
 
-## Current probe status
+## Recorded network validation — 2026-09-08
 
 The 2026-09-08 fixture reproduced working same-network HTTP/name lookup and
 cross-bridge isolation. Prohibited route lookups failed, container root could not
@@ -139,5 +143,6 @@ and removing their owned VMs. The four installer tests passed, including checksu
 rejection, interrupted download cleanup, and reuse without another download.
 
 Route inspection is not proof of endpoint behavior for every prohibited range.
-No launcher selector, credential migration, production VM setup, or default
-switch is implemented.
+These network results do not establish daily-use readiness. The host and launcher
+have their own integration fixtures; `dev/test --lima` runs the nerdctl host gate,
+not the Docker gates. Neither Lima backend is the default.
