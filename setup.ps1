@@ -54,23 +54,58 @@ function Install-Link($Existing, $New) {
     }
 }
 
-function Install-ConfigLink($Existing, $New) {
-    Install-Link (Join-Path $PSScriptRoot "config" $Existing) $New
+function Get-ConfigLinkPlan($InstallConfigPath, $WindowsDestinations) {
+    $InstallConfig = Get-Content $InstallConfigPath -Raw | ConvertFrom-Json
+    $Links = [ordered]@{}
+    foreach ($Section in $InstallConfig) {
+        if ($null -eq $Section.link) {
+            continue
+        }
+        foreach ($Mapping in $Section.link.PSObject.Properties) {
+            if ($Links.Contains($Mapping.Name)) {
+                throw "duplicate config link destination: $($Mapping.Name)"
+            }
+            $Links[$Mapping.Name] = $Mapping.Value
+        }
+    }
+
+    foreach ($UnixDestination in $WindowsDestinations.Keys) {
+        $Source = $Links[$UnixDestination]
+        if ($null -eq $Source) {
+            throw "no config source is mapped for $UnixDestination"
+        }
+
+        $WindowsDestination = $WindowsDestinations[$UnixDestination]
+        if ($WindowsDestination.Children) {
+            foreach ($Child in Get-ChildItem (Join-Path $PSScriptRoot $Source)) {
+                [PSCustomObject]@{
+                    Existing = Join-Path $Source $Child.Name
+                    New = Join-Path $WindowsDestination.Path $Child.Name
+                }
+            }
+        } else {
+            [PSCustomObject]@{
+                Existing = $Source
+                New = $WindowsDestination.Path
+            }
+        }
+    }
 }
 
 function Install-Dotfiles() {
     $GitConfigDirectory = Join-Path $HOME ".config\git"
     New-Item -ItemType Directory -Path $GitConfigDirectory -Force | Out-Null
-    foreach ($Config in "gitignore", "githooks") {
-        Install-ConfigLink $Config (Join-Path $GitConfigDirectory ($Config -replace "^git", ""))
-    }
-    Install-ConfigLink "gitconfig" (Join-Path $HOME ".gitconfig")
-    Install-ConfigLink "jj.toml" (Join-Path $env:APPDATA "jj\config.toml")
-    Install-ConfigLink "keybindings.ahk" (Join-Path $HOME "Documents\AutoHotkey\keybindings.ahk")
 
-    foreach ($File in Get-ChildItem "config/helix") {
-        $Relative = Join-Path "helix" $File.Name
-        Install-ConfigLink $Relative (Join-Path $env:APPDATA $Relative)
+    $WindowsDestinations = [ordered]@{
+        '$HOME/.config/git/ignore' = @{ Path = Join-Path $GitConfigDirectory "ignore" }
+        '$HOME/.config/git/hooks' = @{ Path = Join-Path $GitConfigDirectory "hooks" }
+        '$HOME/.config/git/config' = @{ Path = Join-Path $HOME ".gitconfig" }
+        '$JJ_CONFIG_PATH' = @{ Path = Join-Path $env:APPDATA "jj\config.toml" }
+        '$HOME/.keybindings.ahk' = @{ Path = Join-Path $HOME "Documents\AutoHotkey\keybindings.ahk" }
+        '$HOME/.config/helix' = @{ Path = Join-Path $env:APPDATA "helix"; Children = $true }
+    }
+    foreach ($Link in Get-ConfigLinkPlan (Join-Path $PSScriptRoot "install.conf.json") $WindowsDestinations) {
+        Install-Link (Join-Path $PSScriptRoot $Link.Existing) $Link.New
     }
 
     $BinDirectory = Join-Path $HOME ".local\bin"
