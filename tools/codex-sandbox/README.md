@@ -23,46 +23,38 @@ the contents of bound subtrees remain live.
 ## Flower R2 Keychain access
 
 The [launcher interface](launcher-interface.typ) makes optional services explicit.
-Version 2 configuration, capability gating, bounded project-command transport,
-captured image inputs, explicit refresh and clean rebuild, and accepted-policy/image
-joins are implemented.
+Version 2 configuration, capability gating, bounded project-command transport, captured image inputs, explicit refresh and clean rebuild, and accepted-policy/image joins are implemented.
 
-On macOS, launches selecting `flower-r2` expose a separate, session-authenticated Keychain relay
-through `CODEX_SANDBOX_KEYCHAIN_ADDRESS` and `CODEX_SANDBOX_KEYCHAIN_TOKEN`.
-It accepts only `flower-r2/read`, reading accounts `access-key` then `secret-key`
-under service `dev.jyn.flower.r2` with `/usr/bin/security`.
-Configure both items to confirm access; choosing Always Allow can defeat repeated prompts.
+On macOS, launches selecting `flower-r2` expose a separate, session-authenticated Keychain relay through `CODEX_SANDBOX_KEYCHAIN_ADDRESS` and `CODEX_SANDBOX_KEYCHAIN_TOKEN`.
+It accepts only `flower-r2/read`, reading accounts `access-key` then `secret-key` under service `dev.jyn.flower.r2` with `/usr/bin/security`.
+Configure both items to confirm access;
+choosing Always Allow can defeat repeated prompts.
 An approved read discloses reusable credentials to the untrusted sandbox.
 The relay keeps no credential cache and returns the pair only if both reads succeed.
 
-Flower's local CI client consumes the framed protocol in
-[the relay design](r2-keychain-relay-design.typ); there is no credential-printing command.
-Explicit R2 environment credentials bypass the relay, and unavailable relay
-credentials skip optional upload without failing CI.
-The Keychain listener, token, container, and networks belong to the launch and are
-cleaned up independently of the editor/Podman gateway.
-The two relay networks are created concurrently; startup waits for both workers
-before publishing the capability or handling a creation failure.
+Flower's local CI client consumes the framed protocol in [the relay design](r2-keychain-relay-design.typ);
+there is no credential-printing command.
+Explicit R2 environment credentials bypass the relay, and unavailable relay credentials skip optional upload without failing CI.
+The Keychain listener, token, container, and networks belong to the launch and are cleaned up independently of the editor/Podman gateway.
+The two relay networks are created concurrently;
+startup waits for both workers before publishing the capability or handling a creation failure.
 
-Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and
-dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py`
-for launcher tests.
-The opt-in `python3 tools/codex-sandbox/tests/keychain_integration_relay.py` exercises
-dummy credentials through disposable containers on the existing Docker VM.
+Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py` for launcher tests.
+The opt-in `python3 tools/codex-sandbox/tests/keychain_integration_relay.py` exercises dummy credentials through disposable containers on the existing Docker VM.
 The interactive consent probe is `python3 tools/codex-sandbox/tests/r2_keychain_consent_probe.py`;
 its disposable Keychain password is `r2-probe-password`.
 
 ## Prerequisites and setup
 
-Lima-Docker is the default outer runtime (`lima-docker`). Follow the
-[Docker setup guide](lima/docker.md) before launching; missing setup is an error,
-not a fallback to another engine. Set `CODEX_SANDBOX_RUNTIME=podman` for Podman.
+Lima-Docker is the default outer runtime (`lima-docker`).
+Follow the [Docker setup guide](lima/docker.md) before launching;
+missing setup is an error, not a fallback to another engine.
+Set `CODEX_SANDBOX_RUNTIME=podman` for Podman.
 [Opt-in Lima launches](lima/launch.md) use a separately provisioned VM, Keychain boot credentials, and runtime-aware image builders.
 The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
 The [rootless Docker backend](lima/docker.md) uses Docker's forwarded API socket and has its own setup and validation commands.
-Its [default-readiness record](lima/docker.md#default-readiness) distinguishes
-passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
+Its [default-readiness record](lima/docker.md#default-readiness) distinguishes passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
 
 - Run from a Git checkout.
   The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
@@ -71,33 +63,30 @@ passed bounded tests from unresolved host file-table pressure and sustained-work
 - Put this repository's `bin/` on `PATH`;
   `pi` delegates to `codex-sandbox`.
 - Provide `~/.codex/config.toml`.
-  The [Lima credential helper](lima/credentials.md) imports the Podman secret
-  `codex-github-token` into Keychain for injection as `GH_TOKEN` and retains the
-  Podman secret for rollback; exporting a host `GH_TOKEN` does not provision it.
+  The [Lima credential helper](lima/credentials.md) imports the Podman secret `codex-github-token` into Keychain for injection as `GH_TOKEN` and retains the Podman secret for rollback;
+  exporting a host `GH_TOKEN` does not provision it.
   guest caching lasts one VM boot.
-- Run inside tmux to use tmux session restart support. Repositories select host editing separately.
+- Run inside tmux to use tmux session restart support.
+  Repositories select host editing separately.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`.
   The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select
-`host-editor`, `nested-containers`, and `flower-r2` independently. Missing keys are disabled.
-Version 2 images declare one Bake file or project-command resolver and bind command
-and base image names. Resolver commands receive the versioned JSON contract in
-[the launcher interface](launcher-interface.typ) and run against the admitted engine.
-The Bake resolver captures complete local contexts, assigns private content keys,
-and pins mutable upstream images by provider and platform.
-When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver
-with base target `base`; a repository needing no capabilities or command proxies can
-omit `proxy-commands.json`. An explicit image resolver overrides this convention.
-Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported
-for external repositories. This repository uses the version 2 bundled Bake resolver;
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `nested-containers`, and `flower-r2` independently.
+Missing keys are disabled.
+Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
+Resolver commands receive the versioned JSON contract in [the launcher interface](launcher-interface.typ) and run against the admitted engine.
+The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
+When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
+a repository needing no capabilities or command proxies can omit `proxy-commands.json`.
+An explicit image resolver overrides this convention.
+Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported for external repositories.
+This repository uses the version 2 bundled Bake resolver;
 repository Docker CLI shims are no longer supported.
 These files are trusted startup policy, not agent configuration.
 
-The agent image key hashes source bytes directly, without Git clean filters or
-line-ending normalization, so it tracks the bytes Docker builds.
+The agent image key hashes source bytes directly, without Git clean filters or line-ending normalization, so it tracks the bytes Docker builds.
 
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead.
 Other images use the standalone Bun executable.
@@ -130,11 +119,23 @@ tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images wi
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
 
-`refresh` queries mutable `FROM` and named image-context references, then
-rebuilds identities affected
-by changed pins; it retains BuildKit caches. `clean` retains the current pins but
-passes `--no-cache`. Neither command changes images accepted by a live shared session
-or publishes registry images.
+`refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
+it retains BuildKit caches.
+`clean` retains the current pins but passes `--no-cache`.
+Neither command changes images accepted by a live shared session or publishes registry images.
+
+Project resolvers that derive Bake input at startup can delegate capture and building to the installed engine primitive:
+
+```sh
+sandbox-image bake --platform linux/arm64 --mode resolve base bug < fresh-bake.hcl
+```
+
+Run it from the project root with the launcher's admitted runtime environment.
+Stdin accepts Bake HCL or JSON;
+`--platform` must match the admitted Lima-Docker engine, and `--mode` is `resolve`, `refresh`, or `clean`.
+Stdout contains the version 1 resolver result (`version` and `images`), with immutable references for the requested targets;
+diagnostics go to stderr.
+The command does not reload repository policy, so a version 2 command resolver can call it without recursion or writing a generated declaration into the checkout.
 
 Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor;
 otherwise `VISUAL`, `EDITOR`, then `vi` is used.
@@ -151,17 +152,17 @@ Authentication and repository-command proxies still require readiness checks.
 
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.
-The launcher holds the session lock directly until cleanup. The first launcher
-also holds coordination until publication succeeds; shared joiners validate
-concurrently. Failed publication retains coordination through cleanup, and a
-launch waiting for another publisher can be cancelled.
+The launcher holds the session lock directly until cleanup.
+The first launcher also holds coordination until publication succeeds;
+shared joiners validate concurrently.
+Failed publication retains coordination through cleanup, and a launch waiting for another publisher can be cancelled.
 
 Gateway startup failures are reported to stderr and leave Pi running.
 On exit, the launcher joins gateway startup before removing its container and networks.
-An upstream refusal affects that connection; a listener process failure stops the whole gateway.
+An upstream refusal affects that connection;
+a listener process failure stops the whole gateway.
 Editor-only gateways retain the editor's CPU, memory, and process limits.
-Podman-enabled gateways have no such limits, preserving build throughput but sharing
-Podman's resource and failure domain with the editor.
+Podman-enabled gateways have no such limits, preserving build throughput but sharing Podman's resource and failure domain with the editor.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals.
 It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports.
@@ -190,8 +191,8 @@ A missing readiness marker or unsuccessful exit fails the probe;
 On macOS, `/private/tmp` avoids the launcher's path-alias assertion.
 
 With `CODEX_SANDBOX_RUNTIME=lima-docker`, the probe also records startup boundaries in JSON beside each log, including on timeout.
-Container creation follows `workload_argv end`; `popen end` marks the attach
-client's spawn, and `container entry` marks execution inside the container.
+Container creation follows `workload_argv end`;
+`popen end` marks the attach client's spawn, and `container entry` marks execution inside the container.
 The probe mounts diagnostic wrappers and supplies a Node preload through `NODE_OPTIONS` for this run only.
 Host markers carry their emission time;
 guest markers use host receipt time and include transport delay.
@@ -227,8 +228,8 @@ Do not remove unrelated sessions to manufacture a cold run.
 - On native Linux, dropped capabilities and `no-new-privileges` disable effective sudo elevation.
   A Podman Machine preserves container sudo without weakening host isolation.
 - Proxy and authentication failures fail closed and surface as request failures.
-  They do not terminate an existing agent or fall back to privileged local execution
-  or credentials mounted in the agent. New attachments reject an unhealthy session.
+  They do not terminate an existing agent or fall back to privileged local execution or credentials mounted in the agent.
+  New attachments reject an unhealthy session.
 
 ### Failure recovery
 

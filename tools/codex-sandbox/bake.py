@@ -252,7 +252,7 @@ def _resolve(runtime, repo, requested, *, declaration=None, file=None, captures=
         result.check_returncode()
         source = result.stdout
     elif declaration is not None:
-        source = json.dumps(declaration)
+        source = declaration if isinstance(declaration, str) else json.dumps(declaration)
     else:
         definition = (repo / file).resolve(strict=True)
         if not definition.is_file() or not definition.is_relative_to(repo):

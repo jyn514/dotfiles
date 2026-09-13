@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 
@@ -24,7 +25,7 @@ def policy_module():
     return module
 
 
-def main():
+def execute():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=("podman", "lima", "lima-docker"),
                         help="override CODEX_SANDBOX_RUNTIME (default: lima-docker)")
@@ -39,12 +40,26 @@ def main():
     build.add_argument("--target")
     build.add_argument("--if-missing", action="store_true")
     build.add_argument("context", type=Path)
+    bake = sub.add_parser('bake', help='resolve fresh Bake HCL or JSON from stdin')
+    bake.add_argument('--platform', required=True)
+    bake.add_argument('--mode', choices=('resolve', 'refresh', 'clean'), default='resolve')
+    bake.add_argument('images', nargs='+')
     for operation in ('refresh', 'clean'):
         lifecycle = sub.add_parser(operation)
         lifecycle.add_argument('--repo', type=Path, default=Path.cwd())
         lifecycle.add_argument('images', nargs='*')
     args = parser.parse_args()
     runtime = image_runtime(args.provider, args.state)
+    if args.operation == 'bake':
+        if runtime.provider != 'lima-docker':
+            raise ValueError('the bundled Bake resolver requires Lima-Docker')
+        if runtime.build_platform() != args.platform:
+            raise ValueError('Bake request platform differs from the admitted engine')
+        from bake import resolve as resolve_bake
+        images = resolve_bake(runtime, Path.cwd(), args.images,
+                              declaration=sys.stdin.read(), operation=args.mode)
+        print(json.dumps({'version': 1, 'images': images}, sort_keys=True))
+        return
     if args.operation in {'refresh', 'clean'}:
         repo = args.repo.resolve(strict=True)
         manifest = policy_module().load_manifest(repo)
@@ -94,6 +109,20 @@ def main():
                               args.context.resolve(strict=True),
                               build_args=args.build_arg, target=args.target)
     print(image.reference)
+
+
+def main():
+    def cancel(signum, _frame):
+        # Unwind Bake captures and the runtime's detached builder groups.
+        raise SystemExit(128 + signum)
+
+    handlers = {signum: signal.signal(signum, cancel)
+                for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    try:
+        execute()
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == "__main__":

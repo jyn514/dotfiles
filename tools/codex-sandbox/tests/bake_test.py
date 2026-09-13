@@ -134,6 +134,20 @@ class BakeTest(unittest.TestCase):
         built = next(batch['base'] for batch in reversed(self.engine.built_files) if 'base' in batch)
         self.assertEqual(built, b'FROM scratch\n# changed\n')
 
+    def test_live_hcl_reaches_buildx_without_json_string_encoding(self):
+        source = 'target "base" { context = "ci" }\n'
+        run_builder = self.engine.run_builder
+
+        def inspect_declaration(command, **kwargs):
+            if '--print' in command:
+                definition = Path(command[command.index('--file') + 1])
+                self.assertEqual(definition.suffix, '.hcl')
+                self.assertEqual(definition.read_text(), source)
+            return run_builder(command, **kwargs)
+
+        with mock.patch.object(self.engine, 'run_builder', side_effect=inspect_declaration):
+            self.assertIn('base', resolve(self.engine, self.repo, ['base'], declaration=source))
+
     def test_context_shape_modes_and_symlink_targets_invalidate(self):
         identities = [resolve(self.engine, self.repo, ['base'])['base']]
         first = self.repo / 'ci/first'
