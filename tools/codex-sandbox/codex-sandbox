@@ -46,6 +46,22 @@ PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 
+STAGED_CONFIG = {
+    "shared": ("$HOME/.agents/shared.md", ("/home/codex/.agents/shared.md",)),
+    "coordination": ("$HOME/.agents/coordination-dialect.md", (
+        "/home/codex/.agents/coordination-dialect.md",
+        "/home/codex/.pi/agent/coordination-dialect.md",
+    )),
+    "agents": ("$HOME/.pi/agent/AGENTS.md", ("/home/codex/.pi/agent/AGENTS.md",)),
+    "breq": ("$HOME/.pi/agent/breq.md", ("/home/codex/.pi/agent/breq.md",)),
+    "settings": ("$HOME/.pi/agent/settings.json", ("/home/codex/.pi/agent/settings.json",)),
+    "mcp": ("$HOME/.pi/agent/mcp.json", ("/home/codex/.pi/agent/mcp.json",)),
+    "keybindings": ("$HOME/.pi/agent/keybindings.json", ("/home/codex/.pi/agent/keybindings.json",)),
+    "subagents": ("$HOME/.pi/agent/pi-codex-subagents/config.json", (
+        "/home/codex/.pi/agent/pi-codex-subagents/config.json",
+    )),
+}
+
 
 class LauncherError(Exception):
     pass
@@ -753,6 +769,24 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
     return codex_sidecar_arguments(sidecar["container"], sidecar["key"])
 
 
+@cache
+def installed_config_sources() -> dict[str, Path]:
+    data = json.loads((DOTFILES / "install.conf.json").read_text(encoding="utf-8"))
+    links = next(section["link"] for section in data if "link" in section)
+    return {target: DOTFILES / source for target, source in links.items()}
+
+
+def installed_config_source(target: str) -> Path:
+    try:
+        return installed_config_sources()[target]
+    except KeyError as error:
+        raise LauncherError(f"Dotfiles install mapping is missing {target}") from error
+
+
+def staged_config_path(state: State, role: str) -> Path:
+    return state.skills_tmp / "config" / role
+
+
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp(dir=scratch_directory()))
     source = state.home / ".agents/skills"
@@ -764,12 +798,9 @@ def stage_skills(state: State) -> None:
         raise LauncherError(f"Agent skills directory is invalid: {source}")
     config = state.skills_tmp / "config"
     config.mkdir()
-    for name in (
-        "shared-agents.md", "pi-AGENTS.md", "breq.md", "coordination-dialect.md",
-        "pi.json", "pi-mcp.json", "pi-keybindings.json", "pi-codex-subagents.json",
-    ):
-        shutil.copy2(DOTFILES / "config" / name, config / name)
-    settings_path = config / "pi.json"
+    for role, (target, _) in STAGED_CONFIG.items():
+        shutil.copy2(installed_config_source(target), staged_config_path(state, role))
+    settings_path = staged_config_path(state, "settings")
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     settings["externalEditor"] = "/opt/agent-tools/bin/host-editor"
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -785,7 +816,7 @@ def stage_skills(state: State) -> None:
         )
         instruction_includes.append("@../../.agents/sandbox/AGENTS.md")
     if instruction_includes:
-        agents = config / "pi-AGENTS.md"
+        agents = staged_config_path(state, "agents")
         content = agents.read_text(encoding="utf-8").rstrip("\n")
         agents.write_text(
             content + "\n" + "\n".join(instruction_includes) + "\n",
@@ -1136,20 +1167,20 @@ def run_agent(state: State, arguments: list[str]) -> int:
             ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
             if (state.skills_tmp / "sandbox").is_dir() else []
         ),
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/shared-agents.md'},dst=/home/codex/.agents/shared.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/coordination-dialect.md'},dst=/home/codex/.agents/coordination-dialect.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-AGENTS.md'},dst=/home/codex/.pi/agent/AGENTS.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/breq.md'},dst=/home/codex/.pi/agent/breq.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/coordination-dialect.md'},dst=/home/codex/.pi/agent/coordination-dialect.md,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi.json'},dst=/home/codex/.pi/agent/settings.json,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-mcp.json'},dst=/home/codex/.pi/agent/mcp.json,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-keybindings.json'},dst=/home/codex/.pi/agent/keybindings.json,readonly",
-        "--mount", f"type=bind,src={state.skills_tmp / 'config/pi-codex-subagents.json'},dst=/home/codex/.pi/agent/pi-codex-subagents/config.json,readonly",
+        *[
+            item
+            for role, (_, destinations) in STAGED_CONFIG.items()
+            for destination in destinations
+            for item in (
+                "--mount",
+                f"type=bind,src={staged_config_path(state, role)},dst={destination},readonly",
+            )
+        ],
         "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/codex.toml'},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/codex-developer-instructions.md'},dst=/home/codex/.codex/developer-instructions.md,readonly",
-        "--mount", f"type=bind,src={DOTFILES / 'config/breq.md'},dst=/home/codex/.codex/breq.md,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",
         *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
                        *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
         "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",

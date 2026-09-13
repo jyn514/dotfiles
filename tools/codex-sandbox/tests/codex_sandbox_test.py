@@ -1059,6 +1059,25 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(mount, self.final_run())
         self.assertNotIn(mount + ",readonly", self.final_run())
 
+    def test_staging_uses_install_mapping_for_config_source_names(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        renamed = self.root / "renamed-agents-source.md"
+        renamed.write_text("renamed source\n", encoding="utf-8")
+        sources = launcher["installed_config_sources"]()
+        state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
+        try:
+            with mock.patch.dict(
+                sources, {"$HOME/.pi/agent/AGENTS.md": renamed}, clear=False,
+            ):
+                launcher["stage_skills"](state)
+            self.assertEqual(
+                "renamed source\n",
+                (state.skills_tmp / "config/agents").read_text(encoding="utf-8"),
+            )
+        finally:
+            if state.skills_tmp is not None:
+                shutil.rmtree(state.skills_tmp)
+
     def test_loads_repository_and_home_sandbox_instructions(self) -> None:
         repository_sandbox = self.repo / ".agents" / "sandbox"
         repository_sandbox.mkdir(parents=True)
@@ -1084,7 +1103,7 @@ class CodexSandboxTest(unittest.TestCase):
         )
         try:
             launcher["stage_skills"](state)
-            agents = (state.skills_tmp / "config/pi-AGENTS.md").read_text(encoding="utf-8")
+            agents = (state.skills_tmp / "config/agents").read_text(encoding="utf-8")
             self.assertEqual(
                 "@breq.md\n"
                 "@coordination-dialect.md\n"
@@ -1114,12 +1133,14 @@ class CodexSandboxTest(unittest.TestCase):
         try:
             launcher["stage_skills"](state)
             settings = json.loads(
-                (state.skills_tmp / "config/pi.json").read_text(encoding="utf-8")
+                (state.skills_tmp / "config/settings").read_text(encoding="utf-8")
             )
             self.assertEqual(
                 "/opt/agent-tools/bin/host-editor", settings["externalEditor"]
             )
-            source = json.loads((ROOT / "config/pi.json").read_text(encoding="utf-8"))
+            source = json.loads(launcher["installed_config_source"](
+                "$HOME/.pi/agent/settings.json"
+            ).read_text(encoding="utf-8"))
             self.assertNotIn("externalEditor", source)
         finally:
             if state.skills_tmp is not None:
@@ -1130,9 +1151,11 @@ class CodexSandboxTest(unittest.TestCase):
         state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
         try:
             launcher["stage_skills"](state)
-            staged = state.skills_tmp / "config/pi-codex-subagents.json"
+            staged = state.skills_tmp / "config/subagents"
             self.assertEqual(
-                json.loads((ROOT / "config/pi-codex-subagents.json").read_text(encoding="utf-8")),
+                json.loads(launcher["installed_config_source"](
+                    "$HOME/.pi/agent/pi-codex-subagents/config.json"
+                ).read_text(encoding="utf-8")),
                 json.loads(staged.read_text(encoding="utf-8")),
             )
         finally:
@@ -1143,7 +1166,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(any(
             item.endswith(
-                "/config/pi-codex-subagents.json,dst=/home/codex/.pi/agent/"
+                "/config/subagents,dst=/home/codex/.pi/agent/"
                 "pi-codex-subagents/config.json,readonly"
             )
             for item in self.final_run()
