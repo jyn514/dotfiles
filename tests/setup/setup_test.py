@@ -47,33 +47,43 @@ class DotfileSetupTests(unittest.TestCase):
         )
 
     @staticmethod
-    def config_destinations() -> dict[str, str]:
-        destinations: dict[str, str] = {}
+    def configured_links() -> list[tuple[str, Path]]:
         config = json.loads((ROOT / "install.conf.json").read_text())
         links = next(directive["link"] for directive in config if "link" in directive)
-        for destination, specification in links.items():
-            source = specification if isinstance(specification, str) else specification["path"]
-            if destination.startswith("$HOME/"):
-                destinations[Path(source).name] = destination.removeprefix("$HOME/")
-        return destinations
+        return [
+            (
+                destination,
+                ROOT / (specification if isinstance(specification, str) else specification["path"]),
+            )
+            for destination, specification in links.items()
+        ]
 
-    def destination_for(self, source: Path) -> Path:
-        if source.name == "jj.toml":
-            return self.home / ".config/jj/custom.toml"
+    def destinations_for(self, source: Path) -> list[Path]:
+        destinations = []
+        for destination, configured_source in self.configured_links():
+            if configured_source != source:
+                continue
+            if destination.startswith("$HOME/"):
+                destinations.append(self.home / destination.removeprefix("$HOME/"))
+            elif destination == "$JJ_CONFIG_PATH":
+                destinations.append(self.home / ".config/jj/custom.toml")
+        if destinations:
+            return destinations
         if source.name.startswith("git"):
-            return self.home / ".config/git" / source.name.removeprefix("git")
-        relative = self.config_destinations().get(source.name, f".{source.name}")
-        return self.home / relative
+            return [self.home / ".config/git" / source.name.removeprefix("git")]
+        return [self.home / f".{source.name}"]
 
     def assert_all_dotfiles_installed(self) -> None:
-        for source in (ROOT / "config").iterdir():
-            # Supporting assets can live below config/ without being Dotbot links.
-            if not source.is_file():
-                continue
-            destination = self.destination_for(source)
-            self.assertTrue(destination.exists(), destination)
-            self.assertTrue(destination.is_symlink(), destination)
-            self.assertEqual(source.resolve(), destination.resolve())
+        sources = {
+            source
+            for _, source in self.configured_links()
+            if source.is_file() and source.is_relative_to(ROOT / "config")
+        }
+        for source in sorted(sources):
+            for destination in self.destinations_for(source):
+                self.assertTrue(destination.exists(), destination)
+                self.assertTrue(destination.is_symlink(), destination)
+                self.assertEqual(source.resolve(), destination.resolve())
 
     def test_installs_every_config_entry_in_an_empty_home(self) -> None:
         result = self.run_setup()
