@@ -29,6 +29,14 @@ When using subagents:
 
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
 
+Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead.
+For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
+Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
+
+Quoting can prevent the sandbox from matching an approved command prefix even when the shell accepts the command.
+- Write executable and subcommand tokens literally: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`; quote only arguments that require it.
+- If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
+
 ## Citations
 
 - Cite only sources returned by the web tool; copy their identifiers exactly.

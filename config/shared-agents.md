@@ -39,10 +39,6 @@ To view remote source, use `git clone --depth 1` into a temporary directory, not
 
 ### Execution boundaries
 
-Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead.
-For example, instead of running `jj status && head -n 20 README.md`, run two separate `exec_command`s.
-Do not run commands with `2>/dev/null` at the same time as a command that runs outside the sandbox; it will require approval and delay your work.
-
 Use `diff-check`, never `git diff --check`; the latter may not be installed.
 
 When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
@@ -51,11 +47,7 @@ When comparing toolchains, alternate sequential trials on the real workload, inc
 
 ### Shell command construction
 
-Quoting can prevent the sandbox from matching an approved command prefix even when the shell accepts the command.
-
-- Write executable and subcommand tokens literally: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`; quote only arguments that require it.
 - Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
-- If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
 
 ## Documentation
 
