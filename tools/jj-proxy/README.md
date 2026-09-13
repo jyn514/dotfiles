@@ -47,7 +47,7 @@ The allowlist also covers common history, bookmark, file, and workspace operatio
 
 - Never mount the outer Docker/Podman daemon socket or write-capable protected-remote credentials into the agent container.
 - Keep `.git` and `.jj` read-only there; all `jj` commands, including `status` and `diff`, must use the proxy.
-- The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and unapproved fetch remotes. It can still perform logically destructive but recoverable allowed history edits.
+- The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and unapproved fetch remotes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
 - Socket or proxy failure is fail-closed: the client exits `125` and never falls back to local `jj`.
 - A command timeout returns `124`; policy/request failures normally return `2`. Inspect stderr, correct the request, and retry.
 - Recover history edits with `jj undo` or an explicit `jj op restore <operation>`. If the proxy was interrupted during a metadata write, stop the agent, inspect/recover the repository from a trusted environment, then restart the whole proxy session.

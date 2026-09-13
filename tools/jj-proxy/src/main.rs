@@ -21,6 +21,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_SOCKET: &str = "/run/sandbox-proxy/socket";
+const TRUSTED_JJ_CONFIG: &str = "/trusted/jj.toml";
 
 fn socket_path() -> String {
     std::env::var("SANDBOX_PROXY_SOCKET").unwrap_or_else(|_| DEFAULT_SOCKET.to_owned())
@@ -81,10 +82,10 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
 
 fn prepare_repo_config(repo: &str) -> Result<()> {
     let output = Command::new("/trusted/bin/jj")
+        .args(["--config-file", TRUSTED_JJ_CONFIG])
         .args(["--repository", repo, "--ignore-working-copy", "config", "path", "--repo"])
         .env_clear()
         .envs([
-            ("JJ_CONFIG", "/trusted/jj.toml"),
             ("HOME", "/nonexistent"),
             ("XDG_CONFIG_HOME", CONFIG_HOME),
     ])
@@ -133,12 +134,13 @@ fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
 
 fn jj_command() -> Command {
     let mut command = Command::new("/trusted/bin/jj");
+    // Command-line config has higher precedence than repository config. Keep
+    // jj.toml as the single declaration instead of repeating protected keys.
     command.args([
-        "--no-pager", "--color=never",
-        "--config", "ui.editor=[\"/trusted/bin/jj-proxy\",\"reject-editor\"]",
-        "--config", "ui.diff-editor=:builtin",
-        "--config", "ui.merge-editor=:builtin",
-        "--config", "signing.behavior=drop",
+        "--no-pager",
+        "--color=never",
+        "--config-file",
+        TRUSTED_JJ_CONFIG,
     ]);
     command
 }
@@ -156,7 +158,7 @@ fn author_update_command() -> Command {
 
 fn trusted_environment(temporary_directory: &str) -> Vec<(&str, &str)> {
     vec![
-        ("PATH", "/trusted/bin"), ("JJ_CONFIG", "/trusted/jj.toml"),
+        ("PATH", "/trusted/bin"),
         ("HOME", "/nonexistent"), ("XDG_CONFIG_HOME", CONFIG_HOME),
         ("TMPDIR", temporary_directory),
         ("PAGER", "false"), ("GIT_PAGER", "false"), ("EDITOR", "false"),
@@ -255,9 +257,6 @@ fn execute(
     }
 
     let mut command = jj_command();
-    if matches!(request.argv.first().map(String::as_str), Some("diff" | "show")) {
-        command.args(["--config", "ui.diff-formatter=:git"]);
-    }
     if let Some(split) = &request.agent_split {
         command.args([
             "split", "--tool", "agent-split", "-m", split.message.as_str(),
@@ -437,10 +436,30 @@ mod tests {
     }
 
     #[test]
-    fn jj_command_discovers_the_workspace_from_its_current_directory() {
+    fn jj_command_discovers_the_workspace_and_applies_trusted_config_at_cli_precedence() {
         let command = jj_command();
         let args: Vec<_> = command.get_args().collect();
         assert!(!args.iter().any(|arg| *arg == "--repository"));
+        assert!(args.windows(2).any(|args| {
+            args[0] == "--config-file" && args[1] == TRUSTED_JJ_CONFIG
+        }));
+    }
+
+    #[test]
+    fn trusted_config_preserves_the_effective_security_settings() {
+        let config = include_str!("../jj.toml");
+        for setting in [
+            r#"editor = ["/trusted/bin/jj-proxy", "reject-editor"]"#,
+            r#"diff-editor = ":builtin""#,
+            r#"merge-editor = ":builtin""#,
+            r#"diff-formatter = ":git""#,
+            r#"behavior = "drop""#,
+        ] {
+            assert!(
+                config.lines().any(|line| line == setting),
+                "trusted config is missing {setting:?}",
+            );
+        }
     }
 
     #[test]
@@ -450,6 +469,7 @@ mod tests {
                 .into_iter()
                 .collect();
         assert_eq!(Some(&TEMP_HOME), environment.get("TMPDIR"));
+        assert!(!environment.contains_key("JJ_CONFIG"));
         assert_eq!(Some(&"agent"), environment.get("JJ_USER"));
 
         let trusted: std::collections::HashMap<_, _> =
