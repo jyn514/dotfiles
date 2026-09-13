@@ -47,19 +47,17 @@ HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 
 STAGED_CONFIG = {
-    "shared": ("$HOME/.agents/shared.md", ("/home/codex/.agents/shared.md",)),
-    "coordination": ("$HOME/.agents/coordination-dialect.md", (
-        "/home/codex/.agents/coordination-dialect.md",
-        "/home/codex/.pi/agent/coordination-dialect.md",
-    )),
-    "agents": ("$HOME/.pi/agent/AGENTS.md", ("/home/codex/.pi/agent/AGENTS.md",)),
-    "breq": ("$HOME/.pi/agent/breq.md", ("/home/codex/.pi/agent/breq.md",)),
-    "settings": ("$HOME/.pi/agent/settings.json", ("/home/codex/.pi/agent/settings.json",)),
-    "mcp": ("$HOME/.pi/agent/mcp.json", ("/home/codex/.pi/agent/mcp.json",)),
-    "keybindings": ("$HOME/.pi/agent/keybindings.json", ("/home/codex/.pi/agent/keybindings.json",)),
-    "subagents": ("$HOME/.pi/agent/pi-codex-subagents/config.json", (
+    "shared": ("$HOME/.agents/shared.md", "/home/codex/.agents/shared.md"),
+    "coordination": ("$HOME/.agents/coordination-dialect.md", "/home/codex/.agents/coordination-dialect.md"),
+    "agents": ("$HOME/.pi/agent/AGENTS.md", "/home/codex/.pi/agent/AGENTS.md"),
+    "breq": ("$HOME/.pi/agent/breq.md", "/home/codex/.pi/agent/breq.md"),
+    "settings": ("$HOME/.pi/agent/settings.json", "/home/codex/.pi/agent/settings.json"),
+    "mcp": ("$HOME/.pi/agent/mcp.json", "/home/codex/.pi/agent/mcp.json"),
+    "keybindings": ("$HOME/.pi/agent/keybindings.json", "/home/codex/.pi/agent/keybindings.json"),
+    "subagents": (
+        "$HOME/.pi/agent/pi-codex-subagents/config.json",
         "/home/codex/.pi/agent/pi-codex-subagents/config.json",
-    )),
+    ),
 }
 
 
@@ -1183,8 +1181,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         ),
         *[
             item
-            for role, (_, destinations) in STAGED_CONFIG.items()
-            for destination in destinations
+            for role, (_, destination) in STAGED_CONFIG.items()
             for item in (
                 "--mount",
                 f"type=bind,src={staged_config_path(state, role)},dst={destination},readonly",

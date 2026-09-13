@@ -1132,7 +1132,6 @@ class CodexSandboxTest(unittest.TestCase):
             agents = (state.skills_tmp / "config/agents").read_text(encoding="utf-8")
             self.assertEqual(
                 "@breq.md\n"
-                "@coordination-dialect.md\n"
                 "@../../.agents/shared.md\n"
                 "@/src/repository/.agents/sandbox/AGENTS.md\n"
                 "@../../.agents/sandbox/AGENTS.md\n",
@@ -1432,13 +1431,12 @@ class CodexSandboxTest(unittest.TestCase):
                 "/home/codex/.agents/coordination-dialect.md",
                 "/home/codex/.pi/agent/AGENTS.md",
                 "/home/codex/.pi/agent/breq.md",
-                "/home/codex/.pi/agent/coordination-dialect.md",
                 "/home/codex/.pi/agent/settings.json",
                 "/home/codex/.pi/agent/mcp.json",
                 "/home/codex/.pi/agent/keybindings.json",
             ))
         ]
-        self.assertEqual(8, len(staged_mounts))
+        self.assertEqual(7, len(staged_mounts))
         staged_sources = [
             Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
             for item in staged_mounts

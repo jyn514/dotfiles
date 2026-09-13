@@ -15,7 +15,6 @@
       "$HOME/.codex/developer-instructions.md": "config/agents/codex/codex-developer-instructions.md",
       "$HOME/.pi/agent/AGENTS.md": "config/agents/pi/pi-AGENTS.md",
       "$HOME/.pi/agent/breq.md": "config/agents/breq.md",
-      "$HOME/.pi/agent/coordination-dialect.md": "config/agents/coordination-dialect.md",
       "$HOME/.pi/agent/mcp.json": "config/agents/pi/pi-mcp.json",
       "$HOME/.pi/agent/settings.json": "config/agents/pi/pi.json",
       "$HOME/.pi/agent/pi-codex-subagents/config.json": "config/agents/pi/pi-codex-subagents.json",
