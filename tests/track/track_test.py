@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class TrackTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory(dir=ROOT)
+        self.tempdir = tempfile.TemporaryDirectory()
         self.fixture = Path(self.tempdir.name) / "repo"
         self.fixture.mkdir()
         shutil.copy2(ROOT / "track", self.fixture / "track")
@@ -22,11 +22,21 @@ class TrackTests(unittest.TestCase):
             (self.fixture / directory).mkdir()
         shutil.copy2(ROOT / "install.conf.json", self.fixture / "install.conf.json")
         shutil.copy2(ROOT / "libexec/track_file.py", self.fixture / "libexec/track_file.py")
+        for mutable_file in (
+            self.fixture / "install.conf.json",
+            self.fixture / "libexec/track_file.py",
+        ):
+            mutable_file.chmod(mutable_file.stat().st_mode | 0o200)
         (self.fixture / "install/global.txt").write_text("")
         (self.fixture / "libexec/setup/setup_sudo.sh").write_text("#!/bin/sh\nexit 99\n")
 
         self.home = Path(self.tempdir.name) / "home"
         self.home.mkdir()
+        self.assertEqual(
+            self.fixture.stat().st_dev,
+            self.home.stat().st_dev,
+            "track fixtures require repository and home on the same filesystem",
+        )
         self.fake_bin = Path(self.tempdir.name) / "fake-bin"
         self.fake_bin.mkdir()
         sudo = self.fake_bin / "sudo"

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class DotfileSetupTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory(dir=ROOT)
+        self.tempdir = tempfile.TemporaryDirectory()
         self.home = Path(self.tempdir.name) / "home"
         self.home.mkdir()
         self.bin = Path(self.tempdir.name) / "bin"

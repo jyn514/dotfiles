@@ -40,7 +40,7 @@ setup_kde() { record kde; }
             "9": ["global", "local", "basics", "shell", "python", "vim"],
         }
 
-        with tempfile.TemporaryDirectory(dir=ROOT) as temporary_directory:
+        with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             script = directory / "setup"
             script.write_text(instrumented)

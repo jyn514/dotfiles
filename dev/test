@@ -36,12 +36,13 @@ trap 'rm -rf "$results"' EXIT HUP INT TERM
 export results
 export verbose
 export PYTHONUNBUFFERED=1
+export PYTHONDONTWRITEBYTECODE=1
 
 cd "$root"
 started=$(date +%s)
-pytest_args="-n $jobs --dist loadfile --quiet --no-header --instafail"
+pytest_args="-n $jobs --dist loadfile --quiet --no-header --instafail -p no:cacheprovider"
 if [ "$verbose" = 1 ]; then
-	pytest_args="-n $jobs --dist loadfile --verbose --instafail"
+	pytest_args="-n $jobs --dist loadfile --verbose --instafail -p no:cacheprovider"
 fi
 # pytest-sugar renders compact progress; pytest-instafail streams tracebacks.
 # shellcheck disable=SC2086
