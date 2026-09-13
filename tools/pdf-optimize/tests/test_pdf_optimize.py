@@ -47,6 +47,7 @@ class PdfOptimizeTests(unittest.TestCase):
         return os.environ | {
             "CALLS": str(self.calls),
             "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "PYTHONIOENCODING": "utf-8:strict",
             "TMPDIR": str(self.directory),
         }
 
@@ -76,6 +77,8 @@ class PdfOptimizeTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(self.source.read_bytes(), destination.read_bytes())
+        self.assertIn(f"INFO: Using input file: {self.source}\n".encode(), result.stdout)
+        self.assertIn(f"INFO: Using output file: {destination}\n".encode(), result.stdout)
         calls = self.calls.read_text()
         self.assertIn(f"file <--brief> <--> <{self.source}>", calls)
         self.assertIn("gs <-sDEVICE=pdfwrite> <-dDetectDuplicateImages=true>", calls)
@@ -168,6 +171,8 @@ class PdfOptimizeTests(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(b"INFO: Using input file: " + source + b"\n", result.stdout)
+        self.assertIn(b"INFO: Using output file: " + destination + b"\n", result.stdout)
         self.assertEqual(b"%PDF-1.4\nsource\n", Path(os.fsdecode(destination)).read_bytes())
 
 
