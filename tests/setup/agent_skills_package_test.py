@@ -17,32 +17,40 @@ def load_json(path: str) -> dict:
 
 
 class AgentSkillsPackageTest(unittest.TestCase):
-    def test_codex_marketplace_installs_the_published_package(self) -> None:
-        package = load_json("package.json")
-        plugin = load_json(".codex-plugin/plugin.json")
-        marketplace = load_json(".agents/plugins/marketplace.json")
-        entry = marketplace["plugins"][0]
+    def test_checked_in_plugin_manifests_are_generated_from_package_json(self) -> None:
+        subprocess.run([ROOT / "dev/generate-plugin-manifests", "--check"], check=True)
 
-        self.assertEqual(marketplace["name"], "jyn-plugins")
-        self.assertEqual(plugin["name"], package["name"])
-        self.assertEqual(plugin["version"], package["version"])
-        self.assertEqual(entry["name"], package["name"])
+    def test_marketplaces_install_the_published_package_identity(self) -> None:
+        package = load_json("package.json")
+        codex_plugin = load_json(".codex-plugin/plugin.json")
+        codex_marketplace = load_json(".agents/plugins/marketplace.json")
+        codex_entry = codex_marketplace["plugins"][0]
+        claude_plugin = load_json(".claude-plugin/plugin.json")
+        claude_entry = load_json(".claude-plugin/marketplace.json")["plugins"][0]
+
+        self.assertEqual(codex_marketplace["name"], "jyn-plugins")
+        for metadata in (codex_plugin, claude_plugin, claude_entry):
+            self.assertEqual(metadata["name"], package["name"])
+            self.assertEqual(metadata["version"], package["version"])
+            self.assertEqual(metadata["description"], package["description"])
+        self.assertEqual(codex_entry["name"], package["name"])
         self.assertEqual(
-            entry["source"],
+            codex_entry["source"],
             {
                 "source": "npm",
                 "package": package["name"],
                 "version": package["version"],
             },
         )
-        self.assertEqual(entry["policy"]["installation"], "AVAILABLE")
-        self.assertEqual(entry["policy"]["authentication"], "ON_INSTALL")
+        self.assertEqual(codex_entry["policy"]["installation"], "AVAILABLE")
+        self.assertEqual(codex_entry["policy"]["authentication"], "ON_INSTALL")
 
     def test_npm_archive_declares_codex_and_skill_resources(self) -> None:
         package = load_json("package.json")
         plugin = load_json(".codex-plugin/plugin.json")
 
         self.assertIn(".codex-plugin/", package["files"])
+        self.assertIn(".claude-plugin/", package["files"])
         self.assertIn("skills/", package["files"])
         self.assertEqual(plugin["skills"], "./skills/")
         self.assertEqual(package["pi"]["skills"], ["skills"])
@@ -68,7 +76,9 @@ Path(os.environ["CAPTURE"]).write_text(json.dumps({
     "readme": (package / "README.md").read_text(),
     "has_manifest": (package / "package.json").is_file(),
     "has_license": (package / "LICENSE").is_file(),
-    "has_plugin": (package / ".codex-plugin/plugin.json").is_file(),
+    "has_codex_plugin": (package / ".codex-plugin/plugin.json").is_file(),
+    "has_claude_plugin": (package / ".claude-plugin/plugin.json").is_file(),
+    "has_claude_marketplace": (package / ".claude-plugin/marketplace.json").is_file(),
     "has_skills": (package / "skills").is_dir(),
 }), encoding="utf-8")
 raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
@@ -95,7 +105,9 @@ raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
             )
             self.assertTrue(staged["has_manifest"])
             self.assertTrue(staged["has_license"])
-            self.assertTrue(staged["has_plugin"])
+            self.assertTrue(staged["has_codex_plugin"])
+            self.assertTrue(staged["has_claude_plugin"])
+            self.assertTrue(staged["has_claude_marketplace"])
             self.assertTrue(staged["has_skills"])
             self.assertFalse(Path(staged["package"]).exists())
 

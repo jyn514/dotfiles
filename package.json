@@ -2,6 +2,10 @@
   "name": "judgement-yields-navigation",
   "version": "1.0.1",
   "description": "Judgement Yields Navigation: composable software design, review, documentation, and investigation skills for coding agents",
+  "author": {
+    "name": "jyn514",
+    "url": "https://github.com/jyn514"
+  },
   "license": "Unlicense",
   "repository": {
     "type": "git",
@@ -10,10 +14,14 @@
   "keywords": [
     "agent-skills",
     "codex-plugin",
-    "pi-package"
+    "claude-plugin",
+    "pi-package",
+    "software-design",
+    "code-review"
   ],
   "files": [
     ".codex-plugin/",
+    ".claude-plugin/",
     "skills/"
   ],
   "pi": {

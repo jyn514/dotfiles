@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_FILES = ("package.json", "LICENSE", ".codex-plugin", "skills")
+PACKAGE_FILES = ("package.json", "LICENSE", "skills")
 
 
 def stage_package(destination: Path) -> None:
@@ -20,6 +20,10 @@ def stage_package(destination: Path) -> None:
         else:
             shutil.copy2(source, target)
     shutil.copy2(ROOT / "skills/README.md", destination / "README.md")
+    subprocess.run(
+        [ROOT / "dev/generate-plugin-manifests", "--root", destination],
+        check=True,
+    )
 
 
 def main(arguments: list[str]) -> int:

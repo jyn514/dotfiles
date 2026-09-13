@@ -2,13 +2,30 @@
   "name": "jyn-plugins",
   "description": "Judgement Yields Navigation: composable skills for software design, review, documentation, and investigation",
   "owner": {
-    "name": "jyn514"
+    "name": "jyn514",
+    "url": "https://github.com/jyn514"
   },
   "plugins": [
     {
       "name": "judgement-yields-navigation",
+      "version": "1.0.1",
       "source": "./",
-      "description": "Judgement Yields Navigation: composable software design, review, documentation, and investigation skills for coding agents"
+      "description": "Judgement Yields Navigation: composable software design, review, documentation, and investigation skills for coding agents",
+      "author": {
+        "name": "jyn514",
+        "url": "https://github.com/jyn514"
+      },
+      "repository": "https://github.com/jyn514/dotfiles",
+      "license": "Unlicense",
+      "keywords": [
+        "agent-skills",
+        "codex-plugin",
+        "claude-plugin",
+        "pi-package",
+        "software-design",
+        "code-review"
+      ],
+      "category": "Developer Tools"
     }
   ]
 }
