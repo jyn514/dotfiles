@@ -24,6 +24,115 @@ class CommandIntegrationTests(unittest.TestCase):
         path.write_text("#!/bin/sh\n" + contents)
         path.chmod(0o755)
 
+    def test_recursive_clone_does_not_trust_local_submodule_urls(self) -> None:
+        payload = self.directory / "payload"
+        outer = self.directory / "outer"
+        direct_clone = self.directory / "direct-clone"
+        recursive_clone = self.directory / "recursive-clone"
+        explicitly_allowed_clone = self.directory / "explicitly-allowed-clone"
+        git_environment = os.environ | {
+            "GIT_CONFIG_GLOBAL": str(ROOT / "config/gitconfig"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "HOME": str(self.directory),
+        }
+
+        for repository in (payload, outer):
+            subprocess.run(
+                ["git", "init", str(repository)],
+                check=True,
+                capture_output=True,
+                env=git_environment,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=repository,
+                check=True,
+                env=git_environment,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=repository,
+                check=True,
+                env=git_environment,
+            )
+
+        (payload / "private-data").write_text("should not be copied recursively\n")
+        subprocess.run(
+            ["git", "add", "private-data"],
+            cwd=payload,
+            check=True,
+            env=git_environment,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "payload"],
+            cwd=payload,
+            check=True,
+            capture_output=True,
+            env=git_environment,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                str(payload),
+                "nested",
+            ],
+            cwd=outer,
+            check=True,
+            capture_output=True,
+            env=git_environment,
+        )
+        subprocess.run(
+            ["git", "commit", "-am", "add local submodule"],
+            cwd=outer,
+            check=True,
+            capture_output=True,
+            env=git_environment,
+        )
+
+        direct = subprocess.run(
+            ["git", "clone", str(payload), str(direct_clone)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=git_environment,
+        )
+        recursive = subprocess.run(
+            ["git", "clone", "--recurse-submodules", str(outer), str(recursive_clone)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=git_environment,
+        )
+        explicitly_allowed = subprocess.run(
+            [
+                "git",
+                "-c",
+                "protocol.file.allow=always",
+                "clone",
+                "--recurse-submodules",
+                str(outer),
+                str(explicitly_allowed_clone),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=git_environment,
+        )
+
+        self.assertEqual(0, direct.returncode, direct.stderr)
+        self.assertTrue((direct_clone / "private-data").is_file())
+        self.assertNotEqual(0, recursive.returncode)
+        self.assertIn("transport 'file' not allowed", recursive.stderr)
+        self.assertFalse((recursive_clone / "nested" / "private-data").exists())
+        self.assertEqual(0, explicitly_allowed.returncode, explicitly_allowed.stderr)
+        self.assertTrue(
+            (explicitly_allowed_clone / "nested" / "private-data").is_file()
+        )
+
     def test_git_aliases_preserve_the_remote_default_when_deleting_merged_branches(self) -> None:
         repository = self.directory / "repository"
         remote = self.directory / "remote.git"
