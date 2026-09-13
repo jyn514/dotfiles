@@ -841,8 +841,13 @@ def finalize_proxy_session(state: State) -> list[str]:
     return arguments
 
 
-MAX_EDITOR_DOCUMENT_BYTES = 1024 * 1024
-MAX_EDITOR_MESSAGE_BYTES = MAX_EDITOR_DOCUMENT_BYTES * 6 + 4096
+with (Path(__file__).resolve().parent / "image/host-editor-protocol.json").open(
+    encoding="utf-8",
+) as stream:
+    HOST_EDITOR_PROTOCOL = json.load(stream)
+HOST_EDITOR_PROTOCOL_VERSION = HOST_EDITOR_PROTOCOL["version"]
+MAX_EDITOR_DOCUMENT_BYTES = HOST_EDITOR_PROTOCOL["max_document_bytes"]
+MAX_EDITOR_MESSAGE_BYTES = HOST_EDITOR_PROTOCOL["max_message_bytes"]
 EDITOR_REQUEST_TIMEOUT_SECONDS = 5
 
 
@@ -940,19 +945,28 @@ class HostEditorBridge:
                 raise LauncherError("host editor request is too large")
             request = json.loads(self._receive_exact(connection, length).decode("utf-8"))
             if not isinstance(request, dict) or set(request) != {"version", "token", "content"} \
-                    or type(request["version"]) is not int or request["version"] != 1 \
+                    or type(request["version"]) is not int \
+                    or request["version"] != HOST_EDITOR_PROTOCOL_VERSION \
                     or not isinstance(request["token"], str) \
                     or not secrets.compare_digest(request["token"], self.token) \
                     or not isinstance(request["content"], str):
                 raise LauncherError("invalid host editor request")
             if len(request["content"].encode("utf-8")) > MAX_EDITOR_DOCUMENT_BYTES:
                 raise LauncherError("host editor document is too large")
-            self._send(connection, {"version": 1, "status": "editing"})
+            self._send(connection, {
+                "version": HOST_EDITOR_PROTOCOL_VERSION, "status": "editing",
+            })
             connection.settimeout(None)
             content = self._edit(request["content"])
-            response = {"version": 1, "status": "complete", "content": content}
+            response = {
+                "version": HOST_EDITOR_PROTOCOL_VERSION,
+                "status": "complete", "content": content,
+            }
         except (LauncherError, OSError, UnicodeError, json.JSONDecodeError) as error:
-            response = {"version": 1, "status": "failed", "error": str(error)}
+            response = {
+                "version": HOST_EDITOR_PROTOCOL_VERSION,
+                "status": "failed", "error": str(error),
+            }
         try:
             self._send(connection, response)
         except (LauncherError, OSError):

@@ -582,6 +582,16 @@ class AgentSandboxImageTest(unittest.TestCase):
             "/opt/agent-tools/bin/host-editor",
             dockerfile,
         )
+        self.assertIn(
+            "COPY ./tools/codex-sandbox/image/host-editor-protocol.json "
+            "/opt/agent-tools/bin/host-editor-protocol.json",
+            dockerfile,
+        )
+        self.assertIn(
+            "./tools/zulip-proxy/client ./tools/zulip-proxy/protocol.json "
+            "/tools/zulip-proxy/",
+            dockerfile,
+        )
         self.assertIn("ENV EDITOR=vi VISUAL=vi", dockerfile)
 
     def test_woodpecker_adapter_remains_visible_after_bb_resolves_its_wrapper(self) -> None:
@@ -700,6 +710,22 @@ class HostEditorBridgeTest(unittest.TestCase):
                 text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
             )
             return result, document.read_text(encoding="utf-8")
+
+    def test_document_boundary_matches_on_both_sides_of_bridge(self) -> None:
+        protocol = json.loads(
+            (TOOL / "image" / "host-editor-protocol.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(protocol["max_document_bytes"], self.launcher["MAX_EDITOR_DOCUMENT_BYTES"])
+        self.bridge._edit = lambda content: content
+        self.start_bridge()
+
+        accepted, content = self.run_client("a" * protocol["max_document_bytes"])
+        rejected, _ = self.run_client("a" * (protocol["max_document_bytes"] + 1))
+
+        self.assertEqual(0, accepted.returncode, accepted.stderr)
+        self.assertEqual(protocol["max_document_bytes"], len(content))
+        self.assertEqual(1, rejected.returncode)
+        self.assertIn("document is too large", rejected.stderr)
 
     def test_guest_client_round_trips_only_document_text(self) -> None:
         self.bridge._edit = lambda content: content + " edited"

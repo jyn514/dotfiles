@@ -98,7 +98,7 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
                'tools/jj-proxy/agent-split-editor', 'config/gitignore',
                *[str(p.relative_to(ROOT)) for p in (ROOT / 'tools/jj-proxy/src').rglob('*') if p.is_file()]],
         'zulip': ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
-                  'tools/zulip-proxy/forward.py'],
+                  'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json'],
     }
     return {name: paths for name, paths in sources.items() if name in requested}
 

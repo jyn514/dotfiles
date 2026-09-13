@@ -14,7 +14,9 @@ def main() -> None:
         request = server.read_frame(sys.stdin.buffer, server.MAX_REQUEST)
         response = server.process_request(request, endpoint, authorization)
     except (OSError, server.RequestError) as error:
-        response = json.dumps({"version": 1, "error": str(error)}, separators=(",", ":")).encode()
+        response = json.dumps({
+            "version": server.PROTOCOL_VERSION, "error": str(error),
+        }, separators=(",", ":")).encode()
     server.write_frame(sys.stdout.buffer, response)
 
 

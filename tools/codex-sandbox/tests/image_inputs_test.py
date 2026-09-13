@@ -1,14 +1,18 @@
 """Developer artifacts must not select new runtime images."""
 
+import hashlib
 from pathlib import Path
 import runpy
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
+from bake import _capture
 
 
 class ImageInputsTest(unittest.TestCase):
@@ -45,6 +49,34 @@ class ImageInputsTest(unittest.TestCase):
             self.assertTrue(set(runtime) <= selected)
             self.assertFalse(set(noise) & selected)
 
+    def test_zulip_protocol_is_captured_and_changes_image_identity(self):
+        owned_images = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            root = temporary / 'repository'
+            for name in ('Dockerfile', 'server.py', 'forward.py', 'protocol.json'):
+                path = root / 'tools/zulip-proxy' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name)
+
+            def capture(name):
+                identity = hashlib.sha256()
+                destination = temporary / name
+                _capture(
+                    root, root, destination, identity,
+                    owned_images['source_paths'](['zulip'])['zulip'],
+                )
+                return destination, identity.hexdigest()
+
+            captured, original = capture('first')
+            self.assertEqual(
+                (captured / 'tools/zulip-proxy/protocol.json').read_text(),
+                'protocol.json',
+            )
+            (root / 'tools/zulip-proxy/protocol.json').write_text('changed protocol')
+            _, changed = capture('second')
+            self.assertNotEqual(original, changed)
+
     def test_zulip_key_ignores_developer_files_but_tracks_server(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -56,7 +88,7 @@ class ImageInputsTest(unittest.TestCase):
             shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', image.parent / 'owned_images.py')
             shutil.copyfile(Path(__file__).parent / 'fixtures/image-tag.py', image)
             image.chmod(0o755)
-            for name in ('Dockerfile', 'server.py', 'forward.py'):
+            for name in ('Dockerfile', 'server.py', 'forward.py', 'protocol.json'):
                 path = root / 'tools/zulip-proxy' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('original')

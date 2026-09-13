@@ -5,6 +5,7 @@ RUN apk add --no-cache ca-certificates \
     && chown -R 65532:65532 /run/sandbox-proxy
 
 COPY tools/zulip-proxy/server.py /trusted/bin/zulip-proxy
+COPY tools/zulip-proxy/protocol.json /trusted/bin/protocol.json
 COPY tools/zulip-proxy/forward.py /trusted/bin/sandbox-proxy-forward
 
 ENV PATH="/trusted/bin:${PATH}"

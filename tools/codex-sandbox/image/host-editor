@@ -13,8 +13,11 @@ import struct
 import sys
 import tempfile
 
-MAX_DOCUMENT_BYTES = 1024 * 1024
-MAX_MESSAGE_BYTES = MAX_DOCUMENT_BYTES * 6 + 4096
+with Path(__file__).with_name("host-editor-protocol.json").open(encoding="utf-8") as stream:
+    PROTOCOL = json.load(stream)
+PROTOCOL_VERSION = PROTOCOL["version"]
+MAX_DOCUMENT_BYTES = PROTOCOL["max_document_bytes"]
+MAX_MESSAGE_BYTES = PROTOCOL["max_message_bytes"]
 EDITOR_RESULT_TIMEOUT_SECONDS = 12 * 60 * 60
 ADDRESS = os.environ.get("CODEX_SANDBOX_EDITOR_ADDRESS", "")
 TOKEN = os.environ.get("CODEX_SANDBOX_EDITOR_TOKEN", "")
@@ -92,24 +95,28 @@ def main(arguments: list[str]) -> int:
         if len(content.encode("utf-8")) > MAX_DOCUMENT_BYTES:
             raise RuntimeError("host editor document is too large")
         payload = json.dumps(
-            {"version": 1, "token": TOKEN, "content": content}, separators=(",", ":")
+            {"version": PROTOCOL_VERSION, "token": TOKEN, "content": content},
+            separators=(",", ":"),
         ).encode("utf-8")
         with socket.create_connection(parse_address(ADDRESS), timeout=5) as connection:
             connection.sendall(struct.pack(">I", len(payload)) + payload)
             response = receive_response(connection)
             if set(response) == {"version", "status"} \
-                    and type(response.get("version")) is int and response.get("version") == 1 \
+                    and type(response.get("version")) is int \
+                    and response.get("version") == PROTOCOL_VERSION \
                     and response.get("status") == "editing":
                 connection.settimeout(EDITOR_RESULT_TIMEOUT_SECONDS)
                 response = receive_response(connection)
         if set(response) == {"version", "status", "content"} \
-                and type(response.get("version")) is int and response.get("version") == 1 \
+                and type(response.get("version")) is int \
+                and response.get("version") == PROTOCOL_VERSION \
                 and response.get("status") == "complete" \
                 and isinstance(response.get("content"), str):
             replace_document(path, response["content"])
             return 0
         if set(response) == {"version", "status", "error"} \
-                and type(response.get("version")) is int and response.get("version") == 1 \
+                and type(response.get("version")) is int \
+                and response.get("version") == PROTOCOL_VERSION \
                 and response.get("status") == "failed" \
                 and isinstance(response.get("error"), str):
             print(f"host editor failed: {response['error']}", file=sys.stderr)

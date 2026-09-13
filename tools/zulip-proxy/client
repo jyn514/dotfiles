@@ -17,8 +17,11 @@ import time
 from urllib.parse import unquote, urlsplit
 
 
-MAX_REQUEST = 16 << 10
-MAX_RESPONSE = 16 << 20
+with Path(__file__).with_name("protocol.json").open(encoding="utf-8") as stream:
+    PROTOCOL = json.load(stream)
+PROTOCOL_VERSION = PROTOCOL["version"]
+MAX_REQUEST = PROTOCOL["max_request_bytes"]
+MAX_RESPONSE = PROTOCOL["max_response_bytes"]
 
 
 def arguments() -> argparse.Namespace:
@@ -166,7 +169,7 @@ def exchange(request: dict) -> dict:
     if length > MAX_RESPONSE or len(response_frame) != length + 4:
         raise RuntimeError("proxy returned an invalid response frame")
     response = json.loads(response_frame[4:])
-    if not isinstance(response, dict) or response.get("version") != 1:
+    if not isinstance(response, dict) or response.get("version") != PROTOCOL_VERSION:
         raise RuntimeError("proxy returned a malformed response")
     if "error" in response:
         raise RuntimeError(response["error"])
@@ -181,7 +184,7 @@ def request_page(
     before: str | None = None,
 ) -> dict:
     request = {
-        "version": 1,
+        "version": PROTOCOL_VERSION,
         "channel_id": channel_id,
         "topic": topic,
         "anchor": anchor,
@@ -204,7 +207,9 @@ def request_page(
 
 
 def request_topics(channel_id: int) -> list[dict]:
-    response = exchange({"version": 1, "operation": "topics", "channel_id": channel_id})
+    response = exchange({
+        "version": PROTOCOL_VERSION, "operation": "topics", "channel_id": channel_id,
+    })
     if set(response) != {"version", "topics"} or not isinstance(response["topics"], list):
         raise RuntimeError("proxy returned malformed topic data")
     for topic in response["topics"]:

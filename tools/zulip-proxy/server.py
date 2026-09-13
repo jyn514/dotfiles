@@ -20,8 +20,11 @@ from urllib.request import build_opener, HTTPRedirectHandler, Request as HttpReq
 
 SOCKET = Path(os.environ.get("SANDBOX_PROXY_SOCKET", "/run/sandbox-proxy/socket"))
 CONFIG = Path("/run/secrets/zuliprc")
-MAX_REQUEST = 16 << 10
-MAX_RESPONSE = 16 << 20
+with Path(__file__).with_name("protocol.json").open(encoding="utf-8") as stream:
+    PROTOCOL = json.load(stream)
+PROTOCOL_VERSION = PROTOCOL["version"]
+MAX_REQUEST = PROTOCOL["max_request_bytes"]
+MAX_RESPONSE = PROTOCOL["max_response_bytes"]
 
 
 class RequestError(Exception):
@@ -112,7 +115,7 @@ def parse_request(body: bytes) -> dict[str, Any]:
             raise RequestError("request has missing or unknown fields")
     if operation == "topics" and set(request) != fields:
         raise RequestError("request has missing or unknown fields")
-    if request["version"] != 1:
+    if request["version"] != PROTOCOL_VERSION:
         raise RequestError("unsupported protocol version")
     channel_id = request["channel_id"]
     if isinstance(channel_id, bool) or not isinstance(channel_id, int) or channel_id <= 0:
@@ -182,7 +185,7 @@ def fetch_page(
     if result.get("result") != "success" or not isinstance(result.get("messages"), list):
         raise RequestError(result.get("msg", "Zulip returned a malformed response"))
     return {
-        "version": 1,
+        "version": PROTOCOL_VERSION,
         "messages": result["messages"],
         "found_newest": result.get("found_newest") is True,
         "history_limited": result.get("history_limited") is True,
@@ -225,7 +228,7 @@ def fetch_topics(
     ):
         raise RequestError("Zulip returned malformed topic data")
     return {
-        "version": 1,
+        "version": PROTOCOL_VERSION,
         "topics": [{"name": topic["name"], "max_id": topic["max_id"]} for topic in topics],
     }
 
@@ -239,11 +242,11 @@ def process_request(body: bytes, endpoint: str, authorization: str) -> bytes:
             else fetch_page(endpoint, authorization, request)
         )
     except (OSError, RequestError, ValueError, json.JSONDecodeError) as error:
-        response = {"version": 1, "error": str(error)}
+        response = {"version": PROTOCOL_VERSION, "error": str(error)}
     body = json.dumps(response, separators=(",", ":")).encode()
     if len(body) > MAX_RESPONSE:
         body = json.dumps({
-            "version": 1, "error": "Zulip response exceeds the proxy output limit",
+            "version": PROTOCOL_VERSION, "error": "Zulip response exceeds the proxy output limit",
         }, separators=(",", ":")).encode()
     return body
 
@@ -253,7 +256,9 @@ def serve_connection(connection: socket.socket, endpoint: str, authorization: st
     try:
         body = read_frame(stream, MAX_REQUEST)
     except (OSError, RequestError) as error:
-        body = json.dumps({"version": 1, "error": str(error)}, separators=(",", ":")).encode()
+        body = json.dumps({
+            "version": PROTOCOL_VERSION, "error": str(error),
+        }, separators=(",", ":")).encode()
     else:
         body = process_request(body, endpoint, authorization)
     write_frame(stream, body)

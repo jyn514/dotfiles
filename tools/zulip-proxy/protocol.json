@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "max_request_bytes": 16384,
+  "max_response_bytes": 16777216
+}

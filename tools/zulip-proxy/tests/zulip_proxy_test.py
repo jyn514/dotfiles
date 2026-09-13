@@ -48,6 +48,14 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
     return bytes(result)
 
 
+class PackagingTest(unittest.TestCase):
+    def test_proxy_image_contains_the_protocol_authority(self) -> None:
+        dockerfile = (ROOT / "tools/zulip-proxy/Dockerfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "COPY tools/zulip-proxy/protocol.json /trusted/bin/protocol.json", dockerfile,
+        )
+
+
 class ForwarderTest(unittest.TestCase):
     def test_connects_with_a_supported_unix_socket_path(self) -> None:
         connection = mock.MagicMock()
@@ -65,6 +73,18 @@ class ForwarderTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def test_framing_boundary_is_shared_with_the_client(self) -> None:
+        self.assertEqual(server.PROTOCOL, client.PROTOCOL)
+        body = b" " * server.MAX_REQUEST
+        self.assertEqual(
+            body, server.read_frame(io.BytesIO(struct.pack(">I", len(body)) + body), server.MAX_REQUEST),
+        )
+        oversized = body + b" "
+        with self.assertRaisesRegex(server.RequestError, "too large"):
+            server.read_frame(
+                io.BytesIO(struct.pack(">I", len(oversized)) + oversized), server.MAX_REQUEST,
+            )
+
     def request(self, **updates: object) -> dict:
         request = {
             "version": 1,
