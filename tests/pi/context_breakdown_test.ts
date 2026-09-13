@@ -3,7 +3,7 @@ import contextBreakdown, {
   buildContextBreakdown,
   formatContextBreakdown,
   showContextBreakdown,
-} from "../../config/pi-extensions/context-breakdown";
+} from "../../config/agents/pi/pi-extensions/context-breakdown";
 
 const timestamp = Date.now();
 

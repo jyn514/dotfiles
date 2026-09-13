@@ -10,7 +10,7 @@ import sessionTitle, {
   resolveReadSessionPath,
   resolveSession,
   sessionTitleContent,
-} from "../../config/pi-extensions/session-title";
+} from "../../config/agents/pi/pi-extensions/session-title";
 
 function session(path: string, id: string, name?: string): SessionInfo {
   return {

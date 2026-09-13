@@ -50,7 +50,7 @@ For undocumented mutation APIs, test end-to-end on an owned disposable resource,
 For recovery commands, test states left by failed recovery attempts, not only clean startup and normal shutdown.
 
 Validate configuration with its native parser or application when practical, in addition to repository tests.
-Examples include shell syntax checks, `jq empty config/claude.json`, headless Neovim startup, Kitty's configuration loader, and `claude doctor`;
+Examples include shell syntax checks, `jq empty config/agents/claude/claude.json`, headless Neovim startup, Kitty's configuration loader, and `claude doctor`;
 distinguish parser failures from unrelated runtime, authentication, or environment warnings.
 
 ## Commit & Pull Request Guidelines

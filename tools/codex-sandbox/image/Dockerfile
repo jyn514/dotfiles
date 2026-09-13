@@ -71,10 +71,10 @@ ENV HOME=/home/codex
 ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
 WORKDIR /workspace
-COPY ./config/pi.json /home/codex/.pi/agent/settings.json
+COPY ./config/agents/pi/pi.json /home/codex/.pi/agent/settings.json
 COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
 RUN node /opt/cache-pi-extensions.mjs install
-COPY ./config/pi-extensions /home/codex/.pi/agent/pi-extensions
+COPY ./config/agents/pi/pi-extensions /home/codex/.pi/agent/pi-extensions
 COPY ./tools/codex-sandbox/auth-proxy/pi-extension /home/codex/.pi/agent/extensions/codex-sidecar
 RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 

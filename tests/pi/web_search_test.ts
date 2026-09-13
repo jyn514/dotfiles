@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import webSearch from "../../config/pi-extensions/pi-web-search";
+import webSearch from "../../config/agents/pi/pi-extensions/pi-web-search";
 import {
   appendWebSearchSources,
   createMetadataCollector,
   SUPPORTED_SEARCH_APIS,
-} from "../../config/pi-extensions/pi-web-search-core";
+} from "../../config/agents/pi/pi-extensions/pi-web-search-core";
 
 describe("provider web search extension", () => {
   test("does not break startup on Pi versions without provider tools", () => {

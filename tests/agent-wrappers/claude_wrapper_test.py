@@ -32,11 +32,11 @@ class ClaudeWrapperTests(unittest.TestCase):
         settings = home / ".config/claude/settings.json"
         if install_settings:
             settings.parent.mkdir(parents=True)
-            settings.symlink_to(ROOT / "config/claude.json")
+            settings.symlink_to(ROOT / "config/agents/claude/claude.json")
         legacy_settings = home / ".claude/settings.json"
         legacy_settings.parent.mkdir(parents=True)
         if legacy == "managed-link":
-            legacy_settings.symlink_to(ROOT / "config/claude.json")
+            legacy_settings.symlink_to(ROOT / "config/agents/claude/claude.json")
         else:
             legacy_settings.write_text(legacy)
 

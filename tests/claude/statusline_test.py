@@ -26,7 +26,7 @@ class CommandIntegrationTests(unittest.TestCase):
 
     def test_claude_statusline_rejects_invalid_workspace(self) -> None:
         result = subprocess.run(
-            [str(ROOT / "config/claude-statusline.sh")],
+            [str(ROOT / "config/agents/claude/claude-statusline.sh")],
             text=True,
             input='{"cwd":"/directory/that/does/not/exist"}',
             stdout=subprocess.PIPE,
@@ -37,7 +37,7 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertEqual("", result.stdout)
     def test_claude_statusline_rejects_malformed_json(self) -> None:
         result = subprocess.run(
-            [str(ROOT / "config/claude-statusline.sh")],
+            [str(ROOT / "config/agents/claude/claude-statusline.sh")],
             text=True,
             input="not json",
             stdout=subprocess.PIPE,
@@ -52,7 +52,7 @@ class CommandIntegrationTests(unittest.TestCase):
         workspace = self.directory / "workspace"
         workspace.mkdir()
         installed = self.directory / "statusline-command.sh"
-        installed.symlink_to(ROOT / "config/claude-statusline.sh")
+        installed.symlink_to(ROOT / "config/agents/claude/claude-statusline.sh")
 
         result = subprocess.run(
             [str(installed)],
@@ -79,7 +79,7 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertFalse(marker.exists())
     def test_claude_statusline_rejects_invalid_model_without_partial_output(self) -> None:
         result = subprocess.run(
-            [str(ROOT / "config/claude-statusline.sh")],
+            [str(ROOT / "config/agents/claude/claude-statusline.sh")],
             text=True,
             input='{"model":{"display_name":42}}',
             stdout=subprocess.PIPE,
@@ -90,8 +90,9 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertEqual("", result.stdout)
         self.assertIn("model name must be a string", result.stderr)
     def test_claude_statusline_contains_no_json_or_shell_filters(self) -> None:
-        launcher = (ROOT / "config/claude-statusline.sh").read_text()
+        launcher = (ROOT / "config/agents/claude/claude-statusline.sh").read_text()
 
+        self.assertIn('Path(__file__).resolve().parents[3] / "bin/prompt-command"', launcher)
         self.assertIn('os.execv(command, [str(command), "claude"])', launcher)
         for old_filter in ("jq -r", "head -n", "tr -d", "input=$(cat)", "command -v"):
             self.assertNotIn(old_filter, launcher)

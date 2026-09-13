@@ -126,7 +126,7 @@ class AgentPermissionRendererTests(unittest.TestCase):
         )
 
     def test_shared_policy_retains_claude_rules_and_adds_codex_allows(self) -> None:
-        original = json.loads((ROOT / "config/claude.json").read_text())
+        original = json.loads((ROOT / "config/agents/claude/claude.json").read_text())
         with tempfile.TemporaryDirectory() as temporary:
             base = json.loads(json.dumps(original))
             for decision in ("allow", "deny"):

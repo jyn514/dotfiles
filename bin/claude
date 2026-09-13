@@ -9,7 +9,7 @@ shim_resolve "$0" claude
 prompt=$("$DOTFILES/libexec/gen-claude-system-prompt") || fail "claude wrapper: gen-system-prompt failed"
 base_settings=$HOME/.config/claude/settings.json
 if ! [ -e "$base_settings" ]; then
-	base_settings=$DOTFILES/config/claude.json
+	base_settings=$DOTFILES/config/agents/claude/claude.json
 fi
 legacy_settings=$HOME/.claude/settings.json
 if [ -L "$legacy_settings" ] && [ "$legacy_settings" -ef "$base_settings" ]; then

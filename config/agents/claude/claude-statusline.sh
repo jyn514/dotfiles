@@ -7,7 +7,7 @@ import sys
 
 
 def main() -> int:
-    command = Path(__file__).resolve().parents[1] / "bin/prompt-command"
+    command = Path(__file__).resolve().parents[3] / "bin/prompt-command"
     try:
         os.execv(command, [str(command), "claude"])
     except OSError as error:

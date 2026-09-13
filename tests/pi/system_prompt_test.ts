@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import systemPrompt, { showSystemPrompt } from "../../config/pi-extensions/system-prompt";
+import systemPrompt, { showSystemPrompt } from "../../config/agents/pi/pi-extensions/system-prompt";
 
 describe("system prompt viewer", () => {
   test("registers the system-prompt command", () => {

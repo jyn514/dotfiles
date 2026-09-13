@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { expandInstructionIncludes } from "../../config/pi-extensions/pi-instruction-includes";
+import { expandInstructionIncludes } from "../../config/agents/pi/pi-extensions/pi-instruction-includes";
 
 const temporaryDirectories: string[] = [];
 
@@ -45,7 +45,7 @@ describe("instruction includes", () => {
     await writeFile(join(agent, "breq.md"), "Breq");
     await writeFile(join(agent, "coordination-dialect.md"), "Coordination");
     await writeFile(join(shared, "shared.md"), "Shared");
-    const content = await readFile(join(import.meta.dir, "../../config/pi-AGENTS.md"), "utf8");
+    const content = await readFile(join(import.meta.dir, "../../config/agents/pi/pi-AGENTS.md"), "utf8");
 
     const result = await expandInstructionIncludes(
       [{ path: join(agent, "AGENTS.md"), content }],

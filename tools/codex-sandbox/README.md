@@ -99,7 +99,7 @@ Alpine builds validate Node's minimum version and seed its bytecode cache with t
 Each container gets its own writable copy at `/tmp/pi-node-cache`;
 startup does not spawn a separate version-check process.
 
-The image build installs the packages selected by `config/pi.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
+The image build installs the packages selected by `config/agents/pi/pi.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
 Only the cache enters the final image, at `/tmp/jiti`;
 build-time package stores and extension runtime state are discarded.
 
@@ -108,7 +108,7 @@ Edited or newly installed extensions compile into the disposable container, so `
 Local extension and settings changes invalidate the image;
 moving Git refs are captured when the package-install layer builds and may produce runtime cache misses after an upstream update.
 
-The goal extension uses the precompiled npm release pinned in `config/pi.json`.
+The goal extension uses the precompiled npm release pinned in `config/agents/pi/pi.json`.
 Its Git distribution loads TypeScript, making cache misses more expensive.
 
 ## Common commands

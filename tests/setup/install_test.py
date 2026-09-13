@@ -885,7 +885,7 @@ class MiseConfigTests(unittest.TestCase):
         self.assertNotIn("glide-browser/glide/releases", setup)
 
     def test_claude_settings_are_valid_json(self) -> None:
-        settings = json.loads((ROOT / "config/claude.json").read_text())
+        settings = json.loads((ROOT / "config/agents/claude/claude.json").read_text())
 
         self.assertEqual("opus", settings["model"])
 

@@ -1376,17 +1376,17 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
         self.assertEqual("/src/repository", run[run.index("--workdir") + 1])
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/codex.toml'},"
+            f"type=bind,src={ROOT / 'config/agents/codex/codex.toml'},"
             "dst=/home/codex/.codex/dotfiles.config.toml,readonly",
             run,
         )
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/codex-developer-instructions.md'},"
+            f"type=bind,src={ROOT / 'config/agents/codex/codex-developer-instructions.md'},"
             "dst=/home/codex/.codex/developer-instructions.md,readonly",
             run,
         )
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/breq.md'},"
+            f"type=bind,src={ROOT / 'config/agents/breq.md'},"
             "dst=/home/codex/.codex/breq.md,readonly",
             run,
         )
@@ -1446,7 +1446,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len({source.parent for source in staged_sources}))
         self.assertTrue(all(not source.is_relative_to(ROOT) for source in staged_sources))
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/pi-extensions'},"
+            f"type=bind,src={ROOT / 'config/agents/pi/pi-extensions'},"
             "dst=/home/codex/.pi/agent/pi-extensions,readonly",
             run,
         )
