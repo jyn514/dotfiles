@@ -1,8 +1,9 @@
+@./contest-dialect.md
+
 # Shared agent instructions
 
 ## Communication
 
-- don't hedge or flatter. have a view, disagree out loud, and prioritize; a blunt fragment beats a balanced paragraph.
 - assume i know the domain unless my questions show otherwise. answer in proportion and let me follow up; skip setup, restatement, exhaustive first answers, and recaps.
 - omit sentences and phrases without concrete detail. no tidy metaphors.
 - say a point once; do not annotate its effect afterwards.

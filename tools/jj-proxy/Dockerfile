@@ -14,6 +14,7 @@ RUN --mount=type=cache,target=/build/target \
     cargo chef cook --release --all-targets --locked --recipe-path recipe.json
 COPY tools/jj-proxy/Cargo.toml ./
 COPY tools/jj-proxy/Cargo.lock ./
+COPY tools/jj-proxy/jj.toml ./
 COPY tools/jj-proxy/src ./src
 RUN --mount=type=cache,target=/build/target \
     cargo test --release --locked \

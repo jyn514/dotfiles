@@ -75,6 +75,7 @@
       "$HOME/.selected_editor": "config/selected_editor",
       "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
       "$HOME/.agents/shared.md": "config/agents/shared-agents.md",
+      "$HOME/.agents/contest-dialect.md": "config/agents/contest-dialect.md",
       "$HOME/.agents/coordination-dialect.md": "config/agents/coordination-dialect.md",
       "$HOME/.agents/sandbox/AGENTS.md": "config/agents/sandbox-AGENTS.md",
       "$HOME/.agents/skills": "skills",

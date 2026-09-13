@@ -48,6 +48,7 @@ SANDBOX_NETWORK = "codex-public-only"
 
 STAGED_CONFIG = {
     "shared": ("$HOME/.agents/shared.md", "/home/codex/.agents/shared.md"),
+    "contest": ("$HOME/.agents/contest-dialect.md", "/home/codex/.agents/contest-dialect.md"),
     "coordination": ("$HOME/.agents/coordination-dialect.md", "/home/codex/.agents/coordination-dialect.md"),
     "agents": ("$HOME/.pi/agent/AGENTS.md", "/home/codex/.pi/agent/AGENTS.md"),
     "breq": ("$HOME/.pi/agent/breq.md", "/home/codex/.pi/agent/breq.md"),
