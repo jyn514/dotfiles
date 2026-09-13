@@ -416,6 +416,8 @@ def load_repository_policy(state: State) -> None:
     ).is_file()
     helper(*snapshot_arguments)
     snapshot = json.loads(state.manifest.read_text(encoding="utf-8"))
+    if "zulip" not in snapshot["commands"]:
+        state.zuliprc = None
     state.capabilities = frozenset(
         name for name, selected in snapshot.get("capabilities", {}).items() if selected
     )

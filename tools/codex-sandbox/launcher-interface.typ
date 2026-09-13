@@ -75,15 +75,17 @@ Version 2 requires `version`; omitted `images` uses the conventional Bake file w
 present and otherwise retains installed default image policy. Omitted `capabilities`
 and `commands` mean empty objects. A repository with only the conventional Bake file
 needs no manifest.
-For example, enabling only host editing needs no image declaration:
+For example, disabling the two default services needs no image declaration:
 
 ```json
-{"version": 2, "capabilities": {"host-editor": true}}
+{"version": 2, "capabilities": {"host-editor": false, "zulip": false}}
 ```
 
-Capability values are booleans; missing optional capability
-keys mean disabled. The three optional keys above select separate per-launch
-services, subject to their existing host-authorization rules. They cannot
+Capability values are booleans. `host-editor` and `zulip` default on;
+explicit `false` disables either. `nested-containers` and `flower-r2` default off.
+These four keys select separate services, subject to their existing
+host-authorization rules. Zulip requires available host credentials;
+when disabled, it does not validate or mount those credentials. These keys cannot
 disable required services or authorize an undeclared service through host
 availability alone.
 
@@ -105,12 +107,13 @@ Reject duplicate keys, unknown fields or optional capability names, wrong types,
 mixed resolver forms, unsupported versions, and invalid protected paths before
 any resolver runs. The loader applies the existing configuration trust and
 path-protection rules; normalized output does not weaken those rules. A missing
-configuration uses installed default image policy and no optional capabilities;
+configuration uses installed default image policy, host editing, and Zulip when configured;
 an explicit malformed configuration never falls back to defaults.
 
 Version 2 is accepted for Bake-backed and project-command repositories. Installed
 helpers remain separate. Version 1 remains temporarily supported through an explicit
-adapter and grants no optional capability unless one is explicit. Remove the adapter
+adapter with the same defaults for new sessions. Accepted session policy retains
+its recorded selections. Remove the adapter
 after repository and standalone entrypoints migrate as described below.
 
 == Select capabilities before resolving images
@@ -118,11 +121,11 @@ after repository and standalone entrypoints migrate as described below.
 The launcher derives a fixed launch capability set from trusted repository
 configuration and host authorization before invoking image resolvers. The set
 contains required agent/provider services, built-in repository operations, and
-explicitly selected optional services. Resolvers supply images; they cannot
+optional services selected by defaults or explicit policy. Resolvers supply images; they cannot
 select capabilities or expand container authority.
 
-Flower R2 access, host editing, and nested container access are separate optional
-capabilities, disabled unless selected. Host availability is a prerequisite,
+Flower R2 access, host editing, Zulip, and nested container access are separate optional
+capabilities with the defaults above. Host availability is a prerequisite,
 not a selection rule. Dotfiles can omit R2 access while paracress enables it.
 Host editing and nested containers may share their existing gateway when either
 is selected; neither selected means no gateway. Selected capabilities retain
@@ -329,8 +332,8 @@ shared sessions; it does not change the accepted images of an active session.
 #table(
   columns: (1.2fr, 1.8fr, 2.5fr),
   [Input or backend], [During migration], [Required final state],
-  [No project configuration], [Installed base and helpers; no optional capabilities or project commands.], [Unchanged. Source absence is recorded in shared-session metadata.],
-  [Version 1 `image-command`], [Adapt each command as a single-name legacy resolver; capabilities remain disabled.], [Migrate to one version 2 command resolver and `image` bindings.],
+  [No project configuration], [Installed base and helpers; host editing and configured Zulip; no project commands.], [Unchanged. Source absence is recorded in shared-session metadata.],
+  [Version 1 `image-command`], [Adapt each command as a single-name legacy resolver; apply defaults to new sessions.], [Migrate to one version 2 command resolver and `image` bindings.],
   [Version 1 `image-target` and producer-style `bake`], [Adapt targets behind the bundled resolver on Lima-Docker only.], [Migrate to version 2 `images.resolver` and remove `.agents/sandbox/bake`.],
   [Executable `base-image`], [Retain only on providers already supporting it; reject combinations with version 2 `images`.], [Bind `images.base` through the version 2 resolver.],
   [Standalone `sandbox-image resolve` and `build`], [Retain as engine primitives for legacy callers and project resolvers.], [Add `refresh` and `clean` as resolver operations; engine primitives remain available.],

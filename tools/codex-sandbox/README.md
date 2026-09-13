@@ -73,13 +73,17 @@ Its [default-readiness record](lima/docker.md#default-readiness) distinguishes p
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `nested-containers`, and `flower-r2` independently.
-Missing keys are disabled.
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `zulip`, `nested-containers`, and `flower-r2` independently.
+Host editing and Zulip default on;
+`{"version": 2, "capabilities": {"host-editor": false, "zulip": false}}` disables both.
+Zulip requires host credentials;
+disabling it skips credential validation and proxy startup.
+Nested containers and Flower R2 default off.
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
-a repository needing no capabilities or command proxies can omit `proxy-commands.json`.
+a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
 An explicit image resolver overrides this convention.
 Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported for external repositories.
 This repository uses the version 2 bundled Bake resolver;

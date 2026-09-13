@@ -46,6 +46,24 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_policy_opt_out_drops_host_credentials(self):
+        load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            credentials = root / ".zuliprc"
+            credentials.write_text("unused")
+            manifest = root / "snapshot"
+            manifest.write_text(json.dumps({
+                "capabilities": {"host-editor": False, "zulip": False}, "commands": {},
+            }))
+            state = SimpleNamespace(repository=root, home=root, zuliprc=None)
+            with mock.patch.dict(load.__globals__, temporary_file=lambda: manifest,
+                                 helper=mock.Mock()), \
+                    mock.patch.dict(os.environ, CODEX_SANDBOX_ZULIPRC=str(credentials)):
+                load(state)
+            self.assertIsNone(state.zuliprc)
+            self.assertEqual(frozenset(), state.capabilities)
+
     def test_agent_image_key_tracks_sources_platform_parameters_and_actual_base(self):
         key = runpy.run_path(str(TOOL / "owned_images.py"))["agent_cache_key"]
         with tempfile.TemporaryDirectory() as directory:
@@ -947,7 +965,7 @@ class CodexSandboxTest(unittest.TestCase):
             case "$action" in
                 snapshot)
                     output=$(value_for --output "$@")
-                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{}}}' > "$output"
+                    printf '%s\n' '{"version":1,"capabilities":{"host-editor":true,"nested-containers":true},"commands":{"jj":{},"zulip":{}}}' > "$output"
                     ;;
                 join)
                     state=$(value_for --state "$@")

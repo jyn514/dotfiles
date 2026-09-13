@@ -37,7 +37,11 @@ BARE_IMAGE_RE = re.compile(r"^[0-9a-f]{64}$")
 MODES = {"read-only", "read-write", "hidden"}
 COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
 V2_COMMAND_FIELDS = {"image", "argv", "workdir", "network", "mounts"}
-CAPABILITIES = {"host-editor", "nested-containers", "flower-r2"}
+CAPABILITY_DEFAULTS = {
+    "host-editor": True, "zulip": True,
+    "nested-containers": False, "flower-r2": False,
+}
+CAPABILITIES = set(CAPABILITY_DEFAULTS)
 MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
 
 
@@ -134,7 +138,7 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
     repository_identity(repo)
     sandbox = optional_sandbox_directory(repo)
     if sandbox is None:
-        return {"version": 2, "capabilities": {}, "commands": {}}
+        return load_manifest_file(None)
     path = sandbox / "proxy-commands.json"
     if path.is_symlink():
         raise ConfigError(f"proxy manifest must not be symlinked: {path}")
@@ -142,7 +146,7 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
         bake = sandbox / "docker-bake.hcl"
         if not bake.exists():
             validate_sandbox_tree(sandbox)
-            return {"version": 2, "capabilities": {}, "commands": {}}
+            return load_manifest_file(None)
         _regular_unlinked(bake, "default Bake resolver")
         validate_sandbox_tree(sandbox)
         return load_manifest_file(None, default_bake=True)
@@ -175,7 +179,7 @@ def load_manifest_file(path: Path | None, *, default_bake: bool = False) -> dict
         if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
                 not all(isinstance(value, bool) for value in capabilities.values())):
             raise ConfigError("proxy manifest has invalid capabilities")
-        capabilities = {name: capabilities.get(name, False) for name in sorted(CAPABILITIES)}
+        capabilities = {**CAPABILITY_DEFAULTS, **capabilities}
         images = data.get("images")
         if default_bake and images is None:
             images = {
@@ -1126,10 +1130,15 @@ def inspect_main(args: argparse.Namespace) -> int:
 
 
 def snapshot_main(args: argparse.Namespace) -> int:
-    manifest = serializable_manifest(load_optional_manifest(Path(args.repo)))
+    manifest = load_optional_manifest(Path(args.repo))
+    # Apply defaults only to new repository policy, never to accepted sessions.
+    manifest["capabilities"] = {**CAPABILITY_DEFAULTS, **manifest.get("capabilities", {})}
     # Snapshots are launcher-owned normalized policy. Version 1 command image
     # bindings keep installed helpers distinct from repository declarations.
     manifest["version"] = 1
+    manifest = serializable_manifest(manifest)
+    if "zulip" in manifest["commands"]:
+        raise ConfigError("repository manifest may not override trusted command: zulip")
     if args.jj_image_command:
         builder = Path(args.jj_image_command)
         if not builder.is_absolute():
@@ -1150,7 +1159,7 @@ def snapshot_main(args: argparse.Namespace) -> int:
     zuliprc = getattr(args, "zuliprc", None)
     if bool(zulip_image_command) != bool(zuliprc):
         raise ConfigError("trusted Zulip proxy requires both image command and credentials")
-    if zulip_image_command:
+    if zulip_image_command and manifest["capabilities"]["zulip"]:
         builder = Path(zulip_image_command)
         if not builder.is_absolute():
             raise ConfigError("trusted Zulip image command must be absolute")
@@ -1158,8 +1167,6 @@ def snapshot_main(args: argparse.Namespace) -> int:
         if not os.access(builder, os.X_OK):
             raise ConfigError(f"trusted Zulip image command is not executable: {builder}")
         zuliprc_mount_args(Path(zuliprc))
-        if "zulip" in manifest["commands"]:
-            raise ConfigError("repository manifest may not override trusted command: zulip")
         manifest["commands"]["zulip"] = {
             "image-command": [str(builder)],
             "argv": ["zulip-proxy"],

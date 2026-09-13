@@ -91,7 +91,10 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sys, "argv", ["caller", "unrelated-argument"]):
             self.assertEqual(0, sandbox_proxies.main(arguments))
             self.assertEqual(
-                {"version": 1, "capabilities": {}, "commands": {}},
+                {"version": 1, "capabilities": {
+                    "host-editor": True, "zulip": True,
+                    "nested-containers": False, "flower-r2": False,
+                }, "commands": {}},
                 json.loads(output.read_text()),
             )
             self.assertEqual(["caller", "unrelated-argument"], sys.argv)
@@ -121,6 +124,24 @@ class ManifestTest(unittest.TestCase):
         manifest = sandbox_proxies.load_manifest(self.repo)
         self.assertEqual(["example-proxy", "serve"], manifest["commands"]["example"]["argv"])
 
+    def test_default_services_and_explicit_opt_outs(self) -> None:
+        for capabilities in ({}, {"host-editor": False}, {"zulip": False},
+                             {"host-editor": False, "zulip": False}):
+            with self.subTest(capabilities=capabilities):
+                self.write(version=2, capabilities=capabilities)
+                selected = sandbox_proxies.load_manifest(self.repo)["capabilities"]
+                self.assertEqual({
+                    "host-editor": True, "zulip": True,
+                    "nested-containers": False, "flower-r2": False,
+                    **capabilities,
+                }, selected)
+
+    def test_missing_sandbox_uses_default_services(self) -> None:
+        self.sandbox.rmdir()
+        selected = sandbox_proxies.load_optional_manifest(self.repo)["capabilities"]
+        self.assertTrue(selected["host-editor"])
+        self.assertTrue(selected["zulip"])
+
     def test_version_two_selects_capabilities_and_binds_bake_images(self) -> None:
         self.sandbox.joinpath("proxy-commands.json").write_text(json.dumps({
             "version": 2,
@@ -142,6 +163,12 @@ class ManifestTest(unittest.TestCase):
         self.assertTrue(manifest["capabilities"]["host-editor"])
         self.assertFalse(manifest["capabilities"]["nested-containers"])
         self.assertEqual("example", manifest["commands"]["example"]["image-target"])
+        snapshot = self.repo / "snapshot.json"
+        sandbox_proxies.snapshot_main(SimpleNamespace(
+            repo=str(self.repo), output=str(snapshot), jj_image_command=None,
+        ))
+        accepted = sandbox_proxies.load_manifest_file(snapshot)
+        self.assertEqual("example", accepted["commands"]["example"]["image-target"])
 
     def test_conventional_bake_file_supplies_policy_without_manifest(self) -> None:
         bake = self.sandbox / "docker-bake.hcl"
@@ -559,6 +586,29 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual([str(builder.resolve())], command["image-command"])
         self.assertTrue(command["network"])
         self.assertEqual([], command["mounts"])
+
+    def test_zulip_opt_out_skips_credentials_and_builder(self) -> None:
+        self.write(version=2, capabilities={"zulip": False})
+        snapshot = self.repo / "snapshot"
+        args = SimpleNamespace(
+            repo=str(self.repo), output=str(snapshot), jj_image_command=None,
+            zulip_image_command=str(self.repo / "missing-builder"),
+            zuliprc=str(self.repo / "missing-credentials"),
+        )
+        sandbox_proxies.snapshot_main(args)
+        policy = sandbox_proxies.load_manifest_file(snapshot)
+        self.assertNotIn("zulip", policy["commands"])
+        self.assertFalse(policy["capabilities"]["zulip"])
+        self.write(version=2)
+        self.assertFalse(sandbox_proxies.load_manifest_file(snapshot)["capabilities"]["zulip"])
+
+    def test_zulip_name_is_reserved_even_when_disabled(self) -> None:
+        self.write({"zulip": self.command()}, capabilities={"zulip": False})
+        args = SimpleNamespace(
+            repo=str(self.repo), output=str(self.repo / "snapshot"), jj_image_command=None,
+        )
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "override trusted command: zulip"):
+            sandbox_proxies.snapshot_main(args)
 
     def test_rejects_insecure_zulip_credentials(self) -> None:
         zuliprc = self.repo / "zuliprc"
