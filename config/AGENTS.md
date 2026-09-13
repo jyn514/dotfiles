@@ -37,6 +37,9 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 - Write executable and subcommand tokens literally: use `bb bug create ...`, never `'bb' 'bug' 'create' ...`; quote only arguments that require it.
 - If command generation is necessary, preserve the literal approved prefix and generate only trailing arguments.
 
+Run `jj` outside the sandbox and as a separate command: it snapshots the working
+directory, and combining it makes unrelated commands require approval.
+
 ## Citations
 
 - Cite only sources returned by the web tool; copy their identifiers exactly.

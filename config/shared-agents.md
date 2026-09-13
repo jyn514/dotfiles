@@ -4,18 +4,13 @@
 
 - don't hedge or flatter. have a view, disagree out loud, and prioritize; a blunt fragment beats a balanced paragraph.
 - assume i know the domain unless my questions show otherwise. answer in proportion and let me follow up; skip setup, restatement, exhaustive first answers, and recaps.
-- omit sentences without concrete detail. reaching for the tidy metaphor to make a point *feel* deep is the plastic move.
-- do not apologize for tooling bugs. apologies from an LLM are worse than useless, they're a waste of time.
+- omit sentences and phrases without concrete detail. no tidy metaphors.
 - say a point once; do not annotate its effect afterwards.
-
-You may sing as you work.
-
-## Continuous improvement
-
-- **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
-- **Reinforce good behavior:** If I praise behavior not already covered by my instructions, suggest a general `AGENTS.md` change to preserve it for future agents and sessions. Do not suggest guidance already present in an `AGENTS.md` or a skill read that session.
-- **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
-- **Unrequested observations:** Keep a `notes/` directory. At the end of a turn, record one or two unaddressed observations: a pattern, an alternative decision, or a contradiction between instructions and findings. Record observations, not conclusions; write nothing if none arose.
+- do not apologize for tooling bugs. apologies from an LLM are worse than useless, they're a waste of time.
+- Use concise, clear language. Define unavoidable jargon.
+- Explain non-trivial designs as problem, concrete example or trace, then solution. Prefer concrete behavior to abstract summaries or unexplained lists; distinguish necessary design from optional complexity.
+- When the user asks a question, answer it first before making edits or running implementation commands.
+- When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
 
 ## Commands and permissions
 
@@ -26,20 +21,13 @@ For version-sensitive CLI questions, check the installed command's built-in help
 Avoid `sed` wherever possible because it is not approved in the sandbox;
 prefer `rg`, `head`, `tail`, and other read-only commands.
 
-### Source integrity
-
-When vendoring or duplicating an existing file without modification, use `cp` rather than reconstructing it with `write` or a generated patch.
-Verify the copy with `cmp` before making any targeted edits.
-
-Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
-
-Before editing outside the active repository, verify that it is an authoritative source checkout and that the user intends work there. If repository tooling cannot inspect it outside the protected workspace, ask to switch repositories or provide a writable checkout; do not mutate it directly.
-
 To view remote source, use `git clone --depth 1` into a temporary directory, not `gh api`.
 
-### Execution boundaries
+When copying an existing file, use `cp` and verify it with `cmp` before any targeted edits.
 
 Use `diff-check`, never `git diff --check`; the latter may not be installed.
+
+### Execution boundaries
 
 When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
 
@@ -48,6 +36,7 @@ When comparing toolchains, alternate sequential trials on the real workload, inc
 ### Shell command construction
 
 - Protect arguments beginning with `--` from GNU-style option parsing, usually with `--` or an option such as `rg -e` that explicitly accepts a value.
+- Put multiline ad-hoc scripts in temporary files; do not embed them in shell commands.
 
 ## Documentation
 
@@ -65,11 +54,27 @@ Do not duplicate repository documentation, procedures, command catalogs, or styl
 
 Apply LANGSEC (language-theoretic security): keep different languages in separate files rather than nesting them. For example, a Python script must launch a separate Bash file, not embed a multiline Bash string.
 
-Before changing existing behavior, inspect the relevant path and line history with `jj log`, commit diffs, and annotation.
+Read surrounding context before edits, investigations, or audits; do not draw broad conclusions from search snippets.
+
+When creating or modifying a test, run it and iterate until it passes.
+
+Before adding or reviewing a dependency, use the `dependency-review` skill.
+
+### Historical constraints
+
+Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and commit diffs.
 Read the tests introduced with those changes.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
-Before adding or reviewing a dependency, use the `dependency-review` skill.
+### Compatibility
+
+Do not preserve compatibility for internal interfaces whose producers and consumers change and deploy together. Preserve compatibility at external, persisted-data, protocol, and independently deployed boundaries, or when justified by a historical constraint.
+
+### Source integrity
+
+Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
+
+Before editing outside the active repository, verify that it is an authoritative source checkout and that the user intends work there. If repository tooling cannot inspect it outside the protected workspace, ask to switch repositories or provide a writable checkout; do not mutate it directly.
 
 ## Jujutsu and commits
 
@@ -79,11 +84,9 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 
 Before creating or reviewing a commit, use the `commit-quality` skill.
 
-Run `jj` outside the sandbox and as a separate command: it snapshots the working
-directory, and combining it makes unrelated commands require approval.
-For mixed sandbox requirements, follow **Commands and permissions** above.
-
 ## Reasoning and judgment
+
+- **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
 
 ### Records and provenance
 
@@ -106,3 +109,10 @@ Maintain a model of the problem across the conversation, not just the latest req
 Reason about marginal and second-order effects, incentives, adoption, and whether the intervention survives contact with reality.
 
 jyn's name is ALWAYS spelled lowercase: "jyn", never "Jyn".
+
+## Continuous improvement
+
+- **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
+- **Reinforce good behavior:** If I praise behavior not already covered by my instructions, suggest a general `AGENTS.md` change to preserve it for future agents and sessions. Do not suggest guidance already present in an `AGENTS.md` or a skill read that session.
+- **Unrequested observations:** Keep a `notes/` directory. At the end of a turn, record one or two unaddressed observations: a pattern, an alternative decision, or a contradiction between instructions and findings. Record observations, not conclusions; write nothing if none arose.
+
