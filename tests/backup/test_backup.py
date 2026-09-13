@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -49,12 +51,12 @@ class BackupTests(unittest.TestCase):
             check=False,
         )
 
-    def test_default_command_preserves_backup_arguments(self) -> None:
+    def test_default_command_backs_up_one_documents_root(self) -> None:
         result = self.run_backup("--dry-run")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"backup {self.documents}/backups --exclude notes/ --skip-if-unchanged "
+            f"backup --exclude notes/ --skip-if-unchanged "
             f"--cache-dir {self.directory}/cache --tag documents-backup --dry-run .\n",
             self.log.read_text(),
         )
@@ -91,6 +93,94 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("usage:", result.stderr)
         self.assertFalse(self.log.exists())
+
+
+@unittest.skipUnless(
+    shutil.which("restic"),
+    "restic is not installed; disposable repository integration unavailable",
+)
+class BackupResticIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.documents = self.directory / "Documents"
+        (self.documents / "backups").mkdir(parents=True)
+        (self.documents / "notes").mkdir()
+        (self.documents / "backups" / "nested.txt").write_text("backup data\n")
+        (self.documents / "letter.txt").write_text("document data\n")
+        (self.documents / "notes" / "private.txt").write_text("excluded\n")
+        self.repository = self.directory / "repository"
+        self.cache = self.directory / "cache"
+        self.env_file = self.directory / "restic.env"
+        self.env_file.write_text(
+            f"export RESTIC_REPOSITORY={self.repository}\n"
+            "export RESTIC_PASSWORD=test-password\n"
+        )
+        self.environment = os.environ | {
+            "BACKUP_DOCUMENTS": str(self.documents),
+            "BACKUP_HOME": str(self.directory),
+            "BACKUP_TAG": "integration-documents",
+            "RESTIC_CACHE_DIR": str(self.cache),
+            "RESTIC_ENV_FILE": str(self.env_file),
+            "RESTIC_HOME": str(self.directory),
+            "RESTIC_PASSWORD": "test-password",
+            "RESTIC_REPOSITORY": str(self.repository),
+        }
+        self.run_restic("init")
+
+    def run_restic(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["restic", *arguments],
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
+
+    def test_snapshot_has_one_root_and_restores_canonical_layout(self) -> None:
+        backup = subprocess.run(
+            [str(ROOT / "bin/backup")],
+            env=self.environment,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(0, backup.returncode, backup.stderr)
+
+        snapshots = json.loads(
+            self.run_restic("snapshots", "--tag", "integration-documents", "--json").stdout
+        )
+        self.assertEqual(1, len(snapshots))
+        self.assertEqual([str(self.documents)], snapshots[0]["paths"])
+
+        listing = [
+            json.loads(line)
+            for line in self.run_restic(
+                "ls", "latest", "--tag", "integration-documents", "--json"
+            ).stdout.splitlines()
+        ]
+        paths = [entry["path"] for entry in listing if entry.get("struct_type") == "node"]
+        self.assertEqual(1, paths.count("/backups/nested.txt"))
+        self.assertNotIn("/notes/private.txt", paths)
+
+        restore = self.directory / "restore"
+        self.run_restic(
+            "restore",
+            "latest",
+            "--tag",
+            "integration-documents",
+            "--target",
+            str(restore),
+        )
+        self.assertEqual(
+            "backup data\n",
+            (restore / "backups" / "nested.txt").read_text(),
+        )
+        self.assertEqual("document data\n", (restore / "letter.txt").read_text())
+        self.assertFalse((restore / "notes").exists())
 
 
 if __name__ == "__main__":

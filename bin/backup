@@ -21,6 +21,9 @@
 # sudo -u restic $(which backup) --dry-run
 # backup check checks repository metadata and 5% of its data.
 # backup prune applies the retention policy below and removes unreferenced data.
+# Documents snapshots have one root: BACKUP_DOCUMENTS. Restore with
+# `restic restore latest --tag documents-backup --target TARGET`; its contents
+# are restored directly beneath TARGET.
 # Set HEALTHCHECKS_URL in restic.env to receive start, success, and failure pings.
 
 set -eu
@@ -80,7 +83,7 @@ ping start
 case "$command" in
 backup)
 	cd "$documents"
-	restic backup "$documents/backups" --exclude notes/ --skip-if-unchanged \
+	restic backup --exclude notes/ --skip-if-unchanged \
 		--cache-dir "$cache_dir" --tag "$backup_tag" "$@" .
 	;;
 check)
