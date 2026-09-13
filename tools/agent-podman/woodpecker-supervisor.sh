@@ -1,8 +1,15 @@
 #!/bin/bash
 set -eu
 
+SCRIPT_DIR=$(CDPATH='' cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+CONFIG=$SCRIPT_DIR/agent-podman.conf
+[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || {
+	printf 'woodpecker supervisor: missing adjacent-deployment configuration: %s\n' "$CONFIG" >&2
+	exit 1
+}
+# shellcheck source=agent-podman.conf
+. "$CONFIG"
 ROOT=$HOME/.local/state/agent-podman/woodpecker-runs
-RELABEL_IMAGE=docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
 die() {
 	printf 'woodpecker supervisor: %s\n' "$*" >&2

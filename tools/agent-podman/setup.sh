@@ -11,25 +11,23 @@ IFS=${IFS%x}
 umask 077
 unset CDPATH ENV BASH_ENV ZDOTDIR
 
-ACCOUNT=_agentpodman
-ACCOUNT_GROUP=_agentpodman
-MACHINE=agent-podman
-GUEST_ACCOUNT=agentbuilder
-ACCOUNT_HOME=/Users/$ACCOUNT
-MARKER_DIR=/var/db/agent-podman
+SCRIPT_PATH=$(/bin/realpath "$0")
+SCRIPT_DIR=$(CDPATH='' cd -P -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)
+CONFIG_SOURCE=$SCRIPT_DIR/agent-podman.conf
+[ -f "$CONFIG_SOURCE" ] && [ ! -L "$CONFIG_SOURCE" ] || {
+  printf 'error: missing adjacent-deployment configuration: %s\n' "$CONFIG_SOURCE" >&2
+  exit 1
+}
+# shellcheck source=agent-podman.conf
+. "$CONFIG_SOURCE"
 MARKER=$MARKER_DIR/$ACCOUNT
 GROUP_MARKER=$MARKER_DIR/group
 PF_RULES=$MARKER_DIR/pf.rules
 PF_ENABLE_LOG=$MARKER_DIR/pf-enable.log
-PF_ANCHOR=com.apple/000.agent-podman
-SCRIPT_PATH=$(/bin/realpath "$0")
-SCRIPT_DIR=$(CDPATH='' cd -P -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)
 SUPERVISOR_SOURCE=$SCRIPT_DIR/woodpecker-supervisor.sh
 CPUS=${AGENT_PODMAN_CPUS:-6}
 MEMORY=${AGENT_PODMAN_MEMORY:-12288}
 DISK_SIZE=${AGENT_PODMAN_DISK_SIZE:-30}
-WOODPECKER_VERSION=3.15.0
-RELABEL_IMAGE=docker.io/library/alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -37,7 +35,7 @@ die() {
 }
 
 [ -f "$SUPERVISOR_SOURCE" ] && [ ! -L "$SUPERVISOR_SOURCE" ] && [ -s "$SUPERVISOR_SOURCE" ] || \
-  die "missing safe Woodpecker supervisor: $SUPERVISOR_SOURCE"
+  die "missing adjacent-deployment Woodpecker supervisor: $SUPERVISOR_SOURCE"
 
 find_role_uid() {
   used_uids=$(dscl . -list /Users UniqueID | awk 'NF >= 2 { print $NF }')
@@ -403,15 +401,23 @@ WOODPECKER_ACTUAL_SHA256=$(run_guest /usr/bin/sha256sum "/tmp/$WOODPECKER_ARCHIV
   die "Woodpecker archive checksum mismatch"
 run_guest /usr/bin/tar -xzf "/tmp/$WOODPECKER_ARCHIVE" -C "/home/$GUEST_ACCOUNT/.local/bin" woodpecker-cli
 run_guest /usr/bin/rm -f "/tmp/$WOODPECKER_ARCHIVE"
-SUPERVISOR_TARGET=/home/$GUEST_ACCOUNT/.local/libexec/agent-podman/woodpecker-supervisor
+SUPERVISOR_DIR=/home/$GUEST_ACCOUNT/.local/libexec/agent-podman
+SUPERVISOR_TARGET=$SUPERVISOR_DIR/woodpecker-supervisor
+CONFIG_TARGET=$SUPERVISOR_DIR/agent-podman.conf
 run_guest /usr/bin/tee "$SUPERVISOR_TARGET" < "$SUPERVISOR_SOURCE" >/dev/null
+run_guest /usr/bin/tee "$CONFIG_TARGET" < "$CONFIG_SOURCE" >/dev/null
 run_guest /usr/bin/chmod 700 "$SUPERVISOR_TARGET"
-SUPERVISOR_SOURCE_SHA256=$(/usr/bin/shasum -a 256 "$SUPERVISOR_SOURCE" | \
-  /usr/bin/awk 'NF >= 1 { print $1; exit }')
-SUPERVISOR_TARGET_SHA256=$(run_guest /usr/bin/sha256sum "$SUPERVISOR_TARGET" | \
-  /usr/bin/awk 'NF >= 1 { print $1; exit }')
-[ "$SUPERVISOR_TARGET_SHA256" = "$SUPERVISOR_SOURCE_SHA256" ] || \
-  die "installed Woodpecker supervisor checksum mismatch"
+run_guest /usr/bin/chmod 600 "$CONFIG_TARGET"
+for installed_file in woodpecker-supervisor agent-podman.conf; do
+  case $installed_file in
+    woodpecker-supervisor) source_file=$SUPERVISOR_SOURCE ;;
+    agent-podman.conf) source_file=$CONFIG_SOURCE ;;
+  esac
+  source_sha256=$(/usr/bin/shasum -a 256 "$source_file" | /usr/bin/awk 'NF >= 1 { print $1; exit }')
+  target_sha256=$(run_guest /usr/bin/sha256sum "$SUPERVISOR_DIR/$installed_file" | \
+    /usr/bin/awk 'NF >= 1 { print $1; exit }')
+  [ "$target_sha256" = "$source_sha256" ] || die "installed $installed_file checksum mismatch"
+done
 run_guest /usr/bin/podman pull "$RELABEL_IMAGE"
 
 printf '%s\n' \

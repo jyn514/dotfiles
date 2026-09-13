@@ -11,16 +11,19 @@ IFS=${IFS%x}
 umask 077
 unset CDPATH ENV BASH_ENV ZDOTDIR
 
-ACCOUNT=_agentpodman
-ACCOUNT_GROUP=_agentpodman
-MACHINE=agent-podman
-ACCOUNT_HOME=/Users/$ACCOUNT
-MARKER_DIR=/var/db/agent-podman
+SCRIPT_PATH=$(/bin/realpath "$0")
+SCRIPT_DIR=$(CDPATH='' cd -P -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)
+CONFIG=$SCRIPT_DIR/agent-podman.conf
+[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || {
+  printf 'error: missing adjacent-deployment configuration: %s\n' "$CONFIG" >&2
+  exit 1
+}
+# shellcheck source=agent-podman.conf
+. "$CONFIG"
 MARKER=$MARKER_DIR/$ACCOUNT
 GROUP_MARKER=$MARKER_DIR/group
 PF_RULES=$MARKER_DIR/pf.rules
 PF_ENABLE_LOG=$MARKER_DIR/pf-enable.log
-PF_ANCHOR=com.apple/000.agent-podman
 
 die() {
   printf 'error: %s\n' "$*" >&2

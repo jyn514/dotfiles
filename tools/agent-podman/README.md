@@ -15,10 +15,11 @@ Public Internet access remains available for image and package downloads.
 The machine also contains a pinned `woodpecker-cli` and a supervisor used by
 the sandbox's `woodpecker-cli exec` adapter. The adapter stages the requested
 repository inside the machine, applies a shared SELinux label only to that
-per-run workspace, streams Woodpecker output, and safely reaps abandoned runs.
+per-run workspace, streams Woodpecker output, and reaps abandoned runs.
 
 This is a meaningful VM boundary, not protection against VM-runtime vulnerabilities.
-The threat model treats the host administrator, setup environment, and installed scripts as trusted, while treating the agent container, submitted build inputs, and eventually the entire guest as hostile.
+The threat model treats the host administrator, setup environment, and the entire adjacent deployment—including the configuration and installed scripts—as trusted, while treating the agent container, submitted build inputs, and eventually the entire guest as hostile.
+The scripts reject missing and symlinked adjacent files, but those checks do not make an untrusted deployment safe.
 The guest retains public network access.
 The PF rules substantially restrict standard host and LAN ranges, but they are not an egress allowlist and cannot identify privately routed public address space.
 The restricted macOS account may also read files that host permissions make world-readable.
@@ -34,7 +35,8 @@ for example:
 
 ```sh
 sudo install -d -m 755 -o root -g wheel /usr/local/libexec/agent-podman
-sudo install -m 755 -o root -g wheel setup.sh teardown.sh woodpecker-supervisor.sh /usr/local/libexec/agent-podman/
+sudo install -m 755 -o root -g wheel setup.sh start.sh stop.sh teardown.sh woodpecker-supervisor.sh /usr/local/libexec/agent-podman/
+sudo install -m 644 -o root -g wheel agent-podman.conf /usr/local/libexec/agent-podman/
 ```
 
 Run the installed setup script:
@@ -42,6 +44,10 @@ Run the installed setup script:
 ```sh
 sudo /usr/local/libexec/agent-podman/setup.sh
 ```
+
+`agent-podman.conf` is the single authority for lifecycle identities, paths, the Woodpecker version, and the pinned relabel image. Setup installs a copy beside the standalone guest supervisor and verifies that copy. Treat the configuration and every script beside it as one trusted, administrator-controlled deployment.
+
+Provisioning has a fresh-install contract. Configuration or deployment changes require teardown and reprovisioning; the scripts provide no in-place upgrade or migration guarantee. Teardown the existing provision with the unchanged configuration and scripts that created it, install the updated adjacent deployment, and then run setup again. Replacing the configuration first can prevent teardown from finding the state it owns.
 
 The scripts find `podman` on the standard Homebrew or system path.
 If it is elsewhere, pass the trusted absolute path to both setup and teardown as `AGENT_PODMAN_BIN=/path/to/podman`.
@@ -101,7 +107,7 @@ tools/agent-podman/start.sh
 
 Do not recreate keys, known-hosts files, or the relay first.
 If the machine is already running or its forwarded port changed, restart the sandbox so the launcher regenerates the relay and connection metadata together.
-Use teardown and setup only when the existing machine or persisted access state cannot be recovered.
+Use teardown and setup when the existing machine or persisted access state cannot be recovered, or when changing the trusted adjacent deployment. Routine recovery does not otherwise require reprovisioning.
 
 ## Teardown
 

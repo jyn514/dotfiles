@@ -124,6 +124,30 @@ class ParseExecTest(unittest.TestCase):
         self.assertIn("HostKeyAlias=agent-podman", command)
 
 
+class DeploymentAuthorityTest(unittest.TestCase):
+    def test_relabel_pin_has_one_source_and_both_consumers_load_it(self) -> None:
+        directory = ROOT / "tools/agent-podman"
+        pin = "docker.io/library/alpine@sha256:"
+        occurrences = [
+            path.name
+            for path in directory.iterdir()
+            if path.is_file() and pin in path.read_text()
+        ]
+        self.assertEqual(occurrences, ["agent-podman.conf"])
+        self.assertIn('. "$CONFIG_SOURCE"', (directory / "setup.sh").read_text())
+        self.assertIn('. "$CONFIG"', (directory / "woodpecker-supervisor.sh").read_text())
+
+    def test_lifecycle_scripts_take_home_and_machine_from_config(self) -> None:
+        directory = ROOT / "tools/agent-podman"
+        for operation in ("start", "stop"):
+            script = (directory / f"{operation}.sh").read_text()
+            with self.subTest(operation=operation):
+                self.assertIn('. "$CONFIG"', script)
+                self.assertIn('HOME="$ACCOUNT_HOME"', script)
+                self.assertIn(f'machine {operation} "$MACHINE"', script)
+                self.assertNotIn("_agentspodman", script)
+
+
 class SupervisorTest(unittest.TestCase):
     RUN_ID = "1234567890abcdef1234567890abcdef"
 
@@ -163,6 +187,32 @@ class SupervisorTest(unittest.TestCase):
             check=True,
             capture_output=True,
         )
+
+    def test_relabel_image_follows_adjacent_deployment_config(self) -> None:
+        installed = self.home / "installed"
+        installed.mkdir()
+        supervisor = installed / "woodpecker-supervisor"
+        supervisor.write_bytes(self.supervisor.read_bytes())
+        supervisor.chmod(0o755)
+        configured_image = "registry.example.invalid/relabel@sha256:" + "a" * 64
+        (installed / "agent-podman.conf").write_text(f"RELABEL_IMAGE={configured_image}\n")
+        podman_log = self.home / "podman.log"
+        (self.bin / "podman").write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$PODMAN_LOG\"\n"
+        )
+        self.env["PODMAN_LOG"] = str(podman_log)
+        self.cli.write_text("#!/bin/sh\nexit 0\n")
+        self.cli.chmod(0o755)
+
+        subprocess.run(
+            [supervisor, "run", self.RUN_ID],
+            input=MODULE.encode_argv(["exec", "pipeline.yml"]),
+            env=self.env,
+            check=True,
+            capture_output=True,
+        )
+
+        self.assertIn(f" {configured_image} /bin/true", podman_log.read_text())
 
     def test_run_preserves_arguments_exactly(self) -> None:
         self.cli.write_text(
