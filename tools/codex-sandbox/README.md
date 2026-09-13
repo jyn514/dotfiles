@@ -257,6 +257,8 @@ a join cannot rewrite shared metadata.
   It terminates registered launcher processes, resets shared session metadata after cleanup, then resumes their sessions.
   Inherited `remain-on-exit` settings need no pane-local override.
 - If automatic cleanup warns about a named resource, inspect and remove only that generated resource with the container CLI, then retry.
+  For surviving containers and volumes, the diagnostic includes each resource name and its removal error.
+  A volume still referenced by a stopped agent container cannot be removed until that container is removed.
   Do not delete the host coordination lock files manually.
 - A stopped shared proxy terminates attached agents.
   Restart the sandbox rather than running the protected operation locally.

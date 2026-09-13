@@ -821,6 +821,48 @@ class ManifestTest(unittest.TestCase):
                 sandbox_proxies.reset_main(type("Args", (), {"repo": str(self.repo)}))
         self.assertEqual(contents, metadata.read_text())
 
+    def test_cleanup_reports_survivors_with_engine_errors_and_keeps_metadata(self) -> None:
+        self.write()
+        metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
+        for kind in ("containers", "volumes"):
+            with self.subTest(kind=kind):
+                state = {"runtime": {"provider": "podman"}, "proxies": [
+                    {"container": "proxy", "volume": "busy-volume"},
+                    {"container": "gone", "volume": "gone-volume"},
+                ]}
+                contents = json.dumps({"version": 2, "state": state})
+                metadata.write_text(contents)
+
+                def run(arguments, **kwargs):
+                    output, error, status = "", "", 0
+                    if arguments[:2] == ["container", "ls"] and kind == "containers":
+                        output = "proxy\n"
+                    elif arguments[:2] == ["volume", "ls"]:
+                        output = "busy-volume\n"
+                    elif arguments == ["rm", "proxy"]:
+                        error, status = "container is running", 1
+                    elif arguments == ["volume", "rm", "busy-volume"]:
+                        error, status = "volume is in use - [stopped-agent-1, stopped-agent-2]", 1
+                    elif arguments[0] in ("kill", "rm"):
+                        error, status = "No such container", 1
+                    # Match subprocess: discarded stderr is unavailable to the caller.
+                    return subprocess.CompletedProcess(arguments, status, stdout=output,
+                        stderr=error if kwargs.get("capture_output") else None)
+
+                owner = mock.Mock()
+                owner.run.side_effect = run
+                with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+                    with self.assertRaises(sandbox_proxies.ConfigError) as raised:
+                        sandbox_proxies.reset_main(SimpleNamespace(repo=str(self.repo)))
+                diagnostic = str(raised.exception)
+                self.assertIn("retaining recovery metadata", diagnostic)
+                if kind == "volumes":
+                    self.assertIn("busy-volume: volume is in use - [stopped-agent-1, stopped-agent-2]", diagnostic)
+                else:
+                    self.assertIn("proxy: container is running", diagnostic)
+                self.assertNotIn("No such container", diagnostic)
+                self.assertEqual(contents, metadata.read_text())
+
     def test_local_fallback_preserves_stale_session_recovery_record(self) -> None:
         self.write({"example": self.command()})
         metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"

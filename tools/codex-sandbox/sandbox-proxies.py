@@ -954,24 +954,37 @@ def stop_state(state: dict[str, Any]) -> None:
             owner.stop_proxy_forward(proxy['forwarding'])
     containers.extend(proxy["container"] for proxy in proxies)
 
-    def discard(arguments: list[str]) -> None:
-        owner.run(arguments[1:], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def discard(arguments: list[str]) -> subprocess.CompletedProcess:
+        return owner.run(arguments[1:], check=False, capture_output=True)
+
+    def report_remaining(kind, names, results, remaining):
+        survivors = set(names).intersection(remaining)
+        if not survivors:
+            return
+        details = []
+        for name, result in zip(names, results):
+            if name in survivors:
+                reason = (result.stderr or "").strip() or f"removal exited {result.returncode} without a diagnostic"
+                details.append(f"  {name}: {reason}")
+        raise ConfigError(
+            f"recorded {kind} remain after cleanup; retaining recovery metadata:\n"
+            + "\n".join(details)
+        )
 
     # Podman's forced removal waits for the container stop timeout. Send SIGKILL
     # explicitly, then remove independent containers concurrently.
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         list(executor.map(lambda container: discard(["docker", "kill", container]), containers))
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
-        list(executor.map(lambda container: discard(["docker", "rm", container]), containers))
+        results = list(executor.map(lambda container: discard(["docker", "rm", container]), containers))
     if containers:
         remaining = owner.run(["container", "ls", "--all", "--format", "{{.Names}}"],
                               capture_output=True).stdout.splitlines()
-        if set(containers).intersection(remaining):
-            raise ConfigError("recorded containers remain after cleanup; retaining recovery metadata")
+        report_remaining("containers", containers, results, remaining)
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
     volumes_started = time.monotonic()
-    volumes = set(proxy["volume"] for proxy in proxies)
+    volumes = sorted(set(proxy["volume"] for proxy in proxies))
     for proxy in proxies:
         if "volume-owner" in proxy:
             existing = owner.run(["volume", "ls", "--format", "{{.Name}}"],
@@ -983,12 +996,11 @@ def stop_state(state: dict[str, Any]) -> None:
             if volume.get("Labels", {}).get("dev.codex.volume-owner") != proxy["volume-owner"]:
                 raise ConfigError("volume belongs to another creator; retaining recovery metadata")
     with ThreadPoolExecutor(max_workers=max(1, len(volumes))) as executor:
-        list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
+        results = list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
     if volumes:
         remaining = owner.run(["volume", "ls", "--format", "{{.Name}}"],
                               capture_output=True).stdout.splitlines()
-        if volumes.intersection(remaining):
-            raise ConfigError("recorded volumes remain after cleanup; retaining recovery metadata")
+        report_remaining("volumes", volumes, results, remaining)
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
 
