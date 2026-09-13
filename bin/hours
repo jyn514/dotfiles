@@ -1,36 +1,120 @@
 #!/usr/bin/env python3
+"""Convert newline-separated timesheet cells to decimal hours."""
 
-from sys import stdin
+from __future__ import annotations
 
-# python < 3.9 compat
-def removesuffix(s, suffix):
-    if s.endswith(suffix):
-        return s[:-len(suffix)]
-    return s
+import argparse
+import re
+import sys
+from dataclasses import dataclass
 
-def parse_hhmm(t):
-	t = removesuffix(removesuffix(t, "AM"), "PM")
-	if ":" in t:
-		return (int(c.strip()) for c in t.split(":"))
-	else:
-		return int(t), 0
 
-def time_diff(ts):
-	(shour, smin), (ehour, emin) = (parse_hhmm(t.strip()) for t in ts.split('-'))
-	if ehour < shour:
-		ehour += 12
-		assert ehour > shour
-	start, end = shour*60 + smin, ehour*60 + emin
-	return end - start
+CLOCK = re.compile(r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<meridiem>AM|PM)?")
 
-def cell(s):
-    min = sum(time_diff(ts.strip()) for ts in s.split(','))
-    hour, min = divmod(min, 60)
-    percent = round(min*100/60)
-    return f'{hour}.{percent:02}'
 
-try:
-    for hours in stdin:
-        print(cell(hours))
-except KeyboardInterrupt:
+class InputError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class Clock:
+    minutes: int
+    form: str
+
+
+def parse_clock(text: str, source: str) -> Clock:
+    match = CLOCK.fullmatch(text)
+    if match is None:
+        raise InputError(f"{source}: invalid clock {text!r}")
+
+    hour = int(match.group("hour"))
+    minute_text = match.group("minute")
+    meridiem = match.group("meridiem")
+
+    if meridiem is not None:
+        if not 1 <= hour <= 12:
+            raise InputError(f"{source}: 12-hour clock hour must be between 1 and 12")
+        minute = int(minute_text or 0)
+        if minute > 59:
+            raise InputError(f"{source}: minute must be between 00 and 59")
+        # In a 12-hour clock, both midnight and noon start at clock-face 12.
+        hour = hour % 12 + (12 if meridiem == "PM" else 0)
+        return Clock(hour * 60 + minute, "12-hour")
+
+    if minute_text is None:
+        raise InputError(
+            f"{source}: 24-hour clocks require minutes (for example, 09:00)"
+        )
+    if hour > 23:
+        raise InputError(f"{source}: 24-hour clock hour must be between 0 and 23")
+    minute = int(minute_text)
+    if minute > 59:
+        raise InputError(f"{source}: minute must be between 00 and 59")
+    return Clock(hour * 60 + minute, "24-hour")
+
+
+def parse_interval(text: str, source: str) -> int:
+    endpoints = text.split("-")
+    if len(endpoints) != 2 or not all(endpoint.strip() for endpoint in endpoints):
+        raise InputError(f"{source}: expected exactly one start-end interval")
+
+    start, end = (
+        parse_clock(endpoint.strip(), f"{source} {label}")
+        for endpoint, label in zip(endpoints, ("start", "end"))
+    )
+    if start.form != end.form:
+        raise InputError(f"{source}: start and end must use the same clock form")
+
+    # An earlier end is the following day. Equal endpoints mean zero elapsed time.
+    return (end.minutes - start.minutes) % (24 * 60)
+
+
+def parse_cell(text: str, line_number: int) -> int:
+    members = text.strip().split(",")
+    if not text.strip() or any(not member.strip() for member in members):
+        raise InputError(f"line {line_number}: empty interval")
+    return sum(
+        parse_interval(member.strip(), f"line {line_number}, interval {index}")
+        for index, member in enumerate(members, 1)
+    )
+
+
+def format_hours(minutes: int) -> str:
+    # Round exact integer minutes to the nearest hundredth, with halves upward.
+    hundredths = (minutes * 100 + 30) // 60
+    hours, fraction = divmod(hundredths, 100)
+    return f"{hours}.{fraction:02d}"
+
+
+def argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="convert timesheet intervals from stdin to decimal hours",
+        epilog=(
+            "Each line is a comma-separated cell. Use complete 12-hour clocks "
+            "(9AM, 9:30PM) or complete 24-hour clocks (09:00, 17:30), without "
+            "mixing forms in an interval. An end earlier than its start is on "
+            "the following day; equal endpoints are zero-length. Calculations "
+            "are elapsed wall-clock minutes, independent of locale, dates, and DST."
+        ),
+    )
+    return parser
+
+
+def main() -> int:
+    argument_parser().parse_args()
+    try:
+        cells = [parse_cell(line, number) for number, line in enumerate(sys.stdin, 1)]
+    except InputError as error:
+        print(f"hours: {error}", file=sys.stderr)
+        return 2
+
+    for minutes in cells:
+        print(format_hours(minutes))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        raise SystemExit(130)
