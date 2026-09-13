@@ -34,6 +34,10 @@ glide.g.mapleader = ","
 glide.buf.keymaps.set("normal", ",.", async() => {
   await glide.commandline.show();
 });
+glide.keymaps.set("normal", "'", async () => {
+	await glide.findbar.open({ mode: "links" });
+	await glide.excmds.execute("mode_change insert");
+});
 
 // breaks search on many docs sites
 glide.buf.keymaps.del("normal", "s");
