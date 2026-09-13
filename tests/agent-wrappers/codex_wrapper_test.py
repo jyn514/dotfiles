@@ -13,6 +13,31 @@ WRAPPER = ROOT / "bin/codex"
 
 
 class CodexWrapperTests(unittest.TestCase):
+    def test_instruction_includes_resolve_from_symlink_location(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "tracked"
+            source.mkdir()
+            (source / "developer-instructions.md").write_text("@breq.md\n")
+            installed = root / ".codex"
+            installed.mkdir()
+            (installed / "developer-instructions.md").symlink_to(
+                source / "developer-instructions.md"
+            )
+            (installed / "breq.md").write_text("ancillary instructions\n")
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "libexec/expand-codex-instructions"),
+                    str(installed / "developer-instructions.md"),
+                ],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            )
+
+        self.assertEqual("ancillary instructions\n", result.stdout)
+
     def test_injects_shared_voice_as_developer_instructions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

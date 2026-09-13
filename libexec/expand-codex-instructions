@@ -36,7 +36,7 @@ def expand(path: Path, stack: tuple[Path, ...], *, manifest: bool = False) -> st
             continue
         directive = stripped.strip()
         if fence is None and directive.startswith("@") and directive[1:]:
-            child = resolve_include(canonical, directive[1:])
+            child = resolve_include(path, directive[1:])
             expanded = expand(child, (*stack, canonical))
             output.append(expanded)
             if line.endswith(("\n", "\r")) and expanded and not expanded.endswith(("\n", "\r")):
