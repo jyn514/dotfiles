@@ -163,7 +163,7 @@ class CommandIntegrationTests(unittest.TestCase):
         self.executable("cmus", "exit 0\n")
 
         result = subprocess.run(
-            [str(ROOT / "bin/audio"), "play", "quiet"],
+            [str(ROOT / "bin/audio"), "play", "--quiet"],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -172,6 +172,23 @@ class CommandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn("no known media player", result.stderr)
+    def test_audio_reports_missing_volume_backend_on_stderr(self) -> None:
+        for verb in ("up", "down", "mute", "unmute"):
+            with self.subTest(verb=verb):
+                result = subprocess.run(
+                    [str(ROOT / "bin/audio"), verb, "--quiet"],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=os.environ | {"PATH": str(self.directory)},
+                    check=False,
+                )
+
+                self.assertEqual(1, result.returncode)
+                self.assertEqual("", result.stdout)
+                self.assertEqual(
+                    "ERROR: no known volume manager available\n", result.stderr
+                )
     def test_audio_does_not_announce_a_failed_media_action(self) -> None:
         notifications = self.directory / "notifications"
         self.executable("cmus-remote", "exit 23\n")
@@ -193,6 +210,47 @@ class CommandIntegrationTests(unittest.TestCase):
 
         self.assertEqual(23, result.returncode)
         self.assertFalse(notifications.exists())
+    def test_audio_rejects_complete_invalid_grammar_before_effects(self) -> None:
+        effects = self.directory / "effects"
+        for command in ("amixer", "cmus-remote", "notify-send"):
+            self.executable(command, 'printf "%s\\n" "$0 $*" >> "$EFFECTS"\n')
+        environment = os.environ | {
+            "EFFECTS": str(effects),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        for arguments in (
+            [],
+            ["play", "quite"],
+            ["next", "--quiet", "unexpected"],
+            ["toggle", "--unknown"],
+            ["play", "--quiet", "--quiet"],
+            ["--quiet", "play"],
+        ):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    [str(ROOT / "bin/audio"), *arguments],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=environment,
+                    check=False,
+                )
+                self.assertEqual(2, result.returncode, result.stderr)
+                self.assertIn("usage:", result.stderr)
+                self.assertFalse(effects.exists())
+    def test_audio_help_lists_the_complete_grammar_without_effects(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "bin/audio"), "--help"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {"PATH": str(self.directory)},
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode)
+        self.assertIn("unmute", result.stderr)
     def test_hours_parses_meridiem_and_zero_pads_fractional_hours(self) -> None:
         result = subprocess.run(
             [str(ROOT / "bin/hours")],
@@ -271,6 +329,87 @@ class CommandIntegrationTests(unittest.TestCase):
             "get org.gnome.desktop.notifications show-banners\n",
             calls.read_text(),
         )
+    def test_toggle_dnd_rejects_arguments_before_querying(self) -> None:
+        calls = self.directory / "gsettings-calls"
+        self.executable("gsettings", 'touch "$GSETTINGS_CALLS"\n')
+
+        for arguments in (["--unknown"], ["true"], ["false", "extra"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    [str(ROOT / "bin/toggle-dnd"), *arguments],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=os.environ | {
+                        "GSETTINGS_CALLS": str(calls),
+                        "PATH": f"{self.directory}:{os.environ['PATH']}",
+                    },
+                    check=False,
+                )
+                self.assertEqual(2, result.returncode)
+                self.assertIn("usage:", result.stderr)
+                self.assertFalse(calls.exists())
+    def test_toggle_dnd_requires_boolean_output_and_verifies_the_write(self) -> None:
+        calls = self.directory / "gsettings-calls"
+        state = self.directory / "state"
+        self.executable(
+            "gsettings",
+            'printf "<%s>\\n" "$*" >> "$GSETTINGS_CALLS"\n'
+            'case "$1" in get) cat "$GSETTINGS_STATE";; set) printf "%s\\n" "$4" > "$GSETTINGS_STATE";; esac\n',
+        )
+        environment = os.environ | {
+            "GSETTINGS_CALLS": str(calls),
+            "GSETTINGS_STATE": str(state),
+            "PATH": f"{self.directory}:{os.environ['PATH']}",
+        }
+
+        for malformed in ("", "unexpected-state\n", "'true'\n", "true\nfalse\n"):
+            state.write_text(malformed)
+            calls.unlink(missing_ok=True)
+            result = subprocess.run(
+                [str(ROOT / "bin/toggle-dnd")], env=environment, check=False
+            )
+            self.assertEqual(1, result.returncode)
+            self.assertEqual(
+                "<get org.gnome.desktop.notifications show-banners>\n",
+                calls.read_text(),
+            )
+
+        state.write_text("true\n")
+        calls.unlink()
+        result = subprocess.run(
+            [str(ROOT / "bin/toggle-dnd")], env=environment, check=False
+        )
+        self.assertEqual(0, result.returncode)
+        self.assertEqual("false\n", state.read_text())
+        self.assertEqual(
+            "<get org.gnome.desktop.notifications show-banners>\n"
+            "<set org.gnome.desktop.notifications show-banners false>\n"
+            "<get org.gnome.desktop.notifications show-banners>\n",
+            calls.read_text(),
+        )
+    def test_toggle_dnd_reports_readback_mismatch(self) -> None:
+        calls = self.directory / "gsettings-calls"
+        self.executable(
+            "gsettings",
+            'printf "%s\\n" "$*" >> "$GSETTINGS_CALLS"\n'
+            'case "$1" in get) printf "true\\n";; esac\n',
+        )
+        result = subprocess.run(
+            [str(ROOT / "bin/toggle-dnd")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ | {
+                "GSETTINGS_CALLS": str(calls),
+                "PATH": f"{self.directory}:{os.environ['PATH']}",
+            },
+            check=False,
+        )
+
+        self.assertEqual(3, result.returncode)
+        self.assertIn("readback", result.stderr)
+        self.assertEqual(3, len(calls.read_text().splitlines()))
     def test_youtube_search_passes_only_search_terms(self) -> None:
         calls = self.directory / "ddg-calls"
         self.executable("ddg", 'printf "<%s>\\n" "$@" > "$DDG_CALLS"\n')

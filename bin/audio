@@ -6,19 +6,10 @@
 
 # .SYNTAX
 
-# $1 should be one of the following:
+# usage: audio VERB [--quiet]
 #
-# up . . . increase volume by one step
-# down . . decrease volume by one step
-# mute . . mute volume
-# play . . media play, if possible
-# pause  . media pause if possible
-# toggle . toggle media playback (play/pase) if possible
-# next . . next track, if possible
-# prev . . previous track ,if possible
-
-#
-# for quite operation (no desktop notifications), mate $2 'quiet'
+# VERB is one of up, down, mute, unmute, play, pause, toggle, next, or prev.
+# --quiet suppresses desktop notifications.
 
 # .LICENSE
 
@@ -32,18 +23,26 @@
 set -e
 set -u
 
-if [ $# -eq 0 ] ; then
-	VERB="help"
-else
-	VERB="$1"
-fi
+usage () {
+	printf 'usage: %s VERB [--quiet]\n' "$(basename "$0")" >&2
+	printf 'VERB: up down mute unmute play pause toggle next prev\n' >&2
+}
 
-QUIET="NO"
-if [ $# -gt 1 ] ; then
-	if [ "$2" = "quiet" ] ; then
-		QUIET="YES"
-	fi
-fi
+case "${1:-}" in
+	up|down|mute|unmute|play|pause|toggle|next|prev) VERB=$1 ;;
+	-h|--help)
+		[ "$#" -eq 1 ] || { usage; exit 2; }
+		usage
+		exit 0
+		;;
+	*) usage; exit 2 ;;
+esac
+
+case "$#:${2:-}" in
+	1:) QUIET=NO ;;
+	2:--quiet) QUIET=YES ;;
+	*) usage; exit 2 ;;
+esac
 
 send_notification () {
 	if [ "$QUIET" != "YES" ] ; then
@@ -76,7 +75,7 @@ case "$VERB" in
 				send_notification "raised volume"
 				;;
 			*)
-				echo "ERROR: no known volume manager available"
+				echo "ERROR: no known volume manager available" >&2
 				exit 1
 				;;
 		esac
@@ -88,7 +87,7 @@ case "$VERB" in
 				send_notification "decreased volume"
 				;;
 			*)
-				echo "ERROR: no known volume manager available"
+				echo "ERROR: no known volume manager available" >&2
 				exit 1
 				;;
 		esac
@@ -100,7 +99,7 @@ case "$VERB" in
 				send_notification "muted volume"
 				;;
 			*)
-				echo "ERROR: no known volume manager available"
+				echo "ERROR: no known volume manager available" >&2
 				exit 1
 				;;
 		esac
@@ -112,7 +111,7 @@ case "$VERB" in
 				send_notification "unmuted volume"
 				;;
 			*)
-				echo "ERROR: no known volume manager available"
+				echo "ERROR: no known volume manager available" >&2
 				exit 1
 				;;
 		esac
@@ -137,13 +136,8 @@ case "$VERB" in
 		cmus-remote --prev
 		send_notification "previous track"
 		;;
-	help)
-		echo "usage: $(basename "$0") [verb]"
-		exit 1
-		;;
 	*)
-
-		echo "ERROR: unrecognized verb '$VERB'"
-		exit 1
+		# The complete command grammar was checked before backend discovery.
+		exit 2
 		;;
 esac

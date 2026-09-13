@@ -1,14 +1,29 @@
 #!/bin/sh
 
-case ${1:-} in
-	true) new=false;;
-	false) new=true;;
+usage() {
+	printf 'usage: %s\n' "$(basename "$0")" >&2
+}
+
+if [ "$#" -ne 0 ]; then
+	usage
+	exit 2
+fi
+
+schema=org.gnome.desktop.notifications
+key=show-banners
+current=$(gsettings get "$schema" "$key") || exit $?
+case "$current" in
+	true) new=false ;;
+	false) new=true ;;
 	*)
-	current=$(gsettings get org.gnome.desktop.notifications show-banners) || exit
-	if [ "$current" = true ]
-		then new=false
-		else new=true
-	fi
-	;;
+		printf 'toggle-dnd: invalid boolean from gsettings: %s\n' "$current" >&2
+		exit 1
+		;;
 esac
-gsettings set org.gnome.desktop.notifications show-banners $new
+
+gsettings set "$schema" "$key" "$new" || exit $?
+actual=$(gsettings get "$schema" "$key") || exit $?
+if [ "$actual" != "$new" ]; then
+	printf 'toggle-dnd: setting readback was %s, expected %s\n' "$actual" "$new" >&2
+	exit 3
+fi
