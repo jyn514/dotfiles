@@ -73,7 +73,7 @@ class ClipboardTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["--input", "--clipboard"], arguments.read_text().splitlines())
 
-    def test_terminal_selection_copy_removes_prompt_time_and_padding(self) -> None:
+    def test_terminal_selection_copy_removes_prompt_text(self) -> None:
         clipboard = self.directory / "clipboard"
         arguments = self.directory / "arguments"
         self.executable(
@@ -81,10 +81,12 @@ class ClipboardTest(unittest.TestCase):
             f'printf "%s\\n" "$@" > "{arguments}"\ncat > "{clipboard}"\n',
         )
         selection = (
-            b"; build      \xe2\x8f\xb1 +1.25s [I]\n"
+            b"\x1b]133;A\x07\x1b[0;32m; \x1b[0;0mbuild"
+            b"      \xe2\x8f\xb1 +1.25s [I]\n"
             b"ordinary output 12:34\n"
             b"binary \xff\n"
-            b"; next\t\xe2\x8f\xb1 21:45\r\n"
+            b"\x1b[0;31m; \x1b[0;0mnext\t\xe2\x8f\xb1 21:45\r\n"
+            b";\n"
         )
 
         result = subprocess.run(
@@ -102,7 +104,7 @@ class ClipboardTest(unittest.TestCase):
             arguments.read_text().splitlines(),
         )
         self.assertEqual(
-            b"; build\nordinary output 12:34\nbinary \xff\n; next\r\n",
+            b"build\nordinary output 12:34\nbinary \xff\nnext\r\n\n",
             clipboard.read_bytes(),
         )
 

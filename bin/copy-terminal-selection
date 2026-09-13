@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove prompt-only right margins before copying terminal selections."""
+"""Remove Fish prompt text before copying terminal selections."""
 
 from __future__ import annotations
 
@@ -9,11 +9,20 @@ import sys
 
 
 MARKER = "⏱ ".encode()
+CSI = rb"\x1b\[[0-?]*[ -/]*[@-~]"
+OSC = rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+CONTROL_SEQUENCE = rb"(?:" + CSI + rb"|" + OSC + rb")"
+PROMPT_CONTROLS = rb"(?:" + CONTROL_SEQUENCE + rb")*"
+PROMPT_PREFIX = re.compile(
+    rb"^" + PROMPT_CONTROLS + rb";(?: " + PROMPT_CONTROLS
+    + rb"|" + PROMPT_CONTROLS + rb"(?=\r?$))",
+    re.MULTILINE,
+)
 PROMPT_SUFFIX = re.compile(rb"[ \t]*" + MARKER + rb"[^\r\n]*(?=\r?$)", re.MULTILINE)
 
 
 def clean(selection: bytes) -> bytes:
-    return PROMPT_SUFFIX.sub(b"", selection)
+    return PROMPT_PREFIX.sub(b"", PROMPT_SUFFIX.sub(b"", selection))
 
 
 def main() -> int:
