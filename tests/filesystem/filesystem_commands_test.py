@@ -106,7 +106,6 @@ class CommandIntegrationTests(unittest.TestCase):
         source.mkdir()
         destination.mkdir()
         (source / ".hidden").write_text("kept\n")
-        self.executable("stat", "printf 'different-device\\n'\n")
 
         result = subprocess.run(
             [str(ROOT / "bin/merge"), str(source), str(destination)],
@@ -120,6 +119,36 @@ class CommandIntegrationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("kept\n", (destination / ".hidden").read_text())
         self.assertFalse(source.exists())
+
+    def test_merge_retained_files_are_independent(self) -> None:
+        source = self.directory / "source"
+        destination = self.directory / "destination"
+        source.mkdir()
+        destination.mkdir()
+        source_file = source / "note.txt"
+        destination_file = destination / "note.txt"
+        source_file.write_text("original\n")
+
+        result = subprocess.run(
+            [str(ROOT / "bin/merge"), str(source), str(destination)],
+            text=True,
+            input="\n",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(source.exists())
+        source_identity = (source_file.stat().st_dev, source_file.stat().st_ino)
+        destination_identity = (
+            destination_file.stat().st_dev,
+            destination_file.stat().st_ino,
+        )
+        self.assertNotEqual(source_identity, destination_identity)
+
+        destination_file.write_text("changed through destination\n")
+        self.assertEqual("original\n", source_file.read_text())
+
     def test_merge_retains_source_when_destination_entries_are_skipped(self) -> None:
         source = self.directory / "source"
         destination = self.directory / "destination"
@@ -127,7 +156,6 @@ class CommandIntegrationTests(unittest.TestCase):
         destination.mkdir()
         (source / "collision").write_text("source\n")
         (destination / "collision").write_text("destination\n")
-        self.executable("stat", "printf 'different-device\\n'\n")
         self.executable("cp", "exit 0\n")
 
         result = subprocess.run(

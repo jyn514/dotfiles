@@ -18,20 +18,11 @@ fi
 
 dest="$(realpath "$dest")"
 
-device_number() {
-	stat -c "%d" "$1"
-}
-
-# https://unix.stackexchange.com/a/172402
 # -v: verbose
 # -n: don't copy files that already exist
 # -r: recursive
+# Do not use hard links: the source remains unless removal is confirmed later.
 FLAGS=vnr
-
-if [ "$(device_number "$source")" = "$(device_number "$dest")" ]; then
-	# -l: use hard links to reduce IO
-	FLAGS=l$FLAGS
-fi
 
 collision=false
 for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
