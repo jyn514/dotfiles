@@ -76,6 +76,12 @@ Never edit generated files, installed package checkouts, caches, staged configur
 
 Before editing outside the active repository, verify that it is an authoritative source checkout and that the user intends work there. If repository tooling cannot inspect it outside the protected workspace, ask to switch repositories or provide a writable checkout; do not mutate it directly.
 
+### Single authority
+
+When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it. Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
+
+Add a regression test showing that changing the authority updates consumers without corresponding edits.
+
 ## Jujutsu and commits
 
 Always use `jj`, not `git`, for change management; it supports undo and history editing
