@@ -18,6 +18,8 @@
       "$HOME/.pi/agent/mcp.json": "config/agents/pi/pi-mcp.json",
       "$HOME/.pi/agent/settings.json": "config/agents/pi/pi.json",
       "$HOME/.pi/agent/pi-codex-subagents/config.json": "config/agents/pi/pi-codex-subagents.json",
+      "$HOME/.pi/agent/pi-codex-subagents/agents/luna.md": "config/agents/pi/pi-codex-subagents/agents/luna.md",
+      "$HOME/.pi/agent/pi-codex-subagents/agents/parent.md": "config/agents/pi/pi-codex-subagents/agents/parent.md",
       "$HOME/.pi/agent/keybindings.json": "config/agents/pi/pi-keybindings.json",
       "$HOME/.claude/CLAUDE.md": "config/agents/claude/CLAUDE.md",
       "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",

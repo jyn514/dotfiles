@@ -94,6 +94,7 @@ Before creating or reviewing a commit, use the `commit-quality` skill.
 ## Reasoning and judgment
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
+- **Subagent routing:** Exact allowlisted skills may route a subagent through the `luna` template; absent, unknown, or mixed skill sets inherit the parent model. Use the explicit `parent` template to bypass automatic routing.
 
 ### Records and provenance
 
