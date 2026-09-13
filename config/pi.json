@@ -2,6 +2,9 @@
   "lastChangelogVersion": "0.84.4",
   "defaultThinkingLevel": "low",
   "transport": "sse",
+  "retry": {
+    "maxRetries": 20
+  },
   "tuiMode": "fullscreen",
   "shellCommandPrefix": "export JJ_AGENT=pi",
   "defaultProjectTrust": "ask",
