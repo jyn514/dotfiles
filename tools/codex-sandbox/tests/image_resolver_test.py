@@ -41,6 +41,51 @@ class Runtime:
 
 
 class ImageResolverTest(unittest.TestCase):
+    def test_default_base_is_pulled_only_when_missing(self):
+        for available in (False, True):
+            with self.subTest(available=available):
+                runtime = mock.Mock()
+                base = Image('sha256:' + 'a' * 64, 'base', 'config', 'rootfs')
+                local = {owned_images.DEFAULT_BASE: base} if available else {}
+                runtime.image_if_available.side_effect = lambda ref: local.get(ref)
+                runtime.inspect_image.side_effect = lambda ref: local[ref]
+                runtime.run.side_effect = lambda *args, **kwargs: local.update(
+                    {owned_images.DEFAULT_BASE: base})
+                runtime.build.return_value = Image('agent', 'agent', 'config', 'rootfs')
+                with mock.patch('bake._capture'), mock.patch('bake._pin_dockerfile'), \
+                        mock.patch.object(owned_images, 'agent_cache_key', return_value='key'):
+                    self.assertEqual('agent', owned_images.resolve_agent(
+                        runtime, 501, 20, owned_images.DEFAULT_BASE))
+                self.assertEqual(0 if available else 1, runtime.run.call_count)
+                if not available:
+                    self.assertEqual(['pull', owned_images.DEFAULT_BASE], runtime.run.call_args.args[0])
+                self.assertIn('BASE_IMAGE=' + base.reference, runtime.build.call_args.kwargs['build_args'])
+
+    def test_default_base_selection_follows_launcher_authority(self):
+        runtime = mock.Mock()
+        runtime.bake.return_value = {}
+        runtime.run_builders.return_value = {}
+        with mock.patch.object(owned_images, 'DEFAULT_BASE', 'replacement:base'):
+            prepared = image_resolver.prepare_launch_images(
+                runtime, Path('/nonexistent-project'), {}, include_base=True)
+        self.assertEqual('replacement:base', prepared.base)
+
+    def test_default_base_pull_failure_stops_composition(self):
+        runtime = mock.Mock()
+        runtime.image_if_available.return_value = None
+        runtime.run.side_effect = OSError('pull failed')
+        with mock.patch('bake._capture'), self.assertRaisesRegex(OSError, 'pull failed'):
+            owned_images.resolve_agent(runtime, 501, 20, owned_images.DEFAULT_BASE)
+        runtime.build.assert_not_called()
+
+    def test_missing_project_base_is_not_pulled(self):
+        runtime = mock.Mock()
+        runtime.inspect_image.side_effect = OSError('project base missing')
+        with mock.patch('bake._capture'), self.assertRaisesRegex(OSError, 'project base missing'):
+            owned_images.resolve_agent(runtime, 501, 20, 'sha256:' + 'b' * 64)
+        runtime.run.assert_not_called()
+        runtime.build.assert_not_called()
+
     def resolve(self, mode="valid", names={"base", "proxy"}):
         runtime = Runtime()
         previous = os.environ.get("RESOLVER_FIXTURE")

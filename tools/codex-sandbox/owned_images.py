@@ -14,6 +14,7 @@ COMMANDS = {
     str(ROOT / '.agents/sandbox/zulip-proxy-image'): 'zulip',
 }
 AGENT_CACHE_CONTRACT = 2
+DEFAULT_BASE = "node:24-alpine3.22"
 
 
 def agent_sources(root=ROOT):
@@ -64,6 +65,10 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
     with tempfile.TemporaryDirectory(prefix="sandbox-agent-image-") as directory:
         captured = Path(directory).resolve() / "context"
         _capture(ROOT, ROOT, captured, hashlib.sha256(), agent_sources())
+        # The cache key needs local base contents before BuildKit can pull FROM.
+        # Only the launcher-owned default may bypass a project image resolver.
+        if base_reference == DEFAULT_BASE and runtime.image_if_available(base_reference) is None:
+            runtime.run(["pull", base_reference], stdout=sys.stderr)
         base = runtime.inspect_image(base_reference)
         _pin_dockerfile(
             runtime, captured / "tools/codex-sandbox/image/Dockerfile",

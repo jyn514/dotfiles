@@ -36,7 +36,7 @@ from proxy_session import SessionLock
 from source_view import source_mounts
 from keychain_bridge import HostKeychainBridge
 from image_resolver import prepare_launch_images
-from owned_images import resolve_agent
+from owned_images import DEFAULT_BASE, resolve_agent
 
 OUTER_RUNTIME = Podman()
 
@@ -1321,7 +1321,7 @@ def execute(state: State) -> int:
             if isinstance(OUTER_RUNTIME, VMRuntime):
                 base_image = OUTER_RUNTIME.builder_image(base_image)
         else:
-            base_image = "node:24-alpine3.22"
+            base_image = DEFAULT_BASE
         return phase(
             "model image resolution",
             lambda: resolve_agent(OUTER_RUNTIME, state.uid, state.gid, base_image),

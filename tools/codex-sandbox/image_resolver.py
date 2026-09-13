@@ -241,6 +241,6 @@ def prepare_launch_images(
     }
     base = (
         project[image_policy["base"]].reference if include_base and image_policy is not None
-        else legacy.get("base", "node:24-alpine3.22") if include_base else None
+        else legacy.get("base", owned_images.DEFAULT_BASE) if include_base else None
     )
     return PreparedImages(base, inspected.get("auth"), proxies)
