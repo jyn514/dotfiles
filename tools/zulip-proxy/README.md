@@ -4,7 +4,7 @@
 
 The Zulip proxy gives host tools and sandboxed agents bounded, read-only access to channel transcripts and topic lists without exposing `~/.zuliprc`.
 Use the `zulip` command;
-`server.py`, `forward.py`, and `local.py` are lifecycle components, not operator interfaces.
+`server.py` and `forward.py` are lifecycle components, not operator interfaces. The adapter requires the fixed Caddy endpoint and never reads credentials or contacts Zulip directly.
 
 ## Prerequisites and setup
 

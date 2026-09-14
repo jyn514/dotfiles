@@ -395,7 +395,7 @@ The only admitted Caddy dependency is Docker Official Image `caddy:2.11.4-alpine
 + Generate immutable Caddy configuration for the fixed Codex route, two Zulip route families, header operations, bounds, catch-alls, bodyless precheck, and local readiness path.
 + Point Pi at the Codex Caddy listener. Keep the Zulip typed adapter but route its two upstream request families through its local Caddy.
 + Record, publish, validate, stop, and recover both Caddy and helper container identities and their shared socket volume; retain the Zulip adapter identity separately.
-+ Remove the custom broker HTTP server, parser/framing checks, DNS parser, header filtering/allowlist engine, TLS client, reverse-proxy loop, routing machinery, response-byte limiter, and access-log implementation after parity acceptance passes. Keep no fallback path.
++ On 2026-09-14, the custom broker HTTP server, parser/framing checks, DNS parser, header filtering/allowlist engine, TLS client, reverse-proxy loop, routing machinery, response-byte limiter, and access-log implementation were deleted after parity acceptance. No fallback path remains.
 + Preserve separate Codex and Zulip trust domains and keep Flower R2's dedicated relay unchanged.
 
 The agent's credential-free public network remains outside this reverse proxy. Removing direct egress is a separate design.

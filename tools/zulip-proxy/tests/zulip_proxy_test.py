@@ -98,6 +98,25 @@ class ForwarderTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def test_accepts_only_lifecycle_caddy_endpoint(self) -> None:
+        endpoint = "http://test-zulip-caddy:8787/api/v1/messages"
+        self.assertEqual(endpoint, server.caddy_endpoint(endpoint))
+        invalid = (
+            None, "https://test-zulip-caddy:8787/api/v1/messages",
+            "http://user@test-zulip-caddy:8787/api/v1/messages",
+            "http://test-zulip-caddy/api/v1/messages",
+            "http://test-zulip-caddy:80/api/v1/messages",
+            "http://zulip.example:8787/api/v1/messages",
+            "http://evil.test-zulip-caddy:8787/api/v1/messages",
+            "http://Test-zulip-caddy:8787/api/v1/messages",
+            "http://test-zulip-caddy:8787/api/v1/messages?x=1",
+            "http://test-zulip-caddy:8787/api/v1/messages#fragment",
+            "http://test-zulip-caddy:8787/api/v1/users",
+        )
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(server.RequestError):
+                server.caddy_endpoint(value)
+
     def test_framing_boundary_is_shared_with_the_client(self) -> None:
         self.assertEqual(server.PROTOCOL, client.PROTOCOL)
         body = b" " * server.MAX_REQUEST
@@ -164,21 +183,19 @@ class ServerTest(unittest.TestCase):
         observed = {}
 
         def opener(request, timeout):
-            observed.update(url=request.full_url, method=request.method,
-                            authorization=request.headers["Authorization"], timeout=timeout)
+            observed.update(url=request.full_url, method=request.method, timeout=timeout)
             return io.BytesIO(json.dumps({
                 "result": "success", "messages": [], "found_newest": True,
             }).encode())
 
         result = server.fetch_page(
-            "https://chat.example.test/api/v1/messages", "credential",
+            "http://caddy.test/api/v1/messages",
             self.request(topic="private topic", after="2026-03-01", before="2026-04-01"), opener,
         )
         parsed = urlsplit(observed["url"])
         query = parse_qs(parsed.query)
         self.assertEqual("GET", observed["method"])
         self.assertEqual("/api/v1/messages", parsed.path)
-        self.assertEqual("Basic credential", observed["authorization"])
         self.assertEqual([{"operator": "channel", "operand": 123}, {
             "operator": "topic", "operand": "private topic",
         }, {
@@ -193,22 +210,20 @@ class ServerTest(unittest.TestCase):
         observed = {}
 
         def opener(request, timeout):
-            observed.update(url=request.full_url, method=request.method,
-                            authorization=request.headers["Authorization"], timeout=timeout)
+            observed.update(url=request.full_url, method=request.method, timeout=timeout)
             return io.BytesIO(json.dumps({
                 "result": "success",
                 "topics": [{"name": "private topic", "max_id": 42}],
             }).encode())
 
         result = server.fetch_topics(
-            "https://chat.example.test/api/v1/messages", "credential",
+            "http://caddy.test/api/v1/messages",
             {"version": 1, "operation": "topics", "channel_id": 123}, opener,
         )
         self.assertEqual("GET", observed["method"])
         self.assertEqual(
-            "https://chat.example.test/api/v1/users/me/123/topics", observed["url"],
+            "http://caddy.test/api/v1/users/me/123/topics", observed["url"],
         )
-        self.assertEqual("Basic credential", observed["authorization"])
         self.assertEqual(
             {"version": 1, "topics": [{"name": "private topic", "max_id": 42}]}, result,
         )
@@ -222,15 +237,6 @@ class ServerTest(unittest.TestCase):
             with self.subTest(retry_after=retry_after), \
                     self.assertRaises(server.RequestError):
                 server.fetch_json(request, mock.Mock(side_effect=error))
-
-    def test_transport_rejects_private_dns_and_pins_public_resolution(self) -> None:
-        private = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", 443))]
-        with mock.patch.object(server.socket, "getaddrinfo", return_value=private), \
-                self.assertRaisesRegex(server.RequestError, "prohibited"):
-            server.public_addresses("chat.example")
-        public = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("8.8.8.8", 443))]
-        with mock.patch.object(server.socket, "getaddrinfo", return_value=public):
-            self.assertEqual(["8.8.8.8"], server.public_addresses("chat.example"))
 
     def test_rejects_oversized_upstream_response_before_parsing(self) -> None:
         response = mock.Mock(headers={"Content-Length": str(server.MAX_RESPONSE + 1)})
@@ -248,16 +254,6 @@ class ServerTest(unittest.TestCase):
             with self.subTest(messages=messages), self.assertRaises(server.RequestError):
                 server.validate_messages(messages, after_id=4)
 
-    def test_rejects_non_https_or_credentialed_site(self) -> None:
-        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
-            path = Path(temporary) / "zuliprc"
-            for site in ("http://chat.example.test", "https://key@chat.example.test"):
-                path.write_text(
-                    f"[api]\nsite={site}\nemail=user@example.test\nkey=secret\n",
-                    encoding="utf-8",
-                )
-                with self.subTest(site=site), self.assertRaises(server.RequestError):
-                    server.load_credentials(path)
 
 
 class ClientTest(unittest.TestCase):

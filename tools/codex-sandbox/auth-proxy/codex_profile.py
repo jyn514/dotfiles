@@ -1,21 +1,125 @@
 """Installed Codex OAuth credential profile (not repository configurable)."""
 from __future__ import annotations
-import base64, fcntl, json, os, tempfile, threading, time
+import base64, fcntl, ipaddress, json, multiprocessing, os, socket, tempfile, threading, time
 from http import HTTPStatus
 from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import urlencode
-import importlib.util, sys
-_spec = importlib.util.spec_from_file_location('broker', Path(__file__).with_name('broker.py'))
-broker = sys.modules.get('broker')
-if broker is None:
-    broker = importlib.util.module_from_spec(_spec); sys.modules['broker'] = broker; _spec.loader.exec_module(broker)
 
 AUTH = Path('/var/lib/codex-auth/auth.json')
 CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 TOKEN_HOST = 'auth.openai.com'
 TOKEN_PATH = '/oauth/token'
 REFRESH_LOCK = threading.Lock()
+MAX_TOKEN_RESPONSE = 1024 * 1024
+
+
+def _resolve_in_child(writer) -> None:
+    try:
+        answers = socket.getaddrinfo(TOKEN_HOST, 443, type=socket.SOCK_STREAM)
+        writer.send(('ok', answers))
+    except BaseException as error:
+        writer.send(('error', type(error).__name__, str(error)))
+    finally:
+        writer.close()
+
+
+def _public_addresses(deadline: float) -> list[tuple]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Codex token refresh deadline exceeded')
+    reader, writer = multiprocessing.Pipe(duplex=False)
+    process = multiprocessing.Process(target=_resolve_in_child, args=(writer,), daemon=True)
+    started = False
+    try:
+        process.start(); started = True; writer.close()
+        if not reader.poll(remaining):
+            raise TimeoutError('OAuth host resolution deadline exceeded')
+        result = reader.recv()
+    finally:
+        reader.close(); writer.close()
+        if started:
+            if process.is_alive():
+                process.kill()
+            process.join()
+    if (not isinstance(result, tuple) or not result):
+        raise OSError('OAuth host resolution returned malformed data')
+    if result[0] == 'error' and len(result) == 3 and all(isinstance(x, str) for x in result[1:]):
+        raise OSError(f'OAuth host resolution failed ({result[1]}): {result[2]}')
+    if result[0] != 'ok' or len(result) != 2 or not isinstance(result[1], list):
+        raise OSError('OAuth host resolution returned malformed data')
+    answers = result[1]
+    for answer in answers:
+        if (not isinstance(answer, tuple) or len(answer) != 5
+                or answer[0] not in (socket.AF_INET, socket.AF_INET6)
+                or answer[1] != socket.SOCK_STREAM or not isinstance(answer[2], int)
+                or not isinstance(answer[4], tuple) or len(answer[4]) < 2
+                or not isinstance(answer[4][0], str) or answer[4][1] != 443):
+            raise OSError('OAuth host resolution returned malformed data')
+    if not answers:
+        raise OSError('OAuth host has no addresses')
+    if any(not ipaddress.ip_address(answer[4][0]).is_global for answer in answers):
+        raise RuntimeError('OAuth host resolved to a private or special address')
+    return answers
+
+
+class _PinnedHTTPSConnection(HTTPSConnection):
+    def __init__(self, timeout: float, deadline: float):
+        super().__init__(TOKEN_HOST, 443, timeout=timeout)
+        self._answers = _public_addresses(deadline)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('Codex token refresh deadline exceeded')
+        self.timeout = min(self.timeout, remaining)
+
+    def connect(self) -> None:
+        error = None
+        for family, socktype, proto, _, sockaddr in self._answers:
+            raw = socket.socket(family, socktype, proto)
+            raw.settimeout(self.timeout)
+            try:
+                raw.connect(sockaddr)
+                self.sock = self._context.wrap_socket(raw, server_hostname=TOKEN_HOST)
+                return
+            except OSError as caught:
+                error = caught
+                raw.close()
+        raise error or OSError('OAuth host is unreachable')
+
+
+def _post_token(body: bytes, deadline: float) -> tuple[int, bytes]:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError('Codex token refresh deadline exceeded')
+    connection = _PinnedHTTPSConnection(min(30, remaining), deadline)
+    try:
+        connection.request('POST', TOKEN_PATH, body, {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': str(len(body)),
+        })
+        response = connection.getresponse()
+        declared = response.getheader('Content-Length')
+        if declared is not None:
+            if not declared.isascii() or not declared.isdecimal():
+                raise RuntimeError('Codex token refresh response framing is malformed')
+            if int(declared) > MAX_TOKEN_RESPONSE:
+                raise RuntimeError('Codex token refresh response too large')
+        payload = bytearray()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Codex token refresh deadline exceeded')
+            if connection.sock is not None:
+                connection.sock.settimeout(min(30, remaining))
+            chunk = response.read(min(64 * 1024, MAX_TOKEN_RESPONSE + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+            if len(payload) > MAX_TOKEN_RESPONSE:
+                raise RuntimeError('Codex token refresh response too large')
+        return response.status, bytes(payload)
+    finally:
+        connection.close()
 
 def jwt_payload(token):
     fields = token.split('.')
@@ -67,35 +171,8 @@ def credentials(*, deadline=None):
         except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError): expires = 0
         if expires <= time.time() + 60:
             body = urlencode({'grant_type':'refresh_token','refresh_token':tokens['refresh_token'],'client_id':CLIENT_ID}).encode()
-            refresh_route = broker.Route('codex-refresh', TOKEN_HOST, TOKEN_PATH, TOKEN_PATH,
-                                         frozenset({'POST'}), frozenset(), frozenset(), timeout=30,
-                                         request_timeout=30, response_timeout=30)
-            connection = broker.open_upstream(refresh_route)
-            try:
-                remaining=deadline-time.monotonic()
-                if remaining <= 0: raise TimeoutError('Codex token refresh deadline exceeded')
-                connection.timeout=min(connection.timeout,remaining)
-                connection.connect()
-                if getattr(connection, 'sock', None) is not None:
-                    connection.sock.settimeout(min(30, deadline-time.monotonic()))
-                connection.request('POST', TOKEN_PATH, body, {'Content-Type':'application/x-www-form-urlencoded','Content-Length':str(len(body))})
-                if deadline-time.monotonic() <= 0: raise TimeoutError('Codex token refresh deadline exceeded')
-                if getattr(connection, 'sock', None) is not None:
-                    connection.sock.settimeout(min(30, deadline-time.monotonic()))
-                response = connection.getresponse(); chunks=[]; size=0
-                while True:
-                    remaining=deadline-time.monotonic()
-                    if remaining <= 0: raise TimeoutError('Codex token refresh deadline exceeded')
-                    if getattr(connection, 'sock', None) is not None: connection.sock.settimeout(min(30,remaining))
-                    one_shot=False
-                    try: chunk=response.read(min(64*1024,1024*1024+1-size))
-                    except TypeError: chunk=response.read(); one_shot=True # simple test doubles
-                    if not chunk: break
-                    chunks.append(chunk); size += len(chunk)
-                    if one_shot or size > 1024*1024: break
-                payload=b''.join(chunks)
-            finally: connection.close()
-            if response.status != HTTPStatus.OK: raise RuntimeError(f'Codex token refresh failed ({response.status})')
+            status, payload = _post_token(body, deadline)
+            if status != HTTPStatus.OK: raise RuntimeError(f'Codex token refresh failed ({status})')
             if len(payload) > 1024 * 1024: raise RuntimeError('Codex token refresh response too large')
             refreshed = json.loads(payload)
             access_value, refresh_value = refreshed.get('access_token'), refreshed.get('refresh_token')
@@ -111,6 +188,8 @@ def credentials(*, deadline=None):
             existing_account = tokens.get('account_id')
             if existing_account is not None and (not isinstance(existing_account, str) or not existing_account):
                 raise RuntimeError('Codex account is malformed')
+            if existing_account and claimed_account != existing_account:
+                raise RuntimeError('Codex token refresh changed account identity')
             if not existing_account and (not isinstance(claimed_account, str) or not claimed_account):
                 raise RuntimeError('Codex access token account is malformed')
             # Mutate and publish only after the complete response validates.

@@ -98,7 +98,6 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
     sources = {
         'auth': ['tools/codex-sandbox/auth-proxy/Dockerfile',
                  'tools/codex-sandbox/auth-proxy/profile_helper.py',
-                 'tools/codex-sandbox/auth-proxy/broker.py',
                  'tools/codex-sandbox/auth-proxy/codex_profile.py',
                  'tools/codex-sandbox/auth-proxy/typed_broker.py',
                  'tools/codex-sandbox/gateway.py'],

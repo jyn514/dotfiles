@@ -3,13 +3,10 @@
 
 from __future__ import annotations
 
-import base64
-import configparser
 from datetime import date
 import json
 import os
-import ipaddress
-from http.client import HTTPSConnection
+import re
 from pathlib import Path
 import socket
 import struct
@@ -21,7 +18,6 @@ from urllib.request import build_opener, HTTPRedirectHandler, Request as HttpReq
 
 
 SOCKET = Path(os.environ.get("SANDBOX_PROXY_SOCKET", "/run/sandbox-proxy/socket"))
-CONFIG = Path("/run/secrets/zuliprc")
 with Path(__file__).with_name("protocol.json").open(encoding="utf-8") as stream:
     PROTOCOL = json.load(stream)
 PROTOCOL_VERSION = PROTOCOL["version"]
@@ -45,79 +41,10 @@ class RequestError(Exception):
 
 class RejectRedirects(HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):
-        raise RequestError("Zulip API redirected the credentialed request")
+        raise RequestError("Zulip API redirected the request")
 
 
-PROHIBITED_NETWORKS = tuple(map(ipaddress.ip_network, (
-    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
-    "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
-    "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
-)))
-
-
-def public_addresses(host: str, port: int = 443) -> list[str]:
-    try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(
-            host, port, socket.AF_UNSPEC, socket.SOCK_STREAM, socket.IPPROTO_TCP,
-        )}
-    except socket.gaierror as error:
-        raise RequestError("Zulip host name resolution failed") from error
-    public = []
-    for value in addresses:
-        address = ipaddress.ip_address(value)
-        if not address.is_global or any(address in network for network in PROHIBITED_NETWORKS):
-            raise RequestError("Zulip host resolved to a prohibited address")
-        public.append(value)
-    if not public:
-        raise RequestError("Zulip host has no public address")
-    return sorted(public)
-
-
-class PinnedResponse:
-    def __init__(self, response, connection):
-        self.response, self.connection = response, connection
-    def __getattr__(self, name):
-        return getattr(self.response, name)
-    def __enter__(self):
-        return self
-    def __exit__(self, *_args):
-        self.connection.close()
-
-
-def safe_open(request: HttpRequest, timeout: float):
-    """Resolve once, reject private destinations, then pin TCP while retaining TLS SNI."""
-    parsed = urlsplit(request.full_url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.port not in (None, 443):
-        raise RequestError("Zulip request target is not fixed HTTPS")
-    connection = None
-    for address in public_addresses(parsed.hostname):
-        candidate = HTTPSConnection(parsed.hostname, 443, timeout=timeout)
-        candidate._create_connection = lambda _target, timeout=None, source_address=None, address=address: socket.create_connection(
-            (address, 443), timeout, source_address,
-        )
-        try:
-            candidate.connect()
-        except OSError:
-            candidate.close()
-            continue
-        connection = candidate
-        break
-    if connection is None:
-        raise RequestError("Zulip public addresses were unreachable")
-    target = parsed.path + (("?" + parsed.query) if parsed.query else "")
-    connection.request(request.method, target, headers=dict(request.header_items()))
-    response = connection.getresponse()
-    if 300 <= response.status < 400:
-        connection.close()
-        raise RequestError("Zulip API redirected the credentialed request")
-    if response.status >= 400:
-        headers, status, reason = response.headers, response.status, response.reason
-        connection.close()
-        raise HTTPError(request.full_url, status, reason, headers, None)
-    return PinnedResponse(response, connection)
-
-
-URL_OPEN = safe_open
+URL_OPEN = build_opener(RejectRedirects()).open
 
 
 def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -154,30 +81,6 @@ def write_frame(stream: BinaryIO, body: bytes) -> None:
         raise RequestError("response is too large")
     stream.write(struct.pack(">I", len(body)) + body)
     stream.flush()
-
-
-def load_credentials(path: Path = CONFIG) -> tuple[str, str]:
-    parser = configparser.ConfigParser()
-    if not parser.read(path):
-        raise RequestError(f"cannot read credentials from {path}")
-    try:
-        api = parser["api"]
-        site = api["site"].rstrip("/")
-        credential = f"{api['email']}:{api['key']}".encode()
-    except KeyError as error:
-        raise RequestError(f"missing {error} in zuliprc [api] section") from error
-    parsed = urlsplit(site)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise RequestError("zuliprc site must be a plain HTTPS server URL")
-    authorization = base64.b64encode(credential).decode("ascii")
-    return f"{site}/api/v1/messages", authorization
 
 
 def parse_request(body: bytes) -> dict[str, Any]:
@@ -256,7 +159,6 @@ def validate_messages(messages: Any, after_id: int = 0) -> list[dict[str, Any]]:
 
 def fetch_page(
     endpoint: str,
-    authorization: str,
     request: dict[str, Any],
     opener: Callable[..., Any] = URL_OPEN,
 ) -> dict[str, Any]:
@@ -279,7 +181,6 @@ def fetch_page(
     })
     http_request = HttpRequest(
         f"{endpoint}?{query}",
-        headers=({"Authorization": f"Basic {authorization}"} if authorization else {}),
         method="GET",
     )
     result = fetch_json(http_request, opener)
@@ -351,14 +252,12 @@ def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
 
 def fetch_topics(
     endpoint: str,
-    authorization: str,
     request: dict[str, Any],
     opener: Callable[..., Any] = URL_OPEN,
 ) -> dict[str, Any]:
     topics_endpoint = endpoint.removesuffix("/messages")
     http_request = HttpRequest(
         f"{topics_endpoint}/users/me/{request['channel_id']}/topics",
-        headers=({"Authorization": f"Basic {authorization}"} if authorization else {}),
         method="GET",
     )
     result = fetch_json(http_request, opener)
@@ -379,13 +278,13 @@ def fetch_topics(
     }
 
 
-def process_request(body: bytes, endpoint: str, authorization: str) -> bytes:
+def process_request(body: bytes, endpoint: str) -> bytes:
     try:
         request = parse_request(body)
         response = (
-            fetch_topics(endpoint, authorization, request)
+            fetch_topics(endpoint, request)
             if request.get("operation") == "topics"
-            else fetch_page(endpoint, authorization, request)
+            else fetch_page(endpoint, request)
         )
     except (OSError, RequestError, ValueError, json.JSONDecodeError) as error:
         response = {"version": PROTOCOL_VERSION, "error": str(error)}
@@ -397,7 +296,7 @@ def process_request(body: bytes, endpoint: str, authorization: str) -> bytes:
     return body
 
 
-def serve_connection(connection: socket.socket, endpoint: str, authorization: str,
+def serve_connection(connection: socket.socket, endpoint: str,
                      session_key: str | None = SESSION_KEY) -> None:
     stream = connection.makefile("rwb", buffering=0)
     try:
@@ -415,24 +314,37 @@ def serve_connection(connection: socket.socket, endpoint: str, authorization: st
             "version": PROTOCOL_VERSION, "error": str(error),
         }, separators=(",", ":")).encode()
     else:
-        body = process_request(body, endpoint, authorization)
+        body = process_request(body, endpoint)
     write_frame(stream, body)
 
 
+def caddy_endpoint(value: str | None) -> str:
+    if not value:
+        raise RequestError("ZULIP_CADDY_ENDPOINT must not be empty")
+    parsed = urlsplit(value)
+    hostname = parsed.hostname
+    valid_hostname = (
+        isinstance(hostname, str)
+        and len(hostname) <= 63
+        and hostname.endswith("-zulip-caddy")
+        and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", hostname) is not None
+    )
+    try:
+        port = parsed.port
+    except ValueError as error:
+        raise RequestError("ZULIP_CADDY_ENDPOINT must name the fixed Caddy messages route") from error
+    if (parsed.scheme != "http" or not valid_hostname or port != 8787
+            or parsed.netloc != f"{hostname}:8787"
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path != "/api/v1/messages" or parsed.query or parsed.fragment):
+        raise RequestError("ZULIP_CADDY_ENDPOINT must name the fixed Caddy messages route")
+    return value
+
+
 def main() -> None:
-    # Production is a typed application boundary only.  Caddy owns upstream
-    # HTTP and the separate profile helper owns credentials; source-tree local
-    # mode retains load_credentials for operator use and Step-4 deletion.
-    if CADDY_ENDPOINT:
-        parsed = urlsplit(CADDY_ENDPOINT)
-        if (parsed.scheme != "http" or not parsed.hostname or parsed.path != "/api/v1/messages"
-                or parsed.query or parsed.fragment):
-            raise RequestError("ZULIP_CADDY_ENDPOINT must name the fixed Caddy messages route")
-        endpoint, authorization = CADDY_ENDPOINT, ""
-        global URL_OPEN
-        URL_OPEN = build_opener(RejectRedirects()).open
-    else:
-        endpoint, authorization = load_credentials()
+    endpoint = caddy_endpoint(CADDY_ENDPOINT)
+    global URL_OPEN
+    URL_OPEN = build_opener(RejectRedirects()).open
     if not SESSION_KEY:
         raise RequestError("ZULIP_BROKER_KEY must not be empty")
     SOCKET.parent.mkdir(parents=True, exist_ok=True)
@@ -450,7 +362,7 @@ def main() -> None:
             with connection:
                 connection.settimeout(70)
                 time.sleep(max(0.0, next_api_request - time.monotonic()))
-                serve_connection(connection, endpoint, authorization, SESSION_KEY)
+                serve_connection(connection, endpoint, SESSION_KEY)
                 next_api_request = time.monotonic() + 2
 
 
