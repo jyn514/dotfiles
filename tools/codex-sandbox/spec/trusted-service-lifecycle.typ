@@ -1,6 +1,12 @@
 = Trusted-service lifecycle
 
-*Status:* Selected design; not implemented.
+*Status:* Implemented for command proxies, isolated Codex and Zulip broker
+instances, per-launch gateway and R2 relay resource ownership, schema 4 atomic
+publication and joins, worker cancellation/joining, and owner-validated recovery.
+The remaining acceptance gap is Flower's bounded R2 connection-establishment
+retry, blocked because `/src/flower` is read-only in this checkout. Until that
+external client change lands, an early R2 request may fail rather than wait for
+the best-effort relay; no possibly accepted request is replayed.
 
 == Objective
 
@@ -277,12 +283,13 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
 
 == Migration
 
-+ Introduce normalized service plans and adapters around existing behavior without changing service scope or authority. Add bounded automatic connection retries to best-effort clients that currently require manual retry; test that they stop at the deadline and never replay a request after connection or send outcome becomes uncertain.
-+ Move common resource registration, readiness supervision, identity recording, and reverse-order cleanup into the lifecycle supervisor.
-+ Migrate command proxies first because their shared-session publication and host routing already exercise the full shared lifecycle.
-+ Migrate Codex and Zulip to separate instances of the authenticated egress broker component under the same supervisor.
-+ Migrate per-launch gateway and R2 relays after their installed required-versus-best-effort behavior is explicit and regression-tested.
-+ Remove service-specific lifecycle branches only after differential tests show identical mounts, networks, credentials, readiness, joins, interruption cleanup, and fallback behavior.
++ Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
++ Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
++ Completed: command proxies use supervised shared publication and host routing.
++ Completed: Codex and Zulip use separate authenticated-egress broker instances.
++ Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
++ External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
++ Keep compatibility recovery for pre-schema-4 records until deployed stale records no longer need cleanup; active legacy records must never join.
 
 Each migration slice must leave the launcher with one owner for the migrated resource.
 Do not retain a service-specific cleanup path beside generic cleanup as a fallback.

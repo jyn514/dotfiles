@@ -1,9 +1,9 @@
 = Sandbox launcher: image ownership
 
 *Status:* Capability declarations, gating, bounded project-command transport,
-captured Bake inputs, explicit refresh and clean rebuild, and schema 3
-accepted-authority joins are implemented. Version 1 declaration adapters remain
-for migration.
+captured Bake inputs, explicit refresh and clean rebuild, and schema 4
+accepted-authority joins are implemented. Version 1 declaration adapters and
+pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
 This is the canonical capability-selection and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
 the implemented image-command/image-target split, not the proxy trust or
@@ -342,11 +342,12 @@ Old and new image declarations never merge. Version 2 rejects `image-command`,
 `image-target`, producer-style `bake`, and executable `base-image`; version 1 rejects
 version 2 `images`, `image`, and capabilities unavailable under its migration policy.
 An unsupported resolver/backend pair fails during policy binding, before resolver or
-relay effects. Shared-session schema 3 stores accepted normalized policy, source
-presence, verified images, provider selection, and image-bound parameters. Joins
-accept only schema 3; active legacy records reject the join without reading current
-configuration or disturbing their holders. Final-holder cleanup permits the next
-launch to migrate from current configuration.
+relay effects. Shared-session schema 4 stores accepted normalized policy, source
+presence, verified images, provider selection, image-bound parameters, and the
+complete trusted-service set. Joins accept only schema 4; active legacy records
+reject the join without reading current configuration or disturbing their holders.
+Legacy records remain parseable only for owner-validated stale recovery. Final-holder
+cleanup permits the next launch to migrate from current configuration.
 
 == Acceptance evidence
 

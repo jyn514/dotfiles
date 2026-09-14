@@ -254,9 +254,8 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_insecure_recovery_directory_warning_does_not_replace_primary_status(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(); state.home = Path(directory)
-            state.cleaned = False; state.host_keychain = None
-            state.keychain_container = None; state.codex_container_created = False
-            state.keychain_networks = []; state.skills_tmp = None; state.pi_agent_tmp = None
+            state.cleaned = False; state.codex_container_created = False
+            state.skills_tmp = None; state.pi_agent_tmp = None
             state.proxy_lock = None; state.proxy_state = None; state.proxy_args = None
             state.manifest = None; state.pi_auth_mask = None; state.prepared_images = None
             state.tmux_registration = None

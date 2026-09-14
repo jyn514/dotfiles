@@ -33,10 +33,12 @@ An approved read discloses reusable credentials to the untrusted sandbox.
 The relay keeps no credential cache and returns the pair only if both reads succeed.
 
 Flower's local CI client consumes the framed protocol in [the relay design](spec/r2-keychain-relay-design.typ);
-there is no credential-printing command. It retries only connection establishment until one
-monotonic readiness deadline; after connecting it sends one credential frame and never retries,
-so one invocation can produce at most one Keychain consent sequence.
-Explicit R2 environment credentials bypass the relay, and unavailable relay credentials skip optional upload without failing CI.
+there is no credential-printing command. It sends one credential frame after connecting, so one
+invocation can produce at most one Keychain consent sequence. Bounded connection-establishment
+retry is still pending in the read-only `/src/flower` checkout; until Flower implements it, an
+early request can fail instead of waiting for the best-effort relay. Explicit R2 environment
+credentials bypass the relay, and unavailable relay credentials skip optional upload without
+failing CI.
 The lifecycle supervisor owns the per-launch Keychain listener, token, container, networks, startup worker, and owner-validated cleanup; R2 remains separate from the authenticated broker.
 The two relay networks are created concurrently. Startup joins both creation workers, fixes the relay address and per-launch token, installs peer authorization, and only then projects the capability. Cleanup first closes creation and request admission, joins prompt work, and removes only resources carrying this launch's owner identity. Relay failure remains warning-only and Flower skips optional upload.
 
@@ -80,9 +82,10 @@ Host editing and Zulip default on;
 Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
 Nested containers and Flower R2 default off.
-Host-editor, nested-container, and Flower clients tolerate delayed best-effort listener startup
-for a bounded readiness interval. Retries stop before the first request byte; after transmission
-starts, transport failure is terminal and a possibly accepted operation is never replayed.
+Host-editor and nested-container clients tolerate delayed best-effort listener startup for a
+bounded readiness interval. Retries stop before the first request byte; after transmission starts,
+transport failure is terminal and a possibly accepted operation is never replayed. Flower R2 does
+not yet perform this pre-connection retry; see [Flower R2 Keychain access](#flower-r2-keychain-access).
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
@@ -158,11 +161,10 @@ normal Neovim loads the same shared behavior before its IDE configuration.
 
 Each sandbox has one gateway for the host editor and, when configured, Agent Podman.
 It starts in the background after its private link and egress networks are created.
-Pi reaches its fixed editor and SSH ports by container DNS name;
-early use may report a connection error.
-Zulip also skips its readiness probe.
-Retry once the service is available.
-Authentication and repository-command proxies still require readiness checks.
+Pi reaches its fixed editor and SSH ports by container DNS name. Their clients retry only
+connection establishment within a bounded interval and never replay a possibly accepted request.
+The separately supervised Zulip and Codex brokers and repository-command proxies must be ready
+before publication.
 
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.

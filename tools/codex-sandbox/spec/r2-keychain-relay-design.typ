@@ -1,6 +1,6 @@
 = Prompted R2 Keychain relay for sandboxed local CI
 
-#emph[Status:] Implemented in dotfiles and Flower, September 12, 2026; live R2 upload remains untested. \
+#emph[Status:] The dotfiles relay, lifecycle ownership, and Flower protocol integration are implemented; live R2 upload remains untested. Flower's bounded connection-establishment retry remains pending in the read-only `/src/flower` checkout, so the complete design is not yet implemented. \
 #emph[Owners:] `tools/codex-sandbox` owns relay lifecycle and transport; Flower owns local CI policy and Woodpecker invocation. \
 #emph[Consent evidence:] The disposable access-key item prompted for two consecutive successful reads, denial, and a successful read after denial; jyn confirmed that Always Allow remained unselected.
 On September 12, jyn waived the remaining manual checks and authorized implementation.
@@ -63,7 +63,7 @@ Flower consumes the socket response internally as described in @flower-client.
 
 / Keychain state: macOS Keychain is the sole persistent credential owner and writer. Neither the relay nor Flower writes Keychain items.
 
-/ Relay policy: The R2 adapter is the sole owner of operation names, fixed Keychain selectors, request authentication, request deadlines, consent, and protocol readiness. After lifecycle migration, the #link("trusted-service-lifecycle.typ")[trusted-service supervisor] owns generic resource registration, endpoint state transitions, startup joining, attachment projection, cleanup, and recovery.
+/ Relay policy: The R2 adapter is the sole owner of operation names, fixed Keychain selectors, request authentication, request deadlines, consent, and protocol readiness. The #link("trusted-service-lifecycle.typ")[trusted-service supervisor] owns generic resource registration, endpoint state transitions, startup joining, attachment projection, cleanup, and recovery.
 
 / Local CI policy: Flower is the sole owner of credential precedence, warning-and-skip behavior, temporary pipeline transformation, and Woodpecker child-environment construction.
 
@@ -100,20 +100,17 @@ This bounds concurrent work and prevents an application queue of prompts; it doe
 
 === Launcher integration
 
-`codex-sandbox` should declare this as a per-launch host capability relay reached through a restricted relay container, not as a sibling command-proxy container.
-The R2 adapter supplies the fixed host-listener and relay-container policy below; after migration, the trusted-service supervisor executes the common lifecycle and remains the sole generic resource owner.
-At startup it should:
+`codex-sandbox` implements this as a per-launch host capability relay reached through a restricted relay container, not as a sibling command-proxy container.
+The R2 adapter supplies fixed host-listener and relay-container policy; the trusted-service supervisor executes the common lifecycle and remains the sole generic resource owner.
+At startup it:
 
-+ enable the bridge only when Flower R2 access is selected under
-  #link("launcher-interface.typ")[the launcher capability contract], on macOS
-  when `/usr/bin/security` exists; selection is pending launcher implementation,
-  while the current implementation enables it for every supported macOS launch;
-+ create separate private link and egress networks through `create_relay_network`, start the host listener, then start a restricted `socat` relay with all capabilities dropped, no-new-privileges, a read-only filesystem, and explicit PID, memory, and CPU limits;
-+ inject only `CODEX_SANDBOX_KEYCHAIN_ADDRESS` (the relay's numeric IPv4 link address and port) and `CODEX_SANDBOX_KEYCHAIN_TOKEN` into the agent container;
-+ install the relay's link and egress addresses into the host listener's peer allowlist before accepting requests;
-+ record capability availability, protocol version, relay PID, and lifecycle owner without recording secret values;
-+ register relay containers and networks once with the trusted-service supervisor, preserving resource ownership checks and recovery records; when the attachment ends, the supervisor invokes the adapter's bounded shutdown hook to stop the Keychain listener and active child and join its thread before removing its container and networks;
-+ fail closed if any relay resource, peer identity, token, or protocol version is incomplete or belongs to another launch.
++ enables the bridge only when version 2 policy selects `flower-r2`, on macOS when `/usr/bin/security` exists;
++ creates separate private link and egress networks through `create_relay_network`, starts the host listener, then starts a restricted `socat` relay with all capabilities dropped, no-new-privileges, a read-only filesystem, and explicit PID, memory, and CPU limits;
++ injects only `CODEX_SANDBOX_KEYCHAIN_ADDRESS` (the relay's numeric IPv4 link address and port) and `CODEX_SANDBOX_KEYCHAIN_TOKEN` into the agent container;
++ installs the relay's link and egress addresses into the host listener's peer allowlist before accepting requests;
++ keeps protocol and token authority in the adapter without recording secret values;
++ uses `KeychainHandle` and its `ResourceRegistry` to register the listener, relay container, and both networks once under one lifecycle owner. Attachment cleanup closes admission, stops any active child, joins the listener thread, then removes only owner-validated resources; failures retain credential-free recovery records;
++ fails closed if any relay resource, peer identity, token, or protocol version is incomplete or belongs to another launch.
 
 A joining session gets its own capability and consent requests. It must not inherit another session's successful credential response.
 
@@ -129,7 +126,10 @@ Implement the socket client inside Flower's local CI runner, with this credentia
 Partial explicit environment credentials remain incomplete: warn and skip upload without consulting another source.
 The socket client connects only to the configured numeric IPv4 address, avoiding DNS resolution outside its deadline, reads `CODEX_SANDBOX_KEYCHAIN_TOKEN`, and validates the complete exchange against @relay-protocol before returning credentials as an internal value.
 A missing token, malformed response, timeout, uncertain transport outcome, connection failure, or `unavailable` response warns and removes `upload-artifacts` from the temporary pipeline without failing CI or falling back to direct Keychain access.
-Flower discards failed exchanges and never retries automatically, because another request can produce another consent prompt.
+The current Flower client discards failed exchanges and never retries automatically. The pending
+change may retry only connection establishment, before sending any request byte, until one bounded
+monotonic deadline. After connection, send or response failure is terminal: Flower must never
+replay a request that may have triggered a consent prompt.
 Successful credentials pass through `WOODPECKER_SECRETS` only in the Woodpecker child environment, subject to @secret-handling.
 
 == Protocol <relay-protocol>

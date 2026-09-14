@@ -1,9 +1,9 @@
 = Sandbox command proxies
 
 *Status:* Proxy isolation, transports, capability selection, image resolution,
-and request-failure isolation are implemented. The generic authenticated egress
-broker specified below is selected but not implemented. Manifest examples below
-describe the temporary version 1 wire format.
+request-failure isolation, and separate Codex and Zulip instances of the generic
+authenticated-egress broker are implemented. Manifest examples below describe
+the temporary version 1 wire format.
 
 == Objective
 
@@ -112,9 +112,11 @@ The launcher also injects trusted built-in commands from its own installation ch
 The `jj` command is such a built-in, so repositories can use it without copying the proxy implementation or declaring a local manifest.
 The temporary version 1 image adapter comprises `image-command`, `image-target`,
 `argv`, `workdir`, `network`, and `mounts`. The
-#link("launcher-interface.typ")[version 2 launcher interface] now owns repository
-syntax and optional capability selection; resolver lifecycle migration remains open.
-The fixed execution and mount policies below apply through either path.
+#link("launcher-interface.typ")[version 2 launcher interface] owns repository
+syntax, optional capability selection, and image resolution. The first publisher
+captures normalized policy and immutable resolver results in schema 4 accepted
+state; joiners use those accepted inputs without loading current policy or invoking
+a resolver. The fixed execution and mount policies below apply through either path.
 Container resource limits, generated container names, socket-volume identifiers, startup polling, and cleanup mechanics are launcher implementation details rather than manifest fields.
 A representative first manifest is:
 
