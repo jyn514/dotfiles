@@ -1,8 +1,3 @@
-#set document(title: "Sandbox command proxies")
-#set page(margin: 1in)
-#set text(size: 10.5pt)
-#set par(justify: true)
-
 = Sandbox command proxies
 
 *Status:* Proxy isolation and transports implemented; capability selection and

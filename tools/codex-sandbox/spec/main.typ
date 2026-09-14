@@ -13,22 +13,14 @@ owns their presentation and order.
 
 #outline(title: "Contents", indent: auto)
 
-== Command proxies
-
 #include "proxy-design.typ"
-
-== Launcher and image resolution
 
 #include "launcher-interface.typ"
 
 #include "bake-resolver.typ"
 
-== Process and resource lifecycle
-
 #include "process-ownership.typ"
 
 #include "reclaim-before-exhaustion.typ"
-
-== Credential relay
 
 #include "r2-keychain-relay-design.typ"
