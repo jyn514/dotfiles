@@ -2,7 +2,7 @@
 
 Findings from 2026-09-11. The disposable forwarding implementations were removed
 after adopting session-owned OpenSSH forwards. The maintained behavior is specified
-in the [proxy contract](../proxy-design.typ); setup and migration are in
+in the [proxy contract](../spec/main.typ); setup and migration are in
 [Lima-Docker](docker.md).
 
 ## Why this transport

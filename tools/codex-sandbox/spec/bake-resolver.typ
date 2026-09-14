@@ -1,7 +1,3 @@
-#set document(title: "Bake resolver: cache ownership")
-#set page(paper: "a4", margin: 22mm)
-#set text(size: 11pt)
-
 = Bake resolver: cache ownership
 
 Selected cache contract for the bundled resolver in

@@ -22,7 +22,7 @@ the contents of bound subtrees remain live.
 
 ## Flower R2 Keychain access
 
-The [launcher interface](launcher-interface.typ) makes optional services explicit.
+The [launcher interface](spec/launcher-interface.typ) makes optional services explicit.
 Version 2 configuration, capability gating, bounded project-command transport, captured image inputs, explicit refresh and clean rebuild, and accepted-policy/image joins are implemented.
 
 On macOS, launches selecting `flower-r2` expose a separate, session-authenticated Keychain relay through `CODEX_SANDBOX_KEYCHAIN_ADDRESS` and `CODEX_SANDBOX_KEYCHAIN_TOKEN`.
@@ -32,7 +32,7 @@ choosing Always Allow can defeat repeated prompts.
 An approved read discloses reusable credentials to the untrusted sandbox.
 The relay keeps no credential cache and returns the pair only if both reads succeed.
 
-Flower's local CI client consumes the framed protocol in [the relay design](r2-keychain-relay-design.typ);
+Flower's local CI client consumes the framed protocol in [the relay design](spec/r2-keychain-relay-design.typ);
 there is no credential-printing command.
 Explicit R2 environment credentials bypass the relay, and unavailable relay credentials skip optional upload without failing CI.
 The Keychain listener, token, container, and networks belong to the launch and are cleaned up independently of the editor/Podman gateway.
@@ -80,7 +80,7 @@ Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
 Nested containers and Flower R2 default off.
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
-Resolver commands receive the versioned JSON contract in [the launcher interface](launcher-interface.typ) and run against the admitted engine.
+Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
 a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
@@ -294,6 +294,6 @@ This checks Alpine bytecode reuse, first-launch extension cache hits, edited sou
 
 ## Design and reference
 
-The authoritative [sandbox command proxy design](proxy-design.typ) defines the trust model, proxy manifest contract, and lifecycle.
+The authoritative [sandbox design specification](spec/main.typ) aggregates the sandbox contracts, including the trust model, proxy manifest, image resolution, and lifecycle.
 Read it before changing a security boundary.
 See the [tools overview](../README.md).

@@ -6,7 +6,7 @@ This historical review does not establish full Podman parity. The
 [current readiness section](docker.md#default-readiness) tracks later evidence
 and remaining default-switch gates.
 
-The [process ownership design](../process-ownership.typ) records the subsequent
+The [process ownership design](../spec/process-ownership.typ) records the subsequent
 cancellation audit, reproduced failures, and proposed cleanup boundaries.
 
 ## Cancellation and abandoned orchestration
@@ -49,7 +49,7 @@ The image-identity and wait findings below remain open.
 Resolved after review: Lima-Docker now registers one Unix-socket forward per
 cached proxy on Lima's SSH master. Requests own only their connections; recovery
 state owns listener and guest-alias cleanup. See the updated
-[proxy contract](../proxy-design.typ) for transport-status semantics and the
+[proxy contract](../spec/proxy-design.typ) for transport-status semantics and the
 [forwarding findings](forwarding-review.md) for measurements and validation limits.
 
 The first two differences were reproduced without a VM. The forwarding difference

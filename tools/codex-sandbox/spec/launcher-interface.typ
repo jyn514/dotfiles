@@ -1,7 +1,3 @@
-#set document(title: "Sandbox launcher: image ownership")
-#set page(paper: "a4", margin: 22mm)
-#set text(size: 11pt)
-
 = Sandbox launcher: image ownership
 
 *Status:* Capability declarations, gating, bounded project-command transport,

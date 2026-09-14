@@ -1,8 +1,3 @@
-#set document(title: "Own subprocesses through shutdown")
-#set page(margin: 1in)
-#set text(size: 10.5pt)
-#set par(justify: true)
-
 = Own subprocesses through shutdown
 
 *Status:* Group-supervision changes proposed; findings describe the review baseline.

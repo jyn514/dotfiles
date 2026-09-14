@@ -1,8 +1,3 @@
-#set page(paper: "a4", margin: 2.2cm)
-#set text(size: 10.5pt)
-#set par(justify: true)
-#set heading(numbering: "1.")
-
 = Prompted R2 Keychain relay for sandboxed local CI
 
 #emph[Status:] Implemented in dotfiles and Flower, September 12, 2026; live R2 upload remains untested. \

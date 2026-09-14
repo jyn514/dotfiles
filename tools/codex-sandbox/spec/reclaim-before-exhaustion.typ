@@ -1,7 +1,3 @@
-#set document(title: "Reclaim before exhaustion")
-#set page(margin: 1in)
-#set text(size: 10.5pt)
-
 = Reclaim before exhaustion
 
 *Status:* Implemented and fixture-tested, 2026-09-12. New provisioning enables

@@ -108,7 +108,7 @@ Containers keep running, and may reload evicted data. The timer neither measures
 host pressure nor prevents ENFILE when active demand outruns reclamation.
 Daemon/BuildKit caches are outside the container slice. The
 [replay results](../experiments/reclaim-timer.md) record a 6% median slowdown;
-the [specification](../reclaim-before-exhaustion.typ) defines the ownership and lifecycle rules.
+the [specification](../spec/reclaim-before-exhaustion.typ) defines the ownership and lifecycle rules.
 
 Existing VMs keep their immutable provisioning snapshots and report reclamation
 as `not-installed`. Use a new `--state` directory and `--instance` to adopt this
