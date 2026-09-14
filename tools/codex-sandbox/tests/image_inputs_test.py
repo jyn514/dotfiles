@@ -20,7 +20,8 @@ class ImageInputsTest(unittest.TestCase):
         declaration = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['declaration']
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('auth-proxy/Dockerfile', 'auth-proxy/server.py', 'gateway.py'):
+            for name in ('auth-proxy/Dockerfile', 'auth-proxy/server.py',
+                         'auth-proxy/broker.py', 'auth-proxy/codex_profile.py', 'gateway.py'):
                 path = root / 'tools/codex-sandbox' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('original')
@@ -28,6 +29,25 @@ class ImageInputsTest(unittest.TestCase):
                 original = declaration(['auth'])['target']['auth']['tags']
                 (root / 'tools/codex-sandbox/gateway.py').write_text('changed listener')
                 self.assertNotEqual(original, declaration(['auth'])['target']['auth']['tags'])
+
+    def test_broker_core_and_installed_profile_change_auth_image_identity(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        paths = owned['source_paths'](['auth'])['auth']
+        self.assertIn('tools/codex-sandbox/auth-proxy/broker.py', paths)
+        self.assertIn('tools/codex-sandbox/auth-proxy/codex_profile.py', paths)
+        original = owned['declaration'](['auth'])['target']['auth']['tags']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source in paths:
+                destination = root / source; destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / source, destination)
+            with patch.dict(owned['declaration'].__globals__, ROOT=root):
+                before = owned['declaration'](['auth'])['target']['auth']['tags']
+                (root / 'tools/codex-sandbox/auth-proxy/broker.py').write_text('changed core')
+                after_core = owned['declaration'](['auth'])['target']['auth']['tags']
+                self.assertNotEqual(before, after_core)
+                (root / 'tools/codex-sandbox/auth-proxy/codex_profile.py').write_text('changed profile')
+                self.assertNotEqual(after_core, owned['declaration'](['auth'])['target']['auth']['tags'])
 
     def test_agent_packages_runtime_sources_without_tests_or_bytecode(self):
         sources = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['agent_sources']
