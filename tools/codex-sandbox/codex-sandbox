@@ -123,9 +123,7 @@ class State:
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
     gateway_handle: GatewayHandle | None = None
-    host_keychain: HostKeychainBridge | None = None
-    keychain_networks: list[str] = field(default_factory=list)
-    keychain_container: str | None = None
+    keychain_handle: KeychainHandle | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
     cleaned: bool = False
@@ -569,17 +567,28 @@ class GatewayHandle:
 
 
 def _gateway_network_presence(name: str, owner: str) -> ResourcePresence:
+    # Only a successful enumeration can prove absence. Treat transport and
+    # inspection failures as unknown so cleanup/recovery retains its authority.
     if isinstance(OUTER_RUNTIME, VMRuntime):
-        try:
-            actual = OUTER_RUNTIME.relay_owner(name)
-        except (ValueError, OSError, subprocess.SubprocessError):
+        listing = OUTER_RUNTIME.run(["network", "ls", "--format", "{{.Name}}"],
+                                    capture_output=True)
+        if listing.returncode:
+            raise LauncherError("relay network presence listing failed")
+        if name not in listing.stdout.splitlines():
             return ResourcePresence.ABSENT
+        actual = OUTER_RUNTIME.relay_owner(name)
     else:
+        listing = run(["docker", "network", "ls", "--format", "{{.Name}}"],
+                      check=False, capture=True, quiet=True)
+        if listing.returncode:
+            raise LauncherError("relay network presence listing failed")
+        if name not in listing.stdout.splitlines():
+            return ResourcePresence.ABSENT
         result = run(["docker", "network", "inspect", "--format",
                       "{{index .Labels \"dev.codex.service-owner\"}}", name],
                      check=False, capture=True, quiet=True)
         if result.returncode:
-            return ResourcePresence.ABSENT
+            raise LauncherError("relay network ownership inspection failed")
         actual = result.stdout.strip()
     return ResourcePresence.OWNED if actual == owner else ResourcePresence.MISMATCHED
 
@@ -664,6 +673,46 @@ def persist_gateway_recovery(state: State, remaining: tuple[str, ...]) -> Path |
             pass
         os.close(dirfd)
     return directory / name
+
+
+def persist_keychain_recovery(state: State, remaining: tuple[str, ...]) -> Path | None:
+    """Persist credential-free R2 resources in the trusted relay recovery store."""
+    handle = state.keychain_handle
+    if handle is None:
+        return None
+    resources = []
+    for identity in remaining:
+        kind, _, name = identity.partition(':')
+        if kind not in {'container', 'network'}:
+            continue
+        dependencies = ([] if kind == 'network' else [handle.link, handle.egress])
+        resources.append({'kind': kind, 'name': name, 'owner': handle.owner,
+                          'dependencies': dependencies})
+    if not resources:
+        return None
+    directory = _gateway_recovery_directory(state)
+    dirfd = _gateway_recovery_dirfd(state, create=True)
+    assert dirfd is not None
+    filename = f'{handle.owner}.json'
+    temporary = f'.{handle.owner}.{secrets.token_hex(8)}.tmp'
+    payload = {'version': 1, 'runtime': runtime_identity(OUTER_RUNTIME),
+               'owner': handle.owner, 'resources': resources}
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                             | getattr(os, 'O_NOFOLLOW', 0), 0o600, dir_fd=dirfd)
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+            json.dump(payload, output, sort_keys=True)
+            output.flush()
+            os.fsync(output.fileno())
+        os.rename(temporary, filename, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+        os.fsync(dirfd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=dirfd)
+        except FileNotFoundError:
+            pass
+        os.close(dirfd)
+    return directory / filename
 
 
 def _parse_gateway_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
@@ -851,27 +900,69 @@ def start_gateway(state: State) -> None:
     # Until this allowlist is installed, the listener rejects every connection.
 
 
+class KeychainHandle:
+    """Sole lifecycle owner for one launch's best-effort R2 relay."""
+
+    def __init__(self, state: State, link: str, egress: str, container: str) -> None:
+        self.state, self.link, self.egress, self.container = state, link, egress, container
+        self.owner = f"keychain-{uuid.uuid4().hex}"
+        self.registry = ResourceRegistry(self.owner)
+        self.cancelled = threading.Event()
+        self.bridge: HostKeychainBridge | None = None
+        self.projected = False
+
+    def cleanup(self, primary_status: int = 0):
+        self.cancelled.set()
+        return self.registry.cleanup(primary_status)
+
+
 def start_keychain(state: State) -> list[str]:
-    """Publish a separate, optional fixed R2 capability after relay readiness."""
+    """Project the fixed R2 endpoint only after peer authorization is installed."""
     if sys.platform != 'darwin' or not Path('/usr/bin/security').is_file():
         return []
     link = f'codex-keychain-link-{state.suffix}'
     egress = f'codex-keychain-egress-{state.suffix}'
     container = f'codex-keychain-{state.suffix}'
+    handle = KeychainHandle(state, link, egress, container)
+    state.keychain_handle = handle
     try:
-        state.keychain_networks.extend((link, egress))
-        # Register both owners first and join both workers even on failure, so
-        # cleanup cannot race a network that is still being created.
+        def create_network(name: str, internal: bool) -> None:
+            identity = f"network:{name}"
+            handle.registry.register(OwnedResource(
+                identity, handle.owner,
+                lambda name=name: _gateway_network_presence(name, handle.owner),
+                lambda name=name: run(['docker', 'network', 'rm', name], quiet=True)))
+            if handle.cancelled.is_set():
+                raise LauncherError('Keychain relay startup cancelled')
+            create_relay_network(state, name, internal=internal, owner=handle.owner)
+
+        # Register in each worker before creation and join both workers on every exit.
         with ThreadPoolExecutor(max_workers=2) as executor:
-            networks = [executor.submit(create_relay_network, state, name, internal=internal)
+            networks = [executor.submit(create_network, name, internal)
                         for name, internal in ((link, True), (egress, False))]
             for network in networks:
                 network.result()
-        bridge = state.host_keychain = HostKeychainBridge()
+        container_resource = f'container:{container}'
+        handle.registry.register(OwnedResource(
+            container_resource, handle.owner,
+            lambda: _gateway_container_presence(container, handle.owner),
+            lambda: run(['docker', 'rm', '--force', container], quiet=True),
+            (f'network:{link}', f'network:{egress}')))
+        bridge = handle.bridge = HostKeychainBridge()
+        # The bridge depends on the relay so cleanup closes admission and joins
+        # any prompt worker before removing the relay process.
+        handle.registry.register(OwnedResource(
+            'bridge:keychain', handle.owner,
+            lambda: ResourcePresence.OWNED if handle.bridge is not None else ResourcePresence.ABSENT,
+            bridge.stop, (container_resource,)))
+        if handle.cancelled.is_set():
+            raise LauncherError('Keychain relay startup cancelled')
         bridge.start()
-        state.keychain_container = container
+        if handle.cancelled.is_set():
+            raise LauncherError('Keychain relay startup cancelled')
         run([
             'docker', 'run', '--detach', '--name', container,
+            '--label', f'dev.codex.service-owner={handle.owner}',
             '--cap-drop=ALL', '--security-opt=no-new-privileges', '--read-only',
             '--pids-limit', '32', '--memory', '64m', '--cpus', '0.25',
             '--network', egress, '--network', link, *proxy_flags(),
@@ -884,27 +975,28 @@ def start_keychain(state: State) -> list[str]:
         peers = set()
         link_address = None
         for network in (link, egress):
-            if isinstance(OUTER_RUNTIME, VMRuntime):
-                address = OUTER_RUNTIME.network_address(container, network)
-            else:
-                address = run(['docker', 'inspect', '--format',
-                    f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
-                    container], capture=True).stdout.strip()
+            address = (OUTER_RUNTIME.network_address(container, network)
+                       if isinstance(OUTER_RUNTIME, VMRuntime) else
+                       run(['docker', 'inspect', '--format',
+                            f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
+                           container], capture=True).stdout.strip())
             if not address:
                 raise LauncherError('Keychain relay has incomplete network addresses')
             peers.add(address)
             if network == link:
                 link_address = address
-        # VM host forwarding can present loopback, as for the editor gateway.
+        if handle.cancelled.is_set():
+            raise LauncherError('Keychain relay startup cancelled')
+        # Token creation is bridge-local and per launch; authorization precedes projection.
         bridge.allow_peers(peers | {'127.0.0.1'})
+        handle.projected = True
         return ['--network', link, '--env', f'CODEX_SANDBOX_KEYCHAIN_ADDRESS={link_address}:2224',
                 *([] if isinstance(OUTER_RUNTIME, VMRuntime) else
                   ['--env', 'CODEX_SANDBOX_KEYCHAIN_TOKEN'])]
-    except (OSError, ValueError, LauncherError, subprocess.SubprocessError):
-        if state.host_keychain is not None:
-            state.host_keychain.stop()
-            state.host_keychain = None
-        # Partial resources stay registered with the normal owner-checked cleanup.
+    except (OSError, ValueError, LauncherError, LifecycleError, subprocess.SubprocessError):
+        # Close resource creation immediately. The supervisor remains the sole
+        # shutdown owner and joins the bridge during normal cleanup.
+        handle.cancelled.set()
         print('warning: Keychain relay unavailable', file=sys.stderr)
         return []
 
@@ -1493,6 +1585,13 @@ def wait_for_agent(state: State) -> int:
         raise
 
 
+def keychain_environment(state: State) -> dict[str, str]:
+    handle = getattr(state, 'keychain_handle', None)
+    if handle is None or not handle.projected or handle.bridge is None:
+        return {}
+    return {'CODEX_SANDBOX_KEYCHAIN_TOKEN': handle.bridge.token}
+
+
 def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
@@ -1656,8 +1755,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     bridge_environment: dict[str, str] = {}
     if state.host_editor is not None:
         bridge_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
-    if state.host_keychain is not None:
-        bridge_environment['CODEX_SANDBOX_KEYCHAIN_TOKEN'] = state.host_keychain.token
+    bridge_environment.update(keychain_environment(state))
     agent_environment.update(bridge_environment)
     if timing:
         print(
@@ -1706,8 +1804,10 @@ def startup_workers(state: State, max_workers: int) -> Iterator[ThreadPoolExecut
         yield executor
     except BaseException:
         # Close every adapter's creation gate before waiting for in-flight effects.
-        if getattr(state, "gateway_handle", None) is not None:
-            state.gateway_handle.cancelled.set()
+        for handle in (getattr(state, "gateway_handle", None),
+                       getattr(state, "keychain_handle", None)):
+            if handle is not None:
+                handle.cancelled.set()
         executor.shutdown(wait=False, cancel_futures=True)
         raise
     finally:
@@ -1718,8 +1818,10 @@ def startup_workers(state: State, max_workers: int) -> Iterator[ThreadPoolExecut
             while pending:
                 _, pending = wait(pending, timeout=0.1)
                 if state.deferred_signal is not None:
-                    if getattr(state, "gateway_handle", None) is not None:
-                        state.gateway_handle.cancelled.set()
+                    for handle in (getattr(state, "gateway_handle", None),
+                                   getattr(state, "keychain_handle", None)):
+                        if handle is not None:
+                            handle.cancelled.set()
                     for future in pending:
                         future.cancel()
             executor.shutdown(wait=True, cancel_futures=True)
@@ -1898,13 +2000,7 @@ def cleanup(state: State) -> None:
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             print(f"Sandbox cleanup: {label}={now - previous:.2f}s", file=sys.stderr)
         previous = now
-    if state.host_keychain is not None:
-        state.host_keychain.stop()
-    timing("host relays")
     containers = []
-    if state.keychain_container is not None:
-        containers.append((f'Keychain relay {state.keychain_container}',
-                           ['docker', 'rm', '--force', state.keychain_container]))
     if state.codex_container_created:
         containers.append((
             f"Codex container {state.codex_container}",
@@ -1914,9 +2010,8 @@ def cleanup(state: State) -> None:
         container_results = list(executor.map(lambda item: cleanup_resource(*item), containers))
     timing("containers")
 
+    timing("host relays")
     networks = []
-    for name in state.keychain_networks:
-        networks.append((f'Keychain network {name}', ['docker', 'network', 'rm', name]))
     def remove_network(item):
         if isinstance(OUTER_RUNTIME, VMRuntime):
             try:
@@ -1933,6 +2028,20 @@ def cleanup(state: State) -> None:
 
     with ThreadPoolExecutor(max_workers=max(1, len(networks))) as executor:
         network_results = list(executor.map(remove_network, networks))
+    keychain_handle = getattr(state, 'keychain_handle', None)
+    keychain_result = keychain_handle.cleanup(0) if keychain_handle is not None else None
+    if keychain_result is not None:
+        for failure in keychain_result.failures:
+            print(f"warning: Cleaning up Keychain resource {failure.identity} failed ({failure.code}).",
+                  file=sys.stderr)
+        if keychain_result.remaining:
+            try:
+                path = persist_keychain_recovery(state, keychain_result.remaining)
+                if path is not None:
+                    print(f"warning: Keychain recovery state retained at {path}", file=sys.stderr)
+            except (OSError, LauncherError) as error:
+                print(f"warning: Keychain recovery state could not be persisted: {error}",
+                      file=sys.stderr)
     gateway_result = (state.gateway_handle.cleanup(0)
                       if state.gateway_handle is not None else None)
     if gateway_result is not None:
@@ -1949,7 +2058,8 @@ def cleanup(state: State) -> None:
     timing("gateway")
     keep_scratch = (isinstance(OUTER_RUNTIME, VMRuntime)
                     and (not all([*container_results, *network_results])
-                         or bool(gateway_result and gateway_result.remaining)))
+                         or bool(gateway_result and gateway_result.remaining)
+                         or bool(keychain_result and keychain_result.remaining)))
     if keep_scratch:
         state.recovery_record = temporary_file()
         recovery = {"runtime": runtime_identity(OUTER_RUNTIME),

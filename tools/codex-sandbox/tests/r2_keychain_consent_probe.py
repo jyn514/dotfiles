@@ -4,6 +4,9 @@ Run: python3 tools/codex-sandbox/tests/r2_keychain_consent_probe.py
 Observe every dialog; choose Allow once, never Always Allow. The disposable
 keychain password is r2-probe-password. Repeat from a restarted terminal session.
 Passing this probe does not establish the ACL configuration of production items.
+Before using production items, also run keychain_bridge_test.py and
+keychain_launcher_test.py; the latter verifies supervisor-owned cancellation,
+peer-before-projection ordering, and cleanup without displaying credentials.
 """
 
 from pathlib import Path

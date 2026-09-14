@@ -19,11 +19,13 @@ def main():
         state.sidecar_image = runtime.prepare_images(ROOT.parents[1], {},
             auth_builder=([str(ROOT / 'auth-proxy/image')], ROOT.parents[1])).auth
         flags = launcher['start_keychain'](state)
-        assert flags and state.host_keychain is not None
+        assert flags and state.keychain_handle is not None
+        bridge = state.keychain_handle.bridge
+        assert bridge is not None
         # Native children are covered by keychain_bridge_test; this test owns wiring.
-        state.host_keychain._read = lambda account, connection, deadline: 'dummy-' + account
+        bridge._read = lambda account, connection, deadline: 'dummy-' + account
         image = runtime.inspect_image(state.sidecar_image)
-        with runtime.environment_file({'CODEX_SANDBOX_KEYCHAIN_TOKEN': state.host_keychain.token}) as env:
+        with runtime.environment_file({'CODEX_SANDBOX_KEYCHAIN_TOKEN': bridge.token}) as env:
             with runtime.workload(image, 'keychain-client-' + uuid.uuid4().hex[:12], [
                     *flags, *env, '--cap-drop=ALL',
                     '--mount', f'type=bind,src={ROOT / "tests"},dst=/probe,readonly',
@@ -32,9 +34,10 @@ def main():
     finally:
         launcher['cleanup'](state)
         names = runtime.run(['network', 'ls', '--format', '{{.Name}}'], capture_output=True).stdout.splitlines()
-        assert not set(state.keychain_networks).intersection(names)
-        if state.keychain_container:
-            assert not runtime.run(['ps', '-aq', '--filter', 'name=^/' + state.keychain_container + '$'],
+        if state.keychain_handle:
+            assert not {state.keychain_handle.link, state.keychain_handle.egress}.intersection(names)
+            assert not runtime.run(['ps', '-aq', '--filter',
+                                    'name=^/' + state.keychain_handle.container + '$'],
                                    capture_output=True).stdout.strip()
     print('Owned relay resources removed.')
 

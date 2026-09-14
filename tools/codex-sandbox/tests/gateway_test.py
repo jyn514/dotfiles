@@ -219,6 +219,8 @@ class GatewayLifecycleTest(unittest.TestCase):
             recover = self.launcher["recover_gateways"]
 
             def foreign(command, **_kwargs):
+                if command[1:3] == ["network", "ls"]:
+                    return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
                 if command[1:3] == ["network", "inspect"]:
                     return SimpleNamespace(returncode=0, stdout="foreign\n")
                 if command[1:4] == ["container", "ls", "--all"]:
@@ -232,6 +234,8 @@ class GatewayLifecycleTest(unittest.TestCase):
 
             removed = []
             def owned(command, **_kwargs):
+                if command[1:3] == ["network", "ls"]:
+                    return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
                 if command[1:3] == ["network", "inspect"]:
                     return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
                 if command[1:4] == ["container", "ls", "--all"]:
@@ -302,9 +306,41 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_existing_network_owner_is_adopted_only_for_same_owner(self):
         presence = self.launcher["_gateway_network_presence"]
         for actual, expected in (("owner", "owned"), ("other", "mismatched")):
-            result = SimpleNamespace(returncode=0, stdout=actual + "\n")
-            with patch.dict(presence.__globals__, run=Mock(return_value=result)):
+            run = Mock(side_effect=[
+                SimpleNamespace(returncode=0, stdout="network\n"),
+                SimpleNamespace(returncode=0, stdout=actual + "\n"),
+            ])
+            with patch.dict(presence.__globals__, run=run):
                 self.assertEqual(expected, presence("network", "owner").value)
+
+    def test_network_listing_or_inspection_failure_is_not_absence(self):
+        presence = self.launcher["_gateway_network_presence"]
+        failed = SimpleNamespace(returncode=125, stdout="")
+        with patch.dict(presence.__globals__, run=Mock(return_value=failed)):
+            with self.assertRaisesRegex(Exception, "listing failed"):
+                presence("network", "owner")
+        run = Mock(side_effect=[SimpleNamespace(returncode=0, stdout="network\n"), failed])
+        with patch.dict(presence.__globals__, run=run):
+            with self.assertRaisesRegex(Exception, "inspection failed"):
+                presence("network", "owner")
+        lima = Mock(spec=presence.__globals__["VMRuntime"])
+        lima.run.side_effect = OSError("VM unavailable")
+        with patch.dict(presence.__globals__, OUTER_RUNTIME=lima):
+            with self.assertRaisesRegex(OSError, "VM unavailable"):
+                presence("network", "owner")
+
+    def test_recovery_retains_record_when_runtime_listing_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.state(); state.home = Path(directory)
+            handle = self.launcher["GatewayHandle"](state, False, True)
+            state.gateway_handle = handle
+            path = self.launcher["persist_gateway_recovery"](
+                state, ("network:gateway-link",))
+            unavailable = Mock(return_value=SimpleNamespace(returncode=125, stdout=""))
+            with patch.dict(self.launcher["recover_gateways"].__globals__, run=unavailable), \
+                    patch("sys.stderr", new_callable=io.StringIO):
+                self.launcher["recover_gateways"](state)
+            self.assertTrue(path.exists())
 
 
 class GatewayTest(unittest.TestCase):

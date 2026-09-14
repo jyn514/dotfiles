@@ -37,9 +37,8 @@ there is no credential-printing command. It retries only connection establishmen
 monotonic readiness deadline; after connecting it sends one credential frame and never retries,
 so one invocation can produce at most one Keychain consent sequence.
 Explicit R2 environment credentials bypass the relay, and unavailable relay credentials skip optional upload without failing CI.
-The Keychain listener, token, container, and networks belong to the launch and are cleaned up independently of the editor/Podman gateway.
-The two relay networks are created concurrently;
-startup waits for both workers before publishing the capability or handling a creation failure.
+The lifecycle supervisor owns the per-launch Keychain listener, token, container, networks, startup worker, and owner-validated cleanup; R2 remains separate from the authenticated broker.
+The two relay networks are created concurrently. Startup joins both creation workers, fixes the relay address and per-launch token, installs peer authorization, and only then projects the capability. Cleanup first closes creation and request admission, joins prompt work, and removes only resources carrying this launch's owner identity. Relay failure remains warning-only and Flower skips optional upload.
 
 Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py` for launcher tests.
 The opt-in `python3 tools/codex-sandbox/tests/keychain_integration_relay.py` exercises dummy credentials through disposable containers on the existing Docker VM.

@@ -147,6 +147,7 @@ class BridgeTest(unittest.TestCase):
         self.bridge.stop()
         self.assertTrue(self.children)
         self.assertTrue(all(child.poll() is not None for child in self.children))
+        self.assertEqual(self.bridge.token, '')
 
     def test_read_timeout_discards_value_and_kills_child(self):
         self.mode = 'stall'
