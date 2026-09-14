@@ -28,8 +28,13 @@ The extension class is constructed with one `StenoEngine`. The GUI class inherit
 `plover.gui_qt.tool.Tool`, defines `TITLE` and `ROLE`, and is constructed with one
 engine argument.
 
-It supports 64-bit Windows, Linux, and macOS. It requires `plover >= 5.4, < 6`,
-Python 3.10 or later, and `usbx >= 0.8.3, < 0.9`. `usbx` is the only host-device
+It supports 64-bit Windows, Linux, and macOS. It runs inside Plover `>= 5.4,
+< 6`, requires Python 3.10 or later and `usbx >= 0.8.3, < 0.9`, and declares
+only `usbx` as a runtime dependency. Plover is the host application and is
+available before the plugin is installed; declaring it as a package dependency
+would make Plover's plugin installer create a second Plover installation in
+its plugin environment. The optional `test` extra supplies the supported
+Plover range for tests that exercise host APIs. `usbx` is the only host-device
 backend; the plugin contains no platform-specific USB code.
 
 == Learned device
@@ -90,9 +95,11 @@ execution, both may queue a reset. This bounded race can cause an extra reconnec
 but cannot corrupt plugin state; the design does not add coordination to prevent
 it.
 
-The process-global usbx monitor thread remains alive until Plover exits. This is
-usbx behavior and is acceptable because the design assumes this plugin is its
-only caller within the Plover process.
+The process-global usbx monitor thread remains alive until Plover exits. The
+connected-device callback is also process-global: this plugin assumes it is the
+only caller within the Plover process. Another consumer can replace the
+callback, and stopping this plugin clears the shared callback; safe coexistence
+requires a multi-listener API from usbx.
 
 == Ownership boundaries
 
