@@ -1,10 +1,9 @@
 = Sandbox command proxies
 
-*Status:* Proxy isolation and transports implemented; capability selection and
-image resolution and request-failure isolation follow the selected, not-yet-implemented
-#link("launcher-interface.typ")[launcher interface], including its selected
-version 2 JSON configuration and loader boundary. Manifest examples below
-describe the implemented version 1 wire format.
+*Status:* Proxy isolation, transports, capability selection, image resolution,
+and request-failure isolation are implemented. The generic authenticated egress
+broker specified below is selected but not implemented. Manifest examples below
+describe the temporary version 1 wire format.
 
 == Objective
 
@@ -20,7 +19,7 @@ The first additional capability is `bug`, which runs Flower's git-bug bridge wit
 The design also supports future fixed commands that need authority unavailable inside the agent container.
 
 This design does not make arbitrary repository commands safe, grant the agent Docker access, or infer trust from a read-only mount.
-It also keeps reusable model-provider credentials outside the agent while granting the agent authority to make model requests through a launcher-owned sidecar.
+It also keeps reusable service credentials outside the agent while granting bounded HTTP request authority through launcher-owned instances of one authenticated egress broker component.
 Jujutsu retains `jj-proxy`'s command-specific argument policy while using the generic manifest lifecycle.
 
 == Trust model
@@ -36,10 +35,11 @@ The agent must not be able to:
 - redirect a proxy to another repository
 - control the outer container daemon
 - increase its proxy capabilities during a sandbox session
-- read, replace, or export a reusable model-provider access or refresh token
+- read, replace, or export a reusable upstream credential
+- choose an authenticated upstream origin, authorization scheme, or credential source
 
-The agent is authorized to submit arbitrary supported model requests and therefore to disclose request content, consume quota, and incur charges within configured limits.
-This authority is intentional and distinct from possession of the reusable upstream credential.
+The agent is authorized to submit requests allowed by its selected egress routes and therefore may disclose request content, consume quota, mutate remote state where a route permits it, and incur charges within configured limits.
+This authority is intentional and distinct from possession of a reusable upstream credential.
 
 Proxy manifests under `.agents/sandbox/` are trusted repository configuration.
 The configuration loader accepts repository command, resolver, and mount declarations without a built-in command allowlist, so the repository and its manifest authors must be trusted before startup. It returns validated policy and a bound resolver to the launcher; it does not execute image resolution while loading policy.
@@ -99,7 +99,7 @@ outer container-engine daemon
 
 The proxy containers receive no outer daemon socket.
 The agent may receive a separate, isolated inner container service, but that service cannot replace the outer launcher's mounts or proxy containers.
-The model-provider sidecar described below is a launcher-owned sibling container rather than a manifest command because it carries user authority independent of the repository.
+Each authenticated egress broker instance described below is a launcher-owned sibling container rather than a manifest command because it carries user authority independent of the repository.
 
 Each proxy image is read-only, non-root, capability-free, and uses `no-new-privileges`.
 The launcher supplies explicit container-level PID, memory, CPU, filesystem, and file-descriptor limits.
@@ -246,13 +246,13 @@ Before discovering or starting proxies, the launcher acquires an exclusive host-
 If a live shared session exists, the launcher validates its recorded state and attaches using the accepted configuration, image set, and socket volumes as specified by the launcher interface. It does not compare against current repository declarations. Per-launch relays retain separate resources and tokens under the accepted opt-ins and current host authorization.
 Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
-After required repository-command proxies become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, and each manifest command's proxy container identity and immutable image reference.
+After required repository-command proxies and broker adapters become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, accepted route set, and every command-proxy and broker-instance container identity, immutable image reference, socket or network endpoint, and credential-domain identity.
 Lima ownership includes the VM generation, namespace, hardware identity, and network-policy digest; legacy metadata belongs to Podman.
-The optional trusted Zulip proxy starts without a readiness probe; an early request may fail and be retried after its socket becomes available.
-The metadata contains no command-specific protocol version or request fields.
+A join validates each recorded container, image, endpoint, network attachment, and required readiness state before attaching; it neither restarts one missing instance nor substitutes current policy.
+The metadata contains no command-specific request fields, reusable credentials, refresh state, or session tokens.
 
-A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every manifest command.
-A host-side `bb bug` shim gives it the `bug` manifest key, framed request, and local bridge entrypoint.
+A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed broker adapter.
+A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
 The router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
@@ -273,8 +273,9 @@ The request and response remain on standard input and output.
 Every proxy image contains that launcher-owned client at one conventional absolute path.
 Podman and Lima-containerd send the framed request to that client's standard input; it connects to the in-VM Unix socket and copies the response without interpreting either message.
 Lima-Docker connects directly through a session-owned Unix-socket forward on Lima's existing SSH master. Its host transport copies request bytes, shuts down the write side at input EOF, and copies response bytes until EOF. Command-specific shims and servers own framing, size limits, deadlines, and application status; the transport does not parse messages. A zero transport status reports stream completion, not command success or a valid response; callers must reject missing or malformed response frames. SSH may deliver EOF where a container client reported a remote socket reset.
-The router validates the container's launcher-owned session labels, native image identity, and repository identity before opening either transport, and never executes a manifest- or caller-selected command through the outer runtime.
-Only the trusted host router receives outer-daemon access; neither the agent nor a proxy container receives it.
+The router resolves the accepted command-proxy or broker-adapter endpoint from published metadata, then validates its launcher-owned session labels, native image identity, credential-domain identity where applicable, and repository identity before opening the transport.
+It never executes a manifest- or caller-selected command or connects to a caller-selected endpoint through the outer runtime.
+Only the trusted host router receives outer-daemon access; neither the agent nor a proxy or broker container receives it.
 Failure of outer-runtime execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
 
 For Lima-Docker, each proxy's recovery state records its volume owner and guest socket target before registration. A private short guest alias avoids Unix-socket path limits; a private host listener is registered with OpenSSH's `-O forward`. Both live as long as the cached proxy, including intervals without an attached agent. Requests own only their connections: terminating a router closes its connection without stopping the SSH master or other requests. This does not promise cancellation of work the server already accepted.
@@ -284,7 +285,7 @@ The host kernel releases a launcher's shared session lock when it exits or is ki
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
 Success proves it was the final holder, so it removes the shared proxies and metadata; failure leaves them available to the remaining sessions.
 After a crash or reboot, successful exclusive session-lock acquisition proves that any remaining metadata is stale and safe to clean before local execution or replacement.
-If a command proxy or provider sidecar becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and an unhealthy shared session cannot accept new agents. Recovery requires attached agents to exit before shared services restart.
+If a command proxy or authenticated egress broker becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and an unhealthy shared session cannot accept new agents. Recovery requires attached agents to exit before shared services restart.
 
 Any number of launchers may share one checkout's proxy set.
 Linked worktrees retain distinct repository identities and proxy sets.
@@ -301,31 +302,137 @@ For an interpreted repository tool, the immutable image carries the trusted star
 The launcher starts a proxy with its manifest `argv` as the fixed operation.
 It does not expose a general-purpose shell, `docker exec`, alternate entrypoint, or arbitrary command API to the agent.
 
-== Model-provider credential sidecar <model-provider-sidecar>
+== Generic authenticated egress broker <authenticated-egress-broker>
 
-The launcher starts a trusted sibling container and redirects Pi's existing provider `baseUrl` to it over the sandbox network.
-Only the sidecar mounts a launcher-managed Codex authentication directory, without any ordinary home or configuration directory.
-The trusted `codex-sandbox auth login` command creates that OAuth login rather than copying the human's normal Codex refresh token, so the two clients cannot race token rotation.
-The agent receives no provider access or refresh token through its image, mounts, environment, configuration, responses, or logs.
-The sidecar writes refresh updates transactionally within that directory.
+=== Purpose and boundary
 
-The sidecar is a small streaming reverse proxy.
-It accepts only the required provider request path and method, strips client authorization and forwarding headers, sends the request to one fixed HTTPS origin, injects upstream authorization, and streams the response back.
-It rejects other paths, methods, origins, and oversized requests; it neither interprets prompts nor translates the provider protocol.
+Replace duplicated authenticated-HTTP implementations with one broker component, instantiated once per credential trust domain.
+Each instance owns one credential profile, its fixed upstream identities, authorization transformation, request limits, and authenticated-egress logs.
+The launcher owns route selection, secret-source admission, session tokens, networks, instances, and lifecycle.
+The agent owns only the application request accepted by a route adapter; it never supplies an upstream URL or receives the reusable credential.
 
-Each sidecar receives a random session key that Pi sends as its placeholder API key.
-The key is readable by the agent and intentionally grants only the model-request authority Pi already has; it is not an upstream credential and stops working when the sidecar exits.
-This prevents unrelated containers on the shared sandbox network from using the sidecar.
+The first concrete users are Codex model requests and Zulip transcript reads.
+Both need fixed-origin HTTPS, hidden reusable credentials, bounded transport, and fail-closed lifecycle behavior, but they do not share application authority: Codex forwards a narrow HTTP surface, while Zulip accepts a typed read-only operation and owns pagination and rate limiting.
+They therefore share broker machinery and image construction but run in separate instances with disjoint credential mounts, networks, tokens, mutable state, and failure domains.
+Combining unrelated credentials in one process is rejected because compromise through either protocol would expose both.
+Flower R2 is a later user only if a separate broker profile implements reviewed AWS Signature Version 4 signing while preserving per-request Keychain consent; generic header injection does not satisfy that boundary.
+Host editing, Agent Podman, repository commands, and arbitrary public internet access remain outside this broker.
 
-The sidecar follows the existing proxy-container lifecycle and hardening: an independently built Alpine-based immutable image, non-root user, read-only root filesystem, dropped capabilities, `no-new-privileges`, bounded resources, no repository or outer-daemon mount, and cleanup with the shared proxy session.
-Its image does not inherit the customizable model image base.
-Concurrent agent containers in that session reuse one sidecar and session key, as they reuse the Jujutsu proxy.
-The Codex authentication directory is its only writable host mount.
-Pi continues to use `openai-codex-responses` with only `baseUrl` and the placeholder API key changed.
-Startup, authentication, or refresh failure fails closed and never falls back to mounting the credential in the agent.
+=== Route authority
 
-Passwordless sudo inside the agent does not weaken this boundary: container root has no outer-daemon access and cannot inspect the sibling's filesystem, processes, or mounts.
-It can call the sidecar directly, but that grants only the model-request authority Pi already has.
+The broker starts from a normalized set of immutable routes accepted at shared-session creation.
+A route has:
+
+- a stable launcher-owned route name, selected capability, and broker instance
+- one fixed `https` origin, including host and port
+- one installed application adapter: `http`, `zulip-read`, or another reviewed type
+- adapter-specific methods, paths, query construction, completion rules, and request and response schemas
+- request-body, response-body, header, duration, redirect, and concurrency limits
+- one launcher-owned authentication profile or explicit `none`
+- a response policy for headers exposed to the agent
+
+Repository configuration may select an installed route through a capability.
+It may declare credential-free project routes because the repository is already trusted startup policy, but it cannot name a host credential source, request an installed authentication profile, replace an installed route, or turn an unauthenticated route into an authenticated one.
+Installed authentication profiles bind route names to credential owners outside repository-controlled configuration.
+The loader rejects duplicate routes, unknown fields, user-info in origins, non-HTTPS authenticated origins, IP literals unless explicitly installed, wildcard hosts, path traversal, overlapping ambiguous prefixes, unbounded limits, and authentication references outside the installed namespace.
+Accepted routes and their source provenance enter shared-session metadata; joins use that accepted set without reloading configuration.
+
+=== Agent protocols and adapters
+
+Each broker instance publishes only the transports required by its installed adapters.
+An HTTP adapter listens on its private session network at a route base URL such as:
+
+```text
+http://codex-egress:8787/v1/routes/codex/<relative-path>
+```
+
+The launcher gives the agent an instance-specific bearer token and route base URL.
+The token expires with that instance, authorizes only its routes, and is useless upstream.
+Socket or network possession without it is insufficient.
+The broker validates the token and route on every request.
+
+The HTTP adapter rejects `CONNECT`, absolute- and authority-form targets, fragments, encoded separators, dot segments, malformed critical headers, and paths outside its prefixes after one percent-decoding and normalization pass.
+Queries are rejected unless the adapter declares a query schema; that schema bounds encoded size, names allowed keys, defines duplicate-key and blank-value behavior, and validates values before constructing the upstream query.
+The adapter constructs the upstream URL from its fixed origin, validated path, and validated query, resolves DNS itself, and never follows redirects.
+An upstream redirect is returned only when response policy permits `Location`; it is never converted into another broker request.
+
+The HTTP adapter removes hop-by-hop headers, client `Authorization`, `Proxy-Authorization`, `Forwarded`, `Via`, `X-Forwarded-*`, `Host`, and every authentication-reserved header.
+It sets upstream authority and transport, applies authentication, and streams the body without translating the application protocol.
+The route enumerates surviving client-controlled headers; all others are rejected.
+Response policy similarly allowlists headers and removes upstream authentication challenges, cookies unless required, forwarding metadata, and internal diagnostics.
+
+A typed adapter instead retains its existing bounded framed protocol over a session socket.
+The Zulip adapter accepts only transcript and topic-list operations, constructs fixed API paths and queries, serializes access, enforces the existing two-second spacing, honors bounded `429 Retry-After`, paginates, validates responses, and emits the existing response schema.
+It does not expose a general Zulip HTTP prefix.
+Its socket remains reachable through #link(<host-coordination>)[host coordination], so a host `zulip` command uses the active instance and otherwise performs the same typed operation locally.
+The sandbox client never falls back locally.
+
+Each request has separate limits for request headers or frames, request body, response headers or frames, response body, total duration, idle duration, and redirects.
+The broker enforces limits while streaming and never buffers an unbounded body.
+Before sending response headers or a response frame, it returns a typed policy or upstream error.
+After an HTTP response has begun, timeout, disconnect, or a body limit closes the upstream and downstream streams; clients must treat premature EOF or missing protocol completion as failure rather than a valid short response.
+Typed adapters send no success frame until their complete bounded result validates.
+Whether a remote mutation committed before cancellation may be unknown; the broker does not retry non-idempotent requests.
+Other retries belong to the reviewed adapter, not generic transport policy.
+
+=== Credential owners and transformations
+
+A credential profile is installed trusted code, not repository data.
+It defines one secret owner, one transformation, and one route set.
+The initial transformations are deliberately narrow:
+
+/ OAuth bearer: read and transactionally refresh the dedicated Codex OAuth state, then replace client authorization with one bearer header. The ordinary human Codex login remains a separate owner.
+/ Static API header: read a launcher-approved secret file or host credential and set one fixed header. The agent cannot choose the header name or secret lookup key.
+/ Zulip basic authentication: construct the fixed upstream authorization value from the admitted Zulip identity without returning either component to the agent; this profile is bound only to the `zulip-read` adapter.
+
+Secret providers return opaque values only to their profile implementation.
+Profiles must not expose a generic template language, environment expansion, arbitrary header maps, caller-selected accounts, or caller-selected Keychain services.
+A refresh-capable profile is the sole writer of its refresh state and publishes an update by atomic replacement only after the complete refreshed state is durable.
+Failure to read, refresh, or inject credentials fails that request and never falls back to agent credentials, a different host account, or unauthenticated upstream access.
+
+AWS Signature Version 4 is excluded from the initial broker because it signs method, path, selected headers, and a payload hash and therefore is not equivalent to static credential injection.
+Adding it requires a separate profile specification covering streaming payloads, clock ownership, retries, canonicalization, per-use consent, and outcome-unknown writes.
+Until then, Flower R2 retains its dedicated relay and disclosed-credential semantics.
+
+=== Network and process isolation
+
+Each broker instance joins one internal agent-link network and one restricted egress network.
+Only that instance receives both networks.
+The agent reaches its private address but cannot route through it except through its declared adapter; the instance enables neither IP forwarding nor generic forward-proxy mode.
+By default, the egress network prohibits private and special-use addresses after DNS resolution, for every resolved address and connection attempt; DNS rebinding fails closed.
+An installed route requiring a private destination must declare the exact host and permitted CIDRs in launcher-owned policy, and the network owner must install the matching narrow exception before startup.
+Repository routes cannot request this exception.
+
+The broker image is launcher-owned and independent of the customizable agent image.
+Every instance runs non-root with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, bounded PIDs, memory, CPU, and file descriptors, and only its profile's credential mounts.
+It receives no repository mount, outer-daemon socket, SSH agent, ordinary home directory, or unrelated credential.
+Routes may share an instance only when they use the same credential profile and trust domain; instances never share credentials, mutable refresh files, tokens, networks, concurrency budgets, or failure status.
+A failed request does not terminate another route in the same instance.
+Process failure makes that instance's routes unavailable and never causes direct fallback.
+
+Passwordless sudo inside the agent does not weaken this boundary: container root cannot inspect the sibling's filesystem, processes, mounts, or egress network.
+It can invoke every selected route, but gains only the remote request authority already granted by those routes.
+
+=== Observability
+
+Logs record session identity, route name, method, normalized path classification, response status, byte counts, duration, limit failures, and cancellation outcome.
+They never record query values, request or response bodies, authorization values, cookies, credential-source paths, refresh exchanges, or complete URLs containing user data.
+Route profiles may further redact path components or headers but cannot weaken the baseline exclusions.
+Before an HTTP response begins, diagnostics distinguish policy rejection, credential failure, upstream transport failure, timeout, and response-limit failure without secret material or upstream authorization details.
+After streaming begins, the client sees only premature EOF or missing protocol completion; broker logs retain the specific terminal cause.
+
+=== Migration and removal
+
+Migration is consumer-by-consumer:
+
++ Implement the broker image and Codex HTTP adapter while preserving Pi's existing `baseUrl` and placeholder-key integration.
++ Port the existing Zulip framed protocol into a separate broker instance with the `zulip-read` adapter; preserve host routing, read-only request construction, pagination, response validation, pacing, and bounded `429` handling.
++ Keep Flower R2 on its dedicated Keychain relay until a separately reviewed signing profile preserves consent and avoids credential disclosure.
++ Delete service-specific HTTP, authentication, hardening, image, and lifecycle implementations only after joins, restart, refresh, host routing, and failure recovery use the shared broker component. Separate credential-domain containers and networks remain intentional.
+
+The broker does not initially replace the agent's existing credential-free public network.
+Consequently it simplifies and bounds authenticated egress but does not claim complete domain allowlisting for arbitrary tools.
+A later direct-egress removal is a separate design: it must account for package managers, source downloads, certificate handling, `CONNECT`, non-HTTP protocols, and development usability rather than turning this reverse proxy into a transparent gateway.
 
 == Git-bug proxy <git-bug-proxy>
 
@@ -361,8 +468,8 @@ A direct socket request that still contains `--body-file` is invalid, so bypassi
 
 The protocol rejects `bb bug push` and `bb bug raw` before execution.
 Publishing refs remains a maintainer command outside the sandbox; the proxy receives neither network access nor push credentials, and the agent receives no write-capable Git credentials, writable SSH agent, or reusable provider token that could bypass the proxy through Git or a hosting API.
-The model-provider sidecar accepts only model API requests and cannot reach source-hosting APIs, so its bounded request authority does not grant publication authority.
-Deployments that permit broader network credentials must enforce the same restriction at their credential or egress boundary.
+The authenticated egress broker instances have no source-hosting publication route, so their bounded request authority does not grant publication authority.
+Deployments that add broader authenticated routes must enforce the same restriction in their accepted route and credential-profile boundaries.
 
 During a sandbox session, #link(<host-coordination>)[host coordination] sends agent and human requests to the same long-lived `bug` proxy instead of running the local bridge.
 The proxy processes complete operations serially, so no PID comparison or stale-lock recovery crosses namespaces or the host/guest kernel boundary.
@@ -403,14 +510,14 @@ The first launch creates the shared session with these steps. Joins instead vali
 + Resolve only selected consumers' images and dependencies through the launcher interface; validate immutable references in the admitted engine
 + Create session-specific socket volumes and container names
 + Start each configured proxy with its declared mounts and limits
-+ Wait for required repository-command sockets to become ready; skip the optional Zulip readiness probe
-+ Start the model-provider sidecar with its authentication-directory mount and one fresh session key, then verify readiness
-+ Atomically publish session metadata for the proxy set
++ Wait for required repository-command sockets to become ready
++ Start one authenticated egress broker instance per selected credential profile, with its accepted routes, profile-specific credential mount, and fresh token; verify every required HTTP listener and typed-adapter socket before publication
++ Atomically publish session metadata for the command-proxy and broker-instance set
 + When host editing or nested container access is selected, create the per-sandbox gateway networks and start only its selected listeners in a launcher-owned background job
 + When Flower R2 access is selected, prepare its separate relay using the readiness and consent rules in #link("r2-keychain-relay-design.typ")[the R2 specification]
-+ Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and its provider base URL redirected to the sidecar
++ Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and selected clients directed to their broker route base URLs
 + Join all selected relay startup jobs before cleanup, deferring termination signals during the join
-+ Detach the agent, then stop the sidecar and proxies and remove session resources after the last attached agent exits or startup fails
++ Detach the agent, then stop the broker instances and command proxies and remove session resources after the last attached agent exits or startup fails
 
 Cleanup preserves the agent's exit status and removes only resources owned by that session.
 When selected, the agent addresses editor and Podman ports by the gateway's session-specific container DNS name.
@@ -420,7 +527,7 @@ Upstream refusal ends only that connection; listener failure stops the gateway.
 Names include the host UID and first launcher PID to prevent collisions.
 
 The launcher may keep a proxy alive for the whole sandbox session.
-Long-lived command and authentication proxies amortize image startup without sharing trusted mutable state between unrelated sandbox sessions.
+Long-lived command proxies and the egress broker amortize image startup without sharing trusted mutable state between unrelated sandbox sessions.
 
 == Acceptance checks
 
@@ -431,12 +538,16 @@ Long-lived command and authentication proxies amortize image startup without sha
 - `--body-file` contents cross the proxy as bounded standard input, and the proxy never opens the supplied path
 - `bb bug push` and `bb bug raw` are rejected by the proxy, and push remains a maintainer-only command
 - The agent cannot publish refs through direct Git, SSH-agent, credential, or provider-API access
-- The agent and agent root cannot read the Codex access token, refresh token, OAuth exchange, or authentication directory through files, environment, process inspection, logs, network responses, or the outer daemon
-- Pi can stream supported model requests through the sidecar without a real credential in agent `auth.json`, and direct supported requests have no more authority than Pi's own requests
-- Unknown methods, paths, origins, oversized bodies, and client authorization headers fail closed
-- Sidecar login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
-- Sidecar unavailability and authentication failure never fall back to direct authenticated provider access or mounting the credential in the agent
-- A session key fails after its sidecar exits and cannot authenticate directly to the upstream provider
+- The agent and agent root cannot read any broker-owned access token, refresh token, basic-auth component, refresh exchange, or credential store through files, environment, process inspection, logs, network responses, or the outer daemon
+- Pi streams model requests through its fixed HTTP route, while Zulip clients use only the typed read-only adapter; neither receives reusable credentials
+- Unknown routes, methods, paths, origins, oversized bodies, forbidden headers, redirects, and client authorization fail closed
+- Route normalization rejects encoded separators, dot segments, absolute targets, ambiguous prefixes, and prohibited resolved addresses
+- Codex login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
+- A route failure does not expose its credential or affect another credential-domain instance
+- Broker unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
+- A session key fails after its broker exits, authorizes only the accepted routes, and cannot authenticate directly to an upstream provider
+- Broker logs and diagnostics contain no query values, bodies, cookies, reusable credentials, refresh exchanges, or complete sensitive URLs
+- Non-idempotent requests are not retried, and cancellation reports an outcome-unknown remote mutation where success cannot be established
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
 - Modified working-tree copies of `bb.edn`, bridge source, git-bug, or proxy scripts do not affect trusted execution
@@ -444,7 +555,7 @@ Long-lived command and authentication proxies amortize image startup without sha
 - Resolver freshness, sharing, refresh, and capability omission satisfy the launcher interface's acceptance checks
 - Joins reuse accepted configuration and images without running resolvers, even after sandbox configuration or source edits; existing agents, sockets, and services remain untouched
 - `/reload` updates per-agent instructions, skills, and extensions without reloading sandbox configuration or shared proxies
-- Loss of a command proxy or provider sidecar reports request failures without terminating attached agents or falling back to local privileged execution or direct provider credentials
+- Loss of a command proxy or broker instance reports request failures without terminating attached agents or falling back to local privileged execution or direct provider credentials
 - Editing proxy source after startup does not rebuild, replace, or otherwise change the running proxy
 - Concurrent drain requests execute serially
 - Local human bridge execution cannot overlap a sandbox session
