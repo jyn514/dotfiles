@@ -63,7 +63,7 @@ Flower consumes the socket response internally as described in @flower-client.
 
 / Keychain state: macOS Keychain is the sole persistent credential owner and writer. Neither the relay nor Flower writes Keychain items.
 
-/ Relay policy: `tools/codex-sandbox` is the sole owner of operation names, fixed Keychain selectors, request authentication, deadlines, and endpoint lifecycle.
+/ Relay policy: The R2 adapter is the sole owner of operation names, fixed Keychain selectors, request authentication, request deadlines, consent, and protocol readiness. After lifecycle migration, the #link("trusted-service-lifecycle.typ")[trusted-service supervisor] owns generic resource registration, endpoint state transitions, startup joining, attachment projection, cleanup, and recovery.
 
 / Local CI policy: Flower is the sole owner of credential precedence, warning-and-skip behavior, temporary pipeline transformation, and Woodpecker child-environment construction.
 
@@ -100,7 +100,9 @@ This bounds concurrent work and prevents an application queue of prompts; it doe
 
 === Launcher integration
 
-`codex-sandbox` should declare this as a host bridge reached through a restricted relay container, not as a sibling command-proxy container. At startup it should:
+`codex-sandbox` should declare this as a per-launch host capability relay reached through a restricted relay container, not as a sibling command-proxy container.
+The R2 adapter supplies the fixed host-listener and relay-container policy below; after migration, the trusted-service supervisor executes the common lifecycle and remains the sole generic resource owner.
+At startup it should:
 
 + enable the bridge only when Flower R2 access is selected under
   #link("launcher-interface.typ")[the launcher capability contract], on macOS
@@ -110,7 +112,7 @@ This bounds concurrent work and prevents an application queue of prompts; it doe
 + inject only `CODEX_SANDBOX_KEYCHAIN_ADDRESS` (the relay's numeric IPv4 link address and port) and `CODEX_SANDBOX_KEYCHAIN_TOKEN` into the agent container;
 + install the relay's link and egress addresses into the host listener's peer allowlist before accepting requests;
 + record capability availability, protocol version, relay PID, and lifecycle owner without recording secret values;
-+ register relay containers and networks with the launcher's cleanup paths, preserving resource ownership checks and recovery records; when the attached session ends, stop the Keychain listener and active child, join its thread, then remove its container and networks;
++ register relay containers and networks once with the trusted-service supervisor, preserving resource ownership checks and recovery records; when the attachment ends, the supervisor invokes the adapter's bounded shutdown hook to stop the Keychain listener and active child and join its thread before removing its container and networks;
 + fail closed if any relay resource, peer identity, token, or protocol version is incomplete or belongs to another launch.
 
 A joining session gets its own capability and consent requests. It must not inherit another session's successful credential response.

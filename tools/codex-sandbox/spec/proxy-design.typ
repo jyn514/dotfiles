@@ -249,7 +249,7 @@ It never deletes or replaces the lock file.
 After required repository-command proxies and broker adapters become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, accepted route set, and every command-proxy and broker-instance container identity, immutable image reference, socket or network endpoint, and credential-domain identity.
 Lima ownership includes the VM generation, namespace, hardware identity, and network-policy digest; legacy metadata belongs to Podman.
 A join validates each recorded container, image, endpoint, network attachment, and required readiness state before attaching; it neither restarts one missing instance nor substitutes current policy.
-The metadata contains no command-specific request fields, reusable credentials, refresh state, or session tokens.
+The owner-validated mode-`0600` metadata contains broker session tokens needed by validated joiners, but no command-specific request fields, reusable upstream credentials, or refresh state.
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed broker adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
@@ -285,7 +285,7 @@ The host kernel releases a launcher's shared session lock when it exits or is ki
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
 Success proves it was the final holder, so it removes the shared proxies and metadata; failure leaves them available to the remaining sessions.
 After a crash or reboot, successful exclusive session-lock acquisition proves that any remaining metadata is stale and safe to clean before local execution or replacement.
-If a command proxy or authenticated egress broker becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and an unhealthy shared session cannot accept new agents. Recovery requires attached agents to exit before shared services restart.
+If a command proxy or authenticated egress broker becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and join-time validation rejects an unavailable shared service. Recovery requires attached agents to exit before shared services restart.
 
 Any number of launchers may share one checkout's proxy set.
 Linked worktrees retain distinct repository identities and proxy sets.
@@ -346,8 +346,8 @@ An HTTP adapter listens on its private session network at a route base URL such 
 http://codex-egress:8787/v1/routes/codex/<relative-path>
 ```
 
-The launcher gives the agent an instance-specific bearer token and route base URL.
-The token expires with that instance, authorizes only its routes, and is useless upstream.
+The launcher creates one random bearer token for the broker instance, stores it in that session's atomically published owner-validated `0600` accepted-session record, and gives accepted agents that token and route base URL.
+The token expires when the instance stops, authorizes only its accepted routes, and is useless upstream.
 Socket or network possession without it is insufficient.
 The broker validates the token and route on every request.
 
@@ -495,39 +495,9 @@ A future proxy command with caller-controlled arguments must define a complete a
 
 == Lifecycle
 
-Short helper calls share the launcher's interpreter and receive explicit argument lists.
-They reuse the Git metadata resolved during repository validation for that launch;
-standalone helper commands still discover their own repository metadata.
-The launcher owns its session and publication locks directly. Lock acquisition runs on the signal-owning
-thread while other startup jobs proceed, so a contended launch can be cancelled.
-
-The first launch creates the shared session with these steps. Joins instead validate and reuse its accepted configuration, image set, shared services, and metadata, then prepare their selected per-launch relays and start an agent; they neither resolve images nor republish shared state.
-
-+ Resolve and validate the repository and protected paths
-+ Acquire the repository's host session lock
-+ Read and validate the trusted manifest
-+ Select the fixed launch capability set
-+ Resolve only selected consumers' images and dependencies through the launcher interface; validate immutable references in the admitted engine
-+ Create session-specific socket volumes and container names
-+ Start each configured proxy with its declared mounts and limits
-+ Wait for required repository-command sockets to become ready
-+ Start one authenticated egress broker instance per selected credential profile, with its accepted routes, profile-specific credential mount, and fresh token; verify every required HTTP listener and typed-adapter socket before publication
-+ Atomically publish session metadata for the command-proxy and broker-instance set
-+ When host editing or nested container access is selected, create the per-sandbox gateway networks and start only its selected listeners in a launcher-owned background job
-+ When Flower R2 access is selected, prepare its separate relay using the readiness and consent rules in #link("r2-keychain-relay-design.typ")[the R2 specification]
-+ Start the agent with metadata, sandbox configuration, socket volumes overlaid read-only, and selected clients directed to their broker route base URLs
-+ Join all selected relay startup jobs before cleanup, deferring termination signals during the join
-+ Detach the agent, then stop the broker instances and command proxies and remove session resources after the last attached agent exits or startup fails
-
-Cleanup preserves the agent's exit status and removes only resources owned by that session.
-When selected, the agent addresses editor and Podman ports by the gateway's session-specific container DNS name.
-Early requests may fail; gateway startup failures are reported without terminating the agent.
-The host editor rejects all peers until gateway address inspection installs its allowlist.
-Upstream refusal ends only that connection; listener failure stops the gateway.
-Names include the host UID and first launcher PID to prevent collisions.
-
-The launcher may keep a proxy alive for the whole sandbox session.
-Long-lived command proxies and the egress broker amortize image startup without sharing trusted mutable state between unrelated sandbox sessions.
+The #link("trusted-service-lifecycle.typ")[trusted-service lifecycle] owns planning, identity, readiness, publication, joining, cancellation, cleanup, and recovery across command proxies, authenticated egress broker instances, and host capability relays.
+This specification retains command- and protocol-specific authority: fixed execution policy, request validation, credentials, mounts, network access, serialization, retries, and outcome semantics.
+A service-specific implementation must not duplicate lifecycle ownership or use generic lifecycle failure as permission to fall back to a more privileged path.
 
 == Acceptance checks
 
@@ -545,7 +515,7 @@ Long-lived command proxies and the egress broker amortize image startup without 
 - Codex login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
 - A route failure does not expose its credential or affect another credential-domain instance
 - Broker unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
-- A session key fails after its broker exits, authorizes only the accepted routes, and cannot authenticate directly to an upstream provider
+- A broker session token remains available to validated joiners after the publishing launcher exits, fails after its broker instance ends, authorizes only the accepted routes, and cannot authenticate directly to an upstream provider
 - Broker logs and diagnostics contain no query values, bodies, cookies, reusable credentials, refresh exchanges, or complete sensitive URLs
 - Non-idempotent requests are not retried, and cancellation reports an outcome-unknown remote mutation where success cannot be established
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts

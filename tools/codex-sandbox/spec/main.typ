@@ -15,6 +15,8 @@ owns their presentation and order.
 
 #include "proxy-design.typ"
 
+#include "trusted-service-lifecycle.typ"
+
 #include "launcher-interface.typ"
 
 #include "bake-resolver.typ"
