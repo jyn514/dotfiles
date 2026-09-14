@@ -75,6 +75,9 @@ class Engine:
         self.upstream_calls.append(reference)
         return reference.split(':', 1)[0] + '@' + self.upstream
 
+    def image_if_available(self, reference):
+        return self.images.get(reference)
+
 
 class BakeTest(unittest.TestCase):
     def setUp(self):
@@ -291,6 +294,26 @@ class BakeTest(unittest.TestCase):
         self.assertGreater(len(self.engine.builds), before)
         built = next(batch['base'] for batch in reversed(self.engine.built_files) if 'base' in batch)
         self.assertIn('@sha256:' + '2' * 64, built.decode())
+
+    def test_local_upstream_avoids_registry_until_refresh(self):
+        (self.repo / 'ci/base.Dockerfile').write_text('FROM alpine:3.22\n')
+        digest = 'sha256:' + '3' * 64
+        self.engine.images['alpine:3.22'] = Image('alpine@' + digest, digest, digest, digest)
+        first = resolve(self.engine, self.repo, ['base'])
+        self.assertEqual([], self.engine.upstream_calls)
+        del self.engine.images['alpine:3.22']
+        self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
+        self.assertEqual([], self.engine.upstream_calls)
+        self.assertNotEqual(first, resolve(self.engine, self.repo, ['base'], operation='refresh'))
+        self.assertEqual(['alpine:3.22'], self.engine.upstream_calls)
+
+    def test_failed_build_retains_successful_ordinary_resolution(self):
+        (self.repo / 'ci/base.Dockerfile').write_text('FROM alpine:3.22\n')
+        self.engine.build_status = 23
+        for _ in range(2):
+            with self.assertRaises(BuildError):
+                resolve(self.engine, self.repo, ['base'])
+        self.assertEqual(['alpine:3.22'], self.engine.upstream_calls)
 
     def test_failed_refresh_does_not_publish_new_upstream_pin(self):
         (self.repo / 'ci/base.Dockerfile').write_text('FROM alpine:3.22\n')

@@ -65,11 +65,17 @@ def _pin_upstream(runtime, reference, *, refresh, pending=None):
         pin_key = runtime.provider + '\0' + runtime.build_platform() + '\0' + reference
         if pending is not None and pin_key in pending:
             return pending[pin_key][0]
-        pinned = runtime.upstream_image(reference) if refresh or pin_key not in pins else pins[pin_key]
+        if not refresh and pin_key in pins:
+            pinned = pins[pin_key]
+        else:
+            local = None if refresh else runtime.image_if_available(reference)
+            pinned = local.reference if local is not None else runtime.upstream_image(reference)
         if '@sha256:' not in pinned and not re.fullmatch(r'sha256:[0-9a-f]{64}', pinned):
             raise RuntimeError(f'upstream image did not resolve immutably: {reference}')
         if pins.get(pin_key) != pinned:
-            if pending is not None:
+            # Ordinary lookups survive build failure; refresh retains the last
+            # working pins until every affected build succeeds.
+            if refresh and pending is not None:
                 pending[pin_key] = (pinned, refresh)
             else:
                 pins[pin_key] = pinned

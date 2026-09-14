@@ -82,6 +82,8 @@ Nested containers and Flower R2 default off.
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
+Ordinary resolution reuses saved pins, then local image digests, and queries the registry only when neither is available.
+It saves each ordinary resolution immediately so failed builds do not repeat registry lookups.
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
 a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
 An explicit image resolver overrides this convention.
@@ -92,7 +94,8 @@ These files are trusted startup policy, not agent configuration.
 
 The agent image key hashes source bytes directly, without Git clean filters or line-ending normalization, so it tracks the bytes Docker builds.
 Without a project base image, the launcher pulls its default Node image into the selected engine if absent, before computing the agent image key.
-Later launches reuse the local base; a failed pull aborts startup.
+Later launches reuse the local base;
+a failed pull aborts startup.
 
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead.
 Other images use the standalone Bun executable.
@@ -127,6 +130,7 @@ CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and clean
 
 `refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
 it retains BuildKit caches.
+Refreshed pins replace the previous pins only after the affected builds succeed.
 `clean` retains the current pins but passes `--no-cache`.
 Neither command changes images accepted by a live shared session or publishes registry images.
 
