@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from functools import cache
 import importlib.util
@@ -38,7 +38,8 @@ from keychain_bridge import HostKeychainBridge
 from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, resolve_agent
 from trusted_services import (
-    LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry, ServiceLifecycle,
+    LifecycleError, LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
+    ServiceLifecycle,
 )
 from codex_broker import (
     CREDENTIAL_DOMAIN, ENDPOINT_PORT, NETWORK as CODEX_BROKER_NETWORK,
@@ -121,15 +122,12 @@ class State:
     skills_source: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
-    host_editor: HostEditorBridge | None = None
+    gateway_handle: GatewayHandle | None = None
     host_keychain: HostKeychainBridge | None = None
     keychain_networks: list[str] = field(default_factory=list)
     keychain_container: str | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
-    gateway_link_created: bool = False
-    gateway_egress_created: bool = False
-    gateway_container_created: bool = False
     cleaned: bool = False
     joining_workers: bool = False
     deferred_signal: int | None = None
@@ -141,6 +139,11 @@ class State:
     recovery_record: Path | None = None
     capabilities: frozenset[str] = frozenset()
     policy_source_present: bool = False
+
+    @property
+    def host_editor(self) -> HostEditorBridge | None:
+        """Protocol view only; the gateway handle retains lifecycle ownership."""
+        return self.gateway_handle.bridge if self.gateway_handle is not None else None
 
 
 def run(
@@ -213,11 +216,14 @@ def proxy_flags() -> list[str]:
     return ["--http-proxy=false"]
 
 
-def create_relay_network(state: State, name: str, *, internal: bool) -> None:
+def create_relay_network(state: State, name: str, *, internal: bool,
+                         owner: str | None = None) -> None:
+    owner = owner or state.resource_owner
     if isinstance(OUTER_RUNTIME, VMRuntime):
-        OUTER_RUNTIME.create_relay_network(name, internal=internal, owner=state.resource_owner)
+        OUTER_RUNTIME.create_relay_network(name, internal=internal, owner=owner)
     else:
         run(["docker", "network", "create", *(["--internal"] if internal else []),
+             "--label", f"dev.codex.service-owner={owner}",
              "--opt", "isolate=true", name], discard_stdout=True)
 
 
@@ -529,19 +535,244 @@ def attach_proxies(state: State) -> list[str]:
     return result
 
 
+class GatewayHandle:
+    """Sole owner of one launch's staged, best-effort gateway resources."""
+
+    def __init__(self, state: State, editor: bool, nested: bool) -> None:
+        self.state = state
+        self.editor = editor
+        self.nested = nested
+        self.owner = f"gateway-{uuid.uuid4().hex}"
+        self.registry = ResourceRegistry(self.owner)
+        self.cancelled = threading.Event()
+        self.bridge: HostEditorBridge | None = None
+        self._logical: set[str] = set()
+        self.created: set[str] = set()
+
+    def presence(self, identity: str, inspect: Callable[[], ResourcePresence]) -> ResourcePresence:
+        return ResourcePresence.OWNED if identity in self.created else inspect()
+
+    def _register_logical(self, identity: str, *, depends_on: tuple[str, ...] = (),
+                          remove: Callable[[], None] = lambda: None) -> None:
+        self._logical.add(identity)
+        self.registry.register(OwnedResource(
+            identity, self.owner,
+            lambda identity=identity: (ResourcePresence.OWNED if identity in self._logical
+                                       else ResourcePresence.ABSENT),
+            lambda identity=identity, remove=remove: (remove(), self._logical.discard(identity)),
+            depends_on,
+        ))
+
+    def cleanup(self, primary_status: int = 0):
+        self.cancelled.set()
+        return self.registry.cleanup(primary_status)
+
+
+def _gateway_network_presence(name: str, owner: str) -> ResourcePresence:
+    if isinstance(OUTER_RUNTIME, VMRuntime):
+        try:
+            actual = OUTER_RUNTIME.relay_owner(name)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return ResourcePresence.ABSENT
+    else:
+        result = run(["docker", "network", "inspect", "--format",
+                      "{{index .Labels \"dev.codex.service-owner\"}}", name],
+                     check=False, capture=True, quiet=True)
+        if result.returncode:
+            return ResourcePresence.ABSENT
+        actual = result.stdout.strip()
+    return ResourcePresence.OWNED if actual == owner else ResourcePresence.MISMATCHED
+
+
+def _gateway_container_presence(name: str, owner: str) -> ResourcePresence:
+    return _codex_container_presence(name, owner)
+
+
+def _gateway_recovery_directory(state: State) -> Path:
+    return state.home / ".local/state/codex-sandbox/gateway-recovery"
+
+
+def _gateway_recovery_dirfd(state: State, *, create: bool) -> int | None:
+    """Open the private recovery directory without following any path component."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(state.home, flags)
+    try:
+        for component in (".local", "state", "codex-sandbox", "gateway-recovery"):
+            try:
+                child = os.open(component, flags, dir_fd=fd)
+            except FileNotFoundError:
+                if not create:
+                    return None
+                os.mkdir(component, 0o700, dir_fd=fd)
+                child = os.open(component, flags, dir_fd=fd)
+            status = os.fstat(child)
+            if (not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid()
+                    or (component == "gateway-recovery"
+                        and stat.S_IMODE(status.st_mode) != 0o700)):
+                os.close(child)
+                raise LauncherError("gateway recovery path is not a private directory")
+            os.close(fd)
+            fd = child
+        result, fd = fd, -1
+        return result
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _gateway_recovery_resources(handle: GatewayHandle,
+                                remaining: tuple[str, ...]) -> list[dict[str, object]]:
+    resources = []
+    for identity in remaining:
+        kind, _, name = identity.partition(":")
+        if kind not in {"container", "network"}:
+            continue
+        dependencies = ([] if kind == "network" else
+            [handle.state.gateway_link_network, handle.state.gateway_egress_network])
+        resources.append({"kind": kind, "name": name, "owner": handle.owner,
+                          "dependencies": dependencies})
+    return resources
+
+
+def persist_gateway_recovery(state: State, remaining: tuple[str, ...]) -> Path | None:
+    handle = state.gateway_handle
+    if handle is None:
+        return None
+    resources = _gateway_recovery_resources(handle, remaining)
+    if not resources:
+        return None
+    directory = _gateway_recovery_directory(state)
+    dirfd = _gateway_recovery_dirfd(state, create=True)
+    assert dirfd is not None
+    name = f"{handle.owner}.json"
+    temporary = f".{handle.owner}.{secrets.token_hex(8)}.tmp"
+    payload = {"version": 1, "runtime": runtime_identity(OUTER_RUNTIME),
+               "owner": handle.owner, "resources": resources}
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                             | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=dirfd)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(payload, output, sort_keys=True)
+            output.flush()
+            os.fsync(output.fileno())
+        os.rename(temporary, name, src_dir_fd=dirfd, dst_dir_fd=dirfd)
+        os.fsync(dirfd)
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=dirfd)
+        except FileNotFoundError:
+            pass
+        os.close(dirfd)
+    return directory / name
+
+
+def _parse_gateway_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
+    value = json.loads(data)
+    if (not isinstance(value, dict) or set(value) != {"version", "runtime", "owner", "resources"}
+            or isinstance(value.get("version"), bool) or value.get("version") != 1
+            or value.get("runtime") != runtime_identity(OUTER_RUNTIME)
+            or not isinstance(value.get("owner"), str)
+            or not isinstance(value.get("resources"), list) or len(value["resources"]) > 4):
+        raise LauncherError("invalid gateway recovery record")
+    owner = value["owner"]
+    parsed: list[dict[str, object]] = []
+    identities: set[tuple[str, str]] = set()
+    for item in value["resources"]:
+        if (not isinstance(item, dict) or set(item) != {"kind", "name", "owner", "dependencies"}
+                or item.get("owner") != owner or item.get("kind") not in {"network", "container"}
+                or not isinstance(item.get("name"), str) or not item["name"]
+                or not isinstance(item.get("dependencies"), list)
+                or any(not isinstance(dependency, str) or not dependency
+                       for dependency in item["dependencies"])
+                or len(set(item["dependencies"])) != len(item["dependencies"])):
+            raise LauncherError("invalid gateway recovery resource")
+        identity = (item["kind"], item["name"])
+        if identity in identities:
+            raise LauncherError("duplicate gateway recovery resource")
+        identities.add(identity)
+        parsed.append(item)
+    for item in parsed:
+        if item["kind"] == "network" and item["dependencies"]:
+            raise LauncherError("network recovery resource has dependencies")
+        if any(("network", dependency) not in identities for dependency in item["dependencies"]):
+            raise LauncherError("missing gateway recovery dependency")
+    return owner, parsed
+
+
+def recover_gateways(state: State) -> None:
+    if not hasattr(state, "home"):
+        return
+    try:
+        dirfd = _gateway_recovery_dirfd(state, create=False)
+    except (OSError, LauncherError) as error:
+        print(f"warning: gateway recovery directory retained: {error}", file=sys.stderr)
+        return
+    if dirfd is None:
+        return
+    try:
+        names = sorted(name for name in os.listdir(dirfd) if name.endswith(".json"))[:64]
+        for name in names:
+            try:
+                descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=dirfd)
+                with os.fdopen(descriptor, "rb") as source:
+                    status = os.fstat(source.fileno())
+                    if (not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid()
+                            or stat.S_IMODE(status.st_mode) != 0o600 or status.st_size > 16384):
+                        raise LauncherError("gateway recovery record is not a private regular file")
+                    owner, resources = _parse_gateway_recovery(source.read(16385))
+                registry = ResourceRegistry(owner)
+                for item in sorted(resources, key=lambda item: item["kind"] == "container"):
+                    name_value = item["name"]
+                    dependencies = tuple(f"network:{dependency}" for dependency in item["dependencies"])
+                    if item["kind"] == "network":
+                        registry.register(OwnedResource(
+                            f"network:{name_value}", owner,
+                            lambda name_value=name_value: _gateway_network_presence(name_value, owner),
+                            lambda name_value=name_value: run(
+                                ["docker", "network", "rm", name_value], quiet=True)))
+                    else:
+                        registry.register(OwnedResource(
+                            f"container:{name_value}", owner,
+                            lambda name_value=name_value: _gateway_container_presence(name_value, owner),
+                            lambda name_value=name_value: run(
+                                ["docker", "rm", "--force", name_value], quiet=True), dependencies))
+                if registry.cleanup(0).remaining:
+                    raise LauncherError("gateway resources retained")
+            except (OSError, TypeError, ValueError, json.JSONDecodeError,
+                    LifecycleError, LauncherError) as error:
+                print(f"warning: gateway recovery retained {name}: {error}", file=sys.stderr)
+            else:
+                os.unlink(name, dir_fd=dirfd)
+                os.fsync(dirfd)
+    finally:
+        os.close(dirfd)
+
+
 def prepare_gateway(state: State) -> list[str]:
     capabilities = getattr(state, "capabilities", frozenset({"host-editor", "nested-containers"}))
     editor = "host-editor" in capabilities
     nested = "nested-containers" in capabilities and state.agent_podman is not None
     if not editor and not nested:
         return []
-    state.gateway_link_created = True
-    create_relay_network(state, state.gateway_link_network, internal=True)
-    state.gateway_egress_created = True
-    create_relay_network(state, state.gateway_egress_network, internal=False)
+    handle = GatewayHandle(state, editor, nested)
+    state.gateway_handle = handle
+    for name, internal in ((state.gateway_link_network, True),
+                           (state.gateway_egress_network, False)):
+        identity = f"network:{name}"
+        handle.registry.register(OwnedResource(
+            identity, handle.owner,
+            lambda name=name, identity=identity: handle.presence(
+                identity, lambda: _gateway_network_presence(name, handle.owner)),
+            lambda name=name: run(["docker", "network", "rm", name], quiet=True),
+        ))
+        if handle.cancelled.is_set():
+            raise LauncherError("gateway startup cancelled")
+        create_relay_network(state, name, internal=internal, owner=handle.owner)
+        handle.created.add(identity)
     if editor:
-        state.host_editor = HostEditorBridge()
-        state.host_editor.start()
+        handle.bridge = HostEditorBridge()
+        handle._register_logical("bridge:host-editor", remove=handle.bridge.stop)
+        handle.bridge.start()
     arguments = [
         "--network", state.gateway_link_network,
         *(["--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223"] if editor else []),
@@ -561,14 +792,27 @@ def prepare_gateway(state: State) -> list[str]:
 
 
 def start_gateway(state: State) -> None:
-    editor_port = state.host_editor.port if state.host_editor is not None else None
-    podman_port = (state.agent_podman or {}).get("AGENT_PODMAN_SSH_PORT")
+    handle = state.gateway_handle
+    if handle is None:
+        raise LauncherError("gateway was not prepared")
+    editor_port = handle.bridge.port if handle.bridge is not None else None
+    podman_port = ((state.agent_podman or {}).get("AGENT_PODMAN_SSH_PORT")
+                   if handle.nested else None)
     if editor_port is None and podman_port is None:
         raise LauncherError("gateway requires at least one selected listener")
-    # Failed creation may still leave a container; cleanup owns the name now.
-    state.gateway_container_created = True
+    container_resource = f"container:{state.gateway_container}"
+    handle.registry.register(OwnedResource(
+        container_resource, handle.owner,
+        lambda: handle.presence(container_resource, lambda: _gateway_container_presence(
+            state.gateway_container, handle.owner)),
+        lambda: run(["docker", "rm", "--force", state.gateway_container], quiet=True),
+        (f"network:{state.gateway_link_network}", f"network:{state.gateway_egress_network}"),
+    ))
+    if handle.cancelled.is_set():
+        raise LauncherError("gateway startup cancelled")
     run([
         "docker", "run", "--detach", "--name", state.gateway_container,
+        "--label", f"dev.codex.service-owner={handle.owner}",
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
@@ -581,6 +825,7 @@ def start_gateway(state: State) -> None:
         *(["--editor-port", str(editor_port)] if editor_port is not None else []),
         *(["--podman-port", podman_port] if podman_port is not None else []),
     ], discard_stdout=True)
+    handle.created.add(container_resource)
     def address(network):
         if isinstance(OUTER_RUNTIME, VMRuntime):
             return OUTER_RUNTIME.network_address(state.gateway_container, network)
@@ -591,8 +836,18 @@ def start_gateway(state: State) -> None:
     egress_ip = address(state.gateway_egress_network)
     if not relay_ip or not egress_ip:
         raise LauncherError("gateway has incomplete network addresses")
-    if state.host_editor is not None:
-        state.host_editor.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
+    address_resources = []
+    for kind, value in (("relay", relay_ip), ("egress", egress_ip)):
+        identity = f"address:{kind}-{value.replace('.', '-').replace(':', '-')}"
+        handle._register_logical(identity, depends_on=(container_resource,))
+        address_resources.append(identity)
+    if handle.cancelled.is_set():
+        raise LauncherError("gateway startup cancelled")
+    if handle.bridge is not None:
+        allowlist = "allowlist:host-editor"
+        handle._register_logical(allowlist,
+            depends_on=("bridge:host-editor", *address_resources))
+        handle.bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
 
 
@@ -1433,16 +1688,41 @@ def run_agent(state: State, arguments: list[str]) -> int:
             report_container_timing(state)
 
 
+class StartupExecutor(ThreadPoolExecutor):
+    def __init__(self, max_workers: int) -> None:
+        super().__init__(max_workers=max_workers)
+        self.submitted: list[Future[object]] = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = super().submit(fn, *args, **kwargs)
+        self.submitted.append(future)
+        return future
+
+
 @contextmanager
 def startup_workers(state: State, max_workers: int) -> Iterator[ThreadPoolExecutor]:
-    executor = ThreadPoolExecutor(max_workers=max_workers)
+    executor = StartupExecutor(max_workers=max_workers)
     try:
         yield executor
+    except BaseException:
+        # Close every adapter's creation gate before waiting for in-flight effects.
+        if getattr(state, "gateway_handle", None) is not None:
+            state.gateway_handle.cancelled.set()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
     finally:
         # Signal handlers must not unwind cleanup while a worker creates resources.
         state.joining_workers = True
         try:
-            executor.shutdown(wait=True)
+            pending = set(executor.submitted)
+            while pending:
+                _, pending = wait(pending, timeout=0.1)
+                if state.deferred_signal is not None:
+                    if getattr(state, "gateway_handle", None) is not None:
+                        state.gateway_handle.cancelled.set()
+                    for future in pending:
+                        future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
         finally:
             state.joining_workers = False
         if state.deferred_signal is not None:
@@ -1461,6 +1741,7 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
+    phase("gateway recovery", lambda: recover_gateways(state))
     phase("proxy lock", lambda: acquire_lock(state))
     if state.proxy_lock.shared:
         phase("accepted session discovery", lambda: load_accepted_session(state))
@@ -1539,8 +1820,7 @@ def execute(state: State) -> int:
             phase, "proxy startup", lambda: attach_proxies(state),
         )
         gateway_arguments = gateway_future.result()
-        selected = getattr(state, "capabilities", {"host-editor", "nested-containers"})
-        if {"host-editor", "nested-containers"}.intersection(selected):
+        if getattr(state, "gateway_handle", None) is not None:
             executor.submit(optional_relay, "gateway startup", lambda: start_gateway(state))
         sidecar_arguments = proxy_future.result()
         if model_future is not None:
@@ -1618,11 +1898,9 @@ def cleanup(state: State) -> None:
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             print(f"Sandbox cleanup: {label}={now - previous:.2f}s", file=sys.stderr)
         previous = now
-    if state.host_editor is not None:
-        state.host_editor.stop()
     if state.host_keychain is not None:
         state.host_keychain.stop()
-    timing("host editor")
+    timing("host relays")
     containers = []
     if state.keychain_container is not None:
         containers.append((f'Keychain relay {state.keychain_container}',
@@ -1632,11 +1910,6 @@ def cleanup(state: State) -> None:
             f"Codex container {state.codex_container}",
             ["docker", "rm", "--force", state.codex_container],
         ))
-    if state.gateway_container_created:
-        containers.append((
-            f"gateway container {state.gateway_container}",
-            ["docker", "rm", "--force", state.gateway_container],
-        ))
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         container_results = list(executor.map(lambda item: cleanup_resource(*item), containers))
     timing("containers")
@@ -1644,16 +1917,6 @@ def cleanup(state: State) -> None:
     networks = []
     for name in state.keychain_networks:
         networks.append((f'Keychain network {name}', ['docker', 'network', 'rm', name]))
-    if state.gateway_link_created:
-        networks.append((
-            f"gateway network {state.gateway_link_network}",
-            ["docker", "network", "rm", state.gateway_link_network],
-        ))
-    if state.gateway_egress_created:
-        networks.append((
-            f"gateway network {state.gateway_egress_network}",
-            ["docker", "network", "rm", state.gateway_egress_network],
-        ))
     def remove_network(item):
         if isinstance(OUTER_RUNTIME, VMRuntime):
             try:
@@ -1670,7 +1933,23 @@ def cleanup(state: State) -> None:
 
     with ThreadPoolExecutor(max_workers=max(1, len(networks))) as executor:
         network_results = list(executor.map(remove_network, networks))
-    keep_scratch = isinstance(OUTER_RUNTIME, VMRuntime) and not all([*container_results, *network_results])
+    gateway_result = (state.gateway_handle.cleanup(0)
+                      if state.gateway_handle is not None else None)
+    if gateway_result is not None:
+        for failure in gateway_result.failures:
+            print(f"warning: Cleaning up gateway resource {failure.identity} failed ({failure.code}).",
+                  file=sys.stderr)
+        if gateway_result.remaining:
+            try:
+                path = persist_gateway_recovery(state, gateway_result.remaining)
+                if path is not None:
+                    print(f"warning: gateway recovery state retained at {path}", file=sys.stderr)
+            except (OSError, LauncherError) as error:
+                print(f"warning: gateway recovery state could not be persisted: {error}", file=sys.stderr)
+    timing("gateway")
+    keep_scratch = (isinstance(OUTER_RUNTIME, VMRuntime)
+                    and (not all([*container_results, *network_results])
+                         or bool(gateway_result and gateway_result.remaining)))
     if keep_scratch:
         state.recovery_record = temporary_file()
         recovery = {"runtime": runtime_identity(OUTER_RUNTIME),
@@ -1835,6 +2114,8 @@ def launch(arguments: list[str]) -> int:
     def handle_signal(signum: int, _frame: object) -> None:
         if state is not None and state.joining_workers:
             state.deferred_signal = signum
+            if getattr(state, "gateway_handle", None) is not None:
+                state.gateway_handle.cancelled.set()
             return
         raise SignalExit(signum)
 

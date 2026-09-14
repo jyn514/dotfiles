@@ -1,5 +1,7 @@
 """Listener ownership must survive partial gateway creation."""
 import os
+import io
+import json
 from pathlib import Path
 import runpy
 import socket
@@ -9,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -136,6 +139,172 @@ class GatewayTransportTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "ambiguous send"):
                 TRANSPORT["relay"](left, right)
         right.sendall.assert_called_once_with(b"request")
+
+
+class GatewayLifecycleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / "codex-sandbox"))
+
+    def state(self):
+        return SimpleNamespace(
+            capabilities=frozenset({"nested-containers"}),
+            agent_podman={"AGENT_PODMAN_SSH_USER": "worker", "SOCKET_PATH": "/podman.sock",
+                          "CONTAINER_SSHKEY": "/key", "AGENT_PODMAN_SSH_PORT": "2222"},
+            gateway_link_network="gateway-link", gateway_egress_network="gateway-egress",
+            gateway_container="gateway", sidecar_image="helper@sha256:" + "0" * 64,
+            agent_podman_key=Path("/key"),
+            agent_podman_known_hosts=Path("/known"), container_known_hosts="/container-known",
+            gateway_handle=None, resource_owner="legacy-owner",
+        )
+
+    def test_partial_network_startup_is_owned_and_cleaned(self):
+        state = self.state(); events = []
+        create = Mock(side_effect=[events.append("create-link"), OSError("egress failed")])
+        def runtime(command, **_kwargs):
+            if command[1:3] == ["network", "inspect"]:
+                return SimpleNamespace(returncode=1, stdout="")
+            events.append("remove-" + command[-1])
+            return SimpleNamespace(returncode=0, stdout="")
+        run = Mock(side_effect=runtime)
+        prepare = self.launcher["prepare_gateway"]
+        with patch.dict(prepare.__globals__, create_relay_network=create, run=run):
+            with self.assertRaisesRegex(OSError, "egress failed"):
+                prepare(state)
+            result = state.gateway_handle.cleanup(19)
+        self.assertEqual(19, result.primary_status)
+        self.assertFalse(result.remaining)
+        self.assertTrue(any(call.args[0][:3] == ["docker", "network", "rm"]
+                            for call in run.call_args_list))
+
+    def test_editor_only_ignores_available_podman_credentials(self):
+        state = self.state()
+        state.capabilities = frozenset({"host-editor"})
+        commands = []
+
+        def run(command, **_kwargs):
+            commands.append(command)
+            if command[1:2] == ["inspect"]:
+                return SimpleNamespace(returncode=0, stdout="10.0.0.2\n")
+            return SimpleNamespace(returncode=0, stdout="")
+
+        prepare = self.launcher["prepare_gateway"]
+        start = self.launcher["start_gateway"]
+        bridge = Mock(port=1234)
+        with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
+                        HostEditorBridge=Mock(return_value=bridge)):
+            prepare(state)
+            start(state)
+        gateway_run = commands[0]
+        self.assertIn("--editor-port", gateway_run)
+        self.assertNotIn("--podman-port", gateway_run)
+
+    def test_cleanup_closes_registry_before_background_start_can_create(self):
+        state = self.state()
+        prepare = self.launcher["prepare_gateway"]
+        with patch.dict(prepare.__globals__, create_relay_network=Mock()):
+            prepare(state)
+        state.gateway_handle.cleanup(0)
+        with self.assertRaisesRegex(ValueError, "cleanup has started"):
+            self.launcher["start_gateway"](state)
+
+    def test_recovery_retains_foreign_resources_then_retries_in_dependency_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.state(); state.home = Path(directory)
+            handle = self.launcher["GatewayHandle"](state, False, True)
+            state.gateway_handle = handle
+            remaining = ("container:gateway", "network:gateway-link", "network:gateway-egress")
+            path = self.launcher["persist_gateway_recovery"](state, remaining)
+            self.assertIsNotNone(path)
+            recover = self.launcher["recover_gateways"]
+
+            def foreign(command, **_kwargs):
+                if command[1:3] == ["network", "inspect"]:
+                    return SimpleNamespace(returncode=0, stdout="foreign\n")
+                if command[1:4] == ["container", "ls", "--all"]:
+                    return SimpleNamespace(returncode=0, stdout="gateway\n")
+                return SimpleNamespace(returncode=0, stdout="foreign\n")
+
+            with patch.dict(recover.__globals__, run=foreign), \
+                    patch("sys.stderr", new_callable=io.StringIO):
+                recover(state)
+            self.assertTrue(path.exists(), "foreign resources must retain recovery authority")
+
+            removed = []
+            def owned(command, **_kwargs):
+                if command[1:3] == ["network", "inspect"]:
+                    return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
+                if command[1:4] == ["container", "ls", "--all"]:
+                    return SimpleNamespace(returncode=0, stdout="gateway\n")
+                if command[1:2] == ["inspect"]:
+                    return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
+                if "rm" in command:
+                    removed.append(command[-1])
+                return SimpleNamespace(returncode=0, stdout="")
+            with patch.dict(recover.__globals__, run=owned):
+                recover(state)
+            self.assertFalse(path.exists())
+            self.assertEqual("gateway", removed[0])
+            self.assertCountEqual(["gateway-link", "gateway-egress"], removed[1:])
+
+    def test_insecure_recovery_directory_warning_does_not_replace_primary_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.state(); state.home = Path(directory)
+            state.cleaned = False; state.host_keychain = None
+            state.keychain_container = None; state.codex_container_created = False
+            state.keychain_networks = []; state.skills_tmp = None; state.pi_agent_tmp = None
+            state.proxy_lock = None; state.proxy_state = None; state.proxy_args = None
+            state.manifest = None; state.pi_auth_mask = None; state.prepared_images = None
+            state.tmux_registration = None
+            handle = self.launcher["GatewayHandle"](state, False, True)
+            state.gateway_handle = handle
+            resource_type = self.launcher["OwnedResource"]
+            presence = self.launcher["ResourcePresence"]
+            handle.registry.register(resource_type(
+                "network:gateway-link", handle.owner,
+                lambda: presence.MISMATCHED, lambda: None))
+            recovery = state.home / ".local/state/codex-sandbox/gateway-recovery"
+            recovery.mkdir(parents=True, mode=0o755)
+            cleanup = self.launcher["cleanup"]
+            with patch("sys.stderr", new_callable=io.StringIO) as output:
+                cleanup(state)
+            self.assertIn("could not be persisted", output.getvalue())
+            self.assertTrue(state.cleaned)
+
+    def test_malformed_and_symlink_recovery_records_are_retained_with_warnings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = self.state(); state.home = Path(directory)
+            recovery = state.home / ".local/state/codex-sandbox/gateway-recovery"
+            recovery.mkdir(parents=True, mode=0o700)
+            malformed = recovery / "malformed.json"
+            malformed.write_text(json.dumps({"version": True, "runtime": "x", "owner": "owner",
+                "resources": []}), encoding="utf-8")
+            malformed.chmod(0o600)
+            target = recovery / "target"; target.write_text("{}", encoding="utf-8")
+            symlink = recovery / "symlink.json"; symlink.symlink_to(target)
+            recover = self.launcher["recover_gateways"]
+            with patch("sys.stderr", new_callable=io.StringIO) as output:
+                recover(state)
+            self.assertTrue(malformed.exists())
+            self.assertTrue(symlink.is_symlink())
+            self.assertGreaterEqual(output.getvalue().count("retained"), 2)
+
+    def test_duplicate_recovery_identity_is_rejected_before_resource_inspection(self):
+        parse = self.launcher["_parse_gateway_recovery"]
+        resource = {"kind": "network", "name": "same", "owner": "owner",
+                    "dependencies": []}
+        payload = {"version": 1, "runtime": parse.__globals__["runtime_identity"](
+            parse.__globals__["OUTER_RUNTIME"]), "owner": "owner",
+            "resources": [resource, resource]}
+        with self.assertRaisesRegex(Exception, "duplicate"):
+            parse(json.dumps(payload).encode())
+
+    def test_existing_network_owner_is_adopted_only_for_same_owner(self):
+        presence = self.launcher["_gateway_network_presence"]
+        for actual, expected in (("owner", "owned"), ("other", "mismatched")):
+            result = SimpleNamespace(returncode=0, stdout=actual + "\n")
+            with patch.dict(presence.__globals__, run=Mock(return_value=result)):
+                self.assertEqual(expected, presence("network", "owner").value)
 
 
 class GatewayTest(unittest.TestCase):

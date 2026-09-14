@@ -532,6 +532,8 @@ class BackgroundRelayTest(unittest.TestCase):
             replacements["acquire_lock"].side_effect = lambda value: setattr(
                 value, "proxy_lock", SimpleNamespace(shared=False))
             replacements["load_repository_policy"] = mock.Mock()
+            replacements["prepare_gateway"].side_effect = lambda value: (
+                setattr(value, "gateway_handle", object()) or [])
             replacements.update(
                 resolve_agent=mock.Mock(return_value="image"),
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
