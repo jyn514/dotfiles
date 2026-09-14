@@ -37,10 +37,11 @@ class IdentityTest(unittest.TestCase):
 class ConfigTest(unittest.TestCase):
  def test_real_pinned_caddy_validates_both_platforms(self):
   if subprocess.run(["docker","info"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode: self.skipTest("Docker unavailable")
-  config=caddy.generate_caddy_config("codex","chatgpt.com")
-  for platform,digest in (("linux/amd64",caddy.PLATFORMS["linux/amd64"][0]),("linux/arm64",caddy.PLATFORMS["linux/arm64/v8"][0])):
-   result=subprocess.run(["docker","run","--rm","-i","--platform",platform,"caddy@"+digest,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
-   self.assertEqual(result.returncode,0,result.stderr.decode())
+  for profile,upstream in (("codex","chatgpt.com"),("zulip","chat.example.com")):
+   config=caddy.generate_caddy_config(profile,upstream)
+   for platform,digest in (("linux/amd64",caddy.PLATFORMS["linux/amd64"][0]),("linux/arm64",caddy.PLATFORMS["linux/arm64/v8"][0])):
+    result=subprocess.run(["docker","run","--rm","-i","--platform",platform,"caddy@"+digest,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
+    self.assertEqual(result.returncode,0,result.stderr.decode())
  def test_security_semantics_are_in_generated_json(self):
   server=json.loads(caddy.generate_caddy_config("codex","chatgpt.com"))["apps"]["http"]["servers"]["egress"]
   self.assertNotIn("read_body_timeout",server); self.assertNotIn("logs",server); self.assertEqual(server["idle_timeout"],300_000_000_000)

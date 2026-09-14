@@ -18,6 +18,20 @@ def adapter_bytes(root: Path, core: Path) -> bytes:
     return b'\0'.join(p.name.encode()+b'\0'+p.read_bytes() for p in sorted(paths))
 
 
+def helper_plan(root: Path, image: str, uid: int, gid: int):
+    implementation = b'\0'.join(
+        p.name.encode()+b'\0'+p.read_bytes() for p in sorted(root.rglob('*'))
+        if p.is_file() and 'tests' not in p.parts and '__pycache__' not in p.parts
+    )
+    reference = image if '@sha256:' in image else 'zulip-helper@' + image
+    plan = ServicePlan(role='zulip-profile-helper', family=ServiceFamily.AUTHENTICATED_EGRESS,
+        scope=ServiceScope.SHARED_SESSION, adapter='zulip-profile-helper',
+        adapter_identity='sha256:'+hashlib.sha256(implementation).hexdigest(),
+        state_schema=STATE_SCHEMA, image_role='helper', image_uid=uid, image_gid=gid,
+        fixed_parameters={'credential-domain': CREDENTIAL_DOMAIN, 'egress': 'none'})
+    return plan.resolve(adapter_bytes=implementation, image=reference)
+
+
 def resolved_plan(root: Path, core: Path, image: str, uid: int, gid: int, network: str):
     implementation = adapter_bytes(root, core)
     if '@sha256:' not in image:

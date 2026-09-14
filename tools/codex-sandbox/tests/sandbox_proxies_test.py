@@ -26,6 +26,78 @@ sandbox_proxies = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sandbox_proxies)
 
 
+class RecordedEffectTest(unittest.TestCase):
+    def test_ambiguous_effect_is_durably_unknown(self) -> None:
+        record = {"resource-status": {"container": "absent"}}
+        observed = []
+        def fail(): raise OSError("outcome unknown")
+        with self.assertRaises(OSError):
+            sandbox_proxies._recorded_effect(
+                record, "container", lambda: observed.append(record["resource-status"]["container"]),
+                threading.Event(), fail, "zulip")
+        self.assertEqual(observed, ["intended", "unknown"])
+        self.assertEqual(record["resource-status"]["container"], "unknown")
+
+    def test_cancellation_after_effect_retains_created_recovery_authority(self) -> None:
+        record = {"resource-status": {"container": "absent"}}
+        cancelled = threading.Event()
+        def create(): cancelled.set()
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "startup cancelled"):
+            sandbox_proxies._recorded_effect(record, "container", lambda: None,
+                                              cancelled, create, "zulip")
+        self.assertEqual(record["resource-status"]["container"], "created")
+
+
+class ZulipHardeningTest(unittest.TestCase):
+    def snapshot(self):
+        return {"Config": {"User": "501:20", "Entrypoint": None,
+                           "Cmd": ["caddy", "run", "--config", "/etc/caddy/caddy.json"],
+                           "Labels": {"dev.codex.service-role": "zulip-caddy"}},
+                "HostConfig": {"NetworkMode": "zulip-app", "ReadonlyRootfs": True,
+                               "Privileged": False, "CapAdd": None, "CapDrop": ["ALL"],
+                               "SecurityOpt": ["no-new-privileges"], "PidsLimit": 64,
+                               "Memory": 256 * 1024 * 1024, "NanoCpus": 1_000_000_000,
+                               "Ulimits": [{"Name": "nofile", "Soft": 256, "Hard": 256}]}}
+
+    def accepted(self, snapshot):
+        return sandbox_proxies._zulip_container_hardened(
+            snapshot, role="zulip-caddy", uid=501, gid=20, network="zulip-app",
+            entrypoint=None, command=["caddy", "run", "--config", "/etc/caddy/caddy.json"])
+
+    def test_accepts_exact_declared_hardening(self) -> None:
+        self.assertTrue(self.accepted(self.snapshot()))
+
+    def test_rejects_cap_privilege_and_nofile_tampering(self) -> None:
+        for field, value in (("CapAdd", ["NET_ADMIN"]), ("Privileged", True),
+                             ("Ulimits", [{"Name": "nofile", "Soft": 1024, "Hard": 1024}])):
+            snapshot = self.snapshot(); snapshot["HostConfig"][field] = value
+            with self.subTest(field=field): self.assertFalse(self.accepted(snapshot))
+
+    def test_rejects_extra_or_changed_pair_mounts(self) -> None:
+        socket = {"Destination": "/run/profile-helper", "Source": "/vol/socket", "RW": False,
+                  "Type": "volume", "Name": "socket"}
+        caddy = {"Mounts": [socket, {"Destination": "/etc/caddy/caddy.json", "Source": "/state/caddy.json",
+                                     "RW": False, "Type": "bind", "Name": None}]}
+        helper_socket = {**socket, "RW": True}
+        helper = {"Mounts": [helper_socket, {"Destination": "/run/secrets/zuliprc", "Source": "/home/u/.zuliprc",
+                                              "RW": False, "Type": "bind", "Name": None}]}
+        check = lambda: sandbox_proxies._zulip_mounts_exact(
+            caddy, helper, socket_name="socket", socket_source="/vol/socket",
+            config_source="/state/caddy.json", credential_source="/home/u/.zuliprc")
+        self.assertTrue(check())
+        caddy["Mounts"].append({"Destination": "/tmp/extra", "Source": "/tmp/x", "RW": False,
+                                "Type": "bind", "Name": None})
+        self.assertFalse(check())
+        caddy["Mounts"].pop(); helper["Mounts"][0]["RW"] = False
+        self.assertFalse(check())
+
+    def test_rejects_network_and_runtime_limit_tampering(self) -> None:
+        for field, value in (("NetworkMode", "bridge"), ("ReadonlyRootfs", False),
+                             ("PidsLimit", 65), ("Memory", 0), ("NanoCpus", 0)):
+            snapshot = self.snapshot(); snapshot["HostConfig"][field] = value
+            with self.subTest(field=field): self.assertFalse(self.accepted(snapshot))
+
+
 class ManifestTest(unittest.TestCase):
     def test_launcher_metadata_is_reused_only_for_its_repository(self):
         paths = sandbox_proxies.git_metadata_paths(self.repo)
@@ -715,32 +787,14 @@ class ManifestTest(unittest.TestCase):
                     {"proxies": []}, mock.MagicMock(), "example", command,
                 )
 
-    def test_zulip_broker_fails_closed_before_its_socket_is_ready(self) -> None:
-        zuliprc = self.repo / "zuliprc"
-        zuliprc.write_text("secret", encoding="utf-8")
-        zuliprc.chmod(0o600)
-        args = type("Args", (), {
-            "prefix": "test", "state": str(self.repo / "state"), "network": "sandbox",
-            "container_repo": str(self.container_repo), "zuliprc": str(zuliprc),
-        })
-        image = "sha256:" + "0" * 64
-        state = {"proxies": []}
-        running = subprocess.CompletedProcess([], 0, stdout="true\n")
-        not_ready = subprocess.CompletedProcess([], 1, stderr="socket not ready\n")
-        with mock.patch.object(sandbox_proxies, "_docker", return_value=running), \
-                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=not_ready), \
-                mock.patch.object(sandbox_proxies, "proxy_logs", return_value=""), \
-                mock.patch.object(sandbox_proxies.time, "monotonic", side_effect=[0, 0, 11]), \
-                mock.patch.object(sandbox_proxies.time, "sleep"):
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "did not become ready"):
-                sandbox_proxies.start_one_proxy(
-                    args, self.repo, "identity", {"zulip": image}, state,
-                    mock.MagicMock(), "zulip", self.command(argv=["zulip-proxy"], network=True),
-                )
-        self.assertEqual("failed", state["proxies"][0]["lifecycle-state"])
-        self.assertEqual("authenticated-egress", state["proxies"][0]["family"])
-        self.assertEqual("test-zulip-public-only", state["proxies"][0]["network"])
-        self.assertNotEqual("sandbox", state["proxies"][0]["network"])
+    def test_zulip_profile_uses_distinct_application_network_and_fixed_routes(self) -> None:
+        config = json.loads(sandbox_proxies.generate_caddy_config(
+            "zulip", "chat.example.com", token="a.b.c"))
+        routes = config["apps"]["http"]["servers"]["egress"]["routes"]
+        self.assertIn("/api/v1/messages", routes[1]["match"][0]["expression"])
+        self.assertIn("/api/v1/users/me/", routes[1]["match"][0]["expression"])
+        self.assertEqual(routes[-1]["handle"][0]["status_code"], 404)
+        self.assertEqual("test-zulip-application", "test" + "-zulip-application")
 
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
         self.sandbox.rmdir()

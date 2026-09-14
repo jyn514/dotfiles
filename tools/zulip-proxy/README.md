@@ -52,13 +52,10 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 
 - The protocol supports only paginated `GET` requests for messages and topic lists on one configured Zulip server.
   It cannot send, edit, delete, or react to messages.
-- Credentials remain on the host or in the dedicated proxy container;
-  they are not returned to the client or mounted into the agent.
+- In sandbox sessions the typed adapter, official pinned Caddy, and Zulip profile helper are separate containers. Only the no-egress helper receives the read-only credential mount; Caddy receives fixed GET routes over the ordinary application network, and credentials are never mounted into the adapter or agent.
 - Socket possession authorizes every supported read allowed by the Zulip account.
   Exported transcripts, including private-channel content, remain sensitive—protect files, logs, and terminal output accordingly.
-- Requests and responses are size-bounded.
-  The server rejects redirects, malformed fields, unsupported operations, and non-HTTPS credential sites;
-  failures do not trigger a more privileged fallback.
+- Typed requests and complete responses are size-bounded. The adapter rejects malformed fields and unsupported operations; Caddy owns TLS, redirects, HTTP framing, and fixed-origin routing. Failures do not trigger a more privileged fallback.
 - The proxy serializes API access, waits two seconds between requests, and honors HTTP 429 `Retry-After` up to five minutes.
   A warning about server history limits means older messages were omitted.
 

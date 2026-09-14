@@ -28,6 +28,7 @@ PROTOCOL_VERSION = PROTOCOL["version"]
 MAX_REQUEST = PROTOCOL["max_request_bytes"]
 MAX_RESPONSE = PROTOCOL["max_response_bytes"]
 SESSION_KEY = os.environ.get("ZULIP_BROKER_KEY")
+CADDY_ENDPOINT = os.environ.get("ZULIP_CADDY_ENDPOINT")
 try:
     import typed_broker
 except ImportError:  # Source-tree tests.
@@ -278,7 +279,7 @@ def fetch_page(
     })
     http_request = HttpRequest(
         f"{endpoint}?{query}",
-        headers={"Authorization": f"Basic {authorization}"},
+        headers=({"Authorization": f"Basic {authorization}"} if authorization else {}),
         method="GET",
     )
     result = fetch_json(http_request, opener)
@@ -357,7 +358,7 @@ def fetch_topics(
     topics_endpoint = endpoint.removesuffix("/messages")
     http_request = HttpRequest(
         f"{topics_endpoint}/users/me/{request['channel_id']}/topics",
-        headers={"Authorization": f"Basic {authorization}"},
+        headers=({"Authorization": f"Basic {authorization}"} if authorization else {}),
         method="GET",
     )
     result = fetch_json(http_request, opener)
@@ -419,7 +420,19 @@ def serve_connection(connection: socket.socket, endpoint: str, authorization: st
 
 
 def main() -> None:
-    endpoint, authorization = load_credentials()
+    # Production is a typed application boundary only.  Caddy owns upstream
+    # HTTP and the separate profile helper owns credentials; source-tree local
+    # mode retains load_credentials for operator use and Step-4 deletion.
+    if CADDY_ENDPOINT:
+        parsed = urlsplit(CADDY_ENDPOINT)
+        if (parsed.scheme != "http" or not parsed.hostname or parsed.path != "/api/v1/messages"
+                or parsed.query or parsed.fragment):
+            raise RequestError("ZULIP_CADDY_ENDPOINT must name the fixed Caddy messages route")
+        endpoint, authorization = CADDY_ENDPOINT, ""
+        global URL_OPEN
+        URL_OPEN = build_opener(RejectRedirects()).open
+    else:
+        endpoint, authorization = load_credentials()
     if not SESSION_KEY:
         raise RequestError("ZULIP_BROKER_KEY must not be empty")
     SOCKET.parent.mkdir(parents=True, exist_ok=True)

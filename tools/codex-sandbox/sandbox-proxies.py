@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import fcntl
 import hashlib
@@ -30,8 +31,12 @@ from codex_broker import (
     PAIR_STATUS_FIELDS, SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
     resolved_plan as resolved_codex_broker_plan,
 )
-from zulip_broker import resolved_plan as resolved_zulip_broker_plan
-from caddy_foundation import accepted_caddy_image, validate_configuration_mount
+from zulip_broker import helper_plan as resolved_zulip_helper_plan, resolved_plan as resolved_zulip_broker_plan
+from caddy_foundation import (
+    accepted_caddy_image, configuration_digest as caddy_configuration_digest,
+    generate_caddy_config, publish_configuration, resolve_caddy_image,
+    validate_configuration_mount,
+)
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -503,6 +508,9 @@ def publish_main(args: argparse.Namespace) -> int:
         raise ConfigError("shared state is missing required services")
     if launch["proxy-images"] != {p["name"]: p.get("image") for p in proxies}:
         raise ConfigError("published proxy images differ from accepted launch images")
+    zulip = next((proxy for proxy in proxies if proxy.get("name") == "zulip"), None)
+    if zulip is not None and zulip.get("helper-image") != launch["helper-image"]:
+        raise ConfigError("published Zulip helper differs from accepted owned image")
     validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(Path(args.repo)),
                           commands=manifest["commands"], uid=parameters.get("uid"), gid=parameters.get("gid"))
     services = {p["name"]: _service_record(p["name"], p, owner) for p in proxies}
@@ -848,6 +856,9 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
         raise ConfigError("active session proxy state does not match accepted policy")
     if {proxy["name"]: proxy.get("image") for proxy in proxies} != images["proxies"]:
         raise ConfigError("active session proxy images do not match accepted images")
+    zulip = next((proxy for proxy in proxies if proxy.get("name") == "zulip"), None)
+    if zulip is not None and (images["helper"] is None or zulip.get("helper-image") != images["helper"]):
+        raise ConfigError("active session Zulip helper image differs from accepted owned identity")
     lifecycle_schema = state.get("trusted-services")
     if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
         raise ConfigError("active session has an unsupported trusted-service schema")
@@ -1072,6 +1083,61 @@ def proxy_repository_mount_args(
     return arguments
 
 
+def zulip_credential_identity(path: Path) -> str:
+    metadata = path.stat()
+    material = [metadata.st_dev, metadata.st_ino, metadata.st_uid, metadata.st_mode & 0o777]
+    return "sha256:" + hashlib.sha256(json.dumps(material, separators=(",", ":")).encode()).hexdigest()
+
+
+def zulip_site(path: Path) -> str:
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        with path.open(encoding="utf-8") as stream:
+            parser.read_file(stream)
+        site = parser.get("api", "site").rstrip("/")
+    except (OSError, configparser.Error) as error:
+        raise ConfigError("Zulip credentials do not contain a readable site") from error
+    from urllib.parse import urlsplit
+    parsed = urlsplit(site)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.port not in (None, 443)
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+        raise ConfigError("Zulip site must be a plain HTTPS server origin")
+    return parsed.hostname
+
+
+def _zulip_mounts_exact(caddy: dict[str, Any], helper: dict[str, Any], *, socket_name: str,
+                        socket_source: str, config_source: str, credential_source: str) -> bool:
+    def projection(item):
+        return {(mount.get("Destination"), mount.get("Source"), mount.get("RW"),
+                 mount.get("Type"), mount.get("Name")) for mount in item.get("Mounts", [])}
+    return projection(caddy) == {
+        ("/run/profile-helper", socket_source, False, "volume", socket_name),
+        ("/etc/caddy/caddy.json", config_source, False, "bind", None),
+    } and projection(helper) == {
+        ("/run/profile-helper", socket_source, True, "volume", socket_name),
+        ("/run/secrets/zuliprc", credential_source, False, "bind", None),
+    }
+
+
+def _zulip_container_hardened(item: dict[str, Any], *, role: str, uid: int, gid: int,
+                              network: str, entrypoint: Any, command: list[str]) -> bool:
+    config, host = item.get("Config", {}), item.get("HostConfig", {})
+    security = host.get("SecurityOpt", []) or []
+    ulimits = host.get("Ulimits", []) or []
+    nofile = [limit for limit in ulimits if limit.get("Name") == "nofile"]
+    return (config.get("User") == f"{uid}:{gid}" and
+            config.get("Entrypoint") == entrypoint and config.get("Cmd") == command and
+            host.get("NetworkMode") == network and host.get("ReadonlyRootfs") is True and
+            host.get("Privileged") is False and not (host.get("CapAdd") or []) and
+            "ALL" in (host.get("CapDrop") or []) and
+            any(value.startswith("no-new-privileges") for value in security) and
+            host.get("PidsLimit") == 64 and host.get("Memory") == 256 * 1024 * 1024 and
+            host.get("NanoCpus") == 1_000_000_000 and len(nofile) == 1 and
+            nofile[0].get("Soft") == 256 and nofile[0].get("Hard") == 256 and
+            (config.get("Labels", {}) or {}).get("dev.codex.service-role") == role)
+
+
 def zuliprc_mount_args(path: Path) -> list[str]:
     try:
         metadata = path.lstat()
@@ -1223,6 +1289,20 @@ def _proxy_resource_identity(kind: str, owner: str) -> str:
     return f"{kind}:{owner}"
 
 
+def _recorded_effect(proxy: dict[str, Any], status: str, persist, cancelled,
+                     operation, service: str) -> None:
+    """Durably bracket an effect whose failure cannot prove non-publication."""
+    proxy["resource-status"][status] = "intended"; persist()
+    try:
+        operation()
+    except BaseException:
+        proxy["resource-status"][status] = "unknown"; persist()
+        raise
+    proxy["resource-status"][status] = "created"; persist()
+    if cancelled is not None and cancelled.is_set():
+        raise ConfigError(f"proxy {service} startup cancelled")
+
+
 class CommandProxyHandle:
     """Runtime lifecycle and resources for one ordinary command-proxy start."""
 
@@ -1252,14 +1332,36 @@ def start_one_proxy(
 ) -> dict[str, str]:
     service_owner = uuid.uuid4().hex
     selected_network = args.network if command["network"] else "none"
-    zulip_network = f"{args.prefix}-zulip-public-only" if name == "zulip" else None
+    zulip_network = f"{args.prefix}-zulip-application" if name == "zulip" else None
+    zulip_pair = None
     if zulip_network:
+        helper_image = getattr(args, "helper_image", None)
+        if not args.zuliprc or not helper_image:
+            raise ConfigError("trusted Zulip proxy requires credentials and a helper image")
         selected_network = zulip_network
         resolved = resolved_zulip_broker_plan(
             Path(__file__).parents[1] / "zulip-proxy",
             Path(__file__).with_name("auth-proxy") / "typed_broker.py",
             images[name], os.getuid(), os.getgid(), selected_network,
         )
+        helper = resolved_zulip_helper_plan(Path(__file__).with_name("auth-proxy"),
+                                            helper_image, os.getuid(), os.getgid())
+        caddy_identity = resolve_caddy_image(OUTER_RUNTIME)
+        upstream = zulip_site(Path(args.zuliprc))
+        pair_token = uuid.uuid4().hex + "." + uuid.uuid4().hex + "." + uuid.uuid4().hex
+        caddy_name = f"{args.prefix}-zulip-caddy"
+        helper_name = f"{args.prefix}-zulip-helper"
+        socket_name = f"{args.prefix}-zulip-helper-socket"
+        config_path = runtime_directory(repo) / (caddy_name + ".json")
+        config_bytes = generate_caddy_config("zulip", upstream, token=pair_token)
+        config_digest = caddy_configuration_digest(config_bytes)
+        pair_material = {"caddy": caddy_identity.__dict__, "configuration": config_digest,
+                         "helper": helper.implementation_identity}
+        pair_identity = "sha256:" + hashlib.sha256(json.dumps(
+            pair_material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        zulip_pair = (helper, caddy_identity, upstream, pair_token, caddy_name,
+                      helper_name, socket_name, config_path, config_bytes,
+                      config_digest, pair_identity)
     else:
         resolved = _command_proxy_resolved(
             name, command, images[name], selected_network, os.getuid(), os.getgid(),
@@ -1281,15 +1383,26 @@ def start_one_proxy(
     if isinstance(OUTER_RUNTIME, VMRuntime):
         proxy["volume-owner"] = service_owner
     if zulip_network:
+        helper, caddy_identity, upstream, pair_token, caddy_name, helper_name, socket_name, config_path, config_bytes, config_digest, pair_identity = zulip_pair
         proxy.update({
             "family": "authenticated-egress", "credential-domain": "zulip",
             "network": zulip_network, "network-owner": service_owner,
             "session-token": uuid.uuid4().hex + "." + uuid.uuid4().hex + "." + uuid.uuid4().hex,
-            "credential-mount": "/run/secrets/zuliprc", "mutable-state": "/var/lib/zulip-broker",
+            "credential-mount": "/run/secrets/zuliprc", "mutable-state": "none",
             "network-policy": OUTER_RUNTIME.public_network_policy_identity(),
             "endpoint": {"container": container, "socket": "/run/sandbox-proxy/socket"},
+            "caddy-container": caddy_name, "helper-container": helper_name,
+            "socket-volume": socket_name, "pair-token": pair_token,
+            "caddy-image-chain": caddy_identity.__dict__,
+            "configuration": {"path": str(config_path), "digest": config_digest},
+            "helper-image": helper_image, "helper-implementation": helper.implementation_identity,
+            "pair-implementation": pair_identity,
+            "credential-identity": zulip_credential_identity(Path(args.zuliprc)),
+            "credential-source": str(Path(args.zuliprc).resolve(strict=True)),
+            "networks": {"application": zulip_network},
         })
-        proxy["resource-status"]["network"] = "intended"
+        proxy["resource-status"].update({"network": "intended", "socket-volume": "intended",
+            "helper-container": "intended", "caddy-container": "intended", "configuration": "intended"})
 
     def persist() -> None:
         with state_lock:
@@ -1309,16 +1422,59 @@ def start_one_proxy(
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
         if zulip_network:
-            OUTER_RUNTIME.create_public_service_network(zulip_network, service_owner)
-            proxy["resource-status"]["network"] = "created"
-            persist()
-        if isinstance(OUTER_RUNTIME, VMRuntime):
-            OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
-        else:
-            _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()),
-                    "--label", f"dev.codex.service-owner={service_owner}", volume)
-        proxy["resource-status"]["volume"] = "created"
-        persist()
+            helper, caddy_identity, upstream, pair_token, caddy_name, helper_name, socket_name, config_path, config_bytes, config_digest, pair_identity = zulip_pair
+            pair_effect = lambda status, operation: _recorded_effect(
+                proxy, status, persist, cancelled, operation, name)
+            pair_effect("configuration", lambda: publish_configuration(config_path, config_bytes))
+            pair_effect("socket-volume", lambda: _docker(
+                "volume", "create", "--label", f"dev.codex.service-owner={service_owner}",
+                "--label", "dev.codex.credential-domain=zulip",
+                "--label", "dev.codex.resource-role=profile-socket", socket_name))
+            pair_effect("network", lambda: OUTER_RUNTIME.create_public_service_network(
+                zulip_network, service_owner, domain="zulip", role="application"))
+            common_pair = ["--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+                           "--user", f"{os.getuid()}:{os.getgid()}", "--pids-limit", "64",
+                           "--memory", "256m", "--cpus", "1", "--ulimit", "nofile=256:256",
+                           "--label", f"dev.codex.service-owner={service_owner}",
+                           "--label", "dev.codex.credential-domain=zulip"]
+            helper_args = ["run", "--detach", "--name", helper_name, *common_pair,
+                           "--network", "none", "--mount", f"type=volume,src={socket_name},dst=/run/profile-helper",
+                           *zuliprc_mount_args(Path(args.zuliprc)), "--env", "ZULIPRC=/run/secrets/zuliprc",
+                           "--env", f"CADDY_PROFILE_TOKEN={pair_token}",
+                           "--entrypoint", "/trusted/bin/profile-helper", helper_image, "--profile", "zulip"]
+            helper_args[helper_args.index("--network"):helper_args.index("--network")] = [
+                "--label", "dev.codex.service-role=zulip-profile-helper"]
+            pair_effect("helper-container", lambda: _docker(*helper_args))
+            caddy_args = ("run", "--detach", "--name", caddy_name, *common_pair,
+                    "--label", "dev.codex.service-role=zulip-caddy",
+                    "--network", zulip_network,
+                    "--mount", f"type=volume,src={socket_name},dst=/run/profile-helper,readonly",
+                    "--mount", f"type=bind,src={config_path},dst=/etc/caddy/caddy.json,readonly",
+                    caddy_identity.runtime_reference, "caddy", "run", "--config", "/etc/caddy/caddy.json")
+            pair_effect("caddy-container", lambda: _docker(*caddy_args))
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if cancelled is not None and cancelled.is_set():
+                    raise ConfigError(f"proxy {name} startup cancelled")
+                ready = OUTER_RUNTIME.run(["exec", caddy_name, "wget", "-q", "-O", "/dev/null",
+                                           "http://127.0.0.1:8787/ready"], check=False, capture_output=True)
+                if cancelled is not None and cancelled.is_set():
+                    raise ConfigError(f"proxy {name} startup cancelled")
+                if ready.returncode == 0: break
+                time.sleep(.1)
+            else: raise ConfigError("Zulip Caddy/helper pair did not become ready")
+        proxy["resource-status"]["volume"] = "intended"; persist()
+        try:
+            if isinstance(OUTER_RUNTIME, VMRuntime):
+                OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
+            else:
+                _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()),
+                        "--label", f"dev.codex.service-owner={service_owner}", volume)
+        except BaseException:
+            proxy["resource-status"]["volume"] = "unknown"; persist(); raise
+        proxy["resource-status"]["volume"] = "created"; persist()
+        if cancelled is not None and cancelled.is_set():
+            raise ConfigError(f"proxy {name} startup cancelled")
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
         container_repo = container_repository(args.container_repo)
@@ -1351,20 +1507,19 @@ def start_one_proxy(
                 "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo, container_repo)}",
             ]
         if name == "zulip":
-            if not args.zuliprc:
-                raise ConfigError("trusted Zulip proxy requires a credential path")
             docker_args += [
                 "--label", "dev.codex.credential-domain=zulip",
                 "--env", f"ZULIP_BROKER_KEY={proxy['session-token']}",
-                "--tmpfs", "/var/lib/zulip-broker:rw,noexec,nosuid,nodev,size=1m",
+                "--env", f"ZULIP_CADDY_ENDPOINT=http://{proxy['caddy-container']}:8787/api/v1/messages",
             ]
-            docker_args += zuliprc_mount_args(Path(args.zuliprc))
         checked_repository_path(repo, command["workdir"], f"command {name} workdir")
         docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
         docker_args += [images[name], *command["argv"][1:]]
-        _docker(*docker_args)
-        proxy["resource-status"]["container"] = "created"
-        persist()
+        proxy["resource-status"]["container"] = "intended"; persist()
+        try: _docker(*docker_args)
+        except BaseException:
+            proxy["resource-status"]["container"] = "unknown"; persist(); raise
+        proxy["resource-status"]["container"] = "created"; persist()
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
         if OUTER_RUNTIME.provider == "lima-docker":
@@ -1381,9 +1536,12 @@ def start_one_proxy(
             proxy["forwarding"] = forwarding
             proxy["resource-status"]["forward"] = "intended"
             persist()
-            OUTER_RUNTIME.start_proxy_forward(forwarding)
-            proxy["resource-status"]["forward"] = "created"
-            persist()
+            try: OUTER_RUNTIME.start_proxy_forward(forwarding)
+            except BaseException:
+                proxy["resource-status"]["forward"] = "unknown"; persist(); raise
+            proxy["resource-status"]["forward"] = "created"; persist()
+            if cancelled is not None and cancelled.is_set():
+                raise ConfigError(f"proxy {name} startup cancelled")
         deadline = time.monotonic() + 10
         readiness_error = ""
         while (remaining := deadline - time.monotonic()) > 0:
@@ -1561,7 +1719,9 @@ _MANAGED_PROXY_REQUIRED = {
 _MANAGED_PROXY_OPTIONAL = {
     "volume-owner", "forwarding", "family", "credential-domain", "network",
     "network-owner", "network-policy", "session-token", "credential-mount", "mutable-state",
-    "endpoint",
+    "endpoint", "caddy-container", "helper-container", "socket-volume", "pair-token",
+    "caddy-image-chain", "configuration", "helper-image", "helper-implementation",
+    "pair-implementation", "credential-identity", "credential-source", "networks",
 }
 
 
@@ -1586,8 +1746,12 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
             not isinstance(parameters["network"], str) or not parameters["network"] or
             not isinstance(statuses, dict) or set(statuses) not in (
                 {"volume", "container", "forward"},
-                {"volume", "container", "forward", "network"}) or
-            any(value not in {"absent", "intended", "created"} for value in statuses.values()) or
+                {"volume", "container", "forward", "network"},
+                {"volume", "container", "forward", "network", "socket-volume",
+                 "helper-container", "caddy-container", "configuration"}) or
+            any(value not in ({"absent", "intended", "created", "unknown"}
+                              if proxy.get("name") == "zulip" else
+                              {"absent", "intended", "created"}) for value in statuses.values()) or
             any(not isinstance(proxy[field], str) or not proxy[field] for field in
                 ("name", "volume", "container", "image"))):
         raise ConfigError("managed proxy recovery record is invalid")
@@ -1600,7 +1764,10 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
         raise ConfigError("managed proxy forwarding status is inconsistent")
     if proxy["name"] == "zulip":
         required = {"family", "credential-domain", "network", "network-owner", "network-policy",
-                    "session-token", "credential-mount", "mutable-state", "endpoint"}
+                    "session-token", "credential-mount", "mutable-state", "endpoint",
+                    "caddy-container", "helper-container", "socket-volume", "pair-token",
+                    "caddy-image-chain", "configuration", "helper-image", "helper-implementation",
+                    "pair-implementation", "credential-identity", "credential-source", "networks"}
         if (not required <= set(proxy) or proxy["family"] != "authenticated-egress" or
                 proxy["credential-domain"] != "zulip" or proxy["network-owner"] != owner or
                 proxy["network"] != parameters["network"] or
@@ -1610,8 +1777,17 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
                 not isinstance(proxy["session-token"], str) or
                 re.fullmatch(r"[0-9a-f]{32}\.[0-9a-f]{32}\.[0-9a-f]{32}", proxy["session-token"]) is None or
                 proxy["credential-mount"] != "/run/secrets/zuliprc" or
-                proxy["mutable-state"] != "/var/lib/zulip-broker" or
-                statuses.get("network") not in {"intended", "created"}):
+                proxy["mutable-state"] != "none" or proxy["networks"] != {"application": proxy["network"]} or
+                not all(isinstance(proxy.get(field), str) and proxy[field] for field in
+                        ("caddy-container", "helper-container", "socket-volume", "helper-image",
+                         "credential-source")) or not Path(proxy["credential-source"]).is_absolute() or
+                not _TOKEN_RE.fullmatch(proxy.get("pair-token", "")) or
+                not all(IMAGE_RE.fullmatch(proxy.get(field, "")) for field in
+                        ("helper-implementation", "pair-implementation", "credential-identity")) or
+                not isinstance(proxy.get("configuration"), dict) or
+                set(proxy["configuration"]) != {"path", "digest"} or
+                not IMAGE_RE.fullmatch(proxy["configuration"].get("digest", "")) or
+                statuses.get("network") not in {"intended", "created", "unknown"}):
             raise ConfigError("managed Zulip broker recovery record is invalid")
     elif set(proxy) & {"family", "credential-domain", "network", "network-owner", "network-policy",
                        "session-token", "credential-mount", "mutable-state", "endpoint"}:
@@ -1638,6 +1814,16 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
             Path(__file__).with_name("auth-proxy") / "typed_broker.py",
             managed["image"], parameters["uid"], parameters["gid"], parameters["network"],
         ).implementation_identity
+        helper = resolved_zulip_helper_plan(Path(__file__).with_name("auth-proxy"),
+                                            managed["helper-image"], parameters["uid"], parameters["gid"])
+        caddy = accepted_caddy_image(managed["caddy-image-chain"], OUTER_RUNTIME)
+        material = {"caddy": caddy.__dict__, "configuration": managed["configuration"]["digest"],
+                    "helper": helper.implementation_identity}
+        pair = "sha256:" + hashlib.sha256(json.dumps(
+            material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if (helper.implementation_identity != managed["helper-implementation"] or
+                pair != managed["pair-implementation"]):
+            raise ConfigError("managed Zulip pair implementation identity changed")
     else:
         expected = _command_proxy_resolved(
             managed["name"], command, managed["image"], parameters["network"],
@@ -1724,6 +1910,43 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         lambda: remove(["volume", "rm", proxy["volume"]]),
     ))
     dependencies = [volume_id]
+    if proxy.get("name") == "zulip" and "caddy-container" in proxy:
+        socket_id = _proxy_resource_identity("zulip-socket", service_owner)
+        helper_id = _proxy_resource_identity("zulip-helper", service_owner)
+        caddy_id = _proxy_resource_identity("zulip-caddy", service_owner)
+        config_id = _proxy_resource_identity("zulip-config", service_owner)
+        def named_presence(kind: str, name: str) -> ResourcePresence:
+            if not listed(kind, name): return ResourcePresence.ABSENT
+            raw = runtime.run([kind, "inspect", name], capture_output=True).stdout
+            item = single_json(raw)
+            labels = item.get("Config", {}).get("Labels", {}) if kind == "container" else item.get("Labels", {})
+            return (ResourcePresence.OWNED if labels.get("dev.codex.service-owner") == service_owner
+                    else ResourcePresence.MISMATCHED)
+        def remove_named(kind: str, name: str) -> None:
+            if kind == "container": runtime.run(["kill", name], check=False, capture_output=True)
+            remove((["rm", name] if kind == "container" else [kind, "rm", name]))
+        path = Path(proxy["configuration"]["path"])
+        def config_presence() -> ResourcePresence:
+            try: digest = caddy_configuration_digest(path.read_bytes())
+            except FileNotFoundError: return ResourcePresence.ABSENT
+            return ResourcePresence.OWNED if digest == proxy["configuration"]["digest"] else ResourcePresence.MISMATCHED
+        def remove_config() -> None:
+            path.unlink(missing_ok=True)
+            directory = os.open(path.parent, os.O_DIRECTORY)
+            try: os.fsync(directory)
+            finally: os.close(directory)
+        registry.register(OwnedResource(config_id, service_owner, config_presence, remove_config))
+        registry.register(OwnedResource(socket_id, service_owner,
+            lambda: named_presence("volume", proxy["socket-volume"]),
+            lambda: remove_named("volume", proxy["socket-volume"])))
+        registry.register(OwnedResource(helper_id, service_owner,
+            lambda: named_presence("container", proxy["helper-container"]),
+            lambda: remove_named("container", proxy["helper-container"]), (socket_id,)))
+        registry.register(OwnedResource(caddy_id, service_owner,
+            lambda: named_presence("container", proxy["caddy-container"]),
+            lambda: remove_named("container", proxy["caddy-container"]),
+            (helper_id, socket_id, config_id)))
+        dependencies.append(caddy_id)
     if "network" in proxy:
         network_id = _proxy_resource_identity("network", service_owner)
         def network_presence() -> ResourcePresence:
@@ -1969,10 +2192,67 @@ def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid
                 mounts = [item for item in live_snapshot.get("Mounts", [])
                           if item.get("Destination") == "/run/secrets/zuliprc"]
                 labels = live_snapshot.get("Config", {}).get("Labels", {})
-                if (proxy["network"] not in networks or len(mounts) != 1 or
-                        mounts[0].get("RW") is not False or
+                caddy = owner.inspect_container(proxy["caddy-container"])
+                helper = owner.inspect_container(proxy["helper-container"])
+                helper_credentials = [item for item in helper.get("Mounts", [])
+                                      if item.get("Destination") == "/run/secrets/zuliprc"]
+                caddy_credentials = [item for item in caddy.get("Mounts", [])
+                                     if item.get("Destination") == "/run/secrets/zuliprc"]
+                helper_networks = helper.get("NetworkSettings", {}).get("Networks", {})
+                caddy_networks = caddy.get("NetworkSettings", {}).get("Networks", {})
+                caddy_sockets = [m for m in caddy.get("Mounts", []) if m.get("Destination") == "/run/profile-helper"]
+                helper_sockets = [m for m in helper.get("Mounts", []) if m.get("Destination") == "/run/profile-helper"]
+                expected_labels = {"dev.codex.service-owner": proxy["service-owner"],
+                                   "dev.codex.credential-domain": "zulip"}
+                caddy_mounts = caddy.get("Mounts", [])
+                helper_mounts = helper.get("Mounts", [])
+                try:
+                    credential_identity = zulip_credential_identity(Path(proxy["credential-source"]))
+                    caddy_identity = accepted_caddy_image(proxy["caddy-image-chain"], owner)
+                    validate_configuration_mount(caddy, Path(proxy["configuration"]["path"]),
+                                                 proxy["configuration"]["digest"])
+                    caddy_image = owner.inspect_image(caddy_identity.runtime_reference)
+                    helper_image = owner.inspect_image(proxy["helper-image"])
+                    socket_volume = single_json(owner.run(
+                        ["volume", "inspect", proxy["socket-volume"]], capture_output=True).stdout)
+                except (ValueError, OSError, subprocess.SubprocessError) as error:
+                    raise ConfigError("active Zulip pair identity changed") from error
+                if (proxy["network"] not in networks or mounts or caddy_credentials or
+                        not _zulip_mounts_exact(caddy, helper, socket_name=proxy["socket-volume"],
+                            socket_source=socket_volume.get("Mountpoint"),
+                            config_source=proxy["configuration"]["path"],
+                            credential_source=proxy["credential-source"]) or
+                        len(caddy_mounts) != 2 or len(helper_mounts) != 2 or
+                        len(helper_credentials) != 1 or
+                        helper_credentials[0].get("Source") != proxy["credential-source"] or
+                        helper_credentials[0].get("RW") is not False or
+                        credential_identity != proxy["credential-identity"] or helper_networks or
+                        set(caddy_networks) != {proxy["network"]} or
+                        len(caddy_sockets) != 1 or caddy_sockets[0].get("Name") != proxy["socket-volume"] or
+                        caddy_sockets[0].get("RW") is not False or len(helper_sockets) != 1 or
+                        helper_sockets[0].get("Name") != proxy["socket-volume"] or
+                        helper_sockets[0].get("Source") != socket_volume.get("Mountpoint") or
+                        helper_sockets[0].get("RW") is not True or
+                        caddy_sockets[0].get("Source") != socket_volume.get("Mountpoint") or
+                        (socket_volume.get("Labels", {}) or {}).get("dev.codex.service-owner") != proxy["service-owner"] or
+                        (socket_volume.get("Labels", {}) or {}).get("dev.codex.credential-domain") != "zulip" or
+                        (socket_volume.get("Labels", {}) or {}).get("dev.codex.resource-role") != "profile-socket" or
+                        not owner.container_matches_image(proxy["caddy-container"], caddy_image,
+                            snapshot=caddy, labels={**expected_labels, "dev.codex.service-role": "zulip-caddy"}) or
+                        not owner.container_matches_image(proxy["helper-container"], helper_image,
+                            snapshot=helper, labels={**expected_labels, "dev.codex.service-role": "zulip-profile-helper"}) or
+                        not _zulip_container_hardened(caddy, role="zulip-caddy",
+                            uid=parameters["uid"], gid=parameters["gid"], network=proxy["network"],
+                            entrypoint=None, command=["caddy", "run", "--config", "/etc/caddy/caddy.json"]) or
+                        not _zulip_container_hardened(helper, role="zulip-profile-helper",
+                            uid=parameters["uid"], gid=parameters["gid"], network="none",
+                            entrypoint=["/trusted/bin/profile-helper"], command=["--profile", "zulip"]) or
                         labels.get("dev.codex.credential-domain") != "zulip"):
-                    raise ConfigError("active Zulip broker isolation boundary changed")
+                    raise ConfigError("active Zulip pair isolation or runtime identity changed")
+                ready = owner.run(["exec", proxy["caddy-container"], "wget", "-q", "-O", "/dev/null",
+                                   "http://127.0.0.1:8787/ready"], check=False, capture_output=True)
+                if ready.returncode:
+                    raise ConfigError("active Zulip pair is not ready")
                 network = single_json(owner.run(
                     ["network", "inspect", proxy["network"]], capture_output=True,
                 ).stdout)
