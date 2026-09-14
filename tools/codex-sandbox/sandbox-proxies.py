@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import fcntl
 import hashlib
 import json
@@ -22,6 +22,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, single_json, state_runtime
+from trusted_services import (
+    LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
+    ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
+)
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -456,7 +460,11 @@ def publish_main(args: argparse.Namespace) -> int:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
-    validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []), repository_identity(Path(args.repo)))
+    accepted_preview = state.get("accepted", {})
+    identity_parameters = accepted_preview.get("parameters", {}) if isinstance(accepted_preview, dict) else {}
+    validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []),
+                          repository_identity(Path(args.repo)), commands=manifest["commands"],
+                          uid=identity_parameters.get("uid"), gid=identity_parameters.get("gid"))
     launch = state.pop("accepted", None)
     if not isinstance(launch, dict) or set(launch) != {
         "source-present", "agent-image", "helper-image", "parameters", "proxy-images",
@@ -549,7 +557,8 @@ def cached_session_state(
                 return None
         elif not containers_running(containers):
             return None
-        validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo), snapshots=snapshots)
+        validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(repo),
+                              snapshots=snapshots, commands=manifest["commands"])
         if OUTER_RUNTIME.provider == 'lima-docker':
             from lima.proxy_forward import check
             for proxy in proxies:
@@ -638,6 +647,7 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
             raise ConfigError("active session has a stopped proxy")
         validate_live_proxies(
             OUTER_RUNTIME, proxies, repository_identity(repo), snapshots=snapshots,
+            commands=manifest["commands"], uid=args.uid, gid=args.gid,
         )
         if OUTER_RUNTIME.provider == "lima-docker":
             from lima.proxy_forward import check
@@ -814,95 +824,225 @@ def zuliprc_mount_args(path: Path) -> list[str]:
     ]
 
 
+COMMAND_PROXY_STATE_SCHEMA = 1
+_ADAPTER_BEGIN = b"\n# BEGIN OWNED COMMAND PROXY ADAPTER\n"
+_ADAPTER_END = b"\n# END OWNED COMMAND PROXY ADAPTER\n"
+
+
+def _command_proxy_adapter_bytes(source: bytes | None = None) -> bytes:
+    """Hash the owned implementation region plus its forwarding implementation."""
+    source = Path(__file__).read_bytes() if source is None else source
+    try:
+        owned = source.split(_ADAPTER_BEGIN, 1)[1].split(_ADAPTER_END, 1)[0]
+    except IndexError as error:
+        raise ConfigError("command proxy adapter source boundary is missing") from error
+    lima = Path(__file__).with_name("lima")
+    return owned + b"\0" + b"\0".join(
+        path.read_bytes() for path in (lima / "proxy_forward.py", lima / "proxy_socket.py")
+    )
+
+
+# BEGIN OWNED COMMAND PROXY ADAPTER
+
+
+def _command_proxy_resolved(name: str, command: dict[str, Any], image: str,
+                            network: str, uid: int, gid: int):
+    adapter_bytes = _command_proxy_adapter_bytes()
+    plan = ServicePlan(
+        role=name, family=ServiceFamily.COMMAND_PROXY, scope=ServiceScope.SHARED_SESSION,
+        adapter="command-proxy", adapter_identity="sha256:" + hashlib.sha256(adapter_bytes).hexdigest(),
+        state_schema=COMMAND_PROXY_STATE_SCHEMA, image_role="proxy", image_uid=uid, image_gid=gid,
+        fixed_parameters={"command": command, "network": network},
+    )
+    return plan.resolve(adapter_bytes=adapter_bytes, image=_proxy_image_reference(image))
+
+
+def _proxy_image_reference(image: str) -> str:
+    """Normalize the runtime-verified digest for lifecycle identity hashing."""
+    if "@sha256:" in image:
+        return image
+    if image.startswith("sha256:") and len(image) == 71:
+        return "command-proxy@" + image
+    raise ConfigError("proxy image is not an immutable verified reference")
+
+
+def _proxy_resource_identity(kind: str, owner: str) -> str:
+    return f"{kind}:{owner}"
+
+
+class CommandProxyHandle:
+    """Runtime lifecycle and resources for one ordinary command-proxy start."""
+
+    def __init__(self, lifecycle: ServiceLifecycle, registry: ResourceRegistry,
+                 record: dict[str, Any]) -> None:
+        self.lifecycle = lifecycle
+        self.registry = registry
+        self.record = record
+
+    def cleanup(self) -> None:
+        result = self.registry.cleanup(0)
+        if result.remaining:
+            failures = ", ".join(f"{item.identity}={item.code}" for item in result.failures)
+            raise ConfigError(
+                "recorded proxy resources remain after cleanup; retaining recovery metadata: "
+                + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
+            )
+        for diagnostic in self.registry.adapter_diagnostics:
+            print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
+
+
 def start_one_proxy(
     args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
     state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
+    *, owners: OwnerSet | None = None, cancelled: threading.Event | None = None,
+    handles: list[Any] | None = None,
 ) -> dict[str, str]:
+    service_owner = uuid.uuid4().hex
+    selected_network = args.network if command["network"] else "none"
+    resolved = _command_proxy_resolved(
+        name, command, images[name], selected_network, os.getuid(), os.getgid(),
+    )
+    lifecycle = ServiceLifecycle(resolved, service_owner, owners or OwnerSet())
+    lifecycle.transition(LifecycleState.RESOLVED)
+    lifecycle.transition(LifecycleState.PREPARING)
+    lifecycle.transition(LifecycleState.STARTING)
+
     volume = f"{args.prefix}-{name}"
     container = f"{args.prefix}-{name}"
-    proxy = {"name": name, "volume": volume, "container": container, "image": images[name]}
+    proxy = {
+        "name": name, "volume": volume, "container": container, "image": images[name],
+        "service-owner": service_owner, "implementation-identity": resolved.implementation_identity,
+        "state-schema": COMMAND_PROXY_STATE_SCHEMA, "lifecycle-state": "starting",
+        "identity-parameters": {"uid": os.getuid(), "gid": os.getgid(), "network": selected_network},
+        "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
+    }
     if isinstance(OUTER_RUNTIME, VMRuntime):
-        proxy["volume-owner"] = uuid.uuid4().hex
+        proxy["volume-owner"] = service_owner
+
+    def persist() -> None:
+        with state_lock:
+            write_atomic(Path(args.state), json.dumps(state))
+
+    # This single schema-3 proxy record is both endpoint projection and recovery
+    # authority. It is registered before any effect that can partially succeed.
     with state_lock:
         state["proxies"].append(proxy)
         write_atomic(Path(args.state), json.dumps(state))
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
-    else:
-        _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()), volume)
-    container_repo = container_repository(args.container_repo)
-    docker_args = [
-        "run", "--detach", "--name", container, "--cap-drop=ALL",
-        "--label", "dev.codex.sandbox-proxy=true",
-        "--label", f"dev.codex.repository={identity}",
-        "--label", f"dev.codex.command={name}",
-        "--security-opt=no-new-privileges", "--read-only",
-        "--user", f"{os.getuid()}:{os.getgid()}",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-        "--network", args.network if command["network"] else "none",
-        "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
-        "--ulimit", "nofile=1024:1024", "--workdir", str(container_repo / command["workdir"]),
-        "--entrypoint", command["argv"][0],
-        "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
-        "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
-    ]
-    if isinstance(OUTER_RUNTIME, VMRuntime) and command["network"]:
-        network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
-        docker_args += ["--dns", network["dns"]]
-    if name == "jj":
-        git_dir, common_dir = git_metadata_paths(repo)
-        jj_repo = jj_repository_path(repo)
-        docker_args += [
-            "--env", f"JJ_PROXY_REPO={container_repo}",
-            "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir, container_repo)}",
-            "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir, container_repo)}",
-            "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo, container_repo)}",
-        ]
-    if name == "zulip":
-        if not args.zuliprc:
-            raise ConfigError("trusted Zulip proxy requires a credential path")
-        docker_args += zuliprc_mount_args(Path(args.zuliprc))
-    checked_repository_path(repo, command["workdir"], f"command {name} workdir")
-    docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
-    docker_args += [images[name], *command["argv"][1:]]
-    _docker(*docker_args)
-    if OUTER_RUNTIME.provider == 'lima-docker':
-        forwarding = OUTER_RUNTIME.proxy_forward_record(container, proxy['volume-owner'])
-        # Persist recovery authority before either host or guest publication.
+    registry = _proxy_registry(OUTER_RUNTIME, proxy)
+    handle = CommandProxyHandle(lifecycle, registry, proxy)
+    if handles is not None:
         with state_lock:
-            proxy['forwarding'] = forwarding
-            write_atomic(Path(args.state), json.dumps(state))
-        OUTER_RUNTIME.start_proxy_forward(forwarding)
-    # Optional Zulip access can report an unready socket on first use.
-    # Required repository-command proxies still gate session publication below.
-    if name == "zulip":
-        return proxy
-    deadline = time.monotonic() + 10
-    readiness_error = ""
-    while (remaining := deadline - time.monotonic()) > 0:
-        check = subprocess.run(
-            # Nerdctl can see immediate EOF before registering its stdin
-            # closer. Readiness needs no input, so do not attach stdin there.
-            OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
-                                container, "/trusted/bin/sandbox-proxy-forward"]),
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE, text=True, timeout=remaining,
-        )
-        readiness_error = check.stderr.strip()
-        if check.returncode == 0:
+            handles.append(handle)
+    try:
+        if cancelled is not None and cancelled.is_set():
+            raise ConfigError(f"proxy {name} startup cancelled")
+        if isinstance(OUTER_RUNTIME, VMRuntime):
+            OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
+        else:
+            _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()),
+                    "--label", f"dev.codex.service-owner={service_owner}", volume)
+        proxy["resource-status"]["volume"] = "created"
+        persist()
+        if cancelled is not None and cancelled.is_set():
+            raise ConfigError(f"proxy {name} startup cancelled")
+        container_repo = container_repository(args.container_repo)
+        docker_args = [
+            "run", "--detach", "--name", container, "--cap-drop=ALL",
+            "--label", "dev.codex.sandbox-proxy=true",
+            "--label", f"dev.codex.repository={identity}",
+            "--label", f"dev.codex.command={name}",
+            "--label", f"dev.codex.service-owner={service_owner}",
+            "--security-opt=no-new-privileges", "--read-only",
+            "--user", f"{os.getuid()}:{os.getgid()}",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
+            "--network", args.network if command["network"] else "none",
+            "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
+            "--ulimit", "nofile=1024:1024", "--workdir", str(container_repo / command["workdir"]),
+            "--entrypoint", command["argv"][0],
+            "--env", "SANDBOX_PROXY_SOCKET=/run/sandbox-proxy/socket",
+            "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxy",
+        ]
+        if isinstance(OUTER_RUNTIME, VMRuntime) and command["network"]:
+            network = json.loads((OUTER_RUNTIME.host.state / "source/rootless-network.json").read_text())
+            docker_args += ["--dns", network["dns"]]
+        if name == "jj":
+            git_dir, common_dir = git_metadata_paths(repo)
+            jj_repo = jj_repository_path(repo)
+            docker_args += [
+                "--env", f"JJ_PROXY_REPO={container_repo}",
+                "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir, container_repo)}",
+                "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir, container_repo)}",
+                "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo, container_repo)}",
+            ]
+        if name == "zulip":
+            if not args.zuliprc:
+                raise ConfigError("trusted Zulip proxy requires a credential path")
+            docker_args += zuliprc_mount_args(Path(args.zuliprc))
+        checked_repository_path(repo, command["workdir"], f"command {name} workdir")
+        docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
+        docker_args += [images[name], *command["argv"][1:]]
+        _docker(*docker_args)
+        proxy["resource-status"]["container"] = "created"
+        persist()
+        if cancelled is not None and cancelled.is_set():
+            raise ConfigError(f"proxy {name} startup cancelled")
+        if OUTER_RUNTIME.provider == "lima-docker":
+            forwarding = OUTER_RUNTIME.proxy_forward_record(container, proxy["volume-owner"])
+            if forwarding.get("owner") != service_owner:
+                raise ConfigError("proxy forwarding owner changed before registration")
+            registry.register(OwnedResource(
+                _proxy_resource_identity("forward", service_owner), service_owner,
+                lambda: ResourcePresence.OWNED,
+                lambda: OUTER_RUNTIME.stop_proxy_forward(forwarding),
+                (_proxy_resource_identity("container", service_owner),),
+            ))
+            # Recovery authority precedes both host and guest alias publication.
+            proxy["forwarding"] = forwarding
+            proxy["resource-status"]["forward"] = "intended"
+            persist()
+            OUTER_RUNTIME.start_proxy_forward(forwarding)
+            proxy["resource-status"]["forward"] = "created"
+            persist()
+        if name == "zulip":
+            # Broker migration has not landed: publication intentionally accepts
+            # this service without probing its socket. Do not claim READY.
+            proxy["readiness"] = "legacy-zulip-unprobed"
+            persist()
             return proxy
-        status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
-        if status != "true":
-            logs = proxy_logs(container)
-            detail = f":\n{logs}" if logs else ""
-            raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
-        time.sleep(0.1)
-    logs = proxy_logs(container)
-    diagnostics = "\n".join(dict.fromkeys(
-        output for output in (logs, readiness_error) if output
-    ))
-    detail = f":\n{diagnostics}" if diagnostics else ""
-    raise ConfigError(f"proxy {name} did not become ready{detail}")
+        deadline = time.monotonic() + 10
+        readiness_error = ""
+        while (remaining := deadline - time.monotonic()) > 0:
+            if cancelled is not None and cancelled.is_set():
+                raise ConfigError(f"proxy {name} startup cancelled")
+            check = subprocess.run(
+                OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
+                                    container, "/trusted/bin/sandbox-proxy-forward"]),
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, text=True, timeout=remaining,
+            )
+            readiness_error = check.stderr.strip()
+            if check.returncode == 0:
+                lifecycle.transition(LifecycleState.READY)
+                proxy["lifecycle-state"] = "ready"
+                persist()
+                return proxy
+            status = _docker("inspect", "--format", "{{.State.Running}}", container, capture=True).stdout.strip()
+            if status != "true":
+                logs = proxy_logs(container)
+                detail = f":\n{logs}" if logs else ""
+                raise ConfigError(f"proxy {name} exited before becoming ready{detail}")
+            time.sleep(0.1)
+        logs = proxy_logs(container)
+        diagnostics = "\n".join(dict.fromkeys(output for output in (logs, readiness_error) if output))
+        detail = f":\n{diagnostics}" if diagnostics else ""
+        raise ConfigError(f"proxy {name} did not become ready{detail}")
+    except BaseException:
+        lifecycle.transition(LifecycleState.FAILED)
+        proxy["lifecycle-state"] = "failed"
+        persist()
+        raise
+
+# END OWNED COMMAND PROXY ADAPTER
 
 
 def start_main(args: argparse.Namespace) -> int:
@@ -921,23 +1061,55 @@ def start_main(args: argparse.Namespace) -> int:
     identity = repository_identity(repo)
     write_atomic(Path(args.state), json.dumps(state))
     state_lock = threading.Lock()
+    owners = OwnerSet()
+    cancelled = threading.Event()
+    handles: list[CommandProxyHandle] = []
+    executor = ThreadPoolExecutor(max_workers=max(1, len(manifest["commands"])))
+    futures = [
+        executor.submit(
+            start_one_proxy, args, repo, identity, images, state, state_lock, name, command,
+            owners=owners, cancelled=cancelled, handles=handles,
+        )
+        for name, command in manifest["commands"].items()
+    ]
     try:
-        with ThreadPoolExecutor(max_workers=max(1, len(manifest["commands"]))) as executor:
-            futures = [
-                executor.submit(
-                    start_one_proxy, args, repo, identity, images, state, state_lock, name, command,
-                )
-                for name, command in manifest["commands"].items()
-            ]
-            for future in futures:
-                future.result()
+        for future in as_completed(futures):
+            future.result()
         return 0
-    except Exception:
-        stop_state(state)
+    except BaseException as startup_error:
+        cancelled.set()
+        for future in futures:
+            future.cancel()
+        # Running adapters are joined before cleanup, so they cannot create a
+        # resource after recovery starts. Preserve the first startup failure.
+        for future in futures:
+            try:
+                future.result()
+            except BaseException:
+                pass
+        try:
+            cleanup_failures = []
+            with ThreadPoolExecutor(max_workers=max(1, len(handles))) as cleanup_workers:
+                cleanup_work = [cleanup_workers.submit(handle.cleanup) for handle in handles]
+                for cleanup in cleanup_work:
+                    try:
+                        cleanup.result()
+                    except BaseException as error:
+                        cleanup_failures.append(str(error))
+            if cleanup_failures:
+                raise ConfigError("; ".join(cleanup_failures))
+        except BaseException as cleanup_error:
+            # The state file remains the recovery authority. Cleanup diagnostics
+            # must not replace the service-start failure seen by the launcher.
+            startup_error.add_note(
+                f"proxy cleanup failed; retaining recovery metadata: {cleanup_error}"
+            )
         raise
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
-def stop_state(state: dict[str, Any]) -> None:
+def _stop_legacy_state(state: dict[str, Any]) -> None:
     owner = state_runtime(state, recovery=True)
     started = time.monotonic()
     containers = []
@@ -1005,6 +1177,232 @@ def stop_state(state: dict[str, Any]) -> None:
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
 
 
+
+_MANAGED_PROXY_REQUIRED = {
+    "name", "volume", "container", "image", "service-owner", "implementation-identity",
+    "state-schema", "lifecycle-state", "identity-parameters", "resource-status",
+}
+_MANAGED_PROXY_OPTIONAL = {"volume-owner", "forwarding", "readiness"}
+
+
+def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
+    """Parse a managed record; records without service-owner are explicit legacy schema 3."""
+    if not isinstance(proxy, dict):
+        raise ConfigError("proxy recovery record must be an object")
+    if "service-owner" not in proxy:
+        return None
+    if set(proxy) - (_MANAGED_PROXY_REQUIRED | _MANAGED_PROXY_OPTIONAL) or not _MANAGED_PROXY_REQUIRED <= set(proxy):
+        raise ConfigError("managed proxy recovery record has invalid fields")
+    owner = proxy["service-owner"]
+    parameters = proxy["identity-parameters"]
+    statuses = proxy["resource-status"]
+    if (not isinstance(owner, str) or re.fullmatch(r"[0-9a-f]{32}", owner) is None or
+            not isinstance(proxy["implementation-identity"], str) or
+            IMAGE_RE.fullmatch(proxy["implementation-identity"]) is None or
+            proxy["state-schema"] != COMMAND_PROXY_STATE_SCHEMA or
+            proxy["lifecycle-state"] not in {"starting", "ready", "failed"} or
+            not isinstance(parameters, dict) or set(parameters) != {"uid", "gid", "network"} or
+            not isinstance(parameters["uid"], int) or not isinstance(parameters["gid"], int) or
+            not isinstance(parameters["network"], str) or not parameters["network"] or
+            not isinstance(statuses, dict) or set(statuses) != {"volume", "container", "forward"} or
+            any(value not in {"absent", "intended", "created"} for value in statuses.values()) or
+            any(not isinstance(proxy[field], str) or not proxy[field] for field in
+                ("name", "volume", "container", "image"))):
+        raise ConfigError("managed proxy recovery record is invalid")
+    if proxy.get("volume-owner", owner) != owner:
+        raise ConfigError("managed proxy volume owner changed")
+    forwarding = proxy.get("forwarding")
+    if forwarding is not None and (not isinstance(forwarding, dict) or forwarding.get("owner") != owner):
+        raise ConfigError("managed proxy forwarding owner changed")
+    if (forwarding is None) != (statuses["forward"] == "absent"):
+        raise ConfigError("managed proxy forwarding status is inconsistent")
+    if proxy.get("readiness") is not None and not (
+            proxy["name"] == "zulip" and proxy["readiness"] == "legacy-zulip-unprobed"
+            and proxy["lifecycle-state"] == "starting"):
+        raise ConfigError("managed proxy readiness record is invalid")
+    return proxy
+
+
+def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any],
+                                   *, uid: int | None = None, gid: int | None = None) -> None:
+    managed = _managed_proxy_record(proxy)
+    if managed is None:
+        return
+    parameters = managed["identity-parameters"]
+    if managed["lifecycle-state"] != "ready" and not (
+            managed["name"] == "zulip" and managed.get("readiness") == "legacy-zulip-unprobed"
+            and managed["lifecycle-state"] == "starting"):
+        raise ConfigError("managed required proxy is not ready")
+    if uid is not None and parameters["uid"] != uid or gid is not None and parameters["gid"] != gid:
+        raise ConfigError("managed proxy UID/GID changed")
+    if (command["network"] and parameters["network"] == "none") or (
+            not command["network"] and parameters["network"] != "none"):
+        raise ConfigError("managed proxy network changed")
+    expected = _command_proxy_resolved(
+        managed["name"], command, managed["image"], parameters["network"],
+        parameters["uid"], parameters["gid"],
+    ).implementation_identity
+    if expected != managed["implementation-identity"]:
+        raise ConfigError("managed proxy implementation identity changed")
+
+
+def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
+    managed_record = _managed_proxy_record(proxy)
+    service_owner = proxy.get("service-owner")
+    managed = managed_record is not None
+    if not managed:
+        # Credential-free compatibility for records created before step 2.
+        service_owner = hashlib.sha256(
+            (str(proxy.get("container")) + "\0" + str(proxy.get("volume"))).encode()
+        ).hexdigest()[:32]
+    registry = ResourceRegistry(service_owner)
+    adapter_diagnostics: list[str] = []
+    registry.adapter_diagnostics = adapter_diagnostics
+    volume_id = _proxy_resource_identity("volume", service_owner)
+    container_id = _proxy_resource_identity("container", service_owner)
+
+    def listed(kind: str, name: str) -> bool:
+        arguments = [kind, "ls"]
+        if kind == "container":
+            arguments.append("--all")
+        arguments += ["--format", "{{.Names}}"]
+        return name in runtime.run(arguments, capture_output=True).stdout.splitlines()
+
+    def volume_presence() -> ResourcePresence:
+        if not listed("volume", proxy["volume"]):
+            return ResourcePresence.ABSENT
+        if managed:
+            raw = runtime.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
+            volume = single_json(raw)
+            labels = volume.get("Labels", {})
+            label = (labels.get("dev.codex.volume-owner") if "volume-owner" in proxy
+                     else labels.get("dev.codex.service-owner"))
+            if label != service_owner:
+                return ResourcePresence.MISMATCHED
+        elif "volume-owner" in proxy:
+            raw = runtime.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
+            volume = single_json(raw)
+            if volume.get("Labels", {}).get("dev.codex.volume-owner") != proxy["volume-owner"]:
+                return ResourcePresence.MISMATCHED
+        return ResourcePresence.OWNED
+
+    def container_presence() -> ResourcePresence:
+        if not listed("container", proxy["container"]):
+            return ResourcePresence.ABSENT
+        if managed:
+            raw = runtime.run(["container", "inspect", proxy["container"]], capture_output=True).stdout
+            container = single_json(raw)
+            labels = container.get("Config", {}).get("Labels", {})
+            if labels.get("dev.codex.service-owner") != service_owner:
+                return ResourcePresence.MISMATCHED
+        return ResourcePresence.OWNED
+
+    def remove(arguments: list[str]) -> None:
+        result = runtime.run(arguments, check=False, capture_output=True)
+        if result.returncode:
+            diagnostic = f"{arguments[0]} {arguments[-1]} exited {result.returncode}"
+            adapter_diagnostics.append(diagnostic)
+            raise ConfigError(diagnostic)
+
+    def remove_container() -> None:
+        killed = runtime.run(["kill", proxy["container"]], check=False, capture_output=True)
+        removed = runtime.run(["rm", proxy["container"]], check=False, capture_output=True)
+        operation_failures = []
+        if killed.returncode:
+            operation_failures.append(f"kill {proxy['container']} exited {killed.returncode}")
+        if removed.returncode:
+            operation_failures.append(f"rm {proxy['container']} exited {removed.returncode}")
+        adapter_diagnostics.extend(operation_failures)
+        # A failed kill is diagnostic only when rm establishes absence. Recovery
+        # authority follows rm, not the preliminary signal attempt.
+        if removed.returncode:
+            raise ConfigError("; ".join(operation_failures))
+
+    registry.register(OwnedResource(
+        volume_id, service_owner, volume_presence,
+        lambda: remove(["volume", "rm", proxy["volume"]]),
+    ))
+    registry.register(OwnedResource(
+        container_id, service_owner, container_presence, remove_container, (volume_id,),
+    ))
+    forwarding = proxy.get("forwarding")
+    if forwarding is not None:
+        if runtime.provider != "lima-docker" or not isinstance(forwarding, dict):
+            raise ConfigError("proxy forwarding recovery owner changed")
+        if managed:
+            forwarding_owned = (forwarding.get("owner") == service_owner
+                                and proxy.get("volume-owner") == service_owner)
+        else:
+            forwarding_owned = (isinstance(proxy.get("volume-owner"), str)
+                                and forwarding.get("owner") == proxy["volume-owner"])
+        if not forwarding_owned:
+            raise ConfigError("proxy forwarding recovery owner changed")
+        registry.register(OwnedResource(
+            _proxy_resource_identity("forward", service_owner), service_owner,
+            lambda: ResourcePresence.OWNED,
+            lambda: runtime.stop_proxy_forward(forwarding), (container_id,),
+        ))
+    return registry
+
+
+def _cleanup_proxy_service(runtime, proxy: dict[str, Any]) -> None:
+    registry = _proxy_registry(runtime, proxy)
+    result = registry.cleanup(0)
+    if result.remaining:
+        failures = ", ".join(f"{item.identity}={item.code}" for item in result.failures)
+        raise ConfigError(
+            "recorded proxy resources remain after cleanup; retaining recovery metadata: "
+            + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
+        )
+    for diagnostic in registry.adapter_diagnostics:
+        print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
+
+
+def stop_state(state: dict[str, Any]) -> None:
+    all_proxies = [*state.get("proxies", []), *state.get("retired-proxies", [])]
+    if not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies):
+        _stop_legacy_state(state)
+        return
+    proxies = list(reversed(all_proxies))
+    seen: set[str] = set()
+    for proxy in proxies:
+        managed = _managed_proxy_record(proxy)
+        if managed is not None:
+            service_owner = managed["service-owner"]
+            if service_owner in seen:
+                raise ConfigError("trusted service recovery owner was reused")
+            seen.add(service_owner)
+    owner = state_runtime(state, recovery=True)
+    # Independent service registries clean concurrently; the executor is joined
+    # before returning or surfacing any failure.
+    failures = []
+    with ThreadPoolExecutor(max_workers=max(1, len(proxies))) as executor:
+        work = [(proxy, executor.submit(_cleanup_proxy_service, owner, proxy)) for proxy in proxies]
+        for proxy, future in work:
+            try:
+                future.result()
+            except Exception as error:
+                failures.append(f"{proxy.get('name', 'unknown')}: {error}")
+    auth = state.get("auth")
+    if isinstance(auth, dict) and isinstance(auth.get("container"), str):
+        auth_container = auth["container"]
+        listed = owner.run(
+            ["container", "ls", "--all", "--format", "{{.Names}}"],
+            capture_output=True,
+        ).stdout.splitlines()
+        if auth_container in listed:
+            owner.run(["kill", auth_container], check=False, capture_output=True)
+            result = owner.run(["rm", auth_container], check=False, capture_output=True)
+            if result.returncode:
+                remaining = owner.run(
+                    ["container", "ls", "--all", "--format", "{{.Names}}"],
+                    capture_output=True,
+                ).stdout.splitlines()
+                if auth_container in remaining:
+                    failures.append("authentication container removal failed")
+    if failures:
+        raise ConfigError("cleanup failed; retaining recovery metadata:\n" + "\n".join(failures))
+
 def stop_main(args: argparse.Namespace) -> int:
     path = Path(args.state)
     if path.exists():
@@ -1014,22 +1412,53 @@ def stop_main(args: argparse.Namespace) -> int:
     return 0
 
 
-def validate_live_proxies(owner, proxies, repository, *, snapshots=None):
+def validate_live_proxies(owner, proxies, repository, *, snapshots=None, commands=None,
+                          uid=None, gid=None):
     # Bound SSH concurrency and join every inspection before publication or
     # failure recovery can change the containers being inspected.
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(executor.map(
-            lambda proxy: validate_live_proxy(owner, proxy, repository, proxy["name"],
+            lambda proxy: validate_live_proxy(
+                owner, proxy, repository,
+                (commands.get(proxy["name"], proxy["name"])
+                 if commands is not None else proxy["name"]),
+                uid=uid, gid=gid,
                 **({'snapshot': snapshots[proxy['container']]} if snapshots is not None else {})), proxies,
         ))
 
 
-def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None):
+def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid=None, gid=None):
+    command_name = proxy["name"] if isinstance(command, dict) else command
+    if isinstance(command, dict):
+        _validate_proxy_implementation(proxy, command, uid=uid, gid=gid)
+    else:
+        _managed_proxy_record(proxy)
+    if "service-owner" in proxy:
+        parameters = proxy["identity-parameters"]
+        live_snapshot = snapshot
+        if live_snapshot is None and hasattr(owner, "inspect_container"):
+            live_snapshot = owner.inspect_container(proxy["container"])
+        if isinstance(live_snapshot, dict):
+            configured_user = live_snapshot.get("Config", {}).get("User")
+            expected_user = f"{parameters['uid']}:{parameters['gid']}"
+            if configured_user not in (None, expected_user):
+                raise ConfigError("active proxy container user changed")
+            network_mode = live_snapshot.get("HostConfig", {}).get("NetworkMode")
+            if network_mode not in (None, parameters["network"]):
+                raise ConfigError("active proxy container network changed")
+        raw_volume = owner.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
+        volume_labels = single_json(raw_volume).get("Labels", {})
+        expected_label = ("dev.codex.volume-owner" if "volume-owner" in proxy
+                          else "dev.codex.service-owner")
+        if volume_labels.get(expected_label) != proxy["service-owner"]:
+            raise ConfigError("active proxy volume service owner changed")
     image = owner.inspect_image(proxy["image"])
     inspection = {'snapshot': snapshot} if snapshot is not None else {}
     if not owner.container_matches_image(proxy["container"], image, **inspection, labels={
             "dev.codex.sandbox-proxy": "true", "dev.codex.repository": repository,
-            "dev.codex.command": command}):
+            "dev.codex.command": command_name,
+            **({"dev.codex.service-owner": proxy["service-owner"]}
+               if "service-owner" in proxy else {})}):
         raise ConfigError("active proxy container failed command, repository identity, or native image validation")
 
 

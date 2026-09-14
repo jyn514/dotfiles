@@ -461,7 +461,7 @@ class ManifestTest(unittest.TestCase):
                                container_repo=str(self.container_repo))
         rendezvous = threading.Barrier(2)
 
-        def validate(*_args):
+        def validate(*_args, **_kwargs):
             self.assertFalse((self.repo / "session.json").exists())
             rendezvous.wait(timeout=2)
 
@@ -486,7 +486,7 @@ class ManifestTest(unittest.TestCase):
                                container_repo=str(self.container_repo))
         started, failed, release, finished = (threading.Event() for _ in range(4))
 
-        def validate(_owner, proxy, *_args):
+        def validate(_owner, proxy, *_args, **_kwargs):
             if proxy["name"] == "bad":
                 self.assertTrue(started.wait(2))
                 failed.set()
@@ -674,6 +674,8 @@ class ManifestTest(unittest.TestCase):
                 mock.MagicMock(), "zulip", self.command(argv=["zulip-proxy"], network=True),
             )
         self.assertEqual("zulip", proxy["name"])
+        self.assertEqual("starting", proxy["lifecycle-state"])
+        self.assertEqual("legacy-zulip-unprobed", proxy["readiness"])
         self.assertEqual([proxy], state["proxies"])
 
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
@@ -1068,6 +1070,201 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed):
             images = sandbox_proxies.resolve_images(self.repo, manifest)
         self.assertEqual("sha256:" + digest, images["example"])
+
+    def test_forward_failure_retains_registered_recovery_authority(self) -> None:
+        state_path = self.repo / "state"
+        args = SimpleNamespace(prefix="test", state=str(state_path), network="sandbox",
+                               container_repo=str(self.container_repo), zuliprc=None)
+        command = self.command()
+        image = "sha256:" + "0" * 64
+        runtime = mock.Mock(provider="lima-docker")
+        runtime.proxy_forward_record.return_value = {
+            "owner": "a" * 32, "target": "/run/sandbox-proxy/socket",
+        }
+        runtime.start_proxy_forward.side_effect = RuntimeError("forward failed")
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", runtime), \
+                mock.patch.object(sandbox_proxies, "VMRuntime", object), \
+                mock.patch.object(sandbox_proxies.uuid, "uuid4", return_value=SimpleNamespace(hex="a" * 32)), \
+                mock.patch.object(sandbox_proxies, "_docker") as docker, \
+                mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies, "checked_repository_path"):
+            with self.assertRaisesRegex(RuntimeError, "forward failed"):
+                sandbox_proxies.start_one_proxy(
+                    args, self.repo, "repository", {"example": image},
+                    {"proxies": []}, threading.Lock(), "example", command,
+                )
+        recovery = json.loads(state_path.read_text())["proxies"][0]
+        run_argv = docker.call_args_list[0].args
+        self.assertEqual((image, "serve"), run_argv[-2:])
+        self.assertEqual("example-proxy", run_argv[run_argv.index("--entrypoint") + 1])
+        self.assertEqual("none", run_argv[run_argv.index("--network") + 1])
+        self.assertEqual("failed", recovery["lifecycle-state"])
+        self.assertEqual("a" * 32, recovery["forwarding"]["owner"])
+
+    def test_failed_alias_cleanup_retains_recovery_and_blocks_resource_removal(self) -> None:
+        service_owner = "a" * 32
+        proxy = {
+            "name": "example", "container": "container", "volume": "volume",
+            "image": "sha256:" + "1" * 64,
+            "service-owner": service_owner, "volume-owner": service_owner,
+            "implementation-identity": "sha256:" + "0" * 64, "state-schema": 1,
+            "lifecycle-state": "failed",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "created", "container": "created", "forward": "created"},
+            "forwarding": {"owner": service_owner, "target": "/owned/socket"},
+        }
+        state = {"runtime": {"provider": "lima-docker"}, "proxies": [proxy]}
+        original = json.dumps(state, sort_keys=True)
+        owner = mock.Mock(provider="lima-docker")
+        owner.stop_proxy_forward.side_effect = RuntimeError("alias still live")
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "retaining recovery metadata"):
+                sandbox_proxies.stop_state(state)
+        self.assertEqual(original, json.dumps(state, sort_keys=True))
+        self.assertFalse(any(call.args[0][0] in {"kill", "rm"}
+                             for call in owner.run.call_args_list))
+
+    def test_managed_podman_cleanup_rejects_preexisting_mismatched_volume(self) -> None:
+        service_owner = "a" * 32
+        command = self.command()
+        image = "sha256:" + "1" * 64
+        resolved = sandbox_proxies._command_proxy_resolved(
+            "example", command, image, "none", 501, 20,
+        )
+        proxy = {
+            "name": "example", "container": "container", "volume": "volume", "image": image,
+            "service-owner": service_owner,
+            "implementation-identity": resolved.implementation_identity, "state-schema": 1,
+            "lifecycle-state": "failed",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
+        }
+        owner = mock.Mock(provider="podman")
+        def run(arguments, **_kwargs):
+            output = ""
+            if arguments[:2] == ["volume", "ls"]:
+                output = "volume\n"
+            elif arguments[:2] == ["volume", "inspect"]:
+                output = json.dumps([{"Labels": {"dev.codex.service-owner": "b" * 32}}])
+            return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+        owner.run.side_effect = run
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "retaining recovery metadata"):
+                sandbox_proxies.stop_state({"runtime": {"provider": "podman"}, "proxies": [proxy]})
+        self.assertFalse(any(call.args[0][:2] == ["volume", "rm"] for call in owner.run.call_args_list))
+
+    def test_adapter_identity_changes_when_owned_implementation_changes(self) -> None:
+        source = sandbox_proxies.MODULE_PATH.read_bytes() if hasattr(sandbox_proxies, "MODULE_PATH") else MODULE_PATH.read_bytes()
+        original = sandbox_proxies._command_proxy_adapter_bytes(source)
+        changed = source.replace(
+            b'proxy["lifecycle-state"] = "ready"',
+            b'proxy["lifecycle-state"] = "READY"', 1,
+        )
+        self.assertNotEqual(original, sandbox_proxies._command_proxy_adapter_bytes(changed))
+        outside = source.replace(b'"Generic sandbox proxy manifest', b'"Changed host coordination', 1)
+        self.assertEqual(original, sandbox_proxies._command_proxy_adapter_bytes(outside))
+
+    def test_managed_implementation_identity_rejects_command_mutation(self) -> None:
+        command = self.command()
+        image = "sha256:" + "1" * 64
+        resolved = sandbox_proxies._command_proxy_resolved(
+            "example", command, image, "none", 501, 20,
+        )
+        proxy = {
+            "name": "example", "container": "container", "volume": "volume", "image": image,
+            "service-owner": "a" * 32,
+            "implementation-identity": resolved.implementation_identity, "state-schema": 1,
+            "lifecycle-state": "ready",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "created", "container": "created", "forward": "absent"},
+        }
+        sandbox_proxies._validate_proxy_implementation(proxy, command)
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "implementation identity changed"):
+            sandbox_proxies._validate_proxy_implementation(proxy, {**command, "argv": ["changed"]})
+
+    def test_mixed_legacy_forwarding_remains_recoverable(self) -> None:
+        legacy = {
+            "name": "legacy", "container": "legacy-container", "volume": "legacy-volume",
+            "image": "sha256:" + "1" * 64, "volume-owner": "b" * 32,
+            "forwarding": {"owner": "b" * 32, "target": "/legacy/socket"},
+        }
+        owner = mock.Mock(provider="lima-docker")
+        owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        registry = sandbox_proxies._proxy_registry(owner, legacy)
+        self.assertFalse(registry.cleanup(0).remaining)
+        owner.stop_proxy_forward.assert_called_once_with(legacy["forwarding"])
+
+    def test_absent_auth_container_does_not_make_recovery_fail_forever(self) -> None:
+        managed = {
+            "name": "example", "container": "container", "volume": "volume",
+            "image": "sha256:" + "1" * 64, "service-owner": "a" * 32,
+            "implementation-identity": "sha256:" + "0" * 64, "state-schema": 1,
+            "lifecycle-state": "failed",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "absent", "container": "absent", "forward": "absent"},
+        }
+        owner = mock.Mock(provider="podman")
+        owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        state = {"runtime": {"provider": "podman"}, "proxies": [managed],
+                 "auth": {"container": "already-removed"}}
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner), \
+                mock.patch.object(sandbox_proxies, "_cleanup_proxy_service"):
+            sandbox_proxies.stop_state(state)
+        self.assertFalse(any(call.args[0][:1] == ["rm"] for call in owner.run.call_args_list))
+
+    def test_managed_recovery_rejects_changed_owner_before_cleanup(self) -> None:
+        proxy = {
+            "name": "example", "container": "container", "volume": "volume",
+            "image": "sha256:" + "1" * 64,
+            "service-owner": "a" * 32, "volume-owner": "b" * 32,
+            "implementation-identity": "sha256:" + "0" * 64, "state-schema": 1,
+            "lifecycle-state": "failed",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "created", "container": "created", "forward": "absent"},
+        }
+        with mock.patch.object(sandbox_proxies, "state_runtime") as runtime:
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "owner changed"):
+                sandbox_proxies.stop_state({"proxies": [proxy]})
+        runtime.assert_not_called()
+
+    def test_start_failure_cancels_and_joins_workers_before_cleanup(self) -> None:
+        args = SimpleNamespace(repo=str(self.repo), manifest=str(self.repo / "manifest"),
+                               state=str(self.repo / "state"))
+        manifest = {"commands": {"fast": {}, "slow": {}}}
+        released = threading.Event()
+        slow_started = threading.Event()
+        events = []
+
+        def start(*call_args, **kwargs):
+            name = call_args[-2]
+            if name == "fast":
+                self.assertTrue(slow_started.wait(2))
+                raise KeyboardInterrupt()
+            registry = sandbox_proxies.ResourceRegistry("a" * 32)
+            registry.register(sandbox_proxies.OwnedResource(
+                "volume:owned", "a" * 32,
+                lambda: sandbox_proxies.ResourcePresence.OWNED,
+                lambda: events.append("removed"),
+            ))
+            kwargs["handles"].append(
+                sandbox_proxies.CommandProxyHandle(mock.Mock(), registry, {"name": "slow"})
+            )
+            slow_started.set()
+            self.assertTrue(kwargs["cancelled"].wait(2))
+            events.append("joined")
+            released.set()
+            raise RuntimeError("cancelled")
+
+        with mock.patch.object(sandbox_proxies, "load_manifest_file", return_value=manifest), \
+                mock.patch.object(sandbox_proxies, "resolve_images", return_value={}), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "podman"}), \
+                mock.patch.object(sandbox_proxies, "repository_identity", return_value="repository"), \
+                mock.patch.object(sandbox_proxies, "start_one_proxy", side_effect=start), \
+                mock.patch.object(sandbox_proxies, "stop_state", side_effect=lambda state: events.append("cleanup")):
+            with self.assertRaises(KeyboardInterrupt):
+                sandbox_proxies.start_main(args)
+        self.assertTrue(released.is_set())
+        self.assertEqual(["joined", "removed"], events)
 
     def test_proxy_stop_ignores_empty_state_file(self) -> None:
         state = self.repo / "state"
