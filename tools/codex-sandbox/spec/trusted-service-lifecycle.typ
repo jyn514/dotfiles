@@ -287,7 +287,7 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
 + Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
 + Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
 + Completed: command proxies use supervised shared publication and host routing.
-+ Selected: migrate each Codex and Zulip trust domain to a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container plus minimal helper container and private socket volume; mount credentials only into the helper and remove the custom HTTP broker after acceptance passes.
++ Completed: each Codex and Zulip trust domain uses a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container, minimal helper container, and private socket volume; credentials mount only into the helper, and the custom authenticated HTTP brokers are removed.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
 + External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
 + Keep compatibility recovery for pre-schema-4 records until deployed stale records no longer need cleanup; active legacy records must never join.

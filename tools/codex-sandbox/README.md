@@ -39,7 +39,7 @@ retry is still pending in the read-only `/src/flower` checkout; until Flower imp
 early request can fail instead of waiting for the best-effort relay. Explicit R2 environment
 credentials bypass the relay, and unavailable relay credentials skip optional upload without
 failing CI.
-The lifecycle supervisor owns the per-launch Keychain listener, token, container, networks, startup worker, and owner-validated cleanup; R2 remains separate from the authenticated broker.
+The lifecycle supervisor owns the per-launch Keychain listener, token, container, networks, startup worker, and owner-validated cleanup; R2 remains separate from authenticated HTTP egress.
 The two relay networks are created concurrently. Startup joins both creation workers, fixes the relay address and per-launch token, installs peer authorization, and only then projects the capability. Cleanup first closes creation and request admission, joins prompt work, and removes only resources carrying this launch's owner identity. Relay failure remains warning-only and Flower skips optional upload.
 
 Run `python3 tools/codex-sandbox/tests/keychain_bridge_test.py` for socket and dummy-child tests, and `python3 tools/codex-sandbox/tests/keychain_launcher_test.py` for launcher tests.
@@ -163,7 +163,7 @@ Each sandbox has one gateway for the host editor and, when configured, Agent Pod
 It starts in the background after its private link and egress networks are created.
 Pi reaches its fixed editor and SSH ports by container DNS name. Their clients retry only
 connection establishment within a bounded interval and never replay a possibly accepted request.
-The separately supervised Zulip and Codex brokers and repository-command proxies must be ready
+The separately supervised Zulip and Codex Caddy/helper services and repository-command proxies must be ready
 before publication.
 
 Shared proxy identity checks run two at a time during attach and publication.
@@ -239,7 +239,7 @@ Do not remove unrelated sessions to manufacture a cold run.
 - Networking blocks private and special-use IPv4 ranges.
   A manifest must explicitly enable network access for a proxy.
 - The Codex sidecar keeps reusable OAuth tokens outside the agent, but the agent can submit model requests, disclose their contents, consume quota, and incur charges.
-- Zulip credentials are mounted only into its proxy.
+- Codex and Zulip credentials are mounted only into their respective profile-helper containers; Caddy and the agent receive no credential mount.
   Agent Podman, when configured, is exposed through a separate SSH relay rather than the outer daemon.
 - On native Linux, dropped capabilities and `no-new-privileges` disable effective sudo elevation.
   A Podman Machine preserves container sudo without weakening host isolation.
