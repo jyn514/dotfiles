@@ -145,12 +145,30 @@ fn jj_command() -> Command {
     command
 }
 
+fn agent_jj_command(user: &str, email: &str) -> Command {
+    let mut command = jj_command();
+    // The trusted file contains the human identity used when returning control.
+    // Agent attribution must therefore override it at the same CLI precedence.
+    command
+        .arg("--config")
+        .arg(format!("user.name={user}"))
+        .arg("--config")
+        .arg(format!("user.email={email}"));
+    command
+}
+
 fn author_update_required(request: &Request) -> bool {
     request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
         || matches!(request.argv.first().map(String::as_str), Some("commit" | "split"))
 }
 
-fn author_update_command() -> Command {
+fn author_update_command(user: &str, email: &str) -> Command {
+    let mut command = agent_jj_command(user, email);
+    command.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
+    command
+}
+
+fn reset_author_command() -> Command {
     let mut command = jj_command();
     command.args(["metaedit", "--update-author", "-r", "@", "--quiet"]);
     command
@@ -247,7 +265,7 @@ fn execute(
     let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
 
     if author_update_required(request) {
-        let mut update = author_update_command();
+        let mut update = author_update_command(user, email);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         // Match the local wrapper's best-effort update: failure must not block the
@@ -256,7 +274,7 @@ fn execute(
         let _ = update.status();
     }
 
-    let mut command = jj_command();
+    let mut command = agent_jj_command(user, email);
     if let Some(split) = &request.agent_split {
         command.args([
             "split", "--tool", "agent-split", "-m", split.message.as_str(),
@@ -302,7 +320,7 @@ fn execute(
         return failure("output limit exceeded".into());
     }
     if status == 0 {
-        let mut reset = author_update_command();
+        let mut reset = reset_author_command();
         reset.env_clear().envs(trusted_environment(temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
         // A successful agent command may create or snapshot a new working-copy
@@ -446,6 +464,18 @@ mod tests {
     }
 
     #[test]
+    fn agent_command_overrides_the_trusted_human_identity() {
+        let command = agent_jj_command("Pi gpt-test", "pi@example.test");
+        let args: Vec<_> = command.get_args().collect();
+        assert!(args.windows(2).any(|args| {
+            args[0] == "--config" && args[1] == "user.name=Pi gpt-test"
+        }));
+        assert!(args.windows(2).any(|args| {
+            args[0] == "--config" && args[1] == "user.email=pi@example.test"
+        }));
+    }
+
+    #[test]
     fn trusted_config_preserves_the_effective_security_settings() {
         let config = include_str!("../jj.toml");
         for setting in [
@@ -509,7 +539,7 @@ mod tests {
         )));
         assert!(!author_update_required(&request(&["status"], None)));
 
-        let command = author_update_command();
+        let command = author_update_command("agent", "agent@example.test");
         let args: Vec<_> = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())

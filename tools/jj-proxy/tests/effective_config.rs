@@ -95,3 +95,81 @@ behavior = "own"
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn command_line_agent_identity_stamps_the_commit_then_resets_to_the_human() {
+    let Some(jj) = real_jj() else {
+        eprintln!("skipping effective config test: set JJ_PROXY_TEST_JJ to a real jj binary");
+        return;
+    };
+    let root = std::env::temp_dir().join(format!(
+        "jj-proxy-identity-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test"),
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let repo = root.join("repo");
+    let trusted_config = root.join("trusted-jj.toml");
+    fs::write(&trusted_config, TRUSTED_CONFIG).unwrap();
+
+    success(run(&jj, &root, &["git", "init", repo.to_str().unwrap()]));
+    fs::write(repo.join("file"), "change\n").unwrap();
+    let agent_config = [
+        "--config-file", trusted_config.to_str().unwrap(),
+        "--repository", repo.to_str().unwrap(),
+        "--config", "user.name=Pi gpt-test",
+        "--config", "user.email=pi@example.test",
+    ];
+    success(run(
+        &jj,
+        &root,
+        &[
+            &agent_config[..],
+            &["metaedit", "--update-author", "-r", "@", "--quiet"],
+        ].concat(),
+    ));
+    success(run(
+        &jj,
+        &root,
+        &[&agent_config[..], &["commit", "-m", "test"]].concat(),
+    ));
+
+    let committed_identity = success(run(
+        &jj,
+        &root,
+        &[
+            "--config-file", trusted_config.to_str().unwrap(),
+            "--repository", repo.to_str().unwrap(),
+            "log", "-r", "@-", "--no-graph", "-T",
+            r#"author.name() ++ "|" ++ author.email() ++ "|" ++ committer.name() ++ "|" ++ committer.email()"#,
+        ],
+    ));
+    assert_eq!(
+        "Pi gpt-test|pi@example.test|Pi gpt-test|pi@example.test",
+        committed_identity.trim(),
+    );
+
+    success(run(
+        &jj,
+        &root,
+        &[
+            "--config-file", trusted_config.to_str().unwrap(),
+            "--repository", repo.to_str().unwrap(),
+            "metaedit", "--update-author", "-r", "@", "--quiet",
+        ],
+    ));
+    let working_copy_author = success(run(
+        &jj,
+        &root,
+        &[
+            "--config-file", trusted_config.to_str().unwrap(),
+            "--repository", repo.to_str().unwrap(),
+            "log", "-r", "@", "--no-graph", "-T",
+            r#"author.name() ++ "|" ++ author.email()"#,
+        ],
+    ));
+    assert_eq!("jyn|github@jyn.dev", working_copy_author.trim());
+
+    fs::remove_dir_all(root).unwrap();
+}
