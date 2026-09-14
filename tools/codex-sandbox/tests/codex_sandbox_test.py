@@ -1183,18 +1183,35 @@ class CodexSandboxTest(unittest.TestCase):
                 ).read_text(encoding="utf-8")),
                 json.loads(staged.read_text(encoding="utf-8")),
             )
+            models = state.skills_tmp / "config/models"
+            source = launcher["installed_config_source"](
+                "$HOME/.pi/agent/pi-codex-subagents/agents"
+            )
+            self.assertTrue(models.is_dir())
+            self.assertEqual(
+                (source / "luna.md").read_text(encoding="utf-8"),
+                (models / "luna.md").read_text(encoding="utf-8"),
+            )
         finally:
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
         result = self.run_launcher()
         self.assertEqual(0, result.returncode, result.stderr)
+        run = self.final_run()
         self.assertTrue(any(
             item.endswith(
                 "/config/subagents,dst=/home/codex/.pi/agent/"
                 "pi-codex-subagents/config.json,readonly"
             )
-            for item in self.final_run()
+            for item in run
+        ))
+        self.assertTrue(any(
+            item.endswith(
+                "/config/models,dst=/home/codex/.pi/agent/"
+                "pi-codex-subagents/agents,readonly"
+            )
+            for item in run
         ))
 
     def test_launch_initializes_a_missing_jj_repository(self) -> None:

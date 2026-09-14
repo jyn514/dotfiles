@@ -55,6 +55,10 @@ STAGED_CONFIG = {
     "settings": ("$HOME/.pi/agent/settings.json", "/home/codex/.pi/agent/settings.json"),
     "mcp": ("$HOME/.pi/agent/mcp.json", "/home/codex/.pi/agent/mcp.json"),
     "keybindings": ("$HOME/.pi/agent/keybindings.json", "/home/codex/.pi/agent/keybindings.json"),
+    "models": (
+        "$HOME/.pi/agent/pi-codex-subagents/agents",
+        "/home/codex/.pi/agent/pi-codex-subagents/agents",
+    ),
     "subagents": (
         "$HOME/.pi/agent/pi-codex-subagents/config.json",
         "/home/codex/.pi/agent/pi-codex-subagents/config.json",
@@ -786,6 +790,13 @@ def staged_config_path(state: State, role: str) -> Path:
     return state.skills_tmp / "config" / role
 
 
+def stage_config_source(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination)
+    else:
+        shutil.copy2(source, destination)
+
+
 def stage_skills(state: State) -> None:
     state.skills_tmp = Path(tempfile.mkdtemp(dir=scratch_directory()))
     source = state.home / ".agents/skills"
@@ -798,7 +809,7 @@ def stage_skills(state: State) -> None:
     config = state.skills_tmp / "config"
     config.mkdir()
     for role, (target, _) in STAGED_CONFIG.items():
-        shutil.copy2(installed_config_source(target), staged_config_path(state, role))
+        stage_config_source(installed_config_source(target), staged_config_path(state, role))
     settings_path = staged_config_path(state, "settings")
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     settings["externalEditor"] = "/opt/agent-tools/bin/host-editor"
