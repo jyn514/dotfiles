@@ -1,8 +1,9 @@
 = Trusted-service lifecycle
 
-*Status:* Implemented for command proxies, isolated Codex and Zulip broker
-instances, per-launch gateway and R2 relay resource ownership, schema 4 atomic
-publication and joins, worker cancellation/joining, and owner-validated recovery.
+*Status:* Implemented for command proxies, per-launch gateway and R2 relay
+resource ownership, schema 4 atomic publication and joins, worker
+cancellation/joining, and owner-validated recovery. Caddy 2.11.4 plus private
+profile-helper containers is the selected Codex and Zulip authenticated-egress architecture.
 The remaining acceptance gap is Flower's bounded R2 connection-establishment
 retry, blocked because `/src/flower` is read-only in this checkout. Until that
 external client change lands, an early R2 request may fail rather than wait for
@@ -10,7 +11,7 @@ the best-effort relay; no possibly accepted request is replayed.
 
 == Objective
 
-Give command proxies, authenticated egress broker instances, and host capability relays one lifecycle contract without merging their authority models or application protocols.
+Give command proxies, Caddy authenticated-egress instances, and host capability relays one lifecycle contract without merging their authority models or application protocols.
 The lifecycle owner should remove duplicated container startup, identity validation, readiness, publication, join, cancellation, and cleanup code.
 It must not turn trusted services into interchangeable endpoints or grant one service another family's mounts, credentials, network, or fallback behavior.
 
@@ -19,12 +20,12 @@ It must not turn trusted services into interchangeable endpoints or grant one se
 The lifecycle supports three families:
 
 / Command proxy: Performs a bounded local operation with authority unavailable to the agent. Examples are Jujutsu and `bug`. It normally owns a session socket and protected repository mounts, and has no network unless its fixed command policy requires one.
-/ Authenticated egress broker: Performs bounded requests to fixed upstream services without exposing reusable credentials. Codex and Zulip use separate credential-domain instances of the shared broker component.
+/ Caddy authenticated egress: Uses an unmodified, digest-pinned Docker Official Image Caddy container for fixed reverse proxying and a separate private profile-helper container for session admission and credential headers. Each Codex and Zulip trust domain has its own pair and private socket volume; credentials mount only into its helper.
 / Host capability relay: Connects an agent to an explicitly selected host capability whose protocol and authority remain outside the repository-command and authenticated-HTTP models. Examples are host editing, Agent Podman, and the current Flower R2 Keychain relay.
 
 A service belongs to exactly one family for one lifetime.
 Sharing process machinery, images, or lifecycle code does not permit sharing authority between families.
-R2 remains a host capability relay until a reviewed authenticated-egress profile can sign requests without disclosing credentials and preserve per-request consent.
+R2 remains a host capability relay until a separately reviewed signer can sign requests without disclosing credentials and preserve per-request consent.
 
 == Ownership boundaries
 
@@ -92,7 +93,7 @@ The lifecycle-state schema is a separate explicit integer changed only when pers
 
 Shared-session metadata records the complete accepted shared-service set and enough identity to validate each service and endpoint on join.
 The complete record is atomically published as one owner-validated host runtime file with mode `0600`.
-It may contain broker session tokens, which are passed only to their service and validated joining agents; it contains no reusable upstream credentials, application request fields, or mutable refresh state.
+It may contain authenticated-egress session tokens, which are passed only to their service and validated joining agents; it contains no reusable upstream credentials, application request fields, or mutable refresh state.
 All agents attached to the accepted shared session receive the same route authority, so per-attachment token issuance and revocation add no useful isolation.
 Final-holder cleanup removes the record after stopping the shared services; each token is useless upstream and expires when its service stops.
 Per-launch services are not published as shared state and cannot be inherited by another launcher.
@@ -100,7 +101,7 @@ Per-launch services are not published as shared state and cannot be inherited by
 == Scope and availability
 
 `shared-session` services are created once for one repository session and reused by all attached agents.
-Command proxies and authenticated egress broker instances normally use this scope.
+Command proxies and Caddy authenticated-egress instances normally use this scope.
 The first launcher owns publication; the final attached launcher owns cleanup.
 
 `agent-launch` services belong to one launcher and one agent attachment.
@@ -138,7 +139,7 @@ Recovery may leave `cleanup-failed` only after exclusive ownership validation.
 / `resolved`: Required immutable images and image-bound parameters are verified, and the concrete implementation identity is fixed; no service resource exists.
 / `preparing`: The supervisor creates runtime-owned networks, volumes, forwards, temporary files, and credential mounts. Every successful creation is registered immediately for reverse-order cleanup.
 / `starting`: The service process or container exists but no endpoint is usable by the agent or host router.
-/ `ready`: All declared endpoints passed their service-adapter probe. Shared authenticated services have their session token installed and reject unauthenticated requests; required per-launch relays have installed their token, peer allowlist, or equivalent admission. Credential readiness validates only local source identity, permissions, structure, and mount availability; it performs no upstream request, OAuth refresh, or persistent credential write.
+/ `ready`: All declared endpoints passed their service-adapter probe. Shared authenticated services have their session token installed and reject unauthenticated requests; required per-launch relays have installed their token, peer allowlist, or equivalent admission. For Caddy authenticated egress, a dedicated local Caddy route performs a bodyless helper admission check and returns locally without an upstream handler. Readiness validates both container identities, their private socket-volume attachment, and local credential structure/readability; it performs no upstream request, OAuth refresh, or persistent credential write.
 / `published`: One atomic shared-session record exposes the complete ready shared-service set. Individual shared services are never published incrementally.
 / `attached`: A per-launch service has been projected into one agent's mounts or environment. Required services enter only from `ready`; best-effort services may enter from `starting` after their endpoint identity and authorization boundary exist.
 / `stopping`: New attachment and routing are disabled; the service adapter may perform one bounded protocol-specific graceful shutdown, then the runtime forcibly terminates remaining owned processes.
@@ -207,7 +208,7 @@ Per-launch failure follows the service's installed availability rule and never m
 The supervisor publishes endpoints by role, not by caller-selected addresses.
 An endpoint record identifies its transport kind, runtime-owned socket volume or private network attachment, expected service identity, implementation identity, and state schema.
 Reusable upstream secrets remain only with credential profiles.
-Broker session tokens live in the owner-validated accepted-session record and are passed only to accepted services and agents.
+Authenticated-egress session tokens live in the owner-validated accepted-session record and are passed only to accepted services and agents.
 
 Agent mounts and environment variables are derived only after accepted-record validation.
 A required per-launch service is projected after readiness; a best-effort service is projected once its endpoint identity and authorization boundary exist, even while listener startup continues.
@@ -258,11 +259,11 @@ Command proxies retain their fixed executable, argument grammar, repository iden
 The lifecycle may create their containers and sockets but cannot generalize their protocols into arbitrary command execution.
 Jujutsu's writable metadata filesystem identity remains an adapter-specific requirement.
 
-=== Authenticated egress brokers
+=== Caddy authenticated egress
 
-Each credential trust domain receives a separate broker instance, session token, credential mount, network pair, limits, and failure state.
-The lifecycle shares image and orchestration machinery, not credentials or process address spaces.
-HTTP route and typed-adapter behavior remains authoritative in #link("proxy-design.typ")[the authenticated egress broker specification].
+The architecture selected on 2026-09-14 admits only Docker Official Image `caddy:2.11.4`, resolved and pulled by recorded OCI index and exact platform-manifest digests. Each credential trust domain receives a separate unmodified Caddy container, minimal helper container, private Unix-socket volume, session token, networks, limits, and failure state. Credentials and refresh state mount only into the helper.
+The lifecycle records, publishes, joins, stops, and recovers both container identities and their socket volume. It verifies the OCI index digest -> platform-manifest digest -> image-configuration digest -> runtime container image ID chain and platform tuple against runtime inspection. The generated mounted Caddy configuration has an independent digest; service implementation identity binds that digest to the image chain. Codex and Zulip do not share containers, credentials, sockets, networks, or trust domains; the Zulip typed adapter remains separately identified.
+Caddy owns HTTP parsing, hop-by-hop handling, TLS, DNS dialing, fixed reverse proxying, streaming, method/path matching, the 64 KiB header and Codex 32 MiB body bounds, 10-second header read, 300-second body read, 10-second application-upstream dial, and 60-second application response-header wait. Helper transport has a separate 10-second Unix dial and 30-second response-header timeout. After admission, helper credential read/refresh work uses one internal 30-second monotonic deadline; there is no combined complete-helper-exchange guarantee. The precheck receives bounded metadata and no body, performs constant-time exact bearer-token admission, and returns only the profile's exact nonempty auth/account headers. Expanded Caddy response matching gates proxying on both `2xx` and those required headers. There is no exact response-byte or total-duration cap; consumer protocol completion determines success, while Caddy timeouts and container resources provide coarser bounds. The Codex helper's separately restricted, lifecycle-owned refresh network permits only installed `auth.openai.com` CIDRs and fixed helper HTTPS `POST /oauth/token`; it is not an agent link, cannot reach the application upstream, and is recorded for recovery. The Zulip helper has no egress. HTTP route, header, network, readiness, streaming, and typed-adapter behavior remains authoritative in #link("proxy-design.typ")[the Caddy authenticated-egress specification].
 
 === Host capability relays
 
@@ -286,7 +287,7 @@ Failure after attachment leaves the projected endpoint unavailable until bounded
 + Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
 + Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
 + Completed: command proxies use supervised shared publication and host routing.
-+ Completed: Codex and Zulip use separate authenticated-egress broker instances.
++ Selected: migrate each Codex and Zulip trust domain to a separately recorded unmodified Docker Official Image Caddy 2.11.4 container plus minimal helper container and private socket volume; mount credentials only into the helper and remove the custom HTTP broker after acceptance passes.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
 + External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
 + Keep compatibility recovery for pre-schema-4 records until deployed stale records no longer need cleanup; active legacy records must never join.
@@ -299,7 +300,7 @@ Do not retain a service-specific cleanup path beside generic cleanup as a fallba
 - Planning fixes authority and service-adapter identity before image resolution; verified images finalize implementation identity before resource creation.
 - Every created resource is registered once under a fresh owner before another worker can fail or cleanup can begin.
 - Independent service starts remain concurrent; shared publication and required attachment wait for readiness, while best-effort attachment waits only for endpoint identity and authorization.
-- One atomic mode-`0600` accepted-session record publishes the complete required shared-service set and broker session tokens; joins never observe partial state.
+- One atomic mode-`0600` accepted-session record publishes the complete required shared-service set and authenticated-egress session tokens; joins never observe partial state.
 - Joins load no current repository policy or images and reject missing, unavailable, mismatched, or unauthorized required services without disturbing holders.
 - Post-publication service loss requires no mutable health record: requests fail naturally, joins reject through live validation, and final-holder cleanup removes the recorded service.
 - Best-effort clients retry only connection establishment or explicit not-ready results within a bound; they never replay a possibly accepted request.
@@ -308,7 +309,12 @@ Do not retain a service-specific cleanup path beside generic cleanup as a fallba
 - Required per-launch failure prevents agent startup; best-effort failure leaves its projected endpoint unavailable, reports failure after bounded retries, and completes owned cleanup without terminating the agent.
 - Agent root cannot use lifecycle metadata to select another endpoint, credential domain, repository, executable, mount, or runtime operation.
 - Host routing validates published service and endpoint identity and never falls back to privileged local execution while a session is active.
-- Codex and Zulip share broker implementation but not containers, credentials, tokens, networks, mutable state, or failure domains.
+- Codex and Zulip share the Docker Official Image Caddy 2.11.4 dependency and lifecycle pattern but not Caddy/helper containers, socket volumes, credentials, tokens, networks, mutable state, or failure domains.
+- Join and startup verify the OCI index, platform-manifest, image-configuration, and runtime container image chain plus platform tuple; implementation identity separately binds the mounted Caddy configuration digest.
+- Caddy, helper, and private socket-volume identities are lifecycle-owned; credentials mount only into the helper, and the removed custom HTTP parser, DNS parser, header/framing engine, and response-byte limiter are not retained as fallback resources.
+- Local readiness traverses Caddy to the helper without upstream traffic, refresh, or persistent writes.
+- Lifecycle and recovery records own the Codex helper's restricted refresh network and attachment; it cannot reach the application upstream, and the Zulip helper has no egress.
+- No lifecycle check assumes an exact response-byte or total-duration cap; protocol-specific consumers reject a response until their completion test passes.
 - Jujutsu retains its repository-specific grammar, writable metadata identity, and Landlock boundary.
 - R2 retains per-use consent and dedicated relay semantics until a separately reviewed signing profile replaces them.
 - Cancellation joins startup workers before cleanup and leaves no creator racing a remover.

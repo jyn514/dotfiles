@@ -1,9 +1,10 @@
 = Sandbox command proxies
 
 *Status:* Proxy isolation, transports, capability selection, image resolution,
-request-failure isolation, and separate Codex and Zulip instances of the generic
-authenticated-egress broker are implemented. Manifest examples below describe
-the temporary version 1 wire format.
+and request-failure isolation are implemented. Caddy 2.11.4 with private profile
+helpers is the selected authenticated-egress architecture; Codex and Zulip remain
+separate trust-domain instances. Manifest examples below describe the temporary
+version 1 wire format.
 
 == Objective
 
@@ -19,7 +20,7 @@ The first additional capability is `bug`, which runs Flower's git-bug bridge wit
 The design also supports future fixed commands that need authority unavailable inside the agent container.
 
 This design does not make arbitrary repository commands safe, grant the agent Docker access, or infer trust from a read-only mount.
-It also keeps reusable service credentials outside the agent while granting bounded HTTP request authority through launcher-owned instances of one authenticated egress broker component.
+It also keeps reusable service credentials outside the agent while granting bounded HTTP request authority through launcher-owned Caddy instances with private credential-profile helpers.
 Jujutsu retains `jj-proxy`'s command-specific argument policy while using the generic manifest lifecycle.
 
 == Trust model
@@ -99,7 +100,7 @@ outer container-engine daemon
 
 The proxy containers receive no outer daemon socket.
 The agent may receive a separate, isolated inner container service, but that service cannot replace the outer launcher's mounts or proxy containers.
-Each authenticated egress broker instance described below is a launcher-owned sibling container rather than a manifest command because it carries user authority independent of the repository.
+Each authenticated egress service instance described below is launcher-owned sibling infrastructure rather than a manifest command because it carries user authority independent of the repository.
 
 Each proxy image is read-only, non-root, capability-free, and uses `no-new-privileges`.
 The launcher supplies explicit container-level PID, memory, CPU, filesystem, and file-descriptor limits.
@@ -248,12 +249,12 @@ Before discovering or starting proxies, the launcher acquires an exclusive host-
 If a live shared session exists, the launcher validates its recorded state and attaches using the accepted configuration, image set, and socket volumes as specified by the launcher interface. It does not compare against current repository declarations. Per-launch relays retain separate resources and tokens under the accepted opt-ins and current host authorization.
 Otherwise it starts and publishes one shared proxy set before releasing the coordination lock.
 It never deletes or replaces the lock file.
-After required repository-command proxies and broker adapters become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, accepted route set, and every command-proxy and broker-instance container identity, immutable image reference, socket or network endpoint, and credential-domain identity.
+After required repository-command proxies and Caddy services and typed adapters become ready, the launcher atomically publishes session metadata containing the repository identity, recorded runtime owner, accepted route set, and every command-proxy and authenticated-egress container identity, immutable image reference, socket or network endpoint, and credential-domain identity.
 Lima ownership includes the VM generation, namespace, hardware identity, and network-policy digest; legacy metadata belongs to Podman.
 A join validates each recorded container, image, endpoint, network attachment, and required readiness state before attaching; it neither restarts one missing instance nor substitutes current policy.
-The owner-validated mode-`0600` metadata contains broker session tokens needed by validated joiners, but no command-specific request fields, reusable upstream credentials, or refresh state.
+The owner-validated mode-`0600` metadata contains authenticated-egress session tokens needed by validated joiners, but no command-specific request fields, reusable upstream credentials, or refresh state.
 
-A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed broker adapter.
+A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
 The router chooses one path:
 
@@ -275,9 +276,9 @@ The request and response remain on standard input and output.
 Every proxy image contains that launcher-owned client at one conventional absolute path.
 Podman and Lima-containerd send the framed request to that client's standard input; it connects to the in-VM Unix socket and copies the response without interpreting either message.
 Lima-Docker connects directly through a session-owned Unix-socket forward on Lima's existing SSH master. Its host transport copies request bytes, shuts down the write side at input EOF, and copies response bytes until EOF. Command-specific shims and servers own framing, size limits, deadlines, and application status; the transport does not parse messages. A zero transport status reports stream completion, not command success or a valid response; callers must reject missing or malformed response frames. SSH may deliver EOF where a container client reported a remote socket reset.
-The router resolves the accepted command-proxy or broker-adapter endpoint from published metadata, then validates its launcher-owned session labels, native image identity, credential-domain identity where applicable, and repository identity before opening the transport.
+The router resolves the accepted command-proxy or typed-adapter endpoint from published metadata, then validates its launcher-owned session labels, native image identity, credential-domain identity where applicable, and repository identity before opening the transport.
 It never executes a manifest- or caller-selected command or connects to a caller-selected endpoint through the outer runtime.
-Only the trusted host router receives outer-daemon access; neither the agent nor a proxy or broker container receives it.
+Only the trusted host router receives outer-daemon access; neither the agent nor a proxy or authenticated-egress container receives it.
 Failure of outer-runtime execution, the immutable client, or the proxy connection is a proxy error and never causes local fallback.
 
 For Lima-Docker, each proxy's recovery state records its volume owner and guest socket target before registration. A private short guest alias avoids Unix-socket path limits; a private host listener is registered with OpenSSH's `-O forward`. Both live as long as the cached proxy, including intervals without an attached agent. Requests own only their connections: terminating a router closes its connection without stopping the SSH master or other requests. This does not promise cancellation of work the server already accepted.
@@ -287,7 +288,7 @@ The host kernel releases a launcher's shared session lock when it exits or is ki
 On exit, a launcher briefly reacquires the coordination lock and attempts an exclusive session lock.
 Success proves it was the final holder, so it removes the shared proxies and metadata; failure leaves them available to the remaining sessions.
 After a crash or reboot, successful exclusive session-lock acquisition proves that any remaining metadata is stale and safe to clean before local execution or replacement.
-If a command proxy or authenticated egress broker becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and join-time validation rejects an unavailable shared service. Recovery requires attached agents to exit before shared services restart.
+If a command proxy or Caddy authenticated-egress instance becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and join-time validation rejects an unavailable shared service. Recovery requires attached agents to exit before shared services restart.
 
 Any number of launchers may share one checkout's proxy set.
 Linked worktrees retain distinct repository identities and proxy sets.
@@ -304,137 +305,119 @@ For an interpreted repository tool, the immutable image carries the trusted star
 The launcher starts a proxy with its manifest `argv` as the fixed operation.
 It does not expose a general-purpose shell, `docker exec`, alternate entrypoint, or arbitrary command API to the agent.
 
-== Generic authenticated egress broker <authenticated-egress-broker>
+== Caddy authenticated egress <authenticated-egress-broker>
 
-=== Purpose and boundary
+*Decision date:* 2026-09-14.
 
-Replace duplicated authenticated-HTTP implementations with one broker component, instantiated once per credential trust domain.
-Each instance owns one credential profile, its fixed upstream identities, authorization transformation, request limits, and authenticated-egress logs.
-The launcher owns route selection, secret-source admission, session tokens, networks, instances, and lifecycle.
-The agent owns only the application request accepted by a route adapter; it never supplies an upstream URL or receives the reusable credential.
+=== Selected topology and boundary
 
-The first concrete users are Codex model requests and Zulip transcript reads.
-Both need fixed-origin HTTPS, hidden reusable credentials, bounded transport, and fail-closed lifecycle behavior, but they do not share application authority: Codex forwards a narrow HTTP surface, while Zulip accepts a typed read-only operation and owns pagination and rate limiting.
-They therefore share broker machinery and image construction but run in separate instances with disjoint credential mounts, networks, tokens, mutable state, and failure domains.
-Combining unrelated credentials in one process is rejected because compromise through either protocol would expose both.
-Flower R2 is a later user only if a separate broker profile implements reviewed AWS Signature Version 4 signing while preserving per-request Keychain consent; generic header injection does not satisfy that boundary.
-Host editing, Agent Podman, repository commands, and arbitrary public internet access remain outside this broker.
+Each credential trust domain uses two launcher-owned containers: an unmodified, digest-pinned Caddy 2.11.4 container and a minimal profile-helper container. They share only a private Unix-socket volume. The helper binds its socket there; it has no agent-facing listener. Only the helper receives the credential mount and any mutable refresh state. Caddy receives no credential files. Codex and Zulip have separate Caddy/helper pairs, networks, socket volumes, session tokens, mutable state, lifecycle identities, and failure domains. The Zulip typed adapter remains a further separate application-boundary container in the Zulip trust domain.
 
-=== Route authority
+Caddy owns HTTP parsing and framing, standard hop-by-hop handling, TLS verification, DNS dialing, fixed reverse proxying, streaming, method/path matching, request-size enforcement, request-header limits, and configured transport/server timeouts. It is not a forward proxy and never accepts a caller-selected origin. The helper owns session-token admission, credential read/refresh, and generation of trusted authentication and account headers; it does not proxy HTTP application bodies.
 
-The broker starts from a normalized set of immutable routes accepted at shared-session creation.
-A route has:
+For every application request, Caddy performs the normative helper exchange below. It never forwards the application body to the helper.
 
-- a stable launcher-owned route name, selected capability, and broker instance
-- one fixed `https` origin, including host and port
-- one installed application adapter: `http`, `zulip-read`, or another reviewed type
-- adapter-specific methods, paths, query construction, completion rules, and request and response schemas
-- request-body, response-body, header, duration, redirect, and concurrency limits
-- one launcher-owned authentication profile or explicit `none`
-- a response policy for headers exposed to the agent
+#table(
+  columns: (1.2fr, 2.8fr),
+  [*Field*], [*Normative contract*],
+  [Transport], [HTTP over the private Unix socket; the helper has no TCP listener.],
+  [Request], [`GET /admit`; no request body.],
+  [Admission], [The original client `Authorization` value carries `Bearer <session-token>`. Its total value is at most 4096 bytes. The helper performs a constant-time exact comparison with the instance token.],
+  [Metadata], [Caddy supplies original method and URI metadata through fixed precheck headers. Caddy's complete request-header bound is 64 KiB; the helper applies matching bounded reads, uses metadata only for admission context, and ignores and logs neither metadata value.],
+  [Codex success], [`204` with exactly `Authorization: Bearer <access-token>` and `Chatgpt-Account-Id: <account-id>` as custom response headers. Both values must be nonempty.],
+  [Zulip success], [`204` with exactly `Authorization: Basic <value>` as a custom response header. The value must be nonempty.],
+  [Wrong token], [`401`, `Content-Length: 0`, no body, and no custom response headers.],
+  [Credential failure], [`503` for credential read, validation, or refresh failure, with `Content-Length: 0`, no body, and no custom response headers.],
+  [Transport deadlines], [Caddy applies a 10-second Unix-socket dial timeout and, separately, a 30-second helper response-header timeout. Either failure is handled as local `503`.],
+  [Credential deadline], [After successful admission, the helper uses one 30-second monotonic deadline for all credential reading, validation, and any refresh work. This is an internal work bound, not a combined complete-exchange guarantee.],
+)
 
-Repository configuration may select an installed route through a capability.
-It may declare credential-free project routes because the repository is already trusted startup policy, but it cannot name a host credential source, request an installed authentication profile, replace an installed route, or turn an unauthenticated route into an authenticated one.
-Installed authentication profiles bind route names to credential owners outside repository-controlled configuration.
-The loader rejects duplicate routes, unknown fields, user-info in origins, non-HTTPS authenticated origins, IP literals unless explicitly installed, wildcard hosts, path traversal, overlapping ambiguous prefixes, unbounded limits, and authentication references outside the installed namespace.
-Accepted routes and their source provenance enter shared-session metadata; joins use that accepted set without reloading configuration.
+The Caddy configuration expands the authentication precheck rather than relying on `forward_auth` shorthand alone. A response matcher permits proxying only when the helper returned `2xx` *and* every profile-required header is present and nonempty. Caddy then replaces the stripped client fields with those helper values. Any other helper response, malformed success, timeout, or socket failure becomes a fixed local bodyless `401` or `503` with `Content-Length: 0`, no helper/custom headers, and no upstream application request. In particular, Caddy never begins sending the application body until this gate succeeds.
 
-=== Agent protocols and adapters
+Flower R2 is excluded. AWS Signature Version 4 binds request material and must preserve per-use Keychain consent. R2 remains its dedicated per-launch relay until a separately reviewed signer preserves those semantics without disclosing credentials.
 
-Each broker instance publishes only the transports required by its installed adapters.
-An HTTP adapter listens on its private session network at a route base URL such as:
+=== Fixed routes
 
-```text
-http://codex-egress:8787/v1/routes/codex/<relative-path>
-```
+The Codex Caddy configuration fixes upstream host `chatgpt.com`, method `POST`, downstream path `/codex/responses`, upstream path `/backend-api/codex/responses`, and an empty query. A matcher rejects every query, any other method or path, and non-origin-form targets. A final catch-all returns an error locally and cannot invoke `reverse_proxy`. Pi receives only this listener URL and its compatibility placeholder key.
 
-The launcher creates one random bearer token for the broker instance, stores it in that session's atomically published owner-validated `0600` accepted-session record, and gives accepted agents that token and route base URL.
-The token expires when the instance stops, authorizes only its accepted routes, and is useless upstream.
-Socket or network possession without it is insufficient.
-The broker validates the token and route on every request.
+The Zulip typed adapter remains the only agent/host application interface. It accepts transcript and topic-list framed operations, constructs requests, paginates, serializes access, enforces two-second pacing, honors bounded `429 Retry-After`, validates complete responses, and emits the existing schemas. It calls its local Caddy at only two finite route families on the one launcher-admitted Zulip host:
 
-The HTTP adapter rejects `CONNECT`, absolute- and authority-form targets, fragments, encoded separators, dot segments, malformed critical headers, and paths outside its prefixes after one percent-decoding and normalization pass.
-Queries are rejected unless the adapter declares a query schema; that schema bounds encoded size, names allowed keys, defines duplicate-key and blank-value behavior, and validates values before constructing the upstream query.
-The adapter constructs the upstream URL from its fixed origin, validated path, and validated query, resolves DNS itself, and never follows redirects.
-An upstream redirect is returned only when response policy permits `Location`; it is never converted into another broker request.
+- `GET /api/v1/messages` with the adapter-constructed bounded query
+- `GET /api/v1/users/me/<numeric-user-id>/topics` with the adapter-constructed bounded query
 
-The HTTP adapter removes hop-by-hop headers, client `Authorization`, `Proxy-Authorization`, `Forwarded`, `Via`, `X-Forwarded-*`, `Host`, and every authentication-reserved header.
-It sets upstream authority and transport, applies authentication, and streams the body without translating the application protocol.
-The route enumerates surviving client-controlled headers; all others are rejected.
-Response policy similarly allowlists headers and removes upstream authentication challenges, cookies unless required, forwarding metadata, and internal diagnostics.
+Caddy has explicit matchers for those families and a non-proxying catch-all. The agent never receives a general Zulip HTTP endpoint. Host routing continues through the typed adapter, and the sandbox client never falls back locally.
 
-A typed adapter instead retains its existing bounded framed protocol over a session socket.
-The Zulip adapter accepts only transcript and topic-list operations, constructs fixed API paths and queries, serializes access, enforces the existing two-second spacing, honors bounded `429 Retry-After`, paginates, validates responses, and emits the existing response schema.
-It does not expose a general Zulip HTTP prefix.
-Its socket remains reachable through #link(<host-coordination>)[host coordination], so a host `zulip` command uses the active instance and otherwise performs the same typed operation locally.
-The sandbox client never falls back locally.
+=== Header policy
 
-Each request has separate limits for request headers or frames, request body, response headers or frames, response body, total duration, idle duration, and redirects.
-The broker enforces limits while streaming and never buffers an unbounded body.
-Before sending response headers or a response frame, it returns a typed policy or upstream error.
-After an HTTP response has begun, timeout, disconnect, or a body limit closes the upstream and downstream streams; clients must treat premature EOF or missing protocol completion as failure rather than a valid short response.
-Typed adapters send no success frame until their complete bounded result validates.
-Whether a remote mutation committed before cancellation may be unknown; the broker does not retry non-idempotent requests.
-Other retries belong to the reviewed adapter, not generic transport policy.
+Caddy applies one explicit request-header policy before proxying:
 
-=== Credential owners and transformations
+- set upstream `Host` to the fixed configured upstream host
+- strip incoming authority/profile fields and `Forwarded`, `Via`, every `X-Forwarded-*` field, and `Proxy-Authorization`
+- strip client `Authorization` and every profile-reserved authentication/account field
+- copy only the helper's fixed authentication/account fields after successful admission
+- pass all other safe end-to-end headers unchanged; there is no per-route header allowlist
 
-A credential profile is installed trusted code, not repository data.
-It defines one secret owner, one transformation, and one route set.
-The initial transformations are deliberately narrow:
+Caddy performs normal protocol hop-by-hop removal. Duplicate, malformed, connection-nominated, or protocol-forbidden headers cannot supply alternate authority. Response hop-by-hop fields are handled by Caddy; helper headers and credentials are never copied to downstream responses.
 
-/ OAuth bearer: read and transactionally refresh the dedicated Codex OAuth state, then replace client authorization with one bearer header. The ordinary human Codex login remains a separate owner.
-/ Static API header: read a launcher-approved secret file or host credential and set one fixed header. The agent cannot choose the header name or secret lookup key.
-/ Zulip basic authentication: construct the fixed upstream authorization value from the admitted Zulip identity without returning either component to the agent; this profile is bound only to the `zulip-read` adapter.
+=== Timeouts, bounds, and completion
 
-Secret providers return opaque values only to their profile implementation.
-Profiles must not expose a generic template language, environment expansion, arbitrary header maps, caller-selected accounts, or caller-selected Keychain services.
-A refresh-capable profile is the sole writer of its refresh state and publishes an update by atomic replacement only after the complete refreshed state is durable.
-Failure to read, refresh, or inject credentials fails that request and never falls back to agent credentials, a different host account, or unauthenticated upstream access.
+The immutable Caddy configuration sets a 64 KiB request-header maximum, 10-second header-read timeout, 300-second complete request/body-read timeout, 10-second application-upstream dial timeout, and 60-second application-upstream `response_header_timeout`. The helper transport separately uses a 10-second Unix-socket dial timeout and 30-second response-header timeout. The Codex request-body maximum is 32 MiB. Zulip request bodies are absent because both route families are `GET`; its typed request and query bounds remain adapter-owned. Container PID, memory, CPU, file-descriptor, and network bounds constrain each service.
 
-AWS Signature Version 4 is excluded from the initial broker because it signs method, path, selected headers, and a payload hash and therefore is not equivalent to static credential injection.
-Adding it requires a separate profile specification covering streaming payloads, clock ownership, retries, canonicalization, per-use consent, and outcome-unknown writes.
-Until then, Flower R2 retains its dedicated relay and disclosed-credential semantics.
+There is deliberately no response-byte cap and no claimed exact total stream-duration cap. Removing the byte cap avoids truncating valid model streams and preserves backpressure, but permits a fast peer to transfer more data than a byte budget would allow; Caddy's available timeouts and container bounds are coarser controls and do not establish an exact maximum byte count or wall-clock duration. Consumers must apply their protocol completion test: the Codex consumer requires its valid terminal stream event or complete non-stream response, and the Zulip adapter reports success only after a complete bounded response validates. EOF, timeout, reset, or resource termination before that test passes is failure, never a successful short response.
 
-=== Network and process isolation
+Caddy and the helper do not retry application requests. Whether a remote mutation committed before cancellation may be unknown. Zulip's reviewed `429` behavior remains typed-adapter policy. Service, helper, credential, TLS, DNS, or upstream failure never triggers direct authenticated fallback.
 
-Each broker instance joins one internal agent-link network and one restricted egress network.
-Only that instance receives both networks.
-The agent reaches its private address but cannot route through it except through its declared adapter; the instance enables neither IP forwarding nor generic forward-proxy mode.
-By default, the egress network prohibits private and special-use addresses after DNS resolution, for every resolved address and connection attempt; DNS rebinding fails closed.
-An installed route requiring a private destination must declare the exact host and permitted CIDRs in launcher-owned policy, and the network owner must install the matching narrow exception before startup.
-Repository routes cannot request this exception.
+=== DNS and network enforcement
 
-The broker image is launcher-owned and independent of the customizable agent image.
-Every instance runs non-root with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, bounded PIDs, memory, CPU, and file descriptors, and only its profile's credential mounts.
-It receives no repository mount, outer-daemon socket, SSH agent, ordinary home directory, or unrelated credential.
-Routes may share an instance only when they use the same credential profile and trust domain; instances never share credentials, mutable refresh files, tokens, networks, concurrency budgets, or failure status.
-A failed request does not terminate another route in the same instance.
-Process failure makes that instance's routes unavailable and never causes direct fallback.
+Caddy performs ordinary DNS resolution and dialing for the single configured application upstream host; no custom DNS parser or Caddy-global private-address check is claimed. Before startup, the runtime network owner resolves and installs the exact allowed destination CIDRs for that trust domain, then enforces egress to those CIDRs and required DNS only. IPv6 is disabled for the service networks and containers so an unpoliced address family cannot bypass the IPv4 CIDR policy. Policy refresh requires a new shared session; a resolved address outside the installed CIDRs cannot be dialed. Repository configuration and the agent cannot alter the host, resolver, CIDRs, network attachment, or IP-family policy.
 
-Passwordless sudo inside the agent does not weaken this boundary: container root cannot inspect the sibling's filesystem, processes, mounts, or egress network.
-It can invoke every selected route, but gains only the remote request authority already granted by those routes.
+The Codex helper alone also joins a separate restricted refresh-egress network that is not the agent-link network. Runtime policy permits only required DNS and the installed IPv4 CIDRs for `auth.openai.com`; exact installed helper code permits only HTTPS `POST /oauth/token` with its fixed OAuth fields. That attachment cannot reach the Codex application upstream and offers no general request or fallback path. The Zulip static-credential helper has no egress network. The lifecycle owns and recovery metadata records the Codex helper refresh network and attachment independently of Caddy's networks.
 
-=== Observability
+=== Readiness and observability
 
-Logs record session identity, route name, method, normalized path classification, response status, byte counts, duration, limit failures, and cancellation outcome.
-They never record query values, request or response bodies, authorization values, cookies, credential-source paths, refresh exchanges, or complete URLs containing user data.
-Route profiles may further redact path components or headers but cannot weaken the baseline exclusions.
-Before an HTTP response begins, diagnostics distinguish policy rejection, credential failure, upstream transport failure, timeout, and response-limit failure without secret material or upstream authorization details.
-After streaming begins, the client sees only premature EOF or missing protocol completion; broker logs retain the specific terminal cause.
+Readiness is entirely local and causes no upstream request, OAuth refresh, or persistent credential write. The launcher calls a dedicated Caddy readiness path with the instance session token; Caddy performs the bodyless precheck over the private socket, the helper validates token and local credential structure/readability without refreshing, and Caddy returns local `204`. The readiness route has no `reverse_proxy` handler. Publication requires this Caddy-to-helper check for both containers, plus runtime identity and socket-volume attachment validation.
+
+Caddy access logging is disabled. Caddy's global log level is `INFO`, with error/operational output directed to standard error; these logs may contain Caddy operational errors but must not contain request metadata or sensitive values. The helper logs only admission and credential-operation result classes; the Zulip typed adapter logs only operation class, status, counts, duration, and bounded failure class. Tests exercise malformed requests and upstream/helper failures and assert that Caddy standard error, helper logs, and typed logs omit methods paired with URIs, URI/query values, bodies, cookies, tokens, auth/account-header values, credential paths, refresh exchanges, and sensitive complete URLs.
+
+=== Credential profiles
+
+The Codex helper is the sole reader and transactional writer of dedicated OAuth state and returns fixed `Authorization`, account, and installed profile headers after any request-time refresh. The ordinary human Codex login remains a different owner. The Zulip helper constructs fixed basic authentication from its admitted identity. Helpers expose no template language, arbitrary header map, environment expansion, caller-selected account, credential path, or Keychain service.
+
+All containers run non-root with read-only root filesystems, capabilities dropped, `no-new-privileges`, and explicit resource bounds. They receive no repository, outer-daemon socket, SSH agent, or ordinary home directory. Agent root cannot access the private socket volume or another sibling's mounts or networks.
+
+=== Caddy provenance and pin
+
+The only admitted Caddy dependency is Docker Official Image `caddy:2.11.4`. Trusted installed policy resolves that tag for each supported target platform and records one image identity chain: OCI index digest -> selected platform-manifest digest -> image-configuration digest from that manifest -> runtime container image ID. The generated, mounted Caddy configuration has a separate content digest and is not part of the OCI image chain. The runtime pulls the selected manifest by digest; startup inspection proves the container image ID derives from that manifest. The service implementation identity binds both the verified image chain and the independent mounted-configuration digest. Accepted-session metadata records the chain, configuration digest, and platform tuple, and join validation re-inspects them all. The tag is provenance input, never runtime identity. Floating tags, standalone release binaries, locally rebuilt images, package-manager builds, automatic upgrades, and third-party images are rejected. No digest is written into this specification until verified release metadata is captured in installed policy. A Caddy upgrade or configuration change requires explicit pin/provenance capture, regression tests, and a new shared session.
 
 === Migration and removal
 
-Migration is consumer-by-consumer:
++ Add one unmodified Docker Official Image Caddy container and one minimal helper container per credential domain, with a private socket volume and credentials mounted only into the helper.
++ Generate immutable Caddy configuration for the fixed Codex route, two Zulip route families, header operations, bounds, catch-alls, bodyless precheck, and local readiness path.
++ Point Pi at the Codex Caddy listener. Keep the Zulip typed adapter but route its two upstream request families through its local Caddy.
++ Record, publish, validate, stop, and recover both Caddy and helper container identities and their shared socket volume; retain the Zulip adapter identity separately.
++ Remove the custom broker HTTP server, parser/framing checks, DNS parser, header filtering/allowlist engine, TLS client, reverse-proxy loop, routing machinery, response-byte limiter, and access-log implementation after parity acceptance passes. Keep no fallback path.
++ Preserve separate Codex and Zulip trust domains and keep Flower R2's dedicated relay unchanged.
 
-+ Implement the broker image and Codex HTTP adapter while preserving Pi's existing `baseUrl` and placeholder-key integration.
-+ Port the existing Zulip framed protocol into a separate broker instance with the `zulip-read` adapter; preserve host routing, read-only request construction, pagination, response validation, pacing, and bounded `429` handling.
-+ Keep Flower R2 on its dedicated Keychain relay until a separately reviewed signing profile preserves consent and avoids credential disclosure.
-+ Delete service-specific HTTP, authentication, hardening, image, and lifecycle implementations only after joins, restart, refresh, host routing, and failure recovery use the shared broker component. Separate credential-domain containers and networks remain intentional.
+The agent's credential-free public network remains outside this reverse proxy. Removing direct egress is a separate design.
 
-The broker does not initially replace the agent's existing credential-free public network.
-Consequently it simplifies and bounds authenticated egress but does not claim complete domain allowlisting for arbitrary tools.
-A later direct-egress removal is a separate design: it must account for package managers, source downloads, certificate handling, `CONNECT`, non-HTTP protocols, and development usability rather than turning this reverse proxy into a transparent gateway.
+=== Caddy acceptance checks
+
+- Startup and join admit only Docker Official Image Caddy 2.11.4 whose OCI index, platform-manifest, image-configuration, and runtime container image identities form the recorded chain; the service implementation identity separately binds the mounted Caddy configuration digest.
+- Every credential domain has separately recorded Caddy and helper containers and private socket volume; credentials are visible only to its helper.
+- Codex accepts only downstream `POST /codex/responses` with no query and rewrites it to fixed upstream `/backend-api/codex/responses`; Zulip Caddy accepts only the two typed-adapter route families; every configuration ends in a non-proxying catch-all.
+- `GET /admit` over the private Unix socket receives no body; constant-time exact admission enforces the at-most-4096-byte bearer session token, and metadata stays within the 64 KiB header bound and is ignored and never logged.
+- Helper transport uses separate 10-second Unix dial and 30-second response-header limits; after admission, credential read/refresh uses one internal 30-second monotonic deadline, with no claimed combined complete-exchange deadline.
+- Codex helper success is exactly bodyless `204` with nonempty canonical `Authorization: Bearer` and `Chatgpt-Account-Id`; Zulip success is exactly bodyless `204` with nonempty `Authorization: Basic`; wrong token is `401`, credential failure is `503`, and failures have `Content-Length: 0` with no custom headers.
+- Expanded Caddy response matching requires `2xx` plus every required nonempty helper header before replacing client values and proxying; every other result returns fixed local bodyless `401`/`503` and sends no application body upstream.
+- Caddy fixes `Host`, strips authority/profile/forwarding fields, copies only helper auth/account fields, and passes other safe end-to-end headers unchanged.
+- Tests enforce 64 KiB headers, Codex 32 MiB body, 10-second header read, 300-second body read, 10-second upstream dial, and 60-second response-header wait; no test assumes a total-response or response-byte deadline.
+- Codex terminal-event/non-stream completion and complete Zulip validation reject premature EOF, timeout, reset, and resource termination.
+- Runtime egress permits only installed exact IPv4 CIDRs and required DNS; IPv6 is disabled, and Caddy alone is not credited with global address filtering.
+- Only the Codex helper has a separately lifecycle-owned refresh network, limited to installed `auth.openai.com` CIDRs and fixed helper `POST /oauth/token`; it cannot reach the application upstream, while the Zulip helper has no egress.
+- Readiness proves Caddy-to-helper admission locally through a no-upstream route and performs no refresh or persistent write.
+- Caddy access logs are disabled; helper and typed-adapter logs satisfy the stated exclusions.
+- Removed custom HTTP, DNS, header/framing, streaming, and response-limit code is unreachable and not retained as fallback.
+- Flower R2 remains on its dedicated relay, including the lifecycle specification's existing connection-establishment retry blocker.
 
 == Git-bug proxy <git-bug-proxy>
 
@@ -470,7 +453,7 @@ A direct socket request that still contains `--body-file` is invalid, so bypassi
 
 The protocol rejects `bb bug push` and `bb bug raw` before execution.
 Publishing refs remains a maintainer command outside the sandbox; the proxy receives neither network access nor push credentials, and the agent receives no write-capable Git credentials, writable SSH agent, or reusable provider token that could bypass the proxy through Git or a hosting API.
-The authenticated egress broker instances have no source-hosting publication route, so their bounded request authority does not grant publication authority.
+The Caddy authenticated-egress instances have no source-hosting publication route, so their bounded request authority does not grant publication authority.
 Deployments that add broader authenticated routes must enforce the same restriction in their accepted route and credential-profile boundaries.
 
 During a sandbox session, #link(<host-coordination>)[host coordination] sends agent and human requests to the same long-lived `bug` proxy instead of running the local bridge.
@@ -497,7 +480,7 @@ A future proxy command with caller-controlled arguments must define a complete a
 
 == Lifecycle
 
-The #link("trusted-service-lifecycle.typ")[trusted-service lifecycle] owns planning, identity, readiness, publication, joining, cancellation, cleanup, and recovery across command proxies, authenticated egress broker instances, and host capability relays.
+The #link("trusted-service-lifecycle.typ")[trusted-service lifecycle] owns planning, identity, readiness, publication, joining, cancellation, cleanup, and recovery across command proxies, Caddy authenticated-egress instances, and host capability relays.
 This specification retains command- and protocol-specific authority: fixed execution policy, request validation, credentials, mounts, network access, serialization, retries, and outcome semantics.
 A service-specific implementation must not duplicate lifecycle ownership or use generic lifecycle failure as permission to fall back to a more privileged path.
 
@@ -510,15 +493,15 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - `--body-file` contents cross the proxy as bounded standard input, and the proxy never opens the supplied path
 - `bb bug push` and `bb bug raw` are rejected by the proxy, and push remains a maintainer-only command
 - The agent cannot publish refs through direct Git, SSH-agent, credential, or provider-API access
-- The agent and agent root cannot read any broker-owned access token, refresh token, basic-auth component, refresh exchange, or credential store through files, environment, process inspection, logs, network responses, or the outer daemon
+- The agent and agent root cannot read any authenticated-egress access token, refresh token, basic-auth component, refresh exchange, or credential store through files, environment, process inspection, logs, network responses, or the outer daemon
 - Pi streams model requests through its fixed HTTP route, while Zulip clients use only the typed read-only adapter; neither receives reusable credentials
-- Unknown routes, methods, paths, origins, oversized bodies, forbidden headers, redirects, and client authorization fail closed
-- Route normalization rejects encoded separators, dot segments, absolute targets, ambiguous prefixes, and prohibited resolved addresses
+- Unknown methods, paths, origins, oversized request bodies, alternate authority, and client-supplied authentication fail closed; safe end-to-end headers otherwise pass unchanged
+- Caddy rejects malformed targets and protocol-invalid framing and headers; runtime egress policy and the fixed upstream prevent access to prohibited destinations
 - Codex login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
 - A route failure does not expose its credential or affect another credential-domain instance
-- Broker unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
-- A broker session token remains available to validated joiners after the publishing launcher exits, fails after its broker instance ends, authorizes only the accepted routes, and cannot authenticate directly to an upstream provider
-- Broker logs and diagnostics contain no query values, bodies, cookies, reusable credentials, refresh exchanges, or complete sensitive URLs
+- Caddy or profile-helper unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
+- An authenticated-egress session token remains available to validated joiners after the publishing launcher exits, fails after its Caddy service instance ends, authorizes only that accepted service, and cannot authenticate directly to an upstream provider
+- Caddy and helper logs and diagnostics contain no query values, bodies, cookies, reusable credentials, refresh exchanges, or complete sensitive URLs
 - Non-idempotent requests are not retried, and cancellation reports an outcome-unknown remote mutation where success cannot be established
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
@@ -527,7 +510,7 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - Resolver freshness, sharing, refresh, and capability omission satisfy the launcher interface's acceptance checks
 - Joins reuse accepted configuration and images without running resolvers, even after sandbox configuration or source edits; existing agents, sockets, and services remain untouched
 - `/reload` updates per-agent instructions, skills, and extensions without reloading sandbox configuration or shared proxies
-- Loss of a command proxy or broker instance reports request failures without terminating attached agents or falling back to local privileged execution or direct provider credentials
+- Loss of a command proxy or Caddy authenticated-egress instance reports request failures without terminating attached agents or falling back to local privileged execution or direct provider credentials
 - Editing proxy source after startup does not rebuild, replace, or otherwise change the running proxy
 - Concurrent drain requests execute serially
 - Local human bridge execution cannot overlap a sandbox session
