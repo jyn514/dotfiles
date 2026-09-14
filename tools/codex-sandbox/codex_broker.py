@@ -14,6 +14,10 @@ SESSION_LIFECYCLE_SCHEMA = 1
 NETWORK = "codex-public-only"
 CREDENTIAL_DOMAIN = "codex"
 ENDPOINT_PORT = 8787
+PAIR_FIELDS = {"helper-container", "socket-volume", "networks", "caddy-image-chain",
+               "configuration", "helper-implementation", "refresh-attachment"}
+PAIR_STATUS_FIELDS = {"caddy-container", "helper-container", "socket-volume",
+                      "application-network", "refresh-network", "refresh-attachment"}
 MANAGED_FIELDS = {
     "container", "key", "image", "service-owner", "implementation-identity",
     "state-schema", "lifecycle-state", "credential-domain", "network", "network-owner",
@@ -24,6 +28,9 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*\Z")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
 STATES = {"starting", "ready", "published", "failed", "stopping", "cleanup-failed", "removed"}
+
+def _is_digest(value: Any) -> bool:
+    return isinstance(value, str) and _DIGEST.fullmatch(value) is not None
 
 
 def adapter_bytes(root: Path) -> bytes:
@@ -78,30 +85,54 @@ def parse_auth_record(value: Any, *, managed_required: bool = False) -> tuple[st
         if not all(isinstance(value[field], str) and value[field] for field in LEGACY_FIELDS):
             raise ValueError("invalid legacy authentication record")
         return "legacy", value
-    if fields != MANAGED_FIELDS:
+    if fields not in (MANAGED_FIELDS, MANAGED_FIELDS | PAIR_FIELDS):
         raise ValueError("invalid managed authentication record fields")
+    pair = PAIR_FIELDS <= fields
+    if pair:
+        pair_strings = ("helper-container", "socket-volume", "helper-implementation")
+        if not all(isinstance(value.get(field), str) and value[field] for field in pair_strings):
+            raise ValueError("invalid managed authentication pair")
+        if (not _is_digest(value["helper-implementation"])
+                or not isinstance(value["networks"], dict)
+                or set(value["networks"]) != {"agent-link", "application", "refresh"}
+                or len(set(value["networks"].values())) != 3
+                or not all(isinstance(name, str) and name for name in value["networks"].values())
+                or value["refresh-attachment"] != {"container": value["helper-container"],
+                                                     "network": value["networks"]["refresh"]}
+                or set(value["caddy-image-chain"]) != {"provenance", "index_digest", "platform", "manifest_digest", "configuration_digest", "runtime_image_id"}
+                or any(not isinstance(item, str) or not item for item in value["caddy-image-chain"].values())
+                or any(not _is_digest(value["caddy-image-chain"][field]) for field in
+                       ("index_digest", "manifest_digest", "configuration_digest", "runtime_image_id"))
+                or not isinstance(value["configuration"], dict)
+                or set(value["configuration"]) != {"path", "digest"}
+                or not isinstance(value["configuration"]["path"], str)
+                or not _is_digest(value["configuration"]["digest"])):
+            raise ValueError("invalid managed authentication pair")
     strings = ("container", "key", "image", "service-owner", "implementation-identity",
                "credential-domain", "network", "token-lifetime")
     if not all(isinstance(value.get(field), str) and value[field] for field in strings):
         raise ValueError("invalid managed authentication record values")
     if (not _TOKEN.fullmatch(value["key"]) or not _OWNER.fullmatch(value["service-owner"]) or
-            not _DIGEST.fullmatch(value["implementation-identity"]) or
+            not _is_digest(value["implementation-identity"]) or
             value["state-schema"] != STATE_SCHEMA or value["lifecycle-state"] not in STATES or
-            value["credential-domain"] != CREDENTIAL_DOMAIN or value["network"] != NETWORK or
+            value["credential-domain"] != CREDENTIAL_DOMAIN or
+            value["network"] != (value["networks"]["application"] if pair else NETWORK) or
             value["token-lifetime"] != "shared-session" or
             value["endpoint"] != {"container": value["container"], "port": ENDPOINT_PORT} or
-            value["resource-status"] not in ({"container": "intended"}, {"container": "created"},
-                                             {"container": "unknown"}, {"container": "removed"})):
+            not isinstance(value["resource-status"], dict) or
+            set(value["resource-status"]) != (PAIR_STATUS_FIELDS if pair else {"container"}) or
+            any(status not in {"intended", "created", "unknown", "removed"}
+                for status in value["resource-status"].values())):
         raise ValueError("invalid managed authentication record")
     volume = value["credential-volume"]
     if (not isinstance(volume, dict) or set(volume) != {"kind", "target", "identity", "lifetime"} or
             volume.get("kind") != "bind" or volume.get("target") != "/var/lib/codex-auth" or
             volume.get("lifetime") != "shared-session" or
-            not isinstance(volume.get("identity"), str) or not _DIGEST.fullmatch(volume["identity"])):
+            not _is_digest(volume.get("identity"))):
         raise ValueError("invalid managed credential volume")
     runtime = value["runtime-owner"]
     if not isinstance(runtime, dict) or not isinstance(runtime.get("provider"), str):
         raise ValueError("invalid managed runtime owner")
     if value["network-owner"] != {"kind": "admitted-runtime-public-egress", "runtime": runtime}:
         raise ValueError("invalid managed network owner")
-    return "managed", value
+    return ("managed" if pair else "managed-single"), value

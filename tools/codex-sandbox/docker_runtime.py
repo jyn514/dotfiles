@@ -363,12 +363,15 @@ class Docker(VMRuntime):
         # Setup owns this network; service activation installs its firewall.
         pass
 
-    def create_public_service_network(self, name, owner):
+    def create_public_service_network(self, name, owner, *, domain=None, role=None):
         if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
             raise RuntimeError('invalid Docker service-network owner')
         bridge = 'csp' + hashlib.sha256(name.encode()).hexdigest()[:10]
-        self.run(['network', 'create', '--label', 'dev.codex.service-owner=' + owner,
-                  '--label', 'dev.codex.public-policy=' + self.public_network_policy_identity(),
+        labels = ['--label', 'dev.codex.service-owner=' + owner,
+                  '--label', 'dev.codex.public-policy=' + self.public_network_policy_identity()]
+        if domain is not None: labels += ['--label', 'dev.codex.credential-domain=' + domain]
+        if role is not None: labels += ['--label', 'dev.codex.network-role=' + role]
+        self.run(['network', 'create', *labels,
                   '--opt', 'com.docker.network.bridge.name=' + bridge, name],
                  stdout=subprocess.DEVNULL)
         if self.record.get('firewall') == 'nftables':

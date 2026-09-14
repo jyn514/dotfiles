@@ -293,12 +293,14 @@ class Podman:
     def public_network_policy_identity(self):
         return "sha256:" + hashlib.sha256(policy_bytes()).hexdigest()
 
-    def create_public_service_network(self, name, owner):
+    def create_public_service_network(self, name, owner, *, domain=None, role=None):
         identity = hashlib.sha256(name.encode()).digest()
         subnet = f"10.{200 + identity[0] % 50}.{identity[1]}.0/24"
         arguments = ["network", "create", "--subnet", subnet,
                      "--opt", "isolate=true", "--label", "dev.codex.service-owner=" + owner,
                      "--label", "dev.codex.public-policy=" + self.public_network_policy_identity()]
+        if domain is not None: arguments += ["--label", "dev.codex.credential-domain=" + domain]
+        if role is not None: arguments += ["--label", "dev.codex.network-role=" + role]
         for route in PROHIBITED_ROUTES:
             arguments += ["--route", route + ",prohibit"]
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
@@ -649,12 +651,12 @@ class Lima(VMRuntime):
     def ensure_public_network(self):
         self.verify()
 
-    def create_public_service_network(self, name, owner):
+    def create_public_service_network(self, name, owner, *, domain=None, role=None):
         self.verify()
         if "relay-network.py" not in self.record["files"]:
             raise RuntimeError("Lima host lacks trusted network provisioning")
         self.guest(["python3", "/usr/local/share/codex-sandbox/relay-network.py", name,
-                    "public-service", owner], stdout=subprocess.DEVNULL)
+                    "public-service", owner, domain or "-", role or "-"], stdout=subprocess.DEVNULL)
 
     def create_relay_network(self, name, *, internal, owner=None):
         self.verify()

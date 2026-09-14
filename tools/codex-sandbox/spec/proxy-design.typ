@@ -367,11 +367,11 @@ There is deliberately no response-byte cap and no claimed exact total stream-dur
 
 Caddy and the helper do not retry application requests. Whether a remote mutation committed before cancellation may be unknown. Zulip's reviewed `429` behavior remains typed-adapter policy. Service, helper, credential, TLS, DNS, or upstream failure never triggers direct authenticated fallback.
 
-=== DNS and network enforcement
+=== DNS and network topology
 
-Caddy performs ordinary DNS resolution and dialing for the single configured application upstream host; no custom DNS parser or Caddy-global private-address check is claimed. Before startup, the runtime network owner resolves and installs the exact allowed destination CIDRs for that trust domain, then enforces egress to those CIDRs and required DNS only. IPv6 is disabled for the service networks and containers so an unpoliced address family cannot bypass the IPv4 CIDR policy. Policy refresh requires a new shared session; a resolved address outside the installed CIDRs cannot be dialed. Repository configuration and the agent cannot alter the host, resolver, CIDRs, network attachment, or IP-family policy.
+Caddy performs ordinary DNS resolution and dialing for the single configured application upstream host. Its application egress uses a distinct lifecycle-owned ordinary network, separate from the agent-link network.
 
-The Codex helper alone also joins a separate restricted refresh-egress network that is not the agent-link network. Runtime policy permits only required DNS and the installed IPv4 CIDRs for `auth.openai.com`; exact installed helper code permits only HTTPS `POST /oauth/token` with its fixed OAuth fields. That attachment cannot reach the Codex application upstream and offers no general request or fallback path. The Zulip static-credential helper has no egress network. The lifecycle owns and recovery metadata records the Codex helper refresh network and attachment independently of Caddy's networks.
+The Codex helper alone joins a separate lifecycle-owned ordinary refresh-egress network. This topology keeps helper refresh egress distinct from Caddy application egress. Exact installed helper code permits only HTTPS `POST /oauth/token` with its fixed OAuth fields. The Zulip static-credential helper has no egress network. Recovery metadata records both Codex egress networks and the helper attachment independently.
 
 === Readiness and observability
 
@@ -412,8 +412,8 @@ The agent's credential-free public network remains outside this reverse proxy. R
 - Caddy fixes `Host`, strips authority/profile/forwarding fields, copies only helper auth/account fields, and passes other safe end-to-end headers unchanged.
 - Tests enforce 64 KiB headers, Codex 32 MiB body, 10-second header read, 300-second idle timeout, 10-second upstream dial, and 60-second response-header wait; no test assumes a complete-body, total-response, or response-byte deadline.
 - Codex terminal-event/non-stream completion and complete Zulip validation reject premature EOF, timeout, reset, and resource termination.
-- Runtime egress permits only installed exact IPv4 CIDRs and required DNS; IPv6 is disabled, and Caddy alone is not credited with global address filtering.
-- Only the Codex helper has a separately lifecycle-owned refresh network, limited to installed `auth.openai.com` CIDRs and fixed helper `POST /oauth/token`; it cannot reach the application upstream, while the Zulip helper has no egress.
+- Caddy application egress uses an ordinary, separately lifecycle-owned network.
+- Only the Codex helper has a separately lifecycle-owned ordinary refresh-egress network and fixed helper `POST /oauth/token`; the Zulip helper has no egress.
 - Readiness proves Caddy-to-helper admission locally through a no-upstream route and performs no refresh or persistent write.
 - Caddy access logs are disabled; helper and typed-adapter logs satisfy the stated exclusions.
 - Removed custom HTTP, DNS, header/framing, streaming, and response-limit code is unreachable and not retained as fallback.
@@ -496,7 +496,7 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - The agent and agent root cannot read any authenticated-egress access token, refresh token, basic-auth component, refresh exchange, or credential store through files, environment, process inspection, logs, network responses, or the outer daemon
 - Pi streams model requests through its fixed HTTP route, while Zulip clients use only the typed read-only adapter; neither receives reusable credentials
 - Unknown methods, paths, origins, oversized request bodies, alternate authority, and client-supplied authentication fail closed; safe end-to-end headers otherwise pass unchanged
-- Caddy rejects malformed targets and protocol-invalid framing and headers; runtime egress policy and the fixed upstream prevent access to prohibited destinations
+- Caddy rejects malformed targets and protocol-invalid framing and headers; its fixed upstream prevents callers from selecting arbitrary destinations
 - Codex login and refresh update only the dedicated authentication directory transactionally and do not alter the human's ordinary Codex login
 - A route failure does not expose its credential or affect another credential-domain instance
 - Caddy or profile-helper unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent

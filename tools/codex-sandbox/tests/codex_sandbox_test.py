@@ -902,7 +902,12 @@ class CodexSandboxTest(unittest.TestCase):
                 case " $* " in
                     *" --format "*) printf 'sha256:%064d\n' 0; exit 0 ;;
                 esac
-                printf '[{"Id":"sha256:%064d","RootFS":{"Layers":["sha256:%064d"]},"Os":"linux","Architecture":"arm64"}]\n' 0 1
+                case "$image" in
+                    caddy@sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba)
+                        printf '%s\n' '[{"Id":"sha256:6b08c1b9858ca9a7d99c1da13c3695081e0e604c6cf214ca26a7ce0e2c4fd9b4","RepoDigests":["caddy@sha256:1172d4213087d3fc30bafc7ff2c2896180eb0c41ff7f75f315568fb36cabdcba"],"RootFS":{"Layers":["sha256:0000000000000000000000000000000000000000000000000000000000000001"]},"Os":"linux","Architecture":"arm64"}]'
+                        ;;
+                    *) printf '[{"Id":"sha256:%064d","RootFS":{"Layers":["sha256:%064d"]},"Os":"linux","Architecture":"arm64"}]\n' 0 1 ;;
+                esac
                 exit 0
             fi
             if [ "$1" = build ]; then
@@ -1566,9 +1571,12 @@ class CodexSandboxTest(unittest.TestCase):
                 return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
             return subprocess.CompletedProcess(arguments, 1, stdout="", stderr="unexpected command")
 
-        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, run=fake_run):
+        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, run=fake_run), \
+                mock.patch.dict(launcher["start_codex_sidecar"].__globals__,
+                                resolve_caddy_image=mock.Mock()) as patched:
             with self.assertRaisesRegex(launcher["LauncherError"], "cancelled"):
                 launcher["start_codex_sidecar"](state, auth.resolve(), cancelled=cancelled)
+            patched["resolve_caddy_image"].assert_not_called()
         self.assertFalse(any(call[:2] == ["docker", "run"] for call in calls))
         self.assertNotIn("auth", json.loads(proxy_state.read_text(encoding="utf-8")))
 
@@ -1587,23 +1595,29 @@ class CodexSandboxTest(unittest.TestCase):
             call for call in calls
             if call[:2] == ["run", "--detach"] and any("codex-auth-proxy-" in item for item in call)
         ]
-        self.assertEqual(1, len(sidecars))
-        sidecar = sidecars[0]
-        self.assertEqual(["run", "--detach"], sidecar[:2])
-        self.assertEqual(1, sidecar.count("run"), sidecar)
-        self.assertEqual(sidecar.index("--entrypoint") + 2, len(sidecar) - 1)
-        self.assertIn(
-            f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth", sidecar,
-        )
-        self.assertIn("--read-only", sidecar)
-        labels = [sidecar[index + 1] for index, value in enumerate(sidecar) if value == "--label"]
+        self.assertEqual(2, len(sidecars))
+        helper = next(call for call in sidecars if "/trusted/bin/profile-helper" in call)
+        caddy = next(call for call in sidecars if "/trusted/bin/profile-helper" not in call)
+        credential_mount = f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth"
+        self.assertIn(credential_mount, helper)
+        self.assertNotIn(credential_mount, caddy)
+        self.assertIn("--read-only", helper)
+        self.assertIn("--read-only", caddy)
+        socket_mounts = [item for call in (helper, caddy) for item in call
+                         if item.startswith("type=volume,") and "dst=/run/profile-helper" in item]
+        self.assertEqual(2, len(socket_mounts))
+        self.assertEqual(socket_mounts[0], socket_mounts[1].removesuffix(",readonly"))
+        self.assertIn("--entrypoint", helper)
+        self.assertEqual("sha256:" + "0" * 64, helper[helper.index("--entrypoint") + 2])
+        self.assertTrue(any(item.startswith("caddy@sha256:") for item in caddy))
+        self.assertEqual("run", caddy[-3])
+        self.assertEqual("/etc/caddy/caddy.json", caddy[-1])
+        labels = [helper[index + 1] for index, value in enumerate(helper) if value == "--label"]
         self.assertIn("dev.codex.credential-domain=codex", labels)
         self.assertTrue(any(value.startswith("dev.codex.service-owner=") for value in labels))
-        self.assertEqual("sha256:" + "0" * 64, sidecar[-1])
-        sidecar_name = sidecar[sidecar.index("--name") + 1]
-        readiness = [call for call in calls if call[:3] == [
-            "exec", sidecar_name, "/usr/local/bin/python3",
-        ]]
+        caddy_name = caddy[caddy.index("--name") + 1]
+        readiness = [call for call in calls if call[:2] == ["exec", caddy_name]
+                     and call[-1] == "http://127.0.0.1:8787/ready"]
         self.assertEqual(1, len(readiness))
         agent = self.final_run()
         self.assertFalse(any(str(auth) in item for item in agent))
@@ -1613,58 +1627,6 @@ class CodexSandboxTest(unittest.TestCase):
             "dst=/home/codex/.pi/agent/extensions/codex-sidecar,readonly",
             agent,
         )
-
-    def test_reuses_auth_sidecar_from_persistent_proxy_session(self) -> None:
-        auth = self.home / ".codex-sandbox-auth"
-        auth.mkdir(mode=0o700)
-        (auth / "auth.json").write_text(
-            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
-        )
-        (auth / "auth.json").chmod(0o600)
-
-        result = self.run_launcher(
-            FAKE_SESSION="shared",
-            FAKE_PROXY_STATE=(
-                '{"proxies":[],"auth":{"container":"shared-auth-proxy",'
-                '"key":"shared-key","image":"sha256:' + '0' * 64 + '"}}'
-            ),
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        calls = read_calls(self.docker_log)
-        self.assertFalse(any(
-            call[:2] == ["run", "--detach"] and "shared-auth-proxy" in call
-            for call in calls
-        ))
-        agent = self.final_run()
-        self.assertIn("CODEX_SIDECAR_URL=http://shared-auth-proxy:8787", agent)
-        self.assertIn("CODEX_SIDECAR_KEY=shared-key", agent)
-
-    def test_rejects_cached_auth_sidecar_from_another_network(self) -> None:
-        auth = self.home / ".codex-sandbox-auth"
-        auth.mkdir(mode=0o700)
-        (auth / "auth.json").write_text(
-            '{"tokens":{"access_token":"a","refresh_token":"r"}}\n', encoding="utf-8",
-        )
-        (auth / "auth.json").chmod(0o600)
-
-        result = self.run_launcher(
-            FAKE_SESSION="shared",
-            FAKE_SIDECAR_NETWORK="0",
-            FAKE_PROXY_STATE=(
-                '{"proxies":[],"auth":{"container":"stale-auth-proxy",'
-                '"key":"stale-key","image":"sha256:' + '0' * 64 + '"}}'
-            ),
-        )
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("belongs to another sandbox network", result.stderr)
-        calls = read_calls(self.docker_log)
-        self.assertFalse(any(call[:1] == ["run"] and "-it" in call for call in calls))
-        self.assertTrue(any(
-            call[:2] == ["rm", "--force"]
-            and any("codex-gateway-" in item for item in call)
-            for call in calls
-        ))
 
     def test_accepts_linked_git_worktree_metadata(self) -> None:
         shutil.rmtree(self.repo / ".git")

@@ -119,6 +119,35 @@ class ManifestTest(unittest.TestCase):
             "resource-status": {"volume": "created", "container": "created", "forward": "absent"},
         }
 
+    @staticmethod
+    def pair_auth() -> dict:
+        runtime = {"provider": "podman"}
+        return {
+            "container": "codex-auth", "helper-container": "codex-auth-helper",
+            "socket-volume": "codex-auth-socket", "key": "a.b.c",
+            "image": "caddy@sha256:" + "1" * 64, "service-owner": "a" * 32,
+            "implementation-identity": "sha256:" + "2" * 64,
+            "helper-implementation": "sha256:" + "4" * 64,
+            "caddy-image-chain": {"provenance": "caddy:2.11.4-alpine",
+                "index_digest": "sha256:" + "5" * 64, "platform": "linux/amd64",
+                "manifest_digest": "sha256:" + "1" * 64,
+                "configuration_digest": "sha256:" + "6" * 64,
+                "runtime_image_id": "sha256:" + "6" * 64},
+            "configuration": {"path": "/state/caddy.json", "digest": "sha256:" + "7" * 64},
+            "state-schema": 1, "lifecycle-state": "failed", "credential-domain": "codex",
+            "network": "codex-application", "networks": {"agent-link": "codex-public-only",
+                "application": "codex-application", "refresh": "codex-refresh"},
+            "refresh-attachment": {"container": "codex-auth-helper", "network": "codex-refresh"},
+            "network-owner": {"kind": "admitted-runtime-public-egress", "runtime": runtime},
+            "endpoint": {"container": "codex-auth", "port": 8787},
+            "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
+                                  "identity": "sha256:" + "3" * 64, "lifetime": "shared-session"},
+            "token-lifetime": "shared-session", "runtime-owner": runtime,
+            "resource-status": {"caddy-container": "unknown", "helper-container": "unknown",
+                "socket-volume": "unknown", "application-network": "unknown",
+                "refresh-network": "unknown", "refresh-attachment": "unknown"},
+        }
+
     def schema4(self, commands: dict[str, dict], *, services=None, helper=None) -> dict:
         policy = sandbox_proxies.serializable_manifest({"version": 1, "commands": commands})
         records = services if services is not None else {
@@ -1411,6 +1440,42 @@ class ManifestTest(unittest.TestCase):
         self.assertFalse(registry.cleanup(0).remaining)
         owner.stop_proxy_forward.assert_called_once_with(legacy["forwarding"])
 
+    def test_codex_pair_record_is_complete_and_cross_bound_attachments_fail_closed(self) -> None:
+        record = self.pair_auth()
+        kind, parsed = sandbox_proxies.parse_auth_record(record, managed_required=True)
+        self.assertEqual("managed", kind)
+        self.assertEqual("codex-auth-helper", parsed["refresh-attachment"]["container"])
+        for field in ("helper-container", "socket-volume", "caddy-image-chain", "configuration"):
+            partial = dict(record)
+            partial.pop(field)
+            with self.assertRaisesRegex(ValueError, "fields"):
+                sandbox_proxies.parse_auth_record(partial, managed_required=True)
+        crossed = json.loads(json.dumps(record))
+        crossed["refresh-attachment"]["container"] = crossed["container"]
+        with self.assertRaisesRegex(ValueError, "pair"):
+            sandbox_proxies.parse_auth_record(crossed, managed_required=True)
+        for aliased_role in ("application", "refresh"):
+            aliased = json.loads(json.dumps(record))
+            aliased["networks"][aliased_role] = aliased["networks"]["agent-link"]
+            if aliased_role == "refresh":
+                aliased["refresh-attachment"]["network"] = aliased["networks"]["refresh"]
+            with self.assertRaisesRegex(ValueError, "pair"):
+                sandbox_proxies.parse_auth_record(aliased, managed_required=True)
+
+    def test_codex_pair_rejects_substituted_network_role_labels(self) -> None:
+        record = self.pair_auth()
+        labels = {
+            role: {"dev.codex.service-owner": record["service-owner"],
+                   "dev.codex.credential-domain": "codex",
+                   "dev.codex.network-role": role}
+            for role in ("application", "refresh")
+        }
+        sandbox_proxies._validate_codex_network_labels(record, labels)
+        substituted = json.loads(json.dumps(labels))
+        substituted["application"]["dev.codex.network-role"] = "refresh"
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "ownership"):
+            sandbox_proxies._validate_codex_network_labels(record, substituted)
+
     def test_managed_auth_record_cannot_downgrade_by_dropping_owner(self) -> None:
         record = {
             "container": "codex-auth", "key": "a.b.c", "image": "sha256:" + "1" * 64,
@@ -1439,7 +1504,7 @@ class ManifestTest(unittest.TestCase):
         def run(arguments, **kwargs):
             if arguments[:2] == ["container", "ls"]:
                 return subprocess.CompletedProcess(arguments, 0, stdout="codex-auth\n")
-            if arguments[:2] == ["inspect", "--format"]:
+            if arguments[:2] == ["container", "inspect"]:
                 return subprocess.CompletedProcess(arguments, 0, stdout="another-owner\n")
             return subprocess.CompletedProcess(arguments, 0, stdout="")
 
@@ -1447,17 +1512,31 @@ class ManifestTest(unittest.TestCase):
         state = {
             "runtime": {"provider": "podman"}, "proxies": [],
             "auth": {
-                "container": "codex-auth", "key": "a.b.c", "image": "sha256:" + "1" * 64,
+                "container": "codex-auth", "helper-container": "codex-auth-helper",
+                "socket-volume": "codex-auth-socket", "key": "a.b.c",
+                "image": "caddy@sha256:" + "1" * 64,
                 "service-owner": "a" * 32, "implementation-identity": "sha256:" + "2" * 64,
+                "helper-implementation": "sha256:" + "4" * 64,
+                "caddy-image-chain": {"provenance": "caddy:2.11.4-alpine",
+                    "index_digest": "sha256:" + "5" * 64, "platform": "linux/amd64",
+                    "manifest_digest": "sha256:" + "1" * 64,
+                    "configuration_digest": "sha256:" + "6" * 64,
+                    "runtime_image_id": "sha256:" + "6" * 64},
+                "configuration": {"path": "/state/caddy.json", "digest": "sha256:" + "7" * 64},
                 "state-schema": 1, "lifecycle-state": "failed", "credential-domain": "codex",
-                "network": "codex-public-only", "network-owner": {"kind": "admitted-runtime-public-egress",
-                              "runtime": {"provider": "podman"}},
+                "network": "codex-application", "networks": {"agent-link": "codex-public-only",
+                    "application": "codex-application", "refresh": "codex-refresh"},
+                "refresh-attachment": {"container": "codex-auth-helper", "network": "codex-refresh"},
+                "network-owner": {"kind": "admitted-runtime-public-egress",
+                                  "runtime": {"provider": "podman"}},
                 "endpoint": {"container": "codex-auth", "port": 8787},
                 "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
                                       "identity": "sha256:" + "3" * 64,
                                       "lifetime": "shared-session"},
                 "token-lifetime": "shared-session", "runtime-owner": {"provider": "podman"},
-                "resource-status": {"container": "unknown"},
+                "resource-status": {"caddy-container": "unknown", "helper-container": "unknown",
+                    "socket-volume": "unknown", "application-network": "unknown",
+                    "refresh-network": "unknown", "refresh-attachment": "unknown"},
             },
         }
         with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):

@@ -20,7 +20,7 @@ class ImageInputsTest(unittest.TestCase):
         declaration = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))['declaration']
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('auth-proxy/Dockerfile', 'auth-proxy/server.py',
+            for name in ('auth-proxy/Dockerfile', 'auth-proxy/profile_helper.py',
                          'auth-proxy/broker.py', 'auth-proxy/codex_profile.py',
                          'auth-proxy/typed_broker.py', 'gateway.py'):
                 path = root / 'tools/codex-sandbox' / name

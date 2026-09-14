@@ -14,6 +14,14 @@ class RuntimeContract:
   from types import SimpleNamespace
   return SimpleNamespace(reference=repository+"@"+manifest,content=manifest,config=("sha256:"+"0"*64 if self.bad else configuration))
  def inspect_runtime_image_id(self,reference): return caddy.PLATFORMS["linux/amd64"][1]
+class ImmutableConfigurationTest(unittest.TestCase):
+ def test_atomic_read_only_publication_rejects_changed_authority(self):
+  with tempfile.TemporaryDirectory() as directory:
+   path=Path(directory)/"caddy.json"; digest=caddy.publish_configuration(path,b"{}\n")
+   self.assertEqual(digest,caddy.configuration_digest(b"{}\n")); self.assertEqual(path.stat().st_mode & 0o222,0)
+   self.assertEqual(caddy.publish_configuration(path,b"{}\n"),digest)
+   with self.assertRaises(caddy.CaddyIdentityError): caddy.publish_configuration(path,b"changed\n")
+
 class IdentityTest(unittest.TestCase):
  def test_exact_chain_and_configuration_binding(self):
   identity=caddy.resolve_caddy_image(RuntimeContract()); self.assertEqual(identity.configuration_digest,"sha256:af555904a0961945f16bb323a501457b13a4f7e9bde969b145b97da80b38ecbe")

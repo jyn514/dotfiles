@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
@@ -45,6 +46,10 @@ from codex_broker import (
     CREDENTIAL_DOMAIN, ENDPOINT_PORT, NETWORK as CODEX_BROKER_NETWORK,
     SESSION_LIFECYCLE_SCHEMA, STATE_SCHEMA, credential_source_identity,
     parse_auth_record, resolved_plan,
+)
+from caddy_foundation import (
+    accepted_caddy_image, configuration_digest as caddy_configuration_digest, generate_caddy_config,
+    publish_configuration, resolve_caddy_image, validate_configuration_mount,
 )
 
 OUTER_RUNTIME = Podman()
@@ -1058,7 +1063,9 @@ class CodexBrokerHandle:
             raise LauncherError("Codex broker cleanup failed; recovery authority retained")
         self.lifecycle.transition(LifecycleState.REMOVED)
         self.record["lifecycle-state"] = "removed"
-        self.record["resource-status"] = {"container": "removed"}
+        self.record["resource-status"] = {
+            name: "removed" for name in self.record["resource-status"]
+        }
 
 
 def codex_sidecar_arguments(container: str, key: str) -> list[str]:
@@ -1109,103 +1116,161 @@ def _remove_codex_container(container: str, owner: str) -> None:
 
 def start_codex_sidecar(state: State, auth_directory: Path, *,
                         cancelled: threading.Event | None = None) -> tuple[CodexBrokerHandle, list[str]]:
+    """Create one Caddy/profile-helper pair and durably own every resource."""
+    # Cancellation owns the operation before resolver pulls, runtime inspection,
+    # configuration publication, or any other externally visible work.
+    if cancelled is not None and cancelled.is_set():
+        raise LauncherError("Codex broker startup cancelled")
     key = _sidecar_session_key()
-    container = state.codex_sidecar_container
+    caddy = state.codex_sidecar_container
+    helper_container = caddy + "-helper"
+    socket_volume = caddy + "-socket"
+    application_network = caddy + "-application"
+    refresh_network = caddy + "-refresh"
     owner = uuid.uuid4().hex
-    resolved = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
-                             state.sidecar_image, state.uid, state.gid)
-    lifecycle = ServiceLifecycle(resolved, owner, OwnerSet())
-    lifecycle.transition(LifecycleState.RESOLVED)
-    lifecycle.transition(LifecycleState.PREPARING)
-    lifecycle.transition(LifecycleState.STARTING)
+    helper_plan = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
+                                state.sidecar_image, state.uid, state.gid)
+    caddy_identity = resolve_caddy_image(OUTER_RUNTIME)
+    configuration_bytes = generate_caddy_config(
+        "codex", "chatgpt.com", token=key)
+    configuration_path = state.proxy_state.parent / (caddy + ".json")
+    configuration_digest = caddy_configuration_digest(configuration_bytes)
+    material = {"caddy": caddy_identity.__dict__, "configuration": configuration_digest,
+                "helper": helper_plan.implementation_identity}
+    implementation = "sha256:" + hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    lifecycle = ServiceLifecycle(helper_plan, owner, OwnerSet())
+    for phase in (LifecycleState.RESOLVED, LifecycleState.PREPARING, LifecycleState.STARTING):
+        lifecycle.transition(phase)
     registry = ResourceRegistry(owner)
-    resource = f"container:{owner}"
-    registry.register(OwnedResource(
-        resource, owner, lambda: _codex_container_presence(container, owner),
-        lambda: _remove_codex_container(container, owner),
-    ))
-    credential_identity = credential_source_identity(auth_directory)
+
+    def listed(kind: str, name: str) -> bool:
+        command = ["docker", kind, "ls"]
+        if kind == "container": command.append("--all")
+        result = run([*command, "--format", "{{.Names}}"], check=False,
+                     capture=True, quiet=True)
+        return result.returncode == 0 and name in result.stdout.splitlines()
+    def presence(kind: str, name: str) -> ResourcePresence:
+        if not listed(kind, name): return ResourcePresence.ABSENT
+        result = run(["docker", kind, "inspect", "--format",
+                      "{{index .Labels \"dev.codex.service-owner\"}}" if kind != "container" else
+                      "{{index .Config.Labels \"dev.codex.service-owner\"}}", name],
+                     check=False, capture=True, quiet=True)
+        return ResourcePresence.OWNED if result.returncode == 0 and result.stdout.strip() == owner else ResourcePresence.MISMATCHED
+    def remove(kind: str, name: str) -> None:
+        if kind == "container": run(["docker", "kill", name], check=False, quiet=True)
+        result = run(["docker", kind, "rm", name], check=False, capture=True, quiet=True)
+        if result.returncode and presence(kind, name) is not ResourcePresence.ABSENT:
+            raise LauncherError(f"Codex {kind} cleanup failed")
+
+    config_resource = "file:caddy-config"
+    def config_presence() -> ResourcePresence:
+        try:
+            return (ResourcePresence.OWNED if caddy_configuration_digest(configuration_path.read_bytes()) == configuration_digest
+                    else ResourcePresence.MISMATCHED)
+        except FileNotFoundError:
+            return ResourcePresence.ABSENT
+    def remove_config() -> None:
+        configuration_path.unlink(missing_ok=True)
+        directory = os.open(configuration_path.parent, os.O_DIRECTORY)
+        try: os.fsync(directory)
+        finally: os.close(directory)
+    registry.register(OwnedResource(config_resource, owner, config_presence, remove_config))
+    resources = (("volume", socket_volume), ("network", application_network),
+                 ("network", refresh_network))
+    for kind, name in resources:
+        registry.register(OwnedResource(f"{kind}:{name}", owner,
+            lambda k=kind, n=name: presence(k, n), lambda k=kind, n=name: remove(k, n)))
+    registry.register(OwnedResource(f"container:{helper_container}", owner,
+        lambda: presence("container", helper_container), lambda: remove("container", helper_container),
+        (f"volume:{socket_volume}", f"network:{refresh_network}")))
+    registry.register(OwnedResource(f"container:{caddy}", owner,
+        lambda: presence("container", caddy), lambda: remove("container", caddy),
+        (f"volume:{socket_volume}", f"network:{application_network}", config_resource)))
+    statuses = {"caddy-container": "intended", "helper-container": "intended",
+                "socket-volume": "intended", "application-network": "intended",
+                "refresh-network": "intended", "refresh-attachment": "intended"}
     record: dict[str, object] = {
-        "container": container, "key": key, "image": state.sidecar_image,
-        "service-owner": owner,
-        "implementation-identity": lifecycle.resolved.implementation_identity,
+        "container": caddy, "helper-container": helper_container, "socket-volume": socket_volume,
+        "key": key, "image": caddy_identity.runtime_reference, "service-owner": owner,
+        "implementation-identity": implementation, "helper-implementation": helper_plan.implementation_identity,
+        "caddy-image-chain": caddy_identity.__dict__,
+        "configuration": {"path": str(configuration_path), "digest": configuration_digest},
         "state-schema": STATE_SCHEMA, "lifecycle-state": "starting",
-        "credential-domain": CREDENTIAL_DOMAIN, "network": CODEX_BROKER_NETWORK,
+        "credential-domain": CREDENTIAL_DOMAIN, "network": application_network,
+        "networks": {"agent-link": SANDBOX_NETWORK, "application": application_network,
+                     "refresh": refresh_network},
+        "refresh-attachment": {"container": helper_container, "network": refresh_network},
         "network-owner": {"kind": "admitted-runtime-public-egress",
                           "runtime": runtime_identity(OUTER_RUNTIME)},
-        "endpoint": {"container": container, "port": ENDPOINT_PORT},
+        "endpoint": {"container": caddy, "port": ENDPOINT_PORT},
         "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
-                              "identity": credential_identity, "lifetime": "shared-session"},
+                              "identity": credential_source_identity(auth_directory),
+                              "lifetime": "shared-session"},
         "token-lifetime": "shared-session", "runtime-owner": runtime_identity(OUTER_RUNTIME),
-        "resource-status": {"container": "intended"},
+        "resource-status": statuses,
     }
     handle = CodexBrokerHandle(lifecycle, registry, record)
-    # The complete intended record is durable before the creation request; a
-    # transport failure may still mean Docker accepted it.
     partial = json.loads(state.proxy_state.read_text(encoding="utf-8"))
     partial["trusted-services"] = SESSION_LIFECYCLE_SCHEMA
-    partial["auth"] = handle.schema3_record()
-    _persist_proxy_state(state.proxy_state, partial)
+    partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
     try:
-        if cancelled is not None and cancelled.is_set():
-            raise LauncherError("Codex broker startup cancelled")
-        run([
-        "docker", "run", "--detach", "--name", container,
-        "--label", f"dev.codex.service-owner={owner}",
-        "--label", "dev.codex.credential-domain=codex",
-        "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
-        "--user", f"{state.uid}:{state.gid}", "--network", CODEX_BROKER_NETWORK,
-        *proxy_flags(), "--pids-limit", "64", "--memory", "256m",
-        "--cpus", "1", "--ulimit", "nofile=256:256",
-        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=4m,mode=1777",
-        "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
-        "--env", f"CODEX_SIDECAR_KEY={key}",
-        "--entrypoint", "/trusted/bin/codex-auth-proxy", state.sidecar_image,
-        ], discard_stdout=True)
-        record["resource-status"] = {"container": "created"}
-        partial["auth"] = handle.schema3_record()
-        _persist_proxy_state(state.proxy_state, partial)
+        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        publish_configuration(configuration_path, configuration_bytes)
+        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        for kind, name in resources:
+            if kind == "network":
+                role = "application" if name == application_network else "refresh"
+                OUTER_RUNTIME.create_public_service_network(
+                    name, owner, domain=CREDENTIAL_DOMAIN, role=role)
+            else:
+                run(["docker", kind, "create", "--label", f"dev.codex.service-owner={owner}", name], discard_stdout=True)
+            statuses[{"volume":"socket-volume","network":("application-network" if name == application_network else "refresh-network")}[kind]] = "created"
+            partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+            if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        common = ["--label", f"dev.codex.service-owner={owner}", "--label", "dev.codex.credential-domain=codex",
+                  "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--user", f"{state.uid}:{state.gid}",
+                  "--pids-limit", "64", "--memory", "256m", "--cpus", "1", "--ulimit", "nofile=256:256"]
+        run(["docker", "run", "--detach", "--name", helper_container, *common,
+             "--network", refresh_network, *proxy_flags(),
+             "--mount", f"type=volume,src={socket_volume},dst=/run/profile-helper",
+             "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
+             "--env", f"CADDY_PROFILE_TOKEN={key}", "--entrypoint", "/trusted/bin/profile-helper",
+             state.sidecar_image, "--profile", "codex"], discard_stdout=True)
+        statuses["helper-container"] = statuses["refresh-attachment"] = "created"
+        partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        run(["docker", "run", "--detach", "--name", caddy, *common,
+             "--network", application_network, *proxy_flags(),
+             "--mount", f"type=volume,src={socket_volume},dst=/run/profile-helper,readonly",
+             "--mount", f"type=bind,src={configuration_path},dst=/etc/caddy/caddy.json,readonly",
+             caddy_identity.runtime_reference, "run", "--config", "/etc/caddy/caddy.json"], discard_stdout=True)
+        statuses["caddy-container"] = "created"
+        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        run(["docker", "network", "connect", SANDBOX_NETWORK, caddy], discard_stdout=True)
+        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+        partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            if cancelled is not None and cancelled.is_set():
-                raise LauncherError("Codex broker startup cancelled")
-            result = run([
-                "docker", "exec", container, "/usr/local/bin/python3", "-c",
-                "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
-            ], check=False, quiet=True)
+            if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
+            result = run(["docker", "exec", caddy, "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/ready"], check=False, quiet=True)
             if result.returncode == 0:
-                lifecycle.transition(LifecycleState.READY)
-                record["lifecycle-state"] = "ready"
-                partial["auth"] = handle.schema3_record()
-                _persist_proxy_state(state.proxy_state, partial)
-                return handle, codex_sidecar_arguments(container, key)
-            status = run([
-                "docker", "inspect", "--format", "{{.State.Running}}", container,
-            ], check=False, capture=True, quiet=True)
-            if status.returncode or status.stdout.strip() != "true":
-                raise LauncherError("Codex authentication sidecar exited before becoming ready")
-            time.sleep(0.1)
-        raise LauncherError("Codex authentication sidecar did not become ready")
+                lifecycle.transition(LifecycleState.READY); record["lifecycle-state"] = "ready"
+                partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+                return handle, codex_sidecar_arguments(caddy, key)
+            time.sleep(.1)
+        raise LauncherError("Codex Caddy/helper pair did not become ready")
     except BaseException as startup_error:
-        lifecycle.transition(LifecycleState.FAILED)
-        record["lifecycle-state"] = "failed"
-        if record["resource-status"] == {"container": "intended"}:
-            record["resource-status"] = {"container": "unknown"}
-        # Persist credential-free recovery identity before cleanup. The token is
-        # session-scoped admission material, never an upstream credential.
+        lifecycle.transition(LifecycleState.FAILED); record["lifecycle-state"] = "failed"
+        for name, status in list(statuses.items()):
+            if status == "intended": statuses[name] = "unknown"
         try:
-            partial = json.loads(state.proxy_state.read_text(encoding="utf-8"))
-            partial["auth"] = handle.schema3_record()
-            _persist_proxy_state(state.proxy_state, partial)
-            handle.cleanup()
-            partial.pop("auth", None)
-            _persist_proxy_state(state.proxy_state, partial)
+            partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+            handle.cleanup(); partial.pop("auth", None); _persist_proxy_state(state.proxy_state, partial)
         except BaseException as cleanup_error:
-            partial["auth"] = handle.schema3_record()
-            _persist_proxy_state(state.proxy_state, partial)
-            startup_error.add_note(f"Codex broker cleanup failed; recovery state retained: {type(cleanup_error).__name__}")
+            partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
+            startup_error.add_note(f"Codex pair cleanup failed; recovery state retained: {type(cleanup_error).__name__}")
         raise
-
 
 def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> list[str]:
     proxy_state = json.loads(state.proxy_state.read_text(encoding="utf-8"))
@@ -1227,49 +1292,90 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
         _persist_proxy_state(state.proxy_state, proxy_state)
         return arguments
     lifecycle_schema = proxy_state.get("trusted-services")
-    if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
+    if lifecycle_schema != SESSION_LIFECYCLE_SCHEMA:
         raise LauncherError("active sandbox proxy session has an unsupported lifecycle schema")
     try:
-        record_kind, sidecar = parse_auth_record(
-            sidecar, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
+        record_kind, sidecar = parse_auth_record(sidecar, managed_required=True)
     except ValueError as error:
         raise LauncherError("active sandbox proxy session has invalid authentication state") from error
-    if sidecar["image"] != state.sidecar_image:
-        raise LauncherError("active sandbox proxy session has invalid authentication state")
+    if record_kind != "managed":
+        raise LauncherError("active sandbox proxy session uses cleanup-only authentication state")
     if record_kind == "managed":
-        expected = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
-                                 state.sidecar_image, state.uid, state.gid)
+        helper_plan = resolved_plan(DOTFILES / "tools/codex-sandbox/auth-proxy",
+                                    state.sidecar_image, state.uid, state.gid)
+        caddy_identity = accepted_caddy_image(sidecar["caddy-image-chain"], OUTER_RUNTIME)
+        material = {"caddy": caddy_identity.__dict__,
+                    "configuration": sidecar["configuration"]["digest"],
+                    "helper": helper_plan.implementation_identity}
+        expected_implementation = "sha256:" + hashlib.sha256(
+            json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if (sidecar["runtime-owner"] != runtime_identity(OUTER_RUNTIME) or
-                sidecar["implementation-identity"] != expected.implementation_identity or
+                sidecar["image"] != caddy_identity.runtime_reference or
+                sidecar["caddy-image-chain"] != caddy_identity.__dict__ or
+                sidecar["helper-implementation"] != helper_plan.implementation_identity or
+                sidecar["implementation-identity"] != expected_implementation or
                 sidecar["credential-volume"]["identity"] != credential_source_identity(auth_directory)):
-            raise LauncherError("active sandbox proxy session has invalid broker identity")
+            raise LauncherError("active sandbox proxy session has invalid pair identity")
         try:
-            snapshot = OUTER_RUNTIME.inspect_container(sidecar["container"])
+            caddy_snapshot = OUTER_RUNTIME.inspect_container(sidecar["container"])
+            helper_snapshot = OUTER_RUNTIME.inspect_container(sidecar["helper-container"])
+            validate_configuration_mount(caddy_snapshot, Path(sidecar["configuration"]["path"]),
+                                         sidecar["configuration"]["digest"])
+            network_labels = {}
+            for role in ("application", "refresh"):
+                inspected = OUTER_RUNTIME.run(
+                    ["network", "inspect", sidecar["networks"][role]], capture_output=True)
+                network = json.loads(inspected.stdout)[0]
+                network_labels[role] = network.get(
+                    "Labels", network.get("CNI", {}).get("nerdctlLabels", {})) or {}
         except (OSError, ValueError, subprocess.SubprocessError) as error:
-            raise LauncherError("cached authentication broker inspection failed") from error
-        networks = snapshot.get("NetworkSettings", {}).get("Networks", {})
-        labels = snapshot.get("Config", {}).get("Labels", {}) or {}
-        mounts = snapshot.get("Mounts", [])
-        expected_source = str(auth_directory)
-        credential_mounts = [mount for mount in mounts
-                             if mount.get("Destination") == "/var/lib/codex-auth"]
-        if (CODEX_BROKER_NETWORK not in networks or
-                labels.get("dev.codex.service-owner") != sidecar["service-owner"] or
-                labels.get("dev.codex.credential-domain") != CREDENTIAL_DOMAIN or
-                sidecar["network-owner"] != {"kind": "admitted-runtime-public-egress",
-                                             "runtime": runtime_identity(OUTER_RUNTIME)} or
-                len(credential_mounts) != 1 or
-                credential_mounts[0].get("Source") != expected_source or
-                credential_mounts[0].get("RW") is not True):
-            raise LauncherError("cached authentication broker runtime boundary changed")
+            raise LauncherError("cached authentication pair inspection failed") from error
+        caddy_networks = caddy_snapshot.get("NetworkSettings", {}).get("Networks", {})
+        helper_networks = helper_snapshot.get("NetworkSettings", {}).get("Networks", {})
+        caddy_credentials = [m for m in caddy_snapshot.get("Mounts", [])
+                             if m.get("Destination") == "/var/lib/codex-auth"]
+        helper_credentials = [m for m in helper_snapshot.get("Mounts", [])
+                              if m.get("Destination") == "/var/lib/codex-auth"]
+        caddy_sockets = [m for m in caddy_snapshot.get("Mounts", [])
+                         if m.get("Destination") == "/run/profile-helper"]
+        helper_sockets = [m for m in helper_snapshot.get("Mounts", [])
+                          if m.get("Destination") == "/run/profile-helper"]
+        expected_labels = {"dev.codex.service-owner": sidecar["service-owner"],
+                           "dev.codex.credential-domain": CREDENTIAL_DOMAIN}
+        labels_match = all((snapshot.get("Config", {}).get("Labels", {}) or {}).get(key) == value
+                           for snapshot in (caddy_snapshot, helper_snapshot)
+                           for key, value in expected_labels.items())
+        images_match = (OUTER_RUNTIME.container_matches_image(
+                            sidecar["container"], OUTER_RUNTIME.inspect_image(sidecar["image"]),
+                            snapshot=caddy_snapshot, labels=expected_labels)
+                        and OUTER_RUNTIME.container_matches_image(
+                            sidecar["helper-container"], OUTER_RUNTIME.inspect_image(state.sidecar_image),
+                            snapshot=helper_snapshot, labels=expected_labels))
+        if (set(caddy_networks) != {sidecar["networks"]["agent-link"], sidecar["networks"]["application"]}
+                or set(helper_networks) != {sidecar["networks"]["refresh"]}
+                or sidecar["network-owner"] != {"kind": "admitted-runtime-public-egress",
+                                                 "runtime": runtime_identity(OUTER_RUNTIME)}
+                or any(network_labels[role].get("dev.codex.service-owner") != sidecar["service-owner"]
+                       or network_labels[role].get("dev.codex.credential-domain") != CREDENTIAL_DOMAIN
+                       or network_labels[role].get("dev.codex.network-role") != role
+                       for role in ("application", "refresh"))
+                or not labels_match or not images_match
+                or caddy_credentials or len(helper_credentials) != 1
+                or helper_credentials[0].get("Source") != str(auth_directory)
+                or helper_credentials[0].get("RW") is not True
+                or len(caddy_sockets) != 1 or caddy_sockets[0].get("Name") != sidecar["socket-volume"]
+                or caddy_sockets[0].get("RW") is not False
+                or len(helper_sockets) != 1 or helper_sockets[0].get("Name") != sidecar["socket-volume"]
+                or helper_sockets[0].get("RW") is not True):
+            raise LauncherError("cached authentication pair runtime boundary changed")
     if not codex_sidecar_has_sandbox_network(sidecar["container"]):
         raise LauncherError(
             "cached authentication sidecar is absent or belongs to another sandbox "
             "network; stop the active sandbox session before retrying"
         )
     readiness = run([
-        "docker", "exec", sidecar["container"], "/usr/local/bin/python3", "-c",
-        "import socket; socket.create_connection(('127.0.0.1',8787),1).close()",
+        "docker", "exec", sidecar["container"], "wget", "-q", "-O", "/dev/null",
+        "http://127.0.0.1:8787/ready",
     ], check=False, quiet=True)
     if readiness.returncode:
         raise LauncherError("cached authentication broker is not locally ready")

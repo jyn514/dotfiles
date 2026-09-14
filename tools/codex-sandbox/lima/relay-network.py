@@ -34,11 +34,12 @@ def configure(config, internal, public_service=False):
 
 
 def main():
-    name, kind, owner = sys.argv[1:]
+    name, kind, owner, *boundary = sys.argv[1:]
+    domain, role = boundary if boundary else ("-", "-")
     if not re.fullmatch(r"[0-9a-f]{32}", owner):
         raise ValueError("invalid relay owner")
     relay_name = re.fullmatch(r"codex-(?:agent-podman|host-editor)-(?:link|egress)-[0-9]+-[0-9a-f]{12}", name)
-    service_name = re.fullmatch(r"[a-zA-Z0-9_.-]+-zulip-public-only", name)
+    service_name = re.fullmatch(r"[a-zA-Z0-9_.-]+-(?:zulip-public-only|application|refresh)", name)
     if not relay_name and not service_name:
         raise ValueError("network name is not owned by a sandbox service")
     if ((kind not in ("internal", "egress") or ("-link-" in name) != (kind == "internal"))
@@ -51,7 +52,9 @@ def main():
     # creation succeeds but configuration or transport subsequently fails.
     labels = (["--label", "dev.codex.service-owner=" + owner,
                "--label", "dev.codex.public-policy=sha256:" + hashlib.sha256(
-                   Path('/usr/local/share/codex-sandbox/network-policy.json').read_bytes()).hexdigest()]
+                   Path('/usr/local/share/codex-sandbox/network-policy.json').read_bytes()).hexdigest(),
+               *([] if domain == "-" else ["--label", "dev.codex.credential-domain=" + domain]),
+               *([] if role == "-" else ["--label", "dev.codex.network-role=" + role])]
               if kind == "public-service" else ["--label", "dev.codex.relay-owner=" + owner])
     subprocess.run(["nerdctl", "--namespace", "default", "network", "create",
                     *labels, name], check=True, timeout=30)
