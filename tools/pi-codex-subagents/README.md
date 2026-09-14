@@ -106,9 +106,9 @@ Template skills and extensions override configured defaults. Skills explicitly r
 
 `directSkillRoutes` delegates exact `/skill:<name>` invocations to an agent template before the parent model runs. Each route requires `agentType`; `proposalOnly: true` adds the existing parent session identity and instructs the child to return proposals without mutation. This is a prompt-level instruction, not a security boundary: use a read-only template when the child must be mechanically unable to apply changes.
 
-Direct routes apply only to idle, text-only interactive or RPC input. Images, extension-authored input, and queued input follow Pi's normal skill handling. Route templates must contain frontmatter only: a template prompt before `/skill:<name>` would prevent Pi from expanding the skill. Put model, thinking, tools, skills, and extensions in template frontmatter instead.
+Direct routes apply only to idle, text-only interactive or RPC input. Images, extension-authored input, and queued input follow Pi's normal skill handling. The child message keeps `/skill:<name>` first so Pi expands the skill, then appends the agent template prompt. Template frontmatter still configures the child model, thinking, tools, skills, and extensions.
 
-Missing routes use normal parent execution. A missing or prompted template, unavailable proposal session, or missing parent identity also falls back before child startup, with a warning. Once child startup is attempted, any failure is reported without rerunning the skill on the parent because the child may already have produced effects. Child completion uses the normal parent-continuation delivery path.
+Missing routes use normal parent execution. A missing template, unavailable proposal session, or missing parent identity also falls back before child startup, with a warning. Once child startup is attempted, any failure is reported without rerunning the skill on the parent because the child may already have produced effects. Child completion uses the normal parent-continuation delivery path.
 
 Direct routing requires a Pi version whose extension context provides `resolveSkillCommand()`; older versions continue to support ordinary `spawn_agent` use.
 

@@ -200,6 +200,7 @@ export default function (pi: ExtensionAPI) {
     loadedSkillPaths?: Record<string, string>;
     modelReference?: string;
     thinking?: ThinkingLevel;
+    templatePromptPosition?: "before" | "after";
   }
 
   const spawnFromContext = async (ctx: any, request: SpawnFromContextRequest) => {
@@ -232,6 +233,7 @@ export default function (pi: ExtensionAPI) {
       inheritedTools: pi.getActiveTools().join(","),
       model,
       thinking: request.thinking,
+      templatePromptPosition: request.templatePromptPosition,
     });
   };
 
@@ -329,10 +331,6 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
       ctx.ui?.notify?.(`Direct skill route template not found: ${route.agentType}`, "warning");
       return;
     }
-    if (definition.prompt?.trim()) {
-      ctx.ui?.notify?.(`Direct skill route template must not have a prompt body: ${route.agentType}`, "warning");
-      return;
-    }
     if (!ctx.model?.provider || !ctx.model?.id || !ctx.sessionManager.getSessionId?.()) {
       ctx.ui?.notify?.("Direct skill delegation requires an active model and parent session identity", "warning");
       return;
@@ -350,6 +348,7 @@ ${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${s
         agentType: route.agentType,
         skills: [invocation.skill.name],
         loadedSkillPaths: { [invocation.skill.name]: invocation.skill.filePath },
+        templatePromptPosition: "after",
       });
       ctx.ui?.notify?.(`Delegated /skill:${invocation.skill.name} to ${result.task_name}`, "info");
     } catch (error) {

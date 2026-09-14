@@ -136,6 +136,7 @@ export interface SpawnAgentParams {
   inheritedTools?: string;
   model?: { provider: string; modelId: string };
   thinking?: ThinkingLevel;
+  templatePromptPosition?: "before" | "after";
 }
 
 interface PendingRequest {
@@ -1230,7 +1231,10 @@ export class AgentManager {
       const targets = this.defaultWaitAllTargets.get(params.parentSessionId) ?? new Set<string>();
       targets.add(info.canonicalName);
       this.defaultWaitAllTargets.set(params.parentSessionId, targets);
-      const prompt = [definition?.prompt, params.message].filter(Boolean).join("\n\n");
+      const promptParts = params.templatePromptPosition === "after"
+        ? [params.message, definition?.prompt]
+        : [definition?.prompt, params.message];
+      const prompt = promptParts.filter(Boolean).join("\n\n");
       try {
         await this.startLiveAgent(info, prompt, params.message);
       } catch (error) {

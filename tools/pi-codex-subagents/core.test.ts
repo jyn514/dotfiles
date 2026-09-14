@@ -1177,6 +1177,17 @@ describe("extension completion delivery and TUI", () => {
       await expect(tools.get("spawn_agent").execute("spawn-5", { task_name: "gone", message: "x", model: "openai/gpt-5" }, undefined, undefined, ctx))
         .rejects.toThrow(/not currently available/);
 
+      await tools.get("spawn_agent").execute("spawn-prompt-order", {
+        task_name: "ordinary-prompt-order",
+        message: "ordinary task body",
+        agent_type: "prompted",
+      }, undefined, undefined, ctx);
+      const ordinaryPromptAgent = getAgent("ordinary-prompt-order", parentSessionId)!;
+      const ordinaryPromptEntries = fs.readFileSync(ordinaryPromptAgent.sessionFile, "utf8")
+        .trim().split("\n").map((line) => JSON.parse(line));
+      expect(ordinaryPromptEntries.find((entry) => entry.type === "prompt")?.message)
+        .toBe("Template prompt body.\n\nordinary task body");
+
       // Direct routing uses the resolved skill path before before_agent_start has populated cachedSkills.
       const directResult = await emit("input", {
         text: "/skill:tighten-docs shorten this",
@@ -1210,11 +1221,16 @@ describe("extension completion delivery and TUI", () => {
       expect(await emit("input", { text: "/skill:tighten-docs x", source: "extension" })).toBeUndefined();
       expect(await emit("input", { text: "/skill:tighten-docs x", source: "interactive", streamingBehavior: "followUp" })).toBeUndefined();
       expect(await emit("input", { text: "/skill:tighten-docs x", source: "interactive", images: [{ type: "image" }] })).toBeUndefined();
-      expect(await emit("input", { text: "/skill:blocked x", source: "interactive" })).toBeUndefined();
+      expect(await emit("input", { text: "/skill:blocked x", source: "interactive" })).toEqual({ action: "handled" });
+      const promptedAgent = findDirectAgent("direct/blocked/");
+      const promptedChildEntries = fs.readFileSync(promptedAgent!.sessionFile, "utf8")
+        .trim().split("\n").map((line) => JSON.parse(line));
+      const promptedMessage = promptedChildEntries.find((entry) => entry.type === "prompt")?.message;
+      expect(promptedMessage).toStartWith("/skill:blocked x");
+      expect(promptedMessage).toEndWith("Template prompt body.");
       fs.rmSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), { force: true });
       expect(await emit("input", { text: "/skill:session-title-curation x", source: "interactive" })).toBeUndefined();
       fs.writeFileSync(path.join(TEST_AGENT_DIR, "parent.jsonl"), "");
-      expect(notifications.slice(notificationCount)).toContain("Direct skill route template must not have a prompt body: prompted");
       expect(notifications.slice(notificationCount)).toContain("Proposal-only direct skill routing requires an existing parent session file");
 
       const failureNotificationCount = notifications.length;
