@@ -1,12 +1,13 @@
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from plover_reconnect.config import DeviceFingerprint, parse, read, write
+from plover_reconnect.config import DeviceFingerprint, config_path, parse, read, write
 from plover_reconnect import extension
 
 
@@ -144,6 +145,18 @@ class ReconnectTest(unittest.TestCase):
         fingerprint = DeviceFingerprint(1, 2, "Maker", "Model")
         write(self.path, fingerprint)
         self.assertEqual(read(self.path), fingerprint)
+
+    def test_config_path_uses_plover_oslayer_config(self):
+        plover = types.ModuleType("plover")
+        oslayer = types.ModuleType("plover.oslayer")
+        config = types.ModuleType("plover.oslayer.config")
+        config.CONFIG_DIR = self.temp.name
+        with mock.patch.dict(sys.modules, {
+            "plover": plover,
+            "plover.oslayer": oslayer,
+            "plover.oslayer.config": config,
+        }):
+            self.assertEqual(config_path(), self.path)
 
     def test_configuration_rejects_boolean_identifiers(self):
         with self.assertRaises(ValueError):

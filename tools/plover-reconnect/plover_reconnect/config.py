@@ -14,7 +14,7 @@ CONFIG_NAME = "plover-reconnect.json"
 
 
 def config_path() -> Path:
-    from plover.config import CONFIG_DIR
+    from plover.oslayer.config import CONFIG_DIR
     return Path(CONFIG_DIR) / CONFIG_NAME
 
 

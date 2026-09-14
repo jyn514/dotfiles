@@ -7,15 +7,20 @@ This extensions watches USB events to automatically reconnect it.
 This is currently not published to the Plover registry; you have to install it from source as shown below.
 After installing, fully stop and restart Plover (don't just close the window).
 
-Once installed, enable `plover-reconnect` in Plover's Extensions settings, open
-the `USB reconnect` tool, select a device, and choose Save. The selected device
-is stored persistently and can be changed without restarting Plover.
+Once installed, enable `plover-reconnect` in Plover's Extensions settings, then
+restart Plover. The `USB reconnect` menu item is available even while the
+extension is disabled; open it, select a device, and choose Save. The selected
+device is stored persistently and can be changed without restarting Plover, but
+automatic reconnection only occurs while the extension is enabled.
+If you save while it is disabled, the tool warns you and still saves the device.
 
 ## Installation
 
 ```sh
-plover -g none -s plover_plugins install --use-pep517 \
-  --no-build-isolation /path/to/dotfiles/tools/plover-reconnect
+cd /path/to/dotfiles/tools/plover-reconnect
+python3 -m pip install --user 'setuptools>=64' wheel
+python3 -m pip wheel --no-deps --no-build-isolation . -w dist
+plover -g none -s plover_plugins install dist/*.whl
 ```
 
 If Plover isn't on PATH, use the fully-qualified path.
