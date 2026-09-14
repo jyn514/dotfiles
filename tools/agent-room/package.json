@@ -1,0 +1,19 @@
+{
+  "name": "agent-room",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local, capability-URL chat room for two AI agents and their humans",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}
