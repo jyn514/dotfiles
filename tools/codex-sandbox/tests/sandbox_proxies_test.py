@@ -732,7 +732,7 @@ class ManifestTest(unittest.TestCase):
         shared_state = {"proxies": [{
             "name": "example", "volume": "shared-example", "container": "shared-example",
             "image": "sha256:" + "0" * 64,
-        }], "auth": {"container": "shared-auth", "image": "helper"}}
+        }], "auth": {"container": "shared-auth", "key": "legacy-key", "image": "helper"}}
         shared_manifest = sandbox_proxies.serializable_manifest(
             sandbox_proxies.load_manifest(self.repo)
         )
@@ -1023,7 +1023,7 @@ class ManifestTest(unittest.TestCase):
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {
-            "auth": {"container": "auth-proxy", "key": "secret"},
+            "auth": {"container": "auth-proxy", "key": "secret", "image": "helper"},
             "proxies": [{
                 "name": "example", "container": "proxy", "volume": "volume",
                 "image": "sha256:" + "0" * 64,
@@ -1194,6 +1194,61 @@ class ManifestTest(unittest.TestCase):
         self.assertFalse(registry.cleanup(0).remaining)
         owner.stop_proxy_forward.assert_called_once_with(legacy["forwarding"])
 
+    def test_managed_auth_record_cannot_downgrade_by_dropping_owner(self) -> None:
+        record = {
+            "container": "codex-auth", "key": "a.b.c", "image": "sha256:" + "1" * 64,
+            "implementation-identity": "sha256:" + "2" * 64, "state-schema": 1,
+            "lifecycle-state": "published", "credential-domain": "codex",
+            "network": "codex-public-only", "network-owner": {"kind": "admitted-runtime-public-egress",
+                              "runtime": {"provider": "podman"}},
+            "endpoint": {"container": "codex-auth", "port": 8787},
+            "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
+                                  "identity": "sha256:" + "3" * 64,
+                                  "lifetime": "shared-session"},
+            "token-lifetime": "shared-session", "runtime-owner": {"provider": "podman"},
+            "resource-status": {"container": "created"},
+        }
+        with self.assertRaisesRegex(ValueError, "fields"):
+            sandbox_proxies.parse_auth_record(record)
+        with self.assertRaisesRegex(ValueError, "cannot downgrade"):
+            sandbox_proxies.parse_auth_record(
+                {"container": "codex-auth", "key": "a.b.c", "image": "sha256:" + "1" * 64},
+                managed_required=True,
+            )
+
+    def test_managed_auth_recovery_rejects_another_services_container(self) -> None:
+        owner = mock.Mock(provider="podman")
+
+        def run(arguments, **kwargs):
+            if arguments[:2] == ["container", "ls"]:
+                return subprocess.CompletedProcess(arguments, 0, stdout="codex-auth\n")
+            if arguments[:2] == ["inspect", "--format"]:
+                return subprocess.CompletedProcess(arguments, 0, stdout="another-owner\n")
+            return subprocess.CompletedProcess(arguments, 0, stdout="")
+
+        owner.run.side_effect = run
+        state = {
+            "runtime": {"provider": "podman"}, "proxies": [],
+            "auth": {
+                "container": "codex-auth", "key": "a.b.c", "image": "sha256:" + "1" * 64,
+                "service-owner": "a" * 32, "implementation-identity": "sha256:" + "2" * 64,
+                "state-schema": 1, "lifecycle-state": "failed", "credential-domain": "codex",
+                "network": "codex-public-only", "network-owner": {"kind": "admitted-runtime-public-egress",
+                              "runtime": {"provider": "podman"}},
+                "endpoint": {"container": "codex-auth", "port": 8787},
+                "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
+                                      "identity": "sha256:" + "3" * 64,
+                                      "lifetime": "shared-session"},
+                "token-lifetime": "shared-session", "runtime-owner": {"provider": "podman"},
+                "resource-status": {"container": "unknown"},
+            },
+        }
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "owner validation"):
+                sandbox_proxies.stop_state(state)
+        self.assertFalse(any(call.args[0][:1] in (["kill"], ["rm"])
+                             for call in owner.run.call_args_list))
+
     def test_absent_auth_container_does_not_make_recovery_fail_forever(self) -> None:
         managed = {
             "name": "example", "container": "container", "volume": "volume",
@@ -1206,7 +1261,7 @@ class ManifestTest(unittest.TestCase):
         owner = mock.Mock(provider="podman")
         owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
         state = {"runtime": {"provider": "podman"}, "proxies": [managed],
-                 "auth": {"container": "already-removed"}}
+                 "auth": {"container": "already-removed", "key": "legacy-key", "image": "helper"}}
         with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner), \
                 mock.patch.object(sandbox_proxies, "_cleanup_proxy_service"):
             sandbox_proxies.stop_state(state)

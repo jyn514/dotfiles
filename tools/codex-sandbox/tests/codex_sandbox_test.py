@@ -495,8 +495,9 @@ class BackgroundRelayTest(unittest.TestCase):
         def cleanup(_state):
             self.assertTrue(finished.is_set(), "cleanup raced the relay worker")
 
-        with mock.patch.dict(main.__globals__, new_state=lambda _: state,
-                             execute=execute, cleanup=cleanup,
+        runtime = mock.Mock()
+        with mock.patch.dict(main.__globals__, image_runtime=lambda: runtime,
+                             new_state=lambda _: state, execute=execute, cleanup=cleanup,
                              unregister_tmux_pane=lambda _: None):
             try:
                 self.assertEqual(128 + signal.SIGTERM, main([]))
@@ -1541,6 +1542,34 @@ class CodexSandboxTest(unittest.TestCase):
         attaches = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "attach"]
         self.assertEqual(str(zuliprc), attaches[0][attaches[0].index("--zuliprc") + 1])
 
+    def test_cancelled_codex_broker_persists_then_recovers_without_creation(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        auth = self.home / ".codex-sandbox-auth"
+        auth.mkdir(mode=0o700)
+        (auth / "auth.json").write_text('{"tokens":{}}\n', encoding="utf-8")
+        (auth / "auth.json").chmod(0o600)
+        proxy_state = self.root / "broker-state.json"
+        proxy_state.write_text('{"proxies":[]}', encoding="utf-8")
+        state = SimpleNamespace(
+            codex_sidecar_container="cancelled-auth", sidecar_image="sha256:" + "0" * 64,
+            uid=os.getuid(), gid=os.getgid(), proxy_state=proxy_state,
+        )
+        cancelled = threading.Event()
+        cancelled.set()
+        calls = []
+
+        def fake_run(arguments, **kwargs):
+            calls.append(arguments)
+            if arguments[:3] == ["docker", "container", "ls"]:
+                return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(arguments, 1, stdout="", stderr="unexpected command")
+
+        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, run=fake_run):
+            with self.assertRaisesRegex(launcher["LauncherError"], "cancelled"):
+                launcher["start_codex_sidecar"](state, auth.resolve(), cancelled=cancelled)
+        self.assertFalse(any(call[:2] == ["docker", "run"] for call in calls))
+        self.assertNotIn("auth", json.loads(proxy_state.read_text(encoding="utf-8")))
+
     def test_starts_codex_auth_sidecar_without_mounting_auth_in_agent(self) -> None:
         auth = self.home / ".codex-sandbox-auth"
         auth.mkdir(mode=0o700)
@@ -1558,10 +1587,16 @@ class CodexSandboxTest(unittest.TestCase):
         ]
         self.assertEqual(1, len(sidecars))
         sidecar = sidecars[0]
+        self.assertEqual(["run", "--detach"], sidecar[:2])
+        self.assertEqual(1, sidecar.count("run"), sidecar)
+        self.assertEqual(sidecar.index("--entrypoint") + 2, len(sidecar) - 1)
         self.assertIn(
             f"type=bind,src={auth.resolve()},dst=/var/lib/codex-auth", sidecar,
         )
         self.assertIn("--read-only", sidecar)
+        labels = [sidecar[index + 1] for index, value in enumerate(sidecar) if value == "--label"]
+        self.assertIn("dev.codex.credential-domain=codex", labels)
+        self.assertTrue(any(value.startswith("dev.codex.service-owner=") for value in labels))
         self.assertEqual("sha256:" + "0" * 64, sidecar[-1])
         sidecar_name = sidecar[sidecar.index("--name") + 1]
         readiness = [call for call in calls if call[:3] == [

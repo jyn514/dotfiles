@@ -26,6 +26,10 @@ from trusted_services import (
     LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
     ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
 )
+from codex_broker import (
+    SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
+    resolved_plan as resolved_codex_broker_plan,
+)
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -447,7 +451,14 @@ def reset_main(args: argparse.Namespace) -> int:
         except (FileNotFoundError, json.JSONDecodeError):
             metadata = None
         if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
-            stop_state(session_state(metadata))
+            state = session_state(metadata)
+            try:
+                stop_state(state)
+            except BaseException:
+                if state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA:
+                    metadata["state"] = state
+                    write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
+                raise
         metadata_path.unlink(missing_ok=True)
     return 0
 
@@ -465,6 +476,31 @@ def publish_main(args: argparse.Namespace) -> int:
     validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []),
                           repository_identity(Path(args.repo)), commands=manifest["commands"],
                           uid=identity_parameters.get("uid"), gid=identity_parameters.get("gid"))
+    lifecycle_schema = state.get("trusted-services")
+    if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
+        raise ConfigError("shared state has an unsupported trusted-service schema")
+    auth = state.get("auth")
+    if auth is not None:
+        try:
+            kind, auth = parse_auth_record(
+                auth, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
+        except ValueError as error:
+            raise ConfigError("shared state has invalid authentication recovery authority") from error
+        if kind == "managed":
+            if auth["lifecycle-state"] != "ready" or auth["resource-status"] != {"container": "created"}:
+                raise ConfigError("authentication service is not ready for publication")
+            helper_image = accepted_preview.get("helper-image")
+            if not isinstance(helper_image, str):
+                raise ConfigError("authentication service lacks an accepted image")
+            snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
+            if snapshot.get("State", {}).get("Running") is not True:
+                raise ConfigError("authentication service stopped before publication")
+            _validate_codex_broker(
+                OUTER_RUNTIME, auth, helper_image,
+                identity_parameters.get("uid"), identity_parameters.get("gid"),
+                snapshot=snapshot,
+            )
+            auth["lifecycle-state"] = "published"
     launch = state.pop("accepted", None)
     if not isinstance(launch, dict) or set(launch) != {
         "source-present", "agent-image", "helper-image", "parameters", "proxy-images",
@@ -612,10 +648,23 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
         raise ConfigError("active session proxy state does not match accepted policy")
     if {proxy["name"]: proxy.get("image") for proxy in proxies} != images["proxies"]:
         raise ConfigError("active session proxy images do not match accepted images")
+    lifecycle_schema = state.get("trusted-services")
+    if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
+        raise ConfigError("active session has an unsupported trusted-service schema")
     auth = state.get("auth")
-    if auth is not None and (images["helper"] is None or not isinstance(auth, dict) or
-                             auth.get("image") != images["helper"]):
-        raise ConfigError("active session helper image does not match accepted images")
+    auth_kind = None
+    if auth is not None:
+        try:
+            auth_kind, auth = parse_auth_record(
+                auth, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
+        except ValueError as error:
+            raise ConfigError("active session has invalid authentication state") from error
+        if images["helper"] is None or auth["image"] != images["helper"]:
+            raise ConfigError("active session helper image does not match accepted images")
+        if auth_kind == "managed" and (
+                auth["lifecycle-state"] != "published"
+                or auth["resource-status"] != {"container": "created"}):
+            raise ConfigError("active session authentication service was not published")
     try:
         OUTER_RUNTIME.verify_builder_image(images["agent"])
         helper_image = None
@@ -626,13 +675,12 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
         if auth is not None:
             if not isinstance(auth.get("container"), str) or helper_image is None:
                 raise ConfigError("active session has invalid authentication state")
-            if OUTER_RUNTIME.provider == "lima-docker":
+            if auth_kind == "managed":
                 auth_snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
-                if (auth_snapshot.get("State", {}).get("Running") is not True or
-                        not OUTER_RUNTIME.container_matches_image(
-                            auth["container"], helper_image, snapshot=auth_snapshot,
-                        )):
+                if auth_snapshot.get("State", {}).get("Running") is not True:
                     raise ConfigError("active session has an unhealthy authentication service")
+                _validate_codex_broker(OUTER_RUNTIME, auth, images["helper"], args.uid, args.gid,
+                                       snapshot=auth_snapshot)
             elif (not containers_running([auth["container"]]) or
                   not OUTER_RUNTIME.container_matches_image(auth["container"], helper_image)):
                 raise ConfigError("active session has an unhealthy authentication service")
@@ -825,6 +873,44 @@ def zuliprc_mount_args(path: Path) -> list[str]:
 
 
 COMMAND_PROXY_STATE_SCHEMA = 1
+
+
+def _validate_codex_broker(owner, auth: dict[str, Any], image: str, uid: int, gid: int,
+                           *, snapshot=None) -> None:
+    try:
+        kind, auth = parse_auth_record(auth)
+    except ValueError as error:
+        raise ConfigError("active session has invalid authentication service identity") from error
+    if kind != "managed" or auth["image"] != image or auth["runtime-owner"] != runtime_identity(owner):
+        raise ConfigError("active session has invalid authentication service identity")
+    expected = resolved_codex_broker_plan(Path(__file__).with_name("auth-proxy"), image, uid, gid)
+    if auth["implementation-identity"] != expected.implementation_identity:
+        raise ConfigError("active session has invalid authentication service identity")
+    live = snapshot if snapshot is not None else owner.inspect_container(auth["container"])
+    networks = live.get("NetworkSettings", {}).get("Networks", {})
+    mounts = [mount for mount in live.get("Mounts", [])
+              if mount.get("Destination") == "/var/lib/codex-auth"]
+    if "codex-public-only" not in networks or len(mounts) != 1 or mounts[0].get("RW") is not True:
+        raise ConfigError("active session authentication network or credential mount changed")
+    source = mounts[0].get("Source")
+    try:
+        source_identity = credential_source_identity(Path(source)) if isinstance(source, str) else None
+    except (OSError, ValueError) as error:
+        raise ConfigError("active session authentication credential source changed") from error
+    if source_identity != auth["credential-volume"]["identity"]:
+        raise ConfigError("active session authentication credential source changed")
+    inspection = {"snapshot": live}
+    verified = owner.inspect_image(image)
+    if not owner.container_matches_image(auth["container"], verified, **inspection, labels={
+            "dev.codex.service-owner": auth["service-owner"],
+            "dev.codex.credential-domain": "codex",
+    }):
+        raise ConfigError("active session has an unhealthy authentication service")
+    ready = owner.run(["exec", auth["container"], "/usr/local/bin/python3", "-c",
+                       "import socket; socket.create_connection(('127.0.0.1',8787),1).close()"],
+                      check=False, capture_output=True)
+    if ready.returncode:
+        raise ConfigError("active session authentication service is not locally ready")
 _ADAPTER_BEGIN = b"\n# BEGIN OWNED COMMAND PROXY ADAPTER\n"
 _ADAPTER_END = b"\n# END OWNED COMMAND PROXY ADAPTER\n"
 
@@ -1360,7 +1446,20 @@ def _cleanup_proxy_service(runtime, proxy: dict[str, Any]) -> None:
 
 def stop_state(state: dict[str, Any]) -> None:
     all_proxies = [*state.get("proxies", []), *state.get("retired-proxies", [])]
-    if not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies):
+    lifecycle_schema = state.get("trusted-services")
+    if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
+        raise ConfigError("invalid trusted-service recovery schema")
+    auth = state.get("auth")
+    managed_auth = False
+    if auth is not None:
+        try:
+            auth_kind, auth = parse_auth_record(
+                auth, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
+        except ValueError as error:
+            raise ConfigError("invalid authentication recovery authority") from error
+        managed_auth = auth_kind == "managed"
+    if (not managed_auth and
+            not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies)):
         _stop_legacy_state(state)
         return
     proxies = list(reversed(all_proxies))
@@ -1386,19 +1485,56 @@ def stop_state(state: dict[str, Any]) -> None:
     auth = state.get("auth")
     if isinstance(auth, dict) and isinstance(auth.get("container"), str):
         auth_container = auth["container"]
-        listed = owner.run(
-            ["container", "ls", "--all", "--format", "{{.Names}}"],
-            capture_output=True,
-        ).stdout.splitlines()
-        if auth_container in listed:
-            owner.run(["kill", auth_container], check=False, capture_output=True)
-            result = owner.run(["rm", auth_container], check=False, capture_output=True)
-            if result.returncode:
-                remaining = owner.run(
+        if managed_auth:
+            service_owner = auth["service-owner"]
+            auth["lifecycle-state"] = "stopping"
+            registry = ResourceRegistry(service_owner)
+
+            def presence() -> ResourcePresence:
+                listing = owner.run(
                     ["container", "ls", "--all", "--format", "{{.Names}}"],
-                    capture_output=True,
-                ).stdout.splitlines()
-                if auth_container in remaining:
+                    check=False, capture_output=True,
+                )
+                if listing.returncode:
+                    raise ConfigError("authentication container listing failed")
+                if auth_container not in listing.stdout.splitlines():
+                    return ResourcePresence.ABSENT
+                inspected = owner.run(
+                    ["inspect", "--format", "{{index .Config.Labels \"dev.codex.service-owner\"}}",
+                     auth_container], check=False, capture_output=True,
+                )
+                if inspected.returncode:
+                    raise ConfigError("authentication container inspection failed")
+                return (ResourcePresence.OWNED if inspected.stdout.strip() == service_owner
+                        else ResourcePresence.MISMATCHED)
+
+            def remove() -> None:
+                owner.run(["kill", auth_container], check=False, capture_output=True)
+                result = owner.run(["rm", auth_container], check=False, capture_output=True)
+                if result.returncode and presence() is not ResourcePresence.ABSENT:
+                    raise ConfigError("authentication container removal failed")
+
+            registry.register(OwnedResource(
+                f"container:{service_owner}", service_owner, presence, remove,
+            ))
+            result = registry.cleanup(0)
+            if result.remaining:
+                auth["lifecycle-state"] = "cleanup-failed"
+                failures.append("authentication broker owner validation or removal failed")
+            else:
+                auth["lifecycle-state"] = "removed"
+                auth["resource-status"] = {"container": "removed"}
+        else:
+            # Pre-migration schema-3 records remain recoverable, but new records
+            # have only the lifecycle registry above as cleanup owner.
+            listed = owner.run(
+                ["container", "ls", "--all", "--format", "{{.Names}}"],
+                capture_output=True,
+            ).stdout.splitlines()
+            if auth_container in listed:
+                owner.run(["kill", auth_container], check=False, capture_output=True)
+                result = owner.run(["rm", auth_container], check=False, capture_output=True)
+                if result.returncode:
                     failures.append("authentication container removal failed")
     if failures:
         raise ConfigError("cleanup failed; retaining recovery metadata:\n" + "\n".join(failures))
@@ -1408,7 +1544,13 @@ def stop_main(args: argparse.Namespace) -> int:
     if path.exists():
         contents = path.read_text(encoding="utf-8")
         if contents.strip():
-            stop_state(json.loads(contents))
+            state = json.loads(contents)
+            try:
+                stop_state(state)
+            except BaseException:
+                if state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA:
+                    write_atomic(path, json.dumps(state, sort_keys=True))
+                raise
     return 0
 
 
