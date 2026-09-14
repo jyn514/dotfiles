@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /libexec/agent-wrappers/gateway-transport /usr/local/bin/docker "$@"

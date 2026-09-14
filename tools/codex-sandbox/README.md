@@ -33,7 +33,9 @@ An approved read discloses reusable credentials to the untrusted sandbox.
 The relay keeps no credential cache and returns the pair only if both reads succeed.
 
 Flower's local CI client consumes the framed protocol in [the relay design](spec/r2-keychain-relay-design.typ);
-there is no credential-printing command.
+there is no credential-printing command. It retries only connection establishment until one
+monotonic readiness deadline; after connecting it sends one credential frame and never retries,
+so one invocation can produce at most one Keychain consent sequence.
 Explicit R2 environment credentials bypass the relay, and unavailable relay credentials skip optional upload without failing CI.
 The Keychain listener, token, container, and networks belong to the launch and are cleaned up independently of the editor/Podman gateway.
 The two relay networks are created concurrently;
@@ -79,6 +81,9 @@ Host editing and Zulip default on;
 Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
 Nested containers and Flower R2 default off.
+Host-editor, nested-container, and Flower clients tolerate delayed best-effort listener startup
+for a bounded readiness interval. Retries stop before the first request byte; after transmission
+starts, transport failure is terminal and a possibly accepted operation is never replayed.
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
 The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.

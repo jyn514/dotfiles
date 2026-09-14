@@ -12,6 +12,7 @@ import stat
 import struct
 import sys
 import tempfile
+import time
 
 with Path(__file__).with_name("host-editor-protocol.json").open(encoding="utf-8") as stream:
     PROTOCOL = json.load(stream)
@@ -19,6 +20,8 @@ PROTOCOL_VERSION = PROTOCOL["version"]
 MAX_DOCUMENT_BYTES = PROTOCOL["max_document_bytes"]
 MAX_MESSAGE_BYTES = PROTOCOL["max_message_bytes"]
 EDITOR_RESULT_TIMEOUT_SECONDS = 12 * 60 * 60
+CONNECT_DEADLINE_SECONDS = float(os.environ.get("CODEX_SANDBOX_GATEWAY_RETRY_SECONDS", "15"))
+CONNECT_RETRY_SECONDS = 0.1
 ADDRESS = os.environ.get("CODEX_SANDBOX_EDITOR_ADDRESS", "")
 TOKEN = os.environ.get("CODEX_SANDBOX_EDITOR_TOKEN", "")
 
@@ -84,6 +87,25 @@ def parse_address(value: str) -> tuple[str, int]:
     return host, parsed_port
 
 
+def connect_before_request(address: tuple[str, int]) -> socket.socket:
+    """Retry connection establishment only; callers send at most one request."""
+    deadline = time.monotonic() + CONNECT_DEADLINE_SECONDS
+    last_error: OSError | None = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                f"host editor did not become ready within {CONNECT_DEADLINE_SECONDS:g} seconds"
+            ) from last_error
+        try:
+            return socket.create_connection(address, timeout=min(5, remaining))
+        except InterruptedError:
+            raise
+        except OSError as error:
+            last_error = error
+            time.sleep(min(CONNECT_RETRY_SECONDS, max(0, deadline - time.monotonic())))
+
+
 def main(arguments: list[str]) -> int:
     if len(arguments) != 1:
         print("usage: host-editor FILE", file=sys.stderr)
@@ -98,7 +120,7 @@ def main(arguments: list[str]) -> int:
             {"version": PROTOCOL_VERSION, "token": TOKEN, "content": content},
             separators=(",", ":"),
         ).encode("utf-8")
-        with socket.create_connection(parse_address(ADDRESS), timeout=5) as connection:
+        with connect_before_request(parse_address(ADDRESS)) as connection:
             connection.sendall(struct.pack(">I", len(payload)) + payload)
             response = receive_response(connection)
             if set(response) == {"version", "status"} \

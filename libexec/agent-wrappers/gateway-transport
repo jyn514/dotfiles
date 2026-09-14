@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Run a container client through a retrying, single-use loopback TCP relay."""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import selectors
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from urllib.parse import urlsplit, urlunsplit
+
+DEADLINE_SECONDS = float(os.environ.get("CODEX_SANDBOX_GATEWAY_RETRY_SECONDS", "15"))
+RETRY_SECONDS = 0.1
+
+
+def connect_until(address: tuple[str, int], deadline: float) -> socket.socket:
+    last: OSError | None = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"gateway did not become ready within {DEADLINE_SECONDS:g} seconds") from last
+        try:
+            connection = socket.create_connection(address, timeout=min(1.0, remaining))
+            # The attempt timeout bounds connection establishment only. Once the
+            # transport exists it is a transparent relay and may remain idle.
+            connection.settimeout(None)
+            return connection
+        except InterruptedError:
+            raise
+        except OSError as error:
+            last = error
+            time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
+
+
+def accept_before_deadline(listener: socket.socket, child: subprocess.Popen, deadline: float) -> socket.socket | None:
+    """Return one client, or None when the client process exits first."""
+    with selectors.DefaultSelector() as selector:
+        selector.register(listener, selectors.EVENT_READ)
+        while True:
+            if child.poll() is not None:
+                return None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"container client did not connect within {DEADLINE_SECONDS:g} seconds"
+                )
+            if selector.select(min(0.1, remaining)):
+                client, _ = listener.accept()
+                return client
+
+
+def relay(left: socket.socket, right: socket.socket) -> None:
+    selector = selectors.DefaultSelector()
+    selector.register(left, selectors.EVENT_READ, right)
+    selector.register(right, selectors.EVENT_READ, left)
+    open_read = 2
+    while open_read:
+        for key, _ in selector.select():
+            source, destination = key.fileobj, key.data
+            data = source.recv(65536)
+            if data:
+                destination.sendall(data)
+            else:
+                selector.unregister(source)
+                destination.shutdown(socket.SHUT_WR)
+                open_read -= 1
+
+
+def known_hosts_for_loopback(source: Path, destination: Path, original_host: str, original_port: int,
+                             local_port: int) -> None:
+    # The provisioner deliberately records this stable alias so the gateway's
+    # per-launch DNS name never changes the trusted host identity.
+    aliases = {"agent-podman", original_host, f"[{original_host}]:{original_port}"}
+    output = []
+    for line in source.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            output.append(line); continue
+        fields = line.split(" ", 1)
+        names = fields[0].split(",")
+        if not aliases.intersection(names):
+            continue
+        output.append(f"[127.0.0.1]:{local_port} {fields[1]}")
+    if not output:
+        raise RuntimeError("gateway SSH host has no trusted key")
+    destination.write_text("\n".join(output) + "\n", encoding="utf-8")
+    destination.chmod(0o600)
+
+
+def force_verified_native_ssh(home: Path, local_port: int, argv: list[str]) -> list[str]:
+    """Make host-key verification independent of ambient Podman/SSH settings."""
+    known_hosts = home / ".ssh/known_hosts"
+    config = home / ".ssh/config"
+    config.write_text(
+        "Host 127.0.0.1\n"
+        f"  Port {local_port}\n"
+        "  StrictHostKeyChecking yes\n"
+        f"  UserKnownHostsFile {known_hosts}\n",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    # Podman's native transport consumes the OpenSSH configuration above.  The
+    # option is global and therefore must precede the user's subcommand.
+    return [argv[0], "--ssh=native", *argv[1:]]
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print("gateway-transport: missing client", file=sys.stderr); return 2
+    value = os.environ.get("CONTAINER_HOST", "")
+    parsed = urlsplit(value)
+    if parsed.scheme != "ssh" or parsed.hostname is None or parsed.port is None:
+        os.execv(argv[0], argv)
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    with socket.socket() as listener, tempfile.TemporaryDirectory(prefix="gateway-ssh-") as directory:
+        listener.bind(("127.0.0.1", 0)); listener.listen(1)
+        port = listener.getsockname()[1]
+        home = Path(directory); (home / ".ssh").mkdir()
+        known_hosts_for_loopback(Path(os.environ["AGENT_PODMAN_KNOWN_HOSTS"]), home / ".ssh/known_hosts",
+                                 parsed.hostname, parsed.port, port)
+        host = f"{parsed.username + '@' if parsed.username else ''}127.0.0.1:{port}"
+        environment = os.environ.copy()
+        environment["HOME"] = str(home)
+        environment["CONTAINER_HOST"] = urlunsplit((parsed.scheme, host, parsed.path, parsed.query, parsed.fragment))
+        command = force_verified_native_ssh(home, port, argv)
+        child = subprocess.Popen(command, env=environment)
+        try:
+            client = accept_before_deadline(listener, child, deadline)
+            if client is None:
+                return child.wait()
+            with client:
+                upstream = connect_until((parsed.hostname, parsed.port), deadline)
+                with upstream:
+                    relay(client, upstream)
+        except (OSError, RuntimeError, TimeoutError) as error:
+            print(f"gateway transport failed: {error}", file=sys.stderr)
+            if child.poll() is None:
+                child.terminate()
+        return child.wait()
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
