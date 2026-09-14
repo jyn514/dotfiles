@@ -47,9 +47,21 @@ def atomic_auth(data):
         finally: os.close(directory)
     finally: temporary.unlink(missing_ok=True)
 
-def credentials():
-    with REFRESH_LOCK, (AUTH.parent / 'refresh.lock').open('a+b') as lock:
-        os.chmod(lock.name, 0o600); fcntl.flock(lock, fcntl.LOCK_EX)
+def credentials(*, deadline=None):
+    deadline = time.monotonic() + 30 if deadline is None else deadline
+    remaining = deadline - time.monotonic()
+    if remaining <= 0 or not REFRESH_LOCK.acquire(timeout=remaining):
+        raise TimeoutError('Codex credential deadline exceeded')
+    try:
+      with (AUTH.parent / 'refresh.lock').open('a+b') as lock:
+        os.chmod(lock.name, 0o600)
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+            except BlockingIOError:
+                if time.monotonic() >= deadline: raise TimeoutError('Codex credential deadline exceeded')
+                time.sleep(min(.05, max(0, deadline-time.monotonic())))
+        if time.monotonic() >= deadline: raise TimeoutError('Codex credential deadline exceeded')
         data = read_auth(); tokens = data['tokens']; access = tokens['access_token']
         try: expires = int(jwt_payload(access)['exp'])
         except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError): expires = 0
@@ -58,7 +70,6 @@ def credentials():
             refresh_route = broker.Route('codex-refresh', TOKEN_HOST, TOKEN_PATH, TOKEN_PATH,
                                          frozenset({'POST'}), frozenset(), frozenset(), timeout=30,
                                          request_timeout=30, response_timeout=30)
-            deadline = time.monotonic() + 30
             connection = broker.open_upstream(refresh_route)
             try:
                 remaining=deadline-time.monotonic()
@@ -118,4 +129,7 @@ def credentials():
             account = auth_claim.get('chatgpt_account_id') if isinstance(auth_claim, dict) else None
         if not isinstance(account, str) or not account:
             raise RuntimeError('Codex account is malformed')
+        if time.monotonic() >= deadline: raise TimeoutError('Codex credential deadline exceeded')
         return access, account
+    finally:
+        REFRESH_LOCK.release()

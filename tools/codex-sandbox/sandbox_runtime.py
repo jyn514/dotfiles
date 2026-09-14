@@ -109,6 +109,25 @@ class Podman:
         self.run(["pull", "--quiet", reference], stdout=subprocess.DEVNULL)
         return self.inspect_image(reference).reference
 
+    def verify_external_image(self, repository, manifest, configuration, platform):
+        """Pull an installed-policy manifest and verify its native inspection chain."""
+        digest(manifest); digest(configuration)
+        reference = repository + "@" + manifest
+        self.run(["pull", "--quiet", reference], stdout=subprocess.DEVNULL)
+        raw = single_json(self.run(["image", "inspect", reference], capture_output=True).stdout)
+        actual_platform = raw.get("Os") + "/" + {"aarch64": "arm64", "x86_64": "amd64"}.get(
+            raw.get("Architecture"), raw.get("Architecture"))
+        image_id = digest("sha256:" + raw["Id"].removeprefix("sha256:"))
+        repo_digests = raw.get("RepoDigests") or []
+        if actual_platform != platform or image_id != configuration or not any(
+                item.rsplit("@", 1)[-1] == manifest for item in repo_digests):
+            raise RuntimeError("external image inspection differs from installed identity")
+        return Image(reference, manifest, configuration, chain_id(raw["RootFS"]["Layers"]))
+
+    def inspect_runtime_image_id(self, reference):
+        raw = single_json(self.run(["image", "inspect", reference], capture_output=True).stdout)
+        return digest("sha256:" + raw["Id"].removeprefix("sha256:"))
+
     def forward_proxy(self, container):
         return subprocess.run(self.argv([
             "exec", "--interactive", container, "/trusted/bin/sandbox-proxy-forward"])).returncode
