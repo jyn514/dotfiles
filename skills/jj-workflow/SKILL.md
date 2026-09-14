@@ -1,11 +1,13 @@
 ---
 name: jj-workflow
-description: "Use only when a Jujutsu task requires history-shaping judgment: partial-file splits, rebases/restacks, conflicts, or unclear change ownership. Do not use for commits limited to explicitly owned whole files, even when the working copy contains multiple files or needs multiple commits."
+description: "Use when a Jujutsu task involves inspecting file or revision history, establishing change provenance or ownership, comparing revisions, or shaping history through splits, rebases, restacks, conflicts, or abandonment. Do not use for routine status, diff, or commit tasks that need no history judgment."
 ---
 
 # jj Workflow
 
 Use this skill for nontrivial Jujutsu history work. Prefer `jj` over Git history-editing commands, keep changes coherent, and do not rewrite shared history unless asked.
+
+Use this skill when the task asks how to inspect or interpret Jujutsu history, including path history, annotations, revision ancestry, provenance, or change ownership.
 
 ## Inspect and protect work
 
