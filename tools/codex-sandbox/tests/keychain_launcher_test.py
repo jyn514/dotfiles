@@ -74,7 +74,7 @@ class KeychainLauncherTest(unittest.TestCase):
         egress_finished = threading.Event()
 
         def create(state, name, *, internal, owner):
-            self.assertTrue(owner.startswith('keychain-'))
+            self.assertRegex(owner, r'\A[0-9a-f]{32}\Z')
             if internal:
                 self.assertTrue(egress_started.wait(2))
                 link_failed.set()

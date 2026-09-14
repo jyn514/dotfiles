@@ -540,7 +540,7 @@ class GatewayHandle:
         self.state = state
         self.editor = editor
         self.nested = nested
-        self.owner = f"gateway-{uuid.uuid4().hex}"
+        self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
         self.cancelled = threading.Event()
         self.bridge: HostEditorBridge | None = None
@@ -905,7 +905,7 @@ class KeychainHandle:
 
     def __init__(self, state: State, link: str, egress: str, container: str) -> None:
         self.state, self.link, self.egress, self.container = state, link, egress, container
-        self.owner = f"keychain-{uuid.uuid4().hex}"
+        self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
         self.cancelled = threading.Event()
         self.bridge: HostKeychainBridge | None = None

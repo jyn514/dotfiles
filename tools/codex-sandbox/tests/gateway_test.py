@@ -171,6 +171,7 @@ class GatewayLifecycleTest(unittest.TestCase):
         with patch.dict(prepare.__globals__, create_relay_network=create, run=run):
             with self.assertRaisesRegex(OSError, "egress failed"):
                 prepare(state)
+            self.assertRegex(state.gateway_handle.owner, r"\A[0-9a-f]{32}\Z")
             result = state.gateway_handle.cleanup(19)
         self.assertEqual(19, result.primary_status)
         self.assertFalse(result.remaining)
