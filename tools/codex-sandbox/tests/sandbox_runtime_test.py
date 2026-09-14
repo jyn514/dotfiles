@@ -476,6 +476,17 @@ class TransportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "policy changed"):
             backend.workload_argv(runtime.Image(REFERENCE, CONTENT, CONFIG, LAYER), [])
 
+    def test_podman_service_network_installs_owner_and_prohibited_routes(self):
+        backend = runtime.Podman()
+        backend.run = Mock()
+        backend.create_public_service_network("owned-zulip-public-only", "a" * 32)
+        arguments = backend.run.call_args.args[0]
+        self.assertEqual(["network", "create"], arguments[:2])
+        self.assertIn("dev.codex.service-owner=" + "a" * 32, arguments)
+        self.assertIn("dev.codex.public-policy=" + backend.public_network_policy_identity(), arguments)
+        for route in runtime.PROHIBITED_ROUTES:
+            self.assertIn(route + ",prohibit", arguments)
+
     def test_old_lima_hosts_cannot_create_unprotected_relays(self):
         backend = lima()
         backend.record["files"] = {}

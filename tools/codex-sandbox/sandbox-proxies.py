@@ -30,6 +30,7 @@ from codex_broker import (
     SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
     resolved_plan as resolved_codex_broker_plan,
 )
+from zulip_broker import resolved_plan as resolved_zulip_broker_plan
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -527,7 +528,13 @@ def publish_main(args: argparse.Namespace) -> int:
         },
     }
     for proxy in state.get("proxies", []):
-        payload["commands"][proxy["name"]] = {"container": proxy["container"], "image": proxy["image"]}
+        projection = {"container": proxy["container"], "image": proxy["image"]}
+        if proxy["name"] == "zulip":
+            projection.update({key: proxy[key] for key in (
+                "service-owner", "implementation-identity", "state-schema", "credential-domain",
+                "network", "network-owner", "network-policy", "session-token", "endpoint",
+            )})
+        payload["commands"][proxy["name"]] = projection
     write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
     return 0
 
@@ -985,9 +992,18 @@ def start_one_proxy(
 ) -> dict[str, str]:
     service_owner = uuid.uuid4().hex
     selected_network = args.network if command["network"] else "none"
-    resolved = _command_proxy_resolved(
-        name, command, images[name], selected_network, os.getuid(), os.getgid(),
-    )
+    zulip_network = f"{args.prefix}-zulip-public-only" if name == "zulip" else None
+    if zulip_network:
+        selected_network = zulip_network
+        resolved = resolved_zulip_broker_plan(
+            Path(__file__).parents[1] / "zulip-proxy",
+            Path(__file__).with_name("auth-proxy") / "typed_broker.py",
+            images[name], os.getuid(), os.getgid(), selected_network,
+        )
+    else:
+        resolved = _command_proxy_resolved(
+            name, command, images[name], selected_network, os.getuid(), os.getgid(),
+        )
     lifecycle = ServiceLifecycle(resolved, service_owner, owners or OwnerSet())
     lifecycle.transition(LifecycleState.RESOLVED)
     lifecycle.transition(LifecycleState.PREPARING)
@@ -1004,6 +1020,16 @@ def start_one_proxy(
     }
     if isinstance(OUTER_RUNTIME, VMRuntime):
         proxy["volume-owner"] = service_owner
+    if zulip_network:
+        proxy.update({
+            "family": "authenticated-egress", "credential-domain": "zulip",
+            "network": zulip_network, "network-owner": service_owner,
+            "session-token": uuid.uuid4().hex + "." + uuid.uuid4().hex + "." + uuid.uuid4().hex,
+            "credential-mount": "/run/secrets/zuliprc", "mutable-state": "/var/lib/zulip-broker",
+            "network-policy": OUTER_RUNTIME.public_network_policy_identity(),
+            "endpoint": {"container": container, "socket": "/run/sandbox-proxy/socket"},
+        })
+        proxy["resource-status"]["network"] = "intended"
 
     def persist() -> None:
         with state_lock:
@@ -1022,6 +1048,10 @@ def start_one_proxy(
     try:
         if cancelled is not None and cancelled.is_set():
             raise ConfigError(f"proxy {name} startup cancelled")
+        if zulip_network:
+            OUTER_RUNTIME.create_public_service_network(zulip_network, service_owner)
+            proxy["resource-status"]["network"] = "created"
+            persist()
         if isinstance(OUTER_RUNTIME, VMRuntime):
             OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
         else:
@@ -1041,7 +1071,7 @@ def start_one_proxy(
             "--security-opt=no-new-privileges", "--read-only",
             "--user", f"{os.getuid()}:{os.getgid()}",
             "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
-            "--network", args.network if command["network"] else "none",
+            "--network", selected_network,
             "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
             "--ulimit", "nofile=1024:1024", "--workdir", str(container_repo / command["workdir"]),
             "--entrypoint", command["argv"][0],
@@ -1063,6 +1093,11 @@ def start_one_proxy(
         if name == "zulip":
             if not args.zuliprc:
                 raise ConfigError("trusted Zulip proxy requires a credential path")
+            docker_args += [
+                "--label", "dev.codex.credential-domain=zulip",
+                "--env", f"ZULIP_BROKER_KEY={proxy['session-token']}",
+                "--tmpfs", "/var/lib/zulip-broker:rw,noexec,nosuid,nodev,size=1m",
+            ]
             docker_args += zuliprc_mount_args(Path(args.zuliprc))
         checked_repository_path(repo, command["workdir"], f"command {name} workdir")
         docker_args += proxy_repository_mount_args(repo, container_repo, name, command)
@@ -1089,12 +1124,6 @@ def start_one_proxy(
             OUTER_RUNTIME.start_proxy_forward(forwarding)
             proxy["resource-status"]["forward"] = "created"
             persist()
-        if name == "zulip":
-            # Broker migration has not landed: publication intentionally accepts
-            # this service without probing its socket. Do not claim READY.
-            proxy["readiness"] = "legacy-zulip-unprobed"
-            persist()
-            return proxy
         deadline = time.monotonic() + 10
         readiness_error = ""
         while (remaining := deadline - time.monotonic()) > 0:
@@ -1102,7 +1131,8 @@ def start_one_proxy(
                 raise ConfigError(f"proxy {name} startup cancelled")
             check = subprocess.run(
                 OUTER_RUNTIME.argv(["exec", *([] if OUTER_RUNTIME.provider == "lima" else ["--interactive"]),
-                                    container, "/trusted/bin/sandbox-proxy-forward"]),
+                                    container, "/trusted/bin/sandbox-proxy-forward",
+                                    *(["--health"] if name == "zulip" else [])]),
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE, text=True, timeout=remaining,
             )
@@ -1268,7 +1298,11 @@ _MANAGED_PROXY_REQUIRED = {
     "name", "volume", "container", "image", "service-owner", "implementation-identity",
     "state-schema", "lifecycle-state", "identity-parameters", "resource-status",
 }
-_MANAGED_PROXY_OPTIONAL = {"volume-owner", "forwarding", "readiness"}
+_MANAGED_PROXY_OPTIONAL = {
+    "volume-owner", "forwarding", "family", "credential-domain", "network",
+    "network-owner", "network-policy", "session-token", "credential-mount", "mutable-state",
+    "endpoint",
+}
 
 
 def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
@@ -1290,7 +1324,9 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
             not isinstance(parameters, dict) or set(parameters) != {"uid", "gid", "network"} or
             not isinstance(parameters["uid"], int) or not isinstance(parameters["gid"], int) or
             not isinstance(parameters["network"], str) or not parameters["network"] or
-            not isinstance(statuses, dict) or set(statuses) != {"volume", "container", "forward"} or
+            not isinstance(statuses, dict) or set(statuses) not in (
+                {"volume", "container", "forward"},
+                {"volume", "container", "forward", "network"}) or
             any(value not in {"absent", "intended", "created"} for value in statuses.values()) or
             any(not isinstance(proxy[field], str) or not proxy[field] for field in
                 ("name", "volume", "container", "image"))):
@@ -1302,10 +1338,24 @@ def _managed_proxy_record(proxy: Any) -> dict[str, Any] | None:
         raise ConfigError("managed proxy forwarding owner changed")
     if (forwarding is None) != (statuses["forward"] == "absent"):
         raise ConfigError("managed proxy forwarding status is inconsistent")
-    if proxy.get("readiness") is not None and not (
-            proxy["name"] == "zulip" and proxy["readiness"] == "legacy-zulip-unprobed"
-            and proxy["lifecycle-state"] == "starting"):
-        raise ConfigError("managed proxy readiness record is invalid")
+    if proxy["name"] == "zulip":
+        required = {"family", "credential-domain", "network", "network-owner", "network-policy",
+                    "session-token", "credential-mount", "mutable-state", "endpoint"}
+        if (not required <= set(proxy) or proxy["family"] != "authenticated-egress" or
+                proxy["credential-domain"] != "zulip" or proxy["network-owner"] != owner or
+                proxy["network"] != parameters["network"] or
+                not IMAGE_RE.fullmatch(proxy["network-policy"]) or
+                proxy["endpoint"] != {"container": proxy["container"],
+                                      "socket": "/run/sandbox-proxy/socket"} or
+                not isinstance(proxy["session-token"], str) or
+                re.fullmatch(r"[0-9a-f]{32}\.[0-9a-f]{32}\.[0-9a-f]{32}", proxy["session-token"]) is None or
+                proxy["credential-mount"] != "/run/secrets/zuliprc" or
+                proxy["mutable-state"] != "/var/lib/zulip-broker" or
+                statuses.get("network") not in {"intended", "created"}):
+            raise ConfigError("managed Zulip broker recovery record is invalid")
+    elif set(proxy) & {"family", "credential-domain", "network", "network-owner", "network-policy",
+                       "session-token", "credential-mount", "mutable-state", "endpoint"}:
+        raise ConfigError("non-Zulip proxy contains Zulip broker authority")
     return proxy
 
 
@@ -1315,19 +1365,24 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
     if managed is None:
         return
     parameters = managed["identity-parameters"]
-    if managed["lifecycle-state"] != "ready" and not (
-            managed["name"] == "zulip" and managed.get("readiness") == "legacy-zulip-unprobed"
-            and managed["lifecycle-state"] == "starting"):
+    if managed["lifecycle-state"] != "ready":
         raise ConfigError("managed required proxy is not ready")
     if uid is not None and parameters["uid"] != uid or gid is not None and parameters["gid"] != gid:
         raise ConfigError("managed proxy UID/GID changed")
     if (command["network"] and parameters["network"] == "none") or (
             not command["network"] and parameters["network"] != "none"):
         raise ConfigError("managed proxy network changed")
-    expected = _command_proxy_resolved(
-        managed["name"], command, managed["image"], parameters["network"],
-        parameters["uid"], parameters["gid"],
-    ).implementation_identity
+    if managed["name"] == "zulip":
+        expected = resolved_zulip_broker_plan(
+            Path(__file__).parents[1] / "zulip-proxy",
+            Path(__file__).with_name("auth-proxy") / "typed_broker.py",
+            managed["image"], parameters["uid"], parameters["gid"], parameters["network"],
+        ).implementation_identity
+    else:
+        expected = _command_proxy_resolved(
+            managed["name"], command, managed["image"], parameters["network"],
+            parameters["uid"], parameters["gid"],
+        ).implementation_identity
     if expected != managed["implementation-identity"]:
         raise ConfigError("managed proxy implementation identity changed")
 
@@ -1408,8 +1463,25 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         volume_id, service_owner, volume_presence,
         lambda: remove(["volume", "rm", proxy["volume"]]),
     ))
+    dependencies = [volume_id]
+    if "network" in proxy:
+        network_id = _proxy_resource_identity("network", service_owner)
+        def network_presence() -> ResourcePresence:
+            result = runtime.run(["network", "inspect", proxy["network"]], check=False,
+                                 capture_output=True)
+            if result.returncode:
+                return ResourcePresence.ABSENT
+            network = single_json(result.stdout)
+            labels = network.get("Labels", network.get("CNI", {}).get("nerdctlLabels", {}))
+            label = labels.get("dev.codex.service-owner")
+            return ResourcePresence.OWNED if label == service_owner else ResourcePresence.MISMATCHED
+        registry.register(OwnedResource(
+            network_id, service_owner, network_presence,
+            lambda: remove(["network", "rm", proxy["network"]]),
+        ))
+        dependencies.append(network_id)
     registry.register(OwnedResource(
-        container_id, service_owner, container_presence, remove_container, (volume_id,),
+        container_id, service_owner, container_presence, remove_container, tuple(dependencies),
     ))
     forwarding = proxy.get("forwarding")
     if forwarding is not None:
@@ -1588,6 +1660,23 @@ def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid
             network_mode = live_snapshot.get("HostConfig", {}).get("NetworkMode")
             if network_mode not in (None, parameters["network"]):
                 raise ConfigError("active proxy container network changed")
+            if proxy["name"] == "zulip":
+                networks = live_snapshot.get("NetworkSettings", {}).get("Networks", {})
+                mounts = [item for item in live_snapshot.get("Mounts", [])
+                          if item.get("Destination") == "/run/secrets/zuliprc"]
+                labels = live_snapshot.get("Config", {}).get("Labels", {})
+                if (proxy["network"] not in networks or len(mounts) != 1 or
+                        mounts[0].get("RW") is not False or
+                        labels.get("dev.codex.credential-domain") != "zulip"):
+                    raise ConfigError("active Zulip broker isolation boundary changed")
+                network = single_json(owner.run(
+                    ["network", "inspect", proxy["network"]], capture_output=True,
+                ).stdout)
+                network_labels = network.get("Labels", network.get("CNI", {}).get("nerdctlLabels", {}))
+                if (network_labels.get("dev.codex.service-owner") != proxy["network-owner"] or
+                        network_labels.get("dev.codex.public-policy") != proxy["network-policy"] or
+                        proxy["network-policy"] != owner.public_network_policy_identity()):
+                    raise ConfigError("active Zulip public-network policy changed")
         raw_volume = owner.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
         volume_labels = single_json(raw_volume).get("Labels", {})
         expected_label = ("dev.codex.volume-owner" if "volume-owner" in proxy
@@ -1652,9 +1741,28 @@ def route_main(args: argparse.Namespace) -> int:
     if metadata.get("repository") != identity:
         raise ConfigError("sandbox session metadata names another repository")
     proxy = metadata.get("commands", {}).get(args.command)
+    if args.command == "zulip":
+        required = {"container", "image", "service-owner", "implementation-identity", "state-schema",
+                    "credential-domain", "network", "network-owner", "network-policy", "session-token",
+                    "endpoint"}
+        if not isinstance(proxy, dict) or set(proxy) != required:
+            raise ConfigError("Zulip broker is unavailable in the active sandbox session")
+        state = session_state(metadata)
+        records = [item for item in state.get("proxies", [])
+                   if isinstance(item, dict) and item.get("name") == "zulip"]
+        if len(records) != 1 or any(proxy[key] != records[0][key] for key in required):
+            raise ConfigError("Zulip endpoint authority differs from lifecycle state")
+        accepted = metadata.get("accepted", {})
+        command = accepted.get("manifest", {}).get("commands", {}).get("zulip")
+        if not isinstance(command, dict):
+            raise ConfigError("Zulip endpoint lacks accepted implementation authority")
+        owner = state_runtime(state)
+        snapshot = owner.inspect_container(proxy["container"])
+        if snapshot.get("State", {}).get("Running") is not True:
+            raise ConfigError("Zulip broker is unavailable in the active sandbox session")
+        validate_live_proxy(owner, records[0], identity, command, snapshot=snapshot)
+        return owner.forward_proxy(proxy["container"])
     if not isinstance(proxy, dict) or set(proxy) != {"container", "image"}:
-        if args.command == "zulip":
-            return subprocess.run(local).returncode
         raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
     owner = state_runtime(session_state(metadata))
     validate_live_proxy(owner, proxy, identity, args.command)

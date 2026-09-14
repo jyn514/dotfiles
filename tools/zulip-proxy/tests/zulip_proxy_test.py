@@ -61,15 +61,40 @@ class ForwarderTest(unittest.TestCase):
         connection = mock.MagicMock()
         socket_context = mock.MagicMock()
         socket_context.__enter__.return_value = connection
+        connection.recv.return_value = b""
+        request = frame({"version": 1, "operation": "topics", "channel_id": 1})
+        stdin = mock.Mock(buffer=io.BytesIO(request))
+        stdout = mock.Mock(buffer=io.BytesIO())
         with (
             mock.patch.object(forwarder.socket, "socket", return_value=socket_context),
-            mock.patch.object(forwarder.shutil, "copyfileobj"),
             mock.patch.object(forwarder.Path, "exists", return_value=True),
-            mock.patch.dict(forwarder.os.environ, {"SANDBOX_PROXY_SOCKET": "/tmp/proxy"}),
+            mock.patch.object(forwarder.sys, "stdin", stdin),
+            mock.patch.object(forwarder.sys, "stdout", stdout),
+            mock.patch.dict(forwarder.os.environ, {
+                "SANDBOX_PROXY_SOCKET": "/tmp/proxy", "ZULIP_BROKER_KEY": "token",
+            }),
         ):
-            forwarder.main()
+            forwarder.main([])
 
         connection.connect.assert_called_once_with("/tmp/proxy")
+        sent = connection.sendall.call_args.args[0]
+        self.assertEqual("token", json.loads(sent[4:])["token"])
+
+
+    def test_health_probe_connects_without_reading_or_forwarding_a_request(self) -> None:
+        connection = mock.MagicMock()
+        socket_context = mock.MagicMock()
+        socket_context.__enter__.return_value = connection
+        with (
+            mock.patch.object(forwarder.socket, "socket", return_value=socket_context),
+            mock.patch.object(forwarder.Path, "exists", return_value=True),
+            mock.patch.dict(forwarder.os.environ, {
+                "SANDBOX_PROXY_SOCKET": "/tmp/proxy", "ZULIP_BROKER_KEY": "token",
+            }),
+        ):
+            forwarder.main(["--health"])
+        connection.connect.assert_called_once_with("/tmp/proxy")
+        connection.sendall.assert_not_called()
 
 
 class ServerTest(unittest.TestCase):
@@ -110,6 +135,16 @@ class ServerTest(unittest.TestCase):
             with self.subTest(request=request):
                 with self.assertRaises(server.RequestError):
                     server.parse_request(json.dumps(request).encode())
+
+    def test_authenticated_envelope_preserves_typed_request_semantics(self) -> None:
+        request = self.request(topic="private")
+        raw = json.dumps(request, separators=(",", ":")).encode()
+        admitted = server.typed_broker.wrap("session-token", raw)
+        self.assertEqual(request, server.parse_request(
+            server.typed_broker.unwrap(admitted, "session-token", object_pairs_hook=server.unique_object)
+        ))
+        with self.assertRaises(server.typed_broker.AdmissionError):
+            server.typed_broker.unwrap(admitted, "other-token")
 
     def test_rejects_duplicate_request_fields(self) -> None:
         with self.assertRaisesRegex(server.RequestError, "duplicate JSON field"):
@@ -177,6 +212,41 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(
             {"version": 1, "topics": [{"name": "private topic", "max_id": 42}]}, result,
         )
+
+    def test_rejects_malformed_and_unbounded_rate_limit_retries(self) -> None:
+        from urllib.error import HTTPError
+        request = mock.Mock()
+        for retry_after in ("tomorrow", "301"):
+            error = HTTPError("https://chat.example", 429, "limited",
+                              {"Retry-After": retry_after}, None)
+            with self.subTest(retry_after=retry_after), \
+                    self.assertRaises(server.RequestError):
+                server.fetch_json(request, mock.Mock(side_effect=error))
+
+    def test_transport_rejects_private_dns_and_pins_public_resolution(self) -> None:
+        private = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", 443))]
+        with mock.patch.object(server.socket, "getaddrinfo", return_value=private), \
+                self.assertRaisesRegex(server.RequestError, "prohibited"):
+            server.public_addresses("chat.example")
+        public = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("8.8.8.8", 443))]
+        with mock.patch.object(server.socket, "getaddrinfo", return_value=public):
+            self.assertEqual(["8.8.8.8"], server.public_addresses("chat.example"))
+
+    def test_rejects_oversized_upstream_response_before_parsing(self) -> None:
+        response = mock.Mock(headers={"Content-Length": str(server.MAX_RESPONSE + 1)})
+        with self.assertRaisesRegex(server.RequestError, "output limit"):
+            server._read_json_response(response, server.time.monotonic() + 1)
+        response.read.assert_not_called()
+
+    def test_rejects_malformed_or_non_advancing_messages(self) -> None:
+        valid = {"id": 4, "timestamp": 1, "sender_full_name": "User",
+                 "display_recipient": "Channel", "subject": "Topic", "content": "body"}
+        self.assertEqual([valid], server.validate_messages([{**valid, "ignored": "upstream"}]))
+        for messages in ([{**valid, "id": True}], [valid, dict(valid)],
+                         [{**valid, "id": 4}],
+                         [{key: value for key, value in valid.items() if key != "content"}]):
+            with self.subTest(messages=messages), self.assertRaises(server.RequestError):
+                server.validate_messages(messages, after_id=4)
 
     def test_rejects_non_https_or_credentialed_site(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
@@ -265,6 +335,7 @@ class ClientTest(unittest.TestCase):
             proxy_dir = Path(temporary) / "proxies"
             socket_dir = proxy_dir / "zulip"
             socket_dir.mkdir(parents=True)
+            (socket_dir / "token").write_text("test-token")
             listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             listener.bind(str(socket_dir / "socket"))
             listener.listen(1)
@@ -274,7 +345,9 @@ class ClientTest(unittest.TestCase):
                 connection, _ = listener.accept()
                 with connection:
                     length = struct.unpack(">I", receive_exact(connection, 4))[0]
-                    requests.append(json.loads(receive_exact(connection, length)))
+                    envelope = json.loads(receive_exact(connection, length))
+                    self.assertEqual("test-token", envelope["token"])
+                    requests.append(envelope["request"])
                     connection.recv(1)
                     connection.sendall(frame({
                         "version": 1,
@@ -301,6 +374,7 @@ class ClientTest(unittest.TestCase):
             proxy_dir = Path(temporary) / "proxies"
             socket_dir = proxy_dir / "zulip"
             socket_dir.mkdir(parents=True)
+            (socket_dir / "token").write_text("test-token")
             listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             listener.bind(str(socket_dir / "socket"))
             listener.listen(2)
@@ -311,11 +385,17 @@ class ClientTest(unittest.TestCase):
                     connection, _ = listener.accept()
                     with connection:
                         length = struct.unpack(">I", receive_exact(connection, 4))[0]
-                        requests.append(json.loads(receive_exact(connection, length)))
+                        envelope = json.loads(receive_exact(connection, length))
+                        self.assertEqual("test-token", envelope["token"])
+                        requests.append(envelope["request"])
                         self.assertEqual(b"", connection.recv(1))
                         response = {
                             "version": 1,
-                            "messages": [{"id": 40 + index, "content": f"page {index}"}],
+                            "messages": [{
+                                "id": 40 + index, "timestamp": 1_700_000_000 + index,
+                                "sender_full_name": "Example User", "display_recipient": "Channel",
+                                "subject": "topic", "content": f"page {index}",
+                            }],
                             "found_newest": index == 1,
                             "history_limited": index == 0,
                         }

@@ -528,7 +528,7 @@ class ManifestTest(unittest.TestCase):
         })
         self.assertEqual(7, sandbox_proxies.route_main(args))
 
-    def test_local_zulip_falls_back_when_active_session_has_no_proxy(self) -> None:
+    def test_active_session_zulip_never_falls_back_without_endpoint_authority(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
         (runtime / "session.json").write_text(json.dumps({
@@ -543,7 +543,8 @@ class ManifestTest(unittest.TestCase):
         })
         with (runtime / "session.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
-            self.assertEqual(7, sandbox_proxies.route_main(args))
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "Zulip broker is unavailable"):
+                sandbox_proxies.route_main(args)
 
     def test_snapshot_is_independent_of_later_manifest_edits(self) -> None:
         self.write({"example": self.command()})
@@ -652,7 +653,7 @@ class ManifestTest(unittest.TestCase):
                     {"proxies": []}, mock.MagicMock(), "example", command,
                 )
 
-    def test_zulip_can_start_before_its_socket_is_ready(self) -> None:
+    def test_zulip_broker_fails_closed_before_its_socket_is_ready(self) -> None:
         zuliprc = self.repo / "zuliprc"
         zuliprc.write_text("secret", encoding="utf-8")
         zuliprc.chmod(0o600)
@@ -669,14 +670,15 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(sandbox_proxies, "proxy_logs", return_value=""), \
                 mock.patch.object(sandbox_proxies.time, "monotonic", side_effect=[0, 0, 11]), \
                 mock.patch.object(sandbox_proxies.time, "sleep"):
-            proxy = sandbox_proxies.start_one_proxy(
-                args, self.repo, "identity", {"zulip": image}, state,
-                mock.MagicMock(), "zulip", self.command(argv=["zulip-proxy"], network=True),
-            )
-        self.assertEqual("zulip", proxy["name"])
-        self.assertEqual("starting", proxy["lifecycle-state"])
-        self.assertEqual("legacy-zulip-unprobed", proxy["readiness"])
-        self.assertEqual([proxy], state["proxies"])
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "did not become ready"):
+                sandbox_proxies.start_one_proxy(
+                    args, self.repo, "identity", {"zulip": image}, state,
+                    mock.MagicMock(), "zulip", self.command(argv=["zulip-proxy"], network=True),
+                )
+        self.assertEqual("failed", state["proxies"][0]["lifecycle-state"])
+        self.assertEqual("authenticated-egress", state["proxies"][0]["family"])
+        self.assertEqual("test-zulip-public-only", state["proxies"][0]["network"])
+        self.assertNotEqual("sandbox", state["proxies"][0]["network"])
 
     def test_snapshot_rejects_optional_symlinked_sandbox_directory(self) -> None:
         self.sandbox.rmdir()

@@ -102,13 +102,24 @@ def receive_exact(connection: socket.socket, length: int) -> bytes:
 
 
 def exchange_in_sandbox(body: bytes, proxy_dir: str) -> bytes:
-    path = Path(proxy_dir) / "zulip" / "socket"
+    directory = Path(proxy_dir) / "zulip"
+    path = directory / "socket"
     unavailable = (
         "sandbox proxy 'zulip' is unavailable in this session; "
         "restart the sandbox after configuring ~/.zuliprc"
     )
     if not path.is_socket():
         raise RuntimeError(unavailable)
+    try:
+        token = (directory / "token").read_text(encoding="ascii")
+        length = struct.unpack(">I", body[:4])[0]
+        request = json.loads(body[4:4 + length])
+        admitted = json.dumps(
+            {"token": token, "request": request}, ensure_ascii=False, separators=(",", ":"),
+        ).encode()
+        body = struct.pack(">I", len(admitted)) + admitted
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError(unavailable) from error
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(75)
         try:
@@ -203,6 +214,18 @@ def request_page(
         or not isinstance(response["history_limited"], bool)
     ):
         raise RuntimeError("proxy returned malformed pagination data")
+    previous = anchor if isinstance(anchor, int) else 0
+    message_fields = {"id", "timestamp", "sender_full_name", "display_recipient", "subject", "content"}
+    for message in response["messages"]:
+        if (not isinstance(message, dict) or set(message) != message_fields or
+                isinstance(message.get("id"), bool) or
+                not isinstance(message.get("id"), int) or message["id"] <= previous or
+                isinstance(message.get("timestamp"), bool) or
+                not isinstance(message.get("timestamp"), int) or message["timestamp"] < 0 or
+                not all(isinstance(message.get(field), str) for field in
+                        ("sender_full_name", "display_recipient", "subject", "content"))):
+            raise RuntimeError("proxy returned malformed or non-advancing message data")
+        previous = message["id"]
     return response
 
 
@@ -226,7 +249,7 @@ def request_topics(channel_id: int) -> list[dict]:
 
 def markdown(message: dict) -> str:
     timestamp = datetime.fromtimestamp(message["timestamp"], timezone.utc)
-    topic = message.get("subject", message.get("topic", ""))
+    topic = message["subject"]
     return (
         f"## {timestamp.isoformat().replace('+00:00', 'Z')} — "
         f"{message['sender_full_name']}\n\n"

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Installed creator of isolated per-launch relay links and relay egress networks."""
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -10,7 +11,7 @@ import tempfile
 import os
 
 
-def configure(config, internal):
+def configure(config, internal, public_service=False):
     plugins = config["plugins"]
     if ([plugin["type"] for plugin in plugins] != ["bridge", "portmap", "firewall", "tuning"] or
             plugins[2] != {"type": "firewall", "backend": "iptables", "ingressPolicy": "same-bridge"}):
@@ -26,6 +27,9 @@ def configure(config, internal):
                 subnet.pop("gateway", None)
     # Attachment-local tuning avoids DEL undoing another interface's policy.
     plugins[3]["sysctl"] = {"net.ipv6.conf.IFNAME.disable_ipv6": "1"}
+    if public_service:
+        policy = (Path('/usr/local/share/codex-sandbox/network-policy.json')).read_bytes()
+        plugins.append({"type": "public-only", "policyDigest": hashlib.sha256(policy).hexdigest()})
     return config
 
 
@@ -33,18 +37,26 @@ def main():
     name, kind, owner = sys.argv[1:]
     if not re.fullmatch(r"[0-9a-f]{32}", owner):
         raise ValueError("invalid relay owner")
-    if not re.fullmatch(r"codex-(?:agent-podman|host-editor)-(?:link|egress)-[0-9]+-[0-9a-f]{12}", name):
-        raise ValueError("relay network name is not owned by a sandbox launch")
-    if kind not in ("internal", "egress") or ("-link-" in name) != (kind == "internal"):
-        raise ValueError("relay network purpose differs from its name")
+    relay_name = re.fullmatch(r"codex-(?:agent-podman|host-editor)-(?:link|egress)-[0-9]+-[0-9a-f]{12}", name)
+    service_name = re.fullmatch(r"[a-zA-Z0-9_.-]+-zulip-public-only", name)
+    if not relay_name and not service_name:
+        raise ValueError("network name is not owned by a sandbox service")
+    if ((kind not in ("internal", "egress") or ("-link-" in name) != (kind == "internal"))
+            if relay_name else kind != "public-service"):
+        raise ValueError("network purpose differs from its name")
     destination = Path.home() / ".config/cni/net.d/default" / f"nerdctl-{name}.conflist"
     if destination.exists() or destination.is_symlink():
         raise ValueError("refusing to adopt an existing relay network")
     # The caller owns this unique name before entry and must clean up even if
     # creation succeeds but configuration or transport subsequently fails.
+    labels = (["--label", "dev.codex.service-owner=" + owner,
+               "--label", "dev.codex.public-policy=sha256:" + hashlib.sha256(
+                   Path('/usr/local/share/codex-sandbox/network-policy.json').read_bytes()).hexdigest()]
+              if kind == "public-service" else ["--label", "dev.codex.relay-owner=" + owner])
     subprocess.run(["nerdctl", "--namespace", "default", "network", "create",
-                    "--label", "dev.codex.relay-owner=" + owner, name], check=True, timeout=30)
-    config = configure(json.loads(destination.read_text()), kind == "internal")
+                    *labels, name], check=True, timeout=30)
+    config = configure(json.loads(destination.read_text()), kind == "internal",
+                       kind == "public-service")
     descriptor, temporary = tempfile.mkstemp(dir=destination.parent)
     try:
         with os.fdopen(descriptor, "w") as stream:

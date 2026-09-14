@@ -363,6 +363,17 @@ class Docker(VMRuntime):
         # Setup owns this network; service activation installs its firewall.
         pass
 
+    def create_public_service_network(self, name, owner):
+        if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
+            raise RuntimeError('invalid Docker service-network owner')
+        bridge = 'csp' + hashlib.sha256(name.encode()).hexdigest()[:10]
+        self.run(['network', 'create', '--label', 'dev.codex.service-owner=' + owner,
+                  '--label', 'dev.codex.public-policy=' + self.public_network_policy_identity(),
+                  '--opt', 'com.docker.network.bridge.name=' + bridge, name],
+                 stdout=subprocess.DEVNULL)
+        if self.record.get('firewall') == 'nftables':
+            self.guest(['python3', '/usr/local/share/codex-sandbox/docker-policy.py', 'check-bridges'])
+
     def create_relay_network(self, name, *, internal, owner=None):
         if not re.fullmatch(r'[0-9a-f]{32}', owner or ''):
             raise RuntimeError('invalid Docker relay owner')

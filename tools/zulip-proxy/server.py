@@ -8,6 +8,8 @@ import configparser
 from datetime import date
 import json
 import os
+import ipaddress
+from http.client import HTTPSConnection
 from pathlib import Path
 import socket
 import struct
@@ -25,6 +27,15 @@ with Path(__file__).with_name("protocol.json").open(encoding="utf-8") as stream:
 PROTOCOL_VERSION = PROTOCOL["version"]
 MAX_REQUEST = PROTOCOL["max_request_bytes"]
 MAX_RESPONSE = PROTOCOL["max_response_bytes"]
+SESSION_KEY = os.environ.get("ZULIP_BROKER_KEY")
+try:
+    import typed_broker
+except ImportError:  # Source-tree tests.
+    import importlib.util
+    _path = Path(__file__).parents[1] / "codex-sandbox" / "auth-proxy" / "typed_broker.py"
+    _spec = importlib.util.spec_from_file_location("typed_broker", _path)
+    typed_broker = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(typed_broker)
 
 
 class RequestError(Exception):
@@ -36,7 +47,76 @@ class RejectRedirects(HTTPRedirectHandler):
         raise RequestError("Zulip API redirected the credentialed request")
 
 
-URL_OPEN = build_opener(RejectRedirects()).open
+PROHIBITED_NETWORKS = tuple(map(ipaddress.ip_network, (
+    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+    "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16",
+    "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4",
+)))
+
+
+def public_addresses(host: str, port: int = 443) -> list[str]:
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(
+            host, port, socket.AF_UNSPEC, socket.SOCK_STREAM, socket.IPPROTO_TCP,
+        )}
+    except socket.gaierror as error:
+        raise RequestError("Zulip host name resolution failed") from error
+    public = []
+    for value in addresses:
+        address = ipaddress.ip_address(value)
+        if not address.is_global or any(address in network for network in PROHIBITED_NETWORKS):
+            raise RequestError("Zulip host resolved to a prohibited address")
+        public.append(value)
+    if not public:
+        raise RequestError("Zulip host has no public address")
+    return sorted(public)
+
+
+class PinnedResponse:
+    def __init__(self, response, connection):
+        self.response, self.connection = response, connection
+    def __getattr__(self, name):
+        return getattr(self.response, name)
+    def __enter__(self):
+        return self
+    def __exit__(self, *_args):
+        self.connection.close()
+
+
+def safe_open(request: HttpRequest, timeout: float):
+    """Resolve once, reject private destinations, then pin TCP while retaining TLS SNI."""
+    parsed = urlsplit(request.full_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.port not in (None, 443):
+        raise RequestError("Zulip request target is not fixed HTTPS")
+    connection = None
+    for address in public_addresses(parsed.hostname):
+        candidate = HTTPSConnection(parsed.hostname, 443, timeout=timeout)
+        candidate._create_connection = lambda _target, timeout=None, source_address=None, address=address: socket.create_connection(
+            (address, 443), timeout, source_address,
+        )
+        try:
+            candidate.connect()
+        except OSError:
+            candidate.close()
+            continue
+        connection = candidate
+        break
+    if connection is None:
+        raise RequestError("Zulip public addresses were unreachable")
+    target = parsed.path + (("?" + parsed.query) if parsed.query else "")
+    connection.request(request.method, target, headers=dict(request.header_items()))
+    response = connection.getresponse()
+    if 300 <= response.status < 400:
+        connection.close()
+        raise RequestError("Zulip API redirected the credentialed request")
+    if response.status >= 400:
+        headers, status, reason = response.headers, response.status, response.reason
+        connection.close()
+        raise HTTPError(request.full_url, status, reason, headers, None)
+    return PinnedResponse(response, connection)
+
+
+URL_OPEN = safe_open
 
 
 def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -153,6 +233,26 @@ def parse_request(body: bytes) -> dict[str, Any]:
     return request
 
 
+def validate_messages(messages: Any, after_id: int = 0) -> list[dict[str, Any]]:
+    if not isinstance(messages, list):
+        raise RequestError("Zulip returned malformed message data")
+    previous = after_id
+    fields = {"id", "timestamp", "sender_full_name", "display_recipient", "subject", "content"}
+    required_strings = ("sender_full_name", "display_recipient", "subject", "content")
+    for message in messages:
+        if (not isinstance(message, dict) or not fields <= set(message) or
+                isinstance(message.get("id"), bool) or
+                not isinstance(message.get("id"), int) or message["id"] <= previous or
+                isinstance(message.get("timestamp"), bool) or
+                not isinstance(message.get("timestamp"), int) or message["timestamp"] < 0 or
+                not all(isinstance(message.get(field), str) for field in required_strings)):
+            raise RequestError("Zulip returned malformed or unordered message data")
+        previous = message["id"]
+    return [{field: message[field] for field in (
+        "id", "timestamp", "sender_full_name", "display_recipient", "subject", "content",
+    )} for message in messages]
+
+
 def fetch_page(
     endpoint: str,
     authorization: str,
@@ -182,25 +282,70 @@ def fetch_page(
         method="GET",
     )
     result = fetch_json(http_request, opener)
-    if result.get("result") != "success" or not isinstance(result.get("messages"), list):
+    if result.get("result") != "success":
         raise RequestError(result.get("msg", "Zulip returned a malformed response"))
+    messages = validate_messages(
+        result.get("messages"), request["anchor"] if isinstance(request["anchor"], int) else 0,
+    )
     return {
         "version": PROTOCOL_VERSION,
-        "messages": result["messages"],
+        "messages": messages,
         "found_newest": result.get("found_newest") is True,
         "history_limited": result.get("history_limited") is True,
     }
 
 
-def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
+def _read_json_response(response: Any, deadline: float) -> Any:
+    raw_length = getattr(response, "headers", {}).get("Content-Length")
+    if raw_length is not None:
+        if not raw_length.isascii() or not raw_length.isdecimal():
+            raise RequestError("Zulip returned malformed response framing")
+        if int(raw_length) > MAX_RESPONSE:
+            raise RequestError("Zulip response exceeds the proxy output limit")
+    body = bytearray()
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RequestError("Zulip response deadline expired")
+        connection = getattr(response, "connection", None)
+        sock = getattr(connection, "sock", None)
+        if sock is not None:
+            sock.settimeout(min(60, remaining))
+        chunk = response.read(min(64 * 1024, MAX_RESPONSE + 1 - len(body)))
+        if not chunk:
+            break
+        body.extend(chunk)
+        if len(body) > MAX_RESPONSE:
+            raise RequestError("Zulip response exceeds the proxy output limit")
+    try:
+        return json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RequestError("Zulip returned malformed JSON") from error
+
+
+def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
+    deadline = time.monotonic() + 300
+    attempts = 0
+    while attempts < 5:
+        attempts += 1
         try:
-            with opener(http_request, timeout=60) as response:
-                return json.load(response)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RequestError("Zulip rate-limit retry deadline expired")
+            with opener(http_request, timeout=min(60, remaining)) as response:
+                return _read_json_response(response, deadline)
         except HTTPError as error:
             if error.code != 429:
                 raise RequestError(f"Zulip returned HTTP {error.code}") from error
-            time.sleep(min(int(error.headers.get("Retry-After", "10")), 300))
+            value = error.headers.get("Retry-After", "10")
+            if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+                raise RequestError("Zulip returned invalid Retry-After") from error
+            delay = int(value)
+            remaining = deadline - time.monotonic()
+            if delay > 300 or delay > remaining or attempts >= 5:
+                raise RequestError("Zulip rate limit exceeded retry bounds") from error
+            time.sleep(delay)
+    raise RequestError("Zulip rate limit exceeded retry attempts")
 
 
 def fetch_topics(
@@ -251,10 +396,19 @@ def process_request(body: bytes, endpoint: str, authorization: str) -> bytes:
     return body
 
 
-def serve_connection(connection: socket.socket, endpoint: str, authorization: str) -> None:
+def serve_connection(connection: socket.socket, endpoint: str, authorization: str,
+                     session_key: str | None = SESSION_KEY) -> None:
     stream = connection.makefile("rwb", buffering=0)
     try:
-        body = read_frame(stream, MAX_REQUEST)
+        body = read_frame(stream, MAX_REQUEST + 512)
+        if not session_key:
+            raise RequestError("broker session token is unavailable")
+        try:
+            body = typed_broker.unwrap(body, session_key, object_pairs_hook=unique_object)
+            if len(body) > MAX_REQUEST:
+                raise RequestError("request is too large")
+        except typed_broker.AdmissionError as error:
+            raise RequestError(str(error)) from error
     except (OSError, RequestError) as error:
         body = json.dumps({
             "version": PROTOCOL_VERSION, "error": str(error),
@@ -266,7 +420,12 @@ def serve_connection(connection: socket.socket, endpoint: str, authorization: st
 
 def main() -> None:
     endpoint, authorization = load_credentials()
+    if not SESSION_KEY:
+        raise RequestError("ZULIP_BROKER_KEY must not be empty")
     SOCKET.parent.mkdir(parents=True, exist_ok=True)
+    token_path = SOCKET.parent / "token"
+    token_path.write_text(SESSION_KEY, encoding="ascii")
+    os.chmod(token_path, 0o400)
     SOCKET.unlink(missing_ok=True)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(SOCKET))
@@ -278,7 +437,7 @@ def main() -> None:
             with connection:
                 connection.settimeout(70)
                 time.sleep(max(0.0, next_api_request - time.monotonic()))
-                serve_connection(connection, endpoint, authorization)
+                serve_connection(connection, endpoint, authorization, SESSION_KEY)
                 next_api_request = time.monotonic() + 2
 
 

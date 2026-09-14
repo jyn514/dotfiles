@@ -17,7 +17,7 @@ import time
 import uuid
 
 from lima.host import Host, verification_scope
-from network_policy import PROHIBITED_ROUTES
+from network_policy import PROHIBITED_ROUTES, policy_bytes
 
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -270,6 +270,19 @@ class Podman:
             arguments += ["--route", route + ",prohibit"]
         # Podman's native --ignore handles concurrent repository launchers.
         self.run([*arguments, "codex-public-only"], stdout=subprocess.DEVNULL)
+
+    def public_network_policy_identity(self):
+        return "sha256:" + hashlib.sha256(policy_bytes()).hexdigest()
+
+    def create_public_service_network(self, name, owner):
+        identity = hashlib.sha256(name.encode()).digest()
+        subnet = f"10.{200 + identity[0] % 50}.{identity[1]}.0/24"
+        arguments = ["network", "create", "--subnet", subnet,
+                     "--opt", "isolate=true", "--label", "dev.codex.service-owner=" + owner,
+                     "--label", "dev.codex.public-policy=" + self.public_network_policy_identity()]
+        for route in PROHIBITED_ROUTES:
+            arguments += ["--route", route + ",prohibit"]
+        self.run([*arguments, name], stdout=subprocess.DEVNULL)
 
     def create_relay_network(self, name, *, internal):
         arguments = ["network", "create", "--opt", "isolate=true"]
@@ -616,6 +629,13 @@ class Lima(VMRuntime):
 
     def ensure_public_network(self):
         self.verify()
+
+    def create_public_service_network(self, name, owner):
+        self.verify()
+        if "relay-network.py" not in self.record["files"]:
+            raise RuntimeError("Lima host lacks trusted network provisioning")
+        self.guest(["python3", "/usr/local/share/codex-sandbox/relay-network.py", name,
+                    "public-service", owner], stdout=subprocess.DEVNULL)
 
     def create_relay_network(self, name, *, internal, owner=None):
         self.verify()

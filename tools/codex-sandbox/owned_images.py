@@ -100,13 +100,15 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
                  'tools/codex-sandbox/auth-proxy/server.py',
                  'tools/codex-sandbox/auth-proxy/broker.py',
                  'tools/codex-sandbox/auth-proxy/codex_profile.py',
+                 'tools/codex-sandbox/auth-proxy/typed_broker.py',
                  'tools/codex-sandbox/gateway.py'],
         'jj': ['tools/jj-proxy/Dockerfile', 'tools/jj-proxy/Cargo.toml',
                'tools/jj-proxy/Cargo.lock', 'tools/jj-proxy/jj.toml',
                'tools/jj-proxy/agent-split-editor', 'config/gitignore',
                *[str(p.relative_to(ROOT)) for p in (ROOT / 'tools/jj-proxy/src').rglob('*') if p.is_file()]],
         'zulip': ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
-                  'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json'],
+                  'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json',
+                  'tools/codex-sandbox/auth-proxy/typed_broker.py'],
     }
     return {name: paths for name, paths in sources.items() if name in requested}
 

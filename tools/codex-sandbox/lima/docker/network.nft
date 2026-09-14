@@ -10,16 +10,16 @@ table inet codex_sandbox {
     }
     chain input {
         type filter hook input priority -10; policy accept;
-        iifname { "cs-public", "csl*" } counter reject
+        iifname { "cs-public", "csp*", "csl*" } counter reject
         iifname "cse*" meta nfproto ipv6 counter reject
     }
     chain forward {
         type filter hook forward priority -10; policy accept;
-        iifname { "cs-public", "csl*", "cse*" } meta nfproto ipv6 counter reject
+        iifname { "cs-public", "csp*", "csl*", "cse*" } meta nfproto ipv6 counter reject
         iifname "csl*" counter reject
         iifname "cs-public" oifname "cs-public" return
-        iifname "cs-public" ip daddr @DNS@ meta l4proto { tcp, udp } th dport 53 return
-        iifname "cs-public" ip daddr @prohibited counter reject
+        iifname { "cs-public", "csp*" } ip daddr @DNS@ meta l4proto { tcp, udp } th dport 53 return
+        iifname { "cs-public", "csp*" } ip daddr @prohibited counter reject
         iifname "cse*" oifname { "cs-public", "csl*", "cse*" } counter reject
     }
 }
@@ -27,6 +27,6 @@ table inet codex_sandbox {
 table bridge codex_sandbox {
     chain forward {
         type filter hook forward priority -10; policy accept;
-        meta ibrname { "cs-public", "csl*", "cse*" } ether type ip6 counter drop
+        meta ibrname { "cs-public", "csp*", "csl*", "cse*" } ether type ip6 counter drop
     }
 }

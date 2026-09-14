@@ -21,7 +21,8 @@ class ImageInputsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ('auth-proxy/Dockerfile', 'auth-proxy/server.py',
-                         'auth-proxy/broker.py', 'auth-proxy/codex_profile.py', 'gateway.py'):
+                         'auth-proxy/broker.py', 'auth-proxy/codex_profile.py',
+                         'auth-proxy/typed_broker.py', 'gateway.py'):
                 path = root / 'tools/codex-sandbox' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('original')
@@ -74,10 +75,10 @@ class ImageInputsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             root = temporary / 'repository'
-            for name in ('Dockerfile', 'server.py', 'forward.py', 'protocol.json'):
-                path = root / 'tools/zulip-proxy' / name
+            for source in owned_images['source_paths'](['zulip'])['zulip']:
+                path = root / source
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(name)
+                path.write_text(Path(source).name)
 
             def capture(name):
                 identity = hashlib.sha256()
@@ -108,8 +109,9 @@ class ImageInputsTest(unittest.TestCase):
             shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', image.parent / 'owned_images.py')
             shutil.copyfile(Path(__file__).parent / 'fixtures/image-tag.py', image)
             image.chmod(0o755)
-            for name in ('Dockerfile', 'server.py', 'forward.py', 'protocol.json'):
-                path = root / 'tools/zulip-proxy' / name
+            owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+            for source in owned['source_paths'](['zulip'])['zulip']:
+                path = root / source
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('original')
             def key():
