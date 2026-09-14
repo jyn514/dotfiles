@@ -1,2 +1,6 @@
 *.pdf
 /private/
+
+tools/plover-reconnect/build/
+tools/plover-reconnect/dist/
+tools/plover-reconnect/*.egg-info/
