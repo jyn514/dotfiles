@@ -7,8 +7,8 @@
 = Sandbox design specification
 
 This aggregate specification covers the sandbox launcher, trusted command
-proxies, image resolution, host coordination, credential relays, and resource
-lifecycle. Each included file is authoritative for one subsystem; this file
+proxies, selected host-Pi/guest-tool execution, image resolution, host coordination,
+credential relays, and resource lifecycle. Each included file is authoritative for one subsystem; this file
 owns their presentation and order.
 
 #outline(title: "Contents", indent: auto)

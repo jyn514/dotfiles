@@ -3,7 +3,8 @@
 *Status:* Proxy isolation, transports, capability selection, image resolution,
 and request-failure isolation are implemented. Caddy 2.11.4-alpine with private profile
 helpers is the selected authenticated-egress architecture; Codex and Zulip remain
-separate trust-domain instances. Manifest examples below describe the temporary
+separate trust-domain instances. The host-Pi execution split specified below is
+selected but not implemented. Manifest examples below describe the temporary
 version 1 wire format.
 
 == Objective
@@ -49,6 +50,67 @@ The read-only mount protects that accepted policy from the running agent; it doe
 Trusted proxy images, their fixed entrypoints, and any code copied into them are also part of the trusted computing base.
 A proxy must not load executable code from the agent-writable working tree.
 
+== Host extension authority
+
+The selected #link("launcher-interface.typ")[host-Pi design] moves conversation
+and UI code to the host while retaining the untrusted guest workload and proxy
+boundaries. In container descriptions below, “agent” then means the guest tool
+worker and its descendants. Host Pi is trusted mediation code; model-controlled
+input does not acquire its ambient filesystem, credentials, or process authority.
+
+Classify operations by their trigger, inputs, and granted effects rather than by
+whether an extension imports a filesystem or subprocess API. Human commands and
+trusted configuration may select host operations; model-controlled arguments may
+invoke only explicitly bounded host capabilities or guest execution. Automatic
+hooks can consume model-writable data and must retain that data's authority.
+
+#table(
+  columns: (1fr, 2fr),
+  [Extension group], [Selected placement and authority],
+  [Context/system-prompt viewers, skill autocomplete, prompt-history search],
+  [Host UI. Human history search may run a fixed search over the host session store;
+   restoring editor text does not execute it.],
+  [Date, notification, direct-skill and subagent routing],
+  [Host hooks. Fixed date/notification effects and validated model/template selection
+   do not authorize a new execution environment.],
+  [Compaction, provider web search, Codex provider registration],
+  [Host model integration. Use admitted broker routes for authenticated traffic;
+   provider-side search does not imply arbitrary host URL fetching.],
+  [Goal tracking],
+  [Host session state through Pi APIs, including model-invoked goal tools and
+   automatic continuation. Clipboard export remains a human command with data
+   passed to a fixed program rather than interpreted as code.],
+  [Session search, read, and title edits],
+  [Bounded host session-store capability. Resolve targets through one canonical
+   validated store interface, including title-result hooks; model-supplied paths
+   cannot widen access. Bound search work without blocking the TUI.],
+  [Instruction includes and project resources],
+  [Resolve recursive project includes and resource reads in the guest view:
+   model-writable instruction text can select paths. Explicit personal host
+   resources are separately selected by trusted configuration.],
+  [Subagents],
+  [Host manager and UI with mandatory inherited guest execution, as specified by
+   the launcher. Model-selected tasks or templates cannot replace that backend.],
+  [Other execution extensions and MCP],
+  [Guest execution by default; host admission requires a reviewed bounded capability.
+   Installed packages or staged configuration alone do not establish activation
+   or authority. No arbitrary extension compatibility is promised.],
+)
+
+Host-loaded Pi, extensions, dependencies, and executable configuration must come
+from a host-controlled installation inaccessible to guest writes through any
+mount alias. The current writable npm/Git package stores and a writable dotfiles
+checkout are not suitable host code sources. A read-only extension alias does
+not protect bytes also exposed through a writable workspace mount.
+`/reload` may reload admitted code and guest-view resources; it cannot promote
+guest-modified packages or project extensions to host execution. Host registration
+must distinguish bounded host capabilities from guest-backed tools and reject
+unclassified model-executable handlers. Replacing only Bash is insufficient.
+
+The host can route selected authenticated model requests through validated broker
+endpoints without exposing credentials to guest tools. Moving Pi to the host does
+not authorize direct credential fallback or bypass required broker routes.
+
 == Protected sandbox configuration
 
 Implemented sandbox-owned repository configuration lives under:
@@ -74,7 +136,9 @@ When the directory is absent, no configuration overlay is needed: the accepted d
 
 == Architecture
 
-The outer launcher starts the agent and its proxies as sibling containers:
+The implemented launcher starts Pi and its proxies as sibling containers. In the
+selected host-Pi design, the guest tool worker replaces Pi in the agent container;
+the same mount and proxy boundaries remain:
 
 ```text
 outer container-engine daemon
@@ -186,7 +250,7 @@ The forwarding client uses the configured path while it exists and otherwise fal
 The selected resolver and all executable inputs it loads are trusted startup support code.
 It resolves freshness at shared-session creation, with shared dependencies resolved once.
 Starting another sandbox for the same checkout joins the existing shared session. Joins use its accepted configuration and immutable images without reading changed sandbox configuration or invoking image resolvers. The launcher verifies recorded images and live services before attaching; invalid recorded state fails only the join.
-Configuration and source changes take effect at the next trusted startup after the final attached agent exits. Per-agent instructions, skills, and extensions remain reloadable through `/reload`.
+Configuration and source changes take effect at the next trusted startup after the final execution attachment closes. Per-agent instructions, skills, and extensions remain reloadable through `/reload` under the host extension authority rules above.
 There is no live replacement: one server retains ownership of command serialization, sockets, and shared state for the session.
 
 == Socket protocol
@@ -261,6 +325,15 @@ The router chooses one path:
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
 + If the launcher holds the lock and valid metadata exists, use the recorded runtime's transport to the validated proxy socket
 + If the lock is held without metadata, wait for metadata or lock release, then retry
+
+In the selected host-Pi mode, exclusive lock acquisition proves coordination
+ownership, not that guest work stopped. Before taking the local path, the router
+must require launcher-owned recovery to disable abandoned attachment admission
+and verify recorded guest work and services stopped. An unavailable runtime or
+incomplete cleanup blocks local execution and preserves recovery metadata.
+Surviving host children cannot reuse an abandoned attachment. This replaces the
+implemented local path's assumption that retaining stale metadata is sufficient;
+the router delegates recovery rather than becoming another workload supervisor.
 
 A command-specific host shim invokes the same router directly:
 

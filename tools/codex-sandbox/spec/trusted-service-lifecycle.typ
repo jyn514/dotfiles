@@ -41,6 +41,19 @@ R2 remains a host capability relay until a separately reviewed signer can sign r
 The launcher remains the composition root for the planner, resolver, supervisor, adapters, and runtime provider.
 No service may discover additional authority after planning.
 
+The selected #link("launcher-interface.typ")[host-Pi execution design] keeps Pi
+and its subagent process manager on the host. This supervisor still owns only
+trusted services: arbitrary guest tool execution is an untrusted workload, not a
+fourth service family or a generalized command proxy. The launcher owns execution
+attachments; the tool backend owns individual call admission and cancellation.
+They reuse runtime operations without acquiring a competing cleanup owner for
+trusted services.
+
+In host-Pi mode, readiness gates attachment use and model turns, not presentation
+of the host UI. References below to starting the agent or projecting its environment
+mean enabling the selected execution attachment and its admitted host routes;
+guest mounts and host endpoint projections remain distinct.
+
 == Normalized service plan
 
 A service plan is an internal validated value, not repository syntax.
@@ -105,6 +118,10 @@ Command proxies and Caddy authenticated-egress instances normally use this scope
 The first launcher owns publication; the final attached launcher owns cleanup.
 
 `agent-launch` services belong to one launcher and one agent attachment.
+In host-Pi mode, one Pi session and its children use that execution attachment.
+Directory changes shut down the old session and attachment before enabling the
+new session. Each new attachment authorizes its own per-launch services even
+when it joins the same shared session.
 Host editor and Agent Podman gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
 
@@ -229,6 +246,8 @@ Each service adapter gets at most one bounded graceful-shutdown hook appropriate
 After the deadline, the runtime terminates the complete owned process or container and reaps descendants according to #link("process-ownership.typ")[process ownership].
 
 Per-launch services stop when their agent attachment ends or its startup fails.
+For host Pi, attachment release follows the session shutdown and guest-work drain
+rules in the launcher contract; host process exit alone does not prove release.
 Shared services stop only after the final launcher proves final ownership through the host session lock.
 Cleanup runs in reverse dependency order derived from the declared resource attachments: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.
 Independent removals may run concurrently when ownership and dependency order permit it.
