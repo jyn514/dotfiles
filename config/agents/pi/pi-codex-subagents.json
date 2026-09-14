@@ -3,5 +3,14 @@
     "extensions": [
       "~/.pi/agent/pi-extensions/codex-sidecar.ts"
     ]
+  },
+  "directSkillRoutes": {
+    "tighten-docs": {
+      "agentType": "luna"
+    },
+    "session-title-curation": {
+      "agentType": "luna",
+      "proposalOnly": true
+    }
   }
 }
