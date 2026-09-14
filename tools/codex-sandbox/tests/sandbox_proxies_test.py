@@ -108,6 +108,36 @@ class ManifestTest(unittest.TestCase):
         (self.sandbox / "proxy-commands.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     @staticmethod
+    def managed_proxy(name: str, image: str = "sha256:" + "0" * 64) -> dict:
+        owner = (name.encode().hex() + "0" * 32)[:32]
+        return {
+            "name": name, "volume": f"shared-{name}", "container": f"shared-{name}",
+            "image": image, "service-owner": owner,
+            "implementation-identity": "sha256:" + "1" * 64,
+            "state-schema": 1, "lifecycle-state": "ready",
+            "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
+            "resource-status": {"volume": "created", "container": "created", "forward": "absent"},
+        }
+
+    def schema4(self, commands: dict[str, dict], *, services=None, helper=None) -> dict:
+        policy = sandbox_proxies.serializable_manifest({"version": 1, "commands": commands})
+        records = services if services is not None else {
+            name: sandbox_proxies._service_record(name, self.managed_proxy(name), {"provider": "podman"})
+            for name in commands
+        }
+        return {
+            "version": 4, "repository": sandbox_proxies.repository_identity(self.repo),
+            "container_repository": str(self.container_repo),
+            "runtime-owner": {"provider": "podman"},
+            "accepted": {"policy": policy, "source-present": True,
+                         "broker-roles": (["codex-broker"] if "codex-broker" in records else []),
+                         "images": {"agent": "agent", "helper": helper,
+                                    "services": {name: value["container"]["image"] for name, value in records.items()}},
+                         "image-bound-parameters": {"uid": 501, "gid": 20}},
+            "services": records,
+        }
+
+    @staticmethod
     def command(**updates: object) -> dict:
         command = {
             "image-command": [".agents/sandbox/build-example"],
@@ -421,6 +451,7 @@ class ManifestTest(unittest.TestCase):
         state = self.repo / "state"
         state.write_text(json.dumps({"proxies": [{
             "name": "example", "volume": "shared-example",
+            "session-token": "secret.not.for-agent",
         }]}), encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
@@ -436,6 +467,7 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("dst=/src/example/state,readonly", generated)
         self.assertIn("/src/example/secret:ro,noexec", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
+        self.assertNotIn("secret.not.for-agent", generated)
 
     def test_finalize_publishes_before_generating_agent_arguments(self) -> None:
         args = object()
@@ -450,13 +482,12 @@ class ManifestTest(unittest.TestCase):
 
     def test_publication_checks_proxies_concurrently_before_writing_metadata(self) -> None:
         state = self.repo / "state.json"
-        images = {name: "immutable" for name in ("first", "second")}
-        state.write_text(json.dumps({"proxies": [
-            {"name": name, "container": name, "image": image} for name, image in images.items()],
-            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": "helper",
+        images = {name: "sha256:" + "0" * 64 for name in ("first", "second")}
+        state.write_text(json.dumps({"proxies": [self.managed_proxy(name, image) for name, image in images.items()],
+            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
                          "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
-        manifest.write_text('{"version":1,"commands":{}}')
+        manifest.write_text(json.dumps({"version": 1, "commands": {name: self.command() for name in images}}))
         args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
                                container_repo=str(self.container_repo))
         rendezvous = threading.Barrier(2)
@@ -469,17 +500,18 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(sandbox_proxies, "validate_live_proxy", side_effect=validate):
             self.assertEqual(0, sandbox_proxies.publish_main(args))
         metadata = json.loads((self.repo / "session.json").read_text())
-        self.assertEqual({"first", "second"}, set(metadata["commands"]))
+        self.assertEqual(4, metadata["version"])
+        self.assertEqual({"first", "second"}, set(metadata["services"]))
+        self.assertEqual(0o600, metadata_path_mode := ((self.repo / "session.json").stat().st_mode & 0o777))
 
     def test_failed_publication_waits_for_other_checks_and_keeps_old_metadata(self) -> None:
         state = self.repo / "state.json"
-        images = {name: "immutable" for name in ("bad", "slow")}
-        state.write_text(json.dumps({"proxies": [
-            {"name": name, "container": name, "image": image} for name, image in images.items()],
-            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": "helper",
+        images = {name: "sha256:" + "0" * 64 for name in ("bad", "slow")}
+        state.write_text(json.dumps({"proxies": [self.managed_proxy(name, image) for name, image in images.items()],
+            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
                          "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
-        manifest.write_text('{"version":1,"commands":{}}')
+        manifest.write_text(json.dumps({"version": 1, "commands": {name: self.command() for name in images}}))
         published = self.repo / "session.json"
         published.write_text("previous metadata")
         args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
@@ -537,13 +569,14 @@ class ManifestTest(unittest.TestCase):
             "commands": {}, "state": {"proxies": []},
             "manifest": {"version": 1, "commands": {}},
         }), encoding="utf-8")
+        (runtime / "session.json").chmod(0o600)
         args = type("Args", (), {
             "repo": str(self.repo), "command": "zulip", "wait": 0.1,
             "local": ["--", "/bin/sh", "-c", "exit 7"],
         })
         with (runtime / "session.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "Zulip broker is unavailable"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "schema-4 authority"):
                 sandbox_proxies.route_main(args)
 
     def test_snapshot_is_independent_of_later_manifest_edits(self) -> None:
@@ -712,6 +745,28 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "may not override"):
             sandbox_proxies.snapshot_main(args)
 
+    def test_atomic_write_interruption_preserves_previous_session(self) -> None:
+        path = self.repo / "session.json"
+        path.write_text("previous")
+        with mock.patch.object(sandbox_proxies.os, "replace", side_effect=OSError("interrupted")):
+            with self.assertRaisesRegex(OSError, "interrupted"):
+                sandbox_proxies.write_atomic(path, "partial")
+        self.assertEqual("previous", path.read_text())
+        self.assertEqual([], list(self.repo.glob(".session.json.*")))
+
+    def test_reset_final_holder_cleans_schema4_and_removes_publication(self) -> None:
+        self.write({"example": self.command()})
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        metadata_path = runtime / "session.json"
+        metadata = self.schema4({"example": self.command()})
+        metadata_path.write_text(json.dumps(metadata))
+        metadata_path.chmod(0o600)
+        args = SimpleNamespace(repo=str(self.repo))
+        with mock.patch.object(sandbox_proxies, "stop_state") as stop:
+            self.assertEqual(0, sandbox_proxies.reset_main(args))
+        self.assertEqual(["example"], [p["name"] for p in stop.call_args.args[0]["proxies"]])
+        self.assertFalse(metadata_path.exists())
+
     def test_reset_stops_and_forgets_persistent_session(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
@@ -731,31 +786,19 @@ class ManifestTest(unittest.TestCase):
     def test_attach_reuses_published_proxy_state_and_manifest(self) -> None:
         self.write({"example": self.command()})
         runtime = sandbox_proxies.runtime_directory(self.repo)
-        shared_state = {"proxies": [{
-            "name": "example", "volume": "shared-example", "container": "shared-example",
-            "image": "sha256:" + "0" * 64,
-        }], "auth": {"container": "shared-auth", "key": "legacy-key", "image": "helper"}}
-        shared_manifest = sandbox_proxies.serializable_manifest(
-            sandbox_proxies.load_manifest(self.repo)
-        )
-        accepted = {"manifest": shared_manifest, "source-present": True,
-                    "images": {"agent": "agent", "helper": "helper",
-                               "proxies": {"example": "sha256:" + "0" * 64}},
-                    "parameters": {"uid": 501, "gid": 20}}
-        shared_state["runtime"] = {"provider": "podman"}
-        (runtime / "session.json").write_text(json.dumps({
-            "version": 3,
-            "repository": sandbox_proxies.repository_identity(self.repo),
-            "container_repository": str(self.container_repo),
-            "commands": {}, "state": shared_state, "accepted": accepted,
-        }), encoding="utf-8")
+        commands = sandbox_proxies.load_manifest(self.repo)["commands"]
+        metadata = self.schema4(commands)
+        shared_state = sandbox_proxies.session_state(metadata)
+        shared_manifest = metadata["accepted"]["policy"]
+        (runtime / "session.json").write_text(json.dumps(metadata), encoding="utf-8")
+        (runtime / "session.json").chmod(0o600)
         state = self.repo / "attached-state"
         manifest = self.repo / "attached-manifest"
         manifest.write_text("checkout policy must not be read", encoding="utf-8")
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
             "shared": True, "state": str(state), "manifest": str(manifest),
-            "uid": 501, "gid": 20, "agent_image": "agent", "helper_image": "helper",
+            "uid": 501, "gid": 20, "agent_image": "agent", "helper_image": None,
         })
         owner = mock.Mock(provider="podman")
         owner.builder_image.side_effect = lambda image: "builder:" + image
@@ -773,16 +816,181 @@ class ManifestTest(unittest.TestCase):
         start.assert_not_called()
         publish.assert_not_called()
         resolve.assert_not_called()
-        owner.container_matches_image.assert_called_once_with("shared-auth", "inspected-helper")
         self.assertEqual(shared_state, json.loads(state.read_text(encoding="utf-8")))
         self.assertEqual(shared_manifest, json.loads(manifest.read_text(encoding="utf-8")))
 
-        owner.container_matches_image.reset_mock()
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value=shared_state["runtime"]), \
                 mock.patch.object(sandbox_proxies, "containers_running", return_value=False):
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unhealthy authentication"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "stopped proxy"):
                 sandbox_proxies.accepted_session(args, self.repo, json.loads((runtime / "session.json").read_text()))
+
+    def test_session_reader_rejects_symlink_and_reads_opened_inode_during_replacement(self) -> None:
+        target = self.repo / "target"
+        target.write_text('{"generation":"old"}')
+        target.chmod(0o600)
+        link = self.repo / "session-link"
+        link.symlink_to(target)
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unavailable"):
+            sandbox_proxies._read_session(link)
+        replacement = self.repo / "replacement"
+        replacement.write_text('{"generation":"new"}')
+        replacement.chmod(0o600)
+        original_fdopen = os.fdopen
+        def replace_after_open(descriptor, *args, **kwargs):
+            os.replace(replacement, target)
+            return original_fdopen(descriptor, *args, **kwargs)
+        with mock.patch.object(sandbox_proxies.os, "fdopen", side_effect=replace_after_open):
+            self.assertEqual("old", sandbox_proxies._read_session(target)["generation"])
+        self.assertEqual("new", json.loads(target.read_text())["generation"])
+
+    def test_session_reader_rejects_mode_and_owner(self) -> None:
+        path = self.repo / "session.json"
+        path.write_text("{}")
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "mode 0600"):
+            sandbox_proxies._read_session(path)
+        path.chmod(0o600)
+        with mock.patch.object(sandbox_proxies.os, "getuid", return_value=os.getuid() + 1):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "current uid"):
+                sandbox_proxies._read_session(path)
+
+    def test_empty_schema4_round_trips_publication_join_state_and_recovery(self) -> None:
+        state_path = self.repo / "empty-state"
+        state_path.write_text(json.dumps({
+            "proxies": [], "runtime": {"provider": "podman"},
+            "accepted": {"source-present": False, "agent-image": "agent",
+                         "helper-image": None, "parameters": {"uid": 501, "gid": 20},
+                         "proxy-images": {}},
+        }))
+        manifest_path = self.repo / "empty-manifest"
+        manifest_path.write_text('{"version":1,"commands":{}}')
+        args = SimpleNamespace(repo=str(self.repo), state=str(state_path), manifest=str(manifest_path),
+                               container_repo=str(self.container_repo))
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo):
+            self.assertEqual(0, sandbox_proxies.publish_main(args))
+        metadata = sandbox_proxies._read_session(self.repo / "session.json")
+        self.assertEqual({}, metadata["services"])
+        self.assertEqual({"runtime": {"provider": "podman"}, "proxies": [],
+                          "trusted-services": sandbox_proxies.SESSION_LIFECYCLE_SCHEMA},
+                         sandbox_proxies.session_state(metadata))
+        join_args = SimpleNamespace(container_repo=str(self.container_repo), uid=501, gid=20,
+                                    agent_image="agent", helper_image=None)
+        owner = mock.Mock(provider="podman")
+        owner.verify_builder_image.return_value = SimpleNamespace(reference="agent")
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "podman"}):
+            state, accepted = sandbox_proxies.accepted_session(join_args, self.repo, metadata)
+        self.assertEqual([], state["proxies"])
+        self.assertEqual({}, accepted["images"]["proxies"])
+        with mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
+            sandbox_proxies.stop_state(state)
+        cleanup.assert_called_once_with(state)
+
+    def test_schema4_strictly_parses_policy_and_broker_selection(self) -> None:
+        args = SimpleNamespace(uid=501, gid=20)
+        malformed = self.schema4({"example": self.command()})
+        malformed["accepted"]["policy"]["unknown"] = True
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "accepted policy"):
+            sandbox_proxies._accepted_schema4(malformed, expected_parameters={"uid": 501, "gid": 20})
+        helper_only = self.schema4({}, helper="sha256:" + "4" * 64)
+        sandbox_proxies._accepted_schema4(
+            helper_only, expected_parameters={"uid": 501, "gid": 20})
+        missing = self.schema4({})
+        missing["accepted"]["broker-roles"] = ["codex-broker"]
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "service set"):
+            sandbox_proxies._accepted_schema4(missing, expected_parameters={"uid": 501, "gid": 20})
+        unsolicited = self.schema4({})
+        proxy = self.managed_proxy("extra")
+        proxy["family"] = "authenticated-egress"
+        proxy["credential-domain"] = "zulip"
+        # An unsolicited broker cannot be admitted merely by appearing in services.
+        unsolicited["services"]["extra"] = sandbox_proxies._service_record(
+            "extra", proxy, {"provider": "podman"})
+        unsolicited["accepted"]["images"]["services"]["extra"] = proxy["image"]
+        with self.assertRaises(sandbox_proxies.ConfigError):
+            sandbox_proxies._accepted_schema4(unsolicited, expected_parameters={"uid": 501, "gid": 20})
+
+    def test_publication_rejects_duplicate_proxy_roles_before_projection(self) -> None:
+        proxy = self.managed_proxy("same")
+        state = self.repo / "duplicate-state"
+        state.write_text(json.dumps({"proxies": [proxy, dict(proxy)],
+            "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
+                         "parameters": {"uid": 501, "gid": 20},
+                         "proxy-images": {"same": proxy["image"]}}}))
+        manifest = self.repo / "duplicate-manifest"
+        manifest.write_text(json.dumps({"version": 1, "commands": {"same": self.command()}}))
+        args = SimpleNamespace(repo=str(self.repo), state=str(state), manifest=str(manifest),
+                               container_repo=str(self.container_repo))
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "duplicate service roles"):
+            sandbox_proxies.publish_main(args)
+
+    def test_schema4_rejects_partial_and_cross_bound_authority(self) -> None:
+        command = {"example": self.command()}
+        args = SimpleNamespace(uid=501, gid=20)
+        cases = []
+        partial = self.schema4(command)
+        partial["services"] = {}
+        cases.append(partial)
+        wrong_image = self.schema4(command)
+        wrong_image["accepted"]["images"]["services"]["example"] = "sha256:" + "9" * 64
+        cases.append(wrong_image)
+        wrong_implementation = self.schema4(command)
+        wrong_implementation["services"]["example"]["recovery"]["implementation-identity"] = "sha256:" + "2" * 64
+        cases.append(wrong_implementation)
+        wrong_endpoint = self.schema4(command)
+        wrong_endpoint["services"]["example"]["endpoints"][0]["container"] = "attacker"
+        cases.append(wrong_endpoint)
+        unknown_endpoint = self.schema4(command)
+        unknown_endpoint["services"]["example"]["endpoints"][0]["unknown"] = True
+        cases.append(unknown_endpoint)
+        unknown_recovery = self.schema4(command)
+        unknown_recovery["services"]["example"]["recovery"]["unknown"] = True
+        cases.append(unknown_recovery)
+        unknown_runtime = self.schema4(command)
+        unknown_runtime["services"]["example"]["runtime-owner"]["unknown"] = True
+        cases.append(unknown_runtime)
+        for metadata in cases:
+            with self.subTest(metadata=metadata):
+                with self.assertRaises(sandbox_proxies.ConfigError):
+                    sandbox_proxies._accepted_schema4(metadata, expected_parameters={"uid": 501, "gid": 20})
+
+    def test_schema4_rejects_forward_owner_and_runtime_disagreement(self) -> None:
+        first, second = self.managed_proxy("first"), self.managed_proxy("second")
+        first["forwarding"] = {"owner": first["service-owner"], "socket": "first"}
+        first["volume-owner"] = first["service-owner"]
+        first["resource-status"]["forward"] = "created"
+        services = {
+            "first": sandbox_proxies._service_record("first", first, {"provider": "podman"}),
+            "second": sandbox_proxies._service_record("second", second, {"provider": "lima", "state": "/tmp/lima", "instance": "i", "generation": "g", "namespace": "n", "vm_identity": "v", "network_digest": "d"}),
+        }
+        metadata = self.schema4({"first": self.command(), "second": self.command()}, services=services)
+        metadata["services"]["first"]["endpoints"][0]["forward"]["owner"] = "another-owner"
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "forwarding owner"):
+            sandbox_proxies._accepted_schema4(metadata, expected_parameters={"uid": 501, "gid": 20})
+        first["forwarding"]["owner"] = first["service-owner"]
+        services = {
+            "first": sandbox_proxies._service_record("first", first, {"provider": "podman"}),
+            "second": sandbox_proxies._service_record("second", second, {"provider": "lima", "state": "/tmp/lima", "instance": "i", "generation": "g", "namespace": "n", "vm_identity": "v", "network_digest": "d"}),
+        }
+        metadata = self.schema4({"first": self.command(), "second": self.command()}, services=services)
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "runtime owner"):
+            sandbox_proxies.session_state(metadata)
+
+    def test_active_schema3_join_is_rejected_without_mutation_or_policy_load(self) -> None:
+        metadata = {"version": 3, "state": {"runtime": {"provider": "podman"}, "proxies": []}}
+        before = json.dumps(metadata, sort_keys=True)
+        args = SimpleNamespace(container_repo=str(self.container_repo))
+        with mock.patch.object(sandbox_proxies, "load_manifest", side_effect=AssertionError("policy loaded")):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "not schema 4"):
+                sandbox_proxies.accepted_session(args, self.repo, metadata)
+        self.assertEqual(before, json.dumps(metadata, sort_keys=True))
+
+    def test_schema3_remains_available_for_stale_recovery(self) -> None:
+        state = {"runtime": {"provider": "podman"}, "proxies": []}
+        self.assertIs(state, sandbox_proxies.session_state({"version": 3, "state": state}))
+        with mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
+            sandbox_proxies.stop_state(state)
+        cleanup.assert_called_once_with(state)
 
     def test_new_schema_requires_an_explicit_owner_and_legacy_is_podman(self) -> None:
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing its runtime"):
@@ -930,12 +1138,17 @@ class ManifestTest(unittest.TestCase):
         self.write()
         directory = sandbox_proxies.runtime_directory(self.repo)
         state = {"runtime": {"provider": "podman"}, "proxies": []}
-        (directory / "session.json").write_text(json.dumps({
-            "version": 2, "repository": sandbox_proxies.repository_identity(self.repo),
-            "state": state, "commands": {"example": {"container": "owned", "image": "immutable"}}}))
+        proxy = self.managed_proxy("example")
+        proxy["container"] = "owned"
+        metadata = self.schema4({"example": self.command()}, services={
+            "example": sandbox_proxies._service_record("example", proxy, state["runtime"]),
+        })
+        (directory / "session.json").write_text(json.dumps(metadata))
+        (directory / "session.json").chmod(0o600)
         owner = mock.Mock()
         repository = sandbox_proxies.repository_identity(self.repo)
         owner.forward_proxy.return_value = 7
+        owner.inspect_container.return_value = {"State": {"Running": True}}
         args = type("Args", (), {"repo": str(self.repo), "command": "example", "wait": 1, "local": ["local"]})
         with (directory / "session.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
@@ -944,7 +1157,7 @@ class ManifestTest(unittest.TestCase):
                     mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner) as recorded, \
                     mock.patch.object(sandbox_proxies, "validate_live_proxy") as validate:
                 self.assertEqual(7, sandbox_proxies.route_main(args))
-        recorded.assert_called_once_with(state)
+        recorded.assert_called_once_with(sandbox_proxies.session_state(metadata))
         self.assertIs(owner, validate.call_args.args[0])
         current.forward_proxy.assert_not_called()
         owner.forward_proxy.assert_called_once_with("owned")
@@ -977,6 +1190,7 @@ class ManifestTest(unittest.TestCase):
             "repository": sandbox_proxies.repository_identity(self.repo),
             "state": old_state, "manifest": {"version": 1, "commands": {}},
         }), encoding="utf-8")
+        (runtime / "session.json").chmod(0o600)
         args = type("Args", (), {
             "repo": str(self.repo), "container_repo": str(self.container_repo),
             "shared": False, "state": str(self.repo / "state"),
@@ -999,6 +1213,7 @@ class ManifestTest(unittest.TestCase):
             "repository": sandbox_proxies.repository_identity(self.repo),
             "state": {"proxies": []}, "manifest": {"version": 1, "commands": {"old": {}}},
         }), encoding="utf-8")
+        (runtime / "session.json").chmod(0o600)
         manifest = self.repo / "manifest"
         manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
         args = type("Args", (), {
@@ -1019,7 +1234,7 @@ class ManifestTest(unittest.TestCase):
             "manifest": str(manifest),
         })
         with mock.patch.object(sandbox_proxies, "start_main") as start:
-            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "lacks accepted policy and images"):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unavailable"):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
 

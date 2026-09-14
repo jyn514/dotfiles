@@ -162,8 +162,15 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
     return load_manifest(repo)
 
 
-def load_manifest_file(path: Path | None, *, default_bake: bool = False) -> dict[str, Any]:
-    if path is None:
+def load_manifest_file(path: Path | None, *, default_bake: bool = False,
+                       data: Any = None) -> dict[str, Any]:
+    if data is not None:
+        # In-memory accepted policy parsing must have no filesystem or resolver effects.
+        try:
+            data = json.loads(json.dumps(data), object_pairs_hook=_unique_object)
+        except (TypeError, ValueError, ConfigError) as error:
+            raise ConfigError(f"invalid accepted proxy manifest: {error}") from error
+    elif path is None:
         data = {"version": 2, "commands": {}}
     else:
         try:
@@ -451,12 +458,21 @@ def reset_main(args: argparse.Namespace) -> int:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             metadata = None
-        if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
+        if isinstance(metadata, dict) and (isinstance(metadata.get("state"), dict) or metadata.get("version") == 4):
             state = session_state(metadata)
             try:
                 stop_state(state)
             except BaseException:
-                if state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA:
+                if metadata.get("version") == 4:
+                    for role, service in metadata["services"].items():
+                        recovery = next((p for p in state.get("proxies", []) if p.get("name") == role), None)
+                        if role == "codex-broker":
+                            recovery = state.get("auth")
+                        if recovery is not None:
+                            service["recovery"] = recovery
+                    write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
+                    os.chmod(metadata_path, 0o600)
+                elif state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA:
                     metadata["state"] = state
                     write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
                 raise
@@ -465,6 +481,7 @@ def reset_main(args: argparse.Namespace) -> int:
 
 
 def publish_main(args: argparse.Namespace) -> int:
+    """Publish one complete, strictly parsed schema-4 authority."""
     runtime = runtime_directory(Path(args.repo))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     owner = runtime_identity(OUTER_RUNTIME)
@@ -472,83 +489,201 @@ def publish_main(args: argparse.Namespace) -> int:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
-    accepted_preview = state.get("accepted", {})
-    identity_parameters = accepted_preview.get("parameters", {}) if isinstance(accepted_preview, dict) else {}
-    validate_live_proxies(OUTER_RUNTIME, state.get("proxies", []),
-                          repository_identity(Path(args.repo)), commands=manifest["commands"],
-                          uid=identity_parameters.get("uid"), gid=identity_parameters.get("gid"))
-    lifecycle_schema = state.get("trusted-services")
-    if lifecycle_schema not in (None, SESSION_LIFECYCLE_SCHEMA):
-        raise ConfigError("shared state has an unsupported trusted-service schema")
+    launch = state.get("accepted")
+    if not isinstance(launch, dict) or set(launch) != {
+            "source-present", "agent-image", "helper-image", "parameters", "proxy-images"}:
+        raise ConfigError("shared state is missing accepted launch authority")
+    parameters = launch["parameters"]
+    proxies = state.get("proxies")
+    proxy_roles = [p.get("name") for p in proxies if isinstance(p, dict)] if isinstance(proxies, list) else []
+    if len(proxy_roles) != len(set(proxy_roles)):
+        raise ConfigError("shared state contains duplicate service roles")
+    if not isinstance(proxies, list) or len(proxy_roles) != len(proxies) or set(proxy_roles) != set(manifest["commands"]):
+        raise ConfigError("shared state is missing required services")
+    if launch["proxy-images"] != {p["name"]: p.get("image") for p in proxies}:
+        raise ConfigError("published proxy images differ from accepted launch images")
+    validate_live_proxies(OUTER_RUNTIME, proxies, repository_identity(Path(args.repo)),
+                          commands=manifest["commands"], uid=parameters.get("uid"), gid=parameters.get("gid"))
+    services = {p["name"]: _service_record(p["name"], p, owner) for p in proxies}
     auth = state.get("auth")
     if auth is not None:
         try:
-            kind, auth = parse_auth_record(
-                auth, managed_required=lifecycle_schema == SESSION_LIFECYCLE_SCHEMA)
+            kind, auth = parse_auth_record(auth, managed_required=True)
         except ValueError as error:
             raise ConfigError("shared state has invalid authentication recovery authority") from error
-        if kind == "managed":
-            if auth["lifecycle-state"] != "ready" or auth["resource-status"] != {"container": "created"}:
-                raise ConfigError("authentication service is not ready for publication")
-            helper_image = accepted_preview.get("helper-image")
-            if not isinstance(helper_image, str):
-                raise ConfigError("authentication service lacks an accepted image")
-            snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
-            if snapshot.get("State", {}).get("Running") is not True:
-                raise ConfigError("authentication service stopped before publication")
-            _validate_codex_broker(
-                OUTER_RUNTIME, auth, helper_image,
-                identity_parameters.get("uid"), identity_parameters.get("gid"),
-                snapshot=snapshot,
-            )
-            auth["lifecycle-state"] = "published"
-    launch = state.pop("accepted", None)
-    if not isinstance(launch, dict) or set(launch) != {
-        "source-present", "agent-image", "helper-image", "parameters", "proxy-images",
-    }:
-        raise ConfigError("shared state is missing accepted launch authority")
-    proxy_images = launch["proxy-images"]
-    if proxy_images != {proxy["name"]: proxy["image"] for proxy in state.get("proxies", [])}:
-        raise ConfigError("published proxy images differ from accepted launch images")
+        if kind != "managed" or auth["lifecycle-state"] != "ready" or auth["resource-status"] != {"container": "created"}:
+            raise ConfigError("authentication service is not ready for publication")
+        snapshot = OUTER_RUNTIME.inspect_container(auth["container"])
+        if snapshot.get("State", {}).get("Running") is not True:
+            raise ConfigError("authentication service stopped before publication")
+        _validate_codex_broker(OUTER_RUNTIME, auth, launch["helper-image"], parameters["uid"], parameters["gid"], snapshot=snapshot)
+        published_auth = dict(auth)
+        published_auth["lifecycle-state"] = "published"
+        services["codex-broker"] = _service_record("codex-broker", published_auth, owner)
     payload = {
-        "version": 3,
-        "repository": repository_identity(Path(args.repo)),
+        "version": 4, "repository": repository_identity(Path(args.repo)),
         "container_repository": str(container_repository(args.container_repo)),
-        "commands": {},
-        "state": state,
-        "accepted": {
-            "manifest": serializable_manifest(manifest),
-            "source-present": launch["source-present"],
-            "images": {
-                "agent": launch["agent-image"],
-                "helper": launch["helper-image"],
-                "proxies": proxy_images,
-            },
-            "parameters": launch["parameters"],
-        },
+        "runtime-owner": owner,
+        "accepted": {"policy": serializable_manifest(manifest),
+                     "source-present": launch["source-present"],
+                     "broker-roles": sorted(set(services) - set(manifest["commands"])),
+                     "images": {"agent": launch["agent-image"], "helper": launch["helper-image"],
+                                "services": {role: service["container"]["image"] for role, service in services.items()}},
+                     "image-bound-parameters": parameters},
+        "services": services,
     }
-    for proxy in state.get("proxies", []):
-        projection = {"container": proxy["container"], "image": proxy["image"]}
-        if proxy["name"] == "zulip":
-            projection.update({key: proxy[key] for key in (
-                "service-owner", "implementation-identity", "state-schema", "credential-domain",
-                "network", "network-owner", "network-policy", "session-token", "endpoint",
-            )})
-        payload["commands"][proxy["name"]] = projection
+    # Parse the complete in-memory payload before the sole atomic replacement.
+    _accepted_schema4(payload, expected_parameters=parameters)
     write_atomic(runtime / "session.json", json.dumps(payload, sort_keys=True))
+    os.chmod(runtime / "session.json", 0o600)
     return 0
 
-
 def session_state(metadata):
-    if metadata.get("version") not in (1, 2, 3) or not isinstance(metadata.get("state"), dict):
+    """Return recovery state for all historical schemas and the schema-4 service set."""
+    version = metadata.get("version")
+    if version == 4:
+        services = metadata.get("services")
+        envelope_runtime = metadata.get("runtime-owner")
+        if not isinstance(services, dict) or not _valid_runtime_owner(envelope_runtime):
+            raise ConfigError("schema-4 session has invalid recovery authority")
+        runtimes = []
+        proxies, auth = [], None
+        for role, service in services.items():
+            parsed = _parse_service_record(role, service)
+            runtimes.append(parsed["runtime-owner"])
+            recovery = parsed["recovery"]
+            if parsed["family"] == "command-proxy" or role == "zulip":
+                proxies.append(recovery)
+            elif role == "codex-broker":
+                auth = recovery
+            else:
+                raise ConfigError("schema-4 session contains an unknown service role")
+        if any(owner != envelope_runtime for owner in runtimes):
+            raise ConfigError("schema-4 services disagree with envelope runtime owner")
+        state = {"runtime": envelope_runtime, "proxies": proxies,
+                 "trusted-services": SESSION_LIFECYCLE_SCHEMA}
+        if auth is not None:
+            state["auth"] = auth
+        return state
+    if version not in (1, 2, 3) or not isinstance(metadata.get("state"), dict):
         raise ConfigError("unsupported shared-session schema; retain metadata for explicit recovery")
     state = metadata["state"]
-    if metadata["version"] == 1:
+    if version == 1:
         if "runtime" in state and state["runtime"] != {"provider": "podman"}:
             raise ConfigError("legacy session state cannot name a Lima owner")
     elif "runtime" not in state:
         raise ConfigError("shared-session metadata is missing its runtime owner")
     return state
+
+
+_SERVICE_FIELDS = {"family", "implementation-identity", "state-schema", "container",
+                   "endpoints", "runtime-owner", "recovery-identity", "recovery"}
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
+
+
+def _valid_runtime_owner(value: Any) -> bool:
+    if value == {"provider": "podman"}:
+        return True
+    if not isinstance(value, dict) or value.get("provider") not in {"lima", "lima-docker"}:
+        return False
+    fields = {"provider", "state", "instance", "generation", "namespace", "vm_identity", "network_digest"}
+    if value.get("provider") == "lima-docker":
+        fields |= {"engine_id", "network_id"}
+    return (set(value) == fields and all(isinstance(item, str) and item for item in value.values())
+            and Path(value["state"]).is_absolute())
+
+
+def _parse_service_record(role: str, value: Any) -> dict[str, Any]:
+    if not isinstance(role, str) or not NAME_RE.fullmatch(role) or not isinstance(value, dict):
+        raise ConfigError("invalid schema-4 service record")
+    fields = set(value)
+    if fields not in (_SERVICE_FIELDS, _SERVICE_FIELDS | {"broker-session-token"}):
+        raise ConfigError("schema-4 service has missing or unknown fields")
+    container = value.get("container")
+    endpoints = value.get("endpoints")
+    runtime = value.get("runtime-owner")
+    recovery = value.get("recovery")
+    family = value.get("family")
+    if (family not in {"command-proxy", "authenticated-egress"} or
+            not isinstance(value.get("implementation-identity"), str) or
+            not IMAGE_RE.fullmatch(value["implementation-identity"]) or
+            value.get("state-schema") != 1 or
+            not isinstance(container, dict) or set(container) != {"name", "image", "owner"} or
+            not all(isinstance(container.get(k), str) and container[k] for k in container) or
+            not isinstance(endpoints, list) or len(endpoints) != 1 or
+            not isinstance(endpoints[0], dict) or
+            not _valid_runtime_owner(runtime) or
+            not isinstance(value.get("recovery-identity"), str) or
+            value["recovery-identity"] != container["owner"] or
+            not isinstance(recovery, dict) or recovery.get("container") != container["name"] or
+            recovery.get("image") != container["image"] or
+            recovery.get("service-owner") != container["owner"] or
+            recovery.get("implementation-identity") != value["implementation-identity"] or
+            recovery.get("state-schema") != value["state-schema"]):
+        raise ConfigError("schema-4 service identity is invalid")
+    try:
+        if family == "command-proxy":
+            parsed_recovery = _managed_proxy_record(recovery)
+            if parsed_recovery is None or role == "zulip":
+                raise ConfigError("schema-4 command recovery has the wrong family")
+            endpoint_fields = {"container", "socket"} | ({"forward"} if "forwarding" in recovery else set())
+            if set(endpoints[0]) != endpoint_fields or endpoints[0].get("socket") != "/run/sandbox-proxy/socket":
+                raise ConfigError("schema-4 command endpoint is invalid")
+        elif role == "zulip":
+            parsed_recovery = _managed_proxy_record(recovery)
+            endpoint_fields = {"container", "socket"} | ({"forward"} if "forwarding" in recovery else set())
+            if parsed_recovery is None or set(endpoints[0]) != endpoint_fields or endpoints[0].get("socket") != "/run/sandbox-proxy/socket":
+                raise ConfigError("schema-4 Zulip endpoint is invalid")
+        elif role == "codex-broker":
+            kind, _ = parse_auth_record(recovery, managed_required=True)
+            if kind != "managed" or set(endpoints[0]) != {"container", "port"} or endpoints[0].get("port") != 8787:
+                raise ConfigError("schema-4 Codex endpoint is invalid")
+        else:
+            raise ConfigError("schema-4 authenticated service has an unknown role")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ConfigError("schema-4 service recovery authority is invalid") from error
+    endpoint = endpoints[0]
+    if endpoint.get("container") != container["name"]:
+        raise ConfigError("schema-4 endpoint names another container")
+    endpoint_forward = endpoint.get("forward")
+    recovery_forward = recovery.get("forwarding")
+    if ((endpoint_forward is None) != (recovery_forward is None) or
+            endpoint_forward is not None and (
+                not isinstance(endpoint_forward, dict) or endpoint_forward != recovery_forward or
+                endpoint_forward.get("owner") != container["owner"])):
+        raise ConfigError("schema-4 endpoint forwarding owner is invalid")
+    token = value.get("broker-session-token")
+    if token is not None and (not isinstance(token, str) or not _TOKEN_RE.fullmatch(token)):
+        raise ConfigError("schema-4 broker token is invalid")
+    if (value["family"] == "authenticated-egress") != (token is not None):
+        raise ConfigError("schema-4 broker token authority is invalid")
+    expected_token = recovery.get("key") if role == "codex-broker" else recovery.get("session-token")
+    if token is not None and token != expected_token:
+        raise ConfigError("schema-4 broker token differs from recovery authority")
+    if role == "codex-broker" and recovery.get("runtime-owner") != runtime:
+        raise ConfigError("schema-4 broker runtime owner is invalid")
+    return value
+
+
+def _service_record(role: str, recovery: dict[str, Any], runtime: dict[str, Any]) -> dict[str, Any]:
+    family = recovery.get("family", "command-proxy")
+    endpoint = dict(recovery.get("endpoint", {"container": recovery["container"],
+                                              "socket": "/run/sandbox-proxy/socket"}))
+    if "forwarding" in recovery:
+        endpoint["forward"] = recovery["forwarding"]
+    result = {
+        "family": family, "implementation-identity": recovery["implementation-identity"],
+        "state-schema": recovery["state-schema"],
+        "container": {"name": recovery["container"], "image": recovery["image"],
+                      "owner": recovery["service-owner"]},
+        "endpoints": [endpoint], "runtime-owner": runtime,
+        "recovery-identity": recovery["service-owner"], "recovery": recovery,
+    }
+    token = recovery.get("session-token", recovery.get("key"))
+    if family == "authenticated-egress" or role == "codex-broker":
+        result["family"] = "authenticated-egress"
+        result["broker-session-token"] = token
+    return result
 
 
 def containers_running(containers: list[str]) -> bool:
@@ -616,9 +751,63 @@ def cached_session_state(
     return state
 
 
+def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
+    if not isinstance(metadata, dict) or set(metadata) != {
+            "version", "repository", "container_repository", "runtime-owner", "accepted", "services"} or metadata.get("version") != 4:
+        raise ConfigError("invalid schema-4 shared-session envelope")
+    if not _valid_runtime_owner(metadata.get("runtime-owner")):
+        raise ConfigError("active session has invalid runtime owner")
+    accepted = metadata.get("accepted")
+    if not isinstance(accepted, dict) or set(accepted) != {
+            "policy", "source-present", "broker-roles", "images", "image-bound-parameters"}:
+        raise ConfigError("active session has invalid accepted authority")
+    images = accepted.get("images")
+    services = metadata.get("services")
+    if (not isinstance(accepted["policy"], dict) or not isinstance(accepted["source-present"], bool) or
+            not isinstance(images, dict) or set(images) != {"agent", "helper", "services"} or
+            not isinstance(images["agent"], str) or not images["agent"] or
+            images["helper"] is not None and not isinstance(images["helper"], str) or
+            not isinstance(images["services"], dict) or not isinstance(services, dict)):
+        raise ConfigError("active session has invalid accepted images")
+    try:
+        policy = load_manifest_file(None, data=accepted["policy"])
+    except ConfigError as error:
+        raise ConfigError("active session has invalid accepted policy") from error
+    service_roles = list(services)
+    if len(service_roles) != len(set(service_roles)):
+        raise ConfigError("active session contains duplicate service roles")
+    parsed = {role: _parse_service_record(role, service) for role, service in services.items()}
+    if any(service["runtime-owner"] != metadata["runtime-owner"] for service in parsed.values()):
+        raise ConfigError("active session services disagree with envelope runtime owner")
+    commands = policy["commands"]
+    broker_roles = accepted["broker-roles"]
+    if (not isinstance(broker_roles, list) or len(broker_roles) != len(set(broker_roles)) or
+            any(role != "codex-broker" for role in broker_roles)):
+        raise ConfigError("active session has invalid accepted broker selection")
+    expected_roles = set(commands) | set(broker_roles)
+    if set(parsed) != expected_roles or images["services"] != {
+            role: service["container"]["image"] for role, service in parsed.items()}:
+        raise ConfigError("active session service set does not match accepted policy and images")
+    if accepted["image-bound-parameters"] != expected_parameters:
+        raise ConfigError("active session image-bound parameters changed")
+    accepted = {**accepted, "policy": policy}
+    return parsed, accepted
+
+
 def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tuple[dict[str, Any], dict[str, Any]]:
-    if not isinstance(metadata, dict) or metadata.get("version") != 3:
-        raise ConfigError("active session lacks accepted policy and images; restart after active sandboxes exit")
+    # Active schema 1-3 is recovery-only. In particular, never consult current
+    # repository policy or resolvers while deciding whether it may be joined.
+    if not isinstance(metadata, dict) or metadata.get("version") != 4:
+        raise ConfigError("active session is not schema 4; restart after active sandboxes exit")
+    _, accepted4 = _accepted_schema4(metadata, expected_parameters={"uid": args.uid, "gid": args.gid})
+    state = session_state(metadata)
+    accepted = {"manifest": accepted4["policy"], "source-present": accepted4["source-present"],
+                "images": {"agent": accepted4["images"]["agent"],
+                           "helper": accepted4["images"]["helper"],
+                           "proxies": {name: image for name, image in accepted4["images"]["services"].items()
+                                       if name != "codex-broker"}},
+                "parameters": accepted4["image-bound-parameters"]}
+    metadata = {**metadata, "version": 3, "state": state, "accepted": accepted}
     if metadata.get("repository") != repository_identity(repo):
         raise ConfigError("active session belongs to another repository")
     if metadata.get("container_repository") != str(container_repository(args.container_repo)):
@@ -718,13 +907,30 @@ def accepted_session(args: argparse.Namespace, repo: Path, metadata: Any) -> tup
     return state, accepted
 
 
+def _read_session(path: Path) -> Any:
+    descriptor = None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or
+                stat.S_IMODE(info.st_mode) != 0o600):
+            raise ConfigError(
+                "active session metadata must be a regular file owned by the current uid with mode 0600"
+            )
+        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            descriptor = None
+            return json.load(stream, object_pairs_hook=_unique_object)
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeError, OSError) as error:
+        raise ConfigError("active session metadata is unavailable") from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
 def join_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     path = runtime_directory(repo) / "session.json"
-    try:
-        metadata = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError) as error:
-        raise ConfigError("active session metadata is unavailable") from error
+    metadata = _read_session(path)
     state, accepted = accepted_session(args, repo, metadata)
     write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
     write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
@@ -743,8 +949,10 @@ def attach_main(args: argparse.Namespace) -> int:
     shared = args.shared
     metadata_path = runtime / "session.json"
     try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        metadata = _read_session(metadata_path)
+    except ConfigError:
+        if metadata_path.exists() or shared:
+            raise
         metadata = None
     if shared:
         state, accepted = accepted_session(args, repo, metadata)
@@ -1719,9 +1927,12 @@ def route_main(args: argparse.Namespace) -> int:
     metadata = None
     while time.monotonic() < deadline:
         try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata = _read_session(metadata_path)
             break
-        except (FileNotFoundError, json.JSONDecodeError):
+        except ConfigError as error:
+            if metadata_path.exists():
+                lock.close()
+                raise
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -1738,35 +1949,32 @@ def route_main(args: argparse.Namespace) -> int:
     if metadata is None:
         raise ConfigError("sandbox session is starting but proxy metadata is unavailable")
     identity = repository_identity(repo)
-    if metadata.get("repository") != identity:
-        raise ConfigError("sandbox session metadata names another repository")
-    proxy = metadata.get("commands", {}).get(args.command)
-    if args.command == "zulip":
-        required = {"container", "image", "service-owner", "implementation-identity", "state-schema",
-                    "credential-domain", "network", "network-owner", "network-policy", "session-token",
-                    "endpoint"}
-        if not isinstance(proxy, dict) or set(proxy) != required:
-            raise ConfigError("Zulip broker is unavailable in the active sandbox session")
-        state = session_state(metadata)
-        records = [item for item in state.get("proxies", [])
-                   if isinstance(item, dict) and item.get("name") == "zulip"]
-        if len(records) != 1 or any(proxy[key] != records[0][key] for key in required):
-            raise ConfigError("Zulip endpoint authority differs from lifecycle state")
-        accepted = metadata.get("accepted", {})
-        command = accepted.get("manifest", {}).get("commands", {}).get("zulip")
-        if not isinstance(command, dict):
-            raise ConfigError("Zulip endpoint lacks accepted implementation authority")
-        owner = state_runtime(state)
-        snapshot = owner.inspect_container(proxy["container"])
-        if snapshot.get("State", {}).get("Running") is not True:
-            raise ConfigError("Zulip broker is unavailable in the active sandbox session")
-        validate_live_proxy(owner, records[0], identity, command, snapshot=snapshot)
-        return owner.forward_proxy(proxy["container"])
-    if not isinstance(proxy, dict) or set(proxy) != {"container", "image"}:
+    if metadata.get("version") != 4 or metadata.get("repository") != identity:
+        raise ConfigError("sandbox session does not contain valid schema-4 authority")
+    accepted = metadata.get("accepted", {})
+    parameters = accepted.get("image-bound-parameters", {})
+    services, _ = _accepted_schema4(metadata, expected_parameters=parameters)
+    service = services.get(args.command)
+    if service is None:
         raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
+    recovery = service["recovery"]
+    endpoint = service["endpoints"][0]
+    expected_endpoint = dict(recovery.get("endpoint", {"container": recovery["container"],
+                                                        "socket": "/run/sandbox-proxy/socket"}))
+    if "forwarding" in recovery:
+        expected_endpoint["forward"] = recovery["forwarding"]
+    if endpoint != expected_endpoint or endpoint.get("container") != service["container"]["name"]:
+        raise ConfigError("service endpoint authority differs from lifecycle state")
     owner = state_runtime(session_state(metadata))
-    validate_live_proxy(owner, proxy, identity, args.command)
-    return owner.forward_proxy(proxy["container"])
+    snapshot = owner.inspect_container(service["container"]["name"])
+    if snapshot.get("State", {}).get("Running") is not True:
+        raise ConfigError(f"proxy {args.command} is unavailable in the active sandbox session")
+    command = accepted.get("policy", {}).get("commands", {}).get(args.command)
+    if not isinstance(command, dict):
+        raise ConfigError("service endpoint lacks accepted implementation authority")
+    validate_live_proxy(owner, recovery, identity, command, snapshot=snapshot,
+                        uid=parameters.get("uid"), gid=parameters.get("gid"))
+    return owner.forward_proxy(service["container"]["name"])
 
 
 def finalize_main(args: argparse.Namespace) -> int:
