@@ -6,10 +6,9 @@ Paths below are relative to `tools/codex-sandbox/` unless stated otherwise.
 
 == Problem and recommendation
 
-Several cleanup paths terminate a wrapper and treat its exit as completion of
-the entire operation. A child can retain pipes, a transport connection, or work
-after its parent exits. The problem includes SSH, Lima transports, monitor
-clients, and fixture cleanup; it is not confined to `bin/ssh`.
+Several cleanup paths treat wrapper exit as completion, although a child can
+retain pipes, a transport connection, or work. This affects SSH, Lima
+transports, monitor clients, and fixture cleanup—not only `bin/ssh`.
 
 Give each noninteractive subprocess operation an explicit lifecycle owner.
 That owner either invokes a known leaf executable directly or owns a private
@@ -79,9 +78,9 @@ tested. Strengthen final cleanup without changing the injected fault.
 
 == Ownership model
 
-A PID identifies one process. A process group is a signal destination, not a
-recursive process tree. Children normally inherit the group, but can leave it;
-an SSH master or a nested session may have a different lifetime and owner.
+A PID identifies one process; a process group is a signal destination, not a
+recursive process tree. Children normally inherit the group but can leave it;
+an SSH master or nested session may have a different lifetime and owner.
 
 For a noninteractive operation that needs group ownership:
 

@@ -12,7 +12,7 @@ Flower's local Woodpecker runner executes inside an untrusted Linux container. T
 
 Injecting credentials when the container starts would remove per-use consent and leave reusable credentials available throughout the session. A generic host-command proxy would grant a much broader authority than local CI needs.
 
-The relay must therefore make each credential retrieval an explicit host-mediated operation, show the Keychain confirmation UI, and fail closed when the host, user, or transport refuses access.
+Each retrieval must therefore be an explicit host-mediated operation that shows the Keychain confirmation UI and fails closed when the host, user, or transport refuses access.
 
 == Goals
 

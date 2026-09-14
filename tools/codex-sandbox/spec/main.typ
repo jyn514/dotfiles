@@ -6,10 +6,12 @@
 
 = Sandbox design specification
 
-This is the aggregate specification for the sandbox launcher, trusted command
+This aggregate specification covers the sandbox launcher, trusted command
 proxies, image resolution, host coordination, credential relays, and resource
-lifecycle. Each included file is the authoritative specification for one
-subsystem; this file owns their presentation and order.
+lifecycle. Each included file is authoritative for one subsystem; this file
+owns their presentation and order.
+
+#outline(title: "Contents", indent: auto)
 
 == Command proxies
 

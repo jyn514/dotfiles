@@ -9,9 +9,9 @@ This is the canonical capability-selection and image-resolution contract for
 the implemented image-command/image-target split, not the proxy trust or
 transport contracts. Adopted from the maintainers-ai-guide sketch of 2026-09-12.
 
-Keep ordinary launches quiet and avoid BuildKit solves when images can be reused.
-Simple repositories should declare builds without writing cache code. Projects
-with an existing image lifecycle should retain ownership of it.
+Keep ordinary launches quiet and avoid BuildKit solves when images are reusable.
+Simple repositories should declare builds without cache code; projects with an
+existing image lifecycle retain ownership of it.
 
 == Configuration belongs to the loader
 

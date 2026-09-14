@@ -1,8 +1,8 @@
 = Bake resolver: cache ownership
 
-Selected cache contract for the bundled resolver in
-#link("launcher-interface.typ")[the launcher interface]. These choices do not
-constrain project resolvers.
+This is the bundled resolver's cache contract under
+#link("launcher-interface.typ")[the launcher interface]; it does not constrain
+project resolvers.
 
 Native, quiet `bake --print` resolves build settings; evaluate with controlled
 environment inputs rather than caching arbitrary Bake expressions by file bytes.

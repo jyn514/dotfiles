@@ -13,7 +13,7 @@ describe the implemented version 1 wire format.
 
 == Objective
 
-Allow an untrusted agent container to request a small set of trusted repository operations without giving it direct write access to protected metadata or the outer container daemon.
+Let an untrusted agent container request selected trusted repository operations without direct write access to protected metadata or the outer container daemon.
 
 The design generalizes the sibling-container pattern used by `jj-proxy`.
 The launcher remains unaware of repository-specific request schemas and argument grammars.

@@ -11,8 +11,9 @@ Keep a persistent container parent and a guest systemd timer that starts a
 bounded reclaim job. Systemd owns scheduling and execution; no host polling,
 launchd service, SSH orchestration, or custom controller is needed.
 
-This is cache-pressure mitigation. If active work retains or creates host
-descriptors faster than reclaim releases them, ENFILE remains possible.
+This mitigates cache pressure, not descriptor exhaustion. If active work
+retains or creates host descriptors faster than reclaim releases them, ENFILE
+remains possible.
 The timer cannot detect that host pressure or warn about ineffective descriptor
 reclamation. It can report job failures. Periodic reclaim may evict useful
 caches even when the host has ample headroom; measure that cost before rollout.
