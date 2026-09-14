@@ -43,13 +43,18 @@ class ConfigTest(unittest.TestCase):
     result=subprocess.run(["docker","run","--rm","-i","--platform",platform,"caddy@"+digest,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
     self.assertEqual(result.returncode,0,result.stderr.decode())
  def test_security_semantics_are_in_generated_json(self):
-  server=json.loads(caddy.generate_caddy_config("codex","chatgpt.com"))["apps"]["http"]["servers"]["egress"]
+  config=json.loads(caddy.generate_caddy_config("codex","chatgpt.com")); server=config["apps"]["http"]["servers"]["egress"]
   self.assertNotIn("read_body_timeout",server); self.assertNotIn("logs",server); self.assertEqual(server["idle_timeout"],300_000_000_000)
+  self.assertEqual(config["logging"]["logs"]["default"]["exclude"],["http.handlers.reverse_proxy"])
   route=server["routes"][1]; self.assertEqual(route["handle"][0]["handler"],"request_body")
   gate=route["handle"][1]; self.assertEqual(gate["rewrite"],{"method":"GET","uri":"/admit"})
   success=gate["handle_response"][0]["routes"][0]["match"][0]
   self.assertEqual(success["not"][0]["vars"],{"{http.reverse_proxy.header.Authorization}":[""]})
   self.assertEqual(gate["handle_response"][1]["match"],{"status_code":[401]})
+  proxy=route["handle"][-1]
+  self.assertEqual(len(proxy["upstreams"]),1)
+  self.assertNotIn("lb_retries",proxy); self.assertNotIn("lb_try_duration",proxy)
+  self.assertNotIn("lb_retries",proxy["upstreams"][0]); self.assertNotIn("lb_try_duration",proxy["upstreams"][0])
   self.assertEqual(server["routes"][0]["handle"][0]["rewrite"]["uri"],"/ready")
   self.assertEqual(server["errors"]["routes"][0]["handle"][0]["status_code"],503)
  def test_live_gate_mutates_original_request_and_strips_forwarding(self):

@@ -188,7 +188,11 @@ def generate_caddy_config(profile: str, upstream: str, helper_socket: str = "/ru
     ready_match = {"expression": "method('GET') && path('/ready') && {http.request.uri.query} == ''"}
     routes = [{"match": [ready_match], "handle": [_gate(profile, helper_socket, "/ready", token), _static(204)]},
               {"match": [matcher], "handle": handlers}, {"handle": [_static(404)]}]
-    config = {"logging": {"logs": {"default": {"level": "INFO", "writer": {"output": "stderr"}}}},
+    # Reverse-proxy error records include the mutated request headers.  Caddy
+    # redacts Authorization itself, but not profile-owned account identifiers;
+    # suppress that logger rather than allowing failure paths to disclose them.
+    config = {"logging": {"logs": {"default": {"level": "INFO",
+                  "exclude": ["http.handlers.reverse_proxy"], "writer": {"output": "stderr"}}}},
               "apps": {"http": {"servers": {"egress": {"listen": [":8787"],
                   "max_header_bytes": 65536, "read_header_timeout": 10_000_000_000,
                   "idle_timeout": 300_000_000_000, "routes": routes,
