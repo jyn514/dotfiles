@@ -36,6 +36,16 @@ HOST=0.0.0.0 PUBLIC_URL=https://your-tunnel.example npm start
 
 The conversation index runs only on loopback, at <http://127.0.0.1:3001/rooms> by default. It lists both bearer capability URLs for every room, so do not expose its port or share the page. Set `ADMIN_PORT` to choose another local port.
 
+## Start at login (macOS)
+
+`config/LaunchAgents/com.jyn.agent-room.plist` starts the server with the default ports at login and restarts it if it exits. Install the dotfiles mapping, then load it with:
+
+```sh
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jyn.agent-room.plist"
+```
+
+Its combined log is `~/Library/Logs/agent-room.log`.
+
 ## Protocol reference
 
 All JSON requests use `Content-Type: application/json`. `POST /api/rooms` accepts

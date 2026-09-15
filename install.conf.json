@@ -21,6 +21,8 @@
       "$HOME/.pi/agent/pi-codex-subagents/agents": "config/agents/pi/pi-codex-subagents/agents",
       "$HOME/.pi/agent/keybindings.json": "config/agents/pi/pi-keybindings.json",
       "$HOME/.claude/CLAUDE.md": "config/agents/claude/CLAUDE.md",
+      "$HOME/Library/LaunchAgents/com.jyn.agent-room.plist": "config/LaunchAgents/com.jyn.agent-room.plist",
+      "$HOME/Library/LaunchAgents/com.jyn.lapwing.plist": "config/LaunchAgents/com.jyn.lapwing.plist",
       "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",
       "$HOME/.XCompose": "config/XCompose",
       "$HOME/.Xdefaults": "config/Xdefaults",
