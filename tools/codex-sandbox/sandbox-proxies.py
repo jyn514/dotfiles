@@ -450,6 +450,14 @@ def runtime_directory(repo: Path) -> Path:
     return path
 
 
+def recoverable_session_state(metadata: object) -> dict[str, Any] | None:
+    if not isinstance(metadata, dict):
+        return None
+    if not isinstance(metadata.get("state"), dict) and metadata.get("version") != 4:
+        return None
+    return session_state(metadata)
+
+
 def reset_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
     coordination_path = runtime / "coordination.lock"
@@ -465,8 +473,8 @@ def reset_main(args: argparse.Namespace) -> int:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             metadata = None
-        if isinstance(metadata, dict) and (isinstance(metadata.get("state"), dict) or metadata.get("version") == 4):
-            state = session_state(metadata)
+        state = recoverable_session_state(metadata)
+        if state is not None:
             try:
                 stop_state(state)
             except BaseException:
@@ -983,8 +991,9 @@ def attach_main(args: argparse.Namespace) -> int:
     if state is not None:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         return 0
-    if isinstance(metadata, dict) and isinstance(metadata.get("state"), dict):
-        stop_state(session_state(metadata))
+    previous = recoverable_session_state(metadata)
+    if previous is not None:
+        stop_state(previous)
     metadata_path.unlink(missing_ok=True)
     start_main(args)
     return 0

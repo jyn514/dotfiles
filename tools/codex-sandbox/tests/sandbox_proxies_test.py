@@ -1288,6 +1288,29 @@ class ManifestTest(unittest.TestCase):
         stop.assert_called_once_with(old_state)
         start.assert_called_once_with(args)
 
+    def test_exclusive_session_stops_changed_schema4_services_before_replacement(self) -> None:
+        self.write({"example": self.command()})
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        metadata = self.schema4({"example": self.command()})
+        (runtime / "session.json").write_text(json.dumps(metadata), encoding="utf-8")
+        (runtime / "session.json").chmod(0o600)
+        manifest = self.repo / "manifest"
+        manifest.write_text(json.dumps(
+            sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))
+        ), encoding="utf-8")
+        args = SimpleNamespace(
+            repo=str(self.repo), container_repo=str(self.container_repo), shared=False,
+            state=str(self.repo / "state"), manifest=str(manifest),
+        )
+        with mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
+                mock.patch.object(sandbox_proxies, "stop_state") as stop, \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            self.assertEqual(0, sandbox_proxies.attach_main(args))
+        self.assertEqual(["example"], [
+            proxy["name"] for proxy in stop.call_args.args[0]["proxies"]
+        ])
+        start.assert_called_once_with(args)
+
     def test_shared_session_rejects_changed_cached_proxies(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
