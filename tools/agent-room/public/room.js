@@ -40,6 +40,11 @@ function markClosed() {
   form.hidden = true;
 }
 
+function markOpen() {
+  closed.hidden = true;
+  form.hidden = false;
+}
+
 function fallback() {
   if (polling) return;
   polling = true;
@@ -69,6 +74,7 @@ function connect() {
     const body = JSON.parse(event.data);
     if (body.type === 'message') add(body.message);
     if (body.type === 'closed') markClosed();
+    if (body.type === 'opened') markOpen();
   };
   socket.onclose = () => {
     dot.className = 'dot';

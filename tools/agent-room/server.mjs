@@ -20,6 +20,8 @@ const SCHEMA = fs.readFileSync(path.join(TEMPLATE_DIR, 'schema.sql'), 'utf8');
 const HOME_TEMPLATE = fs.readFileSync(path.join(TEMPLATE_DIR, 'home.html'), 'utf8');
 const ROOM_TEMPLATE = fs.readFileSync(path.join(TEMPLATE_DIR, 'room.html'), 'utf8');
 const ROOMS_TEMPLATE = fs.readFileSync(path.join(TEMPLATE_DIR, 'rooms.html'), 'utf8');
+const noCacheHeaders = response => response.setHeader('Cache-Control', 'no-cache');
+const staticOptions = { etag: true, setHeaders: noCacheHeaders };
 
 const db = new DatabaseSync(DB_PATH);
 db.exec(SCHEMA);
@@ -120,6 +122,10 @@ app.post('/api/rooms', (req, res) => {
     links: {
       mine: `${origin(req)}/r/${tokenA}`,
       theirs: `${origin(req)}/r/${tokenB}`
+    },
+    names: {
+      mine: nameA,
+      theirs: nameB
     }
   });
 });
@@ -128,7 +134,7 @@ app.get('/r/:token', (req, res) => {
   const room = roomForToken(req.params.token);
   if (!room) return res.status(404).type('text').send('Room not found.');
   if (req.accepts('html') && req.get('accept')?.includes('text/html')) {
-    return res.type('html').send(roomPage(room, `${origin(req)}/r/${req.params.token}`));
+    return res.set('Cache-Control', 'no-cache').type('html').send(roomPage(room, `${origin(req)}/r/${req.params.token}`));
   }
   return res.type('text/markdown').send(agentInstructions(room, `${origin(req)}/r/${req.params.token}`));
 });
@@ -218,11 +224,29 @@ app.post('/r/:token/close', (req, res) => {
   res.status(204).end();
 });
 
-app.use('/assets', express.static(STATIC_DIR));
-app.get('/', (_req, res) => res.type('html').send(homePage()));
+app.use('/assets', express.static(STATIC_DIR, staticOptions));
+app.get('/', (_req, res) => res.set('Cache-Control', 'no-cache').type('html').send(homePage()));
 
-adminApp.use('/assets', express.static(STATIC_DIR));
-adminApp.get('/rooms', (_req, res) => res.type('html').send(roomsPage()));
+adminApp.use('/assets', express.static(STATIC_DIR, staticOptions));
+adminApp.get('/rooms', (_req, res) => res.set('Cache-Control', 'no-cache').type('html').send(roomsPage()));
+adminApp.post('/rooms/:id/toggle', (req, res) => {
+  const room = db.prepare('SELECT id, closed_by FROM rooms WHERE id = ?').get(req.params.id);
+  if (!room) return res.status(404).type('text').send('Room not found.');
+  const closed = !room.closed_by;
+  db.prepare('UPDATE rooms SET closed_by = ? WHERE id = ?').run(closed ? 'admin' : null, room.id);
+  wake(room.id);
+  broadcast(room.id, closed ? { type: 'closed', by: 'admin' } : { type: 'opened', by: 'admin' });
+  res.redirect(303, '/rooms');
+});
+adminApp.post('/rooms/:id/delete', (req, res) => {
+  const room = db.prepare('SELECT id FROM rooms WHERE id = ?').get(req.params.id);
+  if (!room) return res.status(404).type('text').send('Room not found.');
+  db.prepare('DELETE FROM rooms WHERE id = ?').run(room.id);
+  wake(room.id);
+  broadcast(room.id, { type: 'deleted' });
+  for (const socket of sockets.get(room.id) || []) socket.close(1000, 'Room deleted');
+  res.redirect(303, '/rooms');
+});
 
 app.use((err, _req, res, _next) => {
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'Request body is too large.' });
@@ -294,14 +318,20 @@ function roomsPage() {
   const rooms = db.prepare('SELECT * FROM rooms ORDER BY created_at DESC').all();
   const rows = rooms.map(room => {
     const title = [room.name_a, room.name_b].filter(Boolean).join(' & ') || 'agent conversation';
-    return `<tr><td>${escapeHtml(title)}</td><td>${escapeHtml(descriptionSnippet(room.seed))}</td><td>${escapeHtml(new Date(room.created_at).toISOString())}</td><td>${room.closed_by ? 'closed' : 'open'}</td><td><a href="${escapeHtml(roomLink(room.token_a))}">side A</a><br><a href="${escapeHtml(roomLink(room.token_b))}">side B</a></td></tr>`;
+    const state = `<form method="post" action="/rooms/${escapeHtml(room.id)}/toggle"><button class="state-toggle" type="submit" aria-pressed="${Boolean(room.closed_by)}">${room.closed_by ? 'closed' : 'open'}</button></form>`;
+    const actions = `<form method="post" action="/rooms/${escapeHtml(room.id)}/delete" data-confirm="Delete this conversation permanently?"><button type="submit">Delete</button></form>`;
+    return `<tr><td>${escapeHtml(title)}</td><td>${escapeHtml(descriptionSnippet(room.seed))}</td><td>${escapeHtml(formatDate(room.created_at))}</td><td>${state}</td><td><a href="${escapeHtml(roomLink(room.token_a))}">side A</a><br><a href="${escapeHtml(roomLink(room.token_b))}">side B</a></td><td><div class="admin-actions">${actions}</div></td></tr>`;
   }).join('');
-  return ROOMS_TEMPLATE.replace('{{ROWS}}', rows || '<tr><td colspan="5">No conversations yet.</td></tr>');
+  return ROOMS_TEMPLATE.replace('{{ROWS}}', rows || '<tr><td colspan="6">No conversations yet.</td></tr>');
 }
 
 function descriptionSnippet(seed) {
   const text = seed.replace(/\s+/g, ' ').trim();
   return text.length > 180 ? `${text.slice(0, 177)}…` : text || '—';
+}
+
+function formatDate(timestamp) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(timestamp));
 }
 
 function roomLink(token) {

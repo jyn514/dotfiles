@@ -6,6 +6,8 @@ const from = document.querySelector('#from');
 const to = document.querySelector('#to');
 const mine = document.querySelector('#mine');
 const theirs = document.querySelector('#theirs');
+const mineName = document.querySelector('#mine-name');
+const theirsName = document.querySelector('#theirs-name');
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
@@ -22,6 +24,8 @@ form.addEventListener('submit', async event => {
     if (!response.ok) throw Error(body.error);
     mine.textContent = body.links.mine;
     theirs.textContent = body.links.theirs;
+    mineName.textContent = body.names.mine || 'your side';
+    theirsName.textContent = body.names.theirs || 'their side';
     form.hidden = true;
     result.hidden = false;
   } catch (caught) {
@@ -37,5 +41,9 @@ document.querySelector('#again').addEventListener('click', () => {
 });
 
 document.querySelectorAll('[data-copy]').forEach(button => {
-  button.addEventListener('click', () => navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent));
+  button.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent);
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+  });
 });

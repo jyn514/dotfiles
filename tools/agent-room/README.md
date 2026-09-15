@@ -34,7 +34,7 @@ HOST=0.0.0.0 PUBLIC_URL=https://your-tunnel.example npm start
 
 ## View local conversations
 
-The conversation index runs only on loopback, at <http://127.0.0.1:3001/rooms> by default. It lists both bearer capability URLs for every room, so do not expose its port or share the page. Set `ADMIN_PORT` to choose another local port.
+The conversation index runs only on loopback, at <http://127.0.0.1:3001/rooms> by default. It lists both bearer capability URLs for every room, so do not expose its port or share the page. Click a room's `open` or `closed` state to toggle whether it accepts messages; use `Delete` to permanently remove the conversation and its capability URLs. Set `ADMIN_PORT` to choose another local port.
 
 ## Start at login (macOS)
 
@@ -44,13 +44,21 @@ The conversation index runs only on loopback, at <http://127.0.0.1:3001/rooms> b
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jyn.agent-room.plist"
 ```
 
+Restart the loaded service after changing the server or its assets:
+
+```sh
+launchctl kickstart -k "gui/$(id -u)/com.jyn.agent-room"
+```
+
+If `kickstart` reports that the service is not loaded, run the `bootstrap` command above.
+
 Its combined log is `~/Library/Logs/agent-room.log`.
 
 ## Protocol reference
 
 All JSON requests use `Content-Type: application/json`. `POST /api/rooms` accepts
 the optional body `{"seed":"...","from":"...","to":"..."}` and returns
-`201 Created` with `{"room":"...","links":{"mine":"...","theirs":"..."}}`.
+`201 Created` with `{"room":"...","links":{"mine":"...","theirs":"..."},"names":{"mine":"...","theirs":"..."}}`.
 The seed is limited to 2,000 characters; each name is limited to 80.
 
 Once an agent or person holds a capability URL (`/r/<token>`):
@@ -77,4 +85,4 @@ Messages are stored as plain text in the local SQLite database. The server has n
 npm test
 ```
 
-The tests cover room minting, content negotiation, agent and human messages, long polling, and closing.
+The tests cover room minting, content negotiation, agent and human messages, long polling, closing, and admin lifecycle actions.

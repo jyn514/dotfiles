@@ -32,6 +32,7 @@ test('mints two distinct capability URLs', async () => {
   mine = body.links.mine;
   theirs = body.links.theirs;
   assert.notEqual(mine, theirs);
+  assert.deepEqual(body.names, { mine: 'Ada', theirs: 'Grace' });
   assert.match(mine, new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/r/`));
   assert.equal('expires_days' in body, false);
 });
@@ -40,11 +41,19 @@ test('lists capability links only on the loopback admin server', async () => {
   const index = await fetch(`${adminBase}/rooms`);
   const page = await index.text();
   assert.equal(index.status, 200);
+  assert.equal(index.headers.get('cache-control'), 'no-cache');
+  assert.ok(index.headers.get('etag'));
   assert.match(page, new RegExp(mine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(page, new RegExp(theirs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(page, /settle on a design/);
+  assert.match(page, /\/rooms\/[^"/]+\/toggle/);
+  assert.match(page, /data-confirm="Delete this conversation permanently\?"/);
+  assert.doesNotMatch(page, /T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   assert.equal((await fetch(`${base}/rooms`)).status, 404);
-  const home = await fetch(base).then(r => r.text());
+  const homeResponse = await fetch(base);
+  assert.equal(homeResponse.headers.get('cache-control'), 'no-cache');
+  assert.ok(homeResponse.headers.get('etag'));
+  const home = await homeResponse.text();
   assert.match(home, new RegExp(`${adminBase}/rooms`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
@@ -53,9 +62,17 @@ test('serves markdown to agents and HTML to humans', async () => {
   assert.match(await markdown.text(), /keep long-polling/i);
   const html = await fetch(mine, { headers: { accept: 'text/html' } });
   const page = await html.text();
+  assert.equal(html.headers.get('cache-control'), 'no-cache');
+  assert.ok(html.headers.get('etag'));
   assert.match(page, /Say something as yourself/);
   assert.match(page, /settle on a design/);
   assert.match(page, /data-side="a"/);
+});
+
+test('revalidates static assets with ETags', async () => {
+  const asset = await fetch(`${base}/assets/home.js`);
+  assert.equal(asset.headers.get('cache-control'), 'no-cache');
+  assert.ok(asset.headers.get('etag'));
 });
 
 test('agents and humans share the transcript', async () => {
@@ -105,4 +122,34 @@ test('closing makes both capabilities read-only', async () => {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'too late' })
   });
   assert.equal(response.status, 409);
+});
+
+test('admin can close and delete a conversation', async () => {
+  const minted = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'admin lifecycle test', from: 'One', to: 'Two' })
+  }).then(r => r.json());
+
+  const close = await fetch(`${adminBase}/rooms/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
+  assert.equal(close.status, 303);
+  const closed = await fetch(`${minted.links.mine}/messages`).then(r => r.json());
+  assert.equal(closed.closed, true);
+
+  const blocked = await fetch(`${minted.links.mine}/messages`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'too soon' })
+  });
+  assert.equal(blocked.status, 409);
+
+  const reopen = await fetch(`${adminBase}/rooms/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
+  assert.equal(reopen.status, 303);
+  const opened = await fetch(`${minted.links.mine}/messages`).then(r => r.json());
+  assert.equal(opened.closed, false);
+  assert.equal((await fetch(`${minted.links.mine}/messages`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'open again' })
+  })).status, 201);
+
+  const deletion = await fetch(`${adminBase}/rooms/${minted.room}/delete`, { method: 'POST', redirect: 'manual' });
+  assert.equal(deletion.status, 303);
+  assert.equal((await fetch(minted.links.mine)).status, 404);
 });
