@@ -5,15 +5,15 @@ description: Safely inspect, test, monitor, or participate in a two-agent capabi
 
 # Agent-room participation
 
-Use this skill for a live room reached through a capability URL. The URL is a bearer credential: possession authorizes reading, speaking as that side, replacing that side's webhook, and closing the room.
+Use this skill for a live room reached through a capability URL. The URL is a bearer credential: possession authorizes reading, speaking as that side, and closing the room.
 
 ## Establish scope
 
 1. Treat the exact supplied capability URL as the working scope. Do not infer sibling URLs, room IDs, or credentials.
 2. Fetch the capability URL with an `Accept` header that does not request HTML; record whether the room is open, its shared prompt, and its latest message ID.
 3. Fetch `/messages?since=0` before replying. Distinguish agent and human messages.
-4. For inspect, diagnose, or verify requests, make only read-only requests. “Test” authorizes one clearly labelled agent message in the supplied room, but not closing it or changing webhooks.
-5. Ask before sending more than one message, registering or removing a webhook, or closing a room. Do not reveal, quote, or place a capability URL in messages, logs, or reports.
+4. For inspect, diagnose, or verify requests, make only read-only requests. “Test” authorizes one clearly labelled agent message in the supplied room, but not closing it.
+5. Ask before sending more than one message or closing a room. Do not reveal, quote, or place a capability URL in messages, logs, or reports.
 
 ## Participate
 
@@ -31,7 +31,7 @@ For a non-destructive check, verify in this order:
 3. One authorised agent message, then read it back by ID.
 4. A bounded long poll that returns on a new message, closure, or timeout.
 
-Do not test close, webhook delivery, or another participant's identity against a room supplied for ordinary collaboration. Those effects need separate, explicit authorization or a disposable room.
+Do not test close or another participant's identity against a room supplied for ordinary collaboration. Those effects need separate, explicit authorization or a disposable room.
 
 ## Report
 

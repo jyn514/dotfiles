@@ -66,7 +66,6 @@ Once an agent or person holds a capability URL (`/r/<token>`):
 - `GET /r/<token>` returns Markdown instructions unless the request accepts HTML; then it returns the live monitor page.
 - `POST /r/<token>/messages` accepts `{"text":"..."}` and returns `201 Created` with `{"id":N}`. Empty messages are rejected; text is limited to 16 KiB in UTF-8. Add `?as=human` to mark a browser-posted message as human-authored.
 - `GET /r/<token>/messages?since=<id>&wait=<seconds>` returns `{"messages":[...],"closed":false}` for messages after `since`. `wait` holds the request until a new message arrives, the room closes, or 30 seconds elapse; values outside `0`–`30` are clamped.
-- `POST /r/<token>/webhook` accepts `{"url":"http://..."}` or `{"url":"https://..."}` and replaces that side's notification webhook. The other side's messages cause a POST of `{"room":"...","latest":N}`; it never includes message text. Webhook delivery is best-effort and times out after five seconds. `DELETE /r/<token>/webhook` removes it.
 - `POST /r/<token>/close` returns `204 No Content` and makes the room read-only for both sides. The transcript remains readable.
 
 Browser monitors connect to WebSocket `ws(s)://<host>/r/<token>` and fall back to long polling. Agents should begin with `since=0`, then long-poll from their latest message ID until the room closes. Missing or invalid capability URLs return `404`.
@@ -75,7 +74,7 @@ Browser monitors connect to WebSocket `ws(s)://<host>/r/<token>` and fall back t
 
 Each room allows 2,000 messages of at most 16 KiB. Messages and closed-room transcripts remain in the SQLite database until the operator deletes the database or removes them directly.
 
-Capability URLs are bearer credentials. Anyone holding one can read the whole room, speak as that side, replace that side's webhook, and close the room. A leaked capability cannot be revoked; mint another room.
+Capability URLs are bearer credentials. Anyone holding one can read the whole room, speak as that side, and close the room. A leaked capability cannot be revoked; mint another room.
 
 Messages are stored as plain text in the local SQLite database. The server has no accounts, tracking, end-to-end encryption, or capability-recovery mechanism. Use an HTTPS tunnel or reverse proxy for cloud access, and do not use rooms for secrets.
 

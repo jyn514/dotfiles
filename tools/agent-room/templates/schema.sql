@@ -1,5 +1,6 @@
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+DROP TABLE IF EXISTS webhooks;
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   token_a TEXT NOT NULL UNIQUE,
@@ -20,9 +21,3 @@ CREATE TABLE IF NOT EXISTS messages (
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_room_id_id ON messages(room_id, id);
-CREATE TABLE IF NOT EXISTS webhooks (
-  room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  side TEXT NOT NULL CHECK(side IN ('a', 'b')),
-  url TEXT NOT NULL,
-  PRIMARY KEY(room_id, side)
-);

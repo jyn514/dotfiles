@@ -91,16 +91,6 @@ function broadcast(roomId, payload) {
   }
 }
 
-async function fireWebhooks(roomId, speakingSide, latest) {
-  const hooks = db.prepare('SELECT side, url FROM webhooks WHERE room_id = ? AND side != ?').all(roomId, speakingSide);
-  await Promise.allSettled(hooks.map(hook => fetch(hook.url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ room: roomId, latest }),
-    signal: AbortSignal.timeout(5000)
-  })));
-}
-
 app.post('/api/rooms', (req, res) => {
   const seed = String(req.body?.seed || '').trim();
   const nameA = String(req.body?.from || '').trim();
@@ -193,26 +183,7 @@ app.post('/r/:token/messages', (req, res) => {
   const message = { id: Number(result.lastInsertRowid), side: room.side, author, text, ts: new Date(now).toISOString() };
   wake(room.id);
   broadcast(room.id, { type: 'message', message });
-  void fireWebhooks(room.id, room.side, message.id);
   res.status(201).json({ id: message.id });
-});
-
-app.post('/r/:token/webhook', (req, res) => {
-  const room = roomForToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'Room not found.' });
-  let url;
-  try { url = new URL(String(req.body?.url || '')); } catch { return res.status(400).json({ error: 'A valid webhook URL is required.' }); }
-  if (!['http:', 'https:'].includes(url.protocol)) return res.status(400).json({ error: 'Webhook URL must use HTTP or HTTPS.' });
-  db.prepare(`INSERT INTO webhooks (room_id, side, url) VALUES (?, ?, ?)
-    ON CONFLICT(room_id, side) DO UPDATE SET url = excluded.url`).run(room.id, room.side, url.href);
-  res.status(204).end();
-});
-
-app.delete('/r/:token/webhook', (req, res) => {
-  const room = roomForToken(req.params.token);
-  if (!room) return res.status(404).json({ error: 'Room not found.' });
-  db.prepare('DELETE FROM webhooks WHERE room_id = ? AND side = ?').run(room.id, room.side);
-  res.status(204).end();
 });
 
 app.post('/r/:token/close', (req, res) => {
@@ -315,10 +286,14 @@ function messageHtml(message, side) {
 }
 
 function roomsPage() {
-  const rooms = db.prepare('SELECT * FROM rooms ORDER BY created_at DESC').all();
+  const rooms = db.prepare(`
+    SELECT rooms.*, count(messages.id) AS message_count
+    FROM rooms LEFT JOIN messages ON messages.room_id = rooms.id
+    GROUP BY rooms.id ORDER BY rooms.created_at DESC
+  `).all();
   const rows = rooms.map(room => {
     const title = [room.name_a, room.name_b].filter(Boolean).join(' & ') || 'agent conversation';
-    const state = `<form method="post" action="/rooms/${escapeHtml(room.id)}/toggle"><button class="state-toggle" type="submit" aria-pressed="${Boolean(room.closed_by)}">${room.closed_by ? 'closed' : 'open'}</button></form>`;
+    const state = `<div class="state"><form method="post" action="/rooms/${escapeHtml(room.id)}/toggle"><button class="state-toggle" type="submit" aria-pressed="${Boolean(room.closed_by)}">${room.closed_by ? 'closed' : 'open'}</button></form><span class="message-count">${room.message_count} sent</span></div>`;
     const actions = `<form method="post" action="/rooms/${escapeHtml(room.id)}/delete" data-confirm="Delete this conversation permanently?"><button type="submit">Delete</button></form>`;
     return `<tr><td>${escapeHtml(title)}</td><td>${escapeHtml(descriptionSnippet(room.seed))}</td><td>${escapeHtml(formatDate(room.created_at))}</td><td>${state}</td><td><a href="${escapeHtml(roomLink(room.token_a))}">side A</a><br><a href="${escapeHtml(roomLink(room.token_b))}">side B</a></td><td><div class="admin-actions">${actions}</div></td></tr>`;
   }).join('');

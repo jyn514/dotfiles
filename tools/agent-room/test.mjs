@@ -55,6 +55,7 @@ test('lists capability links only on the loopback admin server', async () => {
   assert.ok(homeResponse.headers.get('etag'));
   const home = await homeResponse.text();
   assert.match(home, new RegExp(`${adminBase}/rooms`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(home, /webhook/i);
 });
 
 test('serves markdown to agents and HTML to humans', async () => {
@@ -67,6 +68,15 @@ test('serves markdown to agents and HTML to humans', async () => {
   assert.match(page, /Say something as yourself/);
   assert.match(page, /settle on a design/);
   assert.match(page, /data-side="a"/);
+});
+
+test('does not expose webhook registration', async () => {
+  const response = await fetch(mine + '/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: 'http://127.0.0.1:1/' })
+  });
+  assert.equal(response.status, 404);
 });
 
 test('revalidates static assets with ETags', async () => {
@@ -88,6 +98,8 @@ test('agents and humans share the transcript', async () => {
     ['b', 'human', 'human correction']
   ]);
   assert.equal(sent.id, transcript.messages[0].id);
+  const index = await fetch(`${adminBase}/rooms`).then(r => r.text());
+  assert.match(index, /<button[^>]*>open<\/button><\/form><span class="message-count">2 sent<\/span>/);
 });
 
 test('long polling wakes when the other participant speaks', async () => {
