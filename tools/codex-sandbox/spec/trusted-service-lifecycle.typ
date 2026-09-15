@@ -137,7 +137,7 @@ Recovery may leave `cleanup-failed` only after exclusive ownership validation.
 
 / `planned`: Policy, authority, image role, scope, service-adapter identity, and state schema are fixed; no service resource exists.
 / `resolved`: Required immutable images and image-bound parameters are verified, and the concrete implementation identity is fixed; no service resource exists.
-/ `preparing`: The supervisor creates runtime-owned networks, volumes, forwards, temporary files, and credential mounts. Every successful creation is registered immediately for reverse-order cleanup.
+/ `preparing`: The supervisor creates runtime-owned networks, volumes, forwards, temporary files, and credential mounts. Service plans declare resource roles and attachments before effects begin; adapters bind runtime identities and register every successful creation for dependency-ordered cleanup.
 / `starting`: The service process or container exists but no endpoint is usable by the agent or host router.
 / `ready`: All declared endpoints passed their service-adapter probe. Shared authenticated services have their session token installed and reject unauthenticated requests; required per-launch relays have installed their token, peer allowlist, or equivalent admission. For Caddy authenticated egress, a dedicated local Caddy route performs a bodyless helper admission check and returns locally without an upstream handler. Readiness validates both container identities, their private socket-volume attachment, and local credential structure/readability; it performs no upstream request, OAuth refresh, or persistent credential write.
 / `published`: One atomic shared-session record exposes the complete ready shared-service set. Individual shared services are never published incrementally.
@@ -171,7 +171,7 @@ The first launcher creates a shared session as follows:
 Concurrency is preserved for independent image resolution, network creation, service startup, and readiness checks.
 The supervisor owns service preparation, start, and readiness workers. It joins shared and required workers before publication or agent start, and joins every remaining best-effort worker before cleanup so background creation cannot race deletion.
 It waits for image-resolution results but never signals, reaps, or cleans resolver processes or resources.
-It does not introduce a generic dependency graph: a service adapter may declare a small fixed prerequisite such as “network before container,” while image dependencies remain with resolvers and application dependencies remain with protocols.
+The supervisor owns a generic resource-cleanup graph derived from service-plan attachments. It does not order services, image resolution, application requests, or protocol operations; those dependencies remain with their existing owners.
 
 Readiness proves only that the accepted endpoint and local authorization boundary can serve a minimal non-mutating probe.
 It does not execute repository mutations, contact an authenticated upstream, refresh OAuth state, consume a model request, retrieve R2 credentials, or perform another externally visible application effect.
@@ -230,7 +230,7 @@ After the deadline, the runtime terminates the complete owned process or contain
 
 Per-launch services stop when their agent attachment ends or its startup fails.
 Shared services stop only after the final launcher proves final ownership through the host session lock.
-Cleanup runs in reverse dependency order: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.
+Cleanup runs in reverse dependency order derived from the declared resource attachments: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.
 Independent removals may run concurrently when ownership and dependency order permit it.
 
 Cleanup preserves the agent's exit status.

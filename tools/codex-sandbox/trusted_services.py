@@ -265,6 +265,52 @@ class OwnerSet:
 
 
 @dataclass(frozen=True)
+class ResourceTopology:
+    """Bind logical resource roles to identities without owning their effects."""
+
+    dependencies: Mapping[str, tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.dependencies, Mapping):
+            raise LifecycleError("resource topology must be an object")
+        roles = tuple(self.dependencies)
+        for role in roles:
+            _require_role(role, "resource role")
+        normalized: dict[str, tuple[str, ...]] = {}
+        for role, dependencies in self.dependencies.items():
+            if not isinstance(dependencies, tuple):
+                raise LifecycleError("resource topology dependencies must be tuples")
+            if len(set(dependencies)) != len(dependencies):
+                raise LifecycleError("resource topology dependencies must be unique")
+            for dependency in dependencies:
+                _require_role(dependency, "resource dependency role")
+            missing = set(dependencies) - set(roles)
+            if missing:
+                raise LifecycleError(
+                    f"resource topology dependencies are not declared: {sorted(missing)!r}"
+                )
+            normalized[role] = dependencies
+        try:
+            TopologicalSorter(normalized).prepare()
+        except CycleError as error:
+            raise LifecycleError("resource topology dependency cycle") from error
+        object.__setattr__(self, "dependencies", MappingProxyType(normalized))
+
+    def bind(self, identities: Mapping[str, str]) -> Mapping[str, tuple[str, ...]]:
+        if not isinstance(identities, Mapping) or set(identities) != set(self.dependencies):
+            raise LifecycleError("resource topology identities do not match declared roles")
+        for identity in identities.values():
+            _require_resource(identity)
+        if len(set(identities.values())) != len(identities):
+            raise LifecycleError("resource topology identities must be unique")
+        return MappingProxyType({
+            identities[role]: tuple(identities[dependency]
+                                    for dependency in dependencies)
+            for role, dependencies in self.dependencies.items()
+        })
+
+
+@dataclass(frozen=True)
 class OwnedResource:
     identity: str
     owner: str

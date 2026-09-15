@@ -29,7 +29,7 @@ from sandbox_runtime import (
 )
 from trusted_services import (
     LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
-    ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
+    ResourceTopology, ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
 )
 from codex_broker import (
     PAIR_STATUS_FIELDS, SESSION_LIFECYCLE_SCHEMA, credential_source_identity, parse_auth_record,
@@ -41,7 +41,7 @@ from caddy_foundation import (
     generate_caddy_config, resolve_caddy_image,
     validate_configuration_mount,
 )
-from authenticated_egress import EgressPairPlan, start_egress_pair
+from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -1836,6 +1836,25 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
     registry.adapter_diagnostics = adapter_diagnostics
     volume_id = _proxy_resource_identity("volume", service_owner)
     container_id = _proxy_resource_identity("container", service_owner)
+    proxy_roles = {"proxy-volume": ()}
+    proxy_identities = {"proxy-volume": volume_id}
+    container_dependencies = ["proxy-volume"]
+    if "network" in proxy:
+        proxy_roles["network"] = ()
+        proxy_identities["network"] = _proxy_resource_identity("network", service_owner)
+        container_dependencies.append("network")
+    if proxy.get("name") == "zulip" and "caddy-container" in proxy:
+        proxy_roles["caddy-container"] = ()
+        proxy_identities["caddy-container"] = _proxy_resource_identity(
+            "zulip-caddy", service_owner,
+        )
+        container_dependencies.append("caddy-container")
+    proxy_roles["proxy-container"] = tuple(container_dependencies)
+    proxy_identities["proxy-container"] = container_id
+    if "forwarding" in proxy:
+        proxy_roles["forward"] = ("proxy-container",)
+        proxy_identities["forward"] = _proxy_resource_identity("forward", service_owner)
+    proxy_dependencies = ResourceTopology(proxy_roles).bind(proxy_identities)
 
     def listed(kind: str, name: str) -> bool:
         return resource_exists(runtime, ResourceKind(kind), name)
@@ -1906,10 +1925,9 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
 
     registry.register(OwnedResource(
         volume_id, service_owner, volume_presence, remove_volume,
+        proxy_dependencies[volume_id],
     ))
-    dependencies = [volume_id]
-    network_id = (_proxy_resource_identity("network", service_owner)
-                  if "network" in proxy else None)
+    network_id = proxy_identities.get("network")
     if network_id is not None:
         def network_presence() -> ResourcePresence:
             return resource_presence(
@@ -1921,12 +1939,20 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
                 runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
             ),
         ))
-        dependencies.append(network_id)
     if proxy.get("name") == "zulip" and "caddy-container" in proxy:
         socket_id = _proxy_resource_identity("zulip-socket", service_owner)
         helper_id = _proxy_resource_identity("zulip-helper", service_owner)
         caddy_id = _proxy_resource_identity("zulip-caddy", service_owner)
         config_id = _proxy_resource_identity("zulip-config", service_owner)
+        pair_dependencies = egress_pair_topology(
+            application_network_role="network",
+        ).bind({
+            "configuration": config_id,
+            "socket-volume": socket_id,
+            "network": network_id,
+            "helper-container": helper_id,
+            "caddy-container": caddy_id,
+        })
         def named_presence(kind: str, name: str) -> ResourcePresence:
             return resource_presence(runtime, ResourceKind(kind), name, service_owner)
         def remove_named(kind: str, name: str) -> None:
@@ -1941,23 +1967,25 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
             directory = os.open(path.parent, os.O_DIRECTORY)
             try: os.fsync(directory)
             finally: os.close(directory)
-        registry.register(OwnedResource(config_id, service_owner, config_presence, remove_config))
+        registry.register(OwnedResource(
+            config_id, service_owner, config_presence, remove_config,
+            pair_dependencies[config_id],
+        ))
         registry.register(OwnedResource(socket_id, service_owner,
             lambda: named_presence("volume", proxy["socket-volume"]),
-            lambda: remove_named("volume", proxy["socket-volume"])))
+            lambda: remove_named("volume", proxy["socket-volume"]),
+            pair_dependencies[socket_id]))
         registry.register(OwnedResource(helper_id, service_owner,
             lambda: named_presence("container", proxy["helper-container"]),
-            lambda: remove_named("container", proxy["helper-container"]), (socket_id,)))
-        caddy_dependencies = [helper_id, socket_id, config_id]
-        if network_id is not None:
-            caddy_dependencies.append(network_id)
+            lambda: remove_named("container", proxy["helper-container"]),
+            pair_dependencies[helper_id]))
         registry.register(OwnedResource(caddy_id, service_owner,
             lambda: named_presence("container", proxy["caddy-container"]),
             lambda: remove_named("container", proxy["caddy-container"]),
-            tuple(caddy_dependencies)))
-        dependencies.append(caddy_id)
+            pair_dependencies[caddy_id]))
     registry.register(OwnedResource(
-        container_id, service_owner, container_presence, remove_container, tuple(dependencies),
+        container_id, service_owner, container_presence, remove_container,
+        proxy_dependencies[container_id],
     ))
     forwarding = proxy.get("forwarding")
     if forwarding is not None:
@@ -1974,7 +2002,8 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         registry.register(OwnedResource(
             _proxy_resource_identity("forward", service_owner), service_owner,
             lambda: ResourcePresence.OWNED,
-            lambda: runtime.stop_proxy_forward(forwarding), (container_id,),
+            lambda: runtime.stop_proxy_forward(forwarding),
+            proxy_dependencies[_proxy_resource_identity("forward", service_owner)],
         ))
     return registry
 
@@ -2067,18 +2096,34 @@ def stop_state(state: dict[str, Any]) -> None:
             volume_id = f"volume:{auth['socket-volume']}"
             app_id = f"network:{auth['networks']['application']}"
             refresh_id = f"network:{auth['networks']['refresh']}"
+            helper_id = f"container:{auth['helper-container']}"
+            caddy_id = f"container:{auth['container']}"
+            pair_dependencies = egress_pair_topology(
+                application_network_role="application-network",
+                helper_network_role="refresh-network",
+            ).bind({
+                "configuration": config_id,
+                "socket-volume": volume_id,
+                "application-network": app_id,
+                "refresh-network": refresh_id,
+                "helper-container": helper_id,
+                "caddy-container": caddy_id,
+            })
             for kind, name in (("volume", auth["socket-volume"]),
                                ("network", auth["networks"]["application"]),
                                ("network", auth["networks"]["refresh"])):
-                registry.register(OwnedResource(f"{kind}:{name}", service_owner,
+                identity = f"{kind}:{name}"
+                registry.register(OwnedResource(identity, service_owner,
                     lambda k=kind,n=name: owned_presence(k,n),
-                    lambda k=kind,n=name: resource_remove(k,n)))
-            registry.register(OwnedResource(f"container:{auth['helper-container']}", service_owner,
+                    lambda k=kind,n=name: resource_remove(k,n), pair_dependencies[identity]))
+            registry.register(OwnedResource(helper_id, service_owner,
                 lambda: owned_presence("container", auth["helper-container"]),
-                lambda: resource_remove("container", auth["helper-container"]), (volume_id, refresh_id)))
-            registry.register(OwnedResource(f"container:{auth['container']}", service_owner,
+                lambda: resource_remove("container", auth["helper-container"]),
+                pair_dependencies[helper_id]))
+            registry.register(OwnedResource(caddy_id, service_owner,
                 lambda: owned_presence("container", auth["container"]),
-                lambda: resource_remove("container", auth["container"]), (volume_id, app_id, config_id)))
+                lambda: resource_remove("container", auth["container"]),
+                pair_dependencies[caddy_id]))
             result = registry.cleanup(0)
             if result.remaining:
                 auth["lifecycle-state"] = "cleanup-failed"

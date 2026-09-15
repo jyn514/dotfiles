@@ -37,6 +37,7 @@ from sandbox_runtime import (
 )
 from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
+from relay_lifecycle import RelayResourcePlan
 from source_view import source_mounts
 from keychain_bridge import HostKeychainBridge
 from host_tcp_bridge import FixedTcpBridge
@@ -553,6 +554,9 @@ class GatewayHandle:
         self.agent_room = agent_room
         self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
+        self.resources = RelayResourcePlan(
+            state.gateway_link_network, state.gateway_egress_network, state.gateway_container,
+        )
         self.cancelled = threading.Event()
         self.bridge: HostEditorBridge | None = None
         self.agent_room_bridge: FixedTcpBridge | None = None
@@ -589,11 +593,11 @@ def _gateway_container_presence(name: str, owner: str) -> ResourcePresence:
     return resource_presence(OUTER_RUNTIME, ResourceKind.CONTAINER, name, owner)
 
 
-def _gateway_recovery_directory(state: State) -> Path:
+def _relay_recovery_directory(state: State) -> Path:
     return state.home / ".local/state/codex-sandbox/gateway-recovery"
 
 
-def _gateway_recovery_dirfd(state: State, *, create: bool) -> int | None:
+def _relay_recovery_dirfd(state: State, *, create: bool) -> int | None:
     """Open the private recovery directory without following any path component."""
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(state.home, flags)
@@ -621,34 +625,18 @@ def _gateway_recovery_dirfd(state: State, *, create: bool) -> int | None:
             os.close(fd)
 
 
-def _gateway_recovery_resources(handle: GatewayHandle,
-                                remaining: tuple[str, ...]) -> list[dict[str, object]]:
-    resources = []
-    for identity in remaining:
-        kind, _, name = identity.partition(":")
-        if kind not in {"container", "network"}:
-            continue
-        dependencies = ([] if kind == "network" else
-            [handle.state.gateway_link_network, handle.state.gateway_egress_network])
-        resources.append({"kind": kind, "name": name, "owner": handle.owner,
-                          "dependencies": dependencies})
-    return resources
-
-
-def persist_gateway_recovery(state: State, remaining: tuple[str, ...]) -> Path | None:
-    handle = state.gateway_handle
-    if handle is None:
-        return None
-    resources = _gateway_recovery_resources(handle, remaining)
+def persist_relay_recovery(state: State, plan: RelayResourcePlan, owner: str,
+                           remaining: tuple[str, ...]) -> Path | None:
+    resources = plan.recovery_resources(remaining, owner)
     if not resources:
         return None
-    directory = _gateway_recovery_directory(state)
-    dirfd = _gateway_recovery_dirfd(state, create=True)
+    directory = _relay_recovery_directory(state)
+    dirfd = _relay_recovery_dirfd(state, create=True)
     assert dirfd is not None
-    name = f"{handle.owner}.json"
-    temporary = f".{handle.owner}.{secrets.token_hex(8)}.tmp"
+    name = f"{owner}.json"
+    temporary = f".{owner}.{secrets.token_hex(8)}.tmp"
     payload = {"version": 1, "runtime": runtime_identity(OUTER_RUNTIME),
-               "owner": handle.owner, "resources": resources}
+               "owner": owner, "resources": resources}
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
                              | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=dirfd)
@@ -667,47 +655,7 @@ def persist_gateway_recovery(state: State, remaining: tuple[str, ...]) -> Path |
     return directory / name
 
 
-def persist_keychain_recovery(state: State, remaining: tuple[str, ...]) -> Path | None:
-    """Persist credential-free R2 resources in the trusted relay recovery store."""
-    handle = state.keychain_handle
-    if handle is None:
-        return None
-    resources = []
-    for identity in remaining:
-        kind, _, name = identity.partition(':')
-        if kind not in {'container', 'network'}:
-            continue
-        dependencies = ([] if kind == 'network' else [handle.link, handle.egress])
-        resources.append({'kind': kind, 'name': name, 'owner': handle.owner,
-                          'dependencies': dependencies})
-    if not resources:
-        return None
-    directory = _gateway_recovery_directory(state)
-    dirfd = _gateway_recovery_dirfd(state, create=True)
-    assert dirfd is not None
-    filename = f'{handle.owner}.json'
-    temporary = f'.{handle.owner}.{secrets.token_hex(8)}.tmp'
-    payload = {'version': 1, 'runtime': runtime_identity(OUTER_RUNTIME),
-               'owner': handle.owner, 'resources': resources}
-    try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                             | getattr(os, 'O_NOFOLLOW', 0), 0o600, dir_fd=dirfd)
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
-            json.dump(payload, output, sort_keys=True)
-            output.flush()
-            os.fsync(output.fileno())
-        os.rename(temporary, filename, src_dir_fd=dirfd, dst_dir_fd=dirfd)
-        os.fsync(dirfd)
-    finally:
-        try:
-            os.unlink(temporary, dir_fd=dirfd)
-        except FileNotFoundError:
-            pass
-        os.close(dirfd)
-    return directory / filename
-
-
-def _parse_gateway_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
+def _parse_relay_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
     value = json.loads(data)
     if (not isinstance(value, dict) or set(value) != {"version", "runtime", "owner", "resources"}
             or isinstance(value.get("version"), bool) or value.get("version") != 1
@@ -740,11 +688,11 @@ def _parse_gateway_recovery(data: bytes) -> tuple[str, list[dict[str, object]]]:
     return owner, parsed
 
 
-def recover_gateways(state: State) -> None:
+def recover_relays(state: State) -> None:
     if not hasattr(state, "home"):
         return
     try:
-        dirfd = _gateway_recovery_dirfd(state, create=False)
+        dirfd = _relay_recovery_dirfd(state, create=False)
     except (OSError, LauncherError) as error:
         print(f"warning: gateway recovery directory retained: {error}", file=sys.stderr)
         return
@@ -760,7 +708,7 @@ def recover_gateways(state: State) -> None:
                     if (not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid()
                             or stat.S_IMODE(status.st_mode) != 0o600 or status.st_size > 16384):
                         raise LauncherError("gateway recovery record is not a private regular file")
-                    owner, resources = _parse_gateway_recovery(source.read(16385))
+                    owner, resources = _parse_relay_recovery(source.read(16385))
                 registry = ResourceRegistry(owner)
                 for item in sorted(resources, key=lambda item: item["kind"] == "container"):
                     name_value = item["name"]
@@ -860,7 +808,7 @@ def start_gateway(state: State) -> None:
             state.gateway_container, handle.owner)),
         lambda: remove_owned_resource(
             OUTER_RUNTIME, ResourceKind.CONTAINER, state.gateway_container, handle.owner),
-        (f"network:{state.gateway_link_network}", f"network:{state.gateway_egress_network}"),
+        handle.resources.bound_topology()[container_resource],
     ))
     if handle.cancelled.is_set():
         raise LauncherError("gateway startup cancelled")
@@ -918,6 +866,7 @@ class KeychainHandle:
         self.state, self.link, self.egress, self.container = state, link, egress, container
         self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
+        self.resources = RelayResourcePlan(link, egress, container)
         self.cancelled = threading.Event()
         self.bridge: HostKeychainBridge | None = None
         self.projected = False
@@ -961,7 +910,7 @@ def start_keychain(state: State) -> list[str]:
             lambda: _gateway_container_presence(container, handle.owner),
             lambda: remove_owned_resource(
                 OUTER_RUNTIME, ResourceKind.CONTAINER, container, handle.owner),
-            (f'network:{link}', f'network:{egress}')))
+            handle.resources.bound_topology()[container_resource]))
         bridge = handle.bridge = HostKeychainBridge()
         # The bridge depends on the relay so cleanup closes admission and joins
         # any prompt worker before removing the relay process.
@@ -1156,6 +1105,15 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         remove_owned_resource(OUTER_RUNTIME, ResourceKind(kind), name, owner)
 
     config_resource = "file:caddy-config"
+    pair_resources = {
+        "configuration": config_resource,
+        "socket-volume": f"volume:{socket_volume}",
+        "application-network": f"network:{application_network}",
+        "refresh-network": f"network:{refresh_network}",
+        "helper-container": f"container:{helper_container}",
+        "caddy-container": f"container:{caddy}",
+    }
+    pair_dependencies = pair_plan.resource_topology().bind(pair_resources)
     def config_presence() -> ResourcePresence:
         try:
             return (ResourcePresence.OWNED if caddy_configuration_digest(configuration_path.read_bytes()) == configuration_digest
@@ -1167,18 +1125,22 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         directory = os.open(configuration_path.parent, os.O_DIRECTORY)
         try: os.fsync(directory)
         finally: os.close(directory)
-    registry.register(OwnedResource(config_resource, owner, config_presence, remove_config))
+    registry.register(OwnedResource(
+        config_resource, owner, config_presence, remove_config,
+        pair_dependencies[config_resource],
+    ))
     resources = (("volume", socket_volume), ("network", application_network),
                  ("network", refresh_network))
     for kind, name in resources:
         registry.register(OwnedResource(f"{kind}:{name}", owner,
-            lambda k=kind, n=name: presence(k, n), lambda k=kind, n=name: remove(k, n)))
+            lambda k=kind, n=name: presence(k, n), lambda k=kind, n=name: remove(k, n),
+            pair_dependencies[f"{kind}:{name}"]))
     registry.register(OwnedResource(f"container:{helper_container}", owner,
         lambda: presence("container", helper_container), lambda: remove("container", helper_container),
-        (f"volume:{socket_volume}", f"network:{refresh_network}")))
+        pair_dependencies[f"container:{helper_container}"]))
     registry.register(OwnedResource(f"container:{caddy}", owner,
         lambda: presence("container", caddy), lambda: remove("container", caddy),
-        (f"volume:{socket_volume}", f"network:{application_network}", config_resource)))
+        pair_dependencies[f"container:{caddy}"]))
     statuses = {"caddy-container": "intended", "helper-container": "intended",
                 "socket-volume": "intended", "application-network": "intended",
                 "refresh-network": "intended", "refresh-attachment": "intended"}
@@ -1913,7 +1875,7 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
-    phase("gateway recovery", lambda: recover_gateways(state))
+    phase("relay recovery", lambda: recover_relays(state))
     phase("proxy lock", lambda: acquire_lock(state))
     if state.proxy_lock.shared:
         phase("accepted session discovery", lambda: load_accepted_session(state))
@@ -2108,7 +2070,10 @@ def cleanup(state: State) -> None:
                   file=sys.stderr)
         if keychain_result.remaining:
             try:
-                path = persist_keychain_recovery(state, keychain_result.remaining)
+                path = persist_relay_recovery(
+                    state, keychain_handle.resources, keychain_handle.owner,
+                    keychain_result.remaining,
+                )
                 if path is not None:
                     print(f"warning: Keychain recovery state retained at {path}", file=sys.stderr)
             except (OSError, LauncherError) as error:
@@ -2122,7 +2087,10 @@ def cleanup(state: State) -> None:
                   file=sys.stderr)
         if gateway_result.remaining:
             try:
-                path = persist_gateway_recovery(state, gateway_result.remaining)
+                path = persist_relay_recovery(
+                    state, state.gateway_handle.resources, state.gateway_handle.owner,
+                    gateway_result.remaining,
+                )
                 if path is not None:
                     print(f"warning: gateway recovery state retained at {path}", file=sys.stderr)
             except (OSError, LauncherError) as error:

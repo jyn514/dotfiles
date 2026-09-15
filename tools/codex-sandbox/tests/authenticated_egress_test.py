@@ -1,5 +1,6 @@
 """Behavioral tests for the shared authenticated-egress instance owner."""
 from pathlib import Path
+from dataclasses import replace
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,31 @@ class AuthenticatedEgressTest(unittest.TestCase):
                 self.assertIn("--cap-add=NET_BIND_SERVICE", proxy)
                 self.assertEqual(proxy[-4:], ["caddy", "run", "--config", "/etc/caddy/caddy.json"])
                 self.assertEqual(readiness[:2], ["exec", domain + "-caddy"])
+
+    def test_topology_derives_container_dependencies_from_network_attachments(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            zulip = self.plan(directory, "zulip")
+            self.assertEqual(
+                ("configuration", "socket-volume", "network"),
+                zulip.resource_topology().dependencies["caddy-container"],
+            )
+            self.assertEqual(
+                ("socket-volume",),
+                zulip.resource_topology().dependencies["helper-container"],
+            )
+
+            codex = replace(
+                self.plan(directory, "codex"),
+                helper_network="codex-refresh",
+                public_networks=(
+                    ("application-network", "application", "codex-application"),
+                    ("refresh-network", "refresh", "codex-refresh"),
+                ),
+            )
+            self.assertEqual(
+                ("socket-volume", "refresh-network"),
+                codex.resource_topology().dependencies["helper-container"],
+            )
 
     def test_runtime_normalizes_volume_authority_and_disabled_networks(self):
         class Podman(sandbox_runtime.Podman):

@@ -242,9 +242,11 @@ class GatewayLifecycleTest(unittest.TestCase):
             handle = self.launcher["GatewayHandle"](state, False, True)
             state.gateway_handle = handle
             remaining = ("container:gateway", "network:gateway-link", "network:gateway-egress")
-            path = self.launcher["persist_gateway_recovery"](state, remaining)
+            path = self.launcher["persist_relay_recovery"](
+                state, handle.resources, handle.owner, remaining,
+            )
             self.assertIsNotNone(path)
-            recover = self.launcher["recover_gateways"]
+            recover = self.launcher["recover_relays"]
 
             def foreign(command, **_kwargs):
                 if command[:2] == ["network", "ls"]:
@@ -313,7 +315,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             malformed.chmod(0o600)
             target = recovery / "target"; target.write_text("{}", encoding="utf-8")
             symlink = recovery / "symlink.json"; symlink.symlink_to(target)
-            recover = self.launcher["recover_gateways"]
+            recover = self.launcher["recover_relays"]
             with patch("sys.stderr", new_callable=io.StringIO) as output:
                 recover(state)
             self.assertTrue(malformed.exists())
@@ -321,7 +323,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             self.assertGreaterEqual(output.getvalue().count("retained"), 2)
 
     def test_duplicate_recovery_identity_is_rejected_before_resource_inspection(self):
-        parse = self.launcher["_parse_gateway_recovery"]
+        parse = self.launcher["_parse_relay_recovery"]
         resource = {"kind": "network", "name": "same", "owner": "owner",
                     "dependencies": []}
         payload = {"version": 1, "runtime": parse.__globals__["runtime_identity"](
@@ -361,12 +363,13 @@ class GatewayLifecycleTest(unittest.TestCase):
             state = self.state(); state.home = Path(directory)
             handle = self.launcher["GatewayHandle"](state, False, True)
             state.gateway_handle = handle
-            path = self.launcher["persist_gateway_recovery"](
-                state, ("network:gateway-link",))
+            path = self.launcher["persist_relay_recovery"](
+                state, handle.resources, handle.owner, ("network:gateway-link",),
+            )
             unavailable = Mock(return_value=SimpleNamespace(returncode=125, stdout=""))
-            with patch.dict(self.launcher["recover_gateways"].__globals__, run=unavailable), \
+            with patch.dict(self.launcher["recover_relays"].__globals__, run=unavailable), \
                     patch("sys.stderr", new_callable=io.StringIO):
-                self.launcher["recover_gateways"](state)
+                self.launcher["recover_relays"](state)
             self.assertTrue(path.exists())
 
 

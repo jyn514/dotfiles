@@ -10,6 +10,7 @@ import time
 from typing import Callable
 
 from caddy_foundation import CaddyImageIdentity, publish_configuration
+from trusted_services import ResourceTopology
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,18 @@ class EgressPairPlan:
     runtime_flags: tuple[str, ...] = ()
     extra_caddy_networks: tuple[str, ...] = ()
 
+    def resource_topology(self) -> ResourceTopology:
+        network_roles = {network: status for status, _role, network in self.public_networks}
+        return egress_pair_topology(
+            application_network_role=network_roles[self.application_network],
+            helper_network_role=network_roles.get(self.helper_network),
+            extra_caddy_network_roles=tuple(
+                network_roles[network] for network in self.extra_caddy_networks
+                if network in network_roles
+            ),
+            network_roles=tuple(network_roles.values()),
+        )
+
     def implementation_identity(self, helper_identity: str) -> str:
         material = {
             "caddy": self.caddy_image.__dict__,
@@ -43,6 +56,29 @@ class EgressPairPlan:
         return "sha256:" + hashlib.sha256(json.dumps(
             material, sort_keys=True, separators=(",", ":"),
         ).encode()).hexdigest()
+
+
+def egress_pair_topology(*, application_network_role: str,
+                         helper_network_role: str | None = None,
+                         extra_caddy_network_roles: tuple[str, ...] = (),
+                         network_roles: tuple[str, ...] = ()) -> ResourceTopology:
+    declared_networks = tuple(dict.fromkeys((
+        *network_roles, application_network_role,
+        *((helper_network_role,) if helper_network_role is not None else ()),
+        *extra_caddy_network_roles,
+    )))
+    helper_dependencies = ("socket-volume", *(
+        (helper_network_role,) if helper_network_role is not None else ()))
+    return ResourceTopology({
+        "configuration": (),
+        "socket-volume": (),
+        **{role: () for role in declared_networks},
+        "helper-container": helper_dependencies,
+        "caddy-container": (
+            "configuration", "socket-volume", application_network_role,
+            *extra_caddy_network_roles,
+        ),
+    })
 
 
 def start_egress_pair(

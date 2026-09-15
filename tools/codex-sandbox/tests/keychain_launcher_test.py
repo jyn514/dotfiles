@@ -119,18 +119,19 @@ class KeychainLauncherTest(unittest.TestCase):
                 self.state, 'link', 'egress', 'relay')
             self.state.keychain_handle = handle
             self.state.home = Path(home)
-            path = self.launcher['persist_keychain_recovery'](
-                self.state, ('container:relay', 'network:link', 'network:egress'))
+            path = self.launcher['persist_relay_recovery'](
+                self.state, handle.resources, handle.owner,
+                ('container:relay', 'network:link', 'network:egress'))
             self.assertIsNotNone(path)
             data = path.read_bytes()
             self.assertNotIn(b'token', data.lower())
-            owner, resources = self.launcher['_parse_gateway_recovery'](data)
+            owner, resources = self.launcher['_parse_relay_recovery'](data)
             self.assertEqual(owner, handle.owner)
             self.assertEqual({item['name'] for item in resources}, {'relay', 'link', 'egress'})
             malformed = json.loads(data)
             malformed['resources'][0]['owner'] = 'foreign-owner'
             with self.assertRaises(self.launcher['LauncherError']):
-                self.launcher['_parse_gateway_recovery'](json.dumps(malformed).encode())
+                self.launcher['_parse_relay_recovery'](json.dumps(malformed).encode())
 
     def test_cleanup_closes_registration_gate_before_removal(self):
         handle = self.launcher['KeychainHandle'](

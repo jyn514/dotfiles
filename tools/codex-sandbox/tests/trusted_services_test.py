@@ -19,6 +19,7 @@ from trusted_services import (
     OwnerSet,
     ResourcePresence,
     ResourceRegistry,
+    ResourceTopology,
     ResolvedServicePlan,
     ServiceFamily,
     ServiceLifecycle,
@@ -369,6 +370,37 @@ class ResourceRegistryTest(unittest.TestCase):
             registry.register(resource("network:one", []))
         with self.assertRaisesRegex(LifecycleError, "not registered"):
             registry.register(resource("container:one", [], depends_on=("network:missing",)))
+
+
+class ResourceTopologyTest(unittest.TestCase):
+    def test_binding_preserves_each_declared_attachment(self):
+        topology = ResourceTopology({
+            "application-network": (),
+            "socket-volume": (),
+            "caddy-container": ("application-network", "socket-volume"),
+        })
+
+        bound = topology.bind({
+            "application-network": "network:application",
+            "socket-volume": "volume:socket",
+            "caddy-container": "container:caddy",
+        })
+
+        self.assertEqual(
+            ("network:application", "volume:socket"),
+            bound["container:caddy"],
+        )
+
+    def test_rejects_missing_cyclic_duplicate_and_collapsed_resources(self):
+        with self.assertRaisesRegex(LifecycleError, "not declared"):
+            ResourceTopology({"container": ("network",)})
+        with self.assertRaisesRegex(LifecycleError, "cycle"):
+            ResourceTopology({"first": ("second",), "second": ("first",)})
+        with self.assertRaisesRegex(LifecycleError, "must be unique"):
+            ResourceTopology({"container": ("network", "network"), "network": ()})
+        topology = ResourceTopology({"container": (), "network": ()})
+        with self.assertRaisesRegex(LifecycleError, "identities must be unique"):
+            topology.bind({"container": "container:same", "network": "container:same"})
 
 
 class SharedServiceRecordTest(unittest.TestCase):
