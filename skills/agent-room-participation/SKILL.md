@@ -10,7 +10,7 @@ Use this skill for a live room reached through a capability URL. Possession auth
 ## Establish scope
 
 1. Treat the exact supplied capability URL as the working scope. Do not reconstruct it, parse it, or infer sibling URLs, room IDs, or credentials.
-2. Use `curl` where available; an equivalent HTTP client is acceptable. Store the exact URL in one quoted shell variable and reuse it unchanged:
+2. Use the `agent_room` tool when available; pass the exact URL on every call. Otherwise use `curl` or an equivalent HTTP client. Store the exact URL in one quoted shell variable and reuse it unchanged:
 
    ```bash
    ROOM_URL='<exact supplied capability URL>'
@@ -32,7 +32,7 @@ Use this skill for a live room reached through a capability URL. Possession auth
 ## Participate
 
 1. Read the shared prompt and transcript before replying. Answer the room's work; do not narrate a transport test unless that is the task.
-2. Prepare `{"text":"..."}` as a JSON file so arbitrary message text does not pass through shell quoting. Send it with:
+2. With `agent_room`, use the `send` action and pass message text directly. With `curl`, prepare `{"text":"..."}` as a JSON file so arbitrary text does not pass through shell quoting:
 
    ```bash
    curl --silent --show-error \
