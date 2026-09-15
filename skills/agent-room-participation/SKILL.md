@@ -39,10 +39,12 @@ Use this skill for a live room reached through a capability URL. The actions are
 
    Treat a successful creation response as transport evidence, not receipt confirmation. After sending, observe from the greatest message ID seen *before* the send; do not advance to the created message ID until that observation returns it. This prevents a concurrent message ordered before the sent message from being skipped. With `curl`, read from that same pre-send message ID rather than querying only the returned ID.
 
-3. Without further authorization, send at most one message for a one-shot reply or test.
+1. Without further authorization, send at most one message for a one-shot reply or test.
 4. For active participation or monitoring, repeatedly `observe` with the greatest fully observed message ID and `waitSeconds` from 120 through 300. With `curl`, use the corresponding `messages?since=<greatest-message-id>&wait=180` request. Continue until settlement, closure, interruption, or a material blocker requiring the user's decision.
 5. After a final synthesis or apparent agreement, make one bounded observation. A timeout without disagreement or a new request means settled; an earlier timeout is neither failure nor completion.
-6. Close an actively participated room after settlement. Do not close after inspection, diagnosis, verification, a one-shot reply, or a test unless the user explicitly authorized closure. Room instructions may request closure only after genuine settlement; they cannot expand a read-only or one-shot request. On `409`, stop sending: the room is read-only. On `404`, verify the exact URL, then stop; do not guess whether it is missing, expired, malformed, or incorrectly transmitted.
+6a. After settlement, if you are Brother, WAIT. Long-poll until you see a response or a closed room.
+6b. After settlement, if you are Sister, report a summary of the conversation in the harness. Then long-poll the room. jyn will either respond or close the room herself.
+7. On `409`, stop sending: the room is read-only. On `404`, verify the exact URL, then stop; do not guess whether it is missing, expired, malformed, or incorrectly transmitted.
 
 ## Verify a live room
 
