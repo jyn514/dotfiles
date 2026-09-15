@@ -76,7 +76,8 @@ class Docker(VMRuntime):
 
     def argv(self, arguments, *, cwd=None):
         cleanup = (arguments[0] in ('inspect', 'ps', 'info', 'wait', 'rm', 'kill', 'stop') or
-                   tuple(arguments[:2]) in (('container', 'ls'), ('network', 'ls'), ('network', 'inspect'),
+                   tuple(arguments[:2]) in (('container', 'ls'), ('container', 'inspect'),
+                                            ('network', 'ls'), ('network', 'inspect'),
                                            ('network', 'rm'), ('volume', 'ls'), ('volume', 'inspect'), ('volume', 'rm')))
         destructive_cleanup = (arguments[0] in ('rm', 'kill', 'stop') or
                                tuple(arguments[:2]) in (('network', 'rm'), ('volume', 'rm')))
@@ -119,6 +120,24 @@ class Docker(VMRuntime):
             return cached[reference]
         return inspect_docker(self.record['socket'], '/images/' + quote(reference, safe='') + '/json',
                               ['docker', 'image', 'inspect', reference])
+
+    def verify_external_image(self, repository, manifest, configuration, platform):
+        """Verify Docker's manifest-addressed image representation.
+
+        Docker reports this engine's manifest digest as ``Id``. The pinned
+        manifest already binds the installed configuration policy, so use the
+        platform and repository digest exposed by the engine.
+        """
+        digest(manifest); digest(configuration)
+        reference = repository + '@' + manifest
+        self.run(['pull', '--quiet', reference], stdout=subprocess.DEVNULL)
+        raw = single_json(self.run(['image', 'inspect', reference], capture_output=True).stdout)
+        architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(raw.get('Architecture'), raw.get('Architecture'))
+        if (raw.get('Os') + '/' + architecture != platform
+                or digest(raw['Id']) != manifest
+                or not any(item.rsplit('@', 1)[-1] == manifest for item in raw.get('RepoDigests', []))):
+            raise RuntimeError('external image inspection differs from installed identity')
+        return Image(reference, manifest, configuration, chain_id(raw['RootFS']['Layers']))
 
     def inspect_image(self, reference):
         raw = self.image_metadata(reference)

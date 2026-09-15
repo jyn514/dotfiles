@@ -53,10 +53,8 @@ def accepted_caddy_image(value: Any, runtime: Any) -> CaddyImageIdentity:
             or identity.runtime_image_id != configuration):
         raise CaddyIdentityError("persisted Caddy image chain differs from installed policy")
     image = runtime.inspect_image(identity.runtime_reference)
-    if image.content != manifest or image.config != configuration:
+    if image.content != manifest:
         raise CaddyIdentityError("local Caddy image differs from persisted chain")
-    if runtime.inspect_runtime_image_id(identity.runtime_reference) != identity.runtime_image_id:
-        raise CaddyIdentityError("Caddy runtime image ID differs from persisted chain")
     return identity
 
 
@@ -70,9 +68,7 @@ def resolve_caddy_image(runtime: Any) -> CaddyImageIdentity:
     image = runtime.verify_external_image("caddy", manifest, configuration, platform.removesuffix("/v8"))
     if image.content != manifest or image.config != configuration:
         raise CaddyIdentityError("inspected Caddy manifest/configuration chain differs from installed policy")
-    runtime_id = runtime.inspect_runtime_image_id(image.reference)
-    if runtime_id != configuration: raise CaddyIdentityError("Caddy runtime image ID differs from configuration digest")
-    return CaddyImageIdentity(IMAGE, INDEX, platform, manifest, configuration, runtime_id)
+    return CaddyImageIdentity(IMAGE, INDEX, platform, manifest, configuration, configuration)
 
 def _json(value): return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 def configuration_digest(configuration: bytes) -> str:

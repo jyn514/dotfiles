@@ -54,7 +54,7 @@ class ZulipHardeningTest(unittest.TestCase):
                            "Cmd": ["caddy", "run", "--config", "/etc/caddy/caddy.json"],
                            "Labels": {"dev.codex.service-role": "zulip-caddy"}},
                 "HostConfig": {"NetworkMode": "zulip-app", "ReadonlyRootfs": True,
-                               "Privileged": False, "CapAdd": None, "CapDrop": ["ALL"],
+                               "Privileged": False, "CapAdd": ["CAP_NET_BIND_SERVICE"], "CapDrop": ["ALL"],
                                "SecurityOpt": ["no-new-privileges"], "PidsLimit": 64,
                                "Memory": 256 * 1024 * 1024, "NanoCpus": 1_000_000_000,
                                "Ulimits": [{"Name": "nofile", "Soft": 256, "Hard": 256}]}}
@@ -68,7 +68,7 @@ class ZulipHardeningTest(unittest.TestCase):
         self.assertTrue(self.accepted(self.snapshot()))
 
     def test_rejects_cap_privilege_and_nofile_tampering(self) -> None:
-        for field, value in (("CapAdd", ["NET_ADMIN"]), ("Privileged", True),
+        for field, value in (("CapAdd", None), ("CapAdd", ["NET_ADMIN"]), ("Privileged", True),
                              ("Ulimits", [{"Name": "nofile", "Soft": 1024, "Hard": 1024}])):
             snapshot = self.snapshot(); snapshot["HostConfig"][field] = value
             with self.subTest(field=field): self.assertFalse(self.accepted(snapshot))
@@ -1320,6 +1320,26 @@ class ManifestTest(unittest.TestCase):
             with self.assertRaisesRegex(sandbox_proxies.ConfigError, "unavailable"):
                 sandbox_proxies.attach_main(args)
         start.assert_not_called()
+
+    def test_exclusive_attach_discards_unrecognized_cache(self) -> None:
+        self.write()
+        runtime = self.repo / "runtime"
+        runtime.mkdir()
+        cached = runtime / "session.json"
+        cached.write_text("{}", encoding="utf-8")
+        cached.chmod(0o600)
+        manifest = self.repo / "manifest"
+        manifest.write_text(json.dumps({"version": 1, "commands": {}}), encoding="utf-8")
+        args = type("Args", (), {
+            "repo": str(self.repo), "container_repo": str(self.container_repo),
+            "shared": False, "state": str(self.repo / "state"),
+            "manifest": str(manifest),
+        })
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            self.assertEqual(0, sandbox_proxies.attach_main(args))
+        self.assertFalse(cached.exists())
+        start.assert_called_once_with(args)
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
         state = {

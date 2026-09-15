@@ -1152,8 +1152,9 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         return result.returncode == 0 and name in result.stdout.splitlines()
     def presence(kind: str, name: str) -> ResourcePresence:
         if not listed(kind, name): return ResourcePresence.ABSENT
+        label = "dev.codex.volume-owner" if kind == "volume" and isinstance(OUTER_RUNTIME, VMRuntime) else "dev.codex.service-owner"
         result = run(["docker", kind, "inspect", "--format",
-                      "{{index .Labels \"dev.codex.service-owner\"}}" if kind != "container" else
+                      f"{{{{index .Labels \"{label}\"}}}}" if kind != "container" else
                       "{{index .Config.Labels \"dev.codex.service-owner\"}}", name],
                      check=False, capture=True, quiet=True)
         return ResourcePresence.OWNED if result.returncode == 0 and result.stdout.strip() == owner else ResourcePresence.MISMATCHED
@@ -1223,6 +1224,8 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
                 role = "application" if name == application_network else "refresh"
                 OUTER_RUNTIME.create_public_service_network(
                     name, owner, domain=CREDENTIAL_DOMAIN, role=role)
+            elif isinstance(OUTER_RUNTIME, VMRuntime):
+                OUTER_RUNTIME.initialize_volume(name, state.uid, state.gid, owner)
             else:
                 run(["docker", kind, "create", "--label", f"dev.codex.service-owner={owner}", name], discard_stdout=True)
             statuses[{"volume":"socket-volume","network":("application-network" if name == application_network else "refresh-network")}[kind]] = "created"
@@ -1240,11 +1243,11 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         statuses["helper-container"] = statuses["refresh-attachment"] = "created"
         partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
         if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        run(["docker", "run", "--detach", "--name", caddy, *common,
+        run(["docker", "run", "--detach", "--name", caddy, *common, "--cap-add=NET_BIND_SERVICE",
              "--network", application_network, *proxy_flags(),
              "--mount", f"type=volume,src={socket_volume},dst=/run/profile-helper,readonly",
              "--mount", f"type=bind,src={configuration_path},dst=/etc/caddy/caddy.json,readonly",
-             caddy_identity.runtime_reference, "run", "--config", "/etc/caddy/caddy.json"], discard_stdout=True)
+             caddy_identity.runtime_reference, "caddy", "run", "--config", "/etc/caddy/caddy.json"], discard_stdout=True)
         statuses["caddy-container"] = "created"
         if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
         run(["docker", "network", "connect", SANDBOX_NETWORK, caddy], discard_stdout=True)
