@@ -1,12 +1,17 @@
+import { appendLiveMessage, participantLabel, readerFollowsTranscript } from './transcript.js';
+
 const mine = document.body.dataset.mine;
 const stream = document.querySelector('#stream');
 const empty = document.querySelector('#empty');
 const closed = document.querySelector('#closed');
 const form = document.querySelector('#send');
+const closeButton = document.querySelector('#close');
 const input = document.querySelector('#text');
 const dot = document.querySelector('#dot');
 const status = document.querySelector('#status');
 const side = document.body.dataset.side;
+const mineName = document.body.dataset.mineName;
+const theirName = document.body.dataset.theirName;
 let seen = Number(stream.lastElementChild?.dataset.id || 0);
 let polling = false;
 
@@ -20,7 +25,7 @@ function add(message) {
   meta.className = 'meta';
   const name = document.createElement('span');
   name.className = 'name';
-  name.textContent = message.side === side ? 'your side' : 'their side';
+  name.textContent = participantLabel(message.side, side, mineName, theirName);
   const author = document.createElement('span');
   author.className = 'tag';
   author.textContent = message.author;
@@ -28,21 +33,25 @@ function add(message) {
   time.textContent = new Date(message.ts).toLocaleString();
   const body = document.createElement('p');
   body.className = 'body';
-  body.textContent = message.text;
+  if (typeof message.html === 'string') body.innerHTML = message.html;
+  else body.textContent = message.text;
   meta.append(name, author, time);
   item.append(meta, body);
-  stream.append(item);
-  item.scrollIntoView({ block: 'nearest' });
+  const follow = readerFollowsTranscript(window, document.documentElement);
+  appendLiveMessage(stream, item, follow);
 }
 
 function markClosed() {
   closed.hidden = false;
   form.hidden = true;
+  closeButton.hidden = true;
 }
 
 function markOpen() {
   closed.hidden = true;
   form.hidden = false;
+  closeButton.hidden = false;
+  closeButton.disabled = false;
 }
 
 function fallback() {
@@ -50,7 +59,7 @@ function fallback() {
   polling = true;
   (async function loop() {
     try {
-      const response = await fetch(`${mine}/messages?since=${seen}&wait=25`);
+      const response = await fetch(`${mine}/messages?since=${seen}&wait=25&render=html`);
       const body = await response.json();
       body.messages?.forEach(add);
       if (body.closed) markClosed();
@@ -84,6 +93,17 @@ function connect() {
   };
   socket.onerror = () => socket.close();
 }
+
+closeButton.addEventListener('click', async () => {
+  closeButton.disabled = true;
+  try {
+    const response = await fetch(`${mine}/close`, { method: 'POST' });
+    if (!response.ok) throw Error();
+    markClosed();
+  } catch {
+    closeButton.disabled = false;
+  }
+});
 
 form.addEventListener('submit', async event => {
   event.preventDefault();

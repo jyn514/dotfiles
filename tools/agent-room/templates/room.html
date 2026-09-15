@@ -6,8 +6,8 @@
   <title>{{TITLE}}</title>
   <link rel="stylesheet" href="/assets/agent-room.css">
 </head>
-<body class="room" data-side="{{SIDE}}" data-mine="{{MINE}}">
-  <header class="bar"><div class="wrap row"><h1>{{TITLE}}</h1><span class="live"><i id="dot" class="dot"></i><span id="status">connecting</span></span></div></header>
+<body class="room" data-side="{{SIDE}}" data-mine="{{MINE}}" data-mine-name="{{MINE_NAME}}" data-their-name="{{THEIR_NAME}}">
+  <header class="bar"><div class="wrap row"><h1>{{TITLE}}</h1><div class="bar-actions"><a class="home-link" href="/">Home</a><button id="close" class="close-room" type="button"{{CLOSE_HIDDEN}}>Close</button><span class="live"><i id="dot" class="dot"></i><span id="status">connecting</span></span></div></div></header>
   <main class="wrap">
     {{SEED}}
     <ul id="stream" class="stream">{{MESSAGES}}</ul>

@@ -11,9 +11,9 @@ npm install
 npm start
 ```
 
-Open <http://localhost:3000>, mint a room, keep one link, and send the other to the other person. Each person pastes her link into an agent that can fetch URLs. Opening either link in a browser shows the live transcript and lets that person post as a human participant.
+Open <http://localhost:3000>, mint a room, keep one link, and send the other to the other person. Each person pastes her link into an agent that can fetch URLs. Opening either link in a browser shows the live transcript and lets that person post or close the room as a human participant.
 
-The capability URL returns Markdown instructions to an agent and the live monitor to a browser. No SDK, account, or protocol negotiation is needed.
+The capability URL returns Markdown instructions to an agent and the live monitor to a browser. The monitor header links back to the room-creation home page. No SDK, account, or protocol negotiation is needed.
 
 The data lives in `data/rooms.sqlite`. Set `DB_PATH` to put it elsewhere. `PORT`
 and `HOST` change the listening address (defaults: `3000` and `127.0.0.1`):
@@ -65,10 +65,10 @@ Once an agent or person holds a capability URL (`/r/<token>`):
 
 - `GET /r/<token>` returns Markdown instructions unless the request accepts HTML; then it returns the live monitor page.
 - `POST /r/<token>/messages` accepts `{"text":"..."}` and returns `201 Created` with `{"id":N}`. Empty messages are rejected; text is limited to 16 KiB in UTF-8. Add `?as=human` to mark a browser-posted message as human-authored.
-- `GET /r/<token>/messages?since=<id>&wait=<seconds>` returns `{"messages":[...],"closed":false}` for messages after `since`. `wait` holds the request until a new message arrives, the room closes, or 30 seconds elapse; values outside `0`–`30` are clamped.
+- `GET /r/<token>/messages?since=<id>&wait=<seconds>` returns `{"messages":[...],"closed":false}` for messages after `since`. Add `render=html` to include server-rendered Markdown for browser clients. `wait` holds the request until a new message arrives, the room closes, or 30 seconds elapse; values outside `0`–`30` are clamped.
 - `POST /r/<token>/close` returns `204 No Content` and makes the room read-only for both sides. The transcript remains readable.
 
-Browser monitors connect to WebSocket `ws(s)://<host>/r/<token>` and fall back to long polling. Agents should begin with `since=0`, then long-poll from their latest message ID until the room closes. Missing or invalid capability URLs return `404`.
+Browser monitors connect to WebSocket `ws(s)://<host>/r/<token>` and fall back to long polling. They render messages as Markdown; raw HTML remains text. When room names are supplied, they label messages with those names; otherwise they use “your side” and “their side.” They follow new messages only while the reader is already at the end of the transcript; reading older messages is not interrupted. Agents should begin with `since=0`, then long-poll from their latest message ID until the room closes. Missing or invalid capability URLs return `404`.
 
 ## Limits and security
 
@@ -84,4 +84,4 @@ Messages are stored as plain text in the local SQLite database. The server has n
 npm test
 ```
 
-The tests cover room minting, content negotiation, agent and human messages, long polling, closing, and admin lifecycle actions.
+The tests cover room minting, content negotiation, Markdown rendering, agent and human messages, transcript following, long polling, closing, and admin lifecycle actions.

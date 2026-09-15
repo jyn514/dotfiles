@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import express from 'express';
+import MarkdownIt from 'markdown-it';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -22,6 +23,7 @@ const ROOM_TEMPLATE = fs.readFileSync(path.join(TEMPLATE_DIR, 'room.html'), 'utf
 const ROOMS_TEMPLATE = fs.readFileSync(path.join(TEMPLATE_DIR, 'rooms.html'), 'utf8');
 const noCacheHeaders = response => response.setHeader('Cache-Control', 'no-cache');
 const staticOptions = { etag: true, setHeaders: noCacheHeaders };
+const markdown = new MarkdownIt({ html: false });
 
 const db = new DatabaseSync(DB_PATH);
 db.exec(SCHEMA);
@@ -137,7 +139,11 @@ app.get('/r/:token/messages', (req, res) => {
 
   const send = () => {
     if (res.headersSent || res.writableEnded) return;
-    res.json({ messages: messageRows(room.id, since), closed: Boolean(room.closed_by) });
+    const messages = messageRows(room.id, since);
+    res.json({
+      messages: req.query.render === 'html' ? messages.map(renderedMessage) : messages,
+      closed: Boolean(room.closed_by)
+    });
   };
   if (messageRows(room.id, since).length || room.closed_by || !waitSeconds) return send();
 
@@ -180,7 +186,7 @@ app.post('/r/:token/messages', (req, res) => {
   const result = db.prepare('INSERT INTO messages (room_id, side, author, text, ts) VALUES (?, ?, ?, ?, ?)')
     .run(room.id, room.side, author, text, now);
   db.prepare('UPDATE rooms SET updated_at = ? WHERE id = ?').run(now, room.id);
-  const message = { id: Number(result.lastInsertRowid), side: room.side, author, text, ts: new Date(now).toISOString() };
+  const message = renderedMessage({ id: Number(result.lastInsertRowid), side: room.side, author, text, ts: new Date(now).toISOString() });
   wake(room.id);
   broadcast(room.id, { type: 'message', message });
   res.status(201).json({ id: message.id });
@@ -256,9 +262,13 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 
+function participantName(room, side) {
+  return side === 'a' ? room.name_a : room.name_b;
+}
+
 function agentInstructions(room, mine) {
-  const mineName = room.side === 'a' ? room.name_a : room.name_b;
-  const theirName = room.side === 'a' ? room.name_b : room.name_a;
+  const mineName = participantName(room, room.side);
+  const theirName = participantName(room, room.side === 'a' ? 'b' : 'a');
   const last = messageRows(room.id, 0).at(-1)?.id || 0;
   return `# Agent conversation room\n\nYou are ${mineName || 'one participant'} in a cooperative conversation with ${theirName || 'another agent'}.\n\n${room.seed ? `## Shared prompt\n\n${room.seed}\n\n` : ''}## How to participate\n\nThis capability URL is your identity. Do not reveal it.\n\n- Read messages: \`GET ${mine}/messages?since=<id>&wait=30\`\n- Send a message: \`POST ${mine}/messages\` with JSON \`{"text":"..."}\`\n- Close when the conversation is genuinely complete: \`POST ${mine}/close\`\n\nStart by reading from \`since=0\`. Reply when useful, then keep long-polling from the greatest message id you have seen. Cooperate toward a concrete conclusion; disagree plainly, repair each other's ideas, and do not stop merely because you have sent one message. Messages marked \`human\` come from a person watching the room and should be treated as part of the conversation.\n\nCurrent latest message id: ${last}. The room is ${room.closed_by ? 'closed' : 'open'}.\n`;
 }
@@ -266,14 +276,19 @@ function agentInstructions(room, mine) {
 function roomPage(room, mine) {
   const title = [room.name_a, room.name_b].filter(Boolean).join(' & ') || 'agent conversation';
   const messages = messageRows(room.id, 0);
+  const mineName = participantName(room, room.side);
+  const theirName = participantName(room, room.side === 'a' ? 'b' : 'a');
   return ROOM_TEMPLATE
     .replaceAll('{{TITLE}}', escapeHtml(title))
     .replaceAll('{{SIDE}}', room.side)
     .replaceAll('{{MINE}}', escapeHtml(mine))
+    .replaceAll('{{MINE_NAME}}', escapeHtml(mineName))
+    .replaceAll('{{THEIR_NAME}}', escapeHtml(theirName))
     .replace('{{SEED}}', room.seed ? `<section class="seed"><span class="eyebrow">The prompt for both agents</span><p>${escapeHtml(room.seed)}</p></section>` : '')
-    .replace('{{MESSAGES}}', messages.map(message => messageHtml(message, room.side)).join(''))
+    .replace('{{MESSAGES}}', messages.map(message => messageHtml(message, room)).join(''))
     .replace('{{EMPTY_HIDDEN}}', messages.length ? 'hidden' : '')
     .replace('{{CLOSED_HIDDEN}}', room.closed_by ? '' : 'hidden')
+    .replace('{{CLOSE_HIDDEN}}', room.closed_by ? ' hidden' : '')
     .replace('{{SEND_HIDDEN}}', room.closed_by ? 'hidden' : '');
 }
 
@@ -281,8 +296,13 @@ function homePage() {
   return HOME_TEMPLATE.replace('{{ROOMS_URL}}', escapeHtml(`http://127.0.0.1:${adminServer.address().port}/`));
 }
 
-function messageHtml(message, side) {
-  return `<li class="msg${message.side === side ? ' self' : ''}${message.author === 'human' ? ' human' : ''}" data-id="${message.id}"><div class="meta"><span class="name">${message.side === side ? 'your side' : 'their side'}</span><span class="tag">${escapeHtml(message.author)}</span><span>${escapeHtml(formatDate(message.ts))}</span></div><p class="body">${escapeHtml(message.text)}</p></li>`;
+function renderedMessage(message) {
+  return { ...message, html: markdown.render(message.text) };
+}
+
+function messageHtml(message, room) {
+  const name = participantName(room, message.side) || (message.side === room.side ? 'your side' : 'their side');
+  return `<li class="msg${message.side === room.side ? ' self' : ''}${message.author === 'human' ? ' human' : ''}" data-id="${message.id}"><div class="meta"><span class="name">${escapeHtml(name)}</span><span class="tag">${escapeHtml(message.author)}</span><span>${escapeHtml(formatDate(message.ts))}</span></div><div class="body">${markdown.render(message.text)}</div></li>`;
 }
 
 function roomsPage() {
