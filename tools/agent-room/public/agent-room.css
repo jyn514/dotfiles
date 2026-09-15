@@ -15,6 +15,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --ink: #e8e3d8;
     --panel: #1b1f25;
     --edge: #2e343d;
     --bone: #101317;

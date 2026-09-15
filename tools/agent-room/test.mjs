@@ -17,6 +17,17 @@ const adminBase = `http://127.0.0.1:${adminServer.address().port}`;
 let mine;
 let theirs;
 
+function relativeLuminance(hex) {
+  const channels = hex.slice(1).match(/../g).map(value => Number.parseInt(value, 16) / 255);
+  return channels.map(channel => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+}
+
+function contrastRatio(first, second) {
+  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return (lighter + .05) / (darker + .05);
+}
+
 after(() => Promise.all([
   new Promise(resolve => server.close(resolve)),
   new Promise(resolve => adminServer.close(resolve))
@@ -90,6 +101,19 @@ test('revalidates static assets with ETags', async () => {
   const transcript = await fetch(`${base}/assets/transcript.js`);
   assert.equal(transcript.status, 200);
   assert.match(await transcript.text(), /appendLiveMessage/);
+});
+
+test('dark primary buttons retain readable contrast', async () => {
+  const css = await fetch(`${base}/assets/agent-room.css`).then(response => response.text());
+  const darkTheme = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'), css.indexOf('\n\n* {'));
+  const ink = darkTheme.match(/--ink: (#[0-9a-f]{6})/i)?.[1];
+  const bone = darkTheme.match(/--bone: (#[0-9a-f]{6})/i)?.[1];
+
+  assert.ok(ink);
+  assert.ok(bone);
+  assert.ok(contrastRatio(ink, bone) >= 4.5);
+  assert.match(css, /\.mint \{[\s\S]*background: var\(--ink\)[\s\S]*color: var\(--bone\)/);
+  assert.match(css, /\.send button \{[\s\S]*background: var\(--ink\)[\s\S]*color: var\(--bone\)/);
 });
 
 test('agents and humans share the transcript', async () => {
