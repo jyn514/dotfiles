@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from contextlib import contextmanager
+from enum import Enum
 import hashlib
 import ipaddress
 import json
@@ -18,6 +19,7 @@ import uuid
 
 from lima.host import Host, verification_scope
 from network_policy import PROHIBITED_ROUTES, policy_bytes
+from trusted_services import ResourcePresence
 
 
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -36,6 +38,78 @@ IMAGE_TYPES = {
 
 class RuntimeError(ValueError):
     pass
+
+
+class ResourceKind(str, Enum):
+    CONTAINER = "container"
+    NETWORK = "network"
+    VOLUME = "volume"
+
+
+class ResourceOwnerAuthority(str, Enum):
+    RUNTIME = "runtime"
+    SERVICE = "service"
+    VOLUME_CREATOR = "volume-creator"
+    RELAY = "relay"
+
+
+def resource_owner_label(runtime, kind, authority):
+    if not isinstance(authority, ResourceOwnerAuthority):
+        raise RuntimeError("resource owner authority must be a ResourceOwnerAuthority")
+    if authority is ResourceOwnerAuthority.RUNTIME:
+        return runtime.resource_owner_label(kind.value)
+    if authority is ResourceOwnerAuthority.SERVICE:
+        return "dev.codex.service-owner"
+    if authority is ResourceOwnerAuthority.VOLUME_CREATOR:
+        return "dev.codex.volume-owner"
+    return runtime.relay_owner_label()
+
+
+def resource_exists(runtime, kind, name):
+    if not isinstance(kind, ResourceKind):
+        raise RuntimeError("resource kind must be a ResourceKind")
+    command = [kind.value, "ls"]
+    if kind is ResourceKind.CONTAINER:
+        command.append("--all")
+    template = "{{.Names}}" if kind is ResourceKind.CONTAINER else "{{.Name}}"
+    listing = runtime.run([*command, "--format", template], check=False,
+                          capture_output=True)
+    if listing.returncode:
+        raise RuntimeError(f"{kind.value} resource listing failed")
+    return name in listing.stdout.splitlines()
+
+
+def resource_presence(runtime, kind, name, owner, *,
+                      authority=ResourceOwnerAuthority.RUNTIME):
+    if not resource_exists(runtime, kind, name):
+        return ResourcePresence.ABSENT
+    labels = ".Config.Labels" if kind is ResourceKind.CONTAINER else ".Labels"
+    label = resource_owner_label(runtime, kind, authority)
+    inspected = runtime.run([
+        kind.value, "inspect", "--format",
+        "{{index " + labels + " \"" + label + "\"}}", name,
+    ], check=False, capture_output=True)
+    if inspected.returncode:
+        raise RuntimeError(f"{kind.value} resource ownership inspection failed")
+    return (ResourcePresence.OWNED if inspected.stdout.strip() == owner
+            else ResourcePresence.MISMATCHED)
+
+
+def remove_owned_resource(runtime, kind, name, owner, *,
+                          authority=ResourceOwnerAuthority.RUNTIME):
+    presence = resource_presence(runtime, kind, name, owner, authority=authority)
+    if presence is ResourcePresence.ABSENT:
+        return
+    if presence is ResourcePresence.MISMATCHED:
+        raise RuntimeError("resource-owner-mismatch")
+    if kind is ResourceKind.CONTAINER:
+        # Lima-Docker recovery admits these top-level cleanup commands; unlike
+        # list and inspect, their `docker container` aliases are not admitted.
+        runtime.run(["kill", name], check=False,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        runtime.run(["rm", name], stdout=subprocess.DEVNULL)
+    else:
+        runtime.run([kind.value, "rm", name], stdout=subprocess.DEVNULL)
 
 
 def digest(value):
@@ -318,6 +392,9 @@ class Podman:
     def resource_owner_label(self, kind):
         return "dev.codex.service-owner"
 
+    def relay_owner_label(self):
+        return "dev.codex.service-owner"
+
     def owned_volume_matches(self, snapshot, owner, domain, role):
         labels = snapshot.get("Labels", {}) or {}
         return (labels.get(self.resource_owner_label("volume")) == owner
@@ -355,6 +432,9 @@ class VMRuntime(Podman):
 
     def resource_owner_label(self, kind):
         return "dev.codex.volume-owner" if kind == "volume" else "dev.codex.service-owner"
+
+    def relay_owner_label(self):
+        return "dev.codex.relay-owner"
 
     def owned_volume_matches(self, snapshot, owner, domain, role):
         # VM initializers can stamp only their dedicated owner label. The

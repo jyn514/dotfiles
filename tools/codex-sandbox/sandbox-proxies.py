@@ -22,7 +22,11 @@ import uuid
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, single_json, state_runtime
+from sandbox_runtime import (
+    ResourceKind, ResourceOwnerAuthority, VMRuntime, Podman, image_runtime,
+    remove_owned_resource, resource_exists, resource_presence, runtime_identity,
+    single_json, state_runtime,
+)
 from trusted_services import (
     LifecycleState, OwnedResource, OwnerSet, ResourcePresence, ResourceRegistry,
     ServiceFamily, ServiceLifecycle, ServicePlan, ServiceScope,
@@ -1671,8 +1675,8 @@ def _stop_legacy_state(state: dict[str, Any]) -> None:
     with ThreadPoolExecutor(max_workers=max(1, len(containers))) as executor:
         results = list(executor.map(lambda container: discard(["docker", "rm", container]), containers))
     if containers:
-        remaining = owner.run(["container", "ls", "--all", "--format", "{{.Names}}"],
-                              capture_output=True).stdout.splitlines()
+        remaining = [name for name in containers
+                     if resource_exists(owner, ResourceKind.CONTAINER, name)]
         report_remaining("containers", containers, results, remaining)
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: containers={time.monotonic() - started:.2f}s", file=sys.stderr)
@@ -1680,19 +1684,17 @@ def _stop_legacy_state(state: dict[str, Any]) -> None:
     volumes = sorted(set(proxy["volume"] for proxy in proxies))
     for proxy in proxies:
         if "volume-owner" in proxy:
-            existing = owner.run(["volume", "ls", "--format", "{{.Name}}"],
-                                 capture_output=True).stdout.splitlines()
-            if proxy["volume"] not in existing:
-                continue
-            volume = single_json(owner.run(["volume", "inspect", proxy["volume"]],
-                                           capture_output=True).stdout)
-            if volume.get("Labels", {}).get("dev.codex.volume-owner") != proxy["volume-owner"]:
+            presence = resource_presence(
+                owner, ResourceKind.VOLUME, proxy["volume"], proxy["volume-owner"],
+                authority=ResourceOwnerAuthority.VOLUME_CREATOR,
+            )
+            if presence is ResourcePresence.MISMATCHED:
                 raise ConfigError("volume belongs to another creator; retaining recovery metadata")
     with ThreadPoolExecutor(max_workers=max(1, len(volumes))) as executor:
         results = list(executor.map(lambda volume: discard(["docker", "volume", "rm", volume]), volumes))
     if volumes:
-        remaining = owner.run(["volume", "ls", "--format", "{{.Name}}"],
-                              capture_output=True).stdout.splitlines()
+        remaining = [name for name in volumes
+                     if resource_exists(owner, ResourceKind.VOLUME, name)]
         report_remaining("volumes", volumes, results, remaining)
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox proxy cleanup: volumes={time.monotonic() - volumes_started:.2f}s", file=sys.stderr)
@@ -1836,39 +1838,32 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
     container_id = _proxy_resource_identity("container", service_owner)
 
     def listed(kind: str, name: str) -> bool:
-        arguments = [kind, "ls"]
-        if kind == "container":
-            arguments.append("--all")
-        arguments += ["--format", "{{.Names}}"]
-        return name in runtime.run(arguments, capture_output=True).stdout.splitlines()
+        return resource_exists(runtime, ResourceKind(kind), name)
 
     def volume_presence() -> ResourcePresence:
         if not listed("volume", proxy["volume"]):
             return ResourcePresence.ABSENT
         if managed:
-            raw = runtime.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
-            volume = single_json(raw)
-            labels = volume.get("Labels", {})
-            label = (labels.get("dev.codex.volume-owner") if "volume-owner" in proxy
-                     else labels.get("dev.codex.service-owner"))
-            if label != service_owner:
-                return ResourcePresence.MISMATCHED
+            authority = (ResourceOwnerAuthority.VOLUME_CREATOR if "volume-owner" in proxy
+                         else ResourceOwnerAuthority.SERVICE)
+            return resource_presence(
+                runtime, ResourceKind.VOLUME, proxy["volume"], service_owner,
+                authority=authority,
+            )
         elif "volume-owner" in proxy:
-            raw = runtime.run(["volume", "inspect", proxy["volume"]], capture_output=True).stdout
-            volume = single_json(raw)
-            if volume.get("Labels", {}).get("dev.codex.volume-owner") != proxy["volume-owner"]:
-                return ResourcePresence.MISMATCHED
+            return resource_presence(
+                runtime, ResourceKind.VOLUME, proxy["volume"], proxy["volume-owner"],
+                authority=ResourceOwnerAuthority.VOLUME_CREATOR,
+            )
         return ResourcePresence.OWNED
 
     def container_presence() -> ResourcePresence:
         if not listed("container", proxy["container"]):
             return ResourcePresence.ABSENT
         if managed:
-            raw = runtime.run(["container", "inspect", proxy["container"]], capture_output=True).stdout
-            container = single_json(raw)
-            labels = container.get("Config", {}).get("Labels", {})
-            if labels.get("dev.codex.service-owner") != service_owner:
-                return ResourcePresence.MISMATCHED
+            return resource_presence(
+                runtime, ResourceKind.CONTAINER, proxy["container"], service_owner,
+            )
         return ResourcePresence.OWNED
 
     def remove(arguments: list[str]) -> None:
@@ -1879,6 +1874,11 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
             raise ConfigError(diagnostic)
 
     def remove_container() -> None:
+        if managed:
+            remove_owned_resource(
+                runtime, ResourceKind.CONTAINER, proxy["container"], service_owner,
+            )
+            return
         killed = runtime.run(["kill", proxy["container"]], check=False, capture_output=True)
         removed = runtime.run(["rm", proxy["container"]], check=False, capture_output=True)
         operation_failures = []
@@ -1892,9 +1892,20 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         if removed.returncode:
             raise ConfigError("; ".join(operation_failures))
 
+    def remove_volume() -> None:
+        if managed or "volume-owner" in proxy:
+            expected_owner = service_owner if managed else proxy["volume-owner"]
+            authority = (ResourceOwnerAuthority.VOLUME_CREATOR if "volume-owner" in proxy
+                         else ResourceOwnerAuthority.SERVICE)
+            remove_owned_resource(
+                runtime, ResourceKind.VOLUME, proxy["volume"], expected_owner,
+                authority=authority,
+            )
+            return
+        remove(["volume", "rm", proxy["volume"]])
+
     registry.register(OwnedResource(
-        volume_id, service_owner, volume_presence,
-        lambda: remove(["volume", "rm", proxy["volume"]]),
+        volume_id, service_owner, volume_presence, remove_volume,
     ))
     dependencies = [volume_id]
     if proxy.get("name") == "zulip" and "caddy-container" in proxy:
@@ -1903,16 +1914,9 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         caddy_id = _proxy_resource_identity("zulip-caddy", service_owner)
         config_id = _proxy_resource_identity("zulip-config", service_owner)
         def named_presence(kind: str, name: str) -> ResourcePresence:
-            if not listed(kind, name): return ResourcePresence.ABSENT
-            raw = runtime.run([kind, "inspect", name], capture_output=True).stdout
-            item = single_json(raw)
-            labels = item.get("Config", {}).get("Labels", {}) if kind == "container" else item.get("Labels", {})
-            owner_label = runtime.resource_owner_label(kind)
-            return (ResourcePresence.OWNED if labels.get(owner_label) == service_owner
-                    else ResourcePresence.MISMATCHED)
+            return resource_presence(runtime, ResourceKind(kind), name, service_owner)
         def remove_named(kind: str, name: str) -> None:
-            if kind == "container": runtime.run(["kill", name], check=False, capture_output=True)
-            remove((["rm", name] if kind == "container" else [kind, "rm", name]))
+            remove_owned_resource(runtime, ResourceKind(kind), name, service_owner)
         path = Path(proxy["configuration"]["path"])
         def config_presence() -> ResourcePresence:
             try: digest = caddy_configuration_digest(path.read_bytes())
@@ -1938,17 +1942,14 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
     if "network" in proxy:
         network_id = _proxy_resource_identity("network", service_owner)
         def network_presence() -> ResourcePresence:
-            result = runtime.run(["network", "inspect", proxy["network"]], check=False,
-                                 capture_output=True)
-            if result.returncode:
-                return ResourcePresence.ABSENT
-            network = single_json(result.stdout)
-            labels = network.get("Labels", network.get("CNI", {}).get("nerdctlLabels", {}))
-            label = labels.get("dev.codex.service-owner")
-            return ResourcePresence.OWNED if label == service_owner else ResourcePresence.MISMATCHED
+            return resource_presence(
+                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
+            )
         registry.register(OwnedResource(
             network_id, service_owner, network_presence,
-            lambda: remove(["network", "rm", proxy["network"]]),
+            lambda: remove_owned_resource(
+                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
+            ),
         ))
         dependencies.append(network_id)
     registry.register(OwnedResource(
@@ -2038,24 +2039,10 @@ def stop_state(state: dict[str, Any]) -> None:
                      "network": [auth["networks"]["application"], auth["networks"]["refresh"]],
                      "volume": [auth["socket-volume"]]}
 
-            def resource_presence(kind: str, name: str) -> ResourcePresence:
-                command = [kind, "ls"]
-                if kind == "container": command.append("--all")
-                listing = owner.run([*command, "--format", "{{.Names}}"], check=False,
-                                    capture_output=True)
-                if listing.returncode: raise ConfigError(f"authentication {kind} listing failed")
-                if name not in listing.stdout.splitlines(): return ResourcePresence.ABSENT
-                template = ("{{index .Config.Labels \"dev.codex.service-owner\"}}" if kind == "container"
-                            else "{{index .Labels \"dev.codex.service-owner\"}}")
-                inspected = owner.run([kind, "inspect", "--format", template, name],
-                                      check=False, capture_output=True)
-                return (ResourcePresence.OWNED if not inspected.returncode and inspected.stdout.strip() == service_owner
-                        else ResourcePresence.MISMATCHED)
+            def owned_presence(kind: str, name: str) -> ResourcePresence:
+                return resource_presence(owner, ResourceKind(kind), name, service_owner)
             def resource_remove(kind: str, name: str) -> None:
-                if kind == "container": owner.run(["kill", name], check=False, capture_output=True)
-                result = owner.run([kind, "rm", name], check=False, capture_output=True)
-                if result.returncode and resource_presence(kind, name) is not ResourcePresence.ABSENT:
-                    raise ConfigError(f"authentication {kind} removal failed")
+                remove_owned_resource(owner, ResourceKind(kind), name, service_owner)
 
             config_id = "file:caddy-config"
             config_path = Path(auth["configuration"]["path"])
@@ -2080,18 +2067,25 @@ def stop_state(state: dict[str, Any]) -> None:
                                ("network", auth["networks"]["application"]),
                                ("network", auth["networks"]["refresh"])):
                 registry.register(OwnedResource(f"{kind}:{name}", service_owner,
-                    lambda k=kind,n=name: resource_presence(k,n),
+                    lambda k=kind,n=name: owned_presence(k,n),
                     lambda k=kind,n=name: resource_remove(k,n)))
             registry.register(OwnedResource(f"container:{auth['helper-container']}", service_owner,
-                lambda: resource_presence("container", auth["helper-container"]),
+                lambda: owned_presence("container", auth["helper-container"]),
                 lambda: resource_remove("container", auth["helper-container"]), (volume_id, refresh_id)))
             registry.register(OwnedResource(f"container:{auth['container']}", service_owner,
-                lambda: resource_presence("container", auth["container"]),
+                lambda: owned_presence("container", auth["container"]),
                 lambda: resource_remove("container", auth["container"]), (volume_id, app_id, config_id)))
             result = registry.cleanup(0)
             if result.remaining:
                 auth["lifecycle-state"] = "cleanup-failed"
-                failures.append("authentication pair owner validation or removal failed")
+                details = ", ".join(
+                    f"{failure.identity}={failure.code}" for failure in result.failures
+                )
+                failures.append(
+                    "authentication pair owner validation or removal failed; resources remain: "
+                    + ", ".join(result.remaining)
+                    + (f" ({details})" if details else "")
+                )
             else:
                 auth["lifecycle-state"] = "removed"
                 auth["resource-status"] = {key: "removed" for key in auth["resource-status"]}
@@ -2099,27 +2093,20 @@ def stop_state(state: dict[str, Any]) -> None:
             # Stale pre-pair managed records are accepted only as owner-checked
             # recovery authority; active publication and joins reject them.
             service_owner = auth["service-owner"]
-            listing = owner.run(["container", "ls", "--all", "--format", "{{.Names}}"],
-                                check=False, capture_output=True)
-            if listing.returncode:
-                failures.append("authentication container listing failed")
-            elif auth_container in listing.stdout.splitlines():
-                inspected = owner.run(
-                    ["container", "inspect", "--format",
-                     "{{index .Config.Labels \"dev.codex.service-owner\"}}", auth_container],
-                    check=False, capture_output=True)
-                if inspected.returncode or inspected.stdout.strip() != service_owner:
+            try:
+                presence = resource_presence(
+                    owner, ResourceKind.CONTAINER, auth_container, service_owner,
+                )
+                if presence is ResourcePresence.MISMATCHED:
                     failures.append("authentication container owner validation failed")
-                else:
-                    owner.run(["kill", auth_container], check=False, capture_output=True)
-                    result = owner.run(["container", "rm", auth_container], check=False,
-                                       capture_output=True)
-                    if result.returncode:
-                        failures.append("authentication container removal failed")
+                elif presence is ResourcePresence.OWNED:
+                    remove_owned_resource(
+                        owner, ResourceKind.CONTAINER, auth_container, service_owner,
+                    )
+            except (OSError, ValueError, subprocess.SubprocessError):
+                failures.append("authentication container removal failed")
         else:
-            listed = owner.run(["container", "ls", "--all", "--format", "{{.Names}}"],
-                               capture_output=True).stdout.splitlines()
-            if auth_container in listed:
+            if resource_exists(owner, ResourceKind.CONTAINER, auth_container):
                 owner.run(["kill", auth_container], check=False, capture_output=True)
                 if owner.run(["rm", auth_container], check=False, capture_output=True).returncode:
                     failures.append("authentication container removal failed")

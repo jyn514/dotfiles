@@ -5,8 +5,10 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import trusted_services
 from trusted_services import (
     Availability,
     EndpointAuthorization,
@@ -236,6 +238,80 @@ class ResourceRegistryTest(unittest.TestCase):
         self.assertIn("network:independent", events)
         self.assertNotIn("network:blocked", events)
 
+    def test_removal_error_converges_when_resource_became_absent(self):
+        presences = iter((ResourcePresence.OWNED, ResourcePresence.ABSENT))
+        registry = ResourceRegistry("owner")
+
+        def lose_response():
+            raise RuntimeError("engine lost the response")
+
+        registry.register(OwnedResource(
+            "network:one", "owner", lambda: next(presences), lose_response,
+        ))
+
+        result = registry.cleanup(0)
+
+        self.assertFalse(result.failures)
+        self.assertFalse(result.remaining)
+
+    def test_removal_error_retains_resource_replaced_by_another_owner(self):
+        presences = iter((ResourcePresence.OWNED, ResourcePresence.MISMATCHED))
+        registry = ResourceRegistry("owner")
+
+        def lose_response():
+            raise RuntimeError("engine lost the response")
+
+        registry.register(OwnedResource(
+            "network:one", "owner", lambda: next(presences), lose_response,
+        ))
+
+        result = registry.cleanup(0)
+
+        self.assertEqual(("network:one",), result.remaining)
+        self.assertEqual("resource-owner-mismatch", result.failures[0].code)
+
+    def test_cleanup_retries_surviving_owned_resources_within_one_call(self):
+        registry = ResourceRegistry("owner")
+        removals = 0
+
+        def remove():
+            nonlocal removals
+            removals += 1
+            if removals == 1:
+                raise RuntimeError("engine dependency is still detaching")
+
+        registry.register(resource("volume:one", [], remove=remove))
+        with mock.patch.object(registry, "RETRY_DELAYS", (0.05,)), \
+                mock.patch.object(trusted_services.time, "sleep") as sleep:
+            result = registry.cleanup(0)
+
+        self.assertFalse(result.remaining)
+        self.assertEqual(2, removals)
+        sleep.assert_called_once_with(0.05)
+
+    def test_owner_mismatch_does_not_block_retrying_an_independent_owned_resource(self):
+        registry = ResourceRegistry("owner")
+        removals = 0
+
+        def remove():
+            nonlocal removals
+            removals += 1
+            if removals == 1:
+                raise RuntimeError("engine dependency is still detaching")
+
+        registry.register(resource(
+            "network:foreign", [], presence=ResourcePresence.MISMATCHED,
+        ))
+        registry.register(resource("volume:owned", [], remove=remove))
+        with mock.patch.object(registry, "RETRY_DELAYS", (0.05,)), \
+                mock.patch.object(trusted_services.time, "sleep") as sleep:
+            result = registry.cleanup(0)
+
+        self.assertEqual(("network:foreign",), result.remaining)
+        self.assertEqual("resource-owner-mismatch", result.failures[0].code)
+        self.assertEqual(2, removals)
+        sleep.assert_called_once_with(0.05)
+
     def test_cleanup_retry_and_concurrent_call_remove_non_idempotent_resource_once(self):
         registry = ResourceRegistry("owner")
         calls = 0
@@ -277,10 +353,12 @@ class ResourceRegistryTest(unittest.TestCase):
         registry = ResourceRegistry("owner")
         registry.register(resource("container:one", removed,
                                    presence=ResourcePresence.MISMATCHED))
-        result = registry.cleanup(0)
+        with mock.patch.object(trusted_services.time, "sleep") as sleep:
+            result = registry.cleanup(0)
         self.assertEqual(("container:one",), result.remaining)
         self.assertEqual("resource-owner-mismatch", result.failures[0].code)
         self.assertFalse(removed)
+        sleep.assert_not_called()
 
     def test_registration_rejects_wrong_owner_duplicates_and_unknown_dependencies(self):
         registry = ResourceRegistry("owner")

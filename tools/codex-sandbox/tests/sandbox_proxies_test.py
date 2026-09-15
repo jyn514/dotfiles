@@ -1372,7 +1372,8 @@ class ManifestTest(unittest.TestCase):
                 "image": "sha256:" + "0" * 64,
             }],
         }
-        with mock.patch.object(sandbox_proxies.subprocess, "run") as run:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:
             sandbox_proxies.stop_state(state)
         calls = [call.args[0] for call in run.call_args_list]
         self.assertCountEqual([
@@ -1383,9 +1384,8 @@ class ManifestTest(unittest.TestCase):
             ["docker", "rm", "auth-proxy"],
             ["docker", "rm", "proxy"],
         ], calls[2:4])
-        self.assertEqual(["docker", "container", "ls", "--all", "--format", "{{.Names}}"], calls[4])
-        self.assertEqual(["docker", "volume", "rm", "volume"], calls[5])
-        self.assertEqual(["docker", "volume", "ls", "--format", "{{.Name}}"], calls[6])
+        volume_removal = calls.index(["docker", "volume", "rm", "volume"])
+        self.assertGreater(volume_removal, 3)
 
     def test_cleanup_cannot_delete_a_volume_rejected_during_creation(self) -> None:
         state = {"proxies": [{"container": "owned-container", "volume": "collision",
@@ -1406,6 +1406,7 @@ class ManifestTest(unittest.TestCase):
                 sandbox_proxies.stop_state(state)
         self.assertFalse(any(call.args[0][:2] == ["volume", "rm"]
                              for call in owner.run.call_args_list))
+
     def test_image_resolution_normalizes_bare_sha256_hash(self) -> None:
         digest = "0" * 64
         manifest = {"commands": {"example": self.command()}}
@@ -1597,6 +1598,7 @@ class ManifestTest(unittest.TestCase):
 
     def test_managed_auth_recovery_rejects_another_services_container(self) -> None:
         owner = mock.Mock(provider="podman")
+        owner.resource_owner_label.return_value = "dev.codex.service-owner"
 
         def run(arguments, **kwargs):
             if arguments[:2] == ["container", "ls"]:
@@ -1641,6 +1643,54 @@ class ManifestTest(unittest.TestCase):
                 sandbox_proxies.stop_state(state)
         self.assertFalse(any(call.args[0][:1] in (["kill"], ["rm"])
                              for call in owner.run.call_args_list))
+
+    def test_managed_auth_recovery_removes_the_complete_owned_pair(self) -> None:
+        auth = self.pair_auth()
+        resources = {
+            "container": {auth["container"], auth["helper-container"]},
+            "network": {auth["networks"]["application"], auth["networks"]["refresh"]},
+            "volume": {auth["socket-volume"]},
+        }
+        removed = []
+        lock = threading.Lock()
+        owner = mock.Mock(provider="podman")
+        owner.resource_owner_label.return_value = "dev.codex.service-owner"
+
+        def run(arguments, **_kwargs):
+            kind = arguments[0]
+            with lock:
+                if kind in {"kill", "rm"}:
+                    if kind == "rm":
+                        resources["container"].discard(arguments[-1])
+                        removed.append(("container", arguments[-1]))
+                    output = ""
+                elif arguments[1] == "ls":
+                    output = "".join(name + "\n" for name in sorted(resources[kind]))
+                elif arguments[1] == "inspect":
+                    output = auth["service-owner"] + "\n"
+                elif arguments[1] == "rm":
+                    resources[kind].discard(arguments[-1])
+                    removed.append((kind, arguments[-1]))
+                    output = ""
+                else:
+                    output = ""
+            return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+        owner.run.side_effect = run
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
+            sandbox_proxies.stop_state({
+                "runtime": {"provider": "podman"}, "proxies": [], "auth": auth,
+            })
+
+        self.assertTrue(all(not names for names in resources.values()))
+        self.assertCountEqual(
+            [(kind, name) for kind, names in {
+                "container": {auth["container"], auth["helper-container"]},
+                "network": {auth["networks"]["application"], auth["networks"]["refresh"]},
+                "volume": {auth["socket-volume"]},
+            }.items() for name in names],
+            removed,
+        )
 
     def test_absent_auth_container_does_not_make_recovery_fail_forever(self) -> None:
         managed = {

@@ -13,6 +13,7 @@ from enum import Enum
 import hashlib
 import json
 import re
+import time
 from threading import Lock
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
@@ -297,6 +298,8 @@ class CleanupResult:
 class ResourceRegistry:
     """Serialize cleanup and retain failed branches for owner-validated recovery."""
 
+    RETRY_DELAYS = (0.05,) * 19
+
     def __init__(self, owner: str) -> None:
         _require_owner(owner, "resource owner")
         self.owner = owner
@@ -329,35 +332,46 @@ class ResourceRegistry:
         with self._cleanup_lock:
             with self._lock:
                 self._started = True
-            failures: list[CleanupFailure] = []
-            attempted: set[str] = set()
-            while True:
-                with self._lock:
-                    resources = dict(self._resources)
-                prerequisites = {
-                    dependency for resource in resources.values()
-                    for dependency in resource.depends_on
-                }
-                wave = [resource for identity, resource in resources.items()
-                        if identity not in prerequisites and identity not in attempted]
-                if not wave:
+            result = self._cleanup_once(primary_status)
+            for delay in self.RETRY_DELAYS:
+                if not result.remaining or (result.failures and all(
+                        failure.code == "resource-owner-mismatch"
+                        for failure in result.failures)):
                     break
-                with ThreadPoolExecutor(max_workers=len(wave)) as workers:
-                    results = [(resource, workers.submit(self._remove_owned, resource))
-                               for resource in wave]
-                    for resource, future in results:
-                        attempted.add(resource.identity)
-                        try:
-                            future.result()
-                        except Exception as error:
-                            failures.append(CleanupFailure(resource.identity,
-                                                           _safe_error_code(error)))
-                        else:
-                            with self._lock:
-                                self._resources.pop(resource.identity, None)
+                time.sleep(delay)
+                result = self._cleanup_once(primary_status)
+            return result
+
+    def _cleanup_once(self, primary_status: int) -> CleanupResult:
+        failures: list[CleanupFailure] = []
+        attempted: set[str] = set()
+        while True:
             with self._lock:
-                remaining = _removal_order(self._resources)
-            return CleanupResult(primary_status, tuple(failures), remaining)
+                resources = dict(self._resources)
+            prerequisites = {
+                dependency for resource in resources.values()
+                for dependency in resource.depends_on
+            }
+            wave = [resource for identity, resource in resources.items()
+                    if identity not in prerequisites and identity not in attempted]
+            if not wave:
+                break
+            with ThreadPoolExecutor(max_workers=len(wave)) as workers:
+                results = [(resource, workers.submit(self._remove_owned, resource))
+                           for resource in wave]
+                for resource, future in results:
+                    attempted.add(resource.identity)
+                    try:
+                        future.result()
+                    except Exception as error:
+                        failures.append(CleanupFailure(resource.identity,
+                                                       _safe_error_code(error)))
+                    else:
+                        with self._lock:
+                            self._resources.pop(resource.identity, None)
+        with self._lock:
+            remaining = _removal_order(self._resources)
+        return CleanupResult(primary_status, tuple(failures), remaining)
 
     @staticmethod
     def _remove_owned(resource: OwnedResource) -> None:
@@ -367,7 +381,19 @@ class ResourceRegistry:
         if presence is ResourcePresence.MISMATCHED:
             raise LifecycleError("resource-owner-mismatch")
         if presence is ResourcePresence.OWNED:
-            resource.remove()
+            try:
+                resource.remove()
+            except Exception as error:
+                # Engines can complete removal but lose or reject the response.
+                # Absence is the desired state and makes cleanup safe to retry.
+                presence = resource.inspect()
+                if not isinstance(presence, ResourcePresence):
+                    raise LifecycleError("resource inspection returned an invalid result") from error
+                if presence is ResourcePresence.ABSENT:
+                    return
+                if presence is ResourcePresence.MISMATCHED:
+                    raise LifecycleError("resource-owner-mismatch") from error
+                raise
 
 
 class ServiceLifecycle:

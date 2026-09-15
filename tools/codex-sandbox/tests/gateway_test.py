@@ -162,20 +162,23 @@ class GatewayLifecycleTest(unittest.TestCase):
         state = self.state(); events = []
         create = Mock(side_effect=[events.append("create-link"), OSError("egress failed")])
         def runtime(command, **_kwargs):
-            if command[1:3] == ["network", "inspect"]:
-                return SimpleNamespace(returncode=1, stdout="")
+            if command[:2] == ["network", "ls"]:
+                return SimpleNamespace(returncode=0, stdout="gateway-link\n")
+            if command[:2] == ["network", "inspect"]:
+                return SimpleNamespace(returncode=0, stdout=state.gateway_handle.owner + "\n")
             events.append("remove-" + command[-1])
             return SimpleNamespace(returncode=0, stdout="")
         run = Mock(side_effect=runtime)
         prepare = self.launcher["prepare_gateway"]
-        with patch.dict(prepare.__globals__, create_relay_network=create, run=run):
+        with patch.dict(prepare.__globals__, create_relay_network=create), \
+                patch.object(prepare.__globals__["OUTER_RUNTIME"], "run", run):
             with self.assertRaisesRegex(OSError, "egress failed"):
                 prepare(state)
             self.assertRegex(state.gateway_handle.owner, r"\A[0-9a-f]{32}\Z")
             result = state.gateway_handle.cleanup(19)
         self.assertEqual(19, result.primary_status)
         self.assertFalse(result.remaining)
-        self.assertTrue(any(call.args[0][:3] == ["docker", "network", "rm"]
+        self.assertTrue(any(call.args[0][:2] == ["network", "rm"]
                             for call in run.call_args_list))
 
     def test_editor_only_ignores_available_podman_credentials(self):
@@ -244,33 +247,33 @@ class GatewayLifecycleTest(unittest.TestCase):
             recover = self.launcher["recover_gateways"]
 
             def foreign(command, **_kwargs):
-                if command[1:3] == ["network", "ls"]:
+                if command[:2] == ["network", "ls"]:
                     return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
-                if command[1:3] == ["network", "inspect"]:
+                if command[:2] == ["network", "inspect"]:
                     return SimpleNamespace(returncode=0, stdout="foreign\n")
-                if command[1:4] == ["container", "ls", "--all"]:
+                if command[:3] == ["container", "ls", "--all"]:
                     return SimpleNamespace(returncode=0, stdout="gateway\n")
                 return SimpleNamespace(returncode=0, stdout="foreign\n")
 
-            with patch.dict(recover.__globals__, run=foreign), \
+            with patch.object(recover.__globals__["OUTER_RUNTIME"], "run", side_effect=foreign), \
                     patch("sys.stderr", new_callable=io.StringIO):
                 recover(state)
             self.assertTrue(path.exists(), "foreign resources must retain recovery authority")
 
             removed = []
             def owned(command, **_kwargs):
-                if command[1:3] == ["network", "ls"]:
+                if command[:2] == ["network", "ls"]:
                     return SimpleNamespace(returncode=0, stdout="gateway-link\ngateway-egress\n")
-                if command[1:3] == ["network", "inspect"]:
+                if command[:2] == ["network", "inspect"]:
                     return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
-                if command[1:4] == ["container", "ls", "--all"]:
+                if command[:3] == ["container", "ls", "--all"]:
                     return SimpleNamespace(returncode=0, stdout="gateway\n")
-                if command[1:2] == ["inspect"]:
+                if command[:2] == ["container", "inspect"]:
                     return SimpleNamespace(returncode=0, stdout=handle.owner + "\n")
                 if "rm" in command:
                     removed.append(command[-1])
                 return SimpleNamespace(returncode=0, stdout="")
-            with patch.dict(recover.__globals__, run=owned):
+            with patch.object(recover.__globals__["OUTER_RUNTIME"], "run", side_effect=owned):
                 recover(state)
             self.assertFalse(path.exists())
             self.assertEqual("gateway", removed[0])
@@ -334,17 +337,17 @@ class GatewayLifecycleTest(unittest.TestCase):
                 SimpleNamespace(returncode=0, stdout="network\n"),
                 SimpleNamespace(returncode=0, stdout=actual + "\n"),
             ])
-            with patch.dict(presence.__globals__, run=run):
+            with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
                 self.assertEqual(expected, presence("network", "owner").value)
 
     def test_network_listing_or_inspection_failure_is_not_absence(self):
         presence = self.launcher["_gateway_network_presence"]
         failed = SimpleNamespace(returncode=125, stdout="")
-        with patch.dict(presence.__globals__, run=Mock(return_value=failed)):
+        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", return_value=failed):
             with self.assertRaisesRegex(Exception, "listing failed"):
                 presence("network", "owner")
         run = Mock(side_effect=[SimpleNamespace(returncode=0, stdout="network\n"), failed])
-        with patch.dict(presence.__globals__, run=run):
+        with patch.object(presence.__globals__["OUTER_RUNTIME"], "run", run):
             with self.assertRaisesRegex(Exception, "inspection failed"):
                 presence("network", "owner")
         lima = Mock(spec=presence.__globals__["VMRuntime"])

@@ -401,12 +401,14 @@ class DockerRuntimeTest(unittest.TestCase):
         runtime.verify_identity = Mock()
         runtime.recovery = True
         runtime.host.verify_runtime.side_effect = ValueError('damaged firewall')
-        for command in (['rm', '-f', 'owned'], ['container', 'inspect', 'owned'],
+        for command in (['kill', 'owned'], ['rm', 'owned'], ['container', 'inspect', 'owned'],
                         ['network', 'rm', 'owned'], ['volume', 'rm', 'owned']):
             with self.subTest(command=command), patch('subprocess.run') as run:
                 runtime.run(command)
                 run.assert_called_once()
-        for command in (['run', 'image'], ['exec', 'owned', 'command'], ['network', 'create', 'new']):
+        for command in (['run', 'image'], ['exec', 'owned', 'command'],
+                        ['container', 'kill', 'owned'], ['container', 'rm', 'owned'],
+                        ['network', 'create', 'new']):
             with self.subTest(command=command), patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'cleanup only'):
                     runtime.run(command)

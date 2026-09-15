@@ -272,6 +272,9 @@ a join cannot rewrite shared metadata.
   Inherited `remain-on-exit` settings need no pane-local override.
 - If automatic cleanup warns about a named resource, inspect and remove only that generated resource with the container CLI, then retry.
   For surviving containers and volumes, the diagnostic includes each resource name and its removal error.
+  The shared lifecycle treats a resource confirmed absent after a removal error as successfully removed;
+  it briefly retries surviving owned resources while dependencies detach.
+  Differently owned resources are never removed and, by themselves, do not cause a retry.
   A volume still referenced by a stopped agent container cannot be removed until that container is removed.
   Do not delete the host coordination lock files manually.
 - A stopped shared proxy terminates attached agents.

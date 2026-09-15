@@ -31,7 +31,10 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sandbox_runtime import VMRuntime, Podman, image_runtime, runtime_identity, verification_scope
+from sandbox_runtime import (
+    ResourceKind, ResourceOwnerAuthority, VMRuntime, Podman, image_runtime,
+    remove_owned_resource, resource_presence, runtime_identity, verification_scope,
+)
 from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
 from source_view import source_mounts
@@ -576,34 +579,14 @@ class GatewayHandle:
 
 
 def _gateway_network_presence(name: str, owner: str) -> ResourcePresence:
-    # Only a successful enumeration can prove absence. Treat transport and
-    # inspection failures as unknown so cleanup/recovery retains its authority.
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        listing = OUTER_RUNTIME.run(["network", "ls", "--format", "{{.Name}}"],
-                                    capture_output=True)
-        if listing.returncode:
-            raise LauncherError("relay network presence listing failed")
-        if name not in listing.stdout.splitlines():
-            return ResourcePresence.ABSENT
-        actual = OUTER_RUNTIME.relay_owner(name)
-    else:
-        listing = run(["docker", "network", "ls", "--format", "{{.Name}}"],
-                      check=False, capture=True, quiet=True)
-        if listing.returncode:
-            raise LauncherError("relay network presence listing failed")
-        if name not in listing.stdout.splitlines():
-            return ResourcePresence.ABSENT
-        result = run(["docker", "network", "inspect", "--format",
-                      "{{index .Labels \"dev.codex.service-owner\"}}", name],
-                     check=False, capture=True, quiet=True)
-        if result.returncode:
-            raise LauncherError("relay network ownership inspection failed")
-        actual = result.stdout.strip()
-    return ResourcePresence.OWNED if actual == owner else ResourcePresence.MISMATCHED
+    return resource_presence(
+        OUTER_RUNTIME, ResourceKind.NETWORK, name, owner,
+        authority=ResourceOwnerAuthority.RELAY,
+    )
 
 
 def _gateway_container_presence(name: str, owner: str) -> ResourcePresence:
-    return _codex_container_presence(name, owner)
+    return resource_presence(OUTER_RUNTIME, ResourceKind.CONTAINER, name, owner)
 
 
 def _gateway_recovery_directory(state: State) -> Path:
@@ -786,14 +769,15 @@ def recover_gateways(state: State) -> None:
                         registry.register(OwnedResource(
                             f"network:{name_value}", owner,
                             lambda name_value=name_value: _gateway_network_presence(name_value, owner),
-                            lambda name_value=name_value: run(
-                                ["docker", "network", "rm", name_value], quiet=True)))
+                            lambda name_value=name_value: remove_owned_resource(
+                                OUTER_RUNTIME, ResourceKind.NETWORK, name_value, owner,
+                                authority=ResourceOwnerAuthority.RELAY)))
                     else:
                         registry.register(OwnedResource(
                             f"container:{name_value}", owner,
                             lambda name_value=name_value: _gateway_container_presence(name_value, owner),
-                            lambda name_value=name_value: run(
-                                ["docker", "rm", "--force", name_value], quiet=True), dependencies))
+                            lambda name_value=name_value: remove_owned_resource(
+                                OUTER_RUNTIME, ResourceKind.CONTAINER, name_value, owner), dependencies))
                 if registry.cleanup(0).remaining:
                     raise LauncherError("gateway resources retained")
             except (OSError, TypeError, ValueError, json.JSONDecodeError,
@@ -822,7 +806,9 @@ def prepare_gateway(state: State) -> list[str]:
             identity, handle.owner,
             lambda name=name, identity=identity: handle.presence(
                 identity, lambda: _gateway_network_presence(name, handle.owner)),
-            lambda name=name: run(["docker", "network", "rm", name], quiet=True),
+            lambda name=name: remove_owned_resource(
+                OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
+                authority=ResourceOwnerAuthority.RELAY),
         ))
         if handle.cancelled.is_set():
             raise LauncherError("gateway startup cancelled")
@@ -872,7 +858,8 @@ def start_gateway(state: State) -> None:
         container_resource, handle.owner,
         lambda: handle.presence(container_resource, lambda: _gateway_container_presence(
             state.gateway_container, handle.owner)),
-        lambda: run(["docker", "rm", "--force", state.gateway_container], quiet=True),
+        lambda: remove_owned_resource(
+            OUTER_RUNTIME, ResourceKind.CONTAINER, state.gateway_container, handle.owner),
         (f"network:{state.gateway_link_network}", f"network:{state.gateway_egress_network}"),
     ))
     if handle.cancelled.is_set():
@@ -955,7 +942,9 @@ def start_keychain(state: State) -> list[str]:
             handle.registry.register(OwnedResource(
                 identity, handle.owner,
                 lambda name=name: _gateway_network_presence(name, handle.owner),
-                lambda name=name: run(['docker', 'network', 'rm', name], quiet=True)))
+                lambda name=name: remove_owned_resource(
+                    OUTER_RUNTIME, ResourceKind.NETWORK, name, handle.owner,
+                    authority=ResourceOwnerAuthority.RELAY)))
             if handle.cancelled.is_set():
                 raise LauncherError('Keychain relay startup cancelled')
             create_relay_network(state, name, internal=internal, owner=handle.owner)
@@ -970,7 +959,8 @@ def start_keychain(state: State) -> list[str]:
         handle.registry.register(OwnedResource(
             container_resource, handle.owner,
             lambda: _gateway_container_presence(container, handle.owner),
-            lambda: run(['docker', 'rm', '--force', container], quiet=True),
+            lambda: remove_owned_resource(
+                OUTER_RUNTIME, ResourceKind.CONTAINER, container, handle.owner),
             (f'network:{link}', f'network:{egress}')))
         bridge = handle.bridge = HostKeychainBridge()
         # The bridge depends on the relay so cleanup closes admission and joins
@@ -1111,26 +1101,11 @@ def codex_sidecar_has_sandbox_network(container: str) -> bool:
 
 
 def _codex_container_presence(container: str, owner: str) -> ResourcePresence:
-    listing = run([
-        "docker", "container", "ls", "--all", "--format", "{{.Names}}",
-    ], check=False, capture=True, quiet=True)
-    if listing.returncode:
-        raise LauncherError("Codex broker presence listing failed")
-    if container not in listing.stdout.splitlines():
-        return ResourcePresence.ABSENT
-    result = run(["docker", "inspect", "--format",
-                  "{{index .Config.Labels \"dev.codex.service-owner\"}}", container],
-                 check=False, capture=True, quiet=True)
-    if result.returncode:
-        raise LauncherError("Codex broker presence inspection failed")
-    return ResourcePresence.OWNED if result.stdout.strip() == owner else ResourcePresence.MISMATCHED
+    return resource_presence(OUTER_RUNTIME, ResourceKind.CONTAINER, container, owner)
 
 
 def _remove_codex_container(container: str, owner: str) -> None:
-    run(["docker", "kill", container], check=False, quiet=True)
-    result = run(["docker", "rm", container], check=False, capture=True, quiet=True)
-    if result.returncode and _codex_container_presence(container, owner) is not ResourcePresence.ABSENT:
-        raise LauncherError("Codex broker container removal failed")
+    remove_owned_resource(OUTER_RUNTIME, ResourceKind.CONTAINER, container, owner)
 
 
 def start_codex_sidecar(state: State, auth_directory: Path, *,
@@ -1175,25 +1150,10 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         lifecycle.transition(phase)
     registry = ResourceRegistry(owner)
 
-    def listed(kind: str, name: str) -> bool:
-        command = ["docker", kind, "ls"]
-        if kind == "container": command.append("--all")
-        result = run([*command, "--format", "{{.Names}}"], check=False,
-                     capture=True, quiet=True)
-        return result.returncode == 0 and name in result.stdout.splitlines()
     def presence(kind: str, name: str) -> ResourcePresence:
-        if not listed(kind, name): return ResourcePresence.ABSENT
-        label = OUTER_RUNTIME.resource_owner_label(kind)
-        result = run(["docker", kind, "inspect", "--format",
-                      f"{{{{index .Labels \"{label}\"}}}}" if kind != "container" else
-                      "{{index .Config.Labels \"dev.codex.service-owner\"}}", name],
-                     check=False, capture=True, quiet=True)
-        return ResourcePresence.OWNED if result.returncode == 0 and result.stdout.strip() == owner else ResourcePresence.MISMATCHED
+        return resource_presence(OUTER_RUNTIME, ResourceKind(kind), name, owner)
     def remove(kind: str, name: str) -> None:
-        if kind == "container": run(["docker", "kill", name], check=False, quiet=True)
-        result = run(["docker", kind, "rm", name], check=False, capture=True, quiet=True)
-        if result.returncode and presence(kind, name) is not ResourcePresence.ABSENT:
-            raise LauncherError(f"Codex {kind} cleanup failed")
+        remove_owned_resource(OUTER_RUNTIME, ResourceKind(kind), name, owner)
 
     config_resource = "file:caddy-config"
     def config_presence() -> ResourcePresence:
@@ -2125,11 +2085,13 @@ def cleanup(state: State) -> None:
     def remove_network(item):
         if isinstance(OUTER_RUNTIME, VMRuntime):
             try:
-                existing = OUTER_RUNTIME.run(["network", "ls", "--format", "{{.Name}}"],
-                                             capture_output=True).stdout.splitlines()
-                if item[1][-1] not in existing:
+                presence = resource_presence(
+                    OUTER_RUNTIME, ResourceKind.NETWORK, item[1][-1], state.resource_owner,
+                    authority=ResourceOwnerAuthority.RELAY,
+                )
+                if presence is ResourcePresence.ABSENT:
                     return True
-                if OUTER_RUNTIME.relay_owner(item[1][-1]) != state.resource_owner:
+                if presence is ResourcePresence.MISMATCHED:
                     raise LauncherError("relay network belongs to another creator")
             except (LauncherError, ValueError, OSError, subprocess.SubprocessError) as error:
                 print(f"warning: {item[0]} retained: {error}", file=sys.stderr)

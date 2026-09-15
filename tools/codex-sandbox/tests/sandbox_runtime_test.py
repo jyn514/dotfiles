@@ -41,6 +41,116 @@ def lima():
     return backend
 
 
+class ResourceOperationsTest(unittest.TestCase):
+    def test_each_runtime_lists_volumes_with_the_singular_name_template_and_its_owner_label(self):
+        from docker_runtime import Docker
+
+        cases = (
+            (runtime.Podman, "dev.codex.service-owner", "dev.codex.service-owner"),
+            (runtime.Lima, "dev.codex.volume-owner", "dev.codex.relay-owner"),
+            (Docker, "dev.codex.volume-owner", "dev.codex.relay-owner"),
+        )
+        for backend_type, label, relay_label in cases:
+            with self.subTest(runtime=backend_type.provider):
+                backend = object.__new__(backend_type)
+                calls = []
+
+                def run(arguments, **kwargs):
+                    calls.append(arguments)
+                    stdout = "owned\n" if arguments[:2] == ["volume", "ls"] else "owner\n"
+                    return SimpleNamespace(
+                        args=arguments, returncode=0, stdout=stdout, stderr="",
+                    )
+
+                backend.run = Mock(side_effect=run)
+                self.assertIs(
+                    runtime.ResourcePresence.OWNED,
+                    runtime.resource_presence(
+                        backend, runtime.ResourceKind.VOLUME, "owned", "owner",
+                    ),
+                )
+                self.assertEqual(
+                    ["volume", "ls", "--format", "{{.Name}}"], calls[0],
+                )
+                self.assertEqual(
+                    ["volume", "inspect", "--format",
+                     '{{index .Labels "' + label + '"}}', "owned"], calls[1],
+                )
+                self.assertEqual(
+                    relay_label,
+                    runtime.resource_owner_label(
+                        backend, runtime.ResourceKind.NETWORK,
+                        runtime.ResourceOwnerAuthority.RELAY,
+                    ),
+                )
+
+    def test_container_resource_contract_uses_container_metadata_and_validates_kind(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(side_effect=[
+            SimpleNamespace(args=[], returncode=0, stdout="owned\n", stderr=""),
+            SimpleNamespace(args=[], returncode=0, stdout="owner\n", stderr=""),
+        ])
+
+        self.assertIs(
+            runtime.ResourcePresence.OWNED,
+            runtime.resource_presence(
+                backend, runtime.ResourceKind.CONTAINER, "owned", "owner",
+            ),
+        )
+        self.assertEqual(
+            ["container", "ls", "--all", "--format", "{{.Names}}"],
+            backend.run.call_args_list[0].args[0],
+        )
+        self.assertEqual(
+            ["container", "inspect", "--format",
+             '{{index .Config.Labels "dev.codex.service-owner"}}', "owned"],
+            backend.run.call_args_list[1].args[0],
+        )
+        with self.assertRaisesRegex(runtime.RuntimeError, "ResourceKind"):
+            runtime.resource_exists(backend, "container", "owned")
+
+    def test_removal_revalidates_owner_before_mutating_the_resource(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(side_effect=[
+            SimpleNamespace(args=[], returncode=0, stdout="claimed\n", stderr=""),
+            SimpleNamespace(args=[], returncode=0, stdout="another-owner\n", stderr=""),
+        ])
+
+        with self.assertRaisesRegex(runtime.RuntimeError, "resource-owner-mismatch"):
+            runtime.remove_owned_resource(
+                backend, runtime.ResourceKind.VOLUME, "claimed", "our-owner",
+            )
+
+        self.assertEqual(2, backend.run.call_count)
+
+    def test_container_removal_uses_recovery_admitted_top_level_commands(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(side_effect=[
+            SimpleNamespace(returncode=0, stdout="owned\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout="owner\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ])
+
+        runtime.remove_owned_resource(
+            backend, runtime.ResourceKind.CONTAINER, "owned", "owner",
+        )
+
+        commands = [call.args[0] for call in backend.run.call_args_list]
+        self.assertEqual([["kill", "owned"], ["rm", "owned"]], commands[-2:])
+
+    def test_launchers_cannot_duplicate_resource_metadata_templates(self):
+        tool = Path(__file__).resolve().parents[1]
+        forbidden = ("{{.Names}}", "{{.Name}}", "index .Labels", "index .Config.Labels")
+        for name in ("codex-sandbox", "sandbox-proxies.py"):
+            source = (tool / name).read_text(encoding="utf-8")
+            with self.subTest(path=name):
+                self.assertFalse(
+                    any(token in source for token in forbidden),
+                    f"{name} duplicates container-engine resource metadata",
+                )
+
+
 class ImageIdentityTest(unittest.TestCase):
     def test_builder_environment_binds_selected_podman_and_lima_runtime(self):
         podman = object.__new__(runtime.Podman)
