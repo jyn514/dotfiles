@@ -200,6 +200,30 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertIn("--editor-port", gateway_run)
         self.assertNotIn("--podman-port", gateway_run)
 
+    def test_agent_room_uses_fixed_gateway_port_and_loopback_target(self):
+        state = self.state()
+        state.capabilities = frozenset({"agent-room"})
+        commands = []
+
+        def run(command, **_kwargs):
+            commands.append(command)
+            if command[1:2] == ["inspect"]:
+                return SimpleNamespace(returncode=0, stdout="10.0.0.2\n")
+            return SimpleNamespace(returncode=0, stdout="")
+
+        bridge = Mock(port=3456)
+        bridge_factory = Mock(return_value=bridge)
+        prepare = self.launcher["prepare_gateway"]
+        start = self.launcher["start_gateway"]
+        with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
+                        FixedTcpBridge=bridge_factory):
+            prepare(state)
+            start(state)
+        bridge_factory.assert_called_once_with(("127.0.0.1", 3000))
+        gateway_run = commands[0]
+        self.assertEqual("3456", gateway_run[gateway_run.index("--agent-room-port") + 1])
+        bridge.allow_peers.assert_called_once_with({"10.0.0.2", "127.0.0.1"})
+
     def test_cleanup_closes_registry_before_background_start_can_create(self):
         state = self.state()
         prepare = self.launcher["prepare_gateway"]
@@ -369,6 +393,15 @@ class GatewayTest(unittest.TestCase):
                 patch.object(gateway.os, 'killpg'):
             self.assertEqual(1, gateway.serve('host.lima.internal', podman_port=22))
         self.assertIn('TCP4-LISTEN:2222,fork,reuseaddr', spawn.call_args.args[0])
+
+    def test_agent_room_listener_has_fixed_local_port(self):
+        child = Mock(pid=12, returncode=None)
+        with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
+                patch.object(gateway.os, 'wait', return_value=(12, 0)), \
+                patch.object(gateway.os, 'killpg'):
+            self.assertEqual(1, gateway.serve('host.lima.internal', agent_room_port=3456))
+        self.assertIn('TCP4-LISTEN:2225,fork,reuseaddr', spawn.call_args.args[0])
+        self.assertEqual('TCP4:host.lima.internal:3456', spawn.call_args.args[0][-1])
 
     def test_empty_gateway_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'at least one listener'):

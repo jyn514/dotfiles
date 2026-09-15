@@ -315,7 +315,12 @@ def serve_connection(connection: socket.socket, endpoint: str,
         }, separators=(",", ":")).encode()
     else:
         body = process_request(body, endpoint)
-    write_frame(stream, body)
+    try:
+        write_frame(stream, body)
+    except (BrokenPipeError, ConnectionResetError):
+        # A health probe and a cancelled client may close after connecting.
+        # Their socket lifetime must not end the shared server process.
+        pass
 
 
 def caddy_endpoint(value: str | None) -> str:

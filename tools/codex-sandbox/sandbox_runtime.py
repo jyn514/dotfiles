@@ -305,6 +305,28 @@ class Podman:
             arguments += ["--route", route + ",prohibit"]
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
 
+    def create_owned_volume(self, name, uid, gid, owner, domain=None, role=None):
+        # Docker's volume API has no ownership options. Profile helpers create
+        # their socket inside the engine-owned volume after startup.
+        arguments = ["volume", "create", "--label", "dev.codex.service-owner=" + owner]
+        if domain is not None:
+            arguments += ["--label", "dev.codex.credential-domain=" + domain]
+        if role is not None:
+            arguments += ["--label", "dev.codex.resource-role=" + role]
+        self.run([*arguments, name], stdout=subprocess.DEVNULL)
+
+    def resource_owner_label(self, kind):
+        return "dev.codex.service-owner"
+
+    def owned_volume_matches(self, snapshot, owner, domain, role):
+        labels = snapshot.get("Labels", {}) or {}
+        return (labels.get(self.resource_owner_label("volume")) == owner
+                and labels.get("dev.codex.credential-domain") == domain
+                and labels.get("dev.codex.resource-role") == role)
+
+    def container_networks(self, snapshot):
+        return set(snapshot.get("NetworkSettings", {}).get("Networks", {}))
+
     def create_relay_network(self, name, *, internal):
         arguments = ["network", "create", "--opt", "isolate=true"]
         if internal:
@@ -324,7 +346,25 @@ class VMRuntime(Podman):
         return self.host.guest(self.record, *arguments, **kwargs)
 
     def agent_command(self, image, arguments):
-        return ["pi", "--offline", "--approve", *arguments]
+        # The credential wrapper replaces the image entrypoint and execs this
+        # complete command after projecting the short-lived token.
+        return ["/opt/agent-tools/bin/agent-entrypoint", *arguments]
+
+    def create_owned_volume(self, name, uid, gid, owner, domain=None, role=None):
+        self.initialize_volume(name, uid, gid, owner)
+
+    def resource_owner_label(self, kind):
+        return "dev.codex.volume-owner" if kind == "volume" else "dev.codex.service-owner"
+
+    def owned_volume_matches(self, snapshot, owner, domain, role):
+        # VM initializers can stamp only their dedicated owner label. The
+        # accepted record binds domain and role to that unique owner.
+        return (snapshot.get("Labels", {}) or {}).get(
+            self.resource_owner_label("volume")) == owner
+
+    def container_networks(self, snapshot):
+        # Docker may expose its disabled default network as a named attachment.
+        return set(snapshot.get("NetworkSettings", {}).get("Networks", {})) - {"none"}
 
 
 class Lima(VMRuntime):

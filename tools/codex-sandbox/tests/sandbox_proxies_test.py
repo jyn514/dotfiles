@@ -165,7 +165,7 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(
                 {"version": 1, "capabilities": {
                     "host-editor": True, "zulip": True,
-                    "nested-containers": False, "flower-r2": False,
+                    "nested-containers": False, "flower-r2": False, "agent-room": False,
                 }, "commands": {}},
                 json.loads(output.read_text()),
             )
@@ -263,7 +263,7 @@ class ManifestTest(unittest.TestCase):
                 selected = sandbox_proxies.load_manifest(self.repo)["capabilities"]
                 self.assertEqual({
                     "host-editor": True, "zulip": True,
-                    "nested-containers": False, "flower-r2": False,
+                    "nested-containers": False, "flower-r2": False, "agent-room": False,
                     **capabilities,
                 }, selected)
 

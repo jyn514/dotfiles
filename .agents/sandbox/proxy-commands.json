@@ -3,6 +3,7 @@
   "capabilities": {
     "host-editor": true,
     "nested-containers": true,
+    "agent-room": true,
     "flower-r2": false
   },
   "images": {

@@ -36,6 +36,7 @@ from sandbox_credentials import boot_credential
 from proxy_session import SessionLock
 from source_view import source_mounts
 from keychain_bridge import HostKeychainBridge
+from host_tcp_bridge import FixedTcpBridge
 from image_resolver import prepare_launch_images
 from owned_images import DEFAULT_BASE, resolve_agent
 from trusted_services import (
@@ -49,8 +50,9 @@ from codex_broker import (
 )
 from caddy_foundation import (
     accepted_caddy_image, configuration_digest as caddy_configuration_digest, generate_caddy_config,
-    publish_configuration, resolve_caddy_image, validate_configuration_mount,
+    resolve_caddy_image, validate_configuration_mount,
 )
+from authenticated_egress import EgressPairPlan, start_egress_pair
 
 OUTER_RUNTIME = Podman()
 
@@ -541,14 +543,16 @@ def attach_proxies(state: State) -> list[str]:
 class GatewayHandle:
     """Sole owner of one launch's staged, best-effort gateway resources."""
 
-    def __init__(self, state: State, editor: bool, nested: bool) -> None:
+    def __init__(self, state: State, editor: bool, nested: bool, agent_room: bool = False) -> None:
         self.state = state
         self.editor = editor
         self.nested = nested
+        self.agent_room = agent_room
         self.owner = uuid.uuid4().hex
         self.registry = ResourceRegistry(self.owner)
         self.cancelled = threading.Event()
         self.bridge: HostEditorBridge | None = None
+        self.agent_room_bridge: FixedTcpBridge | None = None
         self._logical: set[str] = set()
         self.created: set[str] = set()
 
@@ -806,9 +810,10 @@ def prepare_gateway(state: State) -> list[str]:
     capabilities = getattr(state, "capabilities", frozenset({"host-editor", "nested-containers"}))
     editor = "host-editor" in capabilities
     nested = "nested-containers" in capabilities and state.agent_podman is not None
-    if not editor and not nested:
+    agent_room = "agent-room" in capabilities
+    if not editor and not nested and not agent_room:
         return []
-    handle = GatewayHandle(state, editor, nested)
+    handle = GatewayHandle(state, editor, nested, agent_room)
     state.gateway_handle = handle
     for name, internal in ((state.gateway_link_network, True),
                            (state.gateway_egress_network, False)):
@@ -827,9 +832,15 @@ def prepare_gateway(state: State) -> list[str]:
         handle.bridge = HostEditorBridge()
         handle._register_logical("bridge:host-editor", remove=handle.bridge.stop)
         handle.bridge.start()
+    if agent_room:
+        handle.agent_room_bridge = FixedTcpBridge(("127.0.0.1", 3000))
+        handle._register_logical("bridge:agent-room", remove=handle.agent_room_bridge.stop)
+        handle.agent_room_bridge.start()
     arguments = [
         "--network", state.gateway_link_network,
         *(["--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223"] if editor else []),
+        *(["--env", f"CODEX_SANDBOX_AGENT_ROOM_ADDRESS={state.gateway_container}:2225"]
+          if agent_room else []),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) or not editor else
           ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
@@ -852,7 +863,9 @@ def start_gateway(state: State) -> None:
     editor_port = handle.bridge.port if handle.bridge is not None else None
     podman_port = ((state.agent_podman or {}).get("AGENT_PODMAN_SSH_PORT")
                    if handle.nested else None)
-    if editor_port is None and podman_port is None:
+    agent_room_port = (handle.agent_room_bridge.port
+                       if handle.agent_room_bridge is not None else None)
+    if editor_port is None and podman_port is None and agent_room_port is None:
         raise LauncherError("gateway requires at least one selected listener")
     container_resource = f"container:{state.gateway_container}"
     handle.registry.register(OwnedResource(
@@ -878,6 +891,7 @@ def start_gateway(state: State) -> None:
         "--host", OUTER_RUNTIME.host_address,
         *(["--editor-port", str(editor_port)] if editor_port is not None else []),
         *(["--podman-port", podman_port] if podman_port is not None else []),
+        *(["--agent-room-port", str(agent_room_port)] if agent_room_port is not None else []),
     ], discard_stdout=True)
     handle.created.add(container_resource)
     def address(network):
@@ -902,6 +916,11 @@ def start_gateway(state: State) -> None:
         handle._register_logical(allowlist,
             depends_on=("bridge:host-editor", *address_resources))
         handle.bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
+    if handle.agent_room_bridge is not None:
+        allowlist = "allowlist:agent-room"
+        handle._register_logical(allowlist,
+            depends_on=("bridge:agent-room", *address_resources))
+        handle.agent_room_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
 
 
@@ -1135,10 +1154,22 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         "codex", "chatgpt.com", token=key)
     configuration_path = state.proxy_state.parent / (caddy + ".json")
     configuration_digest = caddy_configuration_digest(configuration_bytes)
-    material = {"caddy": caddy_identity.__dict__, "configuration": configuration_digest,
-                "helper": helper_plan.implementation_identity}
-    implementation = "sha256:" + hashlib.sha256(
-        json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    pair_plan = EgressPairPlan(
+        domain=CREDENTIAL_DOMAIN, service_owner=owner, caddy_name=caddy,
+        helper_name=helper_container, socket_volume=socket_volume,
+        configuration_path=configuration_path, configuration=configuration_bytes,
+        caddy_image=caddy_identity, helper_image=state.sidecar_image,
+        uid=state.uid, gid=state.gid,
+        application_network=application_network, helper_network=refresh_network,
+        public_networks=(("application-network", "application", application_network),
+                         ("refresh-network", "refresh", refresh_network)),
+        helper_mounts=(f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",),
+        helper_environment=(f"CADDY_PROFILE_TOKEN={key}",),
+        helper_arguments=("--profile", "codex"),
+        runtime_flags=tuple(proxy_flags()),
+        extra_caddy_networks=(SANDBOX_NETWORK,),
+    )
+    implementation = pair_plan.implementation_identity(helper_plan.implementation_identity)
     lifecycle = ServiceLifecycle(helper_plan, owner, OwnerSet())
     for phase in (LifecycleState.RESOLVED, LifecycleState.PREPARING, LifecycleState.STARTING):
         lifecycle.transition(phase)
@@ -1152,7 +1183,7 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         return result.returncode == 0 and name in result.stdout.splitlines()
     def presence(kind: str, name: str) -> ResourcePresence:
         if not listed(kind, name): return ResourcePresence.ABSENT
-        label = "dev.codex.volume-owner" if kind == "volume" and isinstance(OUTER_RUNTIME, VMRuntime) else "dev.codex.service-owner"
+        label = OUTER_RUNTIME.resource_owner_label(kind)
         result = run(["docker", kind, "inspect", "--format",
                       f"{{{{index .Labels \"{label}\"}}}}" if kind != "container" else
                       "{{index .Config.Labels \"dev.codex.service-owner\"}}", name],
@@ -1216,53 +1247,21 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
     partial["trusted-services"] = SESSION_LIFECYCLE_SCHEMA
     partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
     try:
-        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        publish_configuration(configuration_path, configuration_bytes)
-        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        for kind, name in resources:
-            if kind == "network":
-                role = "application" if name == application_network else "refresh"
-                OUTER_RUNTIME.create_public_service_network(
-                    name, owner, domain=CREDENTIAL_DOMAIN, role=role)
-            elif isinstance(OUTER_RUNTIME, VMRuntime):
-                OUTER_RUNTIME.initialize_volume(name, state.uid, state.gid, owner)
-            else:
-                run(["docker", kind, "create", "--label", f"dev.codex.service-owner={owner}", name], discard_stdout=True)
-            statuses[{"volume":"socket-volume","network":("application-network" if name == application_network else "refresh-network")}[kind]] = "created"
+        def pair_effect(status, operation):
+            operation()
+            if status in statuses:
+                statuses[status] = "created"
             partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
-            if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        common = ["--label", f"dev.codex.service-owner={owner}", "--label", "dev.codex.credential-domain=codex",
-                  "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only", "--user", f"{state.uid}:{state.gid}",
-                  "--pids-limit", "64", "--memory", "256m", "--cpus", "1", "--ulimit", "nofile=256:256"]
-        run(["docker", "run", "--detach", "--name", helper_container, *common,
-             "--network", refresh_network, *proxy_flags(),
-             "--mount", f"type=volume,src={socket_volume},dst=/run/profile-helper",
-             "--mount", f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",
-             "--env", f"CADDY_PROFILE_TOKEN={key}", "--entrypoint", "/trusted/bin/profile-helper",
-             state.sidecar_image, "--profile", "codex"], discard_stdout=True)
-        statuses["helper-container"] = statuses["refresh-attachment"] = "created"
+            if status == "helper-container":
+                statuses["refresh-attachment"] = "created"
+        start_egress_pair(
+            OUTER_RUNTIME, pair_plan, pair_effect,
+            cancelled=lambda: cancelled is not None and cancelled.is_set(),
+            error=LauncherError,
+        )
+        lifecycle.transition(LifecycleState.READY); record["lifecycle-state"] = "ready"
         partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
-        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        run(["docker", "run", "--detach", "--name", caddy, *common, "--cap-add=NET_BIND_SERVICE",
-             "--network", application_network, *proxy_flags(),
-             "--mount", f"type=volume,src={socket_volume},dst=/run/profile-helper,readonly",
-             "--mount", f"type=bind,src={configuration_path},dst=/etc/caddy/caddy.json,readonly",
-             caddy_identity.runtime_reference, "caddy", "run", "--config", "/etc/caddy/caddy.json"], discard_stdout=True)
-        statuses["caddy-container"] = "created"
-        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        run(["docker", "network", "connect", SANDBOX_NETWORK, caddy], discard_stdout=True)
-        if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-        partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            if cancelled is not None and cancelled.is_set(): raise LauncherError("Codex broker startup cancelled")
-            result = run(["docker", "exec", caddy, "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/ready"], check=False, quiet=True)
-            if result.returncode == 0:
-                lifecycle.transition(LifecycleState.READY); record["lifecycle-state"] = "ready"
-                partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
-                return handle, codex_sidecar_arguments(caddy, key)
-            time.sleep(.1)
-        raise LauncherError("Codex Caddy/helper pair did not become ready")
+        return handle, codex_sidecar_arguments(caddy, key)
     except BaseException as startup_error:
         lifecycle.transition(LifecycleState.FAILED); record["lifecycle-state"] = "failed"
         for name, status in list(statuses.items()):
@@ -1333,8 +1332,8 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
                     "Labels", network.get("CNI", {}).get("nerdctlLabels", {})) or {}
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             raise LauncherError("cached authentication pair inspection failed") from error
-        caddy_networks = caddy_snapshot.get("NetworkSettings", {}).get("Networks", {})
-        helper_networks = helper_snapshot.get("NetworkSettings", {}).get("Networks", {})
+        caddy_networks = OUTER_RUNTIME.container_networks(caddy_snapshot)
+        helper_networks = OUTER_RUNTIME.container_networks(helper_snapshot)
         caddy_credentials = [m for m in caddy_snapshot.get("Mounts", [])
                              if m.get("Destination") == "/var/lib/codex-auth"]
         helper_credentials = [m for m in helper_snapshot.get("Mounts", [])
@@ -1875,12 +1874,14 @@ def run_agent(state: State, arguments: list[str]) -> int:
     launch_started = time.monotonic()
     if isinstance(OUTER_RUNTIME, VMRuntime):
         image_index = command.index(state.image)
+        terminal_arguments = (["--interactive", "--tty"]
+                              if sys.stdin.isatty() and sys.stdout.isatty() else [])
         # Keep create and attach under the runtime's existing producer ownership.
         # The session key may persist with this container; the GitHub token may not.
         # Create first so lost supervision can remove an existing container.
         with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
             with OUTER_RUNTIME.workload(OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
-                    ["--interactive", "--tty", *command[5:image_index], *environment],
+                    [*terminal_arguments, *command[5:image_index], *environment],
                     command[image_index + 1:]) as process:
                 state.agent_process = process
                 result = wait_for_agent(state)

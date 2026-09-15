@@ -76,12 +76,14 @@ Its [default-readiness record](lima/docker.md#default-readiness) distinguishes p
 - Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `zulip`, `nested-containers`, and `flower-r2` independently.
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `zulip`, `nested-containers`, `flower-r2`, and `agent-room` independently.
 Host editing and Zulip default on;
 `{"version": 2, "capabilities": {"host-editor": false, "zulip": false}}` disables both.
 Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
-Nested containers and Flower R2 default off.
+Nested containers, Flower R2, and agent-room default off. Selecting agent-room adds a fixed TCP relay
+from the host's loopback-only `127.0.0.1:3000` to the same `127.0.0.1:3000` inside the agent container.
+It accepts no agent-supplied destination and never relays the admin port 3001.
 Host-editor and nested-container clients tolerate delayed best-effort listener startup for a
 bounded readiness interval. Retries stop before the first request byte; after transmission starts,
 transport failure is terminal and a possibly accepted operation is never replayed. Flower R2 does
@@ -159,7 +161,7 @@ otherwise `VISUAL`, `EDITOR`, then `vi` is used.
 The dotfiles profile selects `config/nvim-host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim-shared.lua`;
 normal Neovim loads the same shared behavior before its IDE configuration.
 
-Each sandbox has one gateway for the host editor and, when configured, Agent Podman.
+Each sandbox has one gateway for the host editor and, when configured, Agent Podman and agent-room.
 It starts in the background after its private link and egress networks are created.
 Pi reaches its fixed editor and SSH ports by container DNS name. Their clients retry only
 connection establishment within a bounded interval and never replay a possibly accepted request.

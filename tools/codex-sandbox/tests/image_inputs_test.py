@@ -52,7 +52,8 @@ class ImageInputsTest(unittest.TestCase):
             dockerfile = root / 'tools/codex-sandbox/image/Dockerfile'
             dockerfile.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / dockerfile.relative_to(root), dockerfile)
-            runtime = ['tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
+            runtime = ['tools/codex-sandbox/image/agent-entrypoint',
+                       'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',
                      'libexec/agent-wrappers/__pycache__/jj.pyc']

@@ -82,6 +82,7 @@ FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
+COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
 COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
 RUN if [ -e /etc/alpine-release ]; then node /opt/agent-pi/check-runtime.mjs; fi
 COPY --chmod=755 ./tools/codex-sandbox/image/host-editor /opt/agent-tools/bin/host-editor
@@ -143,4 +144,4 @@ RUN --network=none if [ -e /etc/alpine-release ]; then pi --offline --help >/dev
 
 ENV COLORTERM=truecolor
 ENV TERM=xterm-256color
-ENTRYPOINT ["pi", "--offline", "--approve"]
+ENTRYPOINT ["/opt/agent-tools/bin/agent-entrypoint"]

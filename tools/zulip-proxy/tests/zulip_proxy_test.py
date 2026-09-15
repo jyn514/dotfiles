@@ -98,6 +98,17 @@ class ForwarderTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def test_peer_disconnect_does_not_stop_server(self) -> None:
+        stream = mock.Mock()
+        stream.read.side_effect = OSError("peer closed")
+        stream.write.side_effect = BrokenPipeError
+        connection = mock.Mock()
+        connection.makefile.return_value = stream
+
+        server.serve_connection(
+            connection, "http://test-zulip-caddy:8787/api/v1/messages", "session-token",
+        )
+
     def test_accepts_only_lifecycle_caddy_endpoint(self) -> None:
         endpoint = "http://test-zulip-caddy:8787/api/v1/messages"
         self.assertEqual(endpoint, server.caddy_endpoint(endpoint))

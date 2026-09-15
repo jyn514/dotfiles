@@ -40,7 +40,8 @@ Bake HCL. A repository using the bundled resolver declares:
   "capabilities": {
     "host-editor": true,
     "nested-containers": true,
-    "flower-r2": false
+    "flower-r2": false,
+    "agent-room": false
   },
   "images": {
     "resolver": {
@@ -78,8 +79,8 @@ For example, disabling the two default services needs no image declaration:
 ```
 
 Capability values are booleans. `host-editor` and `zulip` default on;
-explicit `false` disables either. `nested-containers` and `flower-r2` default off.
-These four keys select separate services, subject to their existing
+explicit `false` disables either. `nested-containers`, `flower-r2`, and `agent-room` default off.
+These five keys select separate services, subject to their existing
 host-authorization rules. Zulip requires available host credentials;
 when disabled, it does not validate or mount those credentials. These keys cannot
 disable required services or authorize an undeclared service through host
@@ -120,11 +121,11 @@ contains required agent/provider services, built-in repository operations, and
 optional services selected by defaults or explicit policy. Resolvers supply images; they cannot
 select capabilities or expand container authority.
 
-Flower R2 access, host editing, Zulip, and nested container access are separate optional
+Flower R2 access, host editing, Zulip, nested container access, and agent-room are separate optional
 capabilities with the defaults above. Host availability is a prerequisite,
 not a selection rule. Dotfiles can omit R2 access while paracress enables it.
-Host editing and nested containers may share their existing gateway when either
-is selected; neither selected means no gateway. Selected capabilities retain
+Host editing, nested containers, and agent-room may share their existing gateway when any
+is selected; none selected means no gateway. Selected capabilities retain
 their existing host-authorization and failure rules.
 
 Resolve only images reachable from selected consumers and their dependencies.
