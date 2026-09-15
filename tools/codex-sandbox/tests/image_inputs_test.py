@@ -53,6 +53,7 @@ class ImageInputsTest(unittest.TestCase):
             dockerfile.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / dockerfile.relative_to(root), dockerfile)
             runtime = ['tools/codex-sandbox/image/agent-entrypoint',
+                       'tools/codex-sandbox/image/agent_supervisor.py',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',
@@ -70,7 +71,7 @@ class ImageInputsTest(unittest.TestCase):
         owned_images = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
-            root = temporary / 'repository'
+            root = (temporary / 'repository').resolve()
             for source in owned_images['source_paths'](['zulip'])['zulip']:
                 path = root / source
                 path.parent.mkdir(parents=True, exist_ok=True)

@@ -163,6 +163,8 @@ normal Neovim loads the same shared behavior before its IDE configuration.
 
 Each sandbox has one gateway for the host editor and, when configured, Agent Podman and agent-room.
 It starts in the background after its private link and egress networks are created.
+The in-container Python relay binds loopback and verifies its fixed gateway target before Pi starts.
+Pi does not start if either step fails; its exit closes the listener and active connections.
 Pi reaches its fixed editor and SSH ports by container DNS name. Their clients retry only
 connection establishment within a bounded interval and never replay a possibly accepted request.
 The separately supervised Zulip and Codex Caddy/helper services and repository-command proxies must be ready

@@ -1,9 +1,2 @@
 #!/bin/sh
-set -eu
-
-if [ -n "${CODEX_SANDBOX_AGENT_ROOM_ADDRESS:-}" ]; then
-    /usr/bin/socat "TCP4-LISTEN:3000,bind=127.0.0.1,fork,reuseaddr" \
-        "TCP4:${CODEX_SANDBOX_AGENT_ROOM_ADDRESS}" &
-fi
-
-exec /opt/agent-pi/bin/pi --offline --approve "$@"
+exec /usr/bin/python3 /opt/agent-tools/bin/agent_supervisor.py "$@"

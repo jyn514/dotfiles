@@ -92,6 +92,7 @@ RUN if [ -e /etc/alpine-release ]; then bun_variant=musl; else bun_variant=glibc
     && rm -rf /opt/bun
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
+COPY --chmod=755 ./tools/codex-sandbox/image/agent_supervisor.py /opt/agent-tools/bin/agent_supervisor.py
 COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
 COPY ./tools/codex-sandbox/image/check-bun.test.ts /opt/agent-pi/check-bun.test.ts
 RUN if [ -e /etc/alpine-release ]; then \
