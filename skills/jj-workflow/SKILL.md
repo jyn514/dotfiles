@@ -30,6 +30,7 @@ Concurrent workers commit only their work and return its change ID. The coordina
 ## Compare and inspect history
 
 Use `jj interdiff --from A --to B` to compare two revisions' patches, especially when their parents differ. `jj diff --from A --to B` compares resulting trees and may include inherited differences.
+`jj show` does not accept filesets; for a path-limited revision patch, use `jj diff -r REV <paths>`.
 
 For ordinary path history, pass the path directly:
 
