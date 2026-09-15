@@ -6,7 +6,7 @@
   <string>com.jyn.lapwing</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jyn/src/personal/lapwing/start</string>
+    <string>/Users/jyn/src/dotfiles/bin/lapwing-start</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/jyn/src/personal/lapwing</string>

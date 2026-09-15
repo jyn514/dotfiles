@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+PATH=$HOME/.local/lib/node_modules/bin:$HOME/.local/share/mise/shims:/usr/bin:/bin
+export PATH
+
+cd ~/src/personal/lapwing
+concurrently --kill-others \
+  "cd lapwing-for-beginners && mdbook serve --port 5001" \
+  "cd typey-type && npm start"
