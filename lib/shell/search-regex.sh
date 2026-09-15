@@ -13,15 +13,20 @@ intermediate_path="(/$component+)"
 line_no='(:[0-9]+)'
 position="$line_no$line_no?"
 extension_file="$component*\.$component+"
+# Keep the explicit end-of-line alternative. On macOS, tmux's BSD regex engine
+# failed to match filenames ending at the line boundary when this used only the
+# GNU-style \> assertion, although directories still matched. Linux tmux tests
+# did not reproduce that failure.
+path_end='(\>|$)'
 
-with_extension="${intermediate_path}*/$extension_file($position)?\>"
-with_position="${intermediate_path}*/$component+$position\>"
-deep_path="${intermediate_path}{2,}(\>|[[:space:]])"
+with_extension="${intermediate_path}*/$extension_file($position)?$path_end"
+with_position="${intermediate_path}*/$component+$position$path_end"
+deep_path="${intermediate_path}{2,}($path_end|[[:space:]])"
 directory="${intermediate_path}+/"
 path_tail="($with_extension|$with_position|$deep_path|$directory)"
 
-relative_file="($relative_path/$component+($position)?\>)"
-executable_path='((bin|sbin|libexec)/[][[:alnum:]_.#$%&+=@"-]+\>)'
+relative_file="($relative_path/$component+($position)?$path_end)"
+executable_path="((bin|sbin|libexec)/$component+$path_end)"
 bare_file="$component+\.$component+$position:"
 
 word_candidate="($path_start$path_tail|$relative_file|$executable_path|$bare_file)"
