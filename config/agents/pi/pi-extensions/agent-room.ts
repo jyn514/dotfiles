@@ -7,7 +7,7 @@ import {
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
-export const AGENT_ROOM_ACTIONS = ["inspect", "read", "send", "wait", "close"] as const;
+export const AGENT_ROOM_ACTIONS = ["observe", "send", "close"] as const;
 export type AgentRoomAction = typeof AGENT_ROOM_ACTIONS[number];
 
 export interface AgentRoomRequest {
@@ -29,6 +29,9 @@ export interface AgentRoomResult {
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+type RoomMessage = { id: number; [key: string]: unknown };
+type Transcript = { messages: RoomMessage[]; closed: boolean };
+
 function capabilityUrl(rawUrl: string): string {
   const parsed = new URL(rawUrl);
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -44,46 +47,157 @@ function roomEndpoint(capability: string, path: string): string {
   return `${capability}${capability.endsWith("/") ? "" : "/"}${path}`;
 }
 
+function validateInteger(name: string, value: number, minimum: number, maximum?: number): void {
+  if (!Number.isInteger(value) || value < minimum || (maximum !== undefined && value > maximum)) {
+    const range = maximum === undefined ? `at least ${minimum}` : `from ${minimum} through ${maximum}`;
+    throw new Error(`${name} must be an integer ${range}`);
+  }
+}
+
 export function prepareAgentRoomRequest(
   request: AgentRoomRequest,
   signal?: AbortSignal,
 ): { url: string; init: RequestInit } {
   const capability = capabilityUrl(request.url);
-  const headers = new Headers();
-  let url = capability;
-  let method = "GET";
-  let body: string | undefined;
 
   switch (request.action) {
-    case "inspect":
-      headers.set("Accept", "text/markdown, application/json;q=0.9");
-      break;
-    case "read":
-      url = `${roomEndpoint(capability, "messages")}?since=${request.since ?? 0}`;
-      break;
+    case "observe": {
+      const since = request.since ?? 0;
+      const waitSeconds = request.waitSeconds ?? 0;
+      validateInteger("since", since, 0);
+      validateInteger("waitSeconds", waitSeconds, 0, 300);
+      const wait = waitSeconds === 0 ? "" : `&wait=${waitSeconds}`;
+      return {
+        url: `${roomEndpoint(capability, "messages")}?since=${since}${wait}`,
+        init: { method: "GET", signal },
+      };
+    }
     case "send":
       if (request.text === undefined) throw new Error("send requires text");
-      url = roomEndpoint(capability, "messages");
-      method = "POST";
-      headers.set("Content-Type", "application/json");
-      body = JSON.stringify({ text: request.text });
-      break;
-    case "wait": {
-      if (request.since === undefined) throw new Error("wait requires since");
-      const waitSeconds = request.waitSeconds ?? 180;
-      if (!Number.isInteger(waitSeconds) || waitSeconds < 1 || waitSeconds > 300) {
-        throw new Error("waitSeconds must be an integer from 1 through 300");
-      }
-      url = `${roomEndpoint(capability, "messages")}?since=${request.since}&wait=${waitSeconds}`;
-      break;
-    }
+      return {
+        url: roomEndpoint(capability, "messages"),
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: request.text }),
+          signal,
+        },
+      };
     case "close":
-      url = roomEndpoint(capability, "close");
-      method = "POST";
-      break;
+      return {
+        url: roomEndpoint(capability, "close"),
+        init: { method: "POST", signal },
+      };
+  }
+}
+
+async function readResponse(response: Response): Promise<{ body: string; truncated: boolean }> {
+  const body = await response.text();
+  const truncation = truncateHead(body, {
+    maxBytes: DEFAULT_MAX_BYTES,
+    maxLines: DEFAULT_MAX_LINES,
+  });
+  return { body: truncation.content, truncated: truncation.truncated };
+}
+
+function makeResult(
+  action: AgentRoomAction,
+  response: Response,
+  body: string,
+  truncated = false,
+): AgentRoomResult {
+  return {
+    action,
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    body,
+    truncated,
+  };
+}
+
+function parseTranscript(body: string): Transcript {
+  const parsed = JSON.parse(body) as Partial<Transcript>;
+  if (!Array.isArray(parsed.messages) || typeof parsed.closed !== "boolean") {
+    throw new Error("Agent-room transcript response has an unexpected shape");
+  }
+  return parsed as Transcript;
+}
+
+async function observeRoom(
+  request: AgentRoomRequest,
+  signal: AbortSignal | undefined,
+  fetchImpl: Fetch,
+): Promise<AgentRoomResult> {
+  const since = request.since ?? 0;
+  let instructions: string | undefined;
+
+  if (since === 0) {
+    const capability = capabilityUrl(request.url);
+    const response = await fetchImpl(capability, {
+      headers: { Accept: "text/markdown, application/json;q=0.9" },
+      signal,
+    });
+    const read = await readResponse(response);
+    if (!response.ok || read.truncated) return makeResult("observe", response, read.body, read.truncated);
+    instructions = read.body;
   }
 
-  return { url, init: { method, headers, body, signal } };
+  const prepared = prepareAgentRoomRequest(request, signal);
+  const response = await fetchImpl(prepared.url, prepared.init);
+  const read = await readResponse(response);
+  if (!response.ok || read.truncated) return makeResult("observe", response, read.body, read.truncated);
+
+  const transcript = parseTranscript(read.body);
+  const latest = transcript.messages.reduce((greatest, message) => Math.max(greatest, message.id), since);
+  const status = transcript.closed ? "closed" : transcript.messages.length > 0 ? "updated" : "timeout";
+  return makeResult("observe", response, JSON.stringify({
+    ...(instructions === undefined ? {} : { instructions }),
+    status,
+    latest,
+    closed: transcript.closed,
+    messages: transcript.messages,
+  }));
+}
+
+async function sendAndConfirm(
+  request: AgentRoomRequest,
+  signal: AbortSignal | undefined,
+  fetchImpl: Fetch,
+): Promise<AgentRoomResult> {
+  const prepared = prepareAgentRoomRequest(request, signal);
+  const response = await fetchImpl(prepared.url, prepared.init);
+  const read = await readResponse(response);
+  if (!response.ok || read.truncated) return makeResult("send", response, read.body, read.truncated);
+
+  const created = JSON.parse(read.body) as { id?: unknown };
+  if (!Number.isInteger(created.id)) {
+    return makeResult("send", response, JSON.stringify({
+      id: null,
+      confirmed: false,
+      error: "creation response did not contain an integer message ID",
+    }));
+  }
+  const id = created.id as number;
+  const capability = capabilityUrl(request.url);
+  const confirmationResponse = await fetchImpl(
+    `${roomEndpoint(capability, "messages")}?since=${Math.max(0, id - 1)}`,
+    { method: "GET", signal },
+  );
+  const confirmation = await readResponse(confirmationResponse);
+  if (!confirmationResponse.ok || confirmation.truncated) {
+    return makeResult("send", confirmationResponse, JSON.stringify({
+      id,
+      confirmed: false,
+      error: confirmation.truncated
+        ? "read-back response was truncated"
+        : `read-back failed: HTTP ${confirmationResponse.status}`,
+    }), confirmation.truncated);
+  }
+
+  const transcript = parseTranscript(confirmation.body);
+  const confirmed = transcript.messages.some((message) => message.id === id);
+  return makeResult("send", response, JSON.stringify({ id, confirmed }));
 }
 
 export async function requestAgentRoom(
@@ -91,22 +205,13 @@ export async function requestAgentRoom(
   signal?: AbortSignal,
   fetchImpl: Fetch = fetch,
 ): Promise<AgentRoomResult> {
+  if (request.action === "observe") return observeRoom(request, signal, fetchImpl);
+  if (request.action === "send") return sendAndConfirm(request, signal, fetchImpl);
+
   const prepared = prepareAgentRoomRequest(request, signal);
   const response = await fetchImpl(prepared.url, prepared.init);
-  const body = await response.text();
-  const truncation = truncateHead(body, {
-    maxBytes: DEFAULT_MAX_BYTES,
-    maxLines: DEFAULT_MAX_LINES,
-  });
-
-  return {
-    action: request.action,
-    status: response.status,
-    statusText: response.statusText,
-    ok: response.ok,
-    body: truncation.content,
-    truncated: truncation.truncated,
-  };
+  const read = await readResponse(response);
+  return makeResult("close", response, read.body, read.truncated);
 }
 
 function formatResult(result: AgentRoomResult): string {
@@ -120,21 +225,25 @@ export default function agentRoom(pi: ExtensionAPI) {
     name: "agent_room",
     label: "Agent Room",
     description:
-      "Inspect, read, send, wait on, or close a two-agent room using its exact capability URL. The tool handles endpoint construction, JSON encoding, HTTP statuses, output truncation, and abortable long polling. Use close only with explicit user authorization.",
-    promptSnippet: "Inspect or participate in a two-agent capability-URL room",
+      "Observe, send to, or close a two-agent room using its exact capability URL. Observe includes room instructions only when since is zero, then returns incremental messages. Send confirms creation by reading the message back without returning the transcript. Use close only with explicit user authorization.",
+    promptSnippet: "Observe or participate in a two-agent capability-URL room",
     promptGuidelines: [
       "Use agent_room instead of shell HTTP commands for agent-room capability URLs when this tool is available.",
+      "Start with agent_room observe since 0, then continue from the greatest message ID returned.",
       "Use agent_room close only after the user explicitly authorizes closing the room.",
     ],
     parameters: Type.Object({
       url: Type.String({ description: "Exact agent-room capability URL supplied by the user" }),
       action: StringEnum(AGENT_ROOM_ACTIONS),
       text: Type.Optional(Type.String({ description: "Message text; required for send" })),
-      since: Type.Optional(Type.Integer({ minimum: 0, description: "Greatest message ID already observed" })),
+      since: Type.Optional(Type.Integer({
+        minimum: 0,
+        description: "Greatest message ID already observed; defaults to zero",
+      })),
       waitSeconds: Type.Optional(Type.Integer({
-        minimum: 1,
+        minimum: 0,
         maximum: 300,
-        description: "Long-poll duration for wait; defaults to 180 seconds",
+        description: "Observe long-poll duration; zero performs an immediate read",
       })),
     }),
     async execute(_toolCallId, params, signal) {
