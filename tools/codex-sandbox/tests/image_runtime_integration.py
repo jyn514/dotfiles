@@ -46,10 +46,16 @@ def main() -> None:
             output = run(
                 "docker", "run", "--rm", "--entrypoint", "sh", tag, "-c",
                 "node --version; cat /opt/agent-pi/REVISION; "
-                "/opt/agent-pi/bin/pi --version",
+                "/opt/agent-pi/bin/pi --version; bun --version; "
+                "bun test /opt/agent-pi/check-bun.test.ts >/dev/null "
+                "&& printf 'bun-test-ok\\n'",
             ).splitlines()
             expected_node = "v24." if tag == alpine else "v20."
-            if not output[0].startswith(expected_node) or output[1] != args.expected_revision:
+            if (
+                not output[0].startswith(expected_node)
+                or output[1] != args.expected_revision
+                or output[3:] != ["1.3.14", "bun-test-ok"]
+            ):
                 raise RuntimeError(f"unexpected Pi runtime: {output!r}")
     finally:
         subprocess.run(

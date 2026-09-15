@@ -49,10 +49,12 @@ RUN printf '%s\n' "${PI_REVISION}" > /REVISION
 RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
 RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
 
-FROM oven/bun:1.3.14 AS bun
+FROM oven/bun:1.3.14 AS bun-build
+FROM oven/bun:1.3.14-alpine AS bun-runtime
 
 FROM node:24-bookworm-slim AS pi-build
-COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+# The Debian build stage requires Bun's glibc binary.
+COPY --from=bun-build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=pi-source /src /opt/agent-pi/src
 COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
 WORKDIR /opt/agent-pi/src
@@ -81,10 +83,21 @@ RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 FROM agent-deps AS pi-runtime
 COPY --from=pi-build /opt/agent-pi /opt/agent-pi
 COPY --from=pi-extensions /opt/pi-npm/node_modules /opt/agent-pi/src/node_modules
+# Runtime libc follows BASE_IMAGE. Select the matching binary rather than using
+# gcompat to approximate glibc behavior beyond startup on Alpine.
+COPY --from=bun-build /usr/local/bin/bun /opt/bun/glibc
+COPY --from=bun-runtime /usr/local/bin/bun /opt/bun/musl
+RUN if [ -e /etc/alpine-release ]; then bun_variant=musl; else bun_variant=glibc; fi \
+    && cp "/opt/bun/${bun_variant}" /usr/local/bin/bun \
+    && rm -rf /opt/bun
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
 COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
-RUN if [ -e /etc/alpine-release ]; then node /opt/agent-pi/check-runtime.mjs; fi
+COPY ./tools/codex-sandbox/image/check-bun.test.ts /opt/agent-pi/check-bun.test.ts
+RUN if [ -e /etc/alpine-release ]; then \
+        node /opt/agent-pi/check-runtime.mjs \
+        && bun test /opt/agent-pi/check-bun.test.ts; \
+    fi
 COPY --chmod=755 ./tools/codex-sandbox/image/host-editor /opt/agent-tools/bin/host-editor
 COPY ./tools/codex-sandbox/image/host-editor-protocol.json /opt/agent-tools/bin/host-editor-protocol.json
 COPY --chmod=755 ./tools/codex-sandbox/image/with-github-token /opt/agent-tools/bin/with-github-token
