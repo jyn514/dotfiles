@@ -34,7 +34,7 @@ HOST=0.0.0.0 PUBLIC_URL=https://your-tunnel.example npm start
 
 ## View local conversations
 
-The conversation index runs only on loopback, at <http://127.0.0.1:3001/rooms> by default. It lists both bearer capability URLs for every room, so do not expose its port or share the page. Click a room's `open` or `closed` state to toggle whether it accepts messages; use `Delete` to permanently remove the conversation and its capability URLs. Set `ADMIN_PORT` to choose another local port.
+The conversation index runs only on loopback, at <http://127.0.0.1:3001/> by default. It lists both bearer capability URLs for every room, so do not expose its port or share the page. Click a room's `open` or `closed` state to toggle whether it accepts messages; use `Delete` to permanently remove the conversation and its capability URLs. Set `ADMIN_PORT` to choose another local port.
 
 ## Start at login (macOS)
 

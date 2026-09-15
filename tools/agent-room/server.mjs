@@ -199,24 +199,24 @@ app.use('/assets', express.static(STATIC_DIR, staticOptions));
 app.get('/', (_req, res) => res.set('Cache-Control', 'no-cache').type('html').send(homePage()));
 
 adminApp.use('/assets', express.static(STATIC_DIR, staticOptions));
-adminApp.get('/rooms', (_req, res) => res.set('Cache-Control', 'no-cache').type('html').send(roomsPage()));
-adminApp.post('/rooms/:id/toggle', (req, res) => {
+adminApp.get('/', (_req, res) => res.set('Cache-Control', 'no-cache').type('html').send(roomsPage()));
+adminApp.post('/:id/toggle', (req, res) => {
   const room = db.prepare('SELECT id, closed_by FROM rooms WHERE id = ?').get(req.params.id);
   if (!room) return res.status(404).type('text').send('Room not found.');
   const closed = !room.closed_by;
   db.prepare('UPDATE rooms SET closed_by = ? WHERE id = ?').run(closed ? 'admin' : null, room.id);
   wake(room.id);
   broadcast(room.id, closed ? { type: 'closed', by: 'admin' } : { type: 'opened', by: 'admin' });
-  res.redirect(303, '/rooms');
+  res.redirect(303, '/');
 });
-adminApp.post('/rooms/:id/delete', (req, res) => {
+adminApp.post('/:id/delete', (req, res) => {
   const room = db.prepare('SELECT id FROM rooms WHERE id = ?').get(req.params.id);
   if (!room) return res.status(404).type('text').send('Room not found.');
   db.prepare('DELETE FROM rooms WHERE id = ?').run(room.id);
   wake(room.id);
   broadcast(room.id, { type: 'deleted' });
   for (const socket of sockets.get(room.id) || []) socket.close(1000, 'Room deleted');
-  res.redirect(303, '/rooms');
+  res.redirect(303, '/');
 });
 
 app.use((err, _req, res, _next) => {
@@ -278,11 +278,11 @@ function roomPage(room, mine) {
 }
 
 function homePage() {
-  return HOME_TEMPLATE.replace('{{ROOMS_URL}}', escapeHtml(`http://127.0.0.1:${adminServer.address().port}/rooms`));
+  return HOME_TEMPLATE.replace('{{ROOMS_URL}}', escapeHtml(`http://127.0.0.1:${adminServer.address().port}/`));
 }
 
 function messageHtml(message, side) {
-  return `<li class="msg${message.side === side ? ' self' : ''}${message.author === 'human' ? ' human' : ''}" data-id="${message.id}"><div class="meta"><span class="name">${message.side === side ? 'your side' : 'their side'}</span><span class="tag">${escapeHtml(message.author)}</span><span>${escapeHtml(new Date(message.ts).toISOString())}</span></div><p class="body">${escapeHtml(message.text)}</p></li>`;
+  return `<li class="msg${message.side === side ? ' self' : ''}${message.author === 'human' ? ' human' : ''}" data-id="${message.id}"><div class="meta"><span class="name">${message.side === side ? 'your side' : 'their side'}</span><span class="tag">${escapeHtml(message.author)}</span><span>${escapeHtml(formatDate(message.ts))}</span></div><p class="body">${escapeHtml(message.text)}</p></li>`;
 }
 
 function roomsPage() {
@@ -293,8 +293,8 @@ function roomsPage() {
   `).all();
   const rows = rooms.map(room => {
     const title = [room.name_a, room.name_b].filter(Boolean).join(' & ') || 'agent conversation';
-    const state = `<div class="state"><form method="post" action="/rooms/${escapeHtml(room.id)}/toggle"><button class="state-toggle" type="submit" aria-pressed="${Boolean(room.closed_by)}">${room.closed_by ? 'closed' : 'open'}</button></form><span class="message-count">${room.message_count} sent</span></div>`;
-    const actions = `<form method="post" action="/rooms/${escapeHtml(room.id)}/delete" data-confirm="Delete this conversation permanently?"><button type="submit">Delete</button></form>`;
+    const state = `<div class="state"><form method="post" action="/${escapeHtml(room.id)}/toggle"><button class="state-toggle" type="submit" aria-pressed="${Boolean(room.closed_by)}">${room.closed_by ? 'closed' : 'open'}</button></form><span class="message-count">${room.message_count} sent</span></div>`;
+    const actions = `<form method="post" action="/${escapeHtml(room.id)}/delete" data-confirm="Delete this conversation permanently?"><button type="submit">Delete</button></form>`;
     return `<tr><td>${escapeHtml(title)}</td><td>${escapeHtml(descriptionSnippet(room.seed))}</td><td>${escapeHtml(formatDate(room.created_at))}</td><td>${state}</td><td><a href="${escapeHtml(roomLink(room.token_a))}">side A</a><br><a href="${escapeHtml(roomLink(room.token_b))}">side B</a></td><td><div class="admin-actions">${actions}</div></td></tr>`;
   }).join('');
   return ROOMS_TEMPLATE.replace('{{ROWS}}', rows || '<tr><td colspan="6">No conversations yet.</td></tr>');

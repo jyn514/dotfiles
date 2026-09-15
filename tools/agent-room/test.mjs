@@ -38,7 +38,7 @@ test('mints two distinct capability URLs', async () => {
 });
 
 test('lists capability links only on the loopback admin server', async () => {
-  const index = await fetch(`${adminBase}/rooms`);
+  const index = await fetch(`${adminBase}/`);
   const page = await index.text();
   assert.equal(index.status, 200);
   assert.equal(index.headers.get('cache-control'), 'no-cache');
@@ -46,7 +46,7 @@ test('lists capability links only on the loopback admin server', async () => {
   assert.match(page, new RegExp(mine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(page, new RegExp(theirs.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(page, /settle on a design/);
-  assert.match(page, /\/rooms\/[^"/]+\/toggle/);
+  assert.match(page, /\/[^"/]+\/toggle/);
   assert.match(page, /data-confirm="Delete this conversation permanently\?"/);
   assert.doesNotMatch(page, /T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   assert.equal((await fetch(`${base}/rooms`)).status, 404);
@@ -54,7 +54,7 @@ test('lists capability links only on the loopback admin server', async () => {
   assert.equal(homeResponse.headers.get('cache-control'), 'no-cache');
   assert.ok(homeResponse.headers.get('etag'));
   const home = await homeResponse.text();
-  assert.match(home, new RegExp(`${adminBase}/rooms`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(home, new RegExp(`${adminBase}/`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(home, /webhook/i);
 });
 
@@ -98,7 +98,7 @@ test('agents and humans share the transcript', async () => {
     ['b', 'human', 'human correction']
   ]);
   assert.equal(sent.id, transcript.messages[0].id);
-  const index = await fetch(`${adminBase}/rooms`).then(r => r.text());
+  const index = await fetch(`${adminBase}/`).then(r => r.text());
   assert.match(index, /<button[^>]*>open<\/button><\/form><span class="message-count">2 sent<\/span>/);
 });
 
@@ -143,7 +143,7 @@ test('admin can close and delete a conversation', async () => {
     body: JSON.stringify({ seed: 'admin lifecycle test', from: 'One', to: 'Two' })
   }).then(r => r.json());
 
-  const close = await fetch(`${adminBase}/rooms/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
+  const close = await fetch(`${adminBase}/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
   assert.equal(close.status, 303);
   const closed = await fetch(`${minted.links.mine}/messages`).then(r => r.json());
   assert.equal(closed.closed, true);
@@ -153,7 +153,7 @@ test('admin can close and delete a conversation', async () => {
   });
   assert.equal(blocked.status, 409);
 
-  const reopen = await fetch(`${adminBase}/rooms/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
+  const reopen = await fetch(`${adminBase}/${minted.room}/toggle`, { method: 'POST', redirect: 'manual' });
   assert.equal(reopen.status, 303);
   const opened = await fetch(`${minted.links.mine}/messages`).then(r => r.json());
   assert.equal(opened.closed, false);
@@ -161,7 +161,7 @@ test('admin can close and delete a conversation', async () => {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'open again' })
   })).status, 201);
 
-  const deletion = await fetch(`${adminBase}/rooms/${minted.room}/delete`, { method: 'POST', redirect: 'manual' });
+  const deletion = await fetch(`${adminBase}/${minted.room}/delete`, { method: 'POST', redirect: 'manual' });
   assert.equal(deletion.status, 303);
   assert.equal((await fetch(minted.links.mine)).status, 404);
 });
