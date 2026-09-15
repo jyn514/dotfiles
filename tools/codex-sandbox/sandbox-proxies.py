@@ -1908,6 +1908,20 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         volume_id, service_owner, volume_presence, remove_volume,
     ))
     dependencies = [volume_id]
+    network_id = (_proxy_resource_identity("network", service_owner)
+                  if "network" in proxy else None)
+    if network_id is not None:
+        def network_presence() -> ResourcePresence:
+            return resource_presence(
+                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
+            )
+        registry.register(OwnedResource(
+            network_id, service_owner, network_presence,
+            lambda: remove_owned_resource(
+                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
+            ),
+        ))
+        dependencies.append(network_id)
     if proxy.get("name") == "zulip" and "caddy-container" in proxy:
         socket_id = _proxy_resource_identity("zulip-socket", service_owner)
         helper_id = _proxy_resource_identity("zulip-helper", service_owner)
@@ -1934,24 +1948,14 @@ def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
         registry.register(OwnedResource(helper_id, service_owner,
             lambda: named_presence("container", proxy["helper-container"]),
             lambda: remove_named("container", proxy["helper-container"]), (socket_id,)))
+        caddy_dependencies = [helper_id, socket_id, config_id]
+        if network_id is not None:
+            caddy_dependencies.append(network_id)
         registry.register(OwnedResource(caddy_id, service_owner,
             lambda: named_presence("container", proxy["caddy-container"]),
             lambda: remove_named("container", proxy["caddy-container"]),
-            (helper_id, socket_id, config_id)))
+            tuple(caddy_dependencies)))
         dependencies.append(caddy_id)
-    if "network" in proxy:
-        network_id = _proxy_resource_identity("network", service_owner)
-        def network_presence() -> ResourcePresence:
-            return resource_presence(
-                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
-            )
-        registry.register(OwnedResource(
-            network_id, service_owner, network_presence,
-            lambda: remove_owned_resource(
-                runtime, ResourceKind.NETWORK, proxy["network"], service_owner,
-            ),
-        ))
-        dependencies.append(network_id)
     registry.register(OwnedResource(
         container_id, service_owner, container_presence, remove_container, tuple(dependencies),
     ))

@@ -1692,6 +1692,36 @@ class ManifestTest(unittest.TestCase):
             removed,
         )
 
+    def test_zulip_recovery_removes_caddy_before_its_application_network(self) -> None:
+        owner = "a" * 32
+        proxy = {
+            "name": "zulip", "service-owner": owner,
+            "volume": "agent-socket", "container": "agent-proxy",
+            "socket-volume": "profile-socket", "helper-container": "profile-helper",
+            "caddy-container": "zulip-caddy", "network": "zulip-application",
+            "configuration": {
+                "path": str(self.repo / "absent-caddy.json"),
+                "digest": "sha256:" + "1" * 64,
+            },
+        }
+        removed = []
+
+        def remove(_runtime, kind, name, _owner, **_kwargs):
+            if kind is sandbox_proxies.ResourceKind.NETWORK and "zulip-caddy" not in removed:
+                raise RuntimeError("network has active endpoints")
+            removed.append(name)
+
+        with mock.patch.object(sandbox_proxies, "_managed_proxy_record", return_value=proxy), \
+                mock.patch.object(sandbox_proxies, "resource_exists", return_value=True), \
+                mock.patch.object(sandbox_proxies, "resource_presence",
+                                  return_value=sandbox_proxies.ResourcePresence.OWNED), \
+                mock.patch.object(sandbox_proxies, "remove_owned_resource", side_effect=remove), \
+                mock.patch.object(sandbox_proxies.ResourceRegistry, "RETRY_DELAYS", ()):
+            result = sandbox_proxies._proxy_registry(mock.Mock(provider="podman"), proxy).cleanup(0)
+
+        self.assertFalse(result.remaining)
+        self.assertLess(removed.index("zulip-caddy"), removed.index("zulip-application"))
+
     def test_absent_auth_container_does_not_make_recovery_fail_forever(self) -> None:
         managed = {
             "name": "example", "container": "container", "volume": "volume",
