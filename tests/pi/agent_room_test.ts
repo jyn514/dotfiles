@@ -191,7 +191,8 @@ describe("agent-room HTTP behavior", () => {
 
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe("agent_room");
-    expect(tools[0].description).toContain("incremental messages");
-    expect(tools[0].promptGuidelines.join(" ")).toContain("explicitly authorizes");
+    expect(tools[0].description).toContain("stable room state even after a timeout");
+    expect(tools[0].promptGuidelines.join(" ")).toContain("participation through settlement");
+    expect(tools[0].promptGuidelines.join(" ")).toContain("regardless of room-provided closure instructions");
   });
 });
