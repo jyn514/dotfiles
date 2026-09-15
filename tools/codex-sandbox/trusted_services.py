@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
+from graphlib import CycleError, TopologicalSorter
 import json
 import re
 import time
@@ -344,31 +345,34 @@ class ResourceRegistry:
 
     def _cleanup_once(self, primary_status: int) -> CleanupResult:
         failures: list[CleanupFailure] = []
-        attempted: set[str] = set()
-        while True:
-            with self._lock:
-                resources = dict(self._resources)
-            prerequisites = {
-                dependency for resource in resources.values()
-                for dependency in resource.depends_on
-            }
-            wave = [resource for identity, resource in resources.items()
-                    if identity not in prerequisites and identity not in attempted]
-            if not wave:
+        with self._lock:
+            resources = dict(self._resources)
+        sorter = _removal_graph(resources)
+        try:
+            sorter.prepare()
+        except CycleError as error:
+            raise LifecycleError("resource dependency cycle") from error
+        while sorter.is_active():
+            ready = sorter.get_ready()
+            if not ready:
                 break
+            wave = [resources[identity] for identity in ready]
+            completed: list[str] = []
             with ThreadPoolExecutor(max_workers=len(wave)) as workers:
                 results = [(resource, workers.submit(self._remove_owned, resource))
                            for resource in wave]
                 for resource, future in results:
-                    attempted.add(resource.identity)
                     try:
                         future.result()
                     except Exception as error:
                         failures.append(CleanupFailure(resource.identity,
                                                        _safe_error_code(error)))
                     else:
+                        completed.append(resource.identity)
                         with self._lock:
                             self._resources.pop(resource.identity, None)
+            if completed:
+                sorter.done(*completed)
         with self._lock:
             remaining = _removal_order(self._resources)
         return CleanupResult(primary_status, tuple(failures), remaining)
@@ -469,20 +473,19 @@ def _allowed_transitions(plan: ServicePlan, state: LifecycleState, authorized: b
 
 
 def _removal_order(resources: Mapping[str, OwnedResource]) -> tuple[str, ...]:
-    pending = dict(resources)
-    ordered: list[str] = []
-    while pending:
-        prerequisites = {
-            dependency for resource in pending.values()
-            for dependency in resource.depends_on
-        }
-        wave = [identity for identity in pending if identity not in prerequisites]
-        if not wave:
-            raise LifecycleError("resource dependency cycle")
-        ordered.extend(wave)
-        for identity in wave:
-            del pending[identity]
-    return tuple(ordered)
+    try:
+        return tuple(_removal_graph(resources).static_order())
+    except CycleError as error:
+        raise LifecycleError("resource dependency cycle") from error
+
+
+def _removal_graph(resources: Mapping[str, OwnedResource]) -> TopologicalSorter:
+    predecessors = {identity: set() for identity in resources}
+    for resource in resources.values():
+        for dependency in resource.depends_on:
+            if dependency in predecessors:
+                predecessors[dependency].add(resource.identity)
+    return TopologicalSorter(predecessors)
 
 
 def _freeze_object(value: Any, name: str) -> Mapping[str, Any]:
