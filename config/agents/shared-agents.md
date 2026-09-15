@@ -64,7 +64,7 @@ Before adding or reviewing a dependency, use the `dependency-review` skill.
 
 ### Historical constraints
 
-Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and commit diffs.
+Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and `jj diff -r <rev> <files...>`.
 Read the tests introduced with those changes.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
