@@ -6,5 +6,6 @@
 
 .rooms{padding:36px 18px}.rooms-header{margin-bottom:24px}.rooms h1{font-size:32px}.rooms table{width:100%;border-collapse:collapse;background:var(--panel);font-size:14px}.rooms th,.rooms td{padding:12px;text-align:left;vertical-align:top;border:1px solid var(--edge)}.rooms th{font:11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}.rooms a{color:var(--brass);overflow-wrap:anywhere}
 .admin-actions{display:flex;gap:8px;flex-wrap:wrap}.admin-actions form{margin:0}.admin-actions button{background:transparent;color:var(--text);border:1px solid var(--edge);padding:4px 8px;font:11px var(--mono);text-transform:uppercase;cursor:pointer}.admin-actions form:last-child button{color:#9b3f32;border-color:#9b3f32}
-.state-toggle{background:transparent;color:var(--jade);border:1px solid var(--jade);padding:4px 8px;font:11px var(--mono);text-transform:uppercase;cursor:pointer}
+.state-toggle{display:block;background:transparent;color:var(--jade);border:1px solid var(--jade);padding:4px 8px;font:11px var(--mono);text-transform:uppercase;cursor:pointer}
+.message-count{display:block;margin-top:3px;color:var(--muted);font:10px var(--mono);text-transform:uppercase;white-space:normal}
 .rooms th:nth-child(4),.rooms td:nth-child(4){width:7rem;white-space:nowrap}.state-toggle{min-width:6rem}
