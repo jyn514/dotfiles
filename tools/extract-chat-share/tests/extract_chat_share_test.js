@@ -1,17 +1,36 @@
 #!/usr/bin/env node
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const zlib = require("node:zlib");
 const test = require("node:test");
 
 const {
   claudeShareId,
   extractClaudeTurns,
+  extractTurns,
   formatTurns,
   loadTurns,
   parseArguments,
   readHtml,
   runSafariSnapshot,
 } = require("../extract-chat-share");
+
+test("extracts the checked-in ChatGPT share fixture", () => {
+  const fixture = zlib.gunzipSync(
+    fs.readFileSync(path.join(__dirname, "fixtures", "chatgpt-share.html.gz"))
+  ).toString("utf8");
+  const turns = extractTurns(fixture);
+
+  assert.equal(turns.length, 57);
+  assert.deepEqual(turns[0], {
+    role: "user",
+    text: "are there online graphs somewhere of review latency over time for rust-lang specifically? for open source projects in general?",
+  });
+  assert.equal(turns.at(-1).role, "assistant");
+  assert.match(turns.at(-1).text, /GH Archive/);
+});
 
 test("customizes user and assistant headings", () => {
   const command = parseArguments([
