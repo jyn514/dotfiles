@@ -74,6 +74,7 @@ class JjProxyClientTest(unittest.TestCase):
         self.assertEqual("warning\n", result.stderr)
         self.assertEqual({
             "version": 1,
+            "mode": "mutate",
             "cwd": "nested",
             "argv": ["status", "--quiet"],
             "user": "Codex gpt-test",

@@ -31,13 +31,18 @@ fn reject_security_options(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+pub fn validate_inspect(argv: &[String]) -> Result<()> {
+    validate_shape(argv)?;
+    let read_only = matches!(argv.first().map(String::as_str), Some("status" | "diff" | "log" | "show" | "interdiff" | "help"))
+        || matches!(argv.get(0..2), Some([command, subcommand]) if command == "file" && ["annotate", "list", "search", "show"].contains(&subcommand.as_str()))
+        || argv.starts_with(&["workspace".into(), "list".into()])
+        || argv.starts_with(&["git".into(), "root".into()]);
+    if !read_only { bail!("command is not allowed in inspection mode"); }
+    reject_security_options(&argv[1..])
+}
+
 pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<()> {
-    if argv.is_empty() || argv.len() > 256 {
-        bail!("expected between 1 and 256 arguments");
-    }
-    if argv.iter().any(|arg| arg.contains('\0') || arg.len() > 65_536) {
-        bail!("argument contains NUL or is too long");
-    }
+    validate_shape(argv)?;
 
     let command = argv[0].as_str();
     if COMMANDS.contains(&command) {
@@ -78,6 +83,17 @@ pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<()> {
     Err(eyre!("command is not allowed: {command}"))
 }
 
+fn validate_shape(argv: &[String]) -> Result<()> {
+    if argv.is_empty() || argv.len() > 256 {
+        bail!("expected between 1 and 256 arguments");
+    }
+    if argv.iter().any(|arg| arg.contains('\0') || arg.len() > 65_536) {
+        bail!("argument contains NUL or is too long");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +118,23 @@ mod tests {
             &["file", "show", "--repository", "/tmp/x", "src/main.rs"][..],
             &["git", "fetch", "--remote", "evil"][..], &["push"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
+    }
+
+    #[test]
+    fn inspection_accepts_only_observational_file_operations() {
+        let check = |args: &[&str]| validate_inspect(
+            &args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()
+        ).is_ok();
+        assert!(check(&["file", "show", "src/main.rs"]));
+        assert!(check(&["workspace", "list"]));
+        for args in [
+            &["file", "track", "src/main.rs"][..],
+            &["file", "untrack", "src/main.rs"][..],
+            &["file", "chmod", "+x", "src/main.rs"][..],
+            &["workspace", "add", "other"][..],
+            &["status", "--repository", "/src/other"][..],
+        ] {
+            assert!(!check(args), "accepted {args:?}");
+        }
     }
 }

@@ -26,3 +26,8 @@ fn trusted_jj_policy_can_replace_working_tree_files() {
 fn trusted_jj_policy_cannot_write_outside_repository() {
     assert_success(run_fixture("outside"));
 }
+
+#[test]
+fn inspection_policy_cannot_write_repository_or_metadata() {
+    assert_success(run_fixture("inspect"));
+}

@@ -17,6 +17,7 @@ The selected path is also the agent and proxy working directory.
 
 For external worktrees whose mountpoints are missing beneath `/src`, the launcher stages those directories in temporary sandbox state and binds the existing source subtrees read-only.
 This also accommodates linked Git metadata without creating placeholder directories under `~/src`.
+Before launch, it rejects duplicate mount destinations in the assembled container arguments.
 When this staging is needed, new entries in staged parent directories appear on the next launch;
 the contents of bound subtrees remain live.
 

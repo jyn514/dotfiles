@@ -16,6 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&jj_repo)?;
     fs::create_dir_all(&trusted_bin)?;
     fs::create_dir_all(&config)?;
+    fs::write(config.join("existing-repository"), "prepared")?;
     fs::create_dir_all(&socket)?;
 
     let working_file = repo.join("working-file");
@@ -24,15 +25,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env::set_var("JJ_PROXY_GIT_DIR", &git);
     env::set_var("JJ_PROXY_COMMON_DIR", &git);
     env::set_var("JJ_PROXY_JJ_REPO", &jj_repo);
-    execution_policy::install_with_paths(
-        repo.to_str().ok_or("non-UTF-8 repository path")?,
-        &execution_policy::PolicyPaths {
-            trusted: &trusted,
-            trusted_bin: &trusted_bin,
-            config: &config,
-            socket: &socket,
-        },
-    )?;
+    let paths = execution_policy::PolicyPaths {
+        source: &root,
+        trusted: &trusted,
+        trusted_bin: &trusted_bin,
+        config: &config,
+        socket: &socket,
+    };
+    let repo_name = repo.to_str().ok_or("non-UTF-8 repository path")?;
+    if env::args().nth(1).as_deref() == Some("inspect") {
+        execution_policy::install_inspect_with_paths(repo_name, &paths)?;
+    } else {
+        execution_policy::install_with_paths(repo_name, &paths)?;
+    }
 
     match env::args().nth(1).as_deref() {
         Some("worktree") => {
@@ -45,7 +50,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(error) => return Err(error.into()),
             Ok(()) => return Err("policy allowed a write outside the repository".into()),
         },
-        _ => return Err("expected worktree or outside mode".into()),
+        Some("inspect") => {
+            if fs::read_to_string(config.join("existing-repository"))? != "prepared" {
+                return Err("inspection policy could not read prepared configuration".into());
+            }
+            for path in [&working_file, &git.join("metadata"), &jj_repo.join("metadata")] {
+                match fs::write(path, "no") {
+                    Err(error) if error.kind() == ErrorKind::PermissionDenied => {}
+                    Err(error) => return Err(error.into()),
+                    Ok(()) => return Err("inspection policy allowed repository writes".into()),
+                }
+            }
+            fs::write(socket.join("scratch"), "temporary work")?;
+            match fs::write(config.join("new-repository"), "no") {
+                Err(error) if error.kind() == ErrorKind::PermissionDenied => {}
+                Err(error) => return Err(error.into()),
+                Ok(()) => return Err("inspection policy allowed configuration writes".into()),
+            }
+        }
+        _ => return Err("expected worktree, outside, or inspect mode".into()),
     }
     Ok(())
 }

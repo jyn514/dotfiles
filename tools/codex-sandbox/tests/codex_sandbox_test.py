@@ -1450,6 +1450,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/repository,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
+        self.assertEqual(1, sum(argument.startswith("type=bind,") and "dst=/src,readonly" in argument for argument in run))
         self.assertEqual("/src/repository", run[run.index("--workdir") + 1])
         self.assertIn(
             f"type=bind,src={ROOT / 'config/agents/codex/codex.toml'},"

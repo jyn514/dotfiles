@@ -42,6 +42,7 @@ from caddy_foundation import (
     validate_configuration_mount,
 )
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
+from source_view import check_mount_destinations
 
 OUTER_RUNTIME = Podman()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
@@ -1076,7 +1077,12 @@ def proxy_repository_mount_args(
         "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},{OUTER_RUNTIME.nonrecursive_bind}",
     ]
     if name == "jj":
-        for source, target in jj_proxy_metadata_mounts(repo, container_repo):
+        metadata_mounts = jj_proxy_metadata_mounts(repo, container_repo)
+        host_src = Path.home() / "src"
+        if host_src.is_dir() and not any(target == Path("/src") for _, target in metadata_mounts):
+            host_src = host_src.resolve(strict=True)
+            arguments += ["--mount", f"type=bind,src={host_src},dst=/src,readonly,{OUTER_RUNTIME.nonrecursive_bind}"]
+        for source, target in metadata_mounts:
             arguments += [
                 "--mount", f"type=bind,src={source},dst={target}{repository_mode}",
             ]
@@ -1097,6 +1103,10 @@ def proxy_repository_mount_args(
         else:
             suffix = ",readonly" if mode == "read-only" else ""
             arguments += ["--mount", f"type=bind,src={source},dst={target}{suffix}"]
+    try:
+        check_mount_destinations(arguments)
+    except ValueError as error:
+        raise ConfigError(str(error)) from error
     return arguments
 
 
@@ -1819,7 +1829,11 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
             parameters["uid"], parameters["gid"],
         ).implementation_identity
     if expected != managed["implementation-identity"]:
-        raise ConfigError("managed proxy implementation identity changed")
+        raise ConfigError(
+            "managed proxy implementation identity changed; the existing proxy was "
+            "built from different launcher code or configuration. Restart the sandbox "
+            "session to rebuild it; do not edit the recovery record manually"
+        )
 
 
 def _proxy_registry(runtime, proxy: dict[str, Any]) -> ResourceRegistry:
@@ -2395,6 +2409,9 @@ def agent_args_main(args: argparse.Namespace) -> int:
         "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
         "--env", f"JJ_PROXY_REPO={container_repo}",
     ]
+    if os.environ.get("JJ_PROXY_INSPECT"):
+        lines += ["--env", "JJ_PROXY_INSPECT=1"]
+    # The launcher owns the agent's /src mount through source_mounts().
     sandbox = optional_sandbox_directory(repo)
     if sandbox is not None:
         lines += ["--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly"]

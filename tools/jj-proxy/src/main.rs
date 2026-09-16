@@ -21,6 +21,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_SOCKET: &str = "/run/sandbox-proxy/socket";
+const TRUSTED_PROXY: &str = "/trusted/bin/jj-proxy";
 const TRUSTED_JJ_CONFIG: &str = "/trusted/jj.toml";
 
 fn socket_path() -> String {
@@ -32,10 +33,18 @@ const MAX_REQUEST: usize = 1 << 20;
 const MAX_OUTPUT: usize = 8 << 20;
 const TIMEOUT: Duration = Duration::from_secs(120);
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RequestMode { Mutate, Inspect }
+
+impl Default for RequestMode { fn default() -> Self { Self::Mutate } }
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
     version: u8,
+    #[serde(default)]
+    mode: RequestMode,
     cwd: String,
     argv: Vec<String>,
     #[serde(default)]
@@ -80,15 +89,13 @@ fn require_eof(stream: &mut UnixStream) -> io::Result<()> {
     }
 }
 
-fn prepare_repo_config(repo: &str) -> Result<()> {
-    let output = Command::new("/trusted/bin/jj")
-        .args(["--config-file", TRUSTED_JJ_CONFIG])
-        .args(["--repository", repo, "--ignore-working-copy", "config", "path", "--repo"])
+fn prepare_jj_config(repo: &str, scope: &str, jj: &Path, trusted_config: &Path, config_home: &Path) -> Result<()> {
+    let output = Command::new(jj)
+        .arg("--config-file").arg(trusted_config)
+        .args(["--repository", repo, "--ignore-working-copy", "config", "path", scope])
         .env_clear()
-        .envs([
-            ("HOME", "/nonexistent"),
-            ("XDG_CONFIG_HOME", CONFIG_HOME),
-    ])
+        .env("HOME", "/nonexistent")
+        .env("XDG_CONFIG_HOME", config_home)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -110,10 +117,53 @@ fn prepare_repo_config(repo: &str) -> Result<()> {
     Ok(())
 }
 
-fn open_cwd(root: RawFd, path: &str) -> Result<OwnedFd> {
-    if path.contains('\0') || path.starts_with('/') {
-        bail!("cwd must be relative to the repository");
+fn seed_inspection_config(config_id_path: &Path, kind: &str, config_home: &Path) -> Result<bool> {
+    let config_id = match fs::read_to_string(config_id_path) {
+        Ok(id) => id,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error).wrap_err("cannot read inspection repository config ID"),
+    };
+    if config_id.len() != 20 || !config_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("invalid inspection repository config ID");
     }
+    let config_dir = config_home.join("jj").join(kind).join(config_id);
+    fs::create_dir_all(&config_dir).wrap_err("cannot create inspection config cache")?;
+    let metadata = config_dir.join("metadata.binpb");
+    if !metadata.exists() {
+        // An empty protobuf is a valid ConfigMetadata with no previous path.
+        // Pinned jj fills in the path without rewriting the repo's config-id.
+        fs::write(&metadata, []).wrap_err("cannot seed inspection config metadata")?;
+    }
+    Ok(true)
+}
+
+fn prepare_inspection_config(workspace: &Path, jj: &Path, trusted_config: &Path, config_home: &Path) -> Result<()> {
+    let jj_dir = workspace.join(".jj");
+    let repo_entry = jj_dir.join("repo");
+    let repo_dir = if repo_entry.is_dir() {
+        repo_entry
+    } else {
+        let pointer = fs::read_to_string(&repo_entry).wrap_err("cannot read linked workspace repository pointer")?;
+        fs::canonicalize(jj_dir.join(pointer.trim_end()))
+            .wrap_err("cannot resolve linked workspace repository pointer")?
+    };
+    let repo_has_config = seed_inspection_config(&repo_dir.join("config-id"), "repos", config_home)?;
+    let workspace_has_config = seed_inspection_config(&jj_dir.join("workspace-config-id"), "workspaces", config_home)?;
+    let workspace = workspace.to_str().ok_or_else(|| eyre!("non-UTF-8 workspace path"))?;
+    if repo_has_config {
+        prepare_jj_config(workspace, "--repo", jj, trusted_config, config_home)?;
+    }
+    if workspace_has_config {
+        prepare_jj_config(workspace, "--workspace", jj, trusted_config, config_home)?;
+    }
+    Ok(())
+}
+
+fn open_cwd(root: RawFd, path: &str, inspect: bool) -> Result<OwnedFd> {
+    if path.contains('\0') || (!inspect && path.starts_with('/')) || (inspect && path != "/src" && !path.starts_with("/src/")) {
+        bail!("cwd is outside the protected /src workspace");
+    }
+    let path = if inspect { path.strip_prefix("/src").unwrap_or("") } else { path };
     let mut current = dup(root).wrap_err("could not duplicate repository descriptor")?;
     for component in path.split('/').filter(|part| !part.is_empty() && *part != ".") {
         if component == ".." { bail!("cwd escapes the repository"); }
@@ -245,6 +295,9 @@ fn execute(
     if request.argv.as_slice() == [":ready"] && request.agent_split.is_none() {
         return Response { version: 1, exit: 0, stdout: String::new(), stderr: String::new() };
     }
+    if matches!(request.mode, RequestMode::Inspect) && request.agent_split.is_some() {
+        return failure("agent split is not allowed in inspection mode".into());
+    }
     if let Some(split) = &request.agent_split {
         if !request.argv.is_empty() {
             return failure("agent split cannot include Jujutsu arguments".into());
@@ -259,12 +312,30 @@ fn execute(
         if let Err(error) = fs::write(format!("{CONFIG_HOME}/agent-split.patch"), &split.patch) {
             return failure(format!("could not stage split patch: {error}"));
         }
+    } else if matches!(request.mode, RequestMode::Inspect) {
+        if let Err(error) = policy::validate_inspect(&request.argv) { return failure(error.to_string()); }
     } else if let Err(error) = policy::validate(&request.argv, remotes) {
         return failure(error.to_string());
     }
-    let cwd = match open_cwd(root, &request.cwd) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+    let cwd = match open_cwd(root, &request.cwd, matches!(request.mode, RequestMode::Inspect)) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
+    if matches!(request.mode, RequestMode::Inspect) {
+        let mut ancestor = Path::new(&request.cwd);
+        let workspace = loop {
+            if ancestor.join(".jj").is_dir() { break Some(ancestor); }
+            match ancestor.parent() {
+                Some(parent) if parent != ancestor => ancestor = parent,
+                _ => break None,
+            }
+        };
+        let Some(workspace) = workspace else {
+            return failure("cwd is not inside a Jujutsu workspace".into());
+        };
+        if let Err(error) = prepare_inspection_config(workspace, Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME)) {
+            return failure(format!("cannot prepare inspection repository config: {error}"));
+        }
+    }
 
-    if author_update_required(request) {
+    if !matches!(request.mode, RequestMode::Inspect) && author_update_required(request) {
         let mut update = author_update_command(user, email);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -274,7 +345,13 @@ fn execute(
         let _ = update.status();
     }
 
-    let mut command = agent_jj_command(user, email);
+    let mut command = if matches!(request.mode, RequestMode::Inspect) {
+        let mut command = Command::new(TRUSTED_PROXY);
+        command.args(["inspect-jj", user, email]);
+        command
+    } else {
+        agent_jj_command(user, email)
+    };
     if let Some(split) = &request.agent_split {
         command.args([
             "split", "--tool", "agent-split", "-m", split.message.as_str(),
@@ -290,6 +367,11 @@ fn execute(
     }
     command.env_clear().envs(command_environment(user, email, temporary_directory))
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if matches!(request.mode, RequestMode::Inspect) {
+        for key in ["JJ_PROXY_REPO", "JJ_PROXY_GIT_DIR", "JJ_PROXY_COMMON_DIR", "JJ_PROXY_JJ_REPO"] {
+            if let Ok(value) = env::var(key) { command.env(key, value); }
+        }
+    }
     // SAFETY: the callback captures only the copied descriptor number and
     // performs the async-signal-safe `setsid`, `fchdir`, and `setrlimit`
     // syscalls. No proxy reader threads exist while `spawn` forks, and `cwd`
@@ -319,7 +401,7 @@ fn execute(
     if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
         return failure("output limit exceeded".into());
     }
-    if status == 0 {
+    if status == 0 && !matches!(request.mode, RequestMode::Inspect) {
         let mut reset = reset_author_command();
         reset.env_clear().envs(trusted_environment(temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -333,8 +415,13 @@ fn execute(
 }
 
 fn serve() -> Result<()> {
+    // The server retains its mutation policy; inspection children add a
+    // read-only policy before executing Jujutsu.
     let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".to_owned());
-    let root = File::open(&repo).wrap_err("cannot open repository")?;
+    // Keep both roots available: request mode, not the server's startup
+    // environment, selects the cwd namespace.
+    let source_root = File::open("/src").wrap_err("cannot open source")?;
+    let repository_root = File::open(&repo).wrap_err("cannot open repository")?;
     let remotes = HashSet::from(["origin".to_owned()]);
     fs::create_dir_all(CONFIG_HOME).wrap_err("cannot create secure config directory")?;
     fs::set_permissions(CONFIG_HOME, fs::Permissions::from_mode(0o700)).wrap_err("cannot secure config directory")?;
@@ -342,7 +429,7 @@ fn serve() -> Result<()> {
     fs::set_permissions(TEMP_HOME, fs::Permissions::from_mode(0o700))
         .wrap_err("cannot secure Jujutsu temporary directory")?;
     execution_policy::install(&repo)?;
-    prepare_repo_config(&repo)?;
+    prepare_jj_config(&repo, "--repo", Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME))?;
     let socket = socket_path();
     let _ = fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket).wrap_err("cannot bind proxy socket")?;
@@ -353,7 +440,16 @@ fn serve() -> Result<()> {
         let response = match read_frame(&mut stream, MAX_REQUEST)
             .and_then(|bytes| { require_eof(&mut stream)?; Ok(bytes) })
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
-            Ok(request) => execute(&request, root.as_raw_fd(), &remotes, TEMP_HOME),
+            Ok(request) => execute(
+                &request,
+                if matches!(request.mode, RequestMode::Inspect) {
+                    source_root.as_raw_fd()
+                } else {
+                    repository_root.as_raw_fd()
+                },
+                &remotes,
+                TEMP_HOME,
+            ),
             Err(error) => Response { version: 1, exit: 2, stdout: String::new(), stderr: format!("jj proxy: invalid request: {error}\n") },
         };
         if let Ok(body) = serde_json::to_vec(&response) { let _ = write_frame(&mut stream, &body); }
@@ -366,10 +462,22 @@ fn client(args: Vec<String>) -> Result<i32> {
     let cwd = env::current_dir().wrap_err("cannot read current directory")?;
     let repo_path = fs::canonicalize(&repo).wrap_err("repository unavailable")?;
     let cwd = fs::canonicalize(cwd).wrap_err("cannot resolve current directory")?;
-    let relative = cwd.strip_prefix(&repo_path).map_err(|_| eyre!("current directory is outside the protected repository"))?;
+    let inspect = env::var_os("JJ_PROXY_INSPECT").is_some()
+        || (cwd.starts_with("/src") && cwd.strip_prefix(&repo_path).is_err());
+    if !inspect && args.iter().any(|arg| arg == "-R" || arg.starts_with("-R")) {
+        bail!("-R is not supported by the proxy; cd into the selected repository and retry");
+    }
+    let cwd = if inspect {
+        cwd.to_string_lossy().into_owned()
+    } else {
+        cwd.strip_prefix(&repo_path)
+            .map_err(|_| eyre!("current directory is outside the protected repository"))?
+            .to_string_lossy().into_owned()
+    };
     let request = Request {
         version: 1,
-        cwd: relative.to_string_lossy().into_owned(),
+        mode: if inspect { RequestMode::Inspect } else { RequestMode::Mutate },
+        cwd,
         argv: args,
         agent_split: None,
         user: env::var("JJ_USER").ok(),
@@ -412,6 +520,17 @@ fn forward() -> Result<i32> {
     Ok(0)
 }
 
+fn inspect_jj(args: &[String]) -> Result<i32> {
+    if args.len() < 3 {
+        bail!("invalid inspection invocation");
+    }
+    let repo = env::var("JJ_PROXY_REPO").wrap_err("repository unavailable")?;
+    execution_policy::install_inspect(&repo)?;
+    let mut command = agent_jj_command(&args[0], &args[1]);
+    command.arg("--ignore-working-copy").args(&args[2..]);
+    Err(command.exec().into())
+}
+
 fn main() {
     color_eyre::install().expect("could not install error reporter");
     let executable = env::args().next().unwrap_or_default();
@@ -424,6 +543,8 @@ fn main() {
         forward()
     } else if args.first().map(String::as_str) == Some("serve") {
         serve().map(|_| 0)
+    } else if args.first().map(String::as_str) == Some("inspect-jj") {
+        inspect_jj(&args[1..])
     } else {
         client(std::mem::take(&mut args))
     };
@@ -433,6 +554,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::path::PathBuf;
 
     #[test]
     fn accepts_frame_followed_by_eof() {
@@ -476,6 +599,63 @@ mod tests {
     }
 
     #[test]
+    fn inspection_prepares_config_without_changing_repository_metadata() {
+        let jj = env::var_os("JJ_PROXY_TEST_JJ").map(PathBuf::from).or_else(|| {
+            ["/trusted/bin/jj", "/opt/agent-tools/bin/jj", "/opt/homebrew/bin/jj"]
+                .into_iter().map(PathBuf::from).find(|path| path.is_file())
+        });
+        let Some(jj) = jj else {
+            eprintln!("skipping inspection config test: set JJ_PROXY_TEST_JJ to a real jj binary");
+            return;
+        };
+        let root = env::temp_dir().join(format!("jj-proxy-inspect-config-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let repo = root.join("repo");
+        let original_home = root.join("original-config");
+        let inspection_home = root.join("inspection-config");
+        let trusted_config = root.join("trusted.toml");
+        fs::write(&trusted_config, include_str!("../jj.toml")).unwrap();
+        let output = Command::new(&jj).args(["git", "init"]).arg(&repo)
+            .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", &original_home)
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        prepare_jj_config(repo.to_str().unwrap(), "--repo", &jj, &trusted_config, &original_home).unwrap();
+        let config_id = repo.join(".jj/repo/config-id");
+        let before = fs::read(&config_id).unwrap();
+        fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o500)).unwrap();
+        prepare_inspection_config(&repo, &jj, &trusted_config, &inspection_home).unwrap();
+        assert_eq!(before, fs::read(&config_id).unwrap());
+        let metadata = inspection_home.join("jj/repos").join(String::from_utf8(before).unwrap()).join("metadata.binpb");
+        assert!(!fs::read(metadata).unwrap().is_empty());
+        fs::set_permissions(&inspection_home, fs::Permissions::from_mode(0o500)).unwrap();
+        let output = Command::new(&jj).args(["--config-file"]).arg(&trusted_config)
+            .args(["--repository"]).arg(&repo).args(["--ignore-working-copy", "status"])
+            .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", &inspection_home)
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        fs::set_permissions(&inspection_home, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
+        let linked = root.join("linked");
+        let output = Command::new(&jj).args(["--repository"]).arg(&repo)
+            .args(["workspace", "add", "--no-colocate"]).arg(&linked)
+            .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", &original_home)
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(linked.join(".jj/repo").is_file());
+        let linked_home = root.join("linked-config");
+        fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o500)).unwrap();
+        prepare_inspection_config(&linked, &jj, &trusted_config, &linked_home).unwrap();
+        let output = Command::new(&jj).args(["--config-file"]).arg(&trusted_config)
+            .args(["--repository"]).arg(&linked).args(["--ignore-working-copy", "status"])
+            .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", &linked_home)
+            .output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn trusted_config_preserves_the_effective_security_settings() {
         let config = include_str!("../jj.toml");
         for setting in [
@@ -512,6 +692,7 @@ mod tests {
     fn commit_paths_update_the_working_copy_author() {
         let request = |argv: &[&str], agent_split| Request {
             version: 1,
+            mode: RequestMode::Mutate,
             cwd: String::new(),
             argv: argv.iter().map(|arg| (*arg).to_owned()).collect(),
             agent_split,
@@ -551,5 +732,26 @@ mod tests {
             "@".into(),
             "--quiet".into(),
         ]));
+    }
+
+    #[test]
+    fn inspection_rejects_agent_split_before_staging_a_patch() {
+        let root = File::open("/tmp").unwrap();
+        let request = Request {
+            version: 1,
+            mode: RequestMode::Inspect,
+            cwd: "/src/other".into(),
+            argv: Vec::new(),
+            agent_split: Some(AgentSplit {
+                patch: "patch".into(),
+                message: "message".into(),
+                revision: "@".into(),
+            }),
+            user: None,
+            email: None,
+        };
+        let response = execute(&request, root.as_raw_fd(), &HashSet::new(), "/tmp");
+        assert_eq!(2, response.exit);
+        assert!(response.stderr.contains("agent split is not allowed"));
     }
 }

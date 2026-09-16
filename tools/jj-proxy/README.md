@@ -26,6 +26,14 @@ instructions when adding image sources.
 The sandbox launcher must validate all metadata indirections, create the private socket volume, mount the repository and metadata as specified by the design, set `JJ_PROXY_REPO`, `JJ_PROXY_GIT_DIR`, `JJ_PROXY_COMMON_DIR`, and `JJ_PROXY_JJ_REPO`, and wait for readiness before starting the agent. A manually started proxy without those mounts is not protected.
 
 The agent-side `jj` wrapper needs `SANDBOX_PROXY_DIR`; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
+From another Jujutsu repository under `/src`, the wrapper sends inspection requests.
+These use `--ignore-working-copy` and a separate read-only Landlock policy;
+commands that change repository state are rejected. Inspection of linked workspaces
+requires their metadata to be visible in the proxy container.
+For a repository with a Jujutsu secure-config ID, the trusted proxy prepares a
+private config-cache entry before inspection. It never initializes or rewrites
+the inspected repository's `.jj` metadata; the inspection child can only read
+that cache.
 
 ## Common commands
 
@@ -62,7 +70,7 @@ python3 -m unittest discover -s tools/jj-proxy/tests -p '*_test.py'
 docker build -f tools/jj-proxy/Dockerfile -t jj-proxy .
 ```
 
-The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover the client framing and the trusted split editor. The image build also runs release Rust tests and verifies the pinned production build.
+The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover the client framing and the trusted split editor. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary.
 
 ## Design and reference
 

@@ -31,12 +31,23 @@ def main() -> int:
         raise RuntimeError("sandbox proxy directory is not configured")
     repository = Path(os.environ.get("JJ_PROXY_REPO", "/src/work")).resolve(strict=True)
     current = Path.cwd().resolve(strict=True)
-    try:
-        relative = current.relative_to(repository)
-    except ValueError as error:
-        raise RuntimeError("current directory is outside the protected repository") from error
+    inspect = bool(os.environ.get("JJ_PROXY_INSPECT")) or (
+        current == Path("/src") or (Path("/src") in current.parents and current != repository and repository not in current.parents)
+    )
+    if not inspect and any(argument == "-R" or argument.startswith("-R") for argument in sys.argv[1:]):
+        raise RuntimeError("-R is not supported by the proxy; cd into the selected repository and retry")
+    if inspect:
+        # Inspection is intentionally rooted by the proxy's /src mount.  Do
+        # not send a host-selected repository (or a relative path) across the
+        # boundary; the proxy derives the workspace root itself.
+        cwd = str(current)
+    else:
+        try:
+            cwd = str(current.relative_to(repository))
+        except ValueError as error:
+            raise RuntimeError("current directory is outside the protected repository") from error
     argv = sys.argv[1:]
-    request = {"version": 1, "cwd": str(relative), "argv": argv}
+    request = {"version": 1, "mode": "inspect" if inspect else "mutate", "cwd": cwd, "argv": argv}
     if argv[:1] == ["--agent-split"]:
         if len(argv) != 4:
             raise RuntimeError("--agent-split requires PATCH MESSAGE REVISION")

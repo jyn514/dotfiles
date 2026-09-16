@@ -34,6 +34,11 @@ RUN --mount=type=cache,target=/jj/target \
     && cp target/release/jj /jj-bin
 RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
+FROM build AS verified
+COPY --from=jj /jj-bin /jj-bin
+RUN JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked \
+    inspection_prepares_config_without_changing_repository_metadata
+
 FROM alpine:3.22 AS editor
 RUN apk add --no-cache git \
     && mkdir -p /trusted/bin \
@@ -49,8 +54,8 @@ ENV RUST_BACKTRACE=1
 COPY --from=editor /trusted/bin /trusted/bin
 COPY --from=editor /lib /lib
 COPY --from=editor /usr/lib /usr/lib
-COPY --from=build /jj-proxy /trusted/bin/jj-proxy
-COPY --from=build /jj-proxy /trusted/bin/sandbox-proxy-forward
+COPY --from=verified /jj-proxy /trusted/bin/jj-proxy
+COPY --from=verified /jj-proxy /trusted/bin/sandbox-proxy-forward
 COPY --from=jj /jj-bin /trusted/bin/jj
 COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=jj /image-root/ /

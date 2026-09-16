@@ -4,6 +4,26 @@ import os
 from pathlib import Path
 
 
+def check_mount_destinations(arguments: list[str]) -> None:
+    """Reject duplicate container targets in a complete run argument list."""
+    seen: set[str] = set()
+    for index, argument in enumerate(arguments[:-1]):
+        if argument == '--mount':
+            fields = arguments[index + 1].split(',')
+            destination = next((field.split('=', 1)[1] for field in fields
+                                if field.startswith(('dst=', 'destination=', 'target='))), None)
+        elif argument == '--tmpfs':
+            destination = arguments[index + 1].split(':', 1)[0]
+        else:
+            continue
+        if destination is None:
+            raise ValueError('mount has no destination')
+        destination = os.path.normpath(destination)
+        if destination in seen:
+            raise ValueError(f'duplicate container mount destination: {destination}')
+        seen.add(destination)
+
+
 def source_mounts(source: Path, destinations: list[Path], staging: Path) -> list[str]:
     target = Path('/src')
     required = [path.relative_to(target) for path in destinations if path.is_relative_to(target)]

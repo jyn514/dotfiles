@@ -13,6 +13,7 @@ use landlock::{
 };
 
 pub struct PolicyPaths<'a> {
+    pub source: &'a Path,
     pub trusted: &'a Path,
     pub trusted_bin: &'a Path,
     pub config: &'a Path,
@@ -24,6 +25,7 @@ pub fn install(repo: &str) -> Result<()> {
     install_with_paths(
         repo,
         &PolicyPaths {
+            source: Path::new("/src"),
             trusted: Path::new("/trusted"),
             trusted_bin: Path::new("/trusted/bin"),
             config: Path::new("/tmp/jj-config"),
@@ -34,10 +36,35 @@ pub fn install(repo: &str) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
+    install_with_paths_mode(repo, paths, true)
+}
+
+#[cfg(target_os = "linux")]
+pub fn install_inspect(repo: &str) -> Result<()> {
+    install_inspect_with_paths(
+        repo,
+        &PolicyPaths {
+            source: Path::new("/src"),
+            trusted: Path::new("/trusted"),
+            trusted_bin: Path::new("/trusted/bin"),
+            config: Path::new("/tmp/jj-config"),
+            socket: Path::new("/run/sandbox-proxy"),
+        },
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub fn install_inspect_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
+    install_with_paths_mode(repo, paths, false)
+}
+
+#[cfg(target_os = "linux")]
+fn install_with_paths_mode(repo: &str, paths: &PolicyPaths<'_>, writable: bool) -> Result<()> {
     let trusted =
         PathFd::new(paths.trusted).wrap_err("cannot open trusted directory")?;
     let trusted_bin = PathFd::new(paths.trusted_bin)
         .wrap_err("cannot open trusted executable directory")?;
+    let source = PathFd::new(paths.source).wrap_err("cannot open source directory")?;
     let repository = PathFd::new(repo).wrap_err("cannot open repository directory")?;
     let git_path = env::var("JJ_PROXY_GIT_DIR").wrap_err("Git directory is not configured")?;
     let common_path =
@@ -64,6 +91,8 @@ pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
         WriteFile | RemoveDir | RemoveFile | MakeDir | MakeReg | MakeSock |
         MakeFifo | MakeSym | Refer | Truncate
     });
+    let repository_access = if writable { read_access | write_access } else { read_access };
+    let metadata_access = repository_access;
     let status = Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(read_access | write_access | AccessFs::Execute)
@@ -74,18 +103,20 @@ pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
         .wrap_err("cannot add trusted read rule")?
         .add_rule(PathBeneath::new(trusted_bin, AccessFs::Execute))
         .wrap_err("cannot add trusted Landlock execution rule")?
-        .add_rule(PathBeneath::new(repository, read_access | write_access))
-        .wrap_err("cannot add repository read-write rule")?
-        .add_rule(PathBeneath::new(git, read_access | write_access))
-        .wrap_err("cannot add Git metadata write rule")?
-        .add_rule(PathBeneath::new(common, read_access | write_access))
-        .wrap_err("cannot add Git common-directory rule")?
-        .add_rule(PathBeneath::new(jj, read_access | write_access))
-        .wrap_err("cannot add Jujutsu metadata write rule")?
-        .add_rule(PathBeneath::new(jj_repo, read_access | write_access))
-        .wrap_err("cannot add Jujutsu repository write rule")?
-        .add_rule(PathBeneath::new(config, read_access | write_access))
-        .wrap_err("cannot add configuration write rule")?
+        .add_rule(PathBeneath::new(source, read_access))
+        .wrap_err("cannot add /src read-only rule")?
+        .add_rule(PathBeneath::new(repository, repository_access))
+        .wrap_err("cannot add repository access rule")?
+        .add_rule(PathBeneath::new(git, metadata_access))
+        .wrap_err("cannot add Git metadata access rule")?
+        .add_rule(PathBeneath::new(common, metadata_access))
+        .wrap_err("cannot add Git common-directory access rule")?
+        .add_rule(PathBeneath::new(jj, metadata_access))
+        .wrap_err("cannot add Jujutsu metadata access rule")?
+        .add_rule(PathBeneath::new(jj_repo, metadata_access))
+        .wrap_err("cannot add Jujutsu repository access rule")?
+        .add_rule(PathBeneath::new(config, if writable { read_access | write_access } else { read_access }))
+        .wrap_err("cannot add configuration access rule")?
         .add_rule(PathBeneath::new(socket, read_access | write_access))
         .wrap_err("cannot add proxy socket write rule")?
         .add_rule(PathBeneath::new(system_config, read_access))
@@ -116,6 +147,16 @@ pub fn install_with_paths(repo: &str, paths: &PolicyPaths<'_>) -> Result<()> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn install(_repo: &str) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn install_inspect(_repo: &str) -> Result<()> {
+    Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn install_inspect_with_paths(_repo: &str, _paths: &PolicyPaths<'_>) -> Result<()> {
     Err(color_eyre::eyre::eyre!("the jj proxy requires Linux Landlock support"))
 }
 

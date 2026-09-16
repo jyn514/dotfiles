@@ -567,6 +567,7 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("dst=/run/sandbox-proxies/example,readonly", generated)
         self.assertIn("dst=/src/example/state,readonly", generated)
         self.assertIn("/src/example/secret:ro,noexec", generated)
+        self.assertNotIn("dst=/src,readonly", generated)
         self.assertNotIn("src=" + str(self.repo / ".git"), generated)
         self.assertNotIn("secret.not.for-agent", generated)
 

@@ -178,23 +178,24 @@ copy descriptor, and receives read-write Landlock access to the working tree,
 Jujutsu store, and resolved Git metadata. This is the only mode that may
 snapshot a working copy or change repository state.
 
-An inspection request may name a separately admitted repository and must be
-resolved and validated by the trusted proxy before execution. The proxy mounts
-that repository, including its resolved `.jj` and Git metadata, read-only,
-applies read-only Landlock rules, and invokes Jujutsu with
-`--ignore-working-copy`.
+The launcher admits repositories by mounting the host source tree read-only at
+`/src` in both containers. An inspection request identifies a directory beneath
+that mount. The proxy opens its `cwd` components without following symlinks, requires
+an ancestor with a `.jj` directory, and runs Jujutsu in a child process with a
+second, read-only Landlock policy and `--ignore-working-copy`. Linked workspaces
+whose metadata is outside the mounted tree are not admitted by this mechanism.
 Inspection requests are restricted to commands whose reviewed grammar has no
 repository mutation path, initially `status`, `diff`, `log`, `show`,
-`interdiff`, `file`, `workspace list`, `git root`, and `help`. They cannot fetch,
+`interdiff`, observational `file` subcommands, `workspace list`, `git root`,
+and `help`. They cannot fetch,
 write working-tree files, alter configuration, or select another repository
 through command-line options.
 
 Read-only classification is an enforced command-policy property, not a label
 in the client. The proxy must reject commands that can snapshot, update stores,
 write configuration, invoke helpers, or access credentials even when their
-usual invocation appears observational. Repository identity, metadata
-resolution, mount validation, and request serialization remain per admitted
-repository in both modes.
+usual invocation appears observational. The `/src` mount defines inspection
+admission; the selected repository remains the sole mutation target.
 
 == Wrapper
 
@@ -260,8 +261,8 @@ surfaces:
 - `debug`;
 - configuration mutation and all command-line configuration overrides;
 - alternate repository, workspace, or config paths in mutation mode; inspection
-  mode may select only a separately admitted repository through its request
-  envelope;
+  mode may select only a directory under the read-only `/src` mount through its
+  request envelope;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
 - irreversible recovery deletion such as operation abandonment or garbage
@@ -350,9 +351,9 @@ sessions.
   trusted interpreters or tools cannot be selected to interpret working-tree
   content.
 - Shell metacharacters in commit messages remain literal data.
-- Config overrides, unadmitted alternate repositories, external tools, and
+- Config overrides, repositories outside the `/src` mount, external tools, and
   `util exec` are rejected.
-- Inspection requests can read only separately admitted repositories and cannot
+- Inspection requests can read only repositories under `/src` and cannot
   mutate their working trees, Jujutsu stores, Git metadata, configuration, or
   credentials.
 - Git fetch is constrained to approved remotes, every Git push request is

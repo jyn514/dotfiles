@@ -7,10 +7,21 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from source_view import source_mounts
+from source_view import check_mount_destinations, source_mounts
 
 
 class SourceViewTest(unittest.TestCase):
+    def test_mount_plan_rejects_duplicate_targets_and_allows_child_overlays(self):
+        arguments = [
+            '--mount', 'type=bind,src=/host/src,dst=/src,readonly',
+            '--mount', 'type=bind,src=/host/repo,dst=/src/repo',
+        ]
+        check_mount_destinations(arguments)
+        with self.assertRaisesRegex(ValueError, 'duplicate container mount destination: /src'):
+            check_mount_destinations([*arguments, '--mount', 'type=bind,src=/other,dst=/src/'])
+        with self.assertRaisesRegex(ValueError, 'duplicate container mount destination: /src/repo'):
+            check_mount_destinations([*arguments, '--tmpfs', '/src/repo:ro'])
+
     def test_existing_destinations_keep_the_live_parent_bind(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
