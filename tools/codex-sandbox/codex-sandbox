@@ -1635,13 +1635,15 @@ def run_agent(state: State, arguments: list[str]) -> int:
     # A non-colocated workspace has no .git entry of its own. Mount the
     # backing Git metadata at the conventional workspace path in the guest.
     protected = [state.repository / ".jj"]
-    external_git_roots: list[tuple[Path, Path]] = []
+    git_roots: list[Path] = []
     for line in git_layout:
         path = Path(line).resolve(strict=True)
         if any(character in str(path) for character in (",", "\n", "\r")):
             raise LauncherError("Git metadata path contains a container-mount delimiter")
-        if path == state.git_mount_source:
-            continue
+        if path not in git_roots:
+            git_roots.append(path)
+    external_git_roots: list[tuple[Path, Path]] = []
+    for path in git_roots[1:]:
         try:
             path.relative_to(state.repository)
         except ValueError:
