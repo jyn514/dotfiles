@@ -20,6 +20,10 @@ This also accommodates linked Git metadata without creating placeholder director
 When this staging is needed, new entries in staged parent directories appear on the next launch;
 the contents of bound subtrees remain live.
 
+The selected Git metadata root has one owner: the launcher mounts it at the
+selected repository's `.git` path. Other Git metadata roots may receive
+protected or external mounts, but must not emit a second mount at that path.
+
 ## Flower R2 Keychain access
 
 The [launcher interface](spec/launcher-interface.typ) makes optional services explicit.
