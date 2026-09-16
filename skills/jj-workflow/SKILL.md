@@ -52,7 +52,7 @@ Use `jj commit` for a coherent completed change. Verify every included hunk firs
 
 ```bash
 jj commit src/flower/petal.clj -m "Fix markdown code fence handling"
-jj show -r @- --summary --no-pager
+jj show -r CHANGE_ID --summary --no-pager
 ```
 
 Messages should be short and imperative. For non-mechanical changes, add a body explaining the problem, reason, and high-level approach; do not list test commands.
@@ -64,7 +64,7 @@ After a commit, `@` is the new working copy and `@-` is usually the commit. Do n
 When exact identity matters:
 
 ```bash
-jj log -r @- --no-graph \
+jj log -r CHANGE_ID --no-graph \
   -T '"commit: " ++ commit_id.short() ++ "\nchange: " ++ change_id.short() ++ "\ntitle: " ++ description.first_line() ++ "\n"'
 ```
 
@@ -78,7 +78,7 @@ Prefer splitting when separating work. Restore only changes that should be disca
 
 `bb agent-split` preflights the Git-style patch under ignored `target/jj-split/`, commits through a trusted path boundary, restores the remainder, and verifies both revisions. Failures retain recovery snapshots and print their location.
 
-After either split, inspect selected and remaining changes with `jj status` and focused `jj diff -r @-` / `jj diff -r @`.
+After either split, inspect selected and remaining changes with `jj status` and focused `jj diff -r CHANGE_ID` / `jj diff -r @`.
 
 ## Rebase and abandon
 
@@ -124,7 +124,7 @@ Repository instructions override message guidance. If descriptions must be human
 
 ## Reporting
 
-After a path-limited commit, report `jj show -r @- --summary --no-pager`. Add `jj diff -r @ --summary` only when remaining dirty files matter. For a stack handoff:
+After a path-limited commit, report `jj show -r CHANGE_ID --summary --no-pager`. Add `jj diff -r @ --summary` only when remaining dirty files matter. For a stack handoff:
 
 ```bash
 jj log -r 'ancestors(@, 8)' --no-graph --summary \
