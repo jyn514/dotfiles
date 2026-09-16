@@ -367,8 +367,10 @@ class GatewayLifecycleTest(unittest.TestCase):
                 state, handle.resources, handle.owner, ("network:gateway-link",),
             )
             unavailable = Mock(return_value=SimpleNamespace(returncode=125, stdout=""))
-            with patch.dict(self.launcher["recover_relays"].__globals__, run=unavailable), \
-                    patch("sys.stderr", new_callable=io.StringIO):
+            with patch.object(
+                    self.launcher["recover_relays"].__globals__["OUTER_RUNTIME"],
+                    "run", unavailable,
+            ), patch("sys.stderr", new_callable=io.StringIO):
                 self.launcher["recover_relays"](state)
             self.assertTrue(path.exists())
 

@@ -34,9 +34,11 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`man-page`](man-page/) implements `open-man-page [SECTION] PAGE`, trying OpenBSD and Ubuntu web manpages before native fallback. Web results require network access and a graphical opener.
 - [`open`](open/) implements the basename-sensitive `open`, `hx-hax`, and `editor-hax` commands for desktop dispatch and editor integration, including managed [macOS file associations](open/macos-file-associations.md).
 - [`picker-actions`](picker-actions/) implements `picker-action copy|edit|open|search` for explicit or NUL-delimited selections. Actions may write the clipboard, inject tmux keys, launch an editor, or open a URL.
+- [`plover-reconnect`](plover-reconnect/) automatically reconnects a configured Plover steno device after USB disconnection and reconnection. See the [operator README](plover-reconnect/README.md).
 - [`prompt`](prompt/) implements `prompt-command` and `jj-info`, rendering shell and Claude prompts from host, path, Git, and Jujutsu state. Repository queries are read-only and time-bounded.
 - [`shell-cache`](shell-cache/) implements `refresh-fish-cache`, transactionally refreshing generated Fish source when dependencies change while preserving the old cache on producer failure.
 - [`shell-data`](shell-data/) validates the shared abbreviation file for shell loaders. Run `python3 tools/shell-data/main.py [FILE]`; it preserves expansions without interpreting shell syntax.
+- [`search-bsky-likes`](search-bsky-likes/) finds media posts by `theotherhappyplace.bsky.social` liked by `jyn.dev`, then opens a temporary local gallery. See the [operator README](search-bsky-likes/README.md).
 - [`take-a-break`](take-a-break/) displays a modal Zenity reminder and uses `wmctrl`, when available, to keep it above other windows.
 - [`watch`](watch/) implements buffered `watch [-n INTERVAL] [-x SHELL] COMMAND...`, running commands in a PTY and replacing the terminal after each complete frame.
 

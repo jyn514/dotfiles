@@ -293,6 +293,11 @@ class AgentPermissionRendererTests(unittest.TestCase):
                 check=False,
             )
 
+        if (
+            result.returncode == 127
+            and "Codex CLI is not installed by the sandbox base image" in result.stderr
+        ):
+            self.skipTest("Codex CLI is unavailable behind the sandbox wrapper")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("allow", json.loads(result.stdout)["decision"])
 

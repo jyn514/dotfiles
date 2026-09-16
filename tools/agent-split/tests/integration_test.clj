@@ -9,6 +9,16 @@
 
 (load-file script)
 
+(defn- isolated-command [args]
+  (concat ["env"
+           "-u" "CLAUDECODE"
+           "-u" "CODEX_THREAD_ID"
+           "-u" "JJ_AGENT"
+           "-u" "PI_CODING_AGENT"
+           "-u" "SANDBOX_PROXY_DIR"
+           "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent"]
+          args))
+
 (defn- ^:needs/git shell!
   [dir & args]
   (let [result (apply process/shell
@@ -17,7 +27,7 @@
                        :err :string
                        :shutdown nil
                        :continue true}
-                      args)]
+                      (isolated-command args))]
     (is (zero? (:exit result))
         (str "stdout:\n" (:out result) "\nstderr:\n" (:err result)))
     result))
@@ -30,7 +40,7 @@
           :err :string
           :shutdown nil
           :continue true}
-         args))
+         (isolated-command args)))
 
 (defn- write-file! [path content]
   (fs/create-dirs (fs/parent path))

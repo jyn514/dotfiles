@@ -6,6 +6,7 @@ const TRUSTED_CONFIG: &str = include_str!("../jj.toml");
 
 fn real_jj() -> Option<PathBuf> {
     std::env::var_os("JJ_PROXY_TEST_JJ")
+        .or_else(|| std::env::var_os("JJ_REAL"))
         .map(PathBuf::from)
         .or_else(|| {
             ["/trusted/bin/jj", "/opt/agent-tools/bin/jj"]

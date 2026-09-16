@@ -17,9 +17,14 @@ def write_executable(path: Path, contents: str) -> None:
 
 class CodexWrapperTest(unittest.TestCase):
     def run_wrapper(self, path: str, **environment: str) -> subprocess.CompletedProcess[str]:
+        inherited = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"CODEX_SIDECAR_KEY", "CODEX_SIDECAR_URL"}
+        }
         return subprocess.run(
             [str(WRAPPER), "exec", "repair the ship"],
-            env={**os.environ, "PATH": path, **environment},
+            env={**inherited, "PATH": path, **environment},
             text=True,
             capture_output=True,
         )

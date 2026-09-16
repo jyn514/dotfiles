@@ -49,7 +49,9 @@ class RgWrapperTest(unittest.TestCase):
             real_rg.chmod(0o755)
             return subprocess.run(
                 [WRAPPER, *arguments],
-                env=os.environ
+                env={
+                    key: value for key, value in os.environ.items() if key != "RG_REAL"
+                }
                 | {
                     "PATH": os.pathsep.join(
                         (str(WRAPPER.parent), str(temp_dir), os.environ["PATH"])

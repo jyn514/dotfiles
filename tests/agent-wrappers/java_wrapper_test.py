@@ -51,7 +51,9 @@ class JavaWrapperTest(unittest.TestCase):
             )
             real_java.chmod(0o755)
             environment = {
-                key: value for key, value in os.environ.items() if key != "TMPDIR"
+                key: value
+                for key, value in os.environ.items()
+                if key not in {"JAVA_REAL", "TMPDIR"}
             }
             environment["PATH"] = os.pathsep.join(
                 (str(WRAPPER.parent), str(temp_dir), os.defpath)

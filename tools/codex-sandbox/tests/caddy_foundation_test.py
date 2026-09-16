@@ -69,7 +69,13 @@ class ConfigTest(unittest.TestCase):
    subprocess.run(["docker","start",container],check=True,stdout=subprocess.DEVNULL)
    with tempfile.NamedTemporaryFile("w") as stream:
     json.dump(config,stream); stream.flush(); subprocess.run(["docker","cp",stream.name,container+":/tmp/config.json"],check=True)
-   subprocess.run(["docker","exec","-d",container,"caddy","run","--config","/tmp/config.json"],check=True); time.sleep(1)
+   subprocess.run(["docker","exec","-d",container,"caddy","run","--config","/tmp/config.json"],check=True)
+   deadline=time.monotonic()+10
+   while True:
+    ready=subprocess.run(["docker","exec",container,"wget","-qO-","http://127.0.0.1:8787/ready"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    if ready.returncode == 0: break
+    if time.monotonic() >= deadline: self.fail("Caddy did not become ready within 10 seconds")
+    time.sleep(.1)
    output=subprocess.check_output(["docker","exec",container,"wget","-qO-","--header=Authorization: Bearer session","--header=X-Forwarded-For: evil","--header=X-Safe: yes","--post-data={}","http://127.0.0.1:8787/codex/responses"],text=True)
    self.assertEqual(output,"auth=Bearer trusted acct=acct xff= safe=yes path=/backend-api/codex/responses")
   finally: subprocess.run(["docker","rm","-f",container],stdout=subprocess.DEVNULL)

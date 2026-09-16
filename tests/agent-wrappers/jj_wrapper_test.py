@@ -129,7 +129,7 @@ class JjWrapperTest(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
-                ["Pi gpt-test-model", "breq@jyn.dev"],
+                ["Pi gpt-test-model", "325577925+one-esk-nineteen@users.noreply.github.com"],
                 result_file.read_text().splitlines(),
             )
 
@@ -173,7 +173,7 @@ class JjWrapperTest(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
-                ["Pi", "breq@jyn.dev"],
+                ["Pi", "325577925+one-esk-nineteen@users.noreply.github.com"],
                 result_file.read_text().splitlines(),
             )
 
@@ -182,7 +182,7 @@ class JjWrapperTest(unittest.TestCase):
             "status", '{"type":"turn_context","payload":{"model":"gpt-test-model"}}\n'
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(["Codex gpt-test-model", "breq@jyn.dev"], identity)
+        self.assertEqual(["Codex gpt-test-model", "325577925+one-esk-nineteen@users.noreply.github.com"], identity)
 
     def test_missing_codex_session_does_not_block_jj(self) -> None:
         for directories_exist in (False, True):
@@ -192,7 +192,7 @@ class JjWrapperTest(unittest.TestCase):
                         command, None, directories_exist=directories_exist
                     )
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertEqual(["Codex", "breq@jyn.dev"], identity)
+                    self.assertEqual(["Codex", "325577925+one-esk-nineteen@users.noreply.github.com"], identity)
                     if command == "status":
                         self.assertEqual("", result.stderr)
                     else:
