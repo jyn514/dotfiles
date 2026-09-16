@@ -109,6 +109,10 @@ a failed pull aborts startup.
 Alpine images run Pi's bundled Node CLI to reduce module-loading overhead.
 Other images use the standalone Bun executable.
 
+The agent image provides a `codex` wrapper that routes a base image's Codex CLI through the
+session authentication proxy. It does not install Codex; invoking it reports how to repair the
+base image when no later `codex` executable is present on `PATH`, or when proxy setup is missing.
+
 Alpine builds validate Node's minimum version and seed its bytecode cache with the final runtime and user.
 Each container gets its own writable copy at `/tmp/pi-node-cache`;
 startup does not spawn a separate version-check process.
@@ -172,6 +176,10 @@ before publication.
 
 Shared proxy identity checks run two at a time during attach and publication.
 Every check finishes before metadata is published or failure recovery begins.
+Joiners print a notice when they reuse the accepted image and proxies; repository image changes
+take effect only after every attached session exits and a new session starts.
+Fresh sessions print a preparation notice and stream resolver and BuildKit diagnostics while
+retaining stdout for the resolver's machine-readable result.
 The launcher holds the session lock directly until cleanup.
 The first launcher also holds coordination until publication succeeds;
 shared joiners validate concurrently.

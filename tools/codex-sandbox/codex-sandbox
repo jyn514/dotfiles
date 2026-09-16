@@ -1879,8 +1879,18 @@ def execute(state: State) -> int:
     phase("proxy lock", lambda: acquire_lock(state))
     if state.proxy_lock.shared:
         phase("accepted session discovery", lambda: load_accepted_session(state))
+        print(
+            "notice: Reusing accepted sandbox image and proxies; repository image changes "
+            "apply after all attached sessions exit.",
+            file=sys.stderr,
+        )
     else:
         phase("repository policy", lambda: load_repository_policy(state))
+        print(
+            "notice: Preparing sandbox image and proxies from current repository policy; "
+            "a cold build may take several minutes.",
+            file=sys.stderr,
+        )
         if (OUTER_RUNTIME.provider != 'lima-docker' and
                 (state.repository / '.agents/sandbox/bake').is_file() and
                 not (state.repository / '.agents/sandbox/base-image').is_file()):

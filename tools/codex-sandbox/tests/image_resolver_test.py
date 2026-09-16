@@ -126,8 +126,11 @@ class ImageResolverTest(unittest.TestCase):
         with self.assertRaisesRegex(image_resolver.ResolverError, "stdout exceeds"):
             self.resolve("large", {"base"})
 
-    def test_reports_nonzero_status_and_stderr(self):
-        with self.assertRaisesRegex(image_resolver.ResolverError, "status 23: fixture failed"):
+    def test_reports_nonzero_status_after_streaming_stderr(self):
+        with self.assertRaisesRegex(
+                image_resolver.ResolverError,
+                "status 23; see resolver output above",
+        ):
             self.resolve("error", {"base"})
 
     def test_timeout_kills_descendant_after_resolver_parent_exits(self):

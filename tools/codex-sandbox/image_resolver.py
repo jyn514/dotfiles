@@ -15,7 +15,6 @@ from typing import Any
 
 
 STDOUT_LIMIT = 1024 * 1024
-STDERR_LIMIT = 8 * 1024 * 1024
 TIMEOUT = 1800
 KILL_TIMEOUT = 5
 
@@ -68,21 +67,19 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
-def _run(command: list[str], repo: Path, request: bytes, environment: dict[str, str]) -> tuple[int, bytes, bytes]:
+def _run(command: list[str], repo: Path, request: bytes, environment: dict[str, str]) -> tuple[int, bytes]:
     process = subprocess.Popen(
         command, cwd=repo, env=environment, stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+        stdout=subprocess.PIPE, start_new_session=True,
     )
-    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
-    outputs = {process.stdout: bytearray(), process.stderr: bytearray()}
-    limits = {process.stdout: STDOUT_LIMIT, process.stderr: STDERR_LIMIT}
+    assert process.stdin is not None and process.stdout is not None
+    output = bytearray()
     deadline = time.monotonic() + TIMEOUT
     try:
         process.stdin.write(request)
         process.stdin.close()
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
-            selector.register(process.stderr, selectors.EVENT_READ)
             while selector.get_map():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -94,16 +91,15 @@ def _run(command: list[str], repo: Path, request: bytes, environment: dict[str, 
                         selector.unregister(stream)
                         stream.close()
                         continue
-                    outputs[stream].extend(chunk)
-                    if len(outputs[stream]) > limits[stream]:
-                        channel = "stdout" if stream is process.stdout else "stderr"
-                        raise ResolverError(f"resolver {channel} exceeds {limits[stream]} bytes")
-        return process.wait(), bytes(outputs[process.stdout]), bytes(outputs[process.stderr])
+                    output.extend(chunk)
+                    if len(output) > STDOUT_LIMIT:
+                        raise ResolverError(f"resolver stdout exceeds {STDOUT_LIMIT} bytes")
+        return process.wait(), bytes(output)
     except BaseException:
         _stop(process)
         raise
     finally:
-        for stream in (process.stdin, process.stdout, process.stderr):
+        for stream in (process.stdin, process.stdout):
             if not stream.closed:
                 stream.close()
 
@@ -123,11 +119,9 @@ def resolve_command(
         "images": requested,
     }
     encoded = (json.dumps(request, separators=(",", ":"), sort_keys=True) + "\n").encode()
-    status, stdout, stderr = _run(argv, repo, encoded, runtime.builder_environment())
-    diagnostic = stderr.decode("utf-8", errors="replace").strip()
+    status, stdout = _run(argv, repo, encoded, runtime.builder_environment())
     if status:
-        suffix = f": {diagnostic}" if diagnostic else ""
-        raise ResolverError(f"resolver exited with status {status}{suffix}")
+        raise ResolverError(f"resolver exited with status {status}; see resolver output above")
     try:
         result = json.loads(stdout, object_pairs_hook=_unique_object)
     except (UnicodeError, json.JSONDecodeError) as error:

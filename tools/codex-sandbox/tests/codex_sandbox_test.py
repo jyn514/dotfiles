@@ -284,6 +284,26 @@ class ContainerTimingTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
+    def test_fresh_session_reports_image_and_proxy_preparation(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        state = SimpleNamespace(repository=Path("/unused"))
+
+        def acquire(value):
+            value.proxy_lock = SimpleNamespace(shared=False)
+
+        with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
+                             recover_relays=mock.Mock(), acquire_lock=acquire,
+                             load_repository_policy=mock.Mock(),
+                             stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+            with self.assertRaisesRegex(RuntimeError, "stop after notice"):
+                execute(state)
+        self.assertIn(
+            "Preparing sandbox image and proxies from current repository policy; "
+            "a cold build may take several minutes.",
+            output.getvalue(),
+        )
+
     def test_session_authority_precedes_policy_loading(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
         state = SimpleNamespace(repository=Path("/unused"))
@@ -311,16 +331,20 @@ class BackgroundRelayTest(unittest.TestCase):
         def acquire(value):
             value.proxy_lock = SimpleNamespace(shared=True)
 
-        def accepted(_value):
-            raise RuntimeError("stop after accepted authority")
-
         policy = mock.Mock(side_effect=AssertionError("join read repository policy"))
         with mock.patch.dict(execute.__globals__, validate_repository=mock.Mock(),
-                             acquire_lock=acquire, load_accepted_session=accepted,
-                             load_repository_policy=policy):
-            with self.assertRaisesRegex(RuntimeError, "accepted authority"):
+                             recover_relays=mock.Mock(), acquire_lock=acquire,
+                             load_accepted_session=mock.Mock(), load_repository_policy=policy,
+                             stage_skills=mock.Mock(side_effect=RuntimeError("stop after notice"))), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+            with self.assertRaisesRegex(RuntimeError, "stop after notice"):
                 execute(state)
         policy.assert_not_called()
+        self.assertIn(
+            "Reusing accepted sandbox image and proxies; repository image changes apply "
+            "after all attached sessions exit.",
+            output.getvalue(),
+        )
 
     def test_bake_only_repository_rejects_podman_before_startup_effects(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))['execute']

@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+real=
+old_ifs=$IFS
+IFS=:
+for directory in ${PATH:-}; do
+	[ -n "$directory" ] || directory=.
+	candidate=$directory/codex
+	[ -x "$candidate" ] || continue
+	[ "$candidate" -ef "$0" ] && continue
+	real=$candidate
+	break
+done
+IFS=$old_ifs
+
+if [ -z "$real" ]; then
+	printf '%s\n' \
+		"codex wrapper: Codex CLI is not installed by the sandbox base image; install an executable named 'codex' on PATH" >&2
+	exit 127
+fi
+if [ -z "${CODEX_SIDECAR_URL:-}" ]; then
+	printf '%s\n' \
+		"codex wrapper: authentication proxy is unavailable: CODEX_SIDECAR_URL is unset" >&2
+	exit 78
+fi
+if [ -z "${CODEX_SIDECAR_KEY:-}" ]; then
+	printf '%s\n' \
+		"codex wrapper: authentication proxy is unavailable: CODEX_SIDECAR_KEY is unset" >&2
+	exit 78
+fi
+
+proxy_url=${CODEX_SIDECAR_URL%/}/codex
+exec "$real" \
+	-c 'model_provider="codex-sandbox"' \
+	-c 'model_providers.codex-sandbox.name="Codex sandbox authentication proxy"' \
+	-c "model_providers.codex-sandbox.base_url=\"$proxy_url\"" \
+	-c 'model_providers.codex-sandbox.env_key="CODEX_SIDECAR_KEY"' \
+	-c 'model_providers.codex-sandbox.wire_api="responses"' \
+	"$@"
