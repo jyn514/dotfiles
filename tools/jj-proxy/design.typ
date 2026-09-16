@@ -170,6 +170,32 @@ The socket is an authorization boundary only by possession: the LLM is expected
 to send arbitrary requests. Security comes from request validation, not from a
 secret token or from trusting the wrapper.
 
+== Repository access modes
+
+The proxy distinguishes mutation access from read-only inspection access. A
+mutation request is bound to the selected repository, uses its fixed working
+copy descriptor, and receives read-write Landlock access to the working tree,
+Jujutsu store, and resolved Git metadata. This is the only mode that may
+snapshot a working copy or change repository state.
+
+An inspection request may name a separately admitted repository and must be
+resolved and validated by the trusted proxy before execution. The proxy mounts
+that repository, including its resolved `.jj` and Git metadata, read-only,
+applies read-only Landlock rules, and invokes Jujutsu with
+`--ignore-working-copy`.
+Inspection requests are restricted to commands whose reviewed grammar has no
+repository mutation path, initially `status`, `diff`, `log`, `show`,
+`interdiff`, `file`, `workspace list`, `git root`, and `help`. They cannot fetch,
+write working-tree files, alter configuration, or select another repository
+through command-line options.
+
+Read-only classification is an enforced command-policy property, not a label
+in the client. The proxy must reject commands that can snapshot, update stores,
+write configuration, invoke helpers, or access credentials even when their
+usual invocation appears observational. Repository identity, metadata
+resolution, mount validation, and request serialization remain per admitted
+repository in both modes.
+
 == Wrapper
 
 Replace the current `jj` shim's final invocation with a small client that sends
@@ -178,10 +204,10 @@ existing agent identity and plain-diff behavior either by translating those
 choices into request fields or, preferably, by moving identity selection into
 the trusted proxy.
 
-All Jujutsu commands, including apparently read-only commands such as `status`
-and `diff`, go through the proxy. Jujutsu may snapshot the working copy and
-write metadata during those commands, so the real binary cannot reliably run
-against the read-only metadata view.
+All Jujutsu commands go through the proxy. Mutation-mode commands may snapshot
+the working copy and write metadata. Inspection-mode commands must add
+`--ignore-working-copy` and use read-only metadata mounts; the real binary
+cannot otherwise be trusted to preserve the read-only boundary.
 
 If the socket is unavailable, the wrapper fails closed with a concise error. It
 must not fall back to a local real `jj` binary.
@@ -233,7 +259,9 @@ surfaces:
 - `util`, especially `util exec`;
 - `debug`;
 - configuration mutation and all command-line configuration overrides;
-- alternate repository, workspace, or config paths;
+- alternate repository, workspace, or config paths in mutation mode; inspection
+  mode may select only a separately admitted repository through its request
+  envelope;
 - arbitrary diff, merge, editor, pager, signing, or conflict-resolution tools;
 - `git init`, `git push`, and commands that redirect storage; and
 - irreversible recovery deletion such as operation abandonment or garbage
@@ -272,6 +300,9 @@ subcommand.
 
 Pinning the Jujutsu version makes the accepted grammar stable; upgrading
 Jujutsu requires reviewing new commands and options before changing the pin.
+The policy must maintain separate mutation and inspection grammars; adding a
+command to the inspection grammar requires proving that it remains read-only
+under `--ignore-working-copy` and the read-only filesystem policy.
 
 == Lifecycle
 
@@ -319,8 +350,11 @@ sessions.
   trusted interpreters or tools cannot be selected to interpret working-tree
   content.
 - Shell metacharacters in commit messages remain literal data.
-- Config overrides, alternate repositories, external tools, and `util exec` are
-  rejected.
+- Config overrides, unadmitted alternate repositories, external tools, and
+  `util exec` are rejected.
+- Inspection requests can read only separately admitted repositories and cannot
+  mutate their working trees, Jujutsu stores, Git metadata, configuration, or
+  credentials.
 - Git fetch is constrained to approved remotes, every Git push request is
   rejected, and the Codex container has no write-capable credentials for
   protected remotes.
