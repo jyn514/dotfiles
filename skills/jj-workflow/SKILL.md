@@ -59,7 +59,9 @@ Messages should be short and imperative. For non-mechanical changes, add a body 
 
 In concurrent worktrees, do not use `jj describe` followed by `jj new`: it mutates the shared working-copy change. Use `jj new` only after committing and when a fresh working change cannot disturb concurrent work.
 
-After a commit, `@` is the new working copy and `@-` is usually the commit. When exact identity matters:
+After a commit, `@` is the new working copy and `@-` is usually the commit. Do not use `@-` as a squash target merely because it is nearby: descendants, rebases, or prior squashes may make it the wrong change. Identify the target by its stable change ID, inspect its patch and descendants, and use that ID explicitly, for example `jj squash --from @ --into CHANGE_ID path/to/owned-file`.
+
+When exact identity matters:
 
 ```bash
 jj log -r @- --no-graph \
@@ -95,7 +97,7 @@ jj log -r @ --no-graph \
   -T '"conflicts: " ++ if(conflict, "true", "false") ++ "\n" ++ conflicted_files.map(|f| f.path().display()).join("\n") ++ "\n"'
 ```
 
-For stacked conflicts, put each resolution into the change that introduced it, using stable change IDs and exact filesets:
+For stacked conflicts, use the introducing change's stable ID and exact fileset. Do not substitute nearby `@-`: descendants, rebases, or prior squashes may make it the wrong change:
 
 ```bash
 jj squash --from @ --into CHANGE_ID path/to/owned-file
