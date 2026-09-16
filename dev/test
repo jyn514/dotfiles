@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = --test-environment-ready ]; then
+	shift
+else
+	exec "$root/dev/test-environment" "$0" --test-environment-ready "$@"
+fi
+
 jobs=${TEST_JOBS:-8}
 run_containers=0
 run_lima=0
@@ -30,7 +37,6 @@ case $jobs in
 	''|*[!0-9]*|0) echo "test job count must be a positive integer" >&2; exit 2;;
 esac
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 results=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-tests.XXXXXX")
 trap 'rm -rf "$results"' EXIT HUP INT TERM
 export results
@@ -69,11 +75,19 @@ else
 	exit 1
 fi
 
-bb tools/extract-chat/tests/extract_chat_test.clj
-bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
-bb -cp tools/package-plan/src tools/package-plan/tests/run.clj
+bb_command=${DOTFILES_TEST_BB_REAL:-bb}
+"$bb_command" tools/extract-chat/tests/extract_chat_test.clj
+if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
+	JJ_REAL=$DOTFILES_TEST_JJ_REAL "$bb_command" -cp tools/agent-split/src tools/agent-split/tests/run.clj
+else
+	"$bb_command" -cp tools/agent-split/src tools/agent-split/tests/run.clj
+fi
+"$bb_command" -cp tools/package-plan/src tools/package-plan/tests/run.clj
 node tools/extract-chat-share/tests/extract_chat_share_test.js
 node tools/codex-archive-old/tests/codex_archive_old_test.js
+if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
+	export JJ_PROXY_TEST_JJ="$DOTFILES_TEST_JJ_REAL"
+fi
 if [ "$(uname -s)" = Linux ]; then
 	cargo test --manifest-path tools/jj-proxy/Cargo.toml
 else

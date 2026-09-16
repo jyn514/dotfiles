@@ -167,7 +167,6 @@ class CodexWrapperTests(unittest.TestCase):
                 "HOME": str(root),
                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
             }
-            environment.pop("BB_REAL", None)
             environment.pop("CODEX_HOME", None)
 
             result = subprocess.run(

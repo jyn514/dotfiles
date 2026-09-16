@@ -27,8 +27,9 @@ class TestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
-            (root / "dev/test").write_bytes((ROOT / "dev/test").read_bytes())
-            (root / "dev/test").chmod(0o755)
+            for name in ("test", "test-environment"):
+                (root / f"dev/{name}").write_bytes((ROOT / f"dev/{name}").read_bytes())
+                (root / f"dev/{name}").chmod(0o755)
             bin_directory = root / "bin"
             bin_directory.mkdir()
             log = root / "pytest.args"

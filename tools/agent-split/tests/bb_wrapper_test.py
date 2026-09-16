@@ -52,6 +52,8 @@ class BbWrapperTest(unittest.TestCase):
 
     def run_bb(self, *args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
+        if real_bb := env.get("DOTFILES_TEST_BB_REAL"):
+            env.update(BB_REAL=real_bb, BB_SOURCE_ROOT=str(ROOT))
         env["PATH"] = f"{WRAPPERS}:{env['PATH']}"
         return subprocess.run(
             ["bb", *args],
@@ -113,12 +115,7 @@ class BbWrapperTest(unittest.TestCase):
                     result = subprocess.run(
                         [str(ROOT / "tools" / "agent-split" / "bb"), *arguments],
                         cwd=ROOT,
-                        env={
-                            key: value
-                            for key, value in os.environ.items()
-                            if key not in {"BB_REAL", "BB_SOURCE_ROOT"}
-                        }
-                        | {"PATH": f"{wrappers}:{real}:{os.defpath}"},
+                        env=os.environ | {"PATH": f"{wrappers}:{real}:{os.defpath}"},
                         text=True,
                         capture_output=True,
                         check=False,
@@ -139,9 +136,7 @@ class BbWrapperTest(unittest.TestCase):
             )
             stub.chmod(0o755)
             environment = {
-                key: value
-                for key, value in os.environ.items()
-                if key not in {"BB_REAL", "BB_SOURCE_ROOT", "TMPDIR"}
+                key: value for key, value in os.environ.items() if key != "TMPDIR"
             }
             environment["PATH"] = f"{WRAPPERS}:{real}:{os.defpath}"
             if tmpdir is not None:

@@ -1693,7 +1693,12 @@ class CodexSandboxTest(unittest.TestCase):
         run = self.final_run()
         repository = self.repo.resolve()
         self.assertNotIn(
-             f"type=bind,src={git_dir.resolve()},dst=/src/repository/.git,readonly",
+            f"type=bind,src={git_dir.resolve()},dst=/src/repository/.git,readonly",
+%%%%%%% diff from: klkrxuxu 45600355 "Specify read-only repository inspection mode" (rebased revision)
+\\\\\\\        to: zzsuumrw 32aa707c "Support Git metadata outside jj workspace" (parents of squashed revision)
+         self.assertIn(
+-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly",
++            f"type=bind,src={git_dir.resolve()},dst=/src/repository/.git,readonly",
             run,
         )
         self.assertIn(

@@ -120,6 +120,7 @@ class State:
     agent_podman: dict[str, str] | None = None
     repository: Path | None = None
     git_repository: Path | None = None
+    git_mount_source: Path | None = None
     container_repository: Path | None = None
     container_working_directory: Path | None = None
     zuliprc: Path | None = None
@@ -406,6 +407,7 @@ def validate_repository(state: State) -> None:
         if len(lines) != 2:
             raise LauncherError("Git returned an invalid metadata layout")
         git_roots = [Path(line).resolve(strict=True) for line in lines]
+        git_mount_source = git_roots[0]
     except (subprocess.CalledProcessError, FileNotFoundError) as error:
         raise LauncherError("Git metadata indirection cannot be resolved safely") from error
     try:
@@ -429,6 +431,7 @@ def validate_repository(state: State) -> None:
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
     state.repository = repository
     state.git_repository = git_repository
+    state.git_mount_source = git_roots[0]
     state.metadata_roots = (jj, jj_repo, *git_roots)
     proxy_module().use_repository_metadata(repository, tuple(git_roots))
     state.container_repository = container_repository_path(state.home, repository)
@@ -1629,7 +1632,9 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "git", "-C", str(state.git_repository), "rev-parse", "--path-format=absolute",
         "--git-dir", "--git-common-dir",
     ], capture=True).stdout.splitlines()
-    protected = [state.repository / ".git", state.repository / ".jj"]
+    # A non-colocated workspace has no .git entry of its own. Mount the
+    # backing Git metadata at the conventional workspace path in the guest.
+    protected = [state.repository / ".jj"]
     external_git_roots: list[tuple[Path, Path]] = []
     for line in git_layout:
         path = Path(line).resolve(strict=True)
@@ -1747,6 +1752,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
                        *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
         "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
+        "--mount", f"type=bind,src={state.git_mount_source},dst={state.container_repository / '.git'},readonly",
         "--workdir", str(state.container_working_directory),
         *[
             item

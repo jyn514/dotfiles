@@ -266,9 +266,16 @@ class CommandIntegrationTests(unittest.TestCase):
         ]
         expression = template.replace("description", '"Fix: parser"', 1)
 
+        environment = os.environ.copy()
+        if proxy_dir := environment.get("DOTFILES_TEST_SANDBOX_PROXY_DIR"):
+            environment["SANDBOX_PROXY_DIR"] = proxy_dir
         rendered = subprocess.run(
-            ["jj", "log", "--no-graph", "-r", "@", "-T", expression],
+            [
+                str(ROOT / "libexec/agent-wrappers/jj"),
+                "log", "--no-graph", "-r", "@", "-T", expression,
+            ],
             cwd=ROOT,
+            env=environment,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
