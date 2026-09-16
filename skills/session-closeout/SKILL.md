@@ -65,12 +65,13 @@ Use only the harness's supported current-session title mechanism. If none is exp
 
 ## 7. Report and stop
 
-Report only:
+Report:
 
 - completion or blockers;
 - verification evidence and its limits;
 - commits created or owned changes left uncommitted;
 - required or recommended follow-ups;
-- the applied session title, when supported.
+- process improvements, or the reason no process improvement is necessary;
+- anything else that would be hard for another agent to recover without reading the session log.
 
 Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected. When title tooling is supported, the title must also be applied. A commit blocker leaves closeout incomplete.
