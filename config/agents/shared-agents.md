@@ -96,6 +96,7 @@ Before creating or reviewing a commit, use the `commit-quality` skill.
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
 - **Subagent routing:** Exact allowlisted skills may route a subagent through the `luna` template; absent, unknown, or mixed skill sets inherit the parent model. Use the explicit `parent` template to bypass automatic routing.
+- **Delegated implementation:** The parent owns integration. Inspect the returned diff against the requirements and agreed boundaries, and run the required acceptance checks before claiming completion; a subagent's summary or test count is not evidence by itself.
 
 ### Records and provenance
 
@@ -124,4 +125,3 @@ jyn's name is ALWAYS spelled lowercase: "jyn", never "Jyn".
 - **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
 - **Reinforce good behavior:** If I praise behavior not already covered by my instructions, suggest a general `AGENTS.md` change to preserve it for future agents and sessions. Do not suggest guidance already present in an `AGENTS.md` or a skill read that session.
 - **Unrequested observations:** Keep a `notes/` directory. At the end of a turn, record one or two unaddressed observations: a pattern, an alternative decision, or a contradiction between instructions and findings. Record observations, not conclusions; write nothing if none arose.
-

@@ -14,16 +14,19 @@ Discover and follow the target repository's guidance for review thresholds, test
 ## Procedure
 
 1. Identify the owned diff, explicit requirements, acceptance criteria, and protected unrelated work while the patch is still uncommitted.
-2. Map every requirement to concrete evidence from the final files, focused tests, native parsers or linters, generated-artifact checks, and migration or compatibility checks where applicable.
+1. Map every requirement to concrete evidence from the final files, focused tests, native parsers or linters, generated-artifact checks, and migration or compatibility checks where applicable.
    Build an acceptance matrix from the original issue, including each named input mode, option combination, and explicitly named exception.
    Each row records the requirement, mode or condition, expected observable behavior, evidence command or artifact, and result.
    Add rows only where behavior can differ; do not enumerate irrelevant combinations.
    Test every applicable row or record why a row is inapplicable.
    Treat a missing row as missing evidence.
-3. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
+   For cross-process or permission-boundary changes, include the assembled runtime path and a forbidden effect in the matrix; test them where the boundary is enforced. If that runtime is unavailable, mark those rows unverified rather than claiming completion.
+1. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
    Report acceptance drift when any later artifact is narrower than the original issue.
-4. Search for likely loose ends: stale names and paths, old representations, duplicate implementations, bypass paths, temporary probes, unhandled lifecycle states, and documentation that still describes the prior behavior.
-5. Challenge applicable boundaries with the cheapest realistic cases:
+1. Ask yourself: is this the right approach? Are you sure this fixes the underlying bug? Would a better approach be simpler or more maintainable?
+   If so, go with that approach instead.
+1. Search for likely loose ends: stale names and paths, old representations, duplicate implementations, bypass paths, temporary probes, unhandled lifecycle states, and documentation that still describes the prior behavior.
+1. Challenge applicable boundaries with the cheapest realistic cases:
    - duplicate identical inputs and multiple selected objects or refs
    - equal, aliased, symlinked, ancestor, and descendant paths
    - interruption or timeout before and after each effect or publication transition
@@ -31,9 +34,9 @@ Discover and follow the target repository's guidance for review thresholds, test
    - stale selection changed before mutation
    - ambient checkout, configuration, platform, or provider differing from the selected object
    - produced-native execution when compilation or JVM tests cannot establish runtime reachability
-6. If the user authorized implementation or repair, fix in-scope failures, rerun affected checks, and inspect the resulting complete diff. Otherwise report findings without mutation.
-7. Apply the repository's review threshold. Request independent review when the change is broad, cross-boundary, security-sensitive, destructive, or otherwise requires authority beyond self-review.
-8. Do not claim completion while any requirement lacks evidence. Distinguish an unrelated baseline failure from an unverified requirement; neither is silently converted into success.
+1. If the user authorized implementation or repair, fix in-scope failures, rerun affected checks, and inspect the resulting complete diff. Otherwise report findings without mutation.
+1. Apply the repository's review threshold. Request independent review when the change is broad, cross-boundary, security-sensitive, destructive, or otherwise requires authority beyond self-review.
+1. Do not claim completion while any requirement lacks evidence. Distinguish an unrelated baseline failure from an unverified requirement; neither is silently converted into success.
 
 ## Reporting
 
