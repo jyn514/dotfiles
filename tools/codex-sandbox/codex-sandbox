@@ -1640,6 +1640,8 @@ def run_agent(state: State, arguments: list[str]) -> int:
         path = Path(line).resolve(strict=True)
         if any(character in str(path) for character in (",", "\n", "\r")):
             raise LauncherError("Git metadata path contains a container-mount delimiter")
+        if path == state.git_mount_source:
+            continue
         try:
             path.relative_to(state.repository)
         except ValueError:
