@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Convert one Codex JSONL session into a Pi v3 session JSONL file."""
+
+import argparse
+import json
+import os
+import re
+import sys
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+import subprocess
+from urllib.request import Request, urlopen
+
+
+def read_events(path: Path):
+    with path.open() as source:
+        return [json.loads(line) for line in source if line.strip()]
+
+
+def read_share(url):
+    extractor = Path(__file__).with_name("extract-chat-share")
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=30) as response:
+        html = response.read().decode("utf-8")
+    model_match = re.search(r'\\"default_model_slug\\",\\"([^\\"]+)\\"', html)
+    model = normalize_model(model_match.group(1)) if model_match else "unknown"
+    result = subprocess.run([str(extractor), url], check=True, capture_output=True, text=True)
+    turns = re.findall(r"^## (User|Assistant)\n\n(.*?)(?=\n\n## |\Z)", result.stdout, re.MULTILINE | re.DOTALL)
+    if not turns:
+        raise SystemExit("ChatGPT share page contained no readable user/assistant messages")
+    session_id = re.search(r"/share/([^/?#]+)", url).group(1)
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return [{"type": "session_meta", "payload": {"session_id": session_id, "cwd": os.getcwd(), "model": model}}] + [
+        {"type": "share_message", "role": role.lower(), "text": text.rstrip(), "timestamp": now}
+        for role, text in turns]
+
+
+def content_text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return content.get("text") or content.get("input_text") or content.get("output_text") or ""
+    if isinstance(content, list):
+        return "\n".join(filter(None, (content_text(part) for part in content)))
+    return ""
+
+
+def normalize_model(model):
+    return model[:-3] if model.endswith("-wm") else model
+
+
+def normalize_cwd(cwd):
+    if cwd == "/Users/jyn/src" or cwd.startswith("/Users/jyn/src/"):
+        return "/src" + cwd[len("/Users/jyn/src"):]
+    return cwd.replace("/Users/jyn", "/home/codex", 1)
+
+
+def synthetic_user_message(text):
+    return text.startswith("# AGENTS.md instructions for ") or text.startswith("<environment_context>")
+
+
+def messages(events):
+    event_messages = []
+    response_messages = []
+    for event in events:
+        payload = event.get("payload", {})
+        if event.get("type") == "share_message":
+            event_messages.append((event["role"], event["text"], event.get("timestamp")))
+        elif event.get("type") == "event_msg":
+            kind = payload.get("type")
+            if kind == "user_message":
+                role, text = "user", payload.get("message", "")
+            elif kind == "agent_message":
+                if payload.get("phase") not in (None, "final_answer"):
+                    continue
+                role, text = "assistant", payload.get("message", "")
+            else:
+                continue
+            if text and text.strip():
+                event_messages.append((role, text, event.get("timestamp")))
+        elif event.get("type") == "response_item":
+            if payload.get("type") != "message" or payload.get("role") not in ("user", "assistant"):
+                continue
+            role, text = payload["role"], content_text(payload.get("content"))
+            if text.strip() and not (role == "user" and synthetic_user_message(text)):
+                response_messages.append((role, text, event.get("timestamp")))
+    # Codex stores both views. Prefer event_msg, matching extract-chat.
+    return event_messages or response_messages
+
+
+def timestamp_ms(value):
+    if not value:
+        return int(datetime.now(timezone.utc).timestamp() * 1000)
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return int(parsed.timestamp() * 1000)
+
+
+def convert(source: Path, destination: Path, normalize=False):
+    events = read_events(source)
+    meta = next((event for event in events if event.get("type") == "session_meta"), {})
+    payload = meta.get("payload", {})
+    if normalize and isinstance(payload.get("cwd"), str):
+        payload["cwd"] = normalize_cwd(payload["cwd"])
+    session_id = payload.get("session_id") or str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    header = {"type": "session", "version": 3, "id": session_id,
+              "timestamp": now, "cwd": payload.get("cwd") or os.getcwd()}
+    output = [header]
+    parent = None
+    for index, (role, text, timestamp) in enumerate(messages(events), 1):
+        entry_id = f"{index:08x}"
+        content = [{"type": "text", "text": text}] if role == "assistant" else text
+        message = {"role": role, "content": content, "timestamp": timestamp_ms(timestamp)}
+        if role == "assistant":
+            message.update({
+                "api": "openai-responses", "provider": "openai-codex", "model": payload.get("model", "unknown"),
+                "usage": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+                          "totalTokens": 0, "cost": {"input": 0, "output": 0,
+                          "cacheRead": 0, "cacheWrite": 0, "total": 0}},
+                "stopReason": "stop"})
+        output.append({"type": "message", "id": entry_id, "parentId": parent,
+                       "timestamp": timestamp or now, "message": message})
+        parent = entry_id
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w") as target:
+        for entry in output:
+            target.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    return len(output) - 1
+
+
+def find_session(session_id, root, archived):
+    if session_id.endswith((".json", ".jsonl")) and Path(session_id).is_file():
+        return Path(session_id)
+    directory = root / ("archived_sessions" if archived else "sessions")
+    matches = sorted(path for path in directory.rglob("*.jsonl")
+                     if path.stem == session_id or path.stem.endswith("-" + session_id))
+    if len(matches) != 1:
+        detail = "no" if not matches else "multiple"
+        raise SystemExit(f"{detail} Codex sessions found for {session_id} under {directory}")
+    return matches[0]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("session", help="Codex session ID, JSONL path, or ChatGPT share URL")
+    parser.add_argument("-o", "--output", type=Path, help="Pi JSONL output path (default: Pi's session directory)")
+    parser.add_argument("--archived", action="store_true", help="Search archived_sessions")
+    parser.add_argument("--normalize", action="store_true",
+                        help="Rewrite /Users/jyn paths to /home/codex for sandbox sessions")
+    args = parser.parse_args()
+    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    is_share = args.session.startswith(("https://chatgpt.com/share/", "https://chat.openai.com/share/"))
+    if is_share:
+        events = read_share(args.session)
+        source = None
+    else:
+        source = find_session(args.session, codex_home, args.archived)
+        events = read_events(source)
+    meta = next((event for event in events if event.get("type") == "session_meta"), {})
+    payload = meta.get("payload", {})
+    if args.normalize and isinstance(payload.get("cwd"), str):
+        payload["cwd"] = normalize_cwd(payload["cwd"])
+    if args.output:
+        destination = args.output
+    else:
+        cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
+        safe_cwd = "--" + str(cwd).lstrip("/\\").replace("/", "-").replace("\\", "-").replace(":", "-") + "--"
+        agent_dir = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent"))
+        stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        filename = f"{stamp.replace(':', '-')}_{payload.get('session_id', uuid.uuid4())}.jsonl"
+        destination = agent_dir / "sessions" / safe_cwd / filename
+    if source is None:
+        temp = Path(f"/tmp/codex-to-pi-{os.getpid()}.jsonl")
+        with temp.open("w") as target:
+            for event in events:
+                target.write(json.dumps(event) + "\n")
+        try:
+            count = convert(temp, destination, args.normalize)
+        finally:
+            temp.unlink(missing_ok=True)
+    else:
+        count = convert(source, destination, args.normalize)
+    print(f"wrote {count} messages to {destination}")
+
+
+if __name__ == "__main__":
+    main()
