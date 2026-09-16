@@ -81,6 +81,14 @@ class JjProxyClientTest(unittest.TestCase):
             "email": "codex@example.test",
         }, request)
 
+    def test_forwards_repository_selector_for_proxy_resolution(self) -> None:
+        result, request = self.run_client(["-R", "../other", "status"])
+
+        self.assertEqual(7, result.returncode)
+        self.assertEqual("mutate", request["mode"])
+        self.assertEqual("nested", request["cwd"])
+        self.assertEqual(["-R", "../other", "status"], request["argv"])
+
     def test_encodes_agent_split_as_a_dedicated_operation(self) -> None:
         patch = "diff --git a/note b/note\n--- a/note\n+++ b/note\n"
         result, request = self.run_client(

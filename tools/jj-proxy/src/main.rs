@@ -207,9 +207,35 @@ fn agent_jj_command(user: &str, email: &str) -> Command {
     command
 }
 
-fn author_update_required(request: &Request) -> bool {
+fn author_update_required(request: &Request, argv: &[String]) -> bool {
     request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
-        || matches!(request.argv.first().map(String::as_str), Some("commit" | "split"))
+        || matches!(argv.first().map(String::as_str), Some("commit" | "split"))
+}
+
+fn workspace_for(path: &Path) -> Option<&Path> {
+    path.ancestors().find(|ancestor| ancestor.join(".jj").is_dir())
+}
+
+fn select_repository(request: &Request, selected_repo: &Path, source_root: &Path, selector: Option<&str>) -> Result<(std::path::PathBuf, bool)> {
+    let invocation = if matches!(request.mode, RequestMode::Inspect) {
+        Path::new(&request.cwd).to_path_buf()
+    } else {
+        selected_repo.join(&request.cwd)
+    };
+    let target = match selector {
+        Some(value) => fs::canonicalize(invocation.join(value)).wrap_err("cannot resolve repository selector")?,
+        None => invocation,
+    };
+    if selector.is_some() && !target.starts_with(source_root) && target != selected_repo {
+        bail!("repository selector is outside /src");
+    }
+    let workspace = if selector.is_some() || matches!(request.mode, RequestMode::Inspect) {
+        workspace_for(&target).ok_or_else(|| eyre!("repository selector is not inside a Jujutsu workspace"))?
+    } else {
+        selected_repo
+    };
+    let inspect = matches!(request.mode, RequestMode::Inspect) || workspace != selected_repo;
+    Ok((workspace.to_path_buf(), inspect))
 }
 
 fn author_update_command(user: &str, email: &str) -> Command {
@@ -275,6 +301,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
 fn execute(
     request: &Request,
     root: RawFd,
+    selected_repo: &Path,
     remotes: &HashSet<String>,
     temporary_directory: &str,
 ) -> Response {
@@ -298,6 +325,14 @@ fn execute(
     if matches!(request.mode, RequestMode::Inspect) && request.agent_split.is_some() {
         return failure("agent split is not allowed in inspection mode".into());
     }
+    let (repository_selector, argv) = if request.agent_split.is_some() {
+        (None, Vec::new())
+    } else {
+        match policy::extract_repository(&request.argv) {
+            Ok(parsed) => parsed,
+            Err(error) => return failure(error.to_string()),
+        }
+    };
     if let Some(split) = &request.agent_split {
         if !request.argv.is_empty() {
             return failure("agent split cannot include Jujutsu arguments".into());
@@ -312,30 +347,24 @@ fn execute(
         if let Err(error) = fs::write(format!("{CONFIG_HOME}/agent-split.patch"), &split.patch) {
             return failure(format!("could not stage split patch: {error}"));
         }
-    } else if matches!(request.mode, RequestMode::Inspect) {
-        if let Err(error) = policy::validate_inspect(&request.argv) { return failure(error.to_string()); }
-    } else if let Err(error) = policy::validate(&request.argv, remotes) {
-        return failure(error.to_string());
     }
     let cwd = match open_cwd(root, &request.cwd, matches!(request.mode, RequestMode::Inspect)) { Ok(fd) => fd, Err(error) => return failure(error.to_string()) };
-    if matches!(request.mode, RequestMode::Inspect) {
-        let mut ancestor = Path::new(&request.cwd);
-        let workspace = loop {
-            if ancestor.join(".jj").is_dir() { break Some(ancestor); }
-            match ancestor.parent() {
-                Some(parent) if parent != ancestor => ancestor = parent,
-                _ => break None,
-            }
-        };
-        let Some(workspace) = workspace else {
-            return failure("cwd is not inside a Jujutsu workspace".into());
-        };
-        if let Err(error) = prepare_inspection_config(workspace, Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME)) {
+    let (workspace, inspect) = match select_repository(request, selected_repo, Path::new("/src"), repository_selector.as_deref()) {
+        Ok(selection) => selection,
+        Err(error) => return failure(error.to_string()),
+    };
+    if request.agent_split.is_none() {
+        let validation = if inspect { policy::validate_inspect(&argv) } else { policy::validate(&argv, remotes) };
+        if let Err(error) = validation { return failure(error.to_string()); }
+    }
+    if inspect {
+        if request.agent_split.is_some() { return failure("agent split is not allowed in inspection mode".into()); }
+        if let Err(error) = prepare_inspection_config(&workspace, Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME)) {
             return failure(format!("cannot prepare inspection repository config: {error}"));
         }
     }
 
-    if !matches!(request.mode, RequestMode::Inspect) && author_update_required(request) {
+    if !inspect && author_update_required(request, &argv) {
         let mut update = author_update_command(user, email);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -345,29 +374,32 @@ fn execute(
         let _ = update.status();
     }
 
-    let mut command = if matches!(request.mode, RequestMode::Inspect) {
+    let mut command = if inspect {
         let mut command = Command::new(TRUSTED_PROXY);
         command.args(["inspect-jj", user, email]);
         command
     } else {
         agent_jj_command(user, email)
     };
+    if repository_selector.is_some() {
+        command.arg("--repository").arg(&workspace);
+    }
     if let Some(split) = &request.agent_split {
         command.args([
             "split", "--tool", "agent-split", "-m", split.message.as_str(),
             "-r", split.revision.as_str(),
         ]);
     } else {
-        command.args(&request.argv);
+        command.args(&argv);
     }
-    if request.argv.as_slice().starts_with(&["git".into(), "fetch".into()])
-        && !request.argv.iter().any(|arg| arg == "--remote" || arg.starts_with("--remote="))
+    if argv.as_slice().starts_with(&["git".into(), "fetch".into()])
+        && !argv.iter().any(|arg| arg == "--remote" || arg.starts_with("--remote="))
     {
         for remote in remotes { command.args(["--remote", remote]); }
     }
     command.env_clear().envs(command_environment(user, email, temporary_directory))
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    if matches!(request.mode, RequestMode::Inspect) {
+    if inspect {
         for key in ["JJ_PROXY_REPO", "JJ_PROXY_GIT_DIR", "JJ_PROXY_COMMON_DIR", "JJ_PROXY_JJ_REPO"] {
             if let Ok(value) = env::var(key) { command.env(key, value); }
         }
@@ -401,7 +433,7 @@ fn execute(
     if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
         return failure("output limit exceeded".into());
     }
-    if status == 0 && !matches!(request.mode, RequestMode::Inspect) {
+    if status == 0 && !inspect {
         let mut reset = reset_author_command();
         reset.env_clear().envs(trusted_environment(temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -447,6 +479,7 @@ fn serve() -> Result<()> {
                 } else {
                     repository_root.as_raw_fd()
                 },
+                Path::new(&repo),
                 &remotes,
                 TEMP_HOME,
             ),
@@ -464,9 +497,6 @@ fn client(args: Vec<String>) -> Result<i32> {
     let cwd = fs::canonicalize(cwd).wrap_err("cannot resolve current directory")?;
     let inspect = env::var_os("JJ_PROXY_INSPECT").is_some()
         || (cwd.starts_with("/src") && cwd.strip_prefix(&repo_path).is_err());
-    if !inspect && args.iter().any(|arg| arg == "-R" || arg.starts_with("-R")) {
-        bail!("-R is not supported by the proxy; cd into the selected repository and retry");
-    }
     let cwd = if inspect {
         cwd.to_string_lossy().into_owned()
     } else {
@@ -656,6 +686,34 @@ mod tests {
     }
 
     #[test]
+    fn repository_selector_grants_writes_only_to_the_selected_workspace() {
+        let root = env::temp_dir().join(format!("jj-proxy-selector-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source = root.join("src");
+        let selected = source.join("selected");
+        let other = source.join("other");
+        let outside = root.join("outside");
+        for path in [&selected, &other, &outside] { fs::create_dir_all(path.join(".jj")).unwrap(); }
+        let source = fs::canonicalize(source).unwrap();
+        let selected = source.join("selected");
+        let other = source.join("other");
+        fs::create_dir_all(selected.join("nested")).unwrap();
+        std::os::unix::fs::symlink(&outside, selected.join("nested/escape")).unwrap();
+        let mut request = Request {
+            version: 1, mode: RequestMode::Mutate, cwd: "nested".into(),
+            argv: vec!["status".into()], agent_split: None, user: None, email: None,
+        };
+        assert_eq!((selected.clone(), false), select_repository(&request, &selected, &source, Some(".")).unwrap());
+        assert_eq!((other.clone(), true), select_repository(&request, &selected, &source, Some("../../other")).unwrap());
+        assert!(select_repository(&request, &selected, &source, Some(outside.to_str().unwrap())).is_err());
+        assert!(select_repository(&request, &selected, &source, Some("escape")).is_err());
+        request.mode = RequestMode::Inspect;
+        request.cwd = other.to_string_lossy().into_owned();
+        assert_eq!((selected, true), select_repository(&request, &source.join("selected"), &source, Some("../selected")).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn trusted_config_preserves_the_effective_security_settings() {
         let config = include_str!("../jj.toml");
         for setting in [
@@ -699,10 +757,11 @@ mod tests {
             user: Some("Pi".into()),
             email: Some("pi@example.test".into()),
         };
+        let author_update_required = |request: Request| super::author_update_required(&request, &request.argv);
 
-        assert!(author_update_required(&request(&["commit", "-m", "message"], None)));
-        assert!(author_update_required(&request(&["split", "-m", "message"], None)));
-        assert!(author_update_required(&request(
+        assert!(author_update_required(request(&["commit", "-m", "message"], None)));
+        assert!(author_update_required(request(&["split", "-m", "message"], None)));
+        assert!(author_update_required(request(
             &[],
             Some(AgentSplit {
                 patch: "patch".into(),
@@ -710,7 +769,7 @@ mod tests {
                 revision: "@".into(),
             }),
         )));
-        assert!(!author_update_required(&request(
+        assert!(!author_update_required(request(
             &[],
             Some(AgentSplit {
                 patch: "patch".into(),
@@ -718,7 +777,7 @@ mod tests {
                 revision: "@-".into(),
             }),
         )));
-        assert!(!author_update_required(&request(&["status"], None)));
+        assert!(!author_update_required(request(&["status"], None)));
 
         let command = author_update_command("agent", "agent@example.test");
         let args: Vec<_> = command
@@ -750,7 +809,7 @@ mod tests {
             user: None,
             email: None,
         };
-        let response = execute(&request, root.as_raw_fd(), &HashSet::new(), "/tmp");
+        let response = execute(&request, root.as_raw_fd(), Path::new("/tmp"), &HashSet::new(), "/tmp");
         assert_eq!(2, response.exit);
         assert!(response.stderr.contains("agent split is not allowed"));
     }

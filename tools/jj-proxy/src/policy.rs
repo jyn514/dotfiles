@@ -31,6 +31,36 @@ fn reject_security_options(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Separate the global repository selector before command-policy validation.
+/// The trusted server resolves the value; no client-provided access mode follows it.
+pub fn extract_repository(argv: &[String]) -> Result<(Option<String>, Vec<String>)> {
+    let mut repository = None;
+    let mut command = Vec::with_capacity(argv.len());
+    let mut index = 0;
+    let mut positional = false;
+    while index < argv.len() {
+        let arg = &argv[index];
+        if arg == "--" { positional = true; }
+        let value = if !positional && (arg == "-R" || arg == "--repository") {
+            index += 1;
+            Some(argv.get(index).ok_or_else(|| eyre!("{arg} requires a path"))?.as_str())
+        } else if !positional {
+            arg.strip_prefix("--repository=").or_else(|| arg.strip_prefix("-R"))
+        } else {
+            None
+        };
+        if let Some(value) = value {
+            if repository.is_some() { bail!("repository selector may appear only once"); }
+            if value.is_empty() || value.contains('\0') { bail!("repository selector is empty or invalid"); }
+            repository = Some(value.to_owned());
+        } else {
+            command.push(arg.clone());
+        }
+        index += 1;
+    }
+    Ok((repository, command))
+}
+
 pub fn validate_inspect(argv: &[String]) -> Result<()> {
     validate_shape(argv)?;
     let read_only = matches!(argv.first().map(String::as_str), Some("status" | "diff" | "log" | "show" | "interdiff" | "help"))
@@ -136,5 +166,29 @@ mod tests {
         ] {
             assert!(!check(args), "accepted {args:?}");
         }
+    }
+
+    #[test]
+    fn repository_selector_is_extracted_once_without_hiding_other_options() {
+        for input in [
+            vec!["-R", "/src/other", "status"],
+            vec!["-R/src/other", "status"],
+            vec!["--repository", "/src/other", "status"],
+            vec!["status", "--repository=/src/other"],
+        ] {
+            let args = input.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            let (repo, command) = extract_repository(&args).unwrap();
+            assert_eq!(repo.as_deref(), Some("/src/other"));
+            assert_eq!(command, ["status"]);
+        }
+        for input in [
+            vec!["-R", "/src/one", "-R", "/src/two", "status"],
+            vec!["--repository=", "status"],
+            vec!["-R"],
+        ] {
+            assert!(extract_repository(&input.into_iter().map(str::to_owned).collect::<Vec<_>>()).is_err());
+        }
+        let (_, command) = extract_repository(&["status", "--", "-R", "/src/other"].map(str::to_owned)).unwrap();
+        assert!(validate_inspect(&command).is_err());
     }
 }

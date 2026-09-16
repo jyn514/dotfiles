@@ -34,6 +34,10 @@ For a repository with a Jujutsu secure-config ID, the trusted proxy prepares a
 private config-cache entry before inspection. It never initializes or rewrites
 the inspected repository's `.jj` metadata; the inspection child can only read
 that cache.
+Use `jj -R /src/flower/paracress status` to inspect another repository without
+changing directories. Relative `-R` paths resolve from the invoking directory;
+`--repository` is equivalent. A selector outside `/src` is refused, and only
+the selected workspace can receive mutation access.
 
 ## Common commands
 

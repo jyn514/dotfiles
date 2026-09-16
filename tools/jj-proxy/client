@@ -34,8 +34,6 @@ def main() -> int:
     inspect = bool(os.environ.get("JJ_PROXY_INSPECT")) or (
         current == Path("/src") or (Path("/src") in current.parents and current != repository and repository not in current.parents)
     )
-    if not inspect and any(argument == "-R" or argument.startswith("-R") for argument in sys.argv[1:]):
-        raise RuntimeError("-R is not supported by the proxy; cd into the selected repository and retry")
     if inspect:
         # Inspection is intentionally rooted by the proxy's /src mount.  Do
         # not send a host-selected repository (or a relative path) across the
