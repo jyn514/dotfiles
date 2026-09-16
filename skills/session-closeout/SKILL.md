@@ -43,10 +43,12 @@ Recommend only concrete work supported by the session. Prioritize defects that c
 ## 4. Review docs, skills, and tooling lessons
 
 Review whether process improvements are warranted.
-Use evidence from the session: observed friction, repeated manual work, hidden failure causes, misleading diagnostics, duplicated policy, missing ownership, or validation gaps in this session.
+Consider the documentation, skills, and tools that materially affected the session or produced friction.
+Look for the following: observed friction, repeated manual work, hidden failure causes, misleading diagnostics, duplicated policy, missing ownership, drift between the implementation and spec, or validation gaps in this session.
 
 For each suggestion, name the affected owner and the failure it would prevent. Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible. Route implementation to `technical-docs`, `skill-authoring`, `cleanup-triage`, or another owning skill rather than duplicating its procedure here.
 
+If the session contains concrete friction, report at least one improvement; otherwise state why none was warranted.
 Do not make up an improvement simply to satisfy this skill; "things are in good shape" is an acceptable answer.
 
 ## 5. Commit the session's changes
