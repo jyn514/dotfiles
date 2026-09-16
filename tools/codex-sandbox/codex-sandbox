@@ -119,6 +119,7 @@ class State:
     container_known_hosts: str = "/run/secrets/agent-podman-known-hosts"
     agent_podman: dict[str, str] | None = None
     repository: Path | None = None
+    git_repository: Path | None = None
     container_repository: Path | None = None
     container_working_directory: Path | None = None
     zuliprc: Path | None = None
@@ -390,18 +391,15 @@ def validate_repository(state: State) -> None:
             raise LauncherError("The current directory could not be initialized as a Jujutsu workspace") from error
     repository = Path(result.stdout.strip()).resolve(strict=True)
     jj = repository / ".jj"
-    git = repository / ".git"
     if not jj.is_dir() or jj.is_symlink():
         raise LauncherError("The Jujutsu workspace root cannot be safely mounted")
-    if not (git.is_dir() or git.is_file()):
-        raise LauncherError("Git metadata is missing or invalid")
-    if git.is_symlink():
-        raise LauncherError("Symlinked Git metadata is not supported")
-    if git.is_file() and git.lstat().st_nlink != 1:
-        raise LauncherError("Git metadata entry must not be hard linked")
     try:
+        result = run(["jj", "git", "root", "--ignore-working-copy"], capture=True)
+        git_repository = Path(result.stdout.strip()).resolve(strict=True)
+        if not git_repository.is_dir() or git_repository.is_symlink():
+            raise LauncherError("Git metadata is missing or invalid")
         result = run([
-            "git", "-C", str(repository), "rev-parse", "--path-format=absolute",
+            "git", "-C", str(git_repository), "rev-parse", "--path-format=absolute",
             "--git-dir", "--git-common-dir",
         ], capture=True)
         lines = result.stdout.splitlines()
@@ -430,6 +428,7 @@ def validate_repository(state: State) -> None:
         if not root.is_dir() or root.is_symlink():
             raise LauncherError(f"Repository metadata directory is invalid: {root}")
     state.repository = repository
+    state.git_repository = git_repository
     state.metadata_roots = (jj, jj_repo, *git_roots)
     proxy_module().use_repository_metadata(repository, tuple(git_roots))
     state.container_repository = container_repository_path(state.home, repository)
@@ -1627,7 +1626,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
     git_layout = run([
-        "git", "-C", str(state.repository), "rev-parse", "--path-format=absolute",
+        "git", "-C", str(state.git_repository), "rev-parse", "--path-format=absolute",
         "--git-dir", "--git-common-dir",
     ], capture=True).stdout.splitlines()
     protected = [state.repository / ".git", state.repository / ".jj"]

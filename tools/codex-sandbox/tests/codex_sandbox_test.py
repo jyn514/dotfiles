@@ -896,9 +896,16 @@ class CodexSandboxTest(unittest.TestCase):
                 mkdir -p "$FAKE_REPOSITORY/.git" "$FAKE_REPOSITORY/.jj/repo"
                 exit
             fi
-            [ "$1 $2" = "workspace root" ] || exit 2
-            [ -d "$FAKE_REPOSITORY/.jj" ] || exit 1
-            printf '%s\n' "$FAKE_REPOSITORY"
+            if [ "$1 $2" = "workspace root" ]; then
+                [ -d "$FAKE_REPOSITORY/.jj" ] || exit 1
+                printf '%s\n' "$FAKE_REPOSITORY"
+                exit
+            fi
+            if [ "$1 $2" = "git root" ]; then
+                printf '%s\n' "${FAKE_GIT_ROOT:-$FAKE_REPOSITORY}"
+                exit
+            fi
+            exit 2
         """)
         write_executable(self.fake_bin / "git", """
             #!/bin/sh
@@ -1685,8 +1692,8 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
         repository = self.repo.resolve()
-        self.assertIn(
-            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly",
+        self.assertNotIn(
+             f"type=bind,src={git_dir.resolve()},dst=/src/repository/.git,readonly",
             run,
         )
         self.assertIn(
