@@ -12,6 +12,33 @@ WRAPPER = ROOT / "libexec" / "agent-wrappers" / "java"
 
 
 class JavaWrapperTest(unittest.TestCase):
+    def test_public_symlink_uses_configured_real_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            public = root / "opt" / "agent-tools" / "bin"
+            public.mkdir(parents=True)
+            public_java = public / "java"
+            public_java.symlink_to(WRAPPER)
+            real_java = root / "real-java"
+            real_java.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            real_java.chmod(0o755)
+            environment = {
+                key: value for key, value in os.environ.items() if key != "TMPDIR"
+            }
+            environment["JAVA_REAL"] = str(real_java)
+
+            result = subprocess.run(
+                [public_java, "-version"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["-version"], result.stdout.splitlines())
+
     def run_wrapper(
         self, *arguments: str, tmpdir: str | None
     ) -> subprocess.CompletedProcess[str]:

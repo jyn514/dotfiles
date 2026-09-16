@@ -28,15 +28,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     PODMAN_VERSION=${PODMAN_VERSION} \
     TYPST_VERSION=${TYPST_VERSION} \
     install-agent-tools \
-    && mkdir -p /opt/agent-tools/bin \
+    && mkdir -p /opt/agent-tools/bin /opt/agent-tools/libexec \
     && cp -a \
-        /usr/local/bin/bb \
         /usr/local/bin/gh \
-        /usr/local/bin/jj \
-        /usr/local/bin/podman \
         /usr/local/bin/typst \
         /opt/agent-tools/bin/ \
-    && ln -s podman /opt/agent-tools/bin/docker
+    && cp -a /usr/local/bin/bb /usr/local/bin/podman /opt/agent-tools/libexec/ \
+    && cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj \
+    && ln -s podman /opt/agent-tools/libexec/docker
 
 FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
@@ -146,7 +145,22 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ig
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/docker ./libexec/agent-wrappers/gateway-transport ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/podman ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
 RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && ln -s ../../tools/jj-proxy/client /libexec/agent-wrappers/jj-proxy-client \
-    && ln -s ../../tools/agent-podman/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli
+    && ln -s ../../tools/agent-podman/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli \
+    && if real_java=$(command -v java); then \
+        ln -s "$real_java" /opt/agent-tools/libexec/java; \
+    fi \
+    && if real_rg=$(command -v rg); then \
+        ln -s "$real_rg" /opt/agent-tools/libexec/rg; \
+    fi \
+    && for command in bb docker java jj podman rg; do \
+        ln -sf "../../../libexec/agent-wrappers/$command" "/opt/agent-tools/bin/$command"; \
+    done
+ENV BB_REAL=/opt/agent-tools/libexec/bb
+ENV BB_SOURCE_ROOT=/
+ENV CONTAINER_CLI_REAL_DIR=/opt/agent-tools/libexec
+ENV JAVA_REAL=/opt/agent-tools/libexec/java
+ENV JJ_REAL=/opt/agent-tools/libexec/jj
+ENV RG_REAL=/opt/agent-tools/libexec/rg
 ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}

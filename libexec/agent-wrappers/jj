@@ -66,29 +66,40 @@ if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
 fi
 
 # Shim: stamp jj commits as the agent, not the human running the wrapper.
-# Lives in a dir prepended to PATH. Strips its own dir so the bare `jj`
-# below resolves to the real binary (next on PATH) — no hardcoded path.
-# Covers both the fish prompt and babashka tooling that calls `jj` via PATH.
-self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
-# Canonicalize entries so aliases such as /lib and /usr/lib compare equal.
-# Empty and nonexistent entries are omitted; an empty PATH entry means cwd.
-original_path=$PATH
-filtered_path=
-while [ -n "$original_path" ]; do
-  path_entry=${original_path%%:*}
-  case "$original_path" in
-    *:*) original_path=${original_path#*:} ;;
-    *) original_path= ;;
-  esac
+# Sandboxes keep the underlying binary outside PATH so alternate executable
+# resolvers cannot bypass this wrapper. Other environments resolve the next jj.
+if [ -n "${JJ_REAL:-}" ]; then
+  if [ ! -x "$JJ_REAL" ]; then
+    printf '%s\n' "jj wrapper: configured real jj is not executable" >&2
+    exit 1
+  fi
+  real_jj=$JJ_REAL
+else
+  self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+  # Canonicalize entries so aliases such as /lib and /usr/lib compare equal.
+  # Empty and nonexistent entries are omitted; an empty PATH entry means cwd.
+  original_path=$PATH
+  filtered_path=
+  while [ -n "$original_path" ]; do
+    path_entry=${original_path%%:*}
+    case "$original_path" in
+      *:*) original_path=${original_path#*:} ;;
+      *) original_path= ;;
+    esac
 
-  [ -n "$path_entry" ] || continue
-  canonical_entry=$(CDPATH='' cd -- "$path_entry" 2>/dev/null && pwd -P) || continue
-  [ "$canonical_entry" != "$self_dir" ] || continue
+    [ -n "$path_entry" ] || continue
+    canonical_entry=$(CDPATH='' cd -- "$path_entry" 2>/dev/null && pwd -P) || continue
+    [ "$canonical_entry" != "$self_dir" ] || continue
 
-  filtered_path=${filtered_path:+$filtered_path:}$canonical_entry
-done
-PATH=$filtered_path
-export PATH
+    filtered_path=${filtered_path:+$filtered_path:}$canonical_entry
+  done
+  PATH=$filtered_path
+  export PATH
+  real_jj=$(command -v jj) || {
+    printf '%s\n' "jj wrapper: real jj not found on PATH" >&2
+    exit 1
+  }
+fi
 
 should_force_plain_diff() {
   [ ! -t 1 ] || return 1
@@ -117,7 +128,7 @@ if [ -n "${JJ_USER:-}" ]; then
   # never block the command if metaedit has nothing to do.
   case "$subcommand" in
     commit|split)
-      jj --config "user.name=$JJ_USER" --config "user.email=$JJ_EMAIL" \
+      "$real_jj" --config "user.name=$JJ_USER" --config "user.email=$JJ_EMAIL" \
         metaedit --update-author -r @ --quiet || true
       ;;
   esac
@@ -129,10 +140,10 @@ if should_force_plain_diff "$subcommand" && ! has_diff_formatter_config "$@"; th
   set -- --config ui.diff-formatter=:git "$@"
 fi
 
-if jj "$@"; then
+if "$real_jj" "$@"; then
   if [ -n "${JJ_USER:-}" ]; then
     # Intentionally use the real jj config here, not the agent identity.
-    jj metaedit --update-author -r @ --quiet || true
+    "$real_jj" metaedit --update-author -r @ --quiet || true
   fi
 else
   exit "$?"

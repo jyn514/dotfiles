@@ -10,6 +10,46 @@ WRAPPERS = ROOT / "libexec" / "agent-wrappers"
 
 
 class BbWrapperTest(unittest.TestCase):
+    def test_public_symlink_reaches_private_binary_and_source_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            public = temporary / "opt" / "agent-tools" / "bin"
+            public.mkdir(parents=True)
+            public_bb = public / "bb"
+            public_bb.symlink_to(WRAPPERS / "bb")
+            real_bb = temporary / "real-bb"
+            real_bb.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            real_bb.chmod(0o755)
+            environment = {
+                key: value for key, value in os.environ.items() if key != "TMPDIR"
+            }
+            environment.update(BB_REAL=str(real_bb), BB_SOURCE_ROOT=str(ROOT))
+
+            version = subprocess.run(
+                [public_bb, "--version"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+            split = subprocess.run(
+                [public_bb, "agent-split", "--help"],
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+        self.assertEqual(0, version.returncode, version.stderr)
+        self.assertEqual(["--version"], version.stdout.splitlines())
+        self.assertEqual(0, split.returncode, split.stderr)
+        self.assertEqual(
+            [str(ROOT / "tools/agent-split/src/scripts/agent-split.clj"), "--help"],
+            split.stdout.splitlines(),
+        )
+
     def run_bb(self, *args: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["PATH"] = f"{WRAPPERS}:{env['PATH']}"
@@ -35,7 +75,26 @@ class BbWrapperTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(result.stdout.startswith("babashka v"))
 
-    def test_agent_split_preserves_wrapped_jj_on_path(self) -> None:
+    def test_uses_configured_real_binary_outside_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            real = Path(temporary_directory) / "real-bb"
+            real.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            real.chmod(0o755)
+            result = subprocess.run(
+                [str(ROOT / "tools" / "agent-split" / "bb"), "tasks"],
+                cwd=ROOT,
+                env={key: value for key, value in os.environ.items() if key != "TMPDIR"}
+                | {"BB_REAL": str(real)},
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["tasks"], result.stdout.splitlines())
+
+    def test_all_commands_preserve_wrapped_jj_on_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             wrappers = temporary / "wrappers"
@@ -49,18 +108,19 @@ class BbWrapperTest(unittest.TestCase):
             fake_bb.write_text("#!/bin/sh\ncommand -v jj\n")
             fake_bb.chmod(0o755)
 
-            result = subprocess.run(
-                [str(ROOT / "tools" / "agent-split" / "bb"), "agent-split", "--help"],
-                cwd=ROOT,
-                env=os.environ | {"PATH": f"{wrappers}:{real}:{os.defpath}"},
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=5,
-            )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(f"{fake_jj}\n", result.stdout)
+            for arguments in (("--version",), ("agent-split", "--help")):
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run(
+                        [str(ROOT / "tools" / "agent-split" / "bb"), *arguments],
+                        cwd=ROOT,
+                        env=os.environ | {"PATH": f"{wrappers}:{real}:{os.defpath}"},
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=5,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(f"{fake_jj}\n", result.stdout)
 
     def run_stub_bb(
         self, *args: str, tmpdir: str | None

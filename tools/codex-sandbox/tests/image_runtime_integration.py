@@ -8,6 +8,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
+WRAPPED_COMMAND_PROBE = Path(__file__).with_name("wrapped_command_probe.clj")
 
 
 def run(*args: str) -> str:
@@ -22,7 +23,7 @@ def run(*args: str) -> str:
 
 def build(tag: str, base_image: str | None = None) -> None:
     command = [
-        "docker", "build", "-f", str(DOCKERFILE), "--target", "pi-runtime",
+        "docker", "build", "-f", str(DOCKERFILE),
     ]
     if base_image is not None:
         command.extend(["--build-arg", f"BASE_IMAGE={base_image}"])
@@ -57,6 +58,14 @@ def main() -> None:
                 or output[3:] != ["1.3.14", "bun-test-ok"]
             ):
                 raise RuntimeError(f"unexpected Pi runtime: {output!r}")
+            wrapped = run(
+                "docker", "run", "--rm",
+                "--entrypoint", "/opt/agent-tools/libexec/bb",
+                "--mount", f"type=bind,src={WRAPPED_COMMAND_PROBE},dst=/probe.clj,readonly",
+                tag, "/probe.clj",
+            )
+            if wrapped != "wrapped-command-probe-ok\n":
+                raise RuntimeError(f"unexpected wrapped-command probe: {wrapped!r}")
     finally:
         subprocess.run(
             ["docker", "image", "rm", "-f", alpine, debian],

@@ -13,6 +13,45 @@ WRAPPER = ROOT / "libexec/agent-wrappers/jj"
 
 
 class JjWrapperTest(unittest.TestCase):
+    def test_uses_configured_real_binary_outside_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / "real-jj"
+            real.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            real.chmod(0o755)
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key
+                not in {
+                    "CLAUDECODE",
+                    "CODEX_THREAD_ID",
+                    "JJ_AGENT",
+                    "PI_CODING_AGENT",
+                    "SANDBOX_PROXY_DIR",
+                }
+            }
+            env.update(
+                {
+                    "JJ_REAL": str(real),
+                    "SANDBOX_PROXY_DEFAULT_DIR": str(root / "no-proxy"),
+                }
+            )
+
+            result = subprocess.run(
+                [str(WRAPPER), "diff", "--name-only"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            ["--config", "ui.diff-formatter=:git", "diff", "--name-only"],
+            result.stdout.splitlines(),
+        )
+
     def test_discovers_mounted_proxy_when_environment_was_stripped(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

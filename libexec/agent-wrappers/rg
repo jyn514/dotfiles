@@ -14,9 +14,17 @@ for argument in "$@"; do
 	esac
 done
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-. "$root/lib/shell/lib.sh"
-shim_resolve "$0" rg
+if [ -n "${RG_REAL:-}" ]; then
+	if [ ! -x "$RG_REAL" ]; then
+		printf '%s\n' "rg wrapper: configured real rg is not executable" >&2
+		exit 1
+	fi
+	REAL=$RG_REAL
+else
+	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	. "$root/lib/shell/lib.sh"
+	shim_resolve "$0" rg
+fi
 
 # Ignore RIPGREP_CONFIG_PATH so a configuration file cannot restore --pre.
 exec "$REAL" --no-config "$@"

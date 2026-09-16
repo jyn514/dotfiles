@@ -1,11 +1,22 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-. "$root/lib/shell/lib.sh"
 original_path=$PATH
-shim_resolve "$0" bb
-real_bb=$REAL
+if [ -n "${BB_REAL:-}" ]; then
+	if [ ! -x "$BB_REAL" ]; then
+		printf '%s\n' "bb wrapper: configured real bb is not executable" >&2
+		exit 1
+	fi
+	real_bb=$BB_REAL
+else
+	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	. "$root/lib/shell/lib.sh"
+	shim_resolve "$0" bb
+	real_bb=$REAL
+fi
+# Keep sibling command wrappers available to every Babashka child process.
+PATH=$original_path
+export PATH
 
 # babashka is a native image, so it never reaches the java wrapper. See that
 # wrapper for why $TMPDIR has to be forced. Substrate VM options lead the
@@ -17,8 +28,10 @@ fi
 
 if [ "${1:-}" = agent-split ]; then
 	shift
-	PATH=$original_path
-	export PATH
+	root=${BB_SOURCE_ROOT:-${root:-}}
+	if [ -z "$root" ]; then
+		root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	fi
 	exec "$real_bb" ${tmpdir_opt:+"$tmpdir_opt"} "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
 fi
 

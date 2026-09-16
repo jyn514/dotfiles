@@ -607,6 +607,27 @@ class AgentSandboxImageTest(unittest.TestCase):
             dockerfile,
         )
 
+    def test_wrapped_tools_are_not_installed_on_the_public_command_path(self) -> None:
+        dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj", dockerfile
+        )
+        self.assertIn(
+            "for command in bb docker java jj podman rg",
+            dockerfile,
+        )
+        self.assertIn("ENV BB_REAL=/opt/agent-tools/libexec/bb", dockerfile)
+        self.assertIn("ENV BB_SOURCE_ROOT=/", dockerfile)
+        self.assertIn(
+            "ENV CONTAINER_CLI_REAL_DIR=/opt/agent-tools/libexec", dockerfile
+        )
+        self.assertIn(
+            "ENV JAVA_REAL=/opt/agent-tools/libexec/java", dockerfile
+        )
+        self.assertIn("ENV JJ_REAL=/opt/agent-tools/libexec/jj", dockerfile)
+        self.assertIn("ENV RG_REAL=/opt/agent-tools/libexec/rg", dockerfile)
+
     def test_login_profile_restores_agent_wrappers_path(self) -> None:
         result = subprocess.run(
             ["sh", "-c", f'. "{AGENT_WRAPPERS_PROFILE}"; printf "%s\\n" "$PATH"'],

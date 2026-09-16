@@ -12,6 +12,35 @@ WRAPPER = ROOT / "libexec" / "agent-wrappers" / "rg"
 
 
 class RgWrapperTest(unittest.TestCase):
+    def test_public_symlink_reaches_private_binary_with_config_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            public = root / "opt" / "agent-tools" / "bin"
+            public.mkdir(parents=True)
+            public_rg = public / "rg"
+            public_rg.symlink_to(WRAPPER)
+            real_rg = root / "real-rg"
+            real_rg.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            real_rg.chmod(0o755)
+
+            result = subprocess.run(
+                [public_rg, "needle", "haystack"],
+                env=os.environ
+                | {
+                    "RG_REAL": str(real_rg),
+                    "RIPGREP_CONFIG_PATH": str(root / "hostile-config"),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            ["--no-config", "needle", "haystack"], result.stdout.splitlines()
+        )
+
     def run_wrapper(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary:
             temp_dir = Path(temporary)

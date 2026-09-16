@@ -1,9 +1,17 @@
 #!/bin/sh
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-. "$root/lib/shell/lib.sh"
-shim_resolve "$0" java
+if [ -n "${JAVA_REAL:-}" ]; then
+	if [ ! -x "$JAVA_REAL" ]; then
+		printf '%s\n' "java wrapper: configured real java is not executable" >&2
+		exit 1
+	fi
+	REAL=$JAVA_REAL
+else
+	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	. "$root/lib/shell/lib.sh"
+	shim_resolve "$0" java
+fi
 
 # macOS derives java.io.tmpdir from confstr(_CS_DARWIN_USER_TEMP_DIR) and ignores
 # $TMPDIR, so under an agent sandbox every temp file lands outside the write
