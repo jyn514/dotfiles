@@ -12,7 +12,10 @@ fn real_jj() -> Option<PathBuf> {
             ["/trusted/bin/jj", "/opt/agent-tools/bin/jj"]
                 .into_iter()
                 .map(PathBuf::from)
-                .find(|path| path.is_file())
+                .find(|path| {
+                    fs::symlink_metadata(path)
+                        .is_ok_and(|metadata| metadata.file_type().is_file())
+                })
         })
 }
 

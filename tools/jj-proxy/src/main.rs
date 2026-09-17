@@ -632,7 +632,9 @@ mod tests {
     fn inspection_prepares_config_without_changing_repository_metadata() {
         let jj = env::var_os("JJ_PROXY_TEST_JJ").map(PathBuf::from).or_else(|| {
             ["/trusted/bin/jj", "/opt/agent-tools/bin/jj", "/opt/homebrew/bin/jj"]
-                .into_iter().map(PathBuf::from).find(|path| path.is_file())
+                .into_iter().map(PathBuf::from).find(|path| {
+                    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+                })
         });
         let Some(jj) = jj else {
             eprintln!("skipping inspection config test: set JJ_PROXY_TEST_JJ to a real jj binary");
