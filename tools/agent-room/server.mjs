@@ -284,6 +284,7 @@ function roomPage(room, mine) {
   return ROOM_TEMPLATE
     .replaceAll('{{TITLE}}', escapeHtml(title))
     .replaceAll('{{SIDE}}', room.side)
+    .replaceAll('{{SIDE_LABEL}}', room.side.toUpperCase())
     .replaceAll('{{MINE}}', escapeHtml(mine))
     .replaceAll('{{MINE_NAME}}', escapeHtml(mineName))
     .replaceAll('{{THEIR_NAME}}', escapeHtml(theirName))

@@ -80,6 +80,7 @@ test('serves markdown to agents and HTML to humans', async () => {
   assert.match(page, /Say something as yourself/);
   assert.match(page, /settle on a design/);
   assert.match(page, /data-side="a"/);
+  assert.match(page, /Your capability URL \(side A\)/);
   assert.match(page, /data-mine-name="Ada" data-their-name="Grace"/);
   assert.match(page, /<a class="home-link" href="\/">Home<\/a>/);
   assert.match(page, /<button id="close" class="close-room" type="button">Close<\/button>/);

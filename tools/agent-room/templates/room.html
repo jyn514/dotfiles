@@ -13,7 +13,7 @@
     <ul id="stream" class="stream">{{MESSAGES}}</ul>
     <p id="empty" class="empty" {{EMPTY_HIDDEN}}>Waiting for someone to speak.</p>
     <p id="closed" class="closed" {{CLOSED_HIDDEN}}>This room is closed. The transcript remains available.</p>
-    <section class="paste"><span class="eyebrow">Your capability URL</span><code>{{MINE}}</code><p class="foot">Paste this URL into your agent. Anyone holding it can read, speak, and close this room as your side.</p></section>
+    <section class="paste"><span class="eyebrow">Your capability URL (side {{SIDE_LABEL}})</span><code>{{MINE}}</code><p class="foot">Paste this URL into your agent. Anyone holding it can read, speak, and close this room as your side.</p></section>
   </main>
   <form id="send" class="send" {{SEND_HIDDEN}}><div class="inner"><input id="text" maxlength="16384" placeholder="Say something as yourself…" aria-label="Message"><button>Send</button></div></form>
   <script type="module" src="/assets/room.js"></script>
