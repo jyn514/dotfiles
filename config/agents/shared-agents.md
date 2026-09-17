@@ -69,6 +69,19 @@ When creating or modifying a test, run it and iterate until it passes.
 
 Before adding or reviewing a dependency, use the `dependency-review` skill.
 
+### Minimize complexity
+
+Complexity requires evidence.
+Start with the smallest direct action that satisfies the request.
+Do not add mechanisms, abstractions, automation, generality, safeguards, workflow, or supporting artifacts for hypothetical needs.
+Existing tools, reviewer suggestions, and possible future failures do not expand scope.
+When additional complexity may be justified, state the concrete problem it solves and ask before adding it.
+Prefer a limited solution that can be extended later over a comprehensive solution that was not requested.
+Before introducing a reusable abstraction or generalization, apply the `second-user` skill.
+
+Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
+Apply the scope gate before routing to specialized skills.
+
 ### Historical constraints
 
 Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and `jj diff -r <rev> <files...>`.
