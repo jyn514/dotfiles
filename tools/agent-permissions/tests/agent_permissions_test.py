@@ -167,21 +167,13 @@ class AgentPermissionRendererTests(unittest.TestCase):
             }
             self.assertLessEqual(existing, generated_bash[decision], decision)
 
-        for permission in {
-            "Bash(clojure -Stree)",
-            "Bash(clj-kondo *)",
-            "Bash(git check-ignore *)",
-            "Bash(find *)",
-            "Bash(awk *)",
-            "Bash(sed *)",
-            "Bash(xxd)",
-            "Bash(command -v *)",
-            "Bash(python3 -m json.tool)",
-            "Bash(typst *)",
-        }:
-            self.assertIn(permission, generated_bash["allow"])
-        self.assertNotIn("Bash(xxd *)", generated_bash["allow"])
+        # Check consumer-visible distinctions that are easy to regress: an
+        # exact rule must not become a prefix rule, and a denied command must
+        # not also be allowed.
+        self.assertIn("Bash(python3 -m json.tool)", generated_bash["allow"])
+        self.assertNotIn("Bash(python3 -m json.tool *)", generated_bash["allow"])
         self.assertNotIn("Bash(sed)", generated_bash["allow"])
+        self.assertNotIn("Bash(sed *)", generated_bash["allow"])
 
         codex_result = self.render_paths("codex", TOOL / "current-policy.clj")
         self.assertEqual(0, codex_result.returncode, codex_result.stderr)
