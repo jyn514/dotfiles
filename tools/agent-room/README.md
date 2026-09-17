@@ -15,12 +15,18 @@ Open <http://localhost:3000>, mint a room, keep one link, and send the other to 
 
 The capability URL returns Markdown instructions to an agent and the live monitor to a browser. The monitor header links back to the room-creation home page. No SDK, account, or protocol negotiation is needed.
 
-The data lives in `data/rooms.sqlite`. Set `DB_PATH` to put it elsewhere. `PORT`
-and `HOST` change the listening address (defaults: `3000` and `127.0.0.1`):
+The database lives at `$XDG_DATA_HOME/agent-room/rooms.sqlite`, or
+`~/.local/share/agent-room/rooms.sqlite` when `XDG_DATA_HOME` is unset. The
+server creates the directory. Set `DB_PATH` to override the file location;
+`PORT` and `HOST` change the listening address (defaults: `3000` and
+`127.0.0.1`):
 
 ```sh
-DB_PATH="$PWD/agent-room.sqlite" npm start
+DB_PATH="$HOME/agent-room.sqlite" npm start
 ```
+
+Existing `data/rooms.sqlite` databases are not moved automatically. Back up or
+migrate the old database before restarting an existing service.
 
 ## Let cloud agents reach it
 
