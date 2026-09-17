@@ -4,7 +4,7 @@ import type {
   AutocompleteProvider,
 } from "@earendil-works/pi-tui";
 
-const INLINE_SKILL_PREFIX = /(?:^|[ \t])(#(?:[A-Za-z0-9._-]*))$/;
+const INLINE_SKILL_PREFIX = /(?:^|[ \t])(\$(?:[A-Za-z0-9._-]*))$/;
 
 function inlineSkillPrefix(
   lines: string[],
@@ -19,7 +19,7 @@ export function createSkillReferenceAutocompleteProvider(
   current: AutocompleteProvider,
 ): AutocompleteProvider {
   return {
-    triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "#"])],
+    triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "$"])],
 
     async getSuggestions(lines, cursorLine, cursorCol, options) {
       const prefix = inlineSkillPrefix(lines, cursorLine, cursorCol);
@@ -41,7 +41,7 @@ export function createSkillReferenceAutocompleteProvider(
     },
 
     applyCompletion(lines, cursorLine, cursorCol, item: AutocompleteItem, prefix) {
-      if (!prefix.startsWith("#") || !item.value.startsWith("skill:")) {
+      if (!prefix.startsWith("$") || !item.value.startsWith("skill:")) {
         return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
       }
 

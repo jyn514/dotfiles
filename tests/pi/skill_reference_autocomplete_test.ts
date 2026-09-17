@@ -44,24 +44,24 @@ describe("inline skill autocomplete", () => {
   test("reuses built-in skill suggestions after prose", async () => {
     const current = fakeProvider(skillSuggestions);
     const provider = createSkillReferenceAutocompleteProvider(current);
-    const text = "please use #arch";
+    const text = "please use $arch";
 
     expect(await provider.getSuggestions([text], 0, text.length, { signal, force: true })).toEqual({
-      prefix: "#arch",
+      prefix: "$arch",
       items: [skillSuggestions.items[0]],
     });
     expect(current.calls).toEqual([
       { lines: ["/skill:arch"], line: 0, col: 11, force: false },
     ]);
-    expect(provider.triggerCharacters).toEqual(["@", "#"]);
+    expect(provider.triggerCharacters).toEqual(["@", "$"]);
   });
 
   test("works at the start of a later line", async () => {
     const provider = createSkillReferenceAutocompleteProvider(fakeProvider(skillSuggestions));
-    const lines = ["first line", "#arch"];
+    const lines = ["first line", "$arch"];
 
     expect(await provider.getSuggestions(lines, 1, lines[1]!.length, { signal }))
-      .toEqual({ prefix: "#arch", items: [skillSuggestions.items[0]] });
+      .toEqual({ prefix: "$arch", items: [skillSuggestions.items[0]] });
   });
 
   test("delegates unrelated and non-boundary contexts unchanged", async () => {
@@ -69,11 +69,11 @@ describe("inline skill autocomplete", () => {
     const provider = createSkillReferenceAutocompleteProvider(current);
 
     await provider.getSuggestions(["please /model"], 0, 13, { signal });
-    await provider.getSuggestions(["word#arch"], 0, 9, { signal });
+    await provider.getSuggestions(["word$arch"], 0, 9, { signal });
 
     expect(current.calls).toEqual([
       { lines: ["please /model"], line: 0, col: 13, force: undefined },
-      { lines: ["word#arch"], line: 0, col: 9, force: undefined },
+      { lines: ["word$arch"], line: 0, col: 9, force: undefined },
     ]);
   });
 
@@ -82,7 +82,7 @@ describe("inline skill autocomplete", () => {
       prefix: "/skill:missing",
       items: [{ value: "model", label: "model" }],
     }));
-    const text = "use #missing";
+    const text = "use $missing";
 
     expect(await provider.getSuggestions([text], 0, text.length, { signal })).toBeNull();
   });
@@ -93,9 +93,9 @@ describe("inline skill autocomplete", () => {
       value: "skill:architecture-design",
       label: "skill:architecture-design",
     };
-    const text = "please use #arch";
+    const text = "please use $arch";
 
-    expect(provider.applyCompletion([text], 0, text.length, item, "#arch")).toEqual({
+    expect(provider.applyCompletion([text], 0, text.length, item, "$arch")).toEqual({
       lines: ["please use /skill:architecture-design "],
       cursorLine: 0,
       cursorCol: 38,
@@ -105,10 +105,10 @@ describe("inline skill autocomplete", () => {
   test("does not duplicate existing whitespace after the cursor", () => {
     const provider = createSkillReferenceAutocompleteProvider(fakeProvider());
     const item = { value: "skill:architecture-design", label: "skill:architecture-design" };
-    const text = "use #arch for this";
-    const cursorCol = "use #arch".length;
+    const text = "use $arch for this";
+    const cursorCol = "use $arch".length;
 
-    expect(provider.applyCompletion([text], 0, cursorCol, item, "#arch")).toEqual({
+    expect(provider.applyCompletion([text], 0, cursorCol, item, "$arch")).toEqual({
       lines: ["use /skill:architecture-design for this"],
       cursorLine: 0,
       cursorCol: 30,
