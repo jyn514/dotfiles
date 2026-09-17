@@ -4,8 +4,9 @@
 captured Bake inputs, explicit refresh and clean rebuild, and schema 4
 accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
-Host Pi with guest tool execution is selected but not implemented; the existing
-launcher still runs Pi inside the agent container.
+Host Pi with guest tool execution is the launcher default; set
+`CODEX_SANDBOX_HOST_PI=0` for the retained guest-Pi path. The host path has
+not passed every acceptance check below.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
 the implemented image-command/image-target split, not the proxy trust or
@@ -17,69 +18,51 @@ existing image lifecycle retain ownership of it.
 
 == Host Pi and guest execution <host-pi-execution>
 
-The selected design runs the parent Pi and its Pi subagents on the host. Pi owns
-conversation persistence, model requests, and UI; the launcher owns execution
-attachments, and the tool backend executes arbitrary model-selected filesystem
-and process operations inside the guest. Bounded host operations follow the
+The parent Pi and its Pi subagents run on the host. Pi owns conversation
+persistence, model requests, and UI; the launcher owns execution attachments,
+and the tool backend executes arbitrary model-selected filesystem and process
+operations inside the guest. Other Pi extensions retain their host authority;
+launcher-owned bounded operations follow the
 #link("proxy-design.typ")[extension authority contract].
 
-An execution attachment binds a canonical repository, accepted shared-session
-identity, guest workload identity, cwd, and selected per-launch services. One Pi
-session and its children use one attachment; its directory is fixed for that session.
-The launcher records enough owner-validated attachment and workload identity for
-crash recovery before admitting tool effects; abandoned bindings cannot reconnect
-without a fresh validated attachment. Application payloads and credentials do not
-belong in these recovery records.
-The launcher derives host/guest path mappings from its validated mounts. Tool
-arguments and model-visible paths use the guest namespace; the model cannot
-choose a host path, runtime identifier, or attachment through tool arguments.
-Conversation identity is independent of attachment identity. Saved conversation
-cwd is historical context, not authorization to mount a repository on resume.
-Resume uses the explicitly selected launch directory. Reuse a session ID only
-when its recorded repository and directory match that selection; otherwise fork
-its conversation under the fresh-session rules below. If the match cannot be
-established, fork rather than inherit old child handles.
+An execution attachment binds one Pi launch and its children to one guest worker
+and directory. The launcher selects the repository and guest mount; tool arguments
+use Pi's guest paths. A saved conversation's cwd is historical context, not a
+request to mount that directory. Cross-directory resume forks the conversation
+into a new session ID under the selected launch directory.
 
 The host backend sends structured tool calls to a persistent guest worker and
-returns progress, text, images, errors, and completion to Pi. Reuse the existing
-guest tool implementations rather than reproduce filesystem semantics on the
-host. Bind each admitted call to its attachment and caller identity until it
-settles; directory changes cannot reinterpret an outstanding call or its result.
-Backend absence, guest failure, or unsupported tool registration fails closed;
-there is no local-tool fallback. Protocol framing and runtime transport remain
-implementation choices; cancellation requirements belong to
+returns progress, text, images, errors, and completion to Pi. Through this
+attachment, it reuses Pi's guest tool implementations for normal built-in and
+`!` calls; backend absence or guest failure returns an error. A failed extension
+reload may restore Pi's local fallback. This path is not a malicious-code
+security boundary.
+Cancellation requirements belong to
 #link("process-ownership.typ")[process ownership].
 
 === Directory changes and attachment lifetime
 
-`/cd` is a human-controlled harness command. Model text, extension-generated
-input, and tool requests cannot authorize a new writable repository. Trusted
-automation requires an explicitly authorized control channel; input text alone
-does not establish provenance.
+`/cd` is a Pi command handled from human input. It validates an existing
+Jujutsu workspace before stopping the current session.
 
 `/cd` is a session handoff, including changes within the same repository:
 
 + Check the destination path without creating resources. An invalid path leaves
   the current session usable.
-+ Stop accepting input and automatic continuations for the old session. Abort and
-  settle its model turn, then use normal session shutdown to stop its subagent
-  manager. Drain guest work and close the old attachment. If shutdown fails, stop here.
++ Abort and settle the current turn, then shut down Pi and its child manager.
+  Close the old guest attachment before starting the destination.
 + Start the destination through ordinary startup or accepted-session joining, then
   fork the settled conversation into a fresh Pi session with normal resource
   loading. Preserve historical messages and paths; add the directory transition
-  to context. Accept input only after startup succeeds.
+  to context. With no saved file and no messages, start fresh; unsaved messages
+  block the handoff.
 
 Cross-directory resume uses the same fresh-session rules. At CLI startup there
 is no current attachment to shut down; in the UI, close the current session first.
 
-The new session has no live or resumable child handles from the old session.
-Historic child results remain conversation data. Hibernated children can restart
-only within their original active session, never under the new attachment.
-Do not transfer queued prompts, automatic goal continuations, or live extension
-state; persisted conversation state follows Pi's ordinary fork behavior. The new
-session waits for human input, even if copied goal state would otherwise schedule
-a continuation; enforce this in the harness turn-admission gate.
-Rebuild the runtime rather than add a separate in-place rebinding lifecycle.
+The new session follows Pi's ordinary fork behavior. Historical child results
+remain conversation data; live child processes and extension state are not
+transferred. Rebuild the runtime rather than rebind a live session.
 
 Only one attachment is owned by this handoff at a time. Destination startup or
 session creation failure runs ordinary failed-start cleanup. Preserve the saved
@@ -90,41 +73,26 @@ locks and per-launch services follow that existing cleanup path.
 
 === Subagents without a second lifecycle implementation
 
-Keep the subagent extension's host process manager, RPC pipes, ownership checks,
-transcripts, and overlay sockets. Every child starts with the same mandatory
-guest backend and its inherited attachment binding before accepting a prompt.
-Automatic project extension discovery must not enable host execution in a child.
-Host process environment may configure the trusted backend, but guest commands
-receive only launcher-selected environment values, never host credentials by
-inheritance.
+Keep the subagent extension's host process manager, RPC pipes, transcripts, and
+overlay sockets. The child wrapper adds the same guest-tool extension and inherits
+the attachment; the guest process does not receive host Pi credentials.
 
-Prefer installed host configuration or the existing `PI_SUBAGENT_PI_BIN` entrypoint
-override to a sandbox-specific extension fork. A wrapper, if needed, launches
-host Pi with the required backend; it does not own a guest Pi process. Verify
-that explicit template extensions and child CLI flags cannot disable or replace
-the backend. If current Pi cannot enforce this, add the enforcement at Pi's tool
-registration boundary rather than duplicate subagent lifecycle machinery.
+Use the existing `PI_SUBAGENT_PI_BIN` entrypoint override. The wrapper launches
+host Pi with the guest-tool extension; it does not own a second guest Pi process.
 
 === Execution migration and acceptance
 
-First support built-in guest tools and prove streaming, cancellation, images,
-and guest-loss behavior with disposable repositories. Then admit the reviewed
-host extensions, enforce child backend inheritance, and add `/cd` transitions.
-Keep the existing guest-Pi mode until the selected mode passes these checks:
+Operational acceptance checks are:
 
-- A model-selected read, write, shell command, or execution extension cannot
-  access host-only files or execute on the host, including after `/reload`.
-- Human host controls and bounded session/model operations retain their intended
-  authority without granting arbitrary host execution.
-- Parent and child guest calls use the same cancellation and disconnect owner;
-  killing a child leaves no unaccounted guest work.
-- After A-to-B `/cd`, a new session continues the conversation in B; the old model
-  turn, queued continuations, and children cannot submit calls to B.
-- Cross-directory resume also creates a fresh session ID without old child handles.
-- Invalid destination paths leave the old session usable. Failed shutdown starts
-  no destination; failed startup cleans its resources and preserves conversation.
-- Host extension code remains protected from guest writes through every alias;
-  unsupported execution extensions fail rather than run locally.
+- Built-in read, write, edit, shell, and human `!` calls use the guest during
+  normal operation and after a successful `/reload`.
+- A child Pi process inherits the guest attachment; worker loss interrupts its
+  owner, and disconnect cancels outstanding guest work.
+- `/cd` validates first, then closes the old guest before starting a new session
+  in the destination; invalid paths leave the old session usable.
+- Cross-directory resume forks the conversation under a fresh session ID.
+- Host Pi uses its existing credentials directly; they are not mounted into
+  the guest. A failed extension reload may restore host-local execution.
 
 == Configuration belongs to the loader
 

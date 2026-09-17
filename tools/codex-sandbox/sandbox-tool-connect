@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Connect one host Pi tool call to its launcher-selected guest worker."""
+
+import os
+import re
+import sys
+
+from sandbox_runtime import image_runtime
+
+
+def main() -> int:
+    container = os.environ.get("CODEX_SANDBOX_TOOL_CONTAINER", "")
+    if not re.fullmatch(r"codex-sandbox-[a-zA-Z0-9-]+", container):
+        print("guest tool container is not selected", file=sys.stderr)
+        return 1
+    runtime = image_runtime()
+    command = runtime.argv([
+        "exec", "--interactive", container, "node",
+        "/opt/agent-tools/bin/tool-connect.mjs",
+    ])
+    os.execvp(command[0], command)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

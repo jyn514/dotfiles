@@ -66,6 +66,11 @@ PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 
+
+def host_pi_enabled() -> bool:
+    return os.environ.get("CODEX_SANDBOX_HOST_PI", "1") == "1"
+
+
 STAGED_CONFIG = {
     "shared": ("$HOME/.agents/shared.md", "/home/codex/.agents/shared.md"),
     "contest": ("$HOME/.agents/contest-dialect.md", "/home/codex/.agents/contest-dialect.md"),
@@ -135,11 +140,14 @@ class State:
     skills_source: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_auth_mask: Path | None = None
+    cd_request: Path | None = None
+    handoff_origin: Path | None = None
     gateway_handle: GatewayHandle | None = None
     keychain_handle: KeychainHandle | None = None
     agent_process: subprocess.Popen[bytes] | None = None
     codex_container_created: bool = False
     cleaned: bool = False
+    cleanup_succeeded: bool = False
     joining_workers: bool = False
     deferred_signal: int | None = None
     tmux_pane: str | None = None
@@ -260,9 +268,93 @@ def resumable_arguments(arguments: list[str]) -> tuple[list[str], str | None]:
     if not arguments:
         session_id = str(uuid.uuid4())
         return ["--session-id", session_id], session_id
-    if len(arguments) == 2 and arguments[0] in ("--session", "--session-id") and arguments[1]:
+    if len(arguments) == 2 and arguments[0] == "--session" and arguments[1]:
         return arguments, arguments[1]
+    if arguments.count("--session-id") == 1:
+        index = arguments.index("--session-id")
+        if index + 1 < len(arguments) and arguments[index + 1]:
+            return arguments, arguments[index + 1]
     return arguments, None
+
+
+def session_header(path: Path) -> tuple[str, Path]:
+    try:
+        with path.open("rb") as stream:
+            line = stream.readline(1024 * 1024 + 1)
+        if len(line) > 1024 * 1024:
+            raise ValueError("session header is too large")
+        header = json.loads(line)
+        if not isinstance(header, dict) or header.get("type") != "session" \
+                or not isinstance(header.get("id"), str) or not header["id"] \
+                or not isinstance(header.get("cwd"), str) or not header["cwd"]:
+            raise ValueError("session header is invalid")
+        return header["id"], Path(header["cwd"]).expanduser().resolve()
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        raise LauncherError(f"Cannot inspect Pi session {path}: {error}") from error
+
+
+def prepare_host_session(state: State) -> None:
+    arguments = state.codex_arguments
+    selected_cwd = state.host_working_directory.resolve()
+    session_dir = os.environ.get("PI_CODING_AGENT_SESSION_DIR")
+    if arguments.count("--session-dir") == 1:
+        directory_index = arguments.index("--session-dir")
+        if directory_index + 1 < len(arguments):
+            session_dir = arguments[directory_index + 1]
+    sessions = Path(session_dir).expanduser() if session_dir else state.home / ".pi/agent/sessions"
+    if not sessions.is_absolute():
+        sessions = selected_cwd / sessions
+    for flag in ("--session", "--session-id"):
+        if arguments.count(flag) != 1:
+            continue
+        index = arguments.index(flag)
+        if index + 1 >= len(arguments):
+            return
+        value = arguments[index + 1]
+        source = None
+        if flag == "--session":
+            if "/" not in value and "\\" not in value and not value.endswith(".jsonl"):
+                candidates = []
+                for path in sessions.rglob("*.jsonl"):
+                    if not path.stem.rsplit("_", 1)[-1].startswith(value):
+                        continue
+                    try:
+                        candidates.append((path, *session_header(path)))
+                    except LauncherError:
+                        continue
+                matching = [(path, session_id, cwd) for path, session_id, cwd in candidates
+                            if session_id.startswith(value)]
+                matching.sort(key=lambda item: (item[2] != selected_cwd,
+                                                item[1] != value, str(item[0])))
+                source = matching[0][0] if matching else None
+            else:
+                source = Path(value).expanduser()
+                if not source.is_absolute():
+                    source = state.host_working_directory / source
+                if not source.is_file():
+                    return  # Let Pi report its normal missing-session error.
+        else:
+            if sessions.is_dir():
+                candidates = []
+                for path in sessions.rglob("*.jsonl"):
+                    if not path.name.endswith(f"_{value}.jsonl"):
+                        continue
+                    try:
+                        if session_header(path)[0] == value:
+                            candidates.append(path)
+                    except LauncherError:
+                        continue
+                matching = [path for path in candidates
+                            if session_header(path)[1] == selected_cwd]
+                if matching:
+                    return
+                if len(candidates) > 1:
+                    raise LauncherError(f"Session ID {value} exists in multiple directories")
+                source = candidates[0] if candidates else None
+        if source is not None and session_header(source)[1] != selected_cwd:
+            state.codex_arguments = [*arguments[:index], "--fork", str(source.resolve()),
+                                     "--session-id", str(uuid.uuid4()), *arguments[index + 2:]]
+        return
 
 
 def new_state(codex_arguments: list[str]) -> State:
@@ -380,11 +472,13 @@ def container_working_directory_path(
     return container_repository / relative
 
 
-def validate_repository(state: State) -> None:
+def validate_repository(state: State, *, initialize_missing: bool = True) -> None:
     try:
         # Finding the mount root needs metadata, not a working-tree snapshot.
         result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
     except subprocess.CalledProcessError:
+        if not initialize_missing:
+            raise LauncherError("The destination is not an existing Jujutsu workspace")
         try:
             run(["jj", "git", "init"])
             result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
@@ -1617,6 +1711,30 @@ def wait_for_agent(state: State) -> int:
         raise
 
 
+def read_cd_request(state: State) -> tuple[Path, Path | None] | None:
+    if state.cd_request is None:
+        return None
+    content = state.cd_request.read_text(encoding="utf-8")
+    if not content:
+        return None
+    try:
+        payload = json.loads(content)
+        if not isinstance(payload, dict) or set(payload) != {"destination", "session"}:
+            raise ValueError("invalid handoff request")
+        if (not isinstance(payload["destination"], str) or not payload["destination"]
+                or (payload["session"] is not None
+                    and (not isinstance(payload["session"], str) or not payload["session"]))):
+            raise ValueError("invalid handoff request")
+        destination = Path(payload["destination"]).resolve(strict=True)
+        session = (Path(payload["session"]).resolve(strict=True)
+                   if payload["session"] is not None else None)
+        if not destination.is_dir() or (session is not None and not session.is_file()):
+            raise ValueError("handoff destination or session is unavailable")
+        return destination, session
+    except (json.JSONDecodeError, OSError, ValueError) as error:
+        raise LauncherError(f"Invalid directory handoff: {error}") from error
+
+
 def keychain_environment(state: State) -> dict[str, str]:
     handle = getattr(state, 'keychain_handle', None)
     if handle is None or not handle.projected or handle.bridge is None:
@@ -1624,7 +1742,7 @@ def keychain_environment(state: State) -> dict[str, str]:
     return {'CODEX_SANDBOX_KEYCHAIN_TOKEN': handle.bridge.token}
 
 
-def run_agent(state: State, arguments: list[str]) -> int:
+def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
@@ -1715,20 +1833,21 @@ def run_agent(state: State, arguments: list[str]) -> int:
     state.pi_auth_mask.write_text("{}\n", encoding="utf-8")
 
     command = [
-        "docker", "run", "--name", state.codex_container, "-it",
+        "docker", "run", "--name", state.codex_container, *([] if host_pi else ["-it"]),
         "--cap-drop=NET_RAW",
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
            "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
-          else ["--secret", "codex-github-token,type=env,target=GH_TOKEN"]),
+          else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
+                *(["--entrypoint", "node"] if host_pi else [])]),
         "--env", "JJ_AGENT=pi",
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
-        "--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions",
+        *([] if host_pi else ["--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions"]),
         *[
             item
-            for directory in persistent_package_directories
+            for directory in ([] if host_pi else persistent_package_directories)
             for item in (
                 "--mount",
                 f"type=bind,src={directory},dst=/home/codex/.pi/agent/{directory.name}",
@@ -1800,6 +1919,58 @@ def run_agent(state: State, arguments: list[str]) -> int:
         bridge_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
     bridge_environment.update(keychain_environment(state))
     agent_environment.update(bridge_environment)
+    if host_pi:
+        image_index = command.index(state.image)
+        host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
+        state.cd_request = temporary_file()
+        host_environment = dict(os.environ)
+        host_environment.update({
+            "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
+            "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
+            "CODEX_SANDBOX_GUEST_CWD": str(state.container_working_directory),
+            "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
+            "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
+            "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
+            "JJ_AGENT": "pi",
+        })
+        if state.handoff_origin is not None:
+            host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)
+        worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
+                          if isinstance(OUTER_RUNTIME, VMRuntime)
+                          else ["/opt/agent-tools/bin/tool-worker.mjs"])
+        with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
+            with OUTER_RUNTIME.workload(
+                OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
+                [*command[4:image_index], *environment], worker_command,
+            ) as worker:
+                for _ in range(100):
+                    if worker.poll() is not None:
+                        raise LauncherError("guest tool worker exited during startup")
+                    ready = OUTER_RUNTIME.run(
+                        ["exec", state.codex_container, "test", "-S", "/tmp/codex-tool-worker.sock"],
+                        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                    if ready.returncode == 0:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise LauncherError("guest tool worker did not become ready")
+                state.agent_process = subprocess.Popen(
+                    [str(host_pi_bin), *state.codex_arguments],
+                    cwd=state.host_working_directory, env=host_environment,
+                )
+                worker_failed = threading.Event()
+                def watch_worker() -> None:
+                    worker.wait()
+                    if state.agent_process is not None and state.agent_process.poll() is None:
+                        worker_failed.set()
+                        state.agent_process.terminate()
+                threading.Thread(target=watch_worker, daemon=True).start()
+                result = wait_for_agent(state)
+                if worker_failed.is_set():
+                    raise LauncherError("guest tool worker stopped while host Pi was running")
+        state.codex_container_created = False
+        return result
     if timing:
         print(
             f"Sandbox launch setup: {time.monotonic() - setup_started:.2f}s; "
@@ -1888,6 +2059,8 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
+    if host_pi_enabled():
+        phase("host session selection", lambda: prepare_host_session(state))
     phase("relay recovery", lambda: recover_relays(state))
     phase("proxy lock", lambda: acquire_lock(state))
     if state.proxy_lock.shared:
@@ -1983,9 +2156,12 @@ def execute(state: State) -> int:
         if model_future is not None:
             state.image = model_future.result()
         keychain_arguments = keychain_future.result() if keychain_future is not None else []
+        host_pi = host_pi_enabled()
+        agent_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"] if host_pi else
+                         OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
+                         if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)
         arguments = [*gateway_arguments, *keychain_arguments, state.image,
-            *(OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
-              if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)]
+                     *agent_command]
         system = run(["uname", "-s"], capture=True).stdout.strip()
         if system == "Linux":
             print(
@@ -1998,7 +2174,7 @@ def execute(state: State) -> int:
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
             print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
-        return run_agent(state, arguments)
+        return run_agent(state, arguments, host_pi=True) if host_pi else run_agent(state, arguments)
 
 
 def preflight_lima(state: State) -> None:
@@ -2042,9 +2218,9 @@ def cleanup_resource(label: str, arguments: list[str]) -> bool:
     return result is not None and result.returncode == 0
 
 
-def cleanup(state: State) -> None:
+def cleanup(state: State) -> bool:
     if state.cleaned:
-        return
+        return state.cleanup_succeeded
     state.cleaned = True
     cleanup_started = time.monotonic()
     previous = cleanup_started
@@ -2152,13 +2328,18 @@ def cleanup(state: State) -> None:
     if state.proxy_lock is not None:
         state.proxy_lock.close()
     for path in (
-        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask, state.prepared_images,
+        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask,
+        state.prepared_images, getattr(state, "cd_request", None),
     ):
         if path is not None and not keep_scratch:
             path.unlink(missing_ok=True)
     timing("temporary files")
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox cleanup total: {time.monotonic() - cleanup_started:.2f}s", file=sys.stderr)
+    state.cleanup_succeeded = (all([*container_results, *network_results])
+                               and not bool(gateway_result and gateway_result.remaining)
+                               and not bool(keychain_result and keychain_result.remaining))
+    return state.cleanup_succeeded
 
 
 def login_codex_sidecar() -> int:
@@ -2261,6 +2442,24 @@ def main(arguments: list[str]) -> int:
 
 def launch(arguments: list[str]) -> int:
     global OUTER_RUNTIME
+    if len(arguments) == 2 and arguments[0] == "validate-cd":
+        try:
+            # Validation is read-only even when an agent shell supplied jj author overrides.
+            os.environ.pop("JJ_USER", None)
+            os.environ.pop("JJ_EMAIL", None)
+            os.environ["JJ_AGENT"] = "none"
+            destination = Path(arguments[1]).expanduser().resolve(strict=True)
+            if not destination.is_dir():
+                raise LauncherError("The destination is not a directory")
+            os.chdir(destination)
+            checked = new_state([])
+            validate_repository(checked, initialize_missing=False)
+            print(json.dumps({"destination": str(checked.host_working_directory),
+                              "repository": str(checked.repository)}))
+            return 0
+        except (LauncherError, OSError, ValueError, subprocess.CalledProcessError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
     if arguments == ["restart-all"]:
         try:
             return restart_all_tmux_sessions()
@@ -2295,11 +2494,39 @@ def launch(arguments: list[str]) -> int:
     try:
         OUTER_RUNTIME = image_runtime()
         proxy_module.cache_clear()
-        state = new_state(arguments)
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             previous_handlers[signum] = signal.signal(signum, handle_signal)
-        result = execute(state)
-        return result
+        next_arguments = arguments
+        handoff_origin = None
+        while True:
+            state = new_state(next_arguments)
+            state.handoff_origin = handoff_origin
+            result = execute(state)
+            request = (read_cd_request(state)
+                       if result == 0 and host_pi_enabled()
+                       else None)
+            if request is None:
+                return result
+            if not cleanup(state):
+                raise LauncherError("Old sandbox cleanup failed; directory handoff stopped")
+            unregister_tmux_pane(state)
+            origin = state.host_working_directory
+            prior_arguments = state.codex_arguments
+            state = None
+            destination, session = request
+            os.chdir(destination)
+            handoff_origin = origin
+            session_dir_arguments = []
+            if prior_arguments.count("--session-dir") == 1:
+                index = prior_arguments.index("--session-dir")
+                if index + 1 < len(prior_arguments):
+                    session_dir = Path(prior_arguments[index + 1]).expanduser()
+                    if not session_dir.is_absolute():
+                        session_dir = origin / session_dir
+                    session_dir_arguments = ["--session-dir", str(session_dir)]
+            next_arguments = [*session_dir_arguments,
+                              *(["--fork", str(session)] if session is not None else []),
+                              "--session-id", str(uuid.uuid4())]
     except SignalExit as error:
         return 128 + error.signum
     except (LauncherError, ValueError) as error:

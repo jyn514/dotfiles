@@ -85,6 +85,8 @@ fi
 "$bb_command" -cp tools/package-plan/src tools/package-plan/tests/run.clj
 node tools/extract-chat-share/tests/extract_chat_share_test.js
 node tools/codex-archive-old/tests/codex_archive_old_test.js
+node --test tools/codex-sandbox/tests/tool_worker_test.mjs
+bun test tools/codex-sandbox/tests/session_handoff_test.ts
 if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
 	export JJ_PROXY_TEST_JJ="$DOTFILES_TEST_JJ_REAL"
 fi

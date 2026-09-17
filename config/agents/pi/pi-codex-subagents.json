@@ -1,9 +1,4 @@
 {
-  "defaults": {
-    "extensions": [
-      "~/.pi/agent/pi-extensions/codex-sidecar.ts"
-    ]
-  },
   "directSkillRoutes": {
     "tighten-docs": {
       "agentType": "luna"

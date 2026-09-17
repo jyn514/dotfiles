@@ -2,9 +2,16 @@
 
 ## Purpose
 
-`codex-sandbox` launches Pi in a disposable agent container.
-Launcher-owned sibling services provide narrowly scoped access to protected repository operations, Codex authentication, the host editor, optional Zulip, and optional Agent Podman.
-The agent can write the working tree, but Git, Jujutsu, sandbox policy, and reusable credentials remain outside its direct authority.
+`codex-sandbox` runs Pi on the host with its normal credentials by default,
+while its built-in tools and human `!` shell commands run in the guest container.
+Set `CODEX_SANDBOX_HOST_PI=0` to retain the older guest-Pi mode.
+Host mode requires the Pi installation at
+`~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
+current sandbox image. The launcher loads its extensions from this checkout;
+`./setup` is not required for the sandbox path. A successful `/reload` restores
+the guest tool extension.
+Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman; guest-Pi mode also uses the Codex authentication broker.
+Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 
 Agent containers drop `NET_RAW` on every backend, including after container-local sudo.
 Sidecars drop all capabilities.
@@ -117,24 +124,25 @@ Without a project base image, the launcher pulls its default Node image into the
 Later launches reuse the local base;
 a failed pull aborts startup.
 
-Alpine images run Pi's bundled Node CLI to reduce module-loading overhead.
-Other images use the standalone Bun executable.
+In guest-Pi mode, Alpine images run Pi's bundled Node CLI; other images use the
+standalone Bun executable. Host mode uses the installed host Pi.
 
 The agent image provides a `codex` wrapper that routes a base image's Codex CLI through the
 session authentication proxy. It does not install Codex; invoking it reports how to repair the
 base image when no later `codex` executable is present on `PATH`, or when proxy setup is missing.
 
-Alpine builds validate Node's minimum version and seed its bytecode cache with the final runtime and user.
-Each container gets its own writable copy at `/tmp/pi-node-cache`;
-startup does not spawn a separate version-check process.
+For guest-Pi mode, Alpine builds validate Node's minimum version and seed its
+bytecode cache with the final runtime and user. Each container gets a writable
+copy at `/tmp/pi-node-cache`.
 
 The image build installs the packages selected by `config/agents/pi/pi.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
 Only the cache enters the final image, at `/tmp/jiti`;
 build-time package stores and extension runtime state are discarded.
 
-Jiti checks source hashes before reuse.
-Edited or newly installed extensions compile into the disposable container, so `/reload` still sees current source and cache writes never reach host Pi or another session.
-Local extension and settings changes invalidate the image;
+In guest-Pi mode, Jiti checks source hashes before reuse. Edited extensions
+compile into the disposable container, so `/reload` sees current source without
+writing host Pi's cache. In host mode, Pi loads the installed host extensions
+and `/reload` uses Pi's normal host cache. Local extension and settings changes invalidate the image;
 moving Git refs are captured when the package-install layer builds and may produce runtime cache misses after an upstream update.
 
 The goal extension uses the precompiled npm release pinned in `config/agents/pi/pi.json`.
@@ -145,12 +153,17 @@ Its Git distribution loads TypeScript, making cache misses more expensive.
 ```sh
 pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
-codex-sandbox auth login        # create/update dedicated sandbox OAuth state
+codex-sandbox auth login        # guest-Pi mode: update dedicated sandbox OAuth state
 codex-sandbox restart-all       # restart registered sessions; run inside tmux
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
 tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images without build cache
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
+
+In host mode, `/cd DIRECTORY` validates an existing Jujutsu workspace, closes
+the current guest, and forks the conversation into a new session there. Resuming
+a session from another directory also forks it; the saved session is preserved.
+An empty session starts fresh in the destination; unsaved messages block handoff.
 
 `refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
 it retains BuildKit caches.

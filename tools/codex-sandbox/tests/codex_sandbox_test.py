@@ -19,6 +19,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+import uuid
 from unittest import mock
 
 
@@ -34,6 +35,14 @@ HOST_EDITOR_CLIENT = TOOL / "image" / "host-editor"
 HOST_EDITOR_PANE = TOOL / "host-editor-pane"
 
 
+class GuestModeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # Existing launcher fixtures exercise the retained guest-Pi fallback.
+        environment = mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "0"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+
 def write_executable(path: Path, content: str) -> None:
     path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
     path.chmod(0o700)
@@ -45,7 +54,7 @@ def read_calls(path: Path) -> list[list[str]]:
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-class ContainerRepositoryPathTest(unittest.TestCase):
+class ContainerRepositoryPathTest(GuestModeTest):
     def test_policy_opt_out_drops_host_credentials(self):
         load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
         with tempfile.TemporaryDirectory() as directory:
@@ -235,7 +244,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             self.assertEqual(Path("/src/repository"), function(home, repository))
 
 
-class ProxyHelperTest(unittest.TestCase):
+class ProxyHelperTest(GuestModeTest):
     def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
         helper = runpy.run_path(str(LAUNCHER))["helper"]
         entrypoint = mock.Mock(return_value=0)
@@ -250,7 +259,7 @@ class ProxyHelperTest(unittest.TestCase):
             self.assertEqual(1, helper("snapshot", "--repo", "example", check=False).returncode)
 
 
-class ContainerTimingTest(unittest.TestCase):
+class ContainerTimingTest(GuestModeTest):
     def test_daemon_timestamps_keep_host_clock_out_of_durations(self) -> None:
         report = runpy.run_path(str(LAUNCHER))["report_container_timing"]
         timestamps = "|".join(json.dumps(value) for value in (
@@ -283,7 +292,224 @@ class ContainerTimingTest(unittest.TestCase):
                 self.assertIn("timing: unavailable", output.getvalue())
 
 
-class BackgroundRelayTest(unittest.TestCase):
+class HostPiWrapperTest(GuestModeTest):
+    def test_subagent_extensions_come_from_host_wrapper(self) -> None:
+        config = json.loads((ROOT / "config/agents/pi/pi-codex-subagents.json").read_text())
+        self.assertEqual([], config.get("defaults", {}).get("extensions", []))
+
+    def test_child_keeps_guest_tools_and_drops_guest_credential_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            cli = home / ".local/share/pi/node/node_modules/.bin/pi"
+            cli.parent.mkdir(parents=True)
+            cli.write_text("#!/usr/bin/env python3\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+            cli.chmod(0o755)
+            sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
+            installed_index = home / ".pi/agent/pi-extensions/index.ts"
+            result = subprocess.run(
+                [str(TOOL / "sandbox-host-pi"), "--mode", "rpc", "--no-extensions",
+                 "--extension", str(sidecar), "--extension", str(installed_index),
+                 "--session", "child.jsonl"],
+                env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, check=True,
+            )
+            args = json.loads(result.stdout)
+            self.assertEqual("--extension", args[0])
+            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), args[1])
+            self.assertEqual("--extension", args[2])
+            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/index.ts"), args[3])
+            self.assertEqual(["--mode", "rpc", "--no-extensions", "--session", "child.jsonl"],
+                             args[4:])
+
+
+class DirectoryHandoffTest(GuestModeTest):
+    def test_cross_directory_session_id_forks_before_pi_starts(self) -> None:
+        prepare = runpy.run_path(str(LAUNCHER))["prepare_host_session"]
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            source_directory = home / "old"
+            destination = home / "new"
+            source_directory.mkdir()
+            destination.mkdir()
+            sessions = home / ".pi/agent/sessions/old"
+            sessions.mkdir(parents=True)
+            session = sessions / "2026-09-17_session-one.jsonl"
+            session.write_text(json.dumps({"type": "session", "id": "session-one",
+                                           "cwd": str(source_directory)}) + "\n")
+            state = SimpleNamespace(codex_arguments=["--session-id", "session-one"],
+                                    home=home, host_working_directory=destination)
+            prepare(state)
+            self.assertEqual(["--fork", str(session.resolve()), "--session-id"],
+                             state.codex_arguments[:3])
+            uuid.UUID(state.codex_arguments[3])
+
+            state.codex_arguments = ["--session", "session-one"]
+            prepare(state)
+            self.assertEqual(["--fork", str(session.resolve()), "--session-id"],
+                             state.codex_arguments[:3])
+
+            state.codex_arguments = ["--session", str(session)]
+            prepare(state)
+            self.assertEqual(["--fork", str(session.resolve()), "--session-id"],
+                             state.codex_arguments[:3])
+
+            state.host_working_directory = source_directory
+            state.codex_arguments = ["--session-id", "session-one"]
+            prepare(state)
+            self.assertEqual(["--session-id", "session-one"], state.codex_arguments)
+
+            custom_sessions = home / "custom-sessions"
+            custom_sessions.mkdir()
+            custom_session = custom_sessions / "2026-09-17_session-two.jsonl"
+            custom_session.write_text(json.dumps({"type": "session", "id": "session-two",
+                                                  "cwd": str(source_directory)}) + "\n")
+            state.host_working_directory = destination
+            state.codex_arguments = ["--session-id", "session-two"]
+            with mock.patch.dict(os.environ, {"PI_CODING_AGENT_SESSION_DIR": str(custom_sessions)}):
+                prepare(state)
+            self.assertEqual(["--fork", str(custom_session.resolve()), "--session-id"],
+                             state.codex_arguments[:3])
+
+            state.codex_arguments = ["--session-dir", str(custom_sessions),
+                                     "--session-id", "session-two"]
+            prepare(state)
+            self.assertEqual(["--session-dir", str(custom_sessions), "--fork",
+                              str(custom_session.resolve()), "--session-id"],
+                             state.codex_arguments[:5])
+
+    def test_validation_does_not_initialize_a_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [str(LAUNCHER), "validate-cd", directory], capture_output=True, text=True,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertFalse((Path(directory) / ".jj").exists())
+
+    def test_successful_handoff_cleans_before_starting_fork(self) -> None:
+        launch = runpy.run_path(str(LAUNCHER))["launch"]
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            session = destination / "source.jsonl"
+            session.write_text("session")
+            states = [SimpleNamespace(host_working_directory=ROOT, codex_arguments=[], joining_workers=False),
+                      SimpleNamespace(host_working_directory=destination, joining_workers=False)]
+            events = []
+
+            def new_state(arguments):
+                events.append(("new", arguments))
+                return states.pop(0)
+
+            replacements = {
+                "image_runtime": lambda: None,
+                "new_state": new_state,
+                "execute": lambda state: events.append(("execute", state.host_working_directory)) or
+                           (0 if state.host_working_directory == ROOT else 19),
+                "read_cd_request": lambda _state: (destination, session),
+                "cleanup": lambda state: events.append(("cleanup", state.host_working_directory)) or True,
+                "unregister_tmux_pane": lambda state: events.append(("unregister", state.host_working_directory)),
+            }
+            with mock.patch.dict(launch.__globals__, replacements), \
+                    mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
+                    mock.patch("os.chdir") as change_directory:
+                self.assertEqual(19, launch([]))
+            self.assertEqual(("cleanup", ROOT), events[2])
+            self.assertEqual("new", events[4][0])
+            self.assertEqual(["--fork", str(session), "--session-id"], events[4][1][:3])
+            uuid.UUID(events[4][1][3])
+            change_directory.assert_called_once_with(destination)
+
+    def test_empty_session_handoff_starts_fresh_in_destination(self) -> None:
+        launch = runpy.run_path(str(LAUNCHER))["launch"]
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            states = [SimpleNamespace(host_working_directory=ROOT, codex_arguments=[
+                "--session-dir", "sessions"], joining_workers=False),
+                      SimpleNamespace(host_working_directory=destination, joining_workers=False)]
+            arguments = []
+
+            def new_state(value):
+                arguments.append(value)
+                return states.pop(0)
+
+            with mock.patch.dict(launch.__globals__, {
+                "image_runtime": lambda: None,
+                "new_state": new_state,
+                "execute": lambda state: 0 if state.host_working_directory == ROOT else 19,
+                "read_cd_request": lambda _state: (destination, None),
+                "cleanup": lambda _state: True,
+                "unregister_tmux_pane": lambda _state: None,
+            }), mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
+                    mock.patch("os.chdir") as change_directory:
+                self.assertEqual(19, launch([]))
+            self.assertEqual([], arguments[0])
+            self.assertEqual(["--session-dir", str(ROOT / "sessions"), "--session-id"],
+                             arguments[1][:3])
+            uuid.UUID(arguments[1][3])
+            change_directory.assert_called_once_with(destination)
+
+    def test_empty_session_request_has_no_source_file(self) -> None:
+        read_request = runpy.run_path(str(LAUNCHER))["read_cd_request"]
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            request = destination / "request.json"
+            request.write_text(json.dumps({"destination": str(destination), "session": None}))
+            self.assertEqual((destination.resolve(), None),
+                             read_request(SimpleNamespace(cd_request=request)))
+
+    def test_failed_cleanup_stops_handoff(self) -> None:
+        launch = runpy.run_path(str(LAUNCHER))["launch"]
+        state = SimpleNamespace(host_working_directory=ROOT, joining_workers=False)
+        new_state = mock.Mock(return_value=state)
+        with mock.patch.dict(launch.__globals__, {
+            "image_runtime": lambda: None,
+            "new_state": new_state,
+            "execute": lambda _state: 0,
+            "read_cd_request": lambda _state: (ROOT, ROOT / "source.jsonl"),
+            "cleanup": lambda _state: False,
+            "unregister_tmux_pane": lambda _state: None,
+        }), mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+            self.assertEqual(1, launch([]))
+        new_state.assert_called_once()
+        self.assertIn("cleanup failed", output.getvalue())
+
+
+class BackgroundRelayTest(GuestModeTest):
+    def test_host_pi_is_default_with_guest_fallback(self) -> None:
+        enabled = runpy.run_path(str(LAUNCHER))["host_pi_enabled"]
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(enabled())
+        with mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "0"}):
+            self.assertFalse(enabled())
+
+    def test_host_pi_selects_guest_worker(self) -> None:
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        calls = []
+        with tempfile.TemporaryDirectory() as directory:
+            state = SimpleNamespace(repository=Path(directory), agent_podman={}, uid=501, gid=20,
+                                    codex_arguments=["--session-id", "test-session"],
+                                    deferred_signal=None)
+            replacements = {
+                name: mock.Mock(return_value=[])
+                for name in ("validate_repository", "register_tmux_pane", "ensure_network",
+                             "attach_proxies", "prepare_gateway", "stage_skills", "start_keychain")
+            }
+            replacements["acquire_lock"] = mock.Mock(side_effect=lambda value: setattr(
+                value, "proxy_lock", SimpleNamespace(shared=False)))
+            replacements["load_repository_policy"] = mock.Mock()
+            replacements.update(
+                prepare_host_session=mock.Mock(),
+                resolve_agent=mock.Mock(return_value="image"),
+                resolve_sidecar_image=mock.Mock(return_value="sidecar"),
+                run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
+                run_agent=lambda _state, arguments, **kwargs: (calls.append((arguments, kwargs)) or 0),
+            )
+            with mock.patch.dict(execute.__globals__, replacements), \
+                    mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}):
+                self.assertEqual(0, execute(state))
+        self.assertEqual(1, len(calls))
+        self.assertEqual({"host_pi": True}, calls[0][1])
+        self.assertEqual(["node", "/opt/agent-tools/bin/tool-worker.mjs"], calls[0][0][-2:])
+
     def test_fresh_session_reports_image_and_proxy_preparation(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
         state = SimpleNamespace(repository=Path("/unused"))
@@ -586,7 +812,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 self.assertEqual(1, output.getvalue().count("injected optional failure"))
 
 
-class AgentSandboxImageTest(unittest.TestCase):
+class AgentSandboxImageTest(GuestModeTest):
     def test_image_creates_source_mount_point_before_chown(self) -> None:
         dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
@@ -707,7 +933,7 @@ class AgentSandboxImageTest(unittest.TestCase):
         self.assertNotIn("[credential]", config)
 
 
-class HostEditorPaneTest(unittest.TestCase):
+class HostEditorPaneTest(GuestModeTest):
     def test_runs_editor_argv_and_records_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -730,8 +956,9 @@ class HostEditorPaneTest(unittest.TestCase):
             self.assertEqual("value with spaces\n", output.read_text(encoding="utf-8"))
 
 
-class HostEditorBridgeTest(unittest.TestCase):
+class HostEditorBridgeTest(GuestModeTest):
     def setUp(self) -> None:
+        super().setUp()
         self.launcher = runpy.run_path(str(LAUNCHER))
         self.bridge = self.launcher["HostEditorBridge"]()
 
@@ -863,8 +1090,9 @@ class HostEditorBridgeTest(unittest.TestCase):
             socket.create_connection(("127.0.0.1", port), timeout=0.1)
 
 
-class CodexSandboxTest(unittest.TestCase):
+class CodexSandboxTest(GuestModeTest):
     def setUp(self) -> None:
+        super().setUp()
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / "repo with spaces"

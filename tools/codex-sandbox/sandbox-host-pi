@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Keep every host Pi process attached to the guest tool worker."""
+
+import os
+from pathlib import Path
+import sys
+
+
+def main() -> None:
+    home = Path.home()
+    pi_cli = home / ".local/share/pi/node/node_modules/.bin/pi"
+    if not pi_cli.is_file():
+        raise SystemExit(f"Host Pi is not installed at {pi_cli}")
+    extensions = Path(__file__).resolve().parents[2] / "config/agents/pi/pi-extensions"
+    old_sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
+    installed_index = home / ".pi/agent/pi-extensions/index.ts"
+    args = []
+    index = 1
+    while index < len(sys.argv):
+        if (sys.argv[index] in ("--extension", "-e") and index + 1 < len(sys.argv)
+                and Path(sys.argv[index + 1]).expanduser() in (old_sidecar, installed_index)):
+            # Drop the guest-only provider and replace the index with its source.
+            index += 2
+            continue
+        args.append(sys.argv[index])
+        index += 1
+    os.execv(pi_cli, [str(pi_cli), "--extension", str(extensions / "guest-tools.ts"),
+                      "--extension", str(extensions / "index.ts"), *args])
+
+
+if __name__ == "__main__":
+    main()

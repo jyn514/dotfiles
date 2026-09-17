@@ -111,41 +111,26 @@ remote identities, and credential handling with their current owners.
 
 == Host Pi and guest tool calls
 
-*Selected, not implemented:* The #link("launcher-interface.typ")[host-Pi design]
-keeps parent and subagent Pi processes on the host. The existing subagent manager
-owns its local child processes and RPC pipes. The launcher owns guest workloads
-and attachment lifetime; the trusted-service supervisor owns only the services
-defined in #link("trusted-service-lifecycle.typ")[its lifecycle contract].
+The #link("launcher-interface.typ")[host-Pi path] keeps parent and subagent Pi
+processes on the host. The existing subagent manager owns child processes and RPC
+pipes. The launcher owns one guest workload per Pi launch; the trusted-service
+supervisor retains only the services in
+#link("trusted-service-lifecycle.typ")[its lifecycle contract].
 
-The guest tool backend is the sole owner of per-call execution and cancellation.
-It registers each call under a host-assigned caller and attachment before starting
-effects, and tracks guest workload identity independently of transport PIDs.
-Parent and child calls use the same mechanism. Host child exit, closed stdin,
-lost transport, and explicit cancellation must reach that owner; a local process
-group cannot account for guest descendants.
+Each tool call uses a separate socket to the persistent guest worker; closing it
+aborts that call's Pi tool signal. The host Pi wrapper gives children the same
+worker binding. A lost worker interrupts host Pi, and the launcher's existing
+workload cleanup removes the guest container.
 
-On cancellation, stop admitting work for the affected caller and attempt bounded
-graceful shutdown. If the backend cannot verify its work stopped, fail the attachment
-and let the launcher terminate the whole guest through its existing cleanup path.
-Report the interruption to every affected caller; do not build per-call containers
-or promise isolation between parent and child failures in the first implementation.
-This whole-guest fallback accounts for commands that detach from process groups.
-After host Pi loss, the launcher drains the guest; after launcher loss, ordinary
-owner-validated recovery removes the recorded workload before reuse.
+Cancellation and transport loss do not roll back a possible write. Never replay
+a call automatically after an unknown outcome. On `/cd`, close and clean the old
+workload before starting the destination; if cleanup fails, stop the handoff.
+Background processes inside the guest end when its container is removed.
 
-Report completion, cancellation, failure, and unknown outcome distinctly. A write
-may have completed before transport loss; neither disconnect nor cancellation
-implies rollback. Never replay a possibly accepted call automatically. If guest
-cleanup cannot be verified, retain recovery identity and report incomplete cleanup
-rather than releasing the attachment as clean. Background processes belong to the
-attachment and end with it; they cannot outlive session handoff.
-
-Acceptance exercises parent and child death, SIGKILL of the local transport,
-guest disappearance, detached descendants, and disconnect after a write but before
-its response. Verify graceful cancellation where possible, explicit failure for
-all callers when whole-guest cleanup is needed, no local fallback, no duplicate
-mutation, and recovery after host-owner restart. These checks supplement the
-existing subagent manager's tests; they do not justify a second subagent manager.
+Live operational probes remain for parent and child death, guest disappearance,
+detached descendants, and disconnect after a write but before its response.
+They supplement the existing subagent manager's tests; they do not justify a
+second subagent manager.
 
 == What an SSH trap can and cannot fix
 

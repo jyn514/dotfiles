@@ -17,6 +17,8 @@
       "$HOME/.pi/agent/breq.md": "config/agents/breq.md",
       "$HOME/.pi/agent/mcp.json": "config/agents/pi/pi-mcp.json",
       "$HOME/.pi/agent/settings.json": "config/agents/pi/pi.json",
+      "$HOME/.pi/agent/pi-extensions/index.ts": "config/agents/pi/pi-extensions/index.ts",
+      "$HOME/.pi/agent/pi-extensions/codex-sidecar.ts": "config/agents/pi/pi-extensions/codex-sidecar.ts",
       "$HOME/.pi/agent/pi-codex-subagents/config.json": "config/agents/pi/pi-codex-subagents.json",
       "$HOME/.pi/agent/pi-codex-subagents/agents": "config/agents/pi/pi-codex-subagents/agents",
       "$HOME/.pi/agent/keybindings.json": "config/agents/pi/pi-keybindings.json",

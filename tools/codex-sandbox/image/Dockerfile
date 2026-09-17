@@ -58,6 +58,7 @@ COPY --from=pi-source /src /opt/agent-pi/src
 COPY --from=pi-source /REVISION /opt/agent-pi/REVISION
 WORKDIR /opt/agent-pi/src
 RUN npm ci --ignore-scripts --prefix /opt/agent-pi/src \
+    && if [ -d packages/ai/src/providers/data ]; then rm -r packages/ai/src/providers/data; fi \
     && npm run hydrate:pinned-model-data --prefix /opt/agent-pi/src \
     && chmod -R a+rX packages/ai/src/providers/data \
     && npm run build:offline --prefix /opt/agent-pi/src \
@@ -92,6 +93,8 @@ RUN if [ -e /etc/alpine-release ]; then bun_variant=musl; else bun_variant=glibc
 COPY --chmod=755 ./tools/codex-sandbox/image/pi /opt/agent-pi/bin/pi
 COPY --chmod=755 ./tools/codex-sandbox/image/agent-entrypoint /opt/agent-tools/bin/agent-entrypoint
 COPY --chmod=755 ./tools/codex-sandbox/image/agent_supervisor.py /opt/agent-tools/bin/agent_supervisor.py
+COPY ./tools/codex-sandbox/image/tool-worker.mjs /opt/agent-tools/bin/tool-worker.mjs
+COPY ./tools/codex-sandbox/image/tool-connect.mjs /opt/agent-tools/bin/tool-connect.mjs
 COPY ./tools/codex-sandbox/image/check-pi-runtime.mjs /opt/agent-pi/check-runtime.mjs
 COPY ./tools/codex-sandbox/image/check-bun.test.ts /opt/agent-pi/check-bun.test.ts
 RUN if [ -e /etc/alpine-release ]; then \
