@@ -2,7 +2,7 @@ use color_eyre::eyre::{bail, eyre, Result};
 use std::collections::HashSet;
 
 const COMMANDS: &[&str] = &[
-    "status", "diff", "log", "show", "interdiff", "file", "commit", "describe",
+    "status", "diff", "log", "show", "interdiff", "file", "help", "commit", "describe",
     "new", "split", "squash", "rebase", "restore", "abandon", "duplicate",
     "edit", "next", "prev", "undo", "workspace",
 ];
@@ -66,7 +66,8 @@ pub fn validate_inspect(argv: &[String]) -> Result<()> {
     let read_only = matches!(argv.first().map(String::as_str), Some("status" | "diff" | "log" | "show" | "interdiff" | "help"))
         || matches!(argv.get(0..2), Some([command, subcommand]) if command == "file" && ["annotate", "list", "search", "show"].contains(&subcommand.as_str()))
         || argv.starts_with(&["workspace".into(), "list".into()])
-        || argv.starts_with(&["git".into(), "root".into()]);
+        || argv.starts_with(&["git".into(), "root".into()])
+        || argv.starts_with(&["op".into(), "log".into()]);
     if !read_only { bail!("command is not allowed in inspection mode"); }
     reject_security_options(&argv[1..])
 }
@@ -78,12 +79,18 @@ pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<()> {
     if COMMANDS.contains(&command) {
         return reject_security_options(&argv[1..]);
     }
+    if argv.starts_with(&["op".into(), "log".into()]) {
+        return reject_security_options(&argv[1..]);
+    }
     if command == "bookmark" {
         let subcommand = argv.get(1).map(String::as_str).unwrap_or("");
         if !["create", "delete", "forget", "list", "move", "rename", "set", "track", "untrack"].contains(&subcommand) {
             bail!("bookmark subcommand is not allowed");
         }
         return reject_security_options(&argv[2..]);
+    }
+    if argv.starts_with(&["git".into(), "root".into()]) {
+        return reject_security_options(&argv[1..]);
     }
     if command == "git" && argv.get(1).map(String::as_str) == Some("fetch") {
         reject_security_options(&argv[2..])?;
@@ -133,6 +140,10 @@ mod tests {
     #[test]
     fn leaves_ordinary_validation_to_jj() {
         assert!(check(&["log", "--future-jj-option", "value"]));
+        assert!(check(&["op", "log"]));
+        assert!(!check(&["op", "log", "--at-operation", "@-"]));
+        assert!(check(&["help"]));
+        assert!(check(&["git", "root"]));
         assert!(check(&["commit", "-m", "literal; $(touch nope)", "src/main.rs"]));
         assert!(check(&["git", "fetch", "--remote", "origin", "--branch", "main"]));
         assert!(check(&["workspace", "list"]));
@@ -141,7 +152,7 @@ mod tests {
     #[test]
     fn rejects_escape_surfaces() {
         for args in [
-            &["util", "exec", "sh"][..], &["debug", "operation"][..], &["git", "push"][..],
+            &["util", "exec", "sh"][..], &["debug", "operation"][..], &["op", "restore", "@-"][..], &["git", "push"][..],
             &["git", "init"][..], &["config", "set", "x", "y"][..], &["diff", "--tool", "/tmp/x"][..],
             &["status", "--repository", "/tmp/x"][..], &["log", "--config", "aliases.x=util exec"][..],
             &["workspace", "list", "--repository", "/tmp/x"][..],
@@ -151,13 +162,17 @@ mod tests {
     }
 
     #[test]
-    fn inspection_accepts_only_observational_file_operations() {
+    fn inspection_accepts_only_observational_commands() {
         let check = |args: &[&str]| validate_inspect(
             &args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()
         ).is_ok();
         assert!(check(&["file", "show", "src/main.rs"]));
         assert!(check(&["workspace", "list"]));
+        assert!(check(&["op", "log"]));
+        assert!(check(&["op", "log", "--no-graph"]));
+        assert!(!check(&["op", "log", "--at-operation", "@-"]));
         for args in [
+            &["op", "restore", "@-"][..],
             &["file", "track", "src/main.rs"][..],
             &["file", "untrack", "src/main.rs"][..],
             &["file", "chmod", "+x", "src/main.rs"][..],

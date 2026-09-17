@@ -47,6 +47,7 @@ Once the launcher has installed the wrapper, use ordinary commands:
 jj status
 jj diff
 jj log
+jj op log
 jj commit -m 'Describe the change'
 jj rebase -r @ -d main
 jj undo
