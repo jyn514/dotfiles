@@ -1,6 +1,6 @@
 ---
 name: jj-workflow
-description: "Use when a Jujutsu task involves inspecting file or revision history, establishing change provenance or ownership, comparing revisions, or shaping history through splits, rebases, restacks, conflicts, or abandonment. Do not use for routine status, diff, or commit tasks that need no history judgment."
+description: "Use when a task involves inspecting file or revision history, establishing change provenance or ownership, comparing revisions, or shaping history through splits, rebases, restacks, conflicts, or abandonment. Do not use for routine status, diff, or commit tasks that need no history judgment."
 ---
 
 # jj Workflow
