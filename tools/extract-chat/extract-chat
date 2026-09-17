@@ -1,5 +1,5 @@
 #!/usr/bin/env bb
-;; Extract readable user/assistant turns from Codex and Claude session JSON/JSONL files.
+;; Extract readable user/assistant turns from Pi, Codex, and Claude session JSON/JSONL files.
 ;;
 ;; Usage:
 ;;   extract-chat --session 019abcde-1234-7000-8000-0123456789ab
@@ -19,6 +19,9 @@
    (str (or (get environment "CODEX_HOME")
             (str (System/getProperty "user.home") "/.codex"))
         (if archived? "/archived_sessions" "/sessions"))))
+
+(defn- pi-root []
+  (str (System/getProperty "user.home") "/.pi/agent/sessions"))
 
 (defn- usage []
   (println "Usage: extract-chat [--archived] [--final-only] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
@@ -56,18 +59,23 @@
   (let [file-name (str (.getFileName file))
         stem (str/replace file-name #"\.jsonl?$" "")]
     (or (= session stem)
-        (str/ends-with? stem (str "-" session)))))
+        (str/ends-with? stem (str "-" session))
+        (str/ends-with? stem (str "_" session)))))
 
 (defn- find-session [session archived?]
-  (let [root (default-root (System/getenv) archived?)
-        matches (filter #(session-file-name-matches? session %)
-                        (files-under (path root)))]
+  (let [roots [(default-root (System/getenv) archived?)
+               (when-not archived? (pi-root))]
+        matches (->> roots
+                     (remove nil?)
+                     (mapcat #(files-under (path %)))
+                     (filter #(session-file-name-matches? session %))
+                     distinct)]
     (case (count matches)
-      0 (throw (ex-info (str "No Codex session found for " session)
-                        {:session session :root root}))
+      0 (throw (ex-info (str "No session found for " session)
+                        {:session session :roots roots}))
       1 (first matches)
-      (throw (ex-info (str "Multiple Codex sessions found for " session)
-                      {:session session :root root :matches matches})))))
+      (throw (ex-info (str "Multiple sessions found for " session)
+                      {:session session :roots roots :matches matches})))))
 
 (defn- read-json-lines [file]
   (with-open [r (io/reader (.toFile file))]
@@ -160,10 +168,21 @@
             {:role role
              :text text}))))))
 
+(defn- pi-message [event]
+  (when (and (map? event) (= "message" (:type event)))
+    (let [message (:message event)
+          role (:role message)
+          text (content-text (:content message))]
+      (when (and (case role ("assistant" "user") role nil)
+                 (seq (str/trim text)))
+        {:role role
+         :text text}))))
+
 (defn- messages [events]
   (or (seq (keep event-message events))
       (seq (keep response-item-message events))
-      (seq (keep claude-message events))))
+      (seq (keep claude-message events))
+      (seq (keep pi-message events))))
 
 (defn- codex-session-meta [events]
   (some (fn [{:keys [type payload timestamp]}]

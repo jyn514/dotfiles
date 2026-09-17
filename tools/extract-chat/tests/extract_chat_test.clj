@@ -125,6 +125,44 @@
                   "Tea is ready.\n\n")
              (str stdout))))))
 
+(deftest extract-chat-handles-pi-session-jsonl
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-pi"})
+        session-file (fs/file root "session.jsonl")
+        event (fn [role content]
+                (json/generate-string
+                 {:type "message"
+                  :message {:role role :content content}}))]
+    (spit session-file
+          (str (json/generate-string {:type "session" :version 3
+                                      :id "pi-session" :timestamp "2026-09-17T00:00:00Z"})
+               "\n"
+               (event "user" [{:type "text" :text "Make tea."}]) "\n"
+               (event "assistant" [{:type "text" :text "Tea is ready."}
+                                    {:type "toolCall" :name "shell"}]) "\n"))
+    (let [stdout (java.io.StringWriter.)]
+      (binding [*out* stdout]
+        (extract-chat/main [(str session-file)]))
+      (is (= (str "# " session-file "\n\n"
+                  "## User\n\nMake tea.\n\n"
+                  "## Assistant\n\nTea is ready.\n\n")
+             (str stdout))))))
+
+(deftest extract-chat-finds-pi-session-by-id
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-session"})
+        session-id "01a0a66d-2c73-77d5-83a1-43ca8362dc92"
+        session-file (fs/file root (str "2026-09-15T18-56-07-795Z_" session-id ".jsonl"))]
+    (spit session-file
+          (str (json/generate-string {:type "message"
+                                      :message {:role "user" :content "Make tea."}})
+               "\n"))
+    (let [stdout (java.io.StringWriter.)]
+      (with-redefs [extract-chat/pi-root (constantly (str root))]
+        (binding [*out* stdout]
+          (extract-chat/main ["--session" session-id])))
+      (is (= (str "# " session-file "\n\n"
+                  "## User\n\nMake tea.\n\n")
+             (str stdout))))))
+
 (deftest extract-chat-finds-archived-codex-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-archived-codex"})
         sessions-root (fs/file root "sessions")
