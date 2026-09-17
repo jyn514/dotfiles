@@ -214,6 +214,33 @@ class CodexWrapperTests(unittest.TestCase):
             self.assertIn("prompt", result.stdout.splitlines())
             self.assertFalse((codex_home / "rules").exists())
 
+    def test_codex_uses_noninteractive_man_pager_without_changing_caller(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            codex = fake_bin / "codex"
+            codex.write_text('#!/bin/sh\nprintf "%s\\n" "$MANPAGER"\n')
+            codex.chmod(0o755)
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            (codex_home / "developer-instructions.md").write_text("")
+            environment = os.environ | {
+                "DOTFILES_SANDBOX": "1",
+                "HOME": str(root),
+                "MANPAGER": "nvim +Man!",
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            environment.pop("CODEX_HOME", None)
+
+            result = subprocess.run(
+                [str(WRAPPER)], env=environment, text=True, capture_output=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("col -b\n", result.stdout)
+            self.assertEqual("nvim +Man!", environment["MANPAGER"])
+
 
 if __name__ == "__main__":
     unittest.main()

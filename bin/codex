@@ -7,6 +7,8 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 shim_resolve "$0" codex
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
+# Agent commands need man output in their transcript, not an interactive editor.
+export MANPAGER='col -b'
 CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
 move_generated_config() {
 	"$DOTFILES/tools/codex-config/move-generated-config" \
