@@ -13,6 +13,10 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
 
+Before making a consequential design, product, or prioritization decision, identify missing context that could change the objective or preferred approach.
+Ask at most three high-leverage questions before proceeding.
+For low-consequence uncertainty, state the assumption and act; do not turn routine work into an interview.
+
 ## Commands and permissions
 
 ### Tool selection
