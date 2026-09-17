@@ -55,6 +55,7 @@ class ImageInputsTest(unittest.TestCase):
             runtime = ['tools/codex-sandbox/image/agent-entrypoint',
                        'tools/codex-sandbox/image/agent_supervisor.py',
                        'tools/codex-sandbox/image/codex',
+                       'tools/extract-chat/extract-chat',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',

@@ -133,7 +133,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/gitconfig ${H
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client /tools/jj-proxy/client
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/zulip-proxy/client ./tools/zulip-proxy/protocol.json /tools/zulip-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./bin/extract-chat /opt/agent-tools/bin/extract-chat
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /tools/agent-podman/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /opt/agent-tools/bin/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/bb /tools/agent-split/bb
