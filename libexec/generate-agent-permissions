@@ -7,8 +7,23 @@ DOTFILES=$(realpath "$(dirname -- "$(realpath -- "$0")")/..")
 case ${1:-}:$# in
 	codex:2) target=codex ;;
 	claude:3) target=claude ;;
-	*) fail "usage: generate-agent-permissions {codex OUTPUT | claude OUTPUT BASE-SETTINGS}" ;;
+	all:1) target=all ;;
+	*) fail "usage: generate-agent-permissions {codex OUTPUT | claude OUTPUT BASE-SETTINGS | all}" ;;
 esac
+
+if [ "$target" = all ]; then
+	CODEX_HOME=${CODEX_HOME:-"$HOME/.codex"}
+	codex_output=$CODEX_HOME/rules/default.rules
+	claude_base=$HOME/.config/claude/settings.json
+	if ! [ -e "$claude_base" ]; then
+		claude_base=$DOTFILES/config/agents/claude/claude.json
+	fi
+	claude_output=${XDG_CACHE_HOME:-$HOME/.cache}/claude/generated-settings.json
+	"$0" codex "$codex_output"
+	"$0" claude "$claude_output" "$claude_base"
+	exit 0
+fi
+
 output=$2
 output_directory=$(dirname -- "$output")
 mkdir -p "$output_directory" || fail "cannot create permission output directory"
