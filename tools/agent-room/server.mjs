@@ -1,21 +1,19 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import express from 'express';
 import MarkdownIt from 'markdown-it';
 import { WebSocketServer, WebSocket } from 'ws';
+import { databasePath } from './storage.mjs';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const ADMIN_PORT = process.env.ADMIN_PORT === undefined ? PORT + 1 : Number(process.env.ADMIN_PORT);
 // Keep the default database outside the repository sandbox's writable tree.
-const dataHome = process.env.XDG_DATA_HOME && path.isAbsolute(process.env.XDG_DATA_HOME)
-  ? process.env.XDG_DATA_HOME : path.join(os.homedir(), '.local', 'share');
-const DB_PATH = process.env.DB_PATH || path.join(dataHome, 'agent-room', 'rooms.sqlite');
+const DB_PATH = databasePath();
 const PUBLIC_URL = process.env.PUBLIC_URL?.replace(/\/$/, '');
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const MAX_MESSAGES = 2000;

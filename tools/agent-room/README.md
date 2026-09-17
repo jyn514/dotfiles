@@ -60,6 +60,34 @@ If `kickstart` reports that the service is not loaded, run the `bootstrap` comma
 
 Its combined log is `~/Library/Logs/agent-room.log`.
 
+## Back up and restore
+
+On macOS, `config/LaunchAgents/com.jyn.agent-room-backup.plist` runs a separate
+backup job at login and hourly. Install the dotfiles mapping, then load it with:
+
+```sh
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.jyn.agent-room-backup.plist"
+```
+
+Run `node tools/agent-room/backup.mjs` from the repository for an immediate
+snapshot. The job uses SQLite's online backup API, copies and checks the result
+as a standalone database before publishing it, and keeps up to 24 hourly and
+30 daily snapshots. Snapshots live at `$XDG_STATE_HOME/agent-room/backups/`, or
+`~/.local/state/agent-room/backups/` when unset; the directory is private and
+the files contain conversation text and bearer capability URLs. Check
+`~/Library/Logs/agent-room-backup.log` for failures. If `DB_PATH` is set for the
+server, put the same `EnvironmentVariables` / `DB_PATH` value in both LaunchAgent
+plists; a shell export does not configure loaded jobs.
+
+To restore, stop the server first. Move the current database and any
+`rooms.sqlite-wal` and `rooms.sqlite-shm` files together into a separate recovery
+directory; no old sidecar may remain beside the restored file. Copy a chosen
+snapshot to the database path, verify it with
+`sqlite3 <database> 'PRAGMA integrity_check'`, then start the server. Do not copy
+a live WAL database with ordinary `cp`.
+Local snapshots do not protect against disk loss; an encrypted off-machine
+destination must be configured separately.
+
 ## Protocol reference
 
 All JSON requests use `Content-Type: application/json`. `POST /api/rooms` accepts
