@@ -13,9 +13,12 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
 
-Before making a consequential design, product, or prioritization decision, identify missing context that could change the objective or preferred approach.
-Ask at most three high-leverage questions before proceeding.
-For low-consequence uncertainty, state the assumption and act; do not turn routine work into an interview.
+Treat behavior changes as consequential by default.
+Before making a consequential design, product, behavior, or prioritization decision,
+identify missing context that could change the objective, ownership boundary, preservation requirements, or preferred approach.
+If those remain unresolved, ask up to three high-leverage questions and make no edits until they are explicit.
+
+For routine uncertainty within an established boundary, state the assumption and act.
 
 ## Commands and permissions
 
