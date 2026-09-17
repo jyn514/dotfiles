@@ -106,6 +106,12 @@ This repository uses the version 2 bundled Bake resolver;
 repository Docker CLI shims are no longer supported.
 These files are trusted startup policy, not agent configuration.
 
+For a project proxy that needs backing Git metadata, declare
+`{"builtin":"git","proxy":"read-write","agent":"read-only"}` in its `mounts` array.
+The launcher resolves colocated and non-colocated Jujutsu metadata, mounts it for
+the proxy, and supplies its in-container Git directory as `SANDBOX_GIT_DIR`.
+The agent retains only its launcher-protected read-only metadata view.
+
 The agent image key hashes source bytes directly, without Git clean filters or line-ending normalization, so it tracks the bytes Docker builds.
 Without a project base image, the launcher pulls its default Node image into the selected engine if absent, before computing the agent image key.
 Later launches reuse the local base;

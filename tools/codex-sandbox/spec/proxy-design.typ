@@ -1,11 +1,11 @@
 = Sandbox command proxies
 
-*Status:* Proxy isolation, transports, capability selection, image resolution,
-and request-failure isolation are implemented. Caddy 2.11.4-alpine with private profile
+*Status:* Proxy isolation, transports, capability selection, image resolution, and
+request-failure isolation are implemented. Caddy 2.11.4-alpine with private profile
 helpers is the selected authenticated-egress architecture; Codex and Zulip remain
-separate trust-domain instances. The host-Pi execution split specified below is
-selected but not implemented. Manifest examples below describe the temporary
-version 1 wire format.
+separate trust domains. The host-Pi execution split is selected but not implemented;
+the `git` built-in mount is implemented in the launcher, not yet consumed by the
+`bug` proxy. Manifest examples use the temporary version 1 format.
 
 == Objective
 
@@ -196,8 +196,7 @@ A representative first manifest is:
       "network": false,
       "mounts": [
         {
-          "source": ".git",
-          "target": ".git",
+          "builtin": "git",
           "proxy": "read-write",
           "agent": "read-only"
         },
@@ -225,12 +224,21 @@ The launcher resolves targets beneath its container repository path, so the mani
 The configuration loader rejects unknown fields, unsupported schema versions, malformed paths, escaping paths, duplicate targets, and configurations that would hide the proxy executable or socket. The launcher receives validated execution policy rather than manifest fields.
 
 `mounts` grants additional or overriding views without command-specific launcher knowledge.
-Each entry names a source, repository-relative target, and the access mode seen by the proxy and agent containers.
+An ordinary entry names a source, repository-relative target, and the access mode seen by the proxy and agent containers.
 The modes are `read-write`, `read-only`, and `hidden`.
 An omitted proxy mode inherits the proxy's read-only repository view, while an omitted agent mode inherits the agent's ordinary repository view and protected-metadata overlays.
 Writable proxy authority must be declared per path; one mount does not make its parent or siblings writable.
 The launcher establishes all declared views before the agent starts and applies an agent restriction to every untrusted agent container in the session.
 A project resolver may create a declared source before returning its image reference; otherwise the launcher rejects a missing source rather than silently omitting its mount.
+
+A built-in entry uses `builtin` instead of `source` and `target`; these forms cannot be mixed.
+The selected `git` built-in identifies the repository's backing Git metadata, not a literal working-tree `.git` path.
+It requires explicit modes: the proxy may receive `read-write` or `read-only`, while the agent must receive `read-only`.
+The loader rejects unknown or repeated built-ins; the launcher rejects any explicit mount with the same resolved target.
+The launcher resolves the Git directory and any separate common directory once, including for non-colocated Jujutsu workspaces; missing, ambiguous, or non-Git metadata fails startup.
+It mounts all required metadata at launcher-owned paths, preserving Git's internal references, and supplies the in-container Git-directory path as `SANDBOX_GIT_DIR`.
+The launcher's existing protected metadata overlay supplies the agent's read-only view; alternate mount paths must not grant write access.
+The manifest names neither a host metadata path nor a container target, and expansion does not depend on the command name.
 
 The launcher passes `argv` directly to process execution, never through a shell, and resolves its executable only through the proxy's fixed trusted `PATH`; manifest arguments cannot name absolute container binary paths.
 The manifest starts one fixed server; its image owns the server and protocol policy, while the matching agent-side shim owns the client.
@@ -517,7 +525,8 @@ It must not run `bb.edn`, Clojure source, scripts, or configuration from the wri
 Inside the agent, `bb bug` sends its argument vector and standard input through the proxy socket when present and otherwise runs the local bridge.
 The check is a routing convenience rather than an authorization boundary: bypassing or editing it gives the agent only the read-only metadata view.
 An unavailable or incompatible configured proxy fails closed instead of falling back locally.
-The privileged bridge always runs at the validated repository root; the shim resolves and consumes path-based agent inputs before sending the request.
+The privileged bridge remains bound to the validated repository; the shim resolves path-based agent inputs before sending the request.
+Because git-bug does not discover repositories from `GIT_DIR` alone, its subprocess uses launcher-supplied `SANDBOX_GIT_DIR` as its working directory. Queue and workqueue paths remain anchored to the selected workspace, not that Git directory; the proxy does not rediscover host metadata with `jj` or fabricate `.git` in the workspace.
 
 The editable Flower source supplies the unprivileged client rather than the launcher or proxy image.
 Editing or bypassing it changes only the requests sent; server validation and metadata protection remain authoritative.
@@ -566,6 +575,8 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - Editing ordinary working-tree files remains possible
 - The generic host router runs `bb bug` locally while it owns the host lock and uses the recorded runtime to reach the proxy while a sandbox launcher owns that lock
 - Proxied reads and writes work without giving the agent access to `.git/git-bug` or queue control state
+- A `git` built-in mount supports colocated and non-colocated Git-backed Jujutsu workspaces, including backing Git directories outside the selected worktree; Git-bug reads and writes the selected refs while queue and workqueue state stay in the selected workspace
+- Unknown, duplicate, conflicting, or unsafe built-in mount declarations fail before startup; a missing Git backing store never falls back to a workspace `.git` path
 - `--body-file` contents cross the proxy as bounded standard input, and the proxy never opens the supplied path
 - `bb bug push` and `bb bug raw` are rejected by the proxy, and push remains a maintainer-only command
 - The agent cannot publish refs through direct Git, SSH-agent, credential, or provider-API access

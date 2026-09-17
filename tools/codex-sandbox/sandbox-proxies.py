@@ -64,6 +64,7 @@ CAPABILITY_DEFAULTS = {
 }
 CAPABILITIES = set(CAPABILITY_DEFAULTS)
 MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
+BUILTIN_MOUNT_FIELDS = {"builtin", "proxy", "agent"}
 
 
 def _plain_relative(value: Any, label: str, *, allow_dot: bool = False) -> str:
@@ -268,8 +269,19 @@ def load_manifest_file(path: Path | None, *, default_bake: bool = False,
             raise ConfigError(f"command {name} has invalid network or mounts")
         mounts = []
         local_targets: set[str] = set()
+        local_builtins: set[str] = set()
         for index, mount in enumerate(raw["mounts"]):
             label = f"command {name} mount {index}"
+            if isinstance(mount, dict) and "builtin" in mount:
+                if set(mount) != BUILTIN_MOUNT_FIELDS or mount["builtin"] != "git":
+                    raise ConfigError(f"{label} has missing or unknown built-in fields")
+                if mount["proxy"] not in {"read-only", "read-write"} or mount["agent"] != "read-only":
+                    raise ConfigError(f"{label} has an invalid built-in access mode")
+                if mount["builtin"] in local_builtins:
+                    raise ConfigError(f"duplicate proxy built-in mount: {mount['builtin']}")
+                local_builtins.add(mount["builtin"])
+                mounts.append(dict(mount))
+                continue
             if not isinstance(mount, dict) or not set(mount) <= MOUNT_FIELDS or not {"source", "target"} <= set(mount):
                 raise ConfigError(f"{label} has missing or unknown fields")
             source = _plain_relative(mount["source"], f"{label} source", allow_dot=True)
@@ -321,7 +333,8 @@ def serializable_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     for name, command in manifest["commands"].items():
         mounts = []
         for mount in command["mounts"]:
-            item = {"source": mount["source"], "target": mount["target"]}
+            item = ({"builtin": mount["builtin"]} if "builtin" in mount else
+                    {"source": mount["source"], "target": mount["target"]})
             for mode in ("proxy", "agent"):
                 if mount[mode] is not None:
                     item[mode] = mount[mode]
@@ -378,10 +391,27 @@ def use_repository_metadata(repo: Path, paths: tuple[Path, Path]) -> None:
 def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     if REPOSITORY_METADATA is not None and repo.resolve(strict=True) == REPOSITORY_METADATA[0]:
         return REPOSITORY_METADATA[1]
-    result = subprocess.run(
-        ["git", "-C", str(repo), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
-        check=True, text=True, stdout=subprocess.PIPE,
-    )
+    git_root = repo
+    if not (repo / ".git").exists():
+        try:
+            backing = subprocess.run(
+                ["jj", "--ignore-working-copy", "-R", str(repo), "git", "root"],
+                check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            backing_path_text = backing.stdout.strip()
+            backing_path = Path(backing_path_text)
+            if not backing_path_text or not backing_path.is_absolute():
+                raise ConfigError("Jujutsu returned an invalid Git metadata path")
+            git_root = backing_path.resolve(strict=True)
+        except (FileNotFoundError, subprocess.CalledProcessError) as error:
+            raise ConfigError(f"Git metadata cannot be resolved for repository: {repo}") from error
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(git_root), "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+            check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise ConfigError(f"Git metadata cannot be resolved for repository: {repo}") from error
     lines = result.stdout.splitlines()
     if len(lines) != 2:
         raise ConfigError("Git returned an invalid metadata layout")
@@ -400,7 +430,7 @@ def validate_git_metadata(paths: tuple[Path, Path]) -> None:
             raise ConfigError(f"Git metadata directory is invalid: {path}")
 
 
-def jj_container_path(repo: Path, host_path: Path, container_repo: Path) -> Path:
+def metadata_container_path(repo: Path, host_path: Path, container_repo: Path) -> Path:
     repo = repo.resolve(strict=True)
     host_path = host_path.resolve(strict=True)
     relative = Path(os.path.relpath(host_path, repo))
@@ -408,21 +438,28 @@ def jj_container_path(repo: Path, host_path: Path, container_repo: Path) -> Path
     try:
         target.relative_to("/src")
     except ValueError as error:
-        raise ConfigError(f"Jujutsu metadata path escapes the container workspace: {host_path}") from error
+        raise ConfigError(f"repository metadata path escapes the container workspace: {host_path}") from error
     return target
 
 
-def jj_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Path, Path]]:
+def metadata_mounts(repo: Path, container_repo: Path, paths: set[Path]) -> list[tuple[Path, Path]]:
     repo = repo.resolve(strict=True)
-    git_dir, common_dir = git_metadata_paths(repo)
-    jj_repo = jj_repository_path(repo)
-    candidates = sorted({git_dir, common_dir, jj_repo}, key=lambda path: len(path.parts))
+    candidates = sorted(paths, key=lambda path: (len(path.parts), str(path)))
     mounts: list[tuple[Path, Path]] = []
     for source in candidates:
         if any(source.is_relative_to(parent) for parent, _ in mounts):
             continue
-        mounts.append((source, jj_container_path(repo, source, container_repo)))
+        mounts.append((source, metadata_container_path(repo, source, container_repo)))
     return mounts
+
+
+def git_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Path, Path]]:
+    return metadata_mounts(repo, container_repo, set(git_metadata_paths(repo)))
+
+
+def jj_proxy_metadata_mounts(repo: Path, container_repo: Path) -> list[tuple[Path, Path]]:
+    git_dir, common_dir = git_metadata_paths(repo)
+    return metadata_mounts(repo, container_repo, {git_dir, common_dir, jj_repository_path(repo)})
 
 
 def jj_repository_path(repo: Path) -> Path:
@@ -1071,7 +1108,7 @@ def proxy_repository_mount_args(
 ) -> list[str]:
     repo = repo.resolve(strict=True)
     repository_mode = ",readonly"
-    if any(mount["target"] == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
+    if any(mount.get("target") == "." and mount["proxy"] == "read-write" for mount in command["mounts"]):
         repository_mode = ""
     arguments = [
         "--mount", f"type=bind,src={repo},dst={container_repo}{repository_mode},{OUTER_RUNTIME.nonrecursive_bind}",
@@ -1092,6 +1129,11 @@ def proxy_repository_mount_args(
             "--mount", f"type=bind,src={sandbox},dst={container_repo / '.agents/sandbox'},readonly",
         ]
     for mount in command["mounts"]:
+        if mount.get("builtin") == "git":
+            suffix = ",readonly" if mount["proxy"] == "read-only" else ""
+            for source, target in git_proxy_metadata_mounts(repo, container_repo):
+                arguments += ["--mount", f"type=bind,src={source},dst={target}{suffix}"]
+            continue
         source = checked_repository_path(repo, mount["source"], f"command {name} mount source")
         checked_repository_path(repo, mount["target"], f"command {name} mount target")
         target = container_repo / mount["target"]
@@ -1108,6 +1150,13 @@ def proxy_repository_mount_args(
     except ValueError as error:
         raise ConfigError(str(error)) from error
     return arguments
+
+
+def proxy_git_environment_args(repo: Path, container_repo: Path, command: dict[str, Any]) -> list[str]:
+    if not any(mount.get("builtin") == "git" for mount in command["mounts"]):
+        return []
+    common_dir = git_metadata_paths(repo)[1]
+    return ["--env", f"SANDBOX_GIT_DIR={metadata_container_path(repo, common_dir, container_repo)}"]
 
 
 def zulip_credential_identity(path: Path) -> str:
@@ -1503,10 +1552,11 @@ def start_one_proxy(
             jj_repo = jj_repository_path(repo)
             docker_args += [
                 "--env", f"JJ_PROXY_REPO={container_repo}",
-                "--env", f"JJ_PROXY_GIT_DIR={jj_container_path(repo, git_dir, container_repo)}",
-                "--env", f"JJ_PROXY_COMMON_DIR={jj_container_path(repo, common_dir, container_repo)}",
-                "--env", f"JJ_PROXY_JJ_REPO={jj_container_path(repo, jj_repo, container_repo)}",
+                "--env", f"JJ_PROXY_GIT_DIR={metadata_container_path(repo, git_dir, container_repo)}",
+                "--env", f"JJ_PROXY_COMMON_DIR={metadata_container_path(repo, common_dir, container_repo)}",
+                "--env", f"JJ_PROXY_JJ_REPO={metadata_container_path(repo, jj_repo, container_repo)}",
             ]
+        docker_args += proxy_git_environment_args(repo, container_repo, command)
         if name == "zulip":
             docker_args += [
                 "--label", "dev.codex.credential-domain=zulip",
@@ -2420,6 +2470,9 @@ def agent_args_main(args: argparse.Namespace) -> int:
             raise ConfigError(f"shared proxy state is missing command: {name}")
         lines += ["--mount", f"type=volume,src={volumes[name]},dst=/run/sandbox-proxies/{name},readonly"]
         for mount in command["mounts"]:
+            if mount.get("builtin") == "git":
+                # The launcher's protected .git overlay already owns this agent view.
+                continue
             mode = mount["agent"]
             if mode is None:
                 continue

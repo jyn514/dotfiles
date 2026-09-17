@@ -120,6 +120,13 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, 'delimiter'):
             sandbox_proxies.use_repository_metadata(self.repo, (bad, bad))
 
+    def test_empty_jj_git_root_cannot_select_the_callers_repository(self) -> None:
+        workspace = self.repo / "workspace"
+        workspace.mkdir()
+        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=SimpleNamespace(stdout="")):
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "invalid Git metadata path"):
+                sandbox_proxies.git_metadata_paths(workspace)
+
     def test_embedded_helper_keeps_the_callers_runtime(self):
         owner = mock.Mock()
         action = mock.Mock(return_value=7)
@@ -386,6 +393,102 @@ class ManifestTest(unittest.TestCase):
         mount = sandbox_proxies.load_manifest(self.repo)["commands"]["example"]["mounts"][0]
         self.assertEqual("read-write", mount["proxy"])
 
+    def test_git_builtin_mount_resolves_non_colocated_jj_metadata(self) -> None:
+        repo = Path(self.temporary.name + "-noncolocated")
+        self.addCleanup(shutil.rmtree, repo, True)
+        subprocess.run(["jj", "git", "init", "--no-colocate", str(repo)],
+                       check=True, capture_output=True, text=True)
+        sandbox = repo / ".agents" / "sandbox"
+        sandbox.mkdir(parents=True)
+        declaration = {"builtin": "git", "proxy": "read-write", "agent": "read-only"}
+        (sandbox / "proxy-commands.json").write_text(json.dumps({
+            "version": 1, "commands": {"bug": self.command(mounts=[declaration])},
+        }), encoding="utf-8")
+
+        self.assertFalse((repo / ".git").exists())
+        command = sandbox_proxies.load_manifest(repo)["commands"]["bug"]
+        self.assertEqual(declaration, command["mounts"][0])
+        self.assertEqual(declaration, sandbox_proxies.serializable_manifest({
+            "version": 1, "commands": {"bug": command},
+        })["commands"]["bug"]["mounts"][0])
+        git_dir = sandbox_proxies.git_metadata_paths(repo)[1]
+        target = sandbox_proxies.metadata_container_path(repo, git_dir, self.container_repo)
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            repo, self.container_repo, "bug", command,
+        )
+        self.assertIn(f"type=bind,src={git_dir},dst={target}", arguments)
+        self.assertNotIn(f"src={repo / '.git'}", " ".join(arguments))
+        self.assertEqual(
+            ["--env", f"SANDBOX_GIT_DIR={target}"],
+            sandbox_proxies.proxy_git_environment_args(repo, self.container_repo, command),
+        )
+
+    def test_git_builtin_rejects_duplicate_or_unsafe_declarations(self) -> None:
+        valid = {"builtin": "git", "proxy": "read-write", "agent": "read-only"}
+        invalid = (
+            ([valid, valid], "duplicate"),
+            ([{**valid, "source": ".git"}], "built-in fields"),
+            ([{**valid, "agent": "read-write"}], "access mode"),
+            ([{**valid, "agent": "hidden"}], "access mode"),
+            ([{**valid, "builtin": "unknown"}], "built-in fields"),
+        )
+        for mounts, message in invalid:
+            with self.subTest(mounts=mounts):
+                self.write({"bug": self.command(mounts=mounts)})
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, message):
+                    sandbox_proxies.load_manifest(self.repo)
+
+    def test_git_builtin_maps_external_backing_for_linked_jj_workspace(self) -> None:
+        main = self.repo / "main"
+        workspace = main / ".workspaces" / "other"
+        subprocess.run(["jj", "git", "init", "--colocate", str(main)],
+                       check=True, capture_output=True, text=True)
+        workspace.parent.mkdir()
+        result = subprocess.run(
+            ["jj", "-R", str(main), "workspace", "add", "--no-colocate", str(workspace)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        command = self.command(mounts=[{
+            "builtin": "git", "proxy": "read-write", "agent": "read-only",
+        }])
+        container_repo = Path("/src/main/.workspaces/other")
+
+        self.assertFalse((workspace / ".git").exists())
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            workspace, container_repo, "bug", command,
+        )
+        backing = (main / ".git").resolve()
+        self.assertIn(f"type=bind,src={backing},dst=/src/main/.git", arguments)
+        self.assertEqual(
+            ["--env", "SANDBOX_GIT_DIR=/src/main/.git"],
+            sandbox_proxies.proxy_git_environment_args(workspace, container_repo, command),
+        )
+
+    def test_git_builtin_read_only_proxy_mount(self) -> None:
+        self.write({"bug": self.command(mounts=[{
+            "builtin": "git", "proxy": "read-only", "agent": "read-only",
+        }])})
+        command = sandbox_proxies.load_manifest(self.repo)["commands"]["bug"]
+        arguments = sandbox_proxies.proxy_repository_mount_args(
+            self.repo, self.container_repo, "bug", command,
+        )
+        self.assertIn(
+            f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/example/.git,readonly",
+            arguments,
+        )
+
+    def test_git_builtin_rejects_colliding_explicit_mount_target(self) -> None:
+        self.write({"bug": self.command(mounts=[
+            {"builtin": "git", "proxy": "read-write", "agent": "read-only"},
+            {"source": ".git", "target": ".git", "proxy": "read-write"},
+        ])})
+        command = sandbox_proxies.load_manifest(self.repo)["commands"]["bug"]
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "duplicate container mount destination"):
+            sandbox_proxies.proxy_repository_mount_args(
+                self.repo, self.container_repo, "bug", command,
+            )
+
     def test_generates_writable_repository_when_root_override_is_declared(self) -> None:
         self.write({"jj": self.command(mounts=[
             {"source": ".", "target": ".", "proxy": "read-write"},
@@ -434,7 +537,7 @@ class ManifestTest(unittest.TestCase):
             arguments,
         )
         common_dir = sandbox_proxies.git_metadata_paths(worktree)[1]
-        target = sandbox_proxies.jj_container_path(
+        target = sandbox_proxies.metadata_container_path(
             worktree, common_dir, self.container_repo,
         )
         self.assertIn(f"type=bind,src={common_dir},dst={target}", arguments)
@@ -447,7 +550,7 @@ class ManifestTest(unittest.TestCase):
         sibling.mkdir()
         self.assertEqual(
             Path("/src/shared"),
-            sandbox_proxies.jj_container_path(
+            sandbox_proxies.metadata_container_path(
                 nested_repository, sibling, Path("/src/team/project"),
             ),
         )
@@ -467,7 +570,7 @@ class ManifestTest(unittest.TestCase):
             f"type=bind,src={self.repo.resolve()},dst=/src/example,bind-nonrecursive=true",
             arguments,
         )
-        target = sandbox_proxies.jj_container_path(
+        target = sandbox_proxies.metadata_container_path(
             self.repo, external, self.container_repo,
         )
         self.assertIn(f"type=bind,src={external.resolve()},dst={target}", arguments)
@@ -546,7 +649,7 @@ class ManifestTest(unittest.TestCase):
         self.write({"example": self.command(mounts=[
             {"source": "state", "target": "state", "agent": "read-only"},
             {"source": "secret", "target": "secret", "agent": "hidden"},
-            {"source": ".git", "target": ".git"},
+            {"builtin": "git", "proxy": "read-write", "agent": "read-only"},
         ])})
         output = self.repo / "args"
         state = self.repo / "state"
