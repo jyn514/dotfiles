@@ -14,11 +14,11 @@
      :reason (:reason options)
      :targets (set (or (:targets options) targets))}))
 
-(defn allow [pattern & {:as options}]
-  (rule :allow pattern options))
+(defn allow [pattern & options]
+  (rule :allow pattern (apply hash-map options)))
 
-(defn deny [pattern & {:as options}]
-  (rule :deny pattern options))
+(defn deny [pattern & options]
+  (rule :deny pattern (apply hash-map options)))
 
 (defn policy [& rules]
   (vec rules))
@@ -33,11 +33,10 @@
   (allow pattern :match :descendants :targets [:claude]))
 
 (policy
-  ;; Codex policy. These retain prefix semantics exactly.
-  (deny-codex ["sed"] "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
+  (deny ["sed"] :reason "`sed` is unavailable. Use head/tail for line selection, `perl -pe` for substitutions, or `rg` for searches.")
 
-  (allow ["clojure" "-Spath"])
-  (allow ["bb" "tasks"])
+  ;; agent-room
+  (allow ["curl" "http://localhost:3000"])
 
   (allow ["jj" (one-of "status" "diff" "log" "show" "interdiff" "root" "help" "--version")])
   (allow ["jj" "file" (one-of "list" "show" "annotate")])
@@ -47,12 +46,12 @@
   (allow ["jj" "workspace" "list"])
   (allow ["jj" "op" "log"])
 
-  (allow ["git" (one-of "ls-remote" "cherry" "cat-file" "fetch")])
+  (allow ["git" (one-of "ls-remote" "cherry" "cat-file" "fetch" "diff" "show" "status" "check-ignore")])
   (allow ["git" "push" "--dry-run"])
-  (allow ["git" "diff" "--check"])
 
-  (allow [(one-of "true" "cat" "grep" "rg" "jq" "head" "tail" "ps" "echo" "wc" "diff" "ls" "sort" "nl" "sleep" "diff-check" "stat" "file" "df" "du" "lsof" "uname" "id")])
+  (allow [(one-of "true" "false" "cat" "grep" "rg" "jq" "head" "tail" "ps" "echo" "wc" "diff" "ls" "sort" "nl" "sleep" "diff-check" "stat" "file" "df" "du" "lsof" "uname" "id" "xxd")])
   (allow ["mise" "activate"])
+  (allow ["command" "-v"])
 
   (allow ["gh" "pr" (one-of "diff" "checks" "list" "status" "view")])
   (allow ["gh" "issue" (one-of "list" "view")])
@@ -81,7 +80,8 @@
   (allow [(one-of "podman" "docker") (one-of "port" "top")])
   (allow ["podman" "machine" (one-of "list" "inspect")])
 
-  (allow [(one-of "pgrep" "jcmd" "lpstat" "lpinfo")])
+  (allow [(one-of "pgrep" "jcmd" "lpstat" "lpinfo" "clj-kondo" "typst")])
+  (allow ["bb" "tasks"])
   (allow ["zola" "build"])
   (allow ["gofmt"])
   (allow ["yt-dlp" "--list-subs"])
@@ -95,16 +95,6 @@
 
   ;; Claude-only rules retain the exact or descendants-only behavior of its
   ;; native permission syntax. General Codex prefixes above are shared.
-  (allow-claude-exact ["clojure" "-Stree"])
-  (allow-claude-descendants ["clj-kondo"])
-  (allow-claude-descendants ["git" "check-ignore"])
-  (allow-claude-descendants ["git" "diff"])
-  (allow-claude-descendants ["git" "show"])
-  (allow-claude-descendants ["git" "status"])
-  (allow-claude-descendants ["find"])
-  (allow-claude-descendants ["awk"])
-  (allow-claude-descendants ["sed"])
-  (allow-claude-exact ["xxd"])
-  (allow-claude-descendants ["command" "-v"])
   (allow-claude-exact ["python3" "-m" "json.tool"])
-  (allow-claude-descendants ["typst"]))
+  (allow-claude-exact ["clojure" "-Spath"])
+  (allow-claude-exact ["clojure" "-Stree"]))
