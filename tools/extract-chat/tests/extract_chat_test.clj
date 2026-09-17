@@ -147,6 +147,19 @@
                   "## Assistant\n\nTea is ready.\n\n")
              (str stdout))))))
 
+(deftest extract-chat-matches-session-id-filename-forms
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-session-names"})
+        matcher (deref #'extract-chat/session-file-name-matches?)]
+    (doseq [[filename expected]
+            [["01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
+             ["rollout-2026-09-15-01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
+             ["2026-09-15T18-56-07-795Z_01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
+             ["rollout-2026-09-15-other.jsonl" false]]]
+      (let [file (fs/file root filename)]
+        (spit file "{}")
+        (is (= expected
+               (matcher "01a0a66d-2c73-77d5-83a1-43ca8362dc92" (.toPath file))))))))
+
 (deftest extract-chat-finds-pi-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-session"})
         session-id "01a0a66d-2c73-77d5-83a1-43ca8362dc92"
