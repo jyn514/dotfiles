@@ -1,3 +1,0 @@
-#!/bin/sh
-real_dir=${CONTAINER_CLI_REAL_DIR:-/opt/agent-tools/bin}
-exec /libexec/agent-wrappers/gateway-transport "$real_dir/docker" "$@"

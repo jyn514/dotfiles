@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import gateway
 
-TRANSPORT = runpy.run_path(str(Path(__file__).resolve().parents[3] / "libexec/agent-wrappers/gateway-transport"))
+TRANSPORT = runpy.run_path(str(Path(__file__).resolve().parents[3] / "libexec/sandbox-wrappers/gateway-transport"))
 
 
 class GatewayTransportTest(unittest.TestCase):

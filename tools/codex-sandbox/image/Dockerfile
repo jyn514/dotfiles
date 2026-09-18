@@ -146,7 +146,8 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 # Package runtime entrypoints only; developer bytecode must not invalidate images.
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/docker ./libexec/agent-wrappers/gateway-transport ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/podman ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/sandbox-wrappers/docker ./libexec/sandbox-wrappers/gateway-transport ./libexec/sandbox-wrappers/podman /libexec/sandbox-wrappers/
 RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && ln -s ../../tools/jj-proxy/client /libexec/agent-wrappers/jj-proxy-client \
     && ln -s ../../tools/agent-podman/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli \
@@ -156,8 +157,11 @@ RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && if real_rg=$(command -v rg); then \
         ln -s "$real_rg" /opt/agent-tools/libexec/rg; \
     fi \
-    && for command in bb docker java jj podman rg; do \
+    && for command in bb java jj rg; do \
         ln -sf "../../../libexec/agent-wrappers/$command" "/opt/agent-tools/bin/$command"; \
+    done \
+    && for command in docker podman; do \
+        ln -sf "../../../libexec/sandbox-wrappers/$command" "/opt/agent-tools/bin/$command"; \
     done
 ENV BB_REAL=/opt/agent-tools/libexec/bb
 ENV BB_SOURCE_ROOT=/
@@ -165,7 +169,7 @@ ENV CONTAINER_CLI_REAL_DIR=/opt/agent-tools/libexec
 ENV JAVA_REAL=/opt/agent-tools/libexec/java
 ENV JJ_REAL=/opt/agent-tools/libexec/jj
 ENV RG_REAL=/opt/agent-tools/libexec/rg
-ENV PATH=/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
+ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 
 USER ${AGENT_UID}:${AGENT_GID}
 WORKDIR /workspace

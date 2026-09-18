@@ -5,7 +5,10 @@
 (def wrapped-commands ["bb" "docker" "java" "jj" "podman" "rg"])
 
 (doseq [command wrapped-commands]
-  (let [wrapper (fs/canonicalize (fs/path "/libexec/agent-wrappers" command))
+  (let [wrapper-directory (if (#{"docker" "podman"} command)
+                           "/libexec/sandbox-wrappers"
+                           "/libexec/agent-wrappers")
+        wrapper (fs/canonicalize (fs/path wrapper-directory command))
         selected (fs/which command)
         alternate (fs/path "/opt/agent-tools/bin" command)]
     (doseq [candidate [selected alternate]]

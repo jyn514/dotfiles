@@ -864,7 +864,17 @@ class AgentSandboxImageTest(GuestModeTest):
             "cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj", dockerfile
         )
         self.assertIn(
-            "for command in bb docker java jj podman rg",
+            "for command in bb java jj rg",
+            dockerfile,
+        )
+        self.assertIn("for command in docker podman", dockerfile)
+        self.assertIn(
+            "ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:",
+            dockerfile,
+        )
+        self.assertIn(
+            "COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} "
+            "./libexec/sandbox-wrappers/docker",
             dockerfile,
         )
         self.assertIn("ENV BB_REAL=/opt/agent-tools/libexec/bb", dockerfile)
@@ -887,7 +897,7 @@ class AgentSandboxImageTest(GuestModeTest):
             check=True,
         )
         self.assertEqual(
-            "/libexec/agent-wrappers:/usr/local/bin:/usr/bin:/bin\n",
+            "/libexec/sandbox-wrappers:/libexec/agent-wrappers:/usr/local/bin:/usr/bin:/bin\n",
             result.stdout,
         )
     def test_dotfiles_profile_sets_a_noninteractive_environment(self) -> None:
@@ -915,7 +925,7 @@ class AgentSandboxImageTest(GuestModeTest):
             check=True,
         )
         self.assertEqual(
-            "/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:"
+            "/libexec/sandbox-wrappers:/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:"
             "/usr/local/bin:/usr/bin:/bin\n",
             path_result.stdout,
         )

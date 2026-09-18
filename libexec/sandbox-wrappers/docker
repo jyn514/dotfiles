@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+if [ "${DOTFILES_SANDBOX:-}" != 1 ]; then
+	printf '%s\n' "docker sandbox wrapper: only available inside an agent sandbox" >&2
+	exit 125
+fi
+
+real_dir=${CONTAINER_CLI_REAL_DIR:-/opt/agent-tools/bin}
+if [ ! -x "$real_dir/docker" ]; then
+	printf '%s\n' "docker sandbox wrapper: private client is not executable: $real_dir/docker" >&2
+	exit 127
+fi
+exec /libexec/sandbox-wrappers/gateway-transport "$real_dir/docker" "$@"

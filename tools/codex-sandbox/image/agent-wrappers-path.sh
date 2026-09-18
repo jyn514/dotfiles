@@ -1,5 +1,8 @@
-case ":$PATH:" in
-  *:/libexec/agent-wrappers:*) ;;
-  *) PATH=/libexec/agent-wrappers:$PATH ;;
-esac
+for directory in /libexec/agent-wrappers /libexec/sandbox-wrappers; do
+  case ":$PATH:" in
+    *:$directory:*) ;;
+    *) PATH=$directory:$PATH ;;
+  esac
+done
+unset directory
 export PATH

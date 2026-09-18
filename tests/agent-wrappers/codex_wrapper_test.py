@@ -106,6 +106,7 @@ class CodexWrapperTests(unittest.TestCase):
         )
         self.assertEqual("prompt", output[4])
         self.assertIn(str(ROOT / "libexec/agent-wrappers"), output[5])
+        self.assertNotIn("sandbox-wrappers", output[5])
         self.assertIn('deny(["sed"]', rendered_rules)
         self.assertIn('allow(["jj", ["status", "diff"', rendered_rules)
         self.assertEqual(0o600, rules_mode)

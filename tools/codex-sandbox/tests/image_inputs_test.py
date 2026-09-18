@@ -57,9 +57,13 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
-                       'libexec/agent-wrappers/jj']
+                       'libexec/agent-wrappers/jj',
+                       'libexec/sandbox-wrappers/docker',
+                       'libexec/sandbox-wrappers/gateway-transport',
+                       'libexec/sandbox-wrappers/podman']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',
-                     'libexec/agent-wrappers/__pycache__/jj.pyc']
+                     'libexec/agent-wrappers/__pycache__/jj.pyc',
+                     'libexec/sandbox-wrappers/__pycache__/docker.pyc']
             for name in runtime + noise:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
