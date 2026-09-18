@@ -1855,6 +1855,9 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         ],
         "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
         "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
+        # Host Pi passes its absolute skill paths to guest-backed tools.
+        *(["--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}"]
+          if host_pi else []),
         *(
             ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
             if (state.skills_tmp / "sandbox").is_dir() else []

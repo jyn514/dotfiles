@@ -1373,6 +1373,22 @@ class CodexSandboxTest(GuestModeTest):
         self.assertIn(mount, self.final_run())
         self.assertNotIn(mount + ",readonly", self.final_run())
 
+    def test_host_pi_skill_paths_are_readable_by_guest_tools(self) -> None:
+        skills = self.home / ".agents/skills"
+        skills.rmdir()
+        source = self.root / "tracked-skills"
+        source.mkdir()
+        skills.symlink_to(source, target_is_directory=True)
+        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+        self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
+        creates = [call for call in read_calls(self.docker_log)
+                   if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
+        self.assertEqual(1, len(creates), result.stderr)
+        self.assertIn(
+            f"type=bind,src={source},dst={skills}",
+            creates[0],
+        )
+
     def test_staging_uses_install_mapping_for_config_source_names(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         renamed = self.root / "renamed-agents-source.md"

@@ -26,10 +26,12 @@ launcher-owned bounded operations follow the
 #link("proxy-design.typ")[extension authority contract].
 
 An execution attachment binds one Pi launch and its children to one guest worker
-and directory. The launcher selects the repository and guest mount; tool arguments
-use Pi's guest paths. A saved conversation's cwd is historical context, not a
-request to mount that directory. Cross-directory resume forks the conversation
-into a new session ID under the selected launch directory.
+and directory. The launcher selects the repository and guest mount; repository
+tool arguments use guest paths. Host-discovered shared skills are also mounted
+at their host absolute path so guest tools can read the paths Pi advertises.
+A saved conversation's cwd is historical context, not a request to mount that
+directory. Cross-directory resume forks into a new session ID under the selected
+launch directory.
 
 The host backend sends structured tool calls to a persistent guest worker and
 returns progress, text, images, errors, and completion to Pi. Through this
