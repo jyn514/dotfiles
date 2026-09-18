@@ -27,13 +27,12 @@ export function parseConflicts(text) {
 		const endMarkerLength = start[1].length;
 		let snapshot;
 		let snapshotSource;
-		let diff;
-		let diffSource;
-		let diffDestination;
+		const diffs = [];
 		i++;
 		while (i < lines.length && !END.test(lines[i])) {
 			const snapshotHeader = lines[i].match(SNAPSHOT);
 			if (snapshotHeader) {
+				if (snapshot) throw new Error(`Conflict at line ${startLine + 1} has multiple snapshot sections`);
 				snapshotSource = snapshotHeader[2];
 				snapshot = [];
 				i++;
@@ -42,15 +41,14 @@ export function parseConflicts(text) {
 			}
 			const diffHeader = lines[i].match(DIFF_SOURCE);
 			if (diffHeader) {
-				if (diff) throw new Error(`Conflict at line ${startLine + 1} has multiple diff sections`);
-				diffSource = diffHeader[2];
+				const diffSource = diffHeader[2];
 				i++;
 				const destination = lines[i]?.match(DIFF_DESTINATION);
 				if (!destination) throw new Error(`Conflict at line ${startLine + 1} has no diff destination`);
-				diffDestination = destination[2];
-				diff = [];
+				const diff = [];
 				i++;
-				while (i < lines.length && !SNAPSHOT.test(lines[i]) && !END.test(lines[i])) diff.push(lines[i++]);
+				while (i < lines.length && !SNAPSHOT.test(lines[i]) && !DIFF_SOURCE.test(lines[i]) && !END.test(lines[i])) diff.push(lines[i++]);
+				diffs.push({ source: diffSource, destination: destination[2], lines: diff });
 				continue;
 			}
 			throw new Error(`Conflict at line ${i + 1} has an unrecognised section: ${lines[i]}`);
@@ -60,19 +58,23 @@ export function parseConflicts(text) {
 		if (!end || end[1].length !== endMarkerLength || end[2] !== start[2] || end[3] !== start[3]) {
 			throw new Error(`Conflict at line ${startLine + 1} has a mismatched end marker`);
 		}
-		if (!snapshot || !diff || !diffSource || !diffDestination) throw new Error(`Conflict at line ${startLine + 1} is incomplete`);
-		conflicts.push({
+		if (!snapshot || diffs.length === 0) throw new Error(`Conflict at line ${startLine + 1} is incomplete`);
+		const conflict = {
 			edit: editNumber++,
 			kind: Number(start[2]),
 			count: Number(start[3]),
 			snapshotSource,
-			diffSource,
-			diffDestination,
 			snapshot,
-			diff,
+			diffs,
 			startLine: startLine + 1,
 			endLine: i + 1,
-		});
+		};
+		if (diffs.length === 1) {
+			conflict.diffSource = diffs[0].source;
+			conflict.diffDestination = diffs[0].destination;
+			conflict.diff = diffs[0].lines;
+		}
+		conflicts.push(conflict);
 		i++;
 	}
 	return conflicts;
@@ -81,7 +83,7 @@ export function parseConflicts(text) {
 function applyDiff(base, diff, edit) {
 	const oldLines = [];
 	const newLines = [];
-	for (const line of diff) {
+	for (const line of diff.lines) {
 		if (line.startsWith(" ")) {
 			oldLines.push(line.slice(1));
 			newLines.push(line.slice(1));
@@ -104,22 +106,40 @@ function applyDiff(base, diff, edit) {
 	return newLines;
 }
 
+function selectionMap(selectedEdits, conflicts) {
+	const known = new Map(conflicts.map((conflict) => [conflict.edit, conflict]));
+	const selections = new Map();
+	for (const value of selectedEdits) {
+		const parts = String(value).split(":");
+		if (parts.length > 2) throw new Error(`Edit ${value} does not identify a diff alternative`);
+		const [editText, diffText = "1"] = parts;
+		const edit = Number(editText);
+		const diff = Number(diffText);
+		if (!Number.isInteger(edit) || !known.has(edit)) throw new Error(`Edit ${value} does not exist in this file`);
+		if (!Number.isInteger(diff) || diff < 1 || diff > known.get(edit).diffs.length) {
+			throw new Error(`Edit ${value} does not identify a diff alternative`);
+		}
+		if (selections.has(edit)) throw new Error(`Conflict ${edit} was selected more than once`);
+		selections.set(edit, diff);
+	}
+	return selections;
+}
+
 export function compose(text, selectedEdits, resolveBase) {
 	const lines = text.replaceAll("\r\n", "\n").split("\n");
 	const conflicts = parseConflicts(text);
-	const knownEdits = new Set(conflicts.map((conflict) => conflict.edit));
-	const unknownEdit = selectedEdits.find((edit) => !knownEdits.has(edit));
-	if (unknownEdit !== undefined) throw new Error(`Edit ${unknownEdit} does not exist in this file`);
-	const selected = new Set(selectedEdits);
+	const selections = selectionMap(selectedEdits, conflicts);
 	const output = [];
 	let cursor = 0;
 	for (const conflict of conflicts) {
 		output.push(...lines.slice(cursor, conflict.startLine - 1));
 		let result = conflict.snapshot;
-		if (selected.has(conflict.edit)) {
-			const base = resolveBase(conflict.diffSource, conflict);
-			if (!base) throw new Error(`No base snapshot was provided for edit ${conflict.edit}`);
-			result = applyDiff(base, conflict.diff, conflict.edit);
+		const selectedDiff = selections.get(conflict.edit);
+		if (selectedDiff !== undefined) {
+			const diff = conflict.diffs[selectedDiff - 1];
+			const base = resolveBase(diff.source, conflict, selectedDiff);
+			if (!base) throw new Error(`No base snapshot was provided for edit ${conflict.edit}:${selectedDiff}`);
+			result = applyDiff(base, diff, `${conflict.edit}:${selectedDiff}`);
 		}
 		output.push(...result);
 		cursor = conflict.endLine;
@@ -130,10 +150,13 @@ export function compose(text, selectedEdits, resolveBase) {
 
 async function composeFile(path, text, selectedEdits) {
 	const baseCache = new Map();
-	const selected = new Set(selectedEdits);
-	for (const conflict of parseConflicts(text)) {
-		if (!selected.has(conflict.edit)) continue;
-		const revision = conflict.diffSource.trim().split(/\s+/, 1)[0];
+	const conflicts = parseConflicts(text);
+	const selections = selectionMap(selectedEdits, conflicts);
+	for (const conflict of conflicts) {
+		const selectedDiff = selections.get(conflict.edit);
+		if (selectedDiff === undefined) continue;
+		const source = conflict.diffs[selectedDiff - 1].source;
+		const revision = source.trim().split(/\s+/, 1)[0];
 		if (!baseCache.has(revision)) {
 			const { stdout } = await execFileAsync(process.env.JJ_BIN ?? "jj", ["file", "show", "--revision", revision, "--", path]);
 			baseCache.set(revision, stdout.endsWith("\n") ? stdout.slice(0, -1).split("\n") : stdout.split("\n"));
@@ -144,14 +167,14 @@ async function composeFile(path, text, selectedEdits) {
 
 function usage() {
 	console.error(`Usage:
-  node scripts/jj-conflict.mjs inspect <file> [--json]
-  node scripts/jj-conflict.mjs apply <file> --edit <numbers> [--stdout]
-  node scripts/jj-conflict.mjs check <file...>`);
+  jj-conflict inspect <file> [--json]
+  jj-conflict apply <file> --edit <conflict>[:<diff>][,...] [--stdout]
+  jj-conflict check <file...>`);
 }
 
 function parseEdits(value) {
-	const edits = value.split(",").map((part) => Number(part.trim()));
-	if (edits.some((edit) => !Number.isInteger(edit) || edit < 1)) throw new Error("--edit expects comma-separated positive integers");
+	const edits = value.split(",").map((part) => part.trim());
+	if (edits.some((edit) => !/^\d+(?::\d+)?$/.test(edit))) throw new Error("--edit expects comma-separated conflict[:diff] selections");
 	return edits;
 }
 
@@ -186,17 +209,22 @@ async function main(argv) {
 	const conflicts = parseConflicts(text);
 	if (command === "inspect") {
 		const json = args.includes("--json");
-		const report = conflicts.map(({ snapshot, diff, ...conflict }) => ({
+		const report = conflicts.map(({ snapshot, diffs, ...conflict }) => ({
 			...conflict,
-			changes: diff.filter((line) => line.startsWith("-") || line.startsWith("+")).map((line) => line.slice(1)),
+			alternatives: diffs.map((diff, index) => ({
+				edit: `${conflict.edit}:${index + 1}`,
+				source: diff.source,
+				destination: diff.destination,
+				changes: diff.lines.filter((line) => line.startsWith("-") || line.startsWith("+")).map((line) => line.slice(1)),
+			})),
 			snapshotLines: snapshot.length,
 		}));
 		if (json) console.log(JSON.stringify({ path, conflicts: report }, null, 2));
-		else for (const conflict of report) console.log(`edit ${conflict.edit}: lines ${conflict.startLine}-${conflict.endLine}, ${conflict.diffDestination}\n  ${conflict.changes.join("\n  ")}`);
+		else for (const conflict of report) console.log(`conflict ${conflict.edit}: lines ${conflict.startLine}-${conflict.endLine}\n  ${conflict.alternatives.map((alternative) => `${alternative.edit} ${alternative.destination}:\n    ${alternative.changes.join("\n    ")}`).join("\n  ")}`);
 		return 0;
 	}
 	const editFlag = args.indexOf("--edit");
-	if (editFlag === -1 || !args[editFlag + 1]) throw new Error("apply requires --edit <numbers>");
+	if (editFlag === -1 || !args[editFlag + 1]) throw new Error("apply requires --edit <conflict>[:<diff>]");
 	const result = await composeFile(path, text, parseEdits(args[editFlag + 1]));
 	if (args.includes("--stdout")) process.stdout.write(result);
 	else await writeFile(path, result);

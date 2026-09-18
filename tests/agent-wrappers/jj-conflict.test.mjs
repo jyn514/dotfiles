@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { compose, parseConflicts } from "../../libexec/agent-wrappers/jj-conflict";
 import test from "node:test";
+
+const execFileAsync = promisify(execFile);
+const jj = process.env.JJ_TEST_BIN ?? process.env.JJ_REAL ?? "/opt/agent-tools/libexec/jj";
+const helper = fileURLToPath(new URL("../../libexec/agent-wrappers/jj-conflict", import.meta.url));
 
 const fixture = `before
 <<<<<<< conflict 1 of 2
@@ -83,4 +92,64 @@ same
 +new
 >>>>>>> conflict 1 of 1 ends\n`;
 	assert.throws(() => compose(ambiguous, [1], () => ["same", "same"]), /does not apply/);
+});
+
+test("selects a specific alternative from a multi-sided conflict", () => {
+	const multiSided = `<<<<<<< conflict 1 of 1
+%%%%%%% diff from: base
+\\\\\\        to: side-a
+-base
++side-a
+%%%%%%% diff from: base
+\\\\\\        to: side-b
+-base
++side-b
++++++++ side-c
+side-c
+>>>>>>> conflict 1 of 1 ends\n`;
+	const conflicts = parseConflicts(multiSided);
+	assert.equal(conflicts[0].diffs.length, 2);
+	assert.equal(compose(multiSided, ["1:2"], () => ["base"]), "side-b\n");
+	assert.equal(compose(multiSided, [], () => ["base"]), "side-c\n");
+	assert.throws(() => compose(multiSided, ["1:3"], () => ["base"]), /does not identify/);
+});
+
+test("resolves a real three-parent jj conflict", async () => {
+	const repo = await mkdtemp(`${tmpdir()}/jj-conflict-real-`);
+	const env = { ...process.env };
+	delete env.JJ_AGENT;
+	delete env.JJ_PROXY_REPO;
+	delete env.JJ_REAL;
+	try {
+		const runJj = (args) => execFileAsync(jj, args, { cwd: repo, env });
+		await runJj(["git", "init", "--colocate"]);
+		await writeFile(`${repo}/file.txt`, "base\n");
+		await runJj(["commit", "-m", "base"]);
+		const { stdout: baseOutput } = await runJj(["log", "-r", "@", "--no-graph", "-T", "commit_id"]);
+		const base = baseOutput.trim();
+		await runJj(["new", "-m", "side-a"]);
+		await writeFile(`${repo}/file.txt`, "side-a\n");
+		await runJj(["commit", "-m", "side-a"]);
+		const { stdout: aOutput } = await runJj(["log", "-r", "@", "--no-graph", "-T", "commit_id"]);
+		await runJj(["new", base, "-m", "side-b"]);
+		await writeFile(`${repo}/file.txt`, "side-b\n");
+		await runJj(["commit", "-m", "side-b"]);
+		const { stdout: bOutput } = await runJj(["log", "-r", "@", "--no-graph", "-T", "commit_id"]);
+		await runJj(["new", base, "-m", "side-c"]);
+		await writeFile(`${repo}/file.txt`, "side-c\n");
+		await runJj(["commit", "-m", "side-c"]);
+		const { stdout: cOutput } = await runJj(["log", "-r", "@", "--no-graph", "-T", "commit_id"]);
+		await runJj(["new", aOutput.trim(), bOutput.trim(), cOutput.trim(), "-m", "merge"]);
+		const conflict = await readFile(`${repo}/file.txt`, "utf8");
+		assert.equal(parseConflicts(conflict)[0].diffs.length, 2);
+		const { stdout: report } = await execFileAsync(helper, ["inspect", `${repo}/file.txt`, "--json"], { cwd: repo, env });
+		assert.equal(JSON.parse(report).conflicts[0].alternatives.length, 2);
+		const { stdout: resolved } = await execFileAsync(helper, ["apply", `${repo}/file.txt`, "--edit", "1:2", "--stdout"], {
+			cwd: repo,
+			env: { ...env, JJ_BIN: jj },
+		});
+		assert.equal(resolved, "side-b\n");
+	} finally {
+		await rm(repo, { recursive: true, force: true });
+	}
 });

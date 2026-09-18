@@ -37,15 +37,15 @@ For a checkout that does not install the wrapper, invoke its tracked path direct
 libexec/agent-wrappers/jj-conflict inspect path/to/file --json
 ```
 
-The helper's edit numbers identify diff alternatives. Preview a composition, write it, then check the file:
+The helper's edit numbers identify conflicts and diff alternatives. A single-diff conflict accepts `1`; a multi-sided conflict requires `conflict:diff`, such as `1:2`. Preview a composition, write it, then check the file:
 
 ```bash
-jj-conflict apply path/to/file --edit 1,3 --stdout
-jj-conflict apply path/to/file --edit 1,3
+jj-conflict apply path/to/file --edit 1,3:2 --stdout
+jj-conflict apply path/to/file --edit 1,3:2
 jj-conflict check path/to/file
 ```
 
-Unselected conflicts use their snapshot alternative. The helper rejects conflict shapes it cannot compose safely; resolve those manually, without adding another heuristic.
+Unselected conflicts use their snapshot alternative. Inspect the alternatives before selecting one; the helper rejects conflict shapes it cannot compose safely rather than adding another heuristic.
 
 Marker order may vary. Parse both forms:
 
@@ -74,7 +74,7 @@ Apply the diff to the base region, then place the result into the destination sn
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.
 
-If the conflict has multiple sides or its representation is unclear, stop and inspect the exact Jujutsu format before editing. An unresolved ambiguity is safer than a syntactically valid but semantically damaged merge.
+For a multi-sided conflict, inspect every diff alternative and choose the required semantic result explicitly with `conflict:diff`. If the representation is unclear or a diff cannot be applied uniquely to its base, stop and inspect the exact Jujutsu format before editing. An unresolved ambiguity is safer than a syntactically valid but semantically damaged merge.
 
 ## Preserve Jujutsu history
 
