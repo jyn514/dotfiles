@@ -97,6 +97,7 @@ Use these independently when their target is already selected:
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `double-check` — audit completed work against requirements and concrete evidence.
+- `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
 `opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. `technical-docs` owns documentation content; `reorganize-docs` owns its organization.

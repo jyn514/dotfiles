@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+import { execFile } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
+import process from "node:process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+const execFileAsync = promisify(execFile);
+const START = /^(<{7,}) conflict (\d+) of (\d+)$/;
+const SNAPSHOT = /^(\+{7,}) (.*)$/;
+const DIFF_SOURCE = /^(%{7,}) diff from: (.*)$/;
+const DIFF_DESTINATION = /^(\\+)\s+to: (.*)$/;
+const END = /^(>{7,}) conflict (\d+) of (\d+) ends$/;
+
+export function parseConflicts(text) {
+	const lines = text.replaceAll("\r\n", "\n").split("\n");
+	const conflicts = [];
+	let i = 0;
+	let editNumber = 1;
+	while (i < lines.length) {
+		const start = lines[i].match(START);
+		if (!start) {
+			i++;
+			continue;
+		}
+		const startLine = i;
+		const endMarkerLength = start[1].length;
+		let snapshot;
+		let snapshotSource;
+		let diff;
+		let diffSource;
+		let diffDestination;
+		i++;
+		while (i < lines.length && !END.test(lines[i])) {
+			const snapshotHeader = lines[i].match(SNAPSHOT);
+			if (snapshotHeader) {
+				snapshotSource = snapshotHeader[2];
+				snapshot = [];
+				i++;
+				while (i < lines.length && !DIFF_SOURCE.test(lines[i]) && !END.test(lines[i])) snapshot.push(lines[i++]);
+				continue;
+			}
+			const diffHeader = lines[i].match(DIFF_SOURCE);
+			if (diffHeader) {
+				if (diff) throw new Error(`Conflict at line ${startLine + 1} has multiple diff sections`);
+				diffSource = diffHeader[2];
+				i++;
+				const destination = lines[i]?.match(DIFF_DESTINATION);
+				if (!destination) throw new Error(`Conflict at line ${startLine + 1} has no diff destination`);
+				diffDestination = destination[2];
+				diff = [];
+				i++;
+				while (i < lines.length && !SNAPSHOT.test(lines[i]) && !END.test(lines[i])) diff.push(lines[i++]);
+				continue;
+			}
+			throw new Error(`Conflict at line ${i + 1} has an unrecognised section: ${lines[i]}`);
+		}
+		if (i >= lines.length) throw new Error(`Conflict at line ${startLine + 1} has no end marker`);
+		const end = lines[i].match(END);
+		if (!end || end[1].length !== endMarkerLength || end[2] !== start[2] || end[3] !== start[3]) {
+			throw new Error(`Conflict at line ${startLine + 1} has a mismatched end marker`);
+		}
+		if (!snapshot || !diff || !diffSource || !diffDestination) throw new Error(`Conflict at line ${startLine + 1} is incomplete`);
+		conflicts.push({
+			edit: editNumber++,
+			kind: Number(start[2]),
+			count: Number(start[3]),
+			snapshotSource,
+			diffSource,
+			diffDestination,
+			snapshot,
+			diff,
+			startLine: startLine + 1,
+			endLine: i + 1,
+		});
+		i++;
+	}
+	return conflicts;
+}
+
+function applyDiff(base, diff, edit) {
+	const oldLines = [];
+	const newLines = [];
+	for (const line of diff) {
+		if (line.startsWith(" ")) {
+			oldLines.push(line.slice(1));
+			newLines.push(line.slice(1));
+		} else if (line.startsWith("-")) {
+			oldLines.push(line.slice(1));
+		} else if (line.startsWith("+")) {
+			newLines.push(line.slice(1));
+		} else if (line !== "" && !line.startsWith("\\ No newline at end of file")) {
+			throw new Error(`Edit ${edit} contains an unrecognised diff line: ${line}`);
+		}
+	}
+	let at = -1;
+	for (let index = 0; index <= base.length - oldLines.length; index++) {
+		if (oldLines.every((line, offset) => base[index + offset] === line)) {
+			if (at !== -1) throw new Error(`Edit ${edit} is ambiguous: its context occurs more than once`);
+			at = index;
+		}
+	}
+	if (at === -1) throw new Error(`Edit ${edit} does not apply to its base snapshot`);
+	return newLines;
+}
+
+export function compose(text, selectedEdits, resolveBase) {
+	const lines = text.replaceAll("\r\n", "\n").split("\n");
+	const conflicts = parseConflicts(text);
+	const knownEdits = new Set(conflicts.map((conflict) => conflict.edit));
+	const unknownEdit = selectedEdits.find((edit) => !knownEdits.has(edit));
+	if (unknownEdit !== undefined) throw new Error(`Edit ${unknownEdit} does not exist in this file`);
+	const selected = new Set(selectedEdits);
+	const output = [];
+	let cursor = 0;
+	for (const conflict of conflicts) {
+		output.push(...lines.slice(cursor, conflict.startLine - 1));
+		let result = conflict.snapshot;
+		if (selected.has(conflict.edit)) {
+			const base = resolveBase(conflict.diffSource, conflict);
+			if (!base) throw new Error(`No base snapshot was provided for edit ${conflict.edit}`);
+			result = applyDiff(base, conflict.diff, conflict.edit);
+		}
+		output.push(...result);
+		cursor = conflict.endLine;
+	}
+	output.push(...lines.slice(cursor));
+	return output.join("\n");
+}
+
+async function composeFile(path, text, selectedEdits) {
+	const baseCache = new Map();
+	const selected = new Set(selectedEdits);
+	for (const conflict of parseConflicts(text)) {
+		if (!selected.has(conflict.edit)) continue;
+		const revision = conflict.diffSource.trim().split(/\s+/, 1)[0];
+		if (!baseCache.has(revision)) {
+			const { stdout } = await execFileAsync(process.env.JJ_BIN ?? "jj", ["file", "show", "--revision", revision, "--", path]);
+			baseCache.set(revision, stdout.endsWith("\n") ? stdout.slice(0, -1).split("\n") : stdout.split("\n"));
+		}
+	}
+	return compose(text, selectedEdits, (source) => baseCache.get(source.trim().split(/\s+/, 1)[0]));
+}
+
+function usage() {
+	console.error(`Usage:
+  node scripts/jj-conflict.mjs inspect <file> [--json]
+  node scripts/jj-conflict.mjs apply <file> --edit <numbers> [--stdout]
+  node scripts/jj-conflict.mjs check <file...>`);
+}
+
+function parseEdits(value) {
+	const edits = value.split(",").map((part) => Number(part.trim()));
+	if (edits.some((edit) => !Number.isInteger(edit) || edit < 1)) throw new Error("--edit expects comma-separated positive integers");
+	return edits;
+}
+
+async function main(argv) {
+	const [command, ...args] = argv;
+	if (!command) {
+		usage();
+		return 2;
+	}
+	if (command === "check") {
+		if (args.length === 0) {
+			usage();
+			return 2;
+		}
+		let failed = false;
+		for (const path of args) {
+			const text = await readFile(path, "utf8");
+			const conflicts = parseConflicts(text);
+			if (conflicts.length) {
+				failed = true;
+				console.error(`${path}: ${conflicts.length} unresolved conflict(s)`);
+			}
+		}
+		return failed ? 1 : 0;
+	}
+	const path = args[0];
+	if (!path || (command !== "inspect" && command !== "apply")) {
+		usage();
+		return 2;
+	}
+	const text = await readFile(path, "utf8");
+	const conflicts = parseConflicts(text);
+	if (command === "inspect") {
+		const json = args.includes("--json");
+		const report = conflicts.map(({ snapshot, diff, ...conflict }) => ({
+			...conflict,
+			changes: diff.filter((line) => line.startsWith("-") || line.startsWith("+")).map((line) => line.slice(1)),
+			snapshotLines: snapshot.length,
+		}));
+		if (json) console.log(JSON.stringify({ path, conflicts: report }, null, 2));
+		else for (const conflict of report) console.log(`edit ${conflict.edit}: lines ${conflict.startLine}-${conflict.endLine}, ${conflict.diffDestination}\n  ${conflict.changes.join("\n  ")}`);
+		return 0;
+	}
+	const editFlag = args.indexOf("--edit");
+	if (editFlag === -1 || !args[editFlag + 1]) throw new Error("apply requires --edit <numbers>");
+	const result = await composeFile(path, text, parseEdits(args[editFlag + 1]));
+	if (args.includes("--stdout")) process.stdout.write(result);
+	else await writeFile(path, result);
+	return 0;
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+	main(process.argv.slice(2)).then((code) => { process.exitCode = code; }).catch((error) => {
+		console.error(`jj-conflict: ${error.message}`);
+		process.exitCode = 1;
+	});
+}

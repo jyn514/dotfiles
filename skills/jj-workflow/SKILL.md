@@ -5,9 +5,7 @@ description: "Use when a task involves inspecting file or revision history, esta
 
 # jj Workflow
 
-Use this skill for nontrivial Jujutsu history work. Prefer `jj` over Git history-editing commands, keep changes coherent, and do not rewrite shared history unless asked.
-
-Use this skill when the task asks how to inspect or interpret Jujutsu history, including path history, annotations, revision ancestry, provenance, or change ownership.
+Use this skill for nontrivial Jujutsu history work: inspect or interpret path history, annotations, revision ancestry, provenance, or change ownership; compare revisions; or shape history. Prefer `jj` over Git history-editing commands, keep changes coherent, and do not rewrite shared history unless asked. For semantic file conflict composition, use `jj-conflict-resolution`; this skill owns provenance, revision selection, and history shaping.
 
 ## Inspect and protect work
 
