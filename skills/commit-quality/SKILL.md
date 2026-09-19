@@ -26,6 +26,9 @@ Partition the owned diff by purpose before committing. Each commit should be ind
 
 Do not confuse atomic with small. Keep inseparable behavior, tests, generated artifacts, and user-facing documentation together. Separate changes that can be reviewed, reverted, or explained independently; never absorb unrelated pre-existing work merely to leave a clean working tree.
 
+If pre-existing changes are present in the files you need to commit, use `bb agent-split` to commit only your changes.
+Use `bb agent-split --help` for documentation.
+
 Order commits so every intermediate revision is valid under the repository's required checks. Preparatory refactors must be useful and behavior-preserving on their own, not incomplete pieces whose only justification appears in a later commit.
 
 ## Paragraph breaks
