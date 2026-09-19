@@ -18,7 +18,7 @@ Discover and follow the target repository's guidance for architecture, ownership
 - Recurring historical pain may matter: use `pain-axis`
 - Several materially different architectures: use `design-deliberation`
 - Selected design entering implementation: use `boundary-declaration`, then `implementation-plan` when requested
-- Proposed framework or reusable layer: use `second-user`
+- Proposed framework, reusable layer, plugin hook, or configurable dimension: use `second-user`
 - Current patch: use the repository's current-change review process
 
 This skill may invoke those skills;
@@ -27,13 +27,14 @@ it does not duplicate their procedures.
 ## Inputs
 
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
+Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
 Stop and route elsewhere if the subsystem is unselected or the real task is comparing competing architectures.
 
 ## Principles
 
 Avoid unnecessary coupling.
 Interfaces should expose the caller’s intent without requiring knowledge of the callee’s implementation.
-Prefer declarative configuration that separates planning from execution.
+Keep policy separate from effects as declarative data, not runtime checks. Declarative policy may remain fixed and local: it implies no external assets, registry, extension interface, or runtime configurability unless an explicit requirement demands variation.
 Before introducing coordination between systems, ask whether one owner can make the decision and pass a completed result across the boundary.
 Do not mix concerns between two different systems just because it simplifies the current implementation.
 
@@ -41,6 +42,12 @@ Prefer simplicity over exhaustiveness.
 Tools should be reliable, but complexity itself can cause reliability issues.
 Favor designs that "passively" do the right thing rather than needing ongoing interventions.
 Before adding coordination, retries, monitoring, or lifecycle state, test whether changing ownership or batching operations removes the need for that mechanism.
+Before extending a tool to handle edge cases, ask if you can narrow the requirements instead.
+
+Minimize features: add no feature or configurable dimension without an explicit requirement. Keep unspecified and adjacent policy fixed; do what was asked, no more.
+
+Require explicit input when omission could select the wrong identity, target, scope, or high-consequence action.
+Otherwise prefer safe defaults rather than forcing the runtime user to make every decision.
 
 ## Procedure
 
@@ -61,7 +68,7 @@ Consumer behavior should remain stable during extraction.
 Reject seams supported only by line count, aesthetics, symmetrical names, or hypothetical reuse.
 Prefer deleting obsolete, lossy, or misleading APIs over extracting new owners around them; a facade that drops diagnostics, provenance, lifecycle state, or other operation results is not a harmless convenience.
 Before detailed design, run the cheapest check that could disprove the seam: a dependency trace, classpath-load check, differential fixture, effect inventory, or focused caller/test probe.
-Invoke `second-user` before proposing generalized machinery without two concrete consumers.
+Invoke `second-user` before proposing reusable machinery, plugin hooks, or configurable dimensions.
 
 ### 3. Define the target boundary
 
