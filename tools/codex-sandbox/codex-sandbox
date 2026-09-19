@@ -2121,6 +2121,8 @@ def execute(state: State) -> int:
         phase_started = time.monotonic()
         try:
             return action()
+        except OSError as error:
+            raise LauncherError(f"{name} failed: {error}") from error
         finally:
             timings.append((name, time.monotonic() - phase_started))
 

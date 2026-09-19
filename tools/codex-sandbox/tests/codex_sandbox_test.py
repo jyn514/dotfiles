@@ -733,6 +733,12 @@ class BackgroundRelayTest(GuestModeTest):
                 with self.assertRaisesRegex(ValueError, 'builder batch failed'):
                     execute(state)
                 replacements['ensure_network'].assert_not_called()
+                preparation.side_effect = OSError("[Errno 2] No such file or directory: '/src'")
+                with self.assertRaisesRegex(
+                    execute.__globals__['LauncherError'],
+                    r"image preparation failed: .*'/src'",
+                ):
+                    execute(state)
 
     def test_signal_during_image_build_waits_before_proxy_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
