@@ -161,6 +161,7 @@ describe("historic session title editing", () => {
   test("registers current and historic title tools", async () => {
     type RegisteredTool = {
       description: string;
+      promptGuidelines?: string[];
       parameters: unknown;
       execute: (...args: never[]) => Promise<{
         content: Array<{ text: string }>;
@@ -187,6 +188,10 @@ describe("historic session title editing", () => {
 
     const currentTool = tools.get("set_current_session_title");
     expect(currentTool?.description).toContain("authoritative session API");
+    expect(currentTool?.promptGuidelines).toEqual([
+      "Use set_current_session_title only for the active session.",
+      "Use an empty title to clear the current session title.",
+    ]);
     const changed = await currentTool?.execute(undefined as never, {
       title: " New\ntitle ",
     } as never);
@@ -201,8 +206,14 @@ describe("historic session title editing", () => {
       title: "New title",
     } as never);
     expect(unchanged?.content[0].text).toBe("Session title unchanged");
-    expect(tools.get("edit_session_title")?.description).toContain("validated batch");
-    expect(tools.get("edit_session_title")?.parameters).toBeDefined();
+    const historicTool = tools.get("edit_session_title");
+    expect(historicTool?.description).toContain("validated batch");
+    expect(historicTool?.promptGuidelines).toEqual([
+      "Use edit_session_title for saved historic sessions, not the active session.",
+      "Identify each historic session by its exact session ID or absolute JSONL path.",
+      "Use an empty title to clear a historic session title.",
+    ]);
+    expect(historicTool?.parameters).toBeDefined();
     expect(events).toContain("tool_result");
   });
 });
