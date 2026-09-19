@@ -5,7 +5,7 @@ FROM node:24-alpine3.22
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 RUN apk add --no-cache \
-      cargo python3 py3-pip \
+      cargo rustfmt python3 py3-pip \
        bash \
        coreutils \
        diffutils \
