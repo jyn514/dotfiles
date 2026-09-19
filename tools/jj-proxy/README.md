@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`jj-proxy` lets an untrusted agent use approved Jujutsu operations while repository metadata remains read-only in the agent container. A sibling proxy owns the writable metadata mount, validates requests, and runs a pinned `jj` with a scrubbed environment.
+`jj-proxy` lets an untrusted agent use approved Jujutsu operations while repository metadata is read-only in the agent container. A sibling proxy owns the writable metadata mount, validates requests, and runs a pinned `jj` with a scrubbed environment.
 
 ## Prerequisites and setup
 
@@ -36,8 +36,8 @@ the inspected repository's `.jj` metadata; the inspection child can only read
 that cache.
 Use `jj -R /src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
-`--repository` is equivalent. A selector outside `/src` is refused, and only
-the selected workspace can receive mutation access.
+`--repository` is equivalent. A selector outside `/src` is refused, and mutation
+access is granted only to the selected workspace.
 
 ## Common commands
 
@@ -54,7 +54,7 @@ jj undo
 jj git fetch --remote origin
 ```
 
-The allowlist also covers common history, bookmark, file, and workspace operations.
+Common history, bookmark, file, and workspace operations are also allowed.
 
 ## Safety and recovery
 
@@ -80,5 +80,5 @@ The Rust suite covers command and Landlock execution policy plus protocol behavi
 ## Design and reference
 
 For the security model, mount topology, protocol, and rationale, read the [design](./design.typ).
-The implementation in [`src/policy.rs`](./src/policy.rs) is the current authority for accepted top-level commands and blocked options.
+The checked-in [`policy.toml`](./policy.toml) is the policy source; [`src/policy.rs`](./src/policy.rs) embeds and evaluates it. It is authoritative for recognized command paths, blocked privilege-crossing options, execution mode, author hooks, and fetch-remote expansion. This policy is not a complete per-command grammar: ordinary option and operand validation remains with the pinned Jujutsu binary. The executor consumes the evaluator’s decision rather than repeating command-policy checks.
 See the [tools overview](../README.md).

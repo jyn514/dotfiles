@@ -1,0 +1,182 @@
+[global]
+forbidden_options = [
+  "--repository", "-R", "--workspace", "--config", "--config-file",
+  "--config-toml", "--operation", "--at-operation", "--tool", "--editor",
+  "--pager", "--sign", "--signing-key", "--ssh-command",
+]
+forbidden_prefixes = ["--config-", "--repository-"]
+
+[[command]]
+path = ["status"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["diff"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["log"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["show"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["interdiff"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["help"]
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["commit"]
+modes = ["mutate"]
+updates_author = true
+
+[[command]]
+path = ["describe"]
+modes = ["mutate"]
+
+[[command]]
+path = ["new"]
+modes = ["mutate"]
+
+[[command]]
+path = ["split"]
+modes = ["mutate"]
+updates_author = true
+
+[[command]]
+path = ["squash"]
+modes = ["mutate"]
+
+[[command]]
+path = ["rebase"]
+modes = ["mutate"]
+
+[[command]]
+path = ["restore"]
+modes = ["mutate"]
+
+[[command]]
+path = ["abandon"]
+modes = ["mutate"]
+
+[[command]]
+path = ["duplicate"]
+modes = ["mutate"]
+
+[[command]]
+path = ["edit"]
+modes = ["mutate"]
+
+[[command]]
+path = ["next"]
+modes = ["mutate"]
+
+[[command]]
+path = ["prev"]
+modes = ["mutate"]
+
+[[command]]
+path = ["undo"]
+modes = ["mutate"]
+
+[[command]]
+path = ["file", "annotate"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["file", "list"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["file", "search"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["file", "show"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["file"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["workspace", "list"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["workspace"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["op", "log"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["git", "root"]
+prefix = true
+modes = ["inspect", "mutate"]
+
+[[command]]
+path = ["bookmark", "create"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "delete"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "forget"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "list"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "move"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "rename"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "set"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "track"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["bookmark", "untrack"]
+prefix = true
+modes = ["mutate"]
+
+[[command]]
+path = ["git", "fetch"]
+prefix = true
+modes = ["mutate"]
+kind = "git-fetch"
+approved_remote = true

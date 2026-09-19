@@ -1,34 +1,88 @@
 use color_eyre::eyre::{bail, eyre, Result};
+use serde::Deserialize;
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
-const COMMANDS: &[&str] = &[
-    "status", "diff", "log", "show", "interdiff", "file", "help", "commit", "describe",
-    "new", "split", "squash", "rebase", "restore", "abandon", "duplicate",
-    "edit", "next", "prev", "undo", "workspace",
-];
-
-const FORBIDDEN_OPTIONS: &[&str] = &[
-    "--repository", "-R", "--workspace", "--config", "--config-file",
-    "--config-toml", "--operation", "--at-operation", "--tool", "--editor",
-    "--pager", "--sign", "--signing-key", "--ssh-command",
-];
-
-fn option_name(arg: &str) -> &str {
-    arg.split_once('=').map_or(arg, |pair| pair.0)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandKind {
+    Standard,
+    GitFetch,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Decision {
+    pub kind: CommandKind,
+    pub read_only: bool,
+    pub updates_author: bool,
+    pub argv: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct PolicyFile {
+    global: GlobalPolicy,
+    command: Vec<CommandRule>,
+}
+
+#[derive(Deserialize)]
+struct GlobalPolicy {
+    forbidden_options: Vec<String>,
+    forbidden_prefixes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct CommandRule {
+    path: Vec<String>,
+    #[serde(default)]
+    prefix: bool,
+    modes: Vec<String>,
+    #[serde(default = "standard_kind")]
+    kind: String,
+    #[serde(default)]
+    approved_remote: bool,
+    #[serde(default)]
+    updates_author: bool,
+}
+
+fn standard_kind() -> String { "standard".to_owned() }
+
+static POLICY: OnceLock<PolicyFile> = OnceLock::new();
+
+fn policy() -> &'static PolicyFile {
+    POLICY.get_or_init(|| {
+        toml::from_str(include_str!("../policy.toml"))
+            .expect("embedded jj-proxy policy.toml must be valid")
+    })
+}
+
+fn option_name(arg: &str) -> &str { arg.split_once('=').map_or(arg, |pair| pair.0) }
+
 fn reject_security_options(args: &[String]) -> Result<()> {
+    let global = &policy().global;
     for arg in args {
         let option = option_name(arg);
-        if FORBIDDEN_OPTIONS.contains(&option)
+        if global.forbidden_options.iter().any(|forbidden| forbidden == option)
             || arg.starts_with("-R")
-            || option.starts_with("--config-")
-            || option.starts_with("--repository-")
+            || global.forbidden_prefixes.iter().any(|prefix| option.starts_with(prefix))
         {
             bail!("security-sensitive option is not allowed: {option}");
         }
     }
     Ok(())
+}
+
+fn matches(rule: &CommandRule, argv: &[String]) -> bool {
+    argv.len() >= rule.path.len()
+        && rule.path.iter().zip(argv).all(|(expected, actual)| expected == actual)
+        && (rule.prefix || argv.first() == rule.path.first())
+}
+
+fn rule_for(argv: &[String], inspect: bool) -> Result<&CommandRule> {
+    let mode = if inspect { "inspect" } else { "mutate" };
+    policy()
+        .command
+        .iter()
+        .find(|rule| matches(rule, argv) && rule.modes.iter().any(|candidate| candidate == mode))
+        .ok_or_else(|| eyre!("command is not allowed: {}", argv.first().map(String::as_str).unwrap_or("")))
 }
 
 /// Separate the global repository selector before command-policy validation.
@@ -46,88 +100,61 @@ pub fn extract_repository(argv: &[String]) -> Result<(Option<String>, Vec<String
             Some(argv.get(index).ok_or_else(|| eyre!("{arg} requires a path"))?.as_str())
         } else if !positional {
             arg.strip_prefix("--repository=").or_else(|| arg.strip_prefix("-R"))
-        } else {
-            None
-        };
+        } else { None };
         if let Some(value) = value {
             if repository.is_some() { bail!("repository selector may appear only once"); }
             if value.is_empty() || value.contains('\0') { bail!("repository selector is empty or invalid"); }
             repository = Some(value.to_owned());
-        } else {
-            command.push(arg.clone());
-        }
+        } else { command.push(arg.clone()); }
         index += 1;
     }
     Ok((repository, command))
 }
 
-pub fn validate_inspect(argv: &[String]) -> Result<()> {
-    validate_shape(argv)?;
-    let read_only = matches!(argv.first().map(String::as_str), Some("status" | "diff" | "log" | "show" | "interdiff" | "help"))
-        || matches!(argv.get(0..2), Some([command, subcommand]) if command == "file" && ["annotate", "list", "search", "show"].contains(&subcommand.as_str()))
-        || argv.starts_with(&["workspace".into(), "list".into()])
-        || argv.starts_with(&["git".into(), "root".into()])
-        || argv.starts_with(&["op".into(), "log".into()]);
-    if !read_only { bail!("command is not allowed in inspection mode"); }
-    reject_security_options(&argv[1..])
-}
+pub fn validate_inspect(argv: &[String]) -> Result<Decision> { validate_for_mode(argv, true, &HashSet::new()) }
 
-pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<()> {
-    validate_shape(argv)?;
+pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<Decision> { validate_for_mode(argv, false, remotes) }
 
-    let command = argv[0].as_str();
-    if COMMANDS.contains(&command) {
-        return reject_security_options(&argv[1..]);
-    }
-    if argv.starts_with(&["op".into(), "log".into()]) {
-        return reject_security_options(&argv[1..]);
-    }
-    if command == "bookmark" {
-        let subcommand = argv.get(1).map(String::as_str).unwrap_or("");
-        if !["create", "delete", "forget", "list", "move", "rename", "set", "track", "untrack"].contains(&subcommand) {
-            bail!("bookmark subcommand is not allowed");
-        }
-        return reject_security_options(&argv[2..]);
-    }
-    if argv.starts_with(&["git".into(), "root".into()]) {
-        return reject_security_options(&argv[1..]);
-    }
-    if command == "git" && argv.get(1).map(String::as_str) == Some("fetch") {
-        reject_security_options(&argv[2..])?;
-        let mut i = 2;
-        let mut selected_remote = false;
-        while i < argv.len() {
-            let arg = &argv[i];
+fn validate_for_mode(argv: &[String], inspect: bool, remotes: &HashSet<String>) -> Result<Decision> {
+    validate_shape(argv)?;
+    let rule = rule_for(argv, inspect)?;
+    reject_security_options(&argv[rule.path.len()..])?;
+    let mut selected_remote = false;
+    if rule.approved_remote {
+        let mut index = rule.path.len();
+        while index < argv.len() {
+            let arg = &argv[index];
             let remote = if arg == "--remote" {
-                i += 1;
-                Some(argv.get(i).ok_or_else(|| eyre!("--remote requires a value"))?.as_str())
-            } else {
-                arg.strip_prefix("--remote=")
-            };
+                index += 1;
+                Some(argv.get(index).ok_or_else(|| eyre!("--remote requires a value"))?.as_str())
+            } else { arg.strip_prefix("--remote=") };
             if let Some(remote) = remote {
                 selected_remote = true;
-                if !remotes.contains(remote) {
-                    bail!("remote is not approved: {remote}");
-                }
+                if !remotes.contains(remote) { bail!("remote is not approved: {remote}"); }
             }
-            i += 1;
+            index += 1;
         }
-        if !selected_remote && remotes.is_empty() {
-            bail!("no remotes are approved");
-        }
-        return Ok(());
+        if !selected_remote && remotes.is_empty() { bail!("no remotes are approved"); }
     }
-    Err(eyre!("command is not allowed: {command}"))
+    let mut normalized_argv = argv.to_vec();
+    if rule.approved_remote && !selected_remote {
+        normalized_argv.extend(remotes.iter().flat_map(|remote| ["--remote".to_owned(), remote.clone()]));
+    }
+    Ok(Decision {
+        kind: match rule.kind.as_str() {
+            "standard" => CommandKind::Standard,
+            "git-fetch" => CommandKind::GitFetch,
+            other => return Err(eyre!("unknown command kind in policy: {other}")),
+        },
+        read_only: inspect,
+        updates_author: rule.updates_author,
+        argv: normalized_argv,
+    })
 }
 
 fn validate_shape(argv: &[String]) -> Result<()> {
-    if argv.is_empty() || argv.len() > 256 {
-        bail!("expected between 1 and 256 arguments");
-    }
-    if argv.iter().any(|arg| arg.contains('\0') || arg.len() > 65_536) {
-        bail!("argument contains NUL or is too long");
-    }
-
+    if argv.is_empty() || argv.len() > 256 { bail!("expected between 1 and 256 arguments"); }
+    if argv.iter().any(|arg| arg.contains('\0') || arg.len() > 65_536) { bail!("argument contains NUL or is too long"); }
     Ok(())
 }
 
@@ -150,57 +177,47 @@ mod tests {
         assert!(check(&["file", "show", "src/main.rs"]));
     }
     #[test]
+    fn decisions_describe_execution_effects() {
+        let commit = validate(&["commit".into()], &HashSet::new()).unwrap();
+        assert_eq!(commit.kind, CommandKind::Standard);
+        assert!(commit.updates_author);
+        assert!(!commit.read_only);
+        let fetch = validate(&["git".into(), "fetch".into()], &HashSet::from(["origin".into()])).unwrap();
+        assert_eq!(fetch.kind, CommandKind::GitFetch);
+        assert_eq!(fetch.argv, ["git", "fetch", "--remote", "origin"]);
+    }
+    #[test]
     fn rejects_escape_surfaces() {
         for args in [
             &["util", "exec", "sh"][..], &["debug", "operation"][..], &["op", "restore", "@-"][..], &["git", "push"][..],
             &["git", "init"][..], &["config", "set", "x", "y"][..], &["diff", "--tool", "/tmp/x"][..],
             &["status", "--repository", "/tmp/x"][..], &["log", "--config", "aliases.x=util exec"][..],
-            &["workspace", "list", "--repository", "/tmp/x"][..],
-            &["file", "show", "--repository", "/tmp/x", "src/main.rs"][..],
+            &["workspace", "list", "--repository", "/tmp/x"][..], &["file", "show", "--repository", "/tmp/x", "src/main.rs"][..],
             &["git", "fetch", "--remote", "evil"][..], &["push"][..],
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
-
     #[test]
     fn inspection_accepts_only_observational_commands() {
-        let check = |args: &[&str]| validate_inspect(
-            &args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()
-        ).is_ok();
+        let check = |args: &[&str]| validate_inspect(&args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()).is_ok();
         assert!(check(&["file", "show", "src/main.rs"]));
         assert!(check(&["workspace", "list"]));
         assert!(check(&["op", "log"]));
         assert!(check(&["op", "log", "--no-graph"]));
         assert!(!check(&["op", "log", "--at-operation", "@-"]));
         for args in [
-            &["op", "restore", "@-"][..],
-            &["file", "track", "src/main.rs"][..],
-            &["file", "untrack", "src/main.rs"][..],
-            &["file", "chmod", "+x", "src/main.rs"][..],
-            &["workspace", "add", "other"][..],
-            &["status", "--repository", "/src/other"][..],
-        ] {
-            assert!(!check(args), "accepted {args:?}");
-        }
+            &["op", "restore", "@-"][..], &["file", "track", "src/main.rs"][..], &["file", "untrack", "src/main.rs"][..],
+            &["file", "chmod", "+x", "src/main.rs"][..], &["workspace", "add", "other"][..], &["status", "--repository", "/src/other"][..],
+        ] { assert!(!check(args), "accepted {args:?}"); }
     }
-
     #[test]
     fn repository_selector_is_extracted_once_without_hiding_other_options() {
-        for input in [
-            vec!["-R", "/src/other", "status"],
-            vec!["-R/src/other", "status"],
-            vec!["--repository", "/src/other", "status"],
-            vec!["status", "--repository=/src/other"],
-        ] {
+        for input in [vec!["-R", "/src/other", "status"], vec!["-R/src/other", "status"], vec!["--repository", "/src/other", "status"], vec!["status", "--repository=/src/other"]] {
             let args = input.into_iter().map(str::to_owned).collect::<Vec<_>>();
             let (repo, command) = extract_repository(&args).unwrap();
             assert_eq!(repo.as_deref(), Some("/src/other"));
             assert_eq!(command, ["status"]);
         }
-        for input in [
-            vec!["-R", "/src/one", "-R", "/src/two", "status"],
-            vec!["--repository=", "status"],
-            vec!["-R"],
-        ] {
+        for input in [vec!["-R", "/src/one", "-R", "/src/two", "status"], vec!["--repository=", "status"], vec!["-R"]] {
             assert!(extract_repository(&input.into_iter().map(str::to_owned).collect::<Vec<_>>()).is_err());
         }
         let (_, command) = extract_repository(&["status", "--", "-R", "/src/other"].map(str::to_owned)).unwrap();

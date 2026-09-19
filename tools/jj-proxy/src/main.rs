@@ -207,11 +207,6 @@ fn agent_jj_command(user: &str, email: &str) -> Command {
     command
 }
 
-fn author_update_required(request: &Request, argv: &[String]) -> bool {
-    request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
-        || matches!(argv.first().map(String::as_str), Some("commit" | "split"))
-}
-
 fn workspace_for(path: &Path) -> Option<&Path> {
     path.ancestors().find(|ancestor| ancestor.join(".jj").is_dir())
 }
@@ -353,10 +348,16 @@ fn execute(
         Ok(selection) => selection,
         Err(error) => return failure(error.to_string()),
     };
-    if request.agent_split.is_none() {
+    let decision = if request.agent_split.is_none() {
         let validation = if inspect { policy::validate_inspect(&argv) } else { policy::validate(&argv, remotes) };
-        if let Err(error) = validation { return failure(error.to_string()); }
-    }
+        match validation {
+            Ok(decision) => Some(decision),
+            Err(error) => return failure(error.to_string()),
+        }
+    } else { None };
+    let argv = decision.as_ref().map_or(argv, |decision| decision.argv.clone());
+    let updates_author = request.agent_split.as_ref().is_some_and(|split| split.revision == "@")
+        || decision.is_some_and(|decision| decision.updates_author);
     if inspect {
         if request.agent_split.is_some() { return failure("agent split is not allowed in inspection mode".into()); }
         if let Err(error) = prepare_inspection_config(&workspace, Path::new("/trusted/bin/jj"), Path::new(TRUSTED_JJ_CONFIG), Path::new(CONFIG_HOME)) {
@@ -364,7 +365,7 @@ fn execute(
         }
     }
 
-    if !inspect && author_update_required(request, &argv) {
+    if !inspect && updates_author {
         let mut update = author_update_command(user, email);
         update.env_clear().envs(command_environment(user, email, temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -391,11 +392,6 @@ fn execute(
         ]);
     } else {
         command.args(&argv);
-    }
-    if argv.as_slice().starts_with(&["git".into(), "fetch".into()])
-        && !argv.iter().any(|arg| arg == "--remote" || arg.starts_with("--remote="))
-    {
-        for remote in remotes { command.args(["--remote", remote]); }
     }
     command.env_clear().envs(command_environment(user, email, temporary_directory))
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -433,7 +429,7 @@ fn execute(
     if stdout.len() > MAX_OUTPUT || stderr.len() > MAX_OUTPUT {
         return failure("output limit exceeded".into());
     }
-    if status == 0 && !inspect {
+    if status == 0 && !inspect && updates_author {
         let mut reset = reset_author_command();
         reset.env_clear().envs(trusted_environment(temporary_directory))
             .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
@@ -749,37 +745,11 @@ mod tests {
     }
 
     #[test]
-    fn commit_paths_update_the_working_copy_author() {
-        let request = |argv: &[&str], agent_split| Request {
-            version: 1,
-            mode: RequestMode::Mutate,
-            cwd: String::new(),
-            argv: argv.iter().map(|arg| (*arg).to_owned()).collect(),
-            agent_split,
-            user: Some("Pi".into()),
-            email: Some("pi@example.test".into()),
-        };
-        let author_update_required = |request: Request| super::author_update_required(&request, &request.argv);
-
-        assert!(author_update_required(request(&["commit", "-m", "message"], None)));
-        assert!(author_update_required(request(&["split", "-m", "message"], None)));
-        assert!(author_update_required(request(
-            &[],
-            Some(AgentSplit {
-                patch: "patch".into(),
-                message: "message".into(),
-                revision: "@".into(),
-            }),
-        )));
-        assert!(!author_update_required(request(
-            &[],
-            Some(AgentSplit {
-                patch: "patch".into(),
-                message: "message".into(),
-                revision: "@-".into(),
-            }),
-        )));
-        assert!(!author_update_required(request(&["status"], None)));
+    fn command_policy_declares_author_update_effects() {
+        let remotes = HashSet::new();
+        assert!(policy::validate(&["commit".into()], &remotes).unwrap().updates_author);
+        assert!(policy::validate(&["split".into()], &remotes).unwrap().updates_author);
+        assert!(!policy::validate(&["status".into()], &remotes).unwrap().updates_author);
 
         let command = author_update_command("agent", "agent@example.test");
         let args: Vec<_> = command

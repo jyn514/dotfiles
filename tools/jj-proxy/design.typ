@@ -317,14 +317,25 @@ bookmark commands, workspace commands, and constrained Git fetch commands. The p
 Git push; publishing to protected remotes remains a host-side operation outside
 the agent container.
 
-For each allowed command, define the complete accepted grammar of subcommands,
-options, option values, and positional operands. Reject every unrecognized
-option wherever Jujutsu's parser would accept it, including global options that
-appear after the subcommand. Do not rely on recognizing the top-level command
-and passing the remainder through. Disable command aliases so validation applies
-to the command Jujutsu actually executes. Alias spellings such as `jj push`,
-`jj p`, `jj g push`, and `jj publish` are therefore rejected rather than
-expanded; only the exact constrained `jj git fetch` grammar is accepted.
+The command policy is declared in the trusted, checked-in `policy.toml` and
+embedded into the proxy at build time. Each rule names its command path,
+permitted modes, special constraints, and execution effects. The evaluator in
+`src/policy.rs` returns a decision containing the command kind, normalized
+arguments, read-only classification, author-update hook, and fetch-remote
+behavior. The executor consumes that decision; it must not repeat command-name
+checks when selecting hooks, inspection behavior, or generated arguments.
+
+The current compatibility-preserving policy rejects known privilege-crossing
+options and recognizes approved command paths, while leaving ordinary option
+and operand validation to the pinned Jujutsu binary. This is deliberately less
+strict than a complete per-command grammar. Tightening individual grammars is a
+separate policy.toml change requiring compatibility review and new rejection
+tests.
+
+Disable command aliases so validation applies to the command Jujutsu actually
+executes. Alias spellings such as `jj push`, `jj p`, `jj g push`, and `jj
+publish` are therefore rejected rather than expanded; only the exact
+constrained `jj git fetch` path is accepted.
 
 Reject arbitrary `--tool`, `--editor`, interactive diff or merge, signing, and
 similar executable-selecting options even though the repository is mounted
@@ -342,9 +353,9 @@ subcommand.
 
 Pinning the Jujutsu version makes the accepted grammar stable; upgrading
 Jujutsu requires reviewing new commands and options before changing the pin.
-The policy must maintain separate mutation and inspection grammars; adding a
-command to the inspection grammar requires proving that it remains read-only
-under `--ignore-working-copy` and the read-only filesystem policy.
+The policy maintains separate mutation and inspection rule permissions;
+adding a command to the inspection permission requires proving that it remains
+read-only under `--ignore-working-copy` and the read-only filesystem policy.
 
 == Lifecycle
 
