@@ -1744,6 +1744,98 @@ def keychain_environment(state: State) -> dict[str, str]:
     return {'CODEX_SANDBOX_KEYCHAIN_TOKEN': handle.bridge.token}
 
 
+def build_agent_command(
+    state: State, arguments: list[str], *, host_pi: bool, timing: bool,
+    protected: list[Path], repository_aliases: list[Path],
+    external_git_roots: list[tuple[Path, Path]],
+    persistent_package_directories: list[Path], sessions: Path,
+    pi_extensions: Path,
+) -> list[str]:
+    """Construct and validate the agent container command without starting it."""
+    command = [
+        "docker", "run", "--name", state.codex_container, *([] if host_pi else ["-it"]),
+        "--cap-drop=NET_RAW",
+        "--network", SANDBOX_NETWORK, *proxy_flags(),
+        *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
+           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
+          else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
+                *(["--entrypoint", "node"] if host_pi else [])]),
+        "--env", "JJ_AGENT=pi",
+        "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
+        "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
+        "--env", f"TERM={state.term}",
+        *(["--env", "PI_TIMING=1"] if timing else []),
+        "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
+        *([] if host_pi else ["--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions"]),
+        *[
+            item
+            for directory in ([] if host_pi else persistent_package_directories)
+            for item in (
+                "--mount",
+                f"type=bind,src={directory},dst=/home/codex/.pi/agent/{directory.name}",
+            )
+        ],
+        "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
+        "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
+        # Host Pi passes its absolute skill paths to guest-backed tools.
+        *(["--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}"]
+          if host_pi else []),
+        *(
+            ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
+            if (state.skills_tmp / "sandbox").is_dir() else []
+        ),
+        *[
+            item
+            for role, (_, destination) in STAGED_CONFIG.items()
+            for item in (
+                "--mount",
+                f"type=bind,src={staged_config_path(state, role)},dst={destination},readonly",
+            )
+        ],
+        "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
+        "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",
+        *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
+                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
+        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
+        "--mount", f"type=bind,src={state.git_mount_source},dst={state.container_repository / '.git'},readonly",
+        "--workdir", str(state.container_working_directory),
+        *[
+            item
+            for target in repository_aliases
+            for item in (
+                "--mount",
+                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
+            )
+        ],
+        *[
+            item
+            for path in protected
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={state.container_repository / path.relative_to(state.repository)},readonly",
+            )
+        ],
+        *[
+            item
+            for path, relative_target in external_git_roots
+            for target in (path, relative_target)
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={target},readonly",
+            )
+        ],
+        *arguments,
+    ]
+    try:
+        check_mount_destinations(command)
+    except ValueError as error:
+        raise LauncherError(str(error)) from error
+    return command
+
+
 def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
@@ -1840,88 +1932,12 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         "modelId": "",
     }) + "\n", encoding="utf-8")
     os.chmod(state.pi_model_file, 0o600)
-
-    command = [
-        "docker", "run", "--name", state.codex_container, *([] if host_pi else ["-it"]),
-        "--cap-drop=NET_RAW",
-        "--network", SANDBOX_NETWORK, *proxy_flags(),
-        *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
-           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
-          else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
-                *(["--entrypoint", "node"] if host_pi else [])]),
-        "--env", "JJ_AGENT=pi",
-        "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
-        "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
-        "--env", f"TERM={state.term}",
-        *(["--env", "PI_TIMING=1"] if timing else []),
-        "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
-        *([] if host_pi else ["--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions"]),
-        *[
-            item
-            for directory in ([] if host_pi else persistent_package_directories)
-            for item in (
-                "--mount",
-                f"type=bind,src={directory},dst=/home/codex/.pi/agent/{directory.name}",
-            )
-        ],
-        "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
-        "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
-        # Host Pi passes its absolute skill paths to guest-backed tools.
-        *(["--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}"]
-          if host_pi else []),
-        *(
-            ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
-            if (state.skills_tmp / "sandbox").is_dir() else []
-        ),
-        *[
-            item
-            for role, (_, destination) in STAGED_CONFIG.items()
-            for item in (
-                "--mount",
-                f"type=bind,src={staged_config_path(state, role)},dst={destination},readonly",
-            )
-        ],
-        "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
-        "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
-        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
-        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
-        "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",
-        *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
-                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
-        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
-        "--mount", f"type=bind,src={state.git_mount_source},dst={state.container_repository / '.git'},readonly",
-        "--workdir", str(state.container_working_directory),
-        *[
-            item
-            for target in repository_aliases
-            for item in (
-                "--mount",
-                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
-            )
-        ],
-        *[
-            item
-            for path in protected
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={state.container_repository / path.relative_to(state.repository)},readonly",
-            )
-        ],
-        *[
-            item
-            for path, relative_target in external_git_roots
-            for target in (path, relative_target)
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={target},readonly",
-            )
-        ],
-        *arguments,
-    ]
-    try:
-        check_mount_destinations(command)
-    except ValueError as error:
-        raise LauncherError(str(error)) from error
+    command = build_agent_command(
+        state, arguments, host_pi=host_pi, timing=timing, protected=protected,
+        repository_aliases=repository_aliases, external_git_roots=external_git_roots,
+        persistent_package_directories=persistent_package_directories, sessions=sessions,
+        pi_extensions=pi_extensions,
+    )
     reserved = {
         "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",
         "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
