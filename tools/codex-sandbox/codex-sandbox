@@ -1794,6 +1794,7 @@ def build_agent_command(
         ],
         "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.config/git/ignore')},dst=/home/codex/.gitignore,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",

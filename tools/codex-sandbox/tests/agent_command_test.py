@@ -64,6 +64,10 @@ class AgentCommandTest(unittest.TestCase):
             session = next(item for item in command if item.startswith("PI_MODEL_SESSION_ID="))
             uuid.UUID(session.removeprefix("PI_MODEL_SESSION_ID="))
             self.assertIn(
+                f"type=bind,src={root / 'installed-config'},dst=/home/codex/.gitignore,readonly",
+                command,
+            )
+            self.assertIn(
                 f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
                 command,
             )
