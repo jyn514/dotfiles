@@ -7,6 +7,7 @@ import instructionIncludes from "./pi-instruction-includes.ts";
 import lunaCompaction from "./luna-compaction.ts";
 import notifyWhenSettled from "./pi-notify.ts";
 import promptHistorySearch from "./prompt-history-search.ts";
+import runtimeIdentity from "./runtime-identity.ts";
 import sessionTitle from "./session-title.ts";
 import sessionHandoff from "./session-handoff.ts";
 import subagentRouting from "./subagent-routing.ts";
@@ -22,6 +23,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   notifyWhenSettled(pi);
   instructionIncludes(pi);
   promptHistorySearch(pi);
+  runtimeIdentity(pi);
   sessionTitle(pi);
   sessionHandoff(pi);
   subagentRouting(pi);

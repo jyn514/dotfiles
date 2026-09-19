@@ -1781,6 +1781,9 @@ class CodexSandboxTest(GuestModeTest):
             run,
         )
         self.assertNotIn("pi-agent-", " ".join(run))
+        self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", run)
+        model_session = next(item for item in run if item.startswith("PI_MODEL_SESSION_ID="))
+        uuid.UUID(model_session.removeprefix("PI_MODEL_SESSION_ID="))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertNotIn("EDITOR=/opt/agent-tools/bin/host-editor", run)

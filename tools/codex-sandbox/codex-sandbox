@@ -139,6 +139,8 @@ class State:
     skills_tmp: Path | None = None
     skills_source: Path | None = None
     pi_agent_tmp: Path | None = None
+    pi_model_file: Path | None = None
+    pi_model_session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     pi_auth_mask: Path | None = None
     cd_request: Path | None = None
     handoff_origin: Path | None = None
@@ -1831,6 +1833,13 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         (state.pi_agent_tmp / directory).mkdir(mode=0o700)
     state.pi_auth_mask = temporary_file()
     state.pi_auth_mask.write_text("{}\n", encoding="utf-8")
+    state.pi_model_file = state.pi_agent_tmp / "runtime-model.json"
+    state.pi_model_file.write_text(json.dumps({
+        "session_id": state.pi_model_session_id,
+        "provider": "",
+        "modelId": "",
+    }) + "\n", encoding="utf-8")
+    os.chmod(state.pi_model_file, 0o600)
 
     command = [
         "docker", "run", "--name", state.codex_container, *([] if host_pi else ["-it"]),
@@ -1841,6 +1850,8 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
           else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
                 *(["--entrypoint", "node"] if host_pi else [])]),
         "--env", "JJ_AGENT=pi",
+        "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
+        "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
@@ -1935,6 +1946,8 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
             "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
             "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
             "JJ_AGENT": "pi",
+            "PI_MODEL_FILE": str(state.pi_model_file),
+            "PI_MODEL_SESSION_ID": state.pi_model_session_id,
         })
         if state.handoff_origin is not None:
             host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)

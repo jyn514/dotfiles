@@ -13,6 +13,21 @@ codex_version() {
     ' "$session" | tail -n1
 }
 
+pi_model() {
+  [ -n "${PI_MODEL_FILE:-}" ] || return 1
+  [ -n "${PI_MODEL_SESSION_ID:-}" ] || return 1
+  jq -er --arg session "$PI_MODEL_SESSION_ID" '
+      select(type == "object"
+        and .session_id == $session
+        and (.provider | type) == "string"
+        and (.provider | length) > 0
+        and (.modelId | type) == "string"
+        and (.modelId | length) > 0
+        and (.modelId | test("^[^[:cntrl:]]+$")))
+      | .modelId
+    ' "$PI_MODEL_FILE" 2>/dev/null
+}
+
 is_jj_write() {
   case "$1" in
     commit|split) return 0 ;;
@@ -29,7 +44,13 @@ subcommand=${1:-}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
   pi)
-    JJ_USER="Pi${PI_MODEL:+ $PI_MODEL}"
+    model=$(pi_model) || model=
+    if [ -n "$model" ]; then
+      JJ_USER="Pi $model"
+    else
+      JJ_USER='Pi unknown-model'
+      printf '%s\n' "jj wrapper: warning: could not determine active Pi model" >&2
+    fi
     JJ_EMAIL='325577925+one-esk-nineteen@users.noreply.github.com'
     ;;
   codex)

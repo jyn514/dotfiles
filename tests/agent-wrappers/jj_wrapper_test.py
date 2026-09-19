@@ -95,7 +95,7 @@ class JjWrapperTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(str(proxy), result_file.read_text().strip())
 
-    def test_forwards_pi_model_identity_to_sandbox_client(self) -> None:
+    def test_forwards_current_pi_model_identity_to_sandbox_client(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             result_file = root / "identity"
@@ -112,13 +112,19 @@ class JjWrapperTest(unittest.TestCase):
                 )
             )
             wrapper.chmod(0o755)
+            model_file = root / "runtime-model.json"
+            model_file.write_text(
+                '{"session_id":"session-1","provider":"openai-codex",'
+                '"modelId":"gpt-test-model"}\n'
+            )
 
             result = subprocess.run(
                 [str(wrapper), "status"],
                 env={
                     **os.environ,
                     "JJ_AGENT": "pi",
-                    "PI_MODEL": "gpt-test-model",
+                    "PI_MODEL_FILE": str(model_file),
+                    "PI_MODEL_SESSION_ID": "session-1",
                     "RESULT_FILE": str(result_file),
                     "SANDBOX_PROXY_DIR": str(root / "proxy"),
                 },
@@ -133,7 +139,7 @@ class JjWrapperTest(unittest.TestCase):
                 result_file.read_text().splitlines(),
             )
 
-    def test_auto_detects_pi_without_a_model(self) -> None:
+    def test_pi_model_file_from_another_session_is_explicitly_unknown(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             result_file = root / "identity"
@@ -153,18 +159,25 @@ class JjWrapperTest(unittest.TestCase):
             env = {
                 key: value
                 for key, value in os.environ.items()
-                if key not in {"JJ_AGENT", "PI_MODEL"}
+                if key not in {"JJ_AGENT", "PI_MODEL", "PI_MODEL_FILE", "PI_MODEL_SESSION_ID"}
             }
+            model_file = root / "runtime-model.json"
+            model_file.write_text(
+                '{"session_id":"other-session","provider":"openai-codex",'
+                '"modelId":"gpt-test-model"}\n'
+            )
             env.update(
                 {
                     "PI_CODING_AGENT": "true",
+                    "PI_MODEL_FILE": str(model_file),
+                    "PI_MODEL_SESSION_ID": "session-1",
                     "RESULT_FILE": str(result_file),
                     "SANDBOX_PROXY_DIR": str(root / "proxy"),
                 }
             )
 
             result = subprocess.run(
-                [str(wrapper), "status"],
+                [str(wrapper), "commit"],
                 env=env,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -173,9 +186,10 @@ class JjWrapperTest(unittest.TestCase):
 
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(
-                ["Pi", "325577925+one-esk-nineteen@users.noreply.github.com"],
+                ["Pi unknown-model", "325577925+one-esk-nineteen@users.noreply.github.com"],
                 result_file.read_text().splitlines(),
             )
+            self.assertIn("could not determine active Pi model", result.stderr)
 
     def test_forwards_codex_model_identity_to_sandbox_client(self) -> None:
         result, identity = self.run_codex_identity(

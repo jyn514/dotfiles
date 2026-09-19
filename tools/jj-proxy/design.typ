@@ -210,6 +210,42 @@ existing agent identity and plain-diff behavior either by translating those
 choices into request fields or, preferably, by moving identity selection into
 the trusted proxy.
 
+=== Runtime agent identity
+
+Agent identity is dynamic session state, not repository configuration. Pi's
+active model may change while the container is running, so `pi.json` and the
+container's initial environment are not authoritative sources for commit
+attribution.
+
+The Pi integration owns the current model and writes its `provider` and
+`modelId` to a session-scoped file whenever the active model changes. The
+launcher gives Pi and its shell children a stable `PI_MODEL_FILE` path, but
+the integration replaces the file atomically after each change. The file is a
+transport representation, not an authorization source; the `jj` wrapper reads
+it for every invocation, constructs the agent identity from the current value,
+and includes that identity in the proxy request:
+
+```text
+Pi gpt-5.6-sol
+```
+
+The flow is therefore:
+
+```text
+Pi model switch
+  -> Pi integration updates PI_MODEL_FILE
+  -> jj wrapper reads the current file
+  -> proxy request carries the resolved agent identity
+  -> trusted jj commit records that identity as author and committer
+```
+
+The proxy must not infer the model from `pi.json`, a default model, repository
+configuration, or an earlier request. A missing or malformed file, or a file
+from another session, is an attribution failure: the wrapper must report a
+warning and use the explicit unknown-model identity policy. It must not
+silently claim that the configured default is active. Non-Pi agents retain
+their existing identity sources.
+
 All Jujutsu commands go through the proxy. Mutation-mode commands may snapshot
 the working copy and write metadata. Inspection-mode commands must add
 `--ignore-working-copy` and use read-only metadata mounts; the real binary
@@ -334,6 +370,9 @@ sessions.
 + Add an integration fixture containing colocated `.jj` and `.git` metadata.
 + Add launcher support for the proxy container, socket volume, readiness, nested
   read-only mounts, and cleanup.
++ Add the Pi runtime identity channel and exercise a model switch before and
+  after `jj status` and `jj commit`; verify that each commit uses the active
+  model rather than the configured default.
 + Move the existing wrapper's identity behavior behind the proxy and remove any
   local-real-`jj` fallback.
 + Exercise normal status, diff, commit, split, rebase, undo, and Git fetch flows.
@@ -366,6 +405,9 @@ sessions.
   protected remotes.
 - Supported commands preserve stdout, stderr, and exit status closely enough
   for interactive agent use.
+- A Pi model switch is reflected by the next `jj` request and commit; a missing
+  or malformed model file produces an explicit attribution warning rather than
+  silently using `pi.json`'s default model.
 - Concurrent requests are serialized; timed-out, oversized, and interrupted
   requests leave neither the proxy wedged nor descendant processes running.
 - Proxy failure is fail-closed, and launcher cleanup removes only resources for
