@@ -1779,6 +1779,7 @@ def build_agent_command(
           else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
                 *(["--entrypoint", "node"] if host_pi else [])]),
         "--env", "JJ_AGENT=pi",
+        *(["--env", "CODEX_SANDBOX_TOOL_WORKER=1"] if host_pi else []),
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",

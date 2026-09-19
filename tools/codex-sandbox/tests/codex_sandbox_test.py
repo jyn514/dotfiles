@@ -31,6 +31,7 @@ AGENT_WRAPPERS_PROFILE = TOOL / "image" / "agent-wrappers-path.sh"
 DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
 SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
+SANDBOX_PI = TOOL / "image" / "pi"
 HOST_EDITOR_CLIENT = TOOL / "image" / "host-editor"
 HOST_EDITOR_PANE = TOOL / "host-editor-pane"
 
@@ -293,6 +294,91 @@ class ContainerTimingTest(GuestModeTest):
 
 
 class HostPiWrapperTest(GuestModeTest):
+    def test_tool_worker_allows_only_isolated_information_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            caller_agent = home / "caller-agent"
+            caller_agent.mkdir()
+            sentinel = home / "extension-loaded"
+            (caller_agent / "extension.ts").write_text(
+                "import { writeFileSync } from 'node:fs';\n"
+                f"writeFileSync({json.dumps(str(sentinel))}, 'loaded');\n"
+                "export default function () {}\n",
+                encoding="utf-8",
+            )
+            (caller_agent / "settings.json").write_text(
+                json.dumps({"extensions": ["./extension.ts"]}), encoding="utf-8",
+            )
+            caller_cache = home / "caller-node-cache"
+            caller_xdg = home / "caller-xdg-cache"
+            empty_bin = home / "empty-bin"
+            empty_bin.mkdir()
+            missing_tmp = home / "missing-tmp"
+            environment = {
+                "CODEX_SANDBOX_TOOL_WORKER": "1",
+                "HOME": str(home),
+                "NODE_COMPILE_CACHE": str(caller_cache),
+                "PATH": str(empty_bin),
+                "PI_CODING_AGENT_DIR": str(caller_agent),
+                "PI_PACKAGE_DIR": str(home / "caller-package"),
+                "TMPDIR": str(missing_tmp),
+                "XDG_CACHE_HOME": str(caller_xdg),
+            }
+            for argument in ("--help", "--version"):
+                with self.subTest(argument=argument):
+                    result = subprocess.run(
+                        ["/bin/sh", str(SANDBOX_PI), argument],
+                        env=environment,
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    if argument == "--help":
+                        self.assertIn("Usage:", result.stdout)
+                    else:
+                        self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
+                    self.assertFalse((home / ".pi").exists())
+                    self.assertFalse(sentinel.exists())
+                    self.assertFalse(caller_cache.exists())
+                    self.assertFalse(caller_xdg.exists())
+                    self.assertFalse(missing_tmp.exists())
+
+            result = subprocess.run(
+                ["/bin/sh", str(SANDBOX_PI), "--list-models"],
+                env=environment,
+                text=True, capture_output=True,
+            )
+            self.assertEqual(64, result.returncode)
+            self.assertEqual(
+                "pi is unavailable in sandbox tool-worker containers\n",
+                result.stderr,
+            )
+            self.assertFalse((home / ".pi").exists())
+
+    def test_live_tool_worker_identity_cannot_be_overridden(self) -> None:
+        try:
+            pid_one = Path("/proc/1/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            self.skipTest("requires Linux procfs")
+        if b"/opt/agent-tools/bin/tool-worker.mjs" not in pid_one:
+            self.skipTest("requires a live sandbox tool-worker container")
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            for marker in (None, "0"):
+                with self.subTest(marker=marker):
+                    environment = {"HOME": str(home)}
+                    if marker is not None:
+                        environment["CODEX_SANDBOX_TOOL_WORKER"] = marker
+                    result = subprocess.run(
+                        ["/bin/sh", str(SANDBOX_PI), "--list-models"],
+                        env=environment, text=True, capture_output=True,
+                    )
+                    self.assertEqual(64, result.returncode)
+                    self.assertEqual(
+                        "pi is unavailable in sandbox tool-worker containers\n",
+                        result.stderr,
+                    )
+                    self.assertFalse((home / ".pi").exists())
+
     def test_subagent_extensions_come_from_host_wrapper(self) -> None:
         config = json.loads((ROOT / "config/agents/pi/pi-codex-subagents.json").read_text())
         self.assertEqual([], config.get("defaults", {}).get("extensions", []))
@@ -1396,6 +1482,14 @@ class CodexSandboxTest(GuestModeTest):
         self.assertIn(mount, self.final_run())
         self.assertNotIn(mount + ",readonly", self.final_run())
 
+    def test_host_pi_marks_guest_as_tool_worker(self) -> None:
+        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+        self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
+        creates = [call for call in read_calls(self.docker_log)
+                   if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
+        self.assertEqual(1, len(creates), result.stderr)
+        self.assertIn("CODEX_SANDBOX_TOOL_WORKER=1", creates[0])
+
     def test_host_pi_skill_paths_are_readable_by_guest_tools(self) -> None:
         skills = self.home / ".agents/skills"
         skills.rmdir()
@@ -1809,6 +1903,7 @@ class CodexSandboxTest(GuestModeTest):
         )
         self.assertNotIn("pi-agent-", " ".join(run))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
+        self.assertNotIn("CODEX_SANDBOX_TOOL_WORKER=1", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertNotIn("EDITOR=/opt/agent-tools/bin/host-editor", run)
         self.assertNotIn("VISUAL=/opt/agent-tools/bin/host-editor", run)

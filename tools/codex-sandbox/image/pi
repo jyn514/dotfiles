@@ -2,6 +2,59 @@
 
 set -eu
 
+tool_worker=${CODEX_SANDBOX_TOOL_WORKER:-}
+# Host-Pi containers run the tool worker as PID 1. Detect that launcher-owned
+# identity as well as the explicit marker so a nested shell cannot unset it.
+if [ -r /proc/1/cmdline ]; then
+    case $(/usr/bin/tr '\0' '\n' < /proc/1/cmdline) in
+        *'/opt/agent-tools/bin/tool-worker.mjs'*) tool_worker=1 ;;
+    esac
+fi
+if [ "$tool_worker" = 1 ]; then
+    case "$#:${1:-}" in
+        1:--help|1:-h|1:--version|1:-v)
+            temporary_home=$(/bin/mktemp -d /tmp/pi-information.XXXXXX)
+            trap '/bin/rm -rf "$temporary_home"' 0
+            /bin/mkdir "$temporary_home/tmp"
+            if [ ! -e /etc/alpine-release ]; then
+                if (cd "$temporary_home" && /usr/bin/env -i \
+                    HOME="$temporary_home" PATH=/usr/local/bin:/usr/bin:/bin \
+                    TMPDIR="$temporary_home/tmp" XDG_CACHE_HOME="$temporary_home/cache" \
+                    XDG_CONFIG_HOME="$temporary_home/config" XDG_DATA_HOME="$temporary_home/data" \
+                    NODE_COMPILE_CACHE="$temporary_home/node-cache" \
+                    PI_CODING_AGENT_DIR="$temporary_home/agent" \
+                    PI_CODING_AGENT_SESSION_DIR="$temporary_home/sessions" \
+                    PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent PI_OFFLINE=1 \
+                    /opt/agent-pi/standalone/pi --offline "$@"); then
+                    status=0
+                else
+                    status=$?
+                fi
+            elif (cd "$temporary_home" && /usr/bin/env -i \
+                HOME="$temporary_home" PATH=/usr/local/bin:/usr/bin:/bin \
+                TMPDIR="$temporary_home/tmp" XDG_CACHE_HOME="$temporary_home/cache" \
+                XDG_CONFIG_HOME="$temporary_home/config" XDG_DATA_HOME="$temporary_home/data" \
+                NODE_COMPILE_CACHE="$temporary_home/node-cache" \
+                PI_CODING_AGENT_DIR="$temporary_home/agent" \
+                PI_CODING_AGENT_SESSION_DIR="$temporary_home/sessions" \
+                PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent PI_OFFLINE=1 \
+                /usr/local/bin/node \
+                /opt/agent-pi/src/packages/coding-agent/dist/bundle/cli.js --offline "$@"); then
+                status=0
+            else
+                status=$?
+            fi
+            /bin/rm -rf "$temporary_home"
+            trap - 0
+            exit "$status"
+            ;;
+        *)
+            echo 'pi is unavailable in sandbox tool-worker containers' >&2
+            exit 64
+            ;;
+    esac
+fi
+
 if [ ! -e /etc/alpine-release ]; then
     exec /opt/agent-pi/standalone/pi "$@"
 fi
