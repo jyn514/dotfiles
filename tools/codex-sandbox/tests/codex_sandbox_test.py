@@ -491,7 +491,8 @@ class BackgroundRelayTest(GuestModeTest):
             replacements = {
                 name: mock.Mock(return_value=[])
                 for name in ("validate_repository", "register_tmux_pane", "ensure_network",
-                             "attach_proxies", "prepare_gateway", "stage_skills", "start_keychain")
+                             "attach_proxies", "prepare_gateway", "stage_skills", "start_keychain",
+                             "prepare_host_pi_resources")
             }
             replacements["acquire_lock"] = mock.Mock(side_effect=lambda value: setattr(
                 value, "proxy_lock", SimpleNamespace(shared=False)))
@@ -1112,6 +1113,17 @@ class CodexSandboxTest(GuestModeTest):
         (self.home / ".agents" / "skills").mkdir(parents=True)
         (self.home / ".codex" / "rules").mkdir(parents=True)
         (self.home / "src").mkdir()
+        self.pi_package = (
+            self.home / ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"
+        )
+        (self.pi_package / "dist/bundle").mkdir(parents=True)
+        (self.pi_package / "dist/bundle/cli.js").touch()
+        (self.pi_package / "README.md").write_text("host readme\n", encoding="utf-8")
+        (self.pi_package / "docs").mkdir()
+        (self.pi_package / "examples").mkdir()
+        pi_cli = self.home / ".local/share/pi/node/node_modules/.bin/pi"
+        pi_cli.parent.mkdir(parents=True, exist_ok=True)
+        pi_cli.symlink_to(self.pi_package / "dist/bundle/cli.js")
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
         self.docker_log = self.root / "docker.log"
@@ -1328,6 +1340,7 @@ class CodexSandboxTest(GuestModeTest):
     def launcher_environment(self, **updates: str) -> dict[str, str]:
         environment = os.environ.copy()
         environment.pop("TMUX", None)
+        environment.pop("TMUX_PANE", None)
         environment.update({
             "CODEX_SANDBOX_RUNTIME": "podman",  # This fixture supplies a fake Podman CLI.
             "PATH": f"{self.fake_bin}:{environment['PATH']}",
@@ -1398,6 +1411,20 @@ class CodexSandboxTest(GuestModeTest):
             f"type=bind,src={source},dst={skills}",
             creates[0],
         )
+
+    def test_host_pi_resources_use_guest_paths(self) -> None:
+        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+
+        self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
+        creates = [call for call in read_calls(self.docker_log)
+                   if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
+        self.assertEqual(1, len(creates), result.stderr)
+        guest = Path("/opt/agent-pi/src/packages/coding-agent")
+        for relative in ("README.md", "docs", "examples"):
+            self.assertIn(
+                f"type=bind,src={self.pi_package / relative},dst={guest / relative},readonly",
+                creates[0],
+            )
 
     def test_staging_uses_install_mapping_for_config_source_names(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

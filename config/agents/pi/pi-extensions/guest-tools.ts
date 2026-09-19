@@ -4,6 +4,7 @@ import {
   createBashTool, createEditTool, createFindTool, createGrepTool,
   createLsTool, createReadTool, createWriteTool,
 } from "@earendil-works/pi-coding-agent";
+import { rewritePiResourcePaths } from "./guest-tools-core.ts";
 
 type GuestFrame =
   | { kind: "update"; result: unknown }
@@ -79,6 +80,14 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
   const cwd = process.env.CODEX_SANDBOX_GUEST_CWD;
   if (!cwd) throw new Error("guest working directory is unavailable");
+  const encodedResourcePaths = process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
+  const resourcePaths = encodedResourcePaths
+    ? JSON.parse(encodedResourcePaths) as Record<string, string>
+    : {};
+  if (Object.entries(resourcePaths).some(([hostPath, guestPath]) =>
+    !hostPath.startsWith("/") || !guestPath.startsWith("/"))) {
+    throw new Error("Pi resource path mapping is invalid");
+  }
   const tools = [
     createReadTool(cwd), createBashTool(cwd), createEditTool(cwd),
     createWriteTool(cwd), createGrepTool(cwd), createFindTool(cwd), createLsTool(cwd),
@@ -96,12 +105,13 @@ export default function guestTools(pi: ExtensionAPI) {
         callGuest("user_bash", { command, timeout }, signal, undefined, onData),
     },
   }));
-  pi.on("before_agent_start", (event) => ({
-    systemPrompt: event.systemPrompt.replace(
+  pi.on("before_agent_start", (event) => {
+    const systemPrompt = event.systemPrompt.replace(
       `Current working directory: ${process.cwd()}`,
       `Current working directory: ${cwd}`,
     ) + (process.env.CODEX_SANDBOX_PREVIOUS_CWD
       ? `\nThis conversation moved from ${process.env.CODEX_SANDBOX_PREVIOUS_CWD} to ${cwd}; older paths remain historical context.\n`
-      : ""),
-  }));
+      : "");
+    return { systemPrompt: rewritePiResourcePaths(systemPrompt, resourcePaths) };
+  });
 }

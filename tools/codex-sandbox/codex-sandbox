@@ -65,6 +65,8 @@ DOTFILES = Path(__file__).resolve().parents[2]
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
+GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
+PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 
 
 def host_pi_enabled() -> bool:
@@ -138,6 +140,7 @@ class State:
     proxy_args: Path | None = None
     skills_tmp: Path | None = None
     skills_source: Path | None = None
+    host_pi_package: Path | None = None
     pi_agent_tmp: Path | None = None
     pi_model_file: Path | None = None
     pi_model_session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -1744,6 +1747,21 @@ def keychain_environment(state: State) -> dict[str, str]:
     return {'CODEX_SANDBOX_KEYCHAIN_TOKEN': handle.bridge.token}
 
 
+def prepare_host_pi_resources(state: State) -> None:
+    if not host_pi_enabled():
+        return
+    cli = state.home / ".local/share/pi/node/node_modules/.bin/pi"
+    try:
+        package = cli.resolve(strict=True).parents[2]
+    except (FileNotFoundError, IndexError) as error:
+        raise LauncherError(f"Host Pi installation is invalid: {cli}") from error
+    for relative in PI_RESOURCE_PATHS:
+        resource = package / relative
+        if not resource.exists():
+            raise LauncherError(f"Host Pi resource is missing: {resource}")
+    state.host_pi_package = package
+
+
 def build_agent_command(
     state: State, arguments: list[str], *, host_pi: bool, timing: bool,
     protected: list[Path], repository_aliases: list[Path],
@@ -1780,6 +1798,15 @@ def build_agent_command(
         # Host Pi passes its absolute skill paths to guest-backed tools.
         *(["--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}"]
           if host_pi else []),
+        *[
+            item
+            for relative in (PI_RESOURCE_PATHS if host_pi else ())
+            for item in (
+                "--mount",
+                f"type=bind,src={state.host_pi_package / relative},"
+                f"dst={GUEST_PI_PACKAGE / relative},readonly",
+            )
+        ],
         *(
             ["--mount", f"type=bind,src={state.skills_tmp / 'sandbox'},dst=/home/codex/.agents/sandbox,readonly"]
             if (state.skills_tmp / "sandbox").is_dir() else []
@@ -1955,12 +1982,17 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
         state.cd_request = temporary_file()
         host_environment = dict(os.environ)
+        pi_resource_paths = {
+            str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
+            for relative in PI_RESOURCE_PATHS
+        }
         host_environment.update({
             "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
             "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
             "CODEX_SANDBOX_GUEST_CWD": str(state.container_working_directory),
             "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
             "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
+            "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
             "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
             "JJ_AGENT": "pi",
             "PI_MODEL_FILE": str(state.pi_model_file),
@@ -2115,6 +2147,7 @@ def execute(state: State) -> int:
                 not (state.repository / '.agents/sandbox/base-image').is_file()):
             raise LauncherError('repository uses Bake images; select CODEX_SANDBOX_RUNTIME=lima-docker')
     phase("skill staging", lambda: stage_skills(state))
+    phase("host Pi resources", lambda: prepare_host_pi_resources(state))
     if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
@@ -2223,6 +2256,9 @@ def preflight_lima(state: State) -> None:
         writable.append(directory)
     readable = [state.home / "src", DOTFILES, state.skills_tmp,
                 state.home / ".codex/config.toml"]
+    host_pi_package = getattr(state, "host_pi_package", None)
+    if host_pi_package is not None:
+        readable += [host_pi_package / relative for relative in PI_RESOURCE_PATHS]
     if state.zuliprc is not None:
         readable.append(state.zuliprc)
     if _secure_codex_auth_directory(state) is not None:
