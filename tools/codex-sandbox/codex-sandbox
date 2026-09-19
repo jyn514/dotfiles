@@ -1987,6 +1987,7 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
             str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
             for relative in PI_RESOURCE_PATHS
         }
+        pi_resource_paths[str(state.repository)] = str(state.container_repository)
         host_environment.update({
             "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
             "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),

@@ -21,3 +21,17 @@ test("host Pi resource paths are rewritten to guest paths", () => {
   expect(rewritten).toContain(`${guest}/docs`);
   expect(rewritten).toContain(`${guest}/examples`);
 });
+
+test("host project paths are rewritten without touching sibling paths", () => {
+  const host = "/Users/jyn/src/personal/lapwing/stint";
+  const guest = "/src/personal/lapwing/stint";
+  const prompt = [
+    `Skill location: ${host}/.agents/skills/spec-review/SKILL.md`,
+    `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`,
+  ].join("\n");
+
+  const rewritten = rewritePiResourcePaths(prompt, { [host]: guest });
+
+  expect(rewritten).toContain(`${guest}/.agents/skills/spec-review/SKILL.md`);
+  expect(rewritten).toContain(`${host}-old/.agents/skills/spec-review/SKILL.md`);
+});

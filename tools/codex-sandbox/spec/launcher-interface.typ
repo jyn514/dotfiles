@@ -31,7 +31,10 @@ tool arguments use guest paths. Host-discovered shared skills are also mounted
 at their host absolute path so guest tools can read the paths Pi advertises.
 Host Pi's README, docs, and examples are mounted read-only at the guest Pi
 package paths, and the guest-tool extension rewrites their advertised host paths
-to those guest paths before each model request.
+to those guest paths before each model request. Project-relative resources that
+Pi discovers on the host, including project skills, are rewritten from the host
+repository root to its `/src` guest mount before the request; sibling and
+historical paths are not treated as live guest paths.
 A saved conversation's cwd is historical context, not a request to mount that
 directory. Cross-directory resume forks into a new session ID under the selected
 launch directory.

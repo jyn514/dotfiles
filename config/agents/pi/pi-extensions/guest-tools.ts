@@ -106,12 +106,13 @@ export default function guestTools(pi: ExtensionAPI) {
     },
   }));
   pi.on("before_agent_start", (event) => {
-    const systemPrompt = event.systemPrompt.replace(
-      `Current working directory: ${process.cwd()}`,
+    const rewrittenPrompt = rewritePiResourcePaths(event.systemPrompt, resourcePaths);
+    const systemPrompt = rewrittenPrompt.replace(
+      `Current working directory: ${event.systemPromptOptions.cwd}`,
       `Current working directory: ${cwd}`,
     ) + (process.env.CODEX_SANDBOX_PREVIOUS_CWD
-      ? `\nThis conversation moved from ${process.env.CODEX_SANDBOX_PREVIOUS_CWD} to ${cwd}; older paths remain historical context.\n`
+      ? `\nThis conversation moved from ${rewritePiResourcePaths(process.env.CODEX_SANDBOX_PREVIOUS_CWD, resourcePaths)} to ${cwd}; older paths remain historical context.\n`
       : "");
-    return { systemPrompt: rewritePiResourcePaths(systemPrompt, resourcePaths) };
+    return { systemPrompt };
   });
 }
