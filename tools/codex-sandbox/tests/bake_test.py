@@ -220,6 +220,15 @@ class BakeTest(unittest.TestCase):
                     resolve(self.engine, self.repo, ['base'])
                 path.unlink()
 
+    def test_external_context_symlink_is_ignored(self):
+        link = self.repo / 'ci/container-python'
+        link.symlink_to('/src/personal/lapwing/stint/.uv-python/python')
+
+        resolve(self.engine, self.repo, ['base'])
+
+        captured = next(batch['base'] for batch in reversed(self.engine.builds) if 'base' in batch)
+        self.assertFalse((Path(captured['context']) / 'container-python').exists())
+
     def test_changed_build_argument_invalidates_base_and_child(self):
         first = resolve(self.engine, self.repo, ['proxy'])
         self.engine.metadata['target']['base']['args']['TOOL_VERSION'] = '2'

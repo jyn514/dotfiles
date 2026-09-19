@@ -218,7 +218,13 @@ def _capture(root, source, destination, identity, include=None):
             target.chmod(stat.S_IMODE(mode))
         elif stat.S_ISLNK(mode):
             link = path.readlink()
-            resolved = (path.parent / link).resolve(strict=True)
+            # Generated environments can leave links to their container path
+            # in a writable checkout. Do not require those unrelated targets
+            # to exist while capturing the repository context.
+            resolved = (path.parent / link).resolve(strict=False)
+            if not resolved.is_relative_to(root):
+                continue
+            resolved = resolved.resolve(strict=True)
             if not resolved.is_relative_to(source):
                 raise RuntimeError(f'Bake context link escapes capture: {relative}')
             identity.update(b'l\0' + str(link).encode())
