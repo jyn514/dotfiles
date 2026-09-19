@@ -9,6 +9,8 @@ description: Declare ownership, side-effect, representation, lifecycle, and API 
 
 At the first transition from a chosen design into specification finalization, delegation, planning, or implementation, state its important ownership, effect, and representation boundaries in a form that can constrain later work. Reuse that declaration during routine continuation; revise it only when a later decision changes a boundary.
 
+For a staged new-tool workflow only, the declaration becomes or revises the boundary section of the implementation specification. Consume approved requirements and the architecture/design contribution without adding product scope or observable behavior.
+
 ## Inputs
 
 - selected design

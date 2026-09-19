@@ -26,6 +26,8 @@ it does not duplicate their procedures.
 
 ## Inputs
 
+For a staged new-tool workflow, consume approved requirements and repository integration constraints as the scope evidence. Do not invent product scope or observable behavior; record only design decisions needed to satisfy that evidence. The resulting design contributes to the implementation specification and does not replace it. For a greenfield tool, do not require a current implementation or extraction history.
+
 Establish the target subsystem, current problem, constraints, non-goals, compatibility posture, and requested artifact: analysis, design document, issues, or some combination.
 Before designing interfaces or configuration, list every dimension required to vary and the policy that remains fixed. For each configurable dimension, name its explicit requirement and authoritative source; prefer stable references to existing authorities over restating their contents. Record deliberately fixed behavior in the output.
 Stop and route elsewhere if the subsystem is unselected or the real task is comparing competing architectures.
@@ -53,7 +55,7 @@ Otherwise prefer safe defaults rather than forcing the runtime user to make ever
 
 ### 1. Map the current subsystem
 
-Inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, open or closed issues, and prepared issue drafts or campaign ledgers.
+For an existing subsystem, inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, open or closed issues, and prepared issue drafts or campaign ledgers. For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 
@@ -62,7 +64,7 @@ Record data shapes, effect owners, dynamic state, and dependency direction befor
 
 ### 2. Find credible seams
 
-A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, independent callers or tests, and a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit.
+A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests. For existing subsystems, seek a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit. For a staged greenfield new tool, justify responsibility, data, and effect seams by approved requirements and lifecycle ownership instead of extraction payoff.
 Consumer behavior should remain stable during extraction.
 
 Reject seams supported only by line count, aesthetics, symmetrical names, or hypothetical reuse.
@@ -88,22 +90,23 @@ A proposed cycle is a failed boundary unless an existing public adapter owns the
 
 ### 4. Compare maintenance gain with churn
 
-Count affected callers, tests, dynamically scoped state, generated artifacts, inventories, and compatibility surfaces.
+Count affected callers, tests, dynamically scoped state, generated artifacts, inventories, and compatibility surfaces. For a staged greenfield new tool, use implementation and integration cost in place of migration churn.
 Then name what becomes cheaper or safer: fewer co-edits, removed dependencies, lower-boundary tests, mechanically rejected invalid states, or a stable phase result.
 Function movement alone is not a benefit.
 
 Classify the result:
 
-- `RECOMMEND`: concrete gain exceeds bounded migration cost
+- `RECOMMEND`: concrete gain exceeds bounded implementation and migration cost
 - `CONDITIONAL`: one named measurement, consumer, or prerequisite is still required
-- `REJECT`: abstraction or churn exceeds demonstrated benefit
+- `REJECT`: abstraction complexity, implementation cost, or churn exceeds demonstrated benefit
 
 Do not turn every responsibility into a namespace.
-A partial extraction is complete when it removes the motivating pain.
+For an existing subsystem, a partial extraction is complete when it removes the motivating pain.
+For a greenfield tool, stop once the architecture satisfies approved requirements without unsupported machinery.
 
 ### 5. Slice the work
 
-Order small, behavior-preserving slices with one owner, focused verification, stable intermediate states, and explicit stopping points.
+Order small slices with one owner, focused verification, stable intermediate states, and explicit stopping points. For a staged new-tool workflow, trace each slice to approved requirements and record it in the implementation specification: preserve approved behavior where behavior exists; for a greenfield tool, establish requirements incrementally rather than preserve nonexistent behavior.
 Keep extraction separate from behavior changes, schema redesign, message rewrites, new frameworks, and public API expansion.
 Route selected work through `boundary-declaration` before implementation and `implementation-plan` when a repository plan is requested.
 

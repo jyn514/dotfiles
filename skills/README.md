@@ -73,6 +73,10 @@ The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`
 
 For agent-driven use, start with `design-deliberation`. It is a thin meta-skill that selects the smallest useful workflow and composes the narrower skills while preserving candidate isolation and explicit abstention.
 
+### Focused new-tool workflow
+
+For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`; use `requirements-definition` only for requirements authoring. `technical-docs` writes the requested product brief or implementation spec, while `spec-review` reviews maturity, upstream/downstream consistency, and stale invalidation.
+
 ## Suggested workflow
 
 For an uncertain design question:

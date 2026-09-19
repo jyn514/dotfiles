@@ -20,6 +20,16 @@ Report findings; revise the artifact only when requested.
   from the subsystem being redesigned; flag conflicts with responsibilities they
   already own.
 
+## Maturity-specific review for new-tool artifacts
+
+For a new-tool workflow, distinguish these artifact maturities:
+
+- **Product brief:** owns the problem, outcomes, scope, non-goals, and human decisions.
+- **Requirements:** must trace to an approved brief, be observable and solution-neutral, and flag invented product decisions.
+- **Implementation spec:** must cover the requirements, own mechanisms, boundaries, and evidence, and introduce no new product behavior.
+
+Review upstream/downstream consistency and identify dependent artifacts or evidence invalidated by stale upstream decisions. These distinctions supplement the consistency, necessity, duplication, completeness, rationale, orthogonality, and findings rules below; they do not replace them.
+
 ## Consistency
 
 Flag contradictions and conceptual mismatches between sections, examples, and

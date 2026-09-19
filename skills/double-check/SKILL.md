@@ -15,14 +15,14 @@ Discover and follow the target repository's guidance for review thresholds, test
 
 1. Identify the owned diff, explicit requirements, acceptance criteria, and protected unrelated work while the patch is still uncommitted.
 1. Map every requirement to concrete evidence from the final files, focused tests, native parsers or linters, generated-artifact checks, and migration or compatibility checks where applicable.
-   Build an acceptance matrix from the original issue, including each named input mode, option combination, and explicitly named exception.
+   Build an acceptance matrix from the original issue. For staged new-tool work, use approved requirement IDs and implementation-spec commitments instead; use the original issue or request only to identify unexplained omissions. Treat approved exclusions and non-goals as valid, not as drift. Include each named input mode, option combination, and explicitly named exception.
    Each row records the requirement, mode or condition, expected observable behavior, evidence command or artifact, and result.
    Add rows only where behavior can differ; do not enumerate irrelevant combinations.
    Test every applicable row or record why a row is inapplicable.
    Treat a missing row as missing evidence.
    For cross-process or permission-boundary changes, include the assembled runtime path and a forbidden effect in the matrix; test them where the boundary is enforced. If that runtime is unavailable, mark those rows unverified rather than claiming completion.
 1. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
-   Report acceptance drift when any later artifact is narrower than the original issue.
+   For staged new-tool work, report acceptance drift only when a later artifact is narrower than the governing approved requirements; do not report approved exclusions or non-goals as drift.
 1. Ask yourself: is this the right approach? Are you sure this fixes the underlying bug? Would a better approach be simpler or more maintainable?
    If so, go with that approach instead.
 1. Search for likely loose ends: stale names and paths, old representations, duplicate implementations, bypass paths, temporary probes, unhandled lifecycle states, and documentation that still describes the prior behavior.

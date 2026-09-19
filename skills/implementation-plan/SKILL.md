@@ -7,6 +7,8 @@ description: Create or review a concrete, repository-specific implementation pla
 
 Turn a selected design into a repository-specific plan another engineer can implement and review without reconstructing hidden decisions.
 
+For a staged new-tool workflow only, require a ready implementation specification before planning. It is the design authority; the plan remains optional and must not alter requirements or design or become another human gate.
+
 ## Procedure
 
 1. **Observe first.** Inspect entry points, data flow, side effects, tests, docs, dependencies, and repository guidance. Separate observations from assumptions.

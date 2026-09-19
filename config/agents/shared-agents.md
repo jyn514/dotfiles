@@ -2,6 +2,10 @@
 
 # Shared agent instructions
 
+## Early routing
+
+When creating a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Do not duplicate that skill's procedure here.
+
 ## Communication
 
 - assume i know the domain unless my questions show otherwise. answer in proportion and let me follow up; skip setup, restatement, exhaustive first answers, and recaps.
