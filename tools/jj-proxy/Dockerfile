@@ -62,6 +62,7 @@ COPY --from=jj /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates
 COPY --from=jj /image-root/ /
 COPY config/gitignore /trusted/gitignore
 COPY tools/jj-proxy/jj.toml /trusted/jj.toml
+COPY tools/jj-proxy/policy.toml /trusted/policy.toml
 COPY --chmod=0555 tools/jj-proxy/agent-split-editor /trusted/bin/agent-split-editor
 USER 65532:65532
 ENTRYPOINT ["/trusted/bin/jj-proxy", "serve"]

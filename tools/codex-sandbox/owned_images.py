@@ -17,8 +17,8 @@ AGENT_CACHE_CONTRACT = 2
 DEFAULT_BASE = "node:24-alpine3.22"
 
 
-def agent_sources(root=ROOT):
-    dockerfile = Path("tools/codex-sandbox/image/Dockerfile")
+def dockerfile_sources(root, dockerfile):
+    """Return the local files named by non-stage COPY instructions."""
     sources = [dockerfile]
     for line in (root / dockerfile).read_text(encoding="utf-8").splitlines():
         fields = line.split()
@@ -39,7 +39,12 @@ def agent_sources(root=ROOT):
             )
         elif absolute.is_file():
             files.append(source)
-    return sorted(set(files), key=lambda path: os.fsencode(path.as_posix()))
+    ordered = sorted(set(files), key=lambda path: os.fsencode(path.as_posix()))
+    return [dockerfile, *[path for path in ordered if path != dockerfile]]
+
+
+def agent_sources(root=ROOT):
+    return dockerfile_sources(root, Path("tools/codex-sandbox/image/Dockerfile"))
 
 
 def agent_cache_key(uid, gid, platform, base, *, root=None):
@@ -95,21 +100,22 @@ def target(command):
 
 
 def source_paths(requested=('auth', 'jj', 'zulip')):
-    sources = {
-        'auth': ['tools/codex-sandbox/auth-proxy/Dockerfile',
-                 'tools/codex-sandbox/auth-proxy/profile_helper.py',
-                 'tools/codex-sandbox/auth-proxy/codex_profile.py',
-                 'tools/codex-sandbox/auth-proxy/typed_broker.py',
-                 'tools/codex-sandbox/gateway.py'],
-        'jj': ['tools/jj-proxy/Dockerfile', 'tools/jj-proxy/Cargo.toml',
-               'tools/jj-proxy/Cargo.lock', 'tools/jj-proxy/jj.toml',
-               'tools/jj-proxy/agent-split-editor', 'config/gitignore',
-               *[str(p.relative_to(ROOT)) for p in (ROOT / 'tools/jj-proxy/src').rglob('*') if p.is_file()]],
-        'zulip': ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
-                  'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json',
-                  'tools/codex-sandbox/auth-proxy/typed_broker.py'],
-    }
-    return {name: paths for name, paths in sources.items() if name in requested}
+    sources = {}
+    if 'auth' in requested:
+        sources['auth'] = ['tools/codex-sandbox/auth-proxy/Dockerfile',
+                           'tools/codex-sandbox/auth-proxy/profile_helper.py',
+                           'tools/codex-sandbox/auth-proxy/codex_profile.py',
+                           'tools/codex-sandbox/auth-proxy/typed_broker.py',
+                           'tools/codex-sandbox/gateway.py']
+    if 'jj' in requested:
+        sources['jj'] = [str(path) for path in dockerfile_sources(
+            ROOT, Path('tools/jj-proxy/Dockerfile'),
+        )]
+    if 'zulip' in requested:
+        sources['zulip'] = ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
+                            'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json',
+                            'tools/codex-sandbox/auth-proxy/typed_broker.py']
+    return sources
 
 
 def declaration(requested=('auth', 'jj', 'zulip')):

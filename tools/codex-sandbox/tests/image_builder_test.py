@@ -21,10 +21,21 @@ class ImageBuilderTest(unittest.TestCase):
             shutil.copyfile(ROOT / 'tools/codex-sandbox/owned_images.py', helper.parent / 'owned_images.py')
             shutil.copyfile(ROOT / 'tools/codex-sandbox/tests/fixtures/print-builder-arguments.sh', helper)
             helper.chmod(0o755)
-            for name in ('Dockerfile', 'Cargo.toml', 'Cargo.lock', 'src/main.rs', 'jj.toml', 'agent-split-editor'):
+            for name in ('Cargo.toml', 'Cargo.lock', 'src/main.rs', 'jj.toml', 'policy.toml', 'agent-split-editor'):
                 path = root / 'tools/jj-proxy' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(name)
+            dockerfile = root / 'tools/jj-proxy/Dockerfile'
+            dockerfile.parent.mkdir(parents=True, exist_ok=True)
+            dockerfile.write_text(
+                'COPY tools/jj-proxy/Cargo.toml ./\\n'
+                'COPY tools/jj-proxy/Cargo.lock ./\\n'
+                'COPY tools/jj-proxy/jj.toml ./\\n'
+                'COPY tools/jj-proxy/policy.toml ./\\n'
+                'COPY tools/jj-proxy/src ./src\\n'
+                'COPY config/gitignore /trusted/gitignore\\n'
+                'COPY tools/jj-proxy/agent-split-editor /trusted/bin/agent-split-editor\\n'
+            )
             (root / 'config').mkdir()
             (root / 'config/gitignore').write_text('ignored\n')
             def key():
@@ -42,6 +53,9 @@ class ImageBuilderTest(unittest.TestCase):
             source.unlink()
             self.assertEqual(key(), first)
             (root / 'tools/jj-proxy/Cargo.lock').write_text('changed dependency')
+            self.assertNotEqual(key(), first)
+            policy = root / 'tools/jj-proxy/policy.toml'
+            policy.write_text('changed policy')
             self.assertNotEqual(key(), first)
 
 
