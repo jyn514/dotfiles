@@ -219,6 +219,9 @@ export function createRuntimeHarness(options: {
 
   const sessionManager: ExtensionCommandContext["sessionManager"] = {
     ...{
+      buildSessionProjection() {
+        return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
+      },
       getEntriesRevision() {
         return unsupportedHarnessMethod("sessionManager.getEntriesRevision");
       },
