@@ -12,6 +12,9 @@ Apply these principles throughout one coherent change after loading them once. A
 - Represent data precisely. Avoid overloaded representations and in-band signalling unless an abstraction contains the unsafety.
 - Parse, don't validate: centralize checks in a structured domain model. Treat stringly typed structured data as suspect; fix the model instead of overloading meanings.
 - Make invalid states unrepresentable when language tools can do so without poor ergonomics, such as needless singleton types.
+- Before a structural refactor, declare the supported interface modes—library import, module invocation, direct script invocation, or a deliberate subset—and test exactly the declared modes. Do not let execution context choose an accidental API.
+- Move existing implementation bodies behind the selected interface. Do not preserve duplicate owners by wrapping legacy entrypoints through imports or subprocesses; retain compatibility only as a thin re-export or remove the old path.
+- After selecting a new owner, search for the old orchestrator and parallel implementations. The refactor is incomplete while two modules can independently make the same decision.
 
 ## Design for testing
 
@@ -24,5 +27,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Before adding or updating a test, name a realistic regression caused by a likely edit or previously observed failure, and verify the test fails when that regression is reintroduced. Otherwise, do not add or update it.
 - When behavior is assembled from multiple producers, test the complete consumer-visible result and make the original failure recur when any producer duplicates or omits an entry.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
+- For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
+- When a user rejects the current design, stop implementation, restate the revised ownership boundary, and continue only from that boundary.
 
 When reviewing a system and its tests, check both directions: required behavior without a test, and tested behavior without a corresponding requirement. Apply this to code, APIs, policies, prompts, workflows, and specifications.
