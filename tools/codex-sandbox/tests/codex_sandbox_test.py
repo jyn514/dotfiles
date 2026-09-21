@@ -406,6 +406,51 @@ class HostPiWrapperTest(GuestModeTest):
             self.assertEqual(["--mode", "rpc", "--no-extensions", "--session", "child.jsonl"],
                              args[4:])
 
+    def test_wrapper_preserves_guest_paths_in_startup_prompt(self) -> None:
+        if shutil.which("bun") is None:
+            self.skipTest("requires Bun")
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            host_repository = home / "src/personal/lapwing/stint"
+            host_repository.mkdir(parents=True)
+            cli = home / ".local/share/pi/node/node_modules/.bin/pi"
+            cli.parent.mkdir(parents=True)
+            cli.write_text(
+                "#!/usr/bin/env bun\n"
+                "const { rewritePiResourcePaths } = await import(process.env.FIXTURE_CORE);\n"
+                "const host = process.env.FIXTURE_HOST;\n"
+                "const prompt = `Skill location: ${host}/.agents/skills/spec-review/SKILL.md\\n` +\n"
+                "  `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`;\n"
+                "console.log(JSON.stringify({args: process.argv.slice(2),\n"
+                "  prompt: rewritePiResourcePaths(prompt, JSON.parse(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS))}));\n",
+                encoding="utf-8",
+            )
+            cli.chmod(0o700)
+            resource_paths = launcher["host_pi_resource_paths"](SimpleNamespace(
+                host_pi_package=home / "pi-package",
+                repository=host_repository,
+                container_repository=Path("/src/personal/lapwing/stint"),
+            ))
+            result = subprocess.run(
+                [str(TOOL / "sandbox-host-pi"), "--mode", "rpc"],
+                env={**os.environ, "HOME": str(home),
+                     "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(resource_paths),
+                     "FIXTURE_CORE": str(ROOT / "config/agents/pi/pi-extensions/guest-tools-core.ts"),
+                     "FIXTURE_HOST": str(host_repository)},
+                capture_output=True, text=True, check=True,
+            )
+            output = json.loads(result.stdout)
+            self.assertIn(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), output["args"])
+            self.assertEqual(
+                "Skill location: /src/personal/lapwing/stint/.agents/skills/spec-review/SKILL.md",
+                output["prompt"].splitlines()[0],
+            )
+            self.assertEqual(
+                f"Sibling location: {host_repository}-old/.agents/skills/spec-review/SKILL.md",
+                output["prompt"].splitlines()[1],
+            )
+
 
 class DirectoryHandoffTest(GuestModeTest):
     def test_cross_directory_session_id_forks_before_pi_starts(self) -> None:

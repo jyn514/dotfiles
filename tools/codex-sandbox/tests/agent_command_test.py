@@ -14,6 +14,26 @@ LAUNCHER = ROOT / "tools/codex-sandbox/codex-sandbox"
 
 
 class AgentCommandTest(unittest.TestCase):
+    def test_host_pi_resource_paths_bind_prompt_paths_to_guest_mounts(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = SimpleNamespace(
+                host_pi_package=root / "pi-package",
+                repository=Path("/Users/jyn/src/personal/lapwing/stint"),
+                container_repository=Path("/src/personal/lapwing/stint"),
+            )
+            paths = launcher["host_pi_resource_paths"](state)
+
+            self.assertEqual(
+                "/src/personal/lapwing/stint",
+                paths[str(state.repository)],
+            )
+            self.assertEqual(
+                "/opt/agent-pi/src/packages/coding-agent/docs",
+                paths[str(state.host_pi_package / "docs")],
+            )
+
     def test_guest_command_contains_session_scoped_model_channel(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         build = launcher["build_agent_command"]

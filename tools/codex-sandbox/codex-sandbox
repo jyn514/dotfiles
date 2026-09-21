@@ -1762,6 +1762,16 @@ def prepare_host_pi_resources(state: State) -> None:
     state.host_pi_package = package
 
 
+def host_pi_resource_paths(state: State) -> dict[str, str]:
+    return {
+        **{
+            str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
+            for relative in PI_RESOURCE_PATHS
+        },
+        str(state.repository): str(state.container_repository),
+    }
+
+
 def build_agent_command(
     state: State, arguments: list[str], *, host_pi: bool, timing: bool,
     protected: list[Path], repository_aliases: list[Path],
@@ -1983,11 +1993,7 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
         state.cd_request = temporary_file()
         host_environment = dict(os.environ)
-        pi_resource_paths = {
-            str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
-            for relative in PI_RESOURCE_PATHS
-        }
-        pi_resource_paths[str(state.repository)] = str(state.container_repository)
+        pi_resource_paths = host_pi_resource_paths(state)
         host_environment.update({
             "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
             "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
