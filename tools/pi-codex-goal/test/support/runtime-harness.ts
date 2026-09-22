@@ -138,6 +138,18 @@ export function createRuntimeHarness(options: {
       registerBashCwdHook() {
         unsupportedHarnessMethod("pi.registerBashCwdHook");
       },
+      registerToolSearch() {
+        unsupportedHarnessMethod("pi.registerToolSearch");
+      },
+      recordUsage() {
+        unsupportedHarnessMethod("pi.recordUsage");
+      },
+      getActiveToolReferences() {
+        return unsupportedHarnessMethod("pi.getActiveToolReferences");
+      },
+      setActiveToolReferences() {
+        unsupportedHarnessMethod("pi.setActiveToolReferences");
+      },
     },
     appendEntry(customType: string, data: unknown) {
       entries.push({
@@ -290,6 +302,9 @@ export function createRuntimeHarness(options: {
       },
       getPendingInputCount() {
         return unsupportedHarnessMethod("ctx.getPendingInputCount");
+      },
+      getPendingToolCalls() {
+        return unsupportedHarnessMethod("ctx.getPendingToolCalls");
       },
       getCompactionSettings() {
         return unsupportedHarnessMethod("ctx.getCompactionSettings");
