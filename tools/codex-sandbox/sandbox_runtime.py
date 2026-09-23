@@ -79,6 +79,34 @@ def resource_exists(runtime, kind, name):
     return name in listing.stdout.splitlines()
 
 
+def remove_stopped_sandbox_holders(runtime, volumes):
+    """Remove stopped agent containers that hold the recorded proxy volumes."""
+    volumes = set(volumes)
+    if not volumes:
+        return []
+    listing = runtime.run(["container", "ls", "--all", "--format", "{{.Names}}"],
+                          capture_output=True)
+    removed = []
+    names = listing.stdout.splitlines() if isinstance(listing.stdout, str) else []
+    for name in names:
+        if not name.startswith("codex-sandbox-"):
+            continue
+        snapshot = runtime.inspect_container(name)
+        mounts = {mount.get("Name") for mount in snapshot.get("Mounts", [])
+                  if isinstance(mount, dict)}
+        if not mounts.intersection(volumes):
+            continue
+        if snapshot.get("State", {}).get("Running") is True:
+            held = sorted(mounts.intersection(volumes))
+            raise RuntimeError(
+                f"recorded proxy volume(s) still held by running container {name}: "
+                + ", ".join(held)
+            )
+        runtime.run(["rm", name], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        removed.append(name)
+    return removed
+
+
 def resource_presence(runtime, kind, name, owner, *,
                       authority=ResourceOwnerAuthority.RUNTIME):
     if not resource_exists(runtime, kind, name):
@@ -107,9 +135,10 @@ def remove_owned_resource(runtime, kind, name, owner, *,
         # list and inspect, their `docker container` aliases are not admitted.
         runtime.run(["kill", name], check=False,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        runtime.run(["rm", name], stdout=subprocess.DEVNULL)
+        runtime.run(["rm", name], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     else:
-        runtime.run([kind.value, "rm", name], stdout=subprocess.DEVNULL)
+        runtime.run([kind.value, "rm", name], stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE)
 
 
 def digest(value):

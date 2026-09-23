@@ -14,6 +14,7 @@ import hashlib
 from graphlib import CycleError, TopologicalSorter
 import json
 import re
+import subprocess
 import time
 from threading import Lock
 from types import MappingProxyType
@@ -616,4 +617,14 @@ def _safe_error_code(error: BaseException) -> str:
     """Return an allowlisted diagnostic code without serializing exception data."""
     if isinstance(error, LifecycleError) and str(error) == "resource-owner-mismatch":
         return "resource-owner-mismatch"
+    if isinstance(error, subprocess.CalledProcessError):
+        detail = error.stderr
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        if isinstance(detail, str) and detail.strip():
+            # Runtime stderr is useful for transient cleanup failures, but keep
+            # it bounded and single-line so it cannot corrupt launcher output.
+            detail = " ".join(detail.split())[:240]
+            return (f"removal-failed:CalledProcessError(exit={error.returncode}, "
+                    f"stderr={detail!r})")
     return "removal-failed:" + type(error).__name__

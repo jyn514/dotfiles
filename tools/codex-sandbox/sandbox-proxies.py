@@ -24,7 +24,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import (
     ResourceKind, ResourceOwnerAuthority, VMRuntime, Podman, image_runtime,
-    remove_owned_resource, resource_exists, resource_presence, runtime_identity,
+    remove_owned_resource, remove_stopped_sandbox_holders, resource_exists,
+    resource_presence, runtime_identity,
     single_json, state_runtime,
 )
 from trusted_services import (
@@ -63,6 +64,10 @@ CAPABILITY_DEFAULTS = {
     "nested-containers": False, "flower-r2": False, "agent-room": False,
 }
 CAPABILITIES = set(CAPABILITY_DEFAULTS)
+RECOVERY_COMMAND = (
+    "run `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo <repository>` "
+    "after all sandbox sessions exit; reset removes stopped matching agent containers"
+)
 MOUNT_FIELDS = {"source", "target", "proxy", "agent"}
 BUILTIN_MOUNT_FIELDS = {"builtin", "proxy", "agent"}
 
@@ -498,6 +503,17 @@ def recoverable_session_state(metadata: object) -> dict[str, Any] | None:
     if not isinstance(metadata.get("state"), dict) and metadata.get("version") != 4:
         return None
     return session_state(metadata)
+
+
+def recorded_proxy_volumes(state: dict[str, Any]) -> set[str]:
+    volumes = {
+        proxy["volume"] for proxy in [*state.get("proxies", []), *state.get("retired-proxies", [])]
+        if isinstance(proxy, dict) and isinstance(proxy.get("volume"), str)
+    }
+    auth = state.get("auth")
+    if isinstance(auth, dict) and isinstance(auth.get("socket-volume"), str):
+        volumes.add(auth["socket-volume"])
+    return volumes
 
 
 def reset_main(args: argparse.Namespace) -> int:
@@ -1396,6 +1412,7 @@ class CommandProxyHandle:
             raise ConfigError(
                 "recorded proxy resources remain after cleanup; retaining recovery metadata: "
                 + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
+                + f"; recovery: {RECOVERY_COMMAND}"
             )
         for diagnostic in self.registry.adapter_diagnostics:
             print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
@@ -1694,8 +1711,8 @@ def start_main(args: argparse.Namespace) -> int:
         executor.shutdown(wait=True, cancel_futures=True)
 
 
-def _stop_legacy_state(state: dict[str, Any]) -> None:
-    owner = state_runtime(state, recovery=True)
+def _stop_legacy_state(state: dict[str, Any], owner=None) -> None:
+    owner = owner or state_runtime(state, recovery=True)
     started = time.monotonic()
     containers = []
     auth = state.get("auth")
@@ -2080,6 +2097,7 @@ def _cleanup_proxy_service(runtime, proxy: dict[str, Any]) -> None:
         raise ConfigError(
             "recorded proxy resources remain after cleanup; retaining recovery metadata: "
             + ", ".join(result.remaining) + (f" ({failures})" if failures else "")
+            + f"; recovery: {RECOVERY_COMMAND}"
         )
     for diagnostic in registry.adapter_diagnostics:
         print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
@@ -2101,9 +2119,16 @@ def stop_state(state: dict[str, Any]) -> None:
             raise ConfigError("invalid authentication recovery authority") from error
         managed_auth = auth_kind in {"managed", "managed-single"}
         pair_auth = auth_kind == "managed"
+    owner = state_runtime(state, recovery=True)
     if (not managed_auth and
             not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies)):
-        _stop_legacy_state(state)
+        removed = remove_stopped_sandbox_holders(
+            owner, recorded_proxy_volumes(state),
+        )
+        for container in removed:
+            print(f"Sandbox proxy cleanup: removed stopped agent container {container}",
+                  file=sys.stderr)
+        _stop_legacy_state(state, owner)
         return
     proxies = list(reversed(all_proxies))
     seen: set[str] = set()
@@ -2114,7 +2139,10 @@ def stop_state(state: dict[str, Any]) -> None:
             if service_owner in seen:
                 raise ConfigError("trusted service recovery owner was reused")
             seen.add(service_owner)
-    owner = state_runtime(state, recovery=True)
+    removed = remove_stopped_sandbox_holders(owner, recorded_proxy_volumes(state))
+    for container in removed:
+        print(f"Sandbox proxy cleanup: removed stopped agent container {container}",
+              file=sys.stderr)
     # Independent service registries clean concurrently; the executor is joined
     # before returning or surfacing any failure.
     failures = []

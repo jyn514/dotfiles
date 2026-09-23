@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import sys
 import threading
 import time
@@ -238,6 +239,28 @@ class ResourceRegistryTest(unittest.TestCase):
         self.assertIn("container:independent", events)
         self.assertIn("network:independent", events)
         self.assertNotIn("network:blocked", events)
+
+    def test_subprocess_removal_failure_preserves_bounded_stderr_diagnostic(self):
+        registry = ResourceRegistry("owner")
+
+        def fail():
+            raise subprocess.CalledProcessError(
+                1, ["docker", "volume", "rm", "volume"],
+                stderr="volume is in use - [stopped-agent-1]\nextra detail\n",
+            )
+
+        registry.register(OwnedResource(
+            "volume:one", "owner", lambda: ResourcePresence.OWNED, fail,
+        ))
+
+        result = registry.cleanup(0)
+
+        self.assertEqual(("volume:one",), result.remaining)
+        self.assertEqual(
+            "removal-failed:CalledProcessError(exit=1, "
+            "stderr='volume is in use - [stopped-agent-1] extra detail')",
+            result.failures[0].code,
+        )
 
     def test_removal_error_converges_when_resource_became_absent(self):
         presences = iter((ResourcePresence.OWNED, ResourcePresence.ABSENT))

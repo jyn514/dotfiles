@@ -302,12 +302,12 @@ a join cannot rewrite shared metadata.
 - If cached proxy/auth state changed or belongs to another network, run `codex-sandbox restart-all` from tmux.
   It terminates registered launcher processes, resets shared session metadata after cleanup, then resumes their sessions.
   Inherited `remain-on-exit` settings need no pane-local override.
-- If automatic cleanup warns about a named resource, inspect and remove only that generated resource with the container CLI, then retry.
+- If automatic cleanup warns about a named resource, reset removes stopped `codex-sandbox-*` agent containers that hold the recorded proxy volumes, then retries cleanup.
   For surviving containers and volumes, the diagnostic includes each resource name and its removal error.
   The shared lifecycle treats a resource confirmed absent after a removal error as successfully removed;
   it briefly retries surviving owned resources while dependencies detach.
   Differently owned resources are never removed and, by themselves, do not cause a retry.
-  A volume still referenced by a stopped agent container cannot be removed until that container is removed.
+  A volume held by a running container is retained; stop that sandbox before retrying recovery.
   Do not delete the host coordination lock files manually.
 - A stopped shared proxy terminates attached agents.
   Restart the sandbox rather than running the protected operation locally.

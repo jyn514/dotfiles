@@ -1255,6 +1255,14 @@ class ManifestTest(unittest.TestCase):
                         sandbox_proxies.reset_main(SimpleNamespace(repo=str(self.repo)))
                 diagnostic = str(raised.exception)
                 self.assertIn("retaining recovery metadata", diagnostic)
+                self.assertIn(
+                    "reset removes stopped matching agent containers",
+                    diagnostic,
+                )
+                self.assertIn(
+                    "run `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo <repository>`",
+                    diagnostic,
+                )
                 if kind == "volumes":
                     self.assertIn("busy-volume: volume is in use - [stopped-agent-1, stopped-agent-2]", diagnostic)
                 else:
@@ -1480,14 +1488,16 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:
             sandbox_proxies.stop_state(state)
         calls = [call.args[0] for call in run.call_args_list]
+        container_cleanup = [call for call in calls if call[:2] == ["docker", "kill"]]
+        container_removal = [call for call in calls if call[:2] == ["docker", "rm"]]
         self.assertCountEqual([
             ["docker", "kill", "auth-proxy"],
             ["docker", "kill", "proxy"],
-        ], calls[:2])
+        ], container_cleanup)
         self.assertCountEqual([
             ["docker", "rm", "auth-proxy"],
             ["docker", "rm", "proxy"],
-        ], calls[2:4])
+        ], container_removal)
         volume_removal = calls.index(["docker", "volume", "rm", "volume"])
         self.assertGreater(volume_removal, 3)
 

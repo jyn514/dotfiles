@@ -42,6 +42,37 @@ def lima():
 
 
 class ResourceOperationsTest(unittest.TestCase):
+    def test_removes_only_stopped_codex_sandbox_containers_holding_recorded_volumes(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(side_effect=[
+            SimpleNamespace(stdout="codex-sandbox-stopped\nother-container\n", returncode=0),
+            SimpleNamespace(stdout="", returncode=0),
+        ])
+        backend.inspect_container = Mock(return_value={
+            "State": {"Running": False},
+            "Mounts": [{"Name": "recorded-volume"}],
+        })
+
+        removed = runtime.remove_stopped_sandbox_holders(backend, {"recorded-volume"})
+
+        self.assertEqual(["codex-sandbox-stopped"], removed)
+        self.assertEqual(["rm", "codex-sandbox-stopped"], backend.run.call_args.args[0])
+        backend.inspect_container.assert_called_once_with("codex-sandbox-stopped")
+
+    def test_does_not_remove_running_codex_sandbox_container_holding_recorded_volume(self):
+        backend = object.__new__(runtime.Podman)
+        backend.run = Mock(return_value=SimpleNamespace(
+            stdout="codex-sandbox-running\n", returncode=0,
+        ))
+        backend.inspect_container = Mock(return_value={
+            "State": {"Running": True},
+            "Mounts": [{"Name": "recorded-volume"}],
+        })
+
+        with self.assertRaisesRegex(ValueError, "running container codex-sandbox-running"):
+            runtime.remove_stopped_sandbox_holders(backend, {"recorded-volume"})
+        self.assertEqual(1, backend.run.call_count)
+
     def test_each_runtime_lists_volumes_with_the_singular_name_template_and_its_owner_label(self):
         from docker_runtime import Docker
 
@@ -138,6 +169,29 @@ class ResourceOperationsTest(unittest.TestCase):
 
         commands = [call.args[0] for call in backend.run.call_args_list]
         self.assertEqual([["kill", "owned"], ["rm", "owned"]], commands[-2:])
+        self.assertEqual(subprocess.PIPE, backend.run.call_args_list[-1].kwargs["stderr"])
+
+    def test_volume_removal_keeps_engine_stderr_on_failure(self):
+        backend = object.__new__(runtime.Podman)
+
+        def run(arguments, **kwargs):
+            if arguments[:2] == ["volume", "ls"]:
+                return SimpleNamespace(returncode=0, stdout="owned\n", stderr="")
+            if arguments[:2] == ["volume", "inspect"]:
+                return SimpleNamespace(returncode=0, stdout="owner\n", stderr="")
+            raise subprocess.CalledProcessError(
+                1, arguments, stderr="volume is in use - [stopped-agent]\n",
+            )
+
+        backend.run = Mock(side_effect=run)
+
+        with self.assertRaises(subprocess.CalledProcessError) as raised:
+            runtime.remove_owned_resource(
+                backend, runtime.ResourceKind.VOLUME, "owned", "owner",
+            )
+
+        self.assertEqual("volume is in use - [stopped-agent]\n", raised.exception.stderr)
+        self.assertEqual(subprocess.PIPE, backend.run.call_args.kwargs["stderr"])
 
     def test_launchers_cannot_duplicate_resource_metadata_templates(self):
         tool = Path(__file__).resolve().parents[1]
