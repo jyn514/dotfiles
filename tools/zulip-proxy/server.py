@@ -79,7 +79,12 @@ def read_frame(stream: BinaryIO, limit: int) -> bytes:
 def write_frame(stream: BinaryIO, body: bytes) -> None:
     if len(body) > MAX_RESPONSE:
         raise RequestError("response is too large")
-    stream.write(struct.pack(">I", len(body)) + body)
+    frame = memoryview(struct.pack(">I", len(body)) + body)
+    while frame:
+        written = stream.write(frame)
+        if written is None or written <= 0:
+            raise OSError("proxy response write made no progress")
+        frame = frame[written:]
     stream.flush()
 
 

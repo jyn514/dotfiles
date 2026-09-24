@@ -98,6 +98,28 @@ class ForwarderTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def test_write_frame_retries_short_writes(self) -> None:
+        class ShortWriter:
+            def __init__(self) -> None:
+                self.written = bytearray()
+                self.flush_called = False
+
+            def write(self, data: bytes) -> int:
+                chunk = bytes(data[:3])
+                self.written.extend(chunk)
+                return len(chunk)
+
+            def flush(self) -> None:
+                self.flush_called = True
+
+        writer = ShortWriter()
+        body = b"a response larger than one write"
+
+        server.write_frame(writer, body)
+
+        self.assertEqual(struct.pack(">I", len(body)) + body, writer.written)
+        self.assertTrue(writer.flush_called)
+
     def test_peer_disconnect_does_not_stop_server(self) -> None:
         stream = mock.Mock()
         stream.read.side_effect = OSError("peer closed")
