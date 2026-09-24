@@ -108,6 +108,15 @@ When the same value appears across multiple consumers, choose one authoritative 
 
 Add a regression test showing that changing the authority updates consumers without corresponding edits.
 
+### Logging
+
+Default CLI output must be human-scannable. Show the action, material inputs,
+current phase, result, and next action; keep hashes and internal data in
+receipts or explicit machine-readable output. Report failures once, stating
+what failed, why, cleanup/publication status, and recovery action. Use stdout
+for results and stderr for progress or diagnostics. Test representative
+success and failure output as a user-facing contract.
+
 ## Jujutsu and commits
 
 Always use `jj`, not `git`, for change management; it supports undo and history editing

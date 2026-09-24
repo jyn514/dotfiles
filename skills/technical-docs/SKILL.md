@@ -130,6 +130,8 @@ Include technical precision, but introduce it incrementally.
 
 Do not remove necessary detail merely to shorten a document. Move detail later, label it, or derive it from a clearer authority.
 
+Avoid wide Markdown tables. Use bullets or short subsections when cells contain prose, commands, or more than three columns; reserve tables for compact comparisons and lookup data.
+
 ## 7. Write designs for review
 
 A selected design should make these reviewable without reconstructing hidden decisions:
