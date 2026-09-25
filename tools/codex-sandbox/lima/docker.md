@@ -13,8 +13,8 @@ codex-sandbox --help
 pi
 ```
 
-On `x86_64` Linux, install Lima, QEMU, Docker CLI 29.8.0, and Buildx 0.37.0
-through the host distribution's trusted package sources. The host must expose
+On `x86_64` Linux, install Lima, QEMU, a real Docker CLI, and Buildx through
+the host distribution's trusted package sources. The host must expose
 readable and writable `/dev/kvm`; setup selects QEMU with KVM acceleration and
 uses Lima's `9p` host-share driver. It rejects Linux hosts without KVM instead
 of silently running software-emulated CPU instructions:
@@ -32,8 +32,8 @@ pins both host executables into private state. A Podman alias is rejected; pass
 Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
 Existing VMs retain their resource sizes when setup is rerun.
 It shares your home directory with the VM; containers retain the launcher's
-narrow mounts. Setup copies the real Homebrew Docker CLI 29.8.0 into private
-state, so Homebrew cleanup and the `docker` → Podman alias cannot replace it.
+narrow mounts. Setup copies the selected real Docker CLI into private state,
+so package upgrades and the `docker` → Podman alias cannot replace it.
 New VMs allocate `/24` bridge networks from `172.16.0.0/12` and configure twenty
 SSH sessions per connection. Docker's default address pools otherwise run out
 before twenty sandboxes can each allocate their two gateway networks. Existing
@@ -47,12 +47,12 @@ python3 tools/codex-sandbox/lima/docker_host.py pin-client
 
 This validates the copied executable and atomically records its digest without
 restarting the VM or changing engine identity. It works even if the previously
-recorded Cellar path has disappeared. Install Docker 29.8.0 first; an explicit
-`--source PATH` after `pin-client` selects another copy of that version. For
+recorded package path has disappeared. Install a supported Docker CLI first;
+an explicit `--source PATH` after `pin-client` selects another copy. For
 non-default state, pass `--state DIRECTORY` before `pin-client`. Missing or
 non-executable pins fail with a repair command; they never fall back to PATH.
 
-Setup copies host Buildx v0.37.0 into private state. Builds
+Setup copies the selected host Buildx into private state. Builds
 invoke it directly with the recorded Docker socket and private builder settings;
 Homebrew upgrades and plugin discovery cannot replace it. For a VM created before
 host Buildx pinning, run this once from dotfiles (no VM restart):
@@ -183,8 +183,8 @@ replaced engine leaves recovery metadata intact.
 
 ## Prototype boundaries
 
-Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and slirp4netns 1.3.5 are
-pinned in setup, along with Ubuntu nftables 1.0.9-1ubuntu0.1.
+The guest Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and
+slirp4netns 1.3.5 are pinned in setup, along with Ubuntu nftables 1.0.9-1ubuntu0.1.
 Docker packages come from Docker's signed Ubuntu repository;
 the signing key and Ubuntu image have pinned SHA-256 digests. Rootful Docker's
 service and socket are masked before package installation.

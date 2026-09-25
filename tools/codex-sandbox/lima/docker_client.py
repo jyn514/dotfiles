@@ -13,10 +13,6 @@ import tempfile
 
 from lima.host import atomic_json, private_directory
 
-BUILDX_VERSION = 'v0.37.0'
-DOCKER_VERSION = '29.8.0'
-
-
 def default_buildx_source():
     candidates = [
         Path('/opt/homebrew/lib/docker/cli-plugins/docker-buildx'),
@@ -40,12 +36,13 @@ def pin_docker(state, source):
         staged.chmod(0o500)
         version = subprocess.run([str(staged), '--version'], check=True,
                                  capture_output=True, text=True, timeout=10).stdout
-        if not version.startswith('Docker version ' + DOCKER_VERSION + ','):
-            raise ValueError('host Docker CLI must be ' + DOCKER_VERSION)
+        match = re.match(r'^Docker version ([^,]+),', version)
+        if match is None:
+            raise ValueError('host Docker CLI must identify itself as Docker')
         checksum = hashlib.sha256(staged.read_bytes()).hexdigest()
         directory = private_directory(client / 'docker' / checksum)
         os.replace(staged, directory / 'docker')
-    return {'version': DOCKER_VERSION, 'sha256': checksum}
+    return {'version': match.group(1), 'sha256': checksum}
 
 
 def docker_client(state, record):
@@ -58,7 +55,8 @@ def docker_client(state, record):
         return record['client']
     try:
         artifact = record['client_artifact']
-        if (artifact['version'] != DOCKER_VERSION or
+        if (not isinstance(artifact['version'], str) or
+                not re.fullmatch(r'[0-9]+(?:\.[0-9]+){2}(?:[-+].*)?', artifact['version']) or
                 not re.fullmatch('[0-9a-f]{64}', artifact['sha256'])):
             raise ValueError('unsupported Docker client record')
         path = state / 'client/docker' / artifact['sha256'] / 'docker'
@@ -86,19 +84,22 @@ def pin_buildx(state, source=None):
         # separate the version check from the bytes we publish.
         version = subprocess.run([str(staged), 'version'], check=True, capture_output=True,
                                  text=True, timeout=10).stdout.split()
-        if version[:2] != ['github.com/docker/buildx', BUILDX_VERSION]:
-            raise ValueError('host Buildx must be ' + BUILDX_VERSION)
+        if (len(version) < 2 or version[0] != 'github.com/docker/buildx' or
+                not re.fullmatch(r'v[0-9]+(?:\.[0-9]+){2}', version[1])):
+            raise ValueError('host Buildx must identify itself as Docker Buildx')
         checksum = hashlib.sha256(staged.read_bytes()).hexdigest()
         directory = private_directory(client / 'buildx' / checksum)
         os.replace(staged, directory / 'docker-buildx')
-    atomic_json(client / 'buildx.json', {'schema': 1, 'version': BUILDX_VERSION, 'sha256': checksum})
+    atomic_json(client / 'buildx.json', {'schema': 1, 'version': version[1], 'sha256': checksum})
     return verify_buildx(state)
 
 
 def verify_buildx(state):
     try:
         record = json.loads((state / 'client/buildx.json').read_text())
-        if (record['schema'] != 1 or record['version'] != BUILDX_VERSION or
+        if (record['schema'] != 1 or
+                not isinstance(record['version'], str) or
+                not re.fullmatch(r'v[0-9]+(?:\.[0-9]+){2}', record['version']) or
                 not re.fullmatch('[0-9a-f]{64}', record['sha256'])):
             raise ValueError('unsupported Buildx record')
         path = state / 'client/buildx' / record['sha256'] / 'docker-buildx'

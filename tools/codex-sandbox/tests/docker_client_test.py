@@ -20,7 +20,7 @@ class DockerClientTest(unittest.TestCase):
             def version(command, **kwargs):
                 self.assertEqual(Path(command[0]).read_bytes(), b'original client')
                 source.write_bytes(b'concurrent replacement')
-                return Mock(stdout='Docker version 29.8.0, build test')
+                return Mock(stdout='Docker version 29.7.2, build test')
             with patch('lima.docker_client.subprocess.run', side_effect=version):
                 artifact = pin_docker(root, source)
             record = {'client': str(source), 'client_artifact': artifact}
@@ -45,16 +45,16 @@ class DockerClientTest(unittest.TestCase):
             root = Path(directory)
             source = root / 'docker'
             source.write_bytes(b'good')
-            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='Docker version 29.8.0, build test')):
+            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='Docker version 29.7.2, build test')):
                 artifact = pin_docker(root, source)
             source.write_bytes(b'wrong')
-            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='Docker version 29.8.0, build test')):
+            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='Docker version 29.7.2, build test')):
                 with patch('lima.docker_client.os.replace', side_effect=OSError('interrupted publication')):
                     with self.assertRaisesRegex(OSError, 'interrupted publication'):
                         pin_docker(root, source)
-            for output in ('podman version 6.0', 'Docker version 30.0.0, build test'):
+            for output in ('podman version 6.0', 'Docker-compatible version unknown'):
                 with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout=output)):
-                    with self.assertRaisesRegex(ValueError, '29.8.0'):
+                    with self.assertRaisesRegex(ValueError, 'identify itself as Docker'):
                         pin_docker(root, source)
             self.assertEqual(Path(docker_client(root, {'client_artifact': artifact})).read_bytes(), b'good')
             with self.assertRaisesRegex(ValueError, 'pin-client'):
@@ -70,7 +70,7 @@ class DockerClientTest(unittest.TestCase):
                 self.assertNotEqual(Path(command[0]), source)
                 self.assertEqual(Path(command[0]).read_bytes(), b'original')
                 source.write_bytes(b'upgraded during pin')
-                return Mock(stdout='github.com/docker/buildx v0.37.0 Homebrew')
+                return Mock(stdout='github.com/docker/buildx v0.37.1 Fedora')
 
             with patch('lima.docker_client.subprocess.run', side_effect=version):
                 pinned = pin_buildx(root / 'state', source)
@@ -81,7 +81,7 @@ class DockerClientTest(unittest.TestCase):
             root = Path(directory)
             source = root / 'homebrew-buildx'
             source.write_bytes(b'original executable')
-            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='github.com/docker/buildx v0.37.0 Homebrew')):
+            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='github.com/docker/buildx v0.37.1 Fedora')):
                 pinned = pin_buildx(root / 'state', source)
             source.write_bytes(b'replacement executable')
             self.assertEqual(verify_buildx(root / 'state').read_bytes(), b'original executable')
@@ -92,13 +92,13 @@ class DockerClientTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'pin-buildx'):
                 verify_buildx(root / 'state')
 
-    def test_wrong_version_is_not_published(self):
+    def test_non_buildx_binary_is_not_published(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / 'buildx'
             source.touch()
-            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='github.com/docker/buildx v0.38.0 Homebrew')):
-                with self.assertRaisesRegex(ValueError, 'v0.37.0'):
+            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='podman version 6.0')):
+                with self.assertRaisesRegex(ValueError, 'identify itself as Docker Buildx'):
                     pin_buildx(root / 'state', source)
             self.assertFalse((root / 'state/client/buildx.json').exists())
 
