@@ -566,6 +566,9 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertNotIn("cargo binstall", setup)
         self.assertIs(True, config["settings"]["cargo"]["binstall_only"])
+        self.assertIn("Some mise tools failed to install; continuing", setup)
+        self.assertIn("install_pi || return", setup)
+        self.assertEqual("{{cwd}}", config["tasks"]["pi-install"]["dir"])
 
     def test_user_tools_no_longer_bootstrap_homebrew(self) -> None:
         setup = (ROOT / "setup").read_text()
@@ -599,14 +602,16 @@ class LocalInstallationTests(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_mise_install_failure_stops_install_local(self) -> None:
+    def test_mise_install_failure_allows_remaining_local_setup(self) -> None:
         result = self.run_install_with(FAIL_MISE_INSTALL="1")
 
-        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             [["mise", "token", "github"], ["mise", "install", "--yes"]],
-            self.commands(),
+            self.commands()[:2],
         )
+        self.assertIn(["mise", "run", "pi-install"], self.commands())
+        self.assertIn("Some mise tools failed to install; continuing", result.stderr)
 
     def test_local_install_can_run_twice(self) -> None:
         first = self.run_install_with(CI="1")

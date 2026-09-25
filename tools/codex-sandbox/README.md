@@ -7,7 +7,10 @@ while its built-in tools and human `!` shell commands run in the guest container
 Set `CODEX_SANDBOX_HOST_PI=0` to retain the older guest-Pi mode.
 Host mode requires the Pi installation at
 `~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
-current sandbox image. The launcher loads its extensions from this checkout;
+current sandbox image. `./setup local` builds `jyn514/pi` from upstream main
+checkout and installs that package at this path; `./setup all` includes it.
+To repeat just this step, run `mise run pi-install` from this repository.
+The launcher loads its extensions from this checkout;
 dotfile installation is not required for the sandbox path, but its default
 Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
 A successful `/reload` restores the guest tool extension.

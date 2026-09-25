@@ -22,6 +22,10 @@ mise_exec() {
 	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
 }
 
+mise_run() {
+	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise run "$@" < /dev/null
+}
+
 install_platform_bundles() {
 	if exists apk; then
 		python3 libexec/setup/install_platform_bundles.py powershell-editor-services
@@ -97,13 +101,34 @@ install_mise() {
 		}
 	fi
 	offer_mise_github_oauth || return
+	mise_install_status=0
 	if exists apk; then
 		# Alpine supplies these itself, or has no compatible prebuilt release.
-		env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:vscode-langservers-extracted,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
-			MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
+		if env MISE_DISABLE_TOOLS='node,python,aqua:pnpm/pnpm,npm:perlnavigator-server,npm:bash-language-server,npm:typescript-language-server,npm:oxlint,npm:vscode-langservers-extracted,aqua:Wilfred/difftastic,github:rustsec/rustsec' \
+			MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null; then
+			:
+		else
+			mise_install_status=$?
+		fi
 	else
-		MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null || return
+		if MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes < /dev/null; then
+			:
+		else
+			mise_install_status=$?
+		fi
 	fi
+	if [ "$mise_install_status" != 0 ]; then
+		echo "Some mise tools failed to install; continuing with the remaining setup" >&2
+	fi
+	unset mise_install_status
+}
+
+install_pi() {
+	if exists apk; then
+		return 0
+	fi
+	echo Installing Pi from github.com/jyn514/pi
+	mise_run pi-install || return
 }
 
 setup_mimetypes() {
@@ -360,6 +385,7 @@ setup_install_local () {
 	fi
 	mkdir -p ~/.local/bin || return
 	install_mise || return
+	install_pi || return
 	install_platform_bundles || return
 
 	if [ -n "${IS_MACOS:-}" ]; then
