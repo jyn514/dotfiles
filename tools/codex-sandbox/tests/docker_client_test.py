@@ -70,7 +70,7 @@ class DockerClientTest(unittest.TestCase):
                 self.assertNotEqual(Path(command[0]), source)
                 self.assertEqual(Path(command[0]).read_bytes(), b'original')
                 source.write_bytes(b'upgraded during pin')
-                return Mock(stdout='github.com/docker/buildx v0.37.1 Fedora')
+                return Mock(stdout='github.com/docker/buildx 0.37.1 1.fc44')
 
             with patch('lima.docker_client.subprocess.run', side_effect=version):
                 pinned = pin_buildx(root / 'state', source)
@@ -81,7 +81,7 @@ class DockerClientTest(unittest.TestCase):
             root = Path(directory)
             source = root / 'homebrew-buildx'
             source.write_bytes(b'original executable')
-            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='github.com/docker/buildx v0.37.1 Fedora')):
+            with patch('lima.docker_client.subprocess.run', return_value=Mock(stdout='github.com/docker/buildx 0.37.1 1.fc44')):
                 pinned = pin_buildx(root / 'state', source)
             source.write_bytes(b'replacement executable')
             self.assertEqual(verify_buildx(root / 'state').read_bytes(), b'original executable')

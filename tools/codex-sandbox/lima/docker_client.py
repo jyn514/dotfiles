@@ -85,7 +85,7 @@ def pin_buildx(state, source=None):
         version = subprocess.run([str(staged), 'version'], check=True, capture_output=True,
                                  text=True, timeout=10).stdout.split()
         if (len(version) < 2 or version[0] != 'github.com/docker/buildx' or
-                not re.fullmatch(r'v[0-9]+(?:\.[0-9]+){2}', version[1])):
+                not re.fullmatch(r'v?[0-9]+(?:\.[0-9]+){2}', version[1])):
             raise ValueError('host Buildx must identify itself as Docker Buildx')
         checksum = hashlib.sha256(staged.read_bytes()).hexdigest()
         directory = private_directory(client / 'buildx' / checksum)
@@ -99,7 +99,7 @@ def verify_buildx(state):
         record = json.loads((state / 'client/buildx.json').read_text())
         if (record['schema'] != 1 or
                 not isinstance(record['version'], str) or
-                not re.fullmatch(r'v[0-9]+(?:\.[0-9]+){2}', record['version']) or
+                not re.fullmatch(r'v?[0-9]+(?:\.[0-9]+){2}', record['version']) or
                 not re.fullmatch('[0-9a-f]{64}', record['sha256'])):
             raise ValueError('unsupported Buildx record')
         path = state / 'client/buildx' / record['sha256'] / 'docker-buildx'
