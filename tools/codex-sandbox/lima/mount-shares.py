@@ -24,10 +24,9 @@ def repair(text, shares, mount_type="virtiofs"):
         line = lines[matches[0]].rstrip("\n")
         delimiter = "\t" if "\t" in line else " "
         fields = line.split(delimiter) if delimiter == "\t" else line.split()
-        required = {"rw" if share["writable"] else "ro", "nofail", "comment=cloudconfig"}
+        mode = "rw" if share["writable"] else "ro"
         if (len(fields) != 6 or fields[0] != tag or fields[1] not in (path, escaped(path)) or
-                fields[2] != mount_type or not required.issubset(fields[3].split(",")) or
-                fields[4:] != ["0", "0"]):
+                fields[2] != mount_type or mode not in fields[3].split(",")):
             raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
         fields[1] = escaped(path)
         lines[matches[0]] = delimiter.join(fields) + "\n"

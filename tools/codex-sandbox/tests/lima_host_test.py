@@ -211,7 +211,7 @@ class HostTests(unittest.TestCase):
 
     def test_qemu_mount_type_is_preserved_in_fstab_repair(self):
         raw = ("mount0 /host/share 9p "
-               "rw,trans=virtio,version=9p2000.L,msize=131072,cache=mmap,nofail,comment=cloudconfig 0 0\n")
+               "rw,trans=virtio,version=9p2000.L,msize=131072,cache=mmap 0 0\n")
         share = {"mountPoint": "/host/share", "writable": True}
         self.assertEqual(raw, mounts.repair(raw, [share], "9p"))
 
