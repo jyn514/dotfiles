@@ -18,17 +18,19 @@ def repair(text, shares, mount_type="virtiofs"):
     for index, share in enumerate(shares):
         tag = f"mount{index}"
         path = share["mountPoint"]
-        matches = [position for position, line in enumerate(lines) if line.startswith(tag + "\t")]
+        matches = [position for position, line in enumerate(lines) if line.split()[:1] == [tag]]
         if len(matches) != 1:
             raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
-        fields = lines[matches[0]].rstrip("\n").split("\t")
+        line = lines[matches[0]].rstrip("\n")
+        delimiter = "\t" if "\t" in line else " "
+        fields = line.split(delimiter) if delimiter == "\t" else line.split()
         required = {"rw" if share["writable"] else "ro", "nofail", "comment=cloudconfig"}
         if (len(fields) != 6 or fields[0] != tag or fields[1] not in (path, escaped(path)) or
                 fields[2] != mount_type or not required.issubset(fields[3].split(",")) or
                 fields[4:] != ["0", "0"]):
             raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
         fields[1] = escaped(path)
-        lines[matches[0]] = "\t".join(fields) + "\n"
+        lines[matches[0]] = delimiter.join(fields) + "\n"
     return "".join(lines)
 
 
