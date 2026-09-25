@@ -117,6 +117,13 @@ what failed, why, cleanup/publication status, and recovery action. Use stdout
 for results and stderr for progress or diagnostics. Test representative
 success and failure output as a user-facing contract.
 
+### Distinguish guarantees from details
+
+API guarantees between architecture boundaries must be explicitly documented.
+Do not depend on internal details, exact source code, or coincidentally convenient properties.
+This applies WHENEVER there is an architecture boundary, even when writing tests for code you wrote yourself.
+Consult the "Principles" section of `architecture-design` for what constitutes a boundary.
+
 ## Jujutsu and commits
 
 Always use `jj`, not `git`, for change management; it supports undo and history editing
