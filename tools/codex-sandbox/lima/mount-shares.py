@@ -20,14 +20,21 @@ def repair(text, shares, mount_type="virtiofs"):
         path = share["mountPoint"]
         matches = [position for position, line in enumerate(lines) if line.split()[:1] == [tag]]
         if len(matches) != 1:
-            raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
+            actual = [lines[position].rstrip("\n") for position in matches]
+            raise ValueError(
+                f"refusing to replace fstab entry for {tag}: expected one entry, actual={actual!r}"
+            )
         line = lines[matches[0]].rstrip("\n")
         delimiter = "\t" if "\t" in line else " "
         fields = line.split(delimiter) if delimiter == "\t" else line.split()
         mode = "rw" if share["writable"] else "ro"
         if (len(fields) != 6 or fields[0] != tag or fields[1] not in (path, escaped(path)) or
                 fields[2] != mount_type or mode not in fields[3].split(",")):
-            raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
+            raise ValueError(
+                f"refusing to replace fstab entry for {tag}: "
+                f"expected source={tag!r}, target={escaped(path)!r}, fstype={mount_type!r}, mode={mode!r}; "
+                f"actual={line!r}"
+            )
         fields[1] = escaped(path)
         lines[matches[0]] = delimiter.join(fields) + "\n"
     return "".join(lines)

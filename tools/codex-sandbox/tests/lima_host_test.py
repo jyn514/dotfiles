@@ -206,7 +206,7 @@ class HostTests(unittest.TestCase):
         fixed = mounts.repair(unrelated + raw, [share])
         self.assertEqual(unrelated + raw.replace("external metadata", "external\\040metadata"), fixed)
         self.assertEqual(fixed, mounts.repair(fixed, [share]))
-        with self.assertRaisesRegex(ValueError, "unexpected"):
+        with self.assertRaisesRegex(ValueError, "expected source='mount0'.*actual='mount0"):
             mounts.repair(unrelated + raw.replace("ro,", "rw,"), [share])
 
     def test_qemu_mount_type_is_preserved_in_fstab_repair(self):
