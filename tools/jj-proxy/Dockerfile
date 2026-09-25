@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.89.0-alpine3.22 AS chef
+FROM lukemathwalker/cargo-chef:0.1.78-rust-1.98.1-alpine3.24 AS chef
 RUN apk add --no-cache musl-dev
 WORKDIR /build
 
