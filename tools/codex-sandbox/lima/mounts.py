@@ -8,5 +8,6 @@ def lima_tag(share):
     return "lima-" + hashlib.sha256(value).digest()[:8].hex()
 
 
-def source(share, index, mount_type):
-    return lima_tag(share) if mount_type == "9p" else f"mount{index}"
+def source(share):
+    """Return Lima's deterministic source name for a configured share."""
+    return lima_tag(share)

@@ -26,7 +26,7 @@ def verify_mount(share, index, mount_type="virtiofs"):
     mounts = json.loads(run("findmnt", "--json", "--target", str(path),
                             "--output", "TARGET,SOURCE,FSTYPE,OPTIONS"))["filesystems"]
     if (len(mounts) != 1 or mounts[0]["target"] != str(path) or
-            mounts[0]["fstype"] != mount_type or mounts[0]["source"] != source(share, index, mount_type) or
+            mounts[0]["fstype"] != mount_type or mounts[0]["source"] != source(share) or
             ("rw" if share["writable"] else "ro") not in mounts[0]["options"].split(",")):
         raise ValueError(f"effective host share differs from setup: {share!r}; mount{index}: {mounts!r}")
     if not path.is_dir() or not os.access(path, os.R_OK | os.X_OK):

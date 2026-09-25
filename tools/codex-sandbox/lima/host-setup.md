@@ -29,9 +29,10 @@ separately configured VM share.
 
 QEMU/9p shares are passed to the guest as virtio-9p devices rather than fstab
 entries, so setup mounts them using Lima's transport tag and 9p options. For
-virtiofs, setup repairs only recorded fstab path escaping, then verifies the
-mounted share, device tag, filesystem type, and access mode. An ordinary guest
-directory cannot stand in for an absent share.
+virtiofs, Lima owns the fstab entries and setup mounts them without rewriting
+that file, then verifies the mounted share, Lima source tag, filesystem type,
+and access mode. An ordinary guest directory cannot stand in for an absent
+share.
 
 Setup owns `~/.local/state/codex-sandbox-lima`, which must be private to the host
 user. Its scratch directory is already covered by the home share; with external

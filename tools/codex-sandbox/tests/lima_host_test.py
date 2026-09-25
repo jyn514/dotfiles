@@ -200,21 +200,10 @@ class HostTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "namespace"):
             verify.verify_worker([worker], info, "buildkit")
 
-    def test_lima_fstab_space_repair_is_idempotent_and_preserves_unrelated_entries(self):
-        unrelated = "LABEL=root\t/\text4\tdefaults\t0 1\n"
-        raw = "mount0\t/host/external metadata\tvirtiofs\tro,nofail,comment=cloudconfig\t0\t0\n"
-        share = {"mountPoint": "/host/external metadata", "writable": False}
-        fixed = mounts.repair(unrelated + raw, [share])
-        self.assertEqual(unrelated + raw.replace("external metadata", "external\\040metadata"), fixed)
-        self.assertEqual(fixed, mounts.repair(fixed, [share]))
-        with self.assertRaisesRegex(ValueError, "expected source='mount0'.*actual='mount0"):
-            mounts.repair(unrelated + raw.replace("ro,", "rw,"), [share])
-
-    def test_qemu_mount_type_is_preserved_in_fstab_repair(self):
-        raw = ("mount0 /host/share 9p "
-               "rw,trans=virtio,version=9p2000.L,msize=131072,cache=mmap 0 0\n")
-        share = {"mountPoint": "/host/share", "writable": True}
-        self.assertEqual(raw, mounts.repair(raw, [share], "9p"))
+    def test_lima_source_is_deterministic_for_each_mount_type(self):
+        share = {"location": "/home/jyn", "mountPoint": "/host/share", "writable": True}
+        expected = mounts.lima_tag(share)
+        self.assertEqual(expected, verify.source(share))
 
     def test_qemu_mount_uses_lima_transport_tag_and_9p_defaults(self):
         share = {"location": "/home/jyn", "mountPoint": "/home/jyn", "writable": True}
@@ -227,12 +216,12 @@ class HostTests(unittest.TestCase):
 
     def test_unmounted_directory_and_changed_mount_mode_are_not_host_shares(self):
         with tempfile.TemporaryDirectory() as temporary:
-            share = {"mountPoint": temporary, "writable": True}
-            mounted = {"target": temporary, "source": "mount0", "fstype": "virtiofs", "options": "rw,relatime"}
+            share = {"location": temporary, "mountPoint": temporary, "writable": True}
+            mounted = {"target": temporary, "source": mounts.lima_tag(share), "fstype": "virtiofs", "options": "rw,relatime"}
             with patch.object(verify, "run", return_value=json.dumps({"filesystems": [mounted]})):
                 verify.verify_mount(share, 0)
             for changes in ({"target": "/", "source": "/dev/vda", "fstype": "ext4"},
-                            {"source": "mount1"}, {"options": "ro,relatime"}):
+                            {"source": "other"}, {"options": "ro,relatime"}):
                 with self.subTest(changes=changes), patch.object(verify, "run", return_value=json.dumps(
                         {"filesystems": [{**mounted, **changes}]})):
                     with self.assertRaisesRegex(ValueError, "effective"):
