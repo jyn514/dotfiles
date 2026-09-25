@@ -18,6 +18,7 @@ uv = "latest"
 "cargo:mdbook" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "aqua:Wilfred/difftastic" = "latest"
 "aqua:Byron/dua-cli" = "latest"
+"aqua:lima-vm/lima" = "latest"
 "cargo:https://github.com/jj-vcs/jj" = { version = "rev:f1b29bced933e289096a9c98276153e29dd95674", crate = "jj-cli", bin = "jj", depends = ["rust"] }
 "aqua:BurntSushi/ripgrep" = "latest"
 "aqua:Myriad-Dreamin/tinymist" = "latest"

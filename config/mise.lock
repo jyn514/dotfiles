@@ -282,6 +282,52 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.21.1/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/489425215"
 provenance = "github-attestations"
 
+[[tools."aqua:lima-vm/lima"]]
+version = "2.2.0"
+backend = "aqua:lima-vm/lima"
+
+[tools."aqua:lima-vm/lima"."platforms.linux-arm64"]
+checksum = "sha256:7c6a09c6844f55f811e9b7b2b60a6070a512c696c8ec752dfdb3c8ed50ed0364"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-aarch64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813992"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.linux-arm64-musl"]
+checksum = "sha256:7c6a09c6844f55f811e9b7b2b60a6070a512c696c8ec752dfdb3c8ed50ed0364"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-aarch64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813992"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.linux-x64"]
+checksum = "sha256:a0ea1ccf6b7335a900adb5f8d2b8384457965fecb1ba72f09b4e3e46d12f424a"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813993"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.linux-x64-musl"]
+checksum = "sha256:a0ea1ccf6b7335a900adb5f8d2b8384457965fecb1ba72f09b4e3e46d12f424a"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Linux-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813993"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.macos-arm64"]
+checksum = "sha256:bbdef91774885a0d05f7b048c4eb89ae2bcf3a0c252ae7ca7934e63df76d93c3"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813994"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.macos-x64"]
+checksum = "sha256:0d6f99c19f6e4bc3c92730c4c29d929e6927f0cb0a0ba1a84383367135a8ff31"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Darwin-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484813996"
+provenance = "github-attestations"
+
+[tools."aqua:lima-vm/lima"."platforms.windows-x64"]
+checksum = "sha256:e7bf7dd2d2e7ab7ce020631f8f7533665f6e6f9068686d3ffcd0f3c438856ea9"
+url = "https://github.com/lima-vm/lima/releases/download/v2.2.0/lima-2.2.0-Windows-AMD64.zip"
+url_api = "https://api.github.com/repos/lima-vm/lima/releases/assets/484814002"
+provenance = "github-attestations"
+
 [[tools."aqua:mvdan/sh"]]
 version = "3.13.1"
 backend = "aqua:mvdan/sh"
