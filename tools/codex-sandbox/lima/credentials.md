@@ -23,6 +23,10 @@ its cache:
 python3 tools/codex-sandbox/sandbox_credentials.py prepare
 ```
 
+If the host has no supported Keychain or no GitHub token, `prepare` reports that
+the optional credential was skipped and succeeds; other transfer and guest
+validation failures remain fatal.
+
 Choose **Allow**, not **Always Allow**, in the Keychain prompt. The item has no
 trusted applications; the helper rejects retrieval if an unprompted decrypt
 grant was added. Remove that grant using Keychain Access before retrying. A denied

@@ -8,7 +8,7 @@ import struct
 import subprocess
 import sys
 
-from keychain import Keychain, validate_token
+from keychain import Keychain, KeychainError, validate_token
 
 
 GUEST_HELPER = "/usr/local/share/codex-sandbox/boot-credential.py"
@@ -23,6 +23,17 @@ def credential_path(value, generation):
             r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/github-token', value):
         raise ValueError('guest credential cache has an invalid identity')
     return value
+
+
+def retrieve_optional_keychain_token():
+    try:
+        return Keychain().retrieve()
+    except KeychainError as error:
+        message = str(error)
+        if (message == "GitHub Keychain provisioning requires macOS" or
+                "OSStatus -25300" in message):
+            return None
+        raise
 
 
 def import_podman_token(keychain=None):
@@ -58,7 +69,9 @@ def boot_credential(runtime, *, retrieve=None, invalidate=False):
         expected = credential_path(response.get('path'), generation)
         status = response.get("status")
         if status == "missing" and not invalidate:
-            token = (retrieve or Keychain().retrieve)()
+            token = (retrieve or retrieve_optional_keychain_token)()
+            if token is None:
+                return None
             validate_token(token)
             output, _ = process.communicate(struct.pack("!I", len(token)) + token, timeout=30)
             if json.loads(output) != {"status": "ready", "path": expected}:
@@ -103,8 +116,11 @@ def main():
         import_podman_token()
         print("Imported GitHub token into Keychain; Podman rollback secret retained.")
     else:
-        boot_credential(image_runtime(args.provider, args.state), invalidate=args.operation == "invalidate")
-        print("Guest boot credential " + ("invalidated." if args.operation == "invalidate" else "ready."))
+        result = boot_credential(image_runtime(args.provider, args.state), invalidate=args.operation == "invalidate")
+        if result is None and args.operation == "prepare":
+            print("[WARN] GitHub token unavailable; skipping optional credential provisioning.", file=sys.stderr)
+        else:
+            print("Guest boot credential " + ("invalidated." if args.operation == "invalidate" else "ready."))
 
 
 if __name__ == "__main__":

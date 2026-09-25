@@ -57,6 +57,19 @@ class BootCredentialTest(unittest.TestCase):
                 self.assertEqual(retrieve.call_count, retrievals)
                 runtime.host.guest_argv.assert_called_once()
 
+    def test_unavailable_host_keychain_skips_optional_credential(self):
+        path = f'/run/user/1000/codex-sandbox-credentials/{GENERATION}/{BOOT}/github-token'
+        fixture = Path(__file__).with_name('credential_reply_fixture.py')
+        runtime = Mock(record={'files': ['boot-credential.py'], 'generation': GENERATION})
+        runtime.host.guest_argv.return_value = [sys.executable, str(fixture), json.dumps([
+            {'status': 'missing', 'path': path},
+        ])]
+        for error in ('GitHub Keychain provisioning requires macOS',
+                      'Keychain operation failed (OSStatus -25300); access denied or item unavailable'):
+            with self.subTest(error=error), patch.object(
+                    credentials, 'Keychain', side_effect=credentials.KeychainError(error)):
+                self.assertIsNone(credentials.boot_credential(runtime))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
