@@ -215,6 +215,23 @@ class HostTests(unittest.TestCase):
         share = {"mountPoint": "/host/share", "writable": True}
         self.assertEqual(raw, mounts.repair(raw, [share], "9p"))
 
+    def test_lima_fstab_is_allowed_to_appear_after_guest_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "fstab"
+            destination.write_text("")
+            share = {"mountPoint": "/host/share", "writable": True}
+            clock = iter((0, 0, 1))
+
+            def guest_init():
+                destination.write_text(
+                    "mount0 /host/share 9p rw,trans=virtio,version=9p2000.L 0 0\n"
+                )
+
+            with patch.object(mounts.time, "monotonic", side_effect=lambda: next(clock)), \
+                    patch.object(mounts.time, "sleep", side_effect=lambda _: guest_init()):
+                found = mounts.wait_for_entries(destination, [share], timeout=10)
+                self.assertEqual(destination.read_text(), found)
+
     def test_unmounted_directory_and_changed_mount_mode_are_not_host_shares(self):
         with tempfile.TemporaryDirectory() as temporary:
             share = {"mountPoint": temporary, "writable": True}

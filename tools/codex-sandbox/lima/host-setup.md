@@ -27,9 +27,10 @@ and hidden policy overlays; whole-home container binds are rejected.
 Symlinks resolve to their actual targets: paths outside home still require a
 separately configured VM share.
 
-Lima 1.2.1 leaves spaces unescaped in generated fstab entries. Setup repairs only
-the exact recorded entries, then verifies the mounted virtiofs root, device tag,
-and access mode. An ordinary guest directory cannot stand in for an absent share.
+Lima can return from `start` before cloud-init has written its share entries to
+`/etc/fstab`. Setup waits for the recorded entries, repairs only their path
+escaping, then verifies the mounted share, device tag, filesystem type, and
+access mode. An ordinary guest directory cannot stand in for an absent share.
 
 Setup owns `~/.local/state/codex-sandbox-lima`, which must be private to the host
 user. Its scratch directory is already covered by the home share; with external

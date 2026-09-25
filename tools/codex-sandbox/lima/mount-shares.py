@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def escaped(path):
@@ -40,6 +41,22 @@ def repair(text, shares, mount_type="virtiofs"):
     return "".join(lines)
 
 
+def wait_for_entries(destination, shares, timeout=120):
+    deadline = time.monotonic() + timeout
+    while True:
+        original = destination.read_text()
+        tags = {line.split()[0] for line in original.splitlines() if line.split()}
+        missing = [f"mount{index}" for index, _ in enumerate(shares) if f"mount{index}" not in tags]
+        if not missing:
+            return original
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"timed out waiting for Lima fstab entries: missing={missing!r}; "
+                f"fstab={original!r}"
+            )
+        time.sleep(1)
+
+
 def main():
     if os.getuid() != 0:
         raise ValueError("mount provisioning requires guest root")
@@ -47,7 +64,7 @@ def main():
     shares = record["shares"]
     mount_type = record.get("mount_type", "virtiofs")
     destination = Path("/etc/fstab")
-    original = destination.read_text()
+    original = wait_for_entries(destination, shares)
     fixed = repair(original, shares, mount_type)
     if fixed != original:
         descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".sandbox-fstab-")
