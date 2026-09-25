@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Repair Lima 1.2.1 fstab escaping before accepting host shares."""
+"""Repair Lima-generated fstab escaping before accepting host shares."""
 
 import json
 import os
@@ -18,13 +18,17 @@ def repair(text, shares, mount_type="virtiofs"):
     for index, share in enumerate(shares):
         tag = f"mount{index}"
         path = share["mountPoint"]
-        options = ("rw" if share["writable"] else "ro") + ",nofail,comment=cloudconfig"
-        raw = "\t".join((tag, path, mount_type, options, "0", "0")) + "\n"
-        fixed = "\t".join((tag, escaped(path), mount_type, options, "0", "0")) + "\n"
         matches = [position for position, line in enumerate(lines) if line.startswith(tag + "\t")]
-        if len(matches) != 1 or lines[matches[0]] not in (raw, fixed):
+        if len(matches) != 1:
             raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
-        lines[matches[0]] = fixed
+        fields = lines[matches[0]].rstrip("\n").split("\t")
+        required = {"rw" if share["writable"] else "ro", "nofail", "comment=cloudconfig"}
+        if (len(fields) != 6 or fields[0] != tag or fields[1] not in (path, escaped(path)) or
+                fields[2] != mount_type or not required.issubset(fields[3].split(",")) or
+                fields[4:] != ["0", "0"]):
+            raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
+        fields[1] = escaped(path)
+        lines[matches[0]] = "\t".join(fields) + "\n"
     return "".join(lines)
 
 
@@ -57,8 +61,7 @@ def main():
         if mounted.returncode != 32:
             raise ValueError(f"cannot inspect mount point: {target}")
         Path(target).mkdir(parents=True, exist_ok=True)
-        subprocess.run(["mount", "-t", mount_type, "-o", "rw" if share["writable"] else "ro",
-                        f"mount{index}", target], check=True, timeout=30)
+        subprocess.run(["mount", "--target", target], check=True, timeout=30)
 
 
 if __name__ == "__main__":
