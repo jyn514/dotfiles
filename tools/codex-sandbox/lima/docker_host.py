@@ -161,17 +161,12 @@ class DockerHost(Host):
             record['vm_identity'] = hashlib.sha256(machine_id.encode()).hexdigest()
             record['vm_identity_source'] = 'guest-machine-id'
             atomic_json(self.record_path, record)
-        staging = self.guest(record, 'mktemp', '-d', capture_output=True, text=True).stdout.strip()
-        try:
+        with self.staged_snapshot(record) as staging:
             self.guest(record, 'sudo', 'mkdir', '-p', GUEST)
             for name in record['files']:
-                self.guest(record, 'tee', staging + '/' + name,
-                           input=(self.state / 'source' / name).read_bytes(), stdout=subprocess.DEVNULL)
                 self.guest(record, 'sudo', 'install', '-m', '0644', staging + '/' + name, GUEST + '/' + name)
             self.guest(record, 'sudo', 'python3', GUEST + '/mount-shares.py', input=json.dumps(record).encode())
             self.guest(record, 'python3', GUEST + '/docker-user.py')
-        finally:
-            self.guest(record, 'rm', '-rf', staging)
         info = json.loads(self.guest(record, 'docker', 'info', '--format', '{{json .}}', capture_output=True, text=True).stdout)
         record['engine_id'] = info['ID']
         networks = self.guest(record, 'docker', 'network', 'ls', '--format', '{{.Name}}', capture_output=True, text=True).stdout.splitlines()

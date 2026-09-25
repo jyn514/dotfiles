@@ -127,6 +127,24 @@ class Host:
             kwargs.setdefault("stdin", subprocess.DEVNULL)
         return command(*self.guest_argv(record, *args), **kwargs)
 
+    @contextmanager
+    def staged_snapshot(self, record, snapshot=None):
+        snapshot = Path(snapshot or self.state / "source")
+        temporary = self.guest(record, "mktemp", "-d", capture_output=True, text=True).stdout.strip()
+        try:
+            for name in record["files"]:
+                self.guest(record, "tee", temporary + "/" + name,
+                           input=(snapshot / name).read_bytes(), stdout=subprocess.DEVNULL)
+            yield temporary
+        finally:
+            primary_failure = sys.exc_info()[0] is not None
+            try:
+                self.guest(record, "rm", "-rf", "--", temporary)
+            except (OSError, subprocess.SubprocessError) as error:
+                if not primary_failure:
+                    raise
+                print(f"Guest staging cleanup failed: {error}", file=sys.stderr)
+
     def machine_identity(self, record):
         machine = machines().get(record["instance"])
         if machine is None:
@@ -233,10 +251,7 @@ class Host:
         if identity_path.exists():
             record["vm_identity"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
         atomic_json(self.record_path, record)
-        temporary = self.guest(record, "mktemp", "-d", capture_output=True, text=True).stdout.strip()
-        try:
-            for name in record["files"]:
-                self.guest(record, "tee", temporary + "/" + name, input=(snapshot / name).read_bytes(), stdout=subprocess.DEVNULL)
+        with self.staged_snapshot(record, snapshot) as temporary:
             self.guest(record, "sudo", "python3", temporary + "/mount-shares.py", input=json.dumps(record).encode())
             self.guest(record, "python3", temporary + "/pin-rootless-network.py", temporary + "/rootless-network.json")
             self.guest(record, "sudo", "install", "-d", "-m", "755", GUEST)
@@ -247,14 +262,6 @@ class Host:
             record["network_path"] = machine["config"]["user"]["home"] + "/.config/cni/net.d/default/nerdctl-codex-public-only.conflist"
             network = self.guest(record, "cat", record["network_path"], capture_output=True).stdout
             record["network_digest"] = hashlib.sha256(network).hexdigest()
-        finally:
-            primary_failure = sys.exc_info()[0] is not None
-            try:
-                self.guest(record, "rm", "-rf", "--", temporary)
-            except (OSError, subprocess.SubprocessError) as error:
-                if not primary_failure:
-                    raise
-                print(f"Guest staging cleanup failed: {error}", file=sys.stderr)
         self.configure_ssh(record)
         self.verify(record)
         record["phase"] = "ready"
