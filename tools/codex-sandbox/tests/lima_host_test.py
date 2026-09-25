@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -215,22 +216,14 @@ class HostTests(unittest.TestCase):
         share = {"mountPoint": "/host/share", "writable": True}
         self.assertEqual(raw, mounts.repair(raw, [share], "9p"))
 
-    def test_lima_fstab_is_allowed_to_appear_after_guest_start(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            destination = Path(temporary) / "fstab"
-            destination.write_text("")
-            share = {"mountPoint": "/host/share", "writable": True}
-            clock = iter((0, 0, 1))
-
-            def guest_init():
-                destination.write_text(
-                    "mount0 /host/share 9p rw,trans=virtio,version=9p2000.L 0 0\n"
-                )
-
-            with patch.object(mounts.time, "monotonic", side_effect=lambda: next(clock)), \
-                    patch.object(mounts.time, "sleep", side_effect=lambda _: guest_init()):
-                found = mounts.wait_for_entries(destination, [share], timeout=10)
-                self.assertEqual(destination.read_text(), found)
+    def test_qemu_mount_uses_lima_transport_tag_and_9p_defaults(self):
+        share = {"location": "/home/jyn", "mountPoint": "/home/jyn", "writable": True}
+        with patch.object(mounts.subprocess, "run") as run:
+            mounts.mount_9p(share)
+        expected_tag = "lima-" + hashlib.sha256(b"/home/jyn:/home/jyn").hexdigest()[:16]
+        run.assert_called_once_with(
+            ["mount", "-t", "9p", "-o", "rw,trans=virtio,version=9p2000.L,msize=131072,cache=mmap",
+             expected_tag, "/home/jyn"], check=True, timeout=30)
 
     def test_unmounted_directory_and_changed_mount_mode_are_not_host_shares(self):
         with tempfile.TemporaryDirectory() as temporary:

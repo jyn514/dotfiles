@@ -1,17 +1,30 @@
 #!/usr/bin/python3
-"""Repair Lima-generated fstab escaping before accepting host shares."""
+"""Mount Lima shares and repair virtiofs paths before accepting host shares."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 
 
 def escaped(path):
     return path.replace("\\", "\\134").replace(" ", "\\040")
+
+
+def lima_tag(share):
+    value = f'{share["location"]}:{share["mountPoint"]}'.encode()
+    return "lima-" + hashlib.sha256(value).digest()[:8].hex()
+
+
+def mount_9p(share):
+    cache = "mmap" if share["writable"] else "fscache"
+    options = ",".join(("rw" if share["writable"] else "ro", "trans=virtio",
+                         "version=9p2000.L", "msize=131072", f"cache={cache}"))
+    subprocess.run(["mount", "-t", "9p", "-o", options, lima_tag(share),
+                    share["mountPoint"]], check=True, timeout=30)
 
 
 def repair(text, shares, mount_type="virtiofs"):
@@ -41,31 +54,28 @@ def repair(text, shares, mount_type="virtiofs"):
     return "".join(lines)
 
 
-def wait_for_entries(destination, shares, timeout=120):
-    deadline = time.monotonic() + timeout
-    while True:
-        original = destination.read_text()
-        tags = {line.split()[0] for line in original.splitlines() if line.split()}
-        missing = [f"mount{index}" for index, _ in enumerate(shares) if f"mount{index}" not in tags]
-        if not missing:
-            return original
-        if time.monotonic() >= deadline:
-            raise ValueError(
-                f"timed out waiting for Lima fstab entries: missing={missing!r}; "
-                f"fstab={original!r}"
-            )
-        time.sleep(1)
-
-
 def main():
     if os.getuid() != 0:
         raise ValueError("mount provisioning requires guest root")
     record = json.load(sys.stdin)
     shares = record["shares"]
     mount_type = record.get("mount_type", "virtiofs")
+    for share in shares:
+        target = share["mountPoint"]
+        mounted = subprocess.run(["mountpoint", "--quiet", "--", target], timeout=30)
+        if mounted.returncode == 0:
+            continue  # The read-only preflight checks filesystem, tag, and mode.
+        if mounted.returncode != 32:
+            raise ValueError(f"cannot inspect mount point: {target}")
+        Path(target).mkdir(parents=True, exist_ok=True)
+        if mount_type == "9p":
+            mount_9p(share)
     destination = Path("/etc/fstab")
-    original = wait_for_entries(destination, shares)
-    fixed = repair(original, shares, mount_type)
+    if mount_type != "9p":
+        original = destination.read_text()
+        fixed = repair(original, shares, mount_type)
+    else:
+        original = fixed = None
     if fixed != original:
         descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".sandbox-fstab-")
         try:
@@ -78,7 +88,7 @@ def main():
         finally:
             Path(temporary).unlink(missing_ok=True)
         subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=30)
-    for index, share in enumerate(shares):
+    for share in shares:
         target = share["mountPoint"]
         mounted = subprocess.run(["mountpoint", "--quiet", "--", target], timeout=30)
         if mounted.returncode == 0:
