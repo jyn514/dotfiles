@@ -848,6 +848,21 @@ def prepare_gateway(state: State) -> list[str]:
         return []
     handle = GatewayHandle(state, editor, nested, agent_room)
     state.gateway_handle = handle
+    if agent_room:
+        handle.agent_room_bridge = FixedTcpBridge(("127.0.0.1", 3000))
+        handle._register_logical("bridge:agent-room", remove=handle.agent_room_bridge.stop)
+        try:
+            handle.agent_room_bridge.start()
+        except OSError as error:
+            print(f"warning: agent-room relay unavailable: {error}", file=sys.stderr)
+            handle.agent_room_bridge = None
+            handle.agent_room = False
+            agent_room = False
+            handle._logical.discard("bridge:agent-room")
+        if not editor and not nested and not agent_room:
+            handle.cleanup()
+            state.gateway_handle = None
+            return []
     for name, internal in ((state.gateway_link_network, True),
                            (state.gateway_egress_network, False)):
         identity = f"network:{name}"
@@ -867,10 +882,6 @@ def prepare_gateway(state: State) -> list[str]:
         handle.bridge = HostEditorBridge()
         handle._register_logical("bridge:host-editor", remove=handle.bridge.stop)
         handle.bridge.start()
-    if agent_room:
-        handle.agent_room_bridge = FixedTcpBridge(("127.0.0.1", 3000))
-        handle._register_logical("bridge:agent-room", remove=handle.agent_room_bridge.stop)
-        handle.agent_room_bridge.start()
     arguments = [
         "--network", state.gateway_link_network,
         *(["--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223"] if editor else []),
@@ -1184,7 +1195,10 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         helper_name=helper_container, socket_volume=socket_volume,
         configuration_path=configuration_path, configuration=configuration_bytes,
         caddy_image=caddy_identity, helper_image=state.sidecar_image,
-        uid=state.uid, gid=state.gid,
+        # Rootless Docker maps host-owned bind mounts to container root. Both
+        # pair members use that identity so the helper can read auth.json and
+        # Caddy can read the helper socket it creates.
+        uid=0, gid=0,
         application_network=application_network, helper_network=refresh_network,
         public_networks=(("application-network", "application", application_network),
                          ("refresh-network", "refresh", refresh_network)),
@@ -1281,6 +1295,7 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
             OUTER_RUNTIME, pair_plan, pair_effect,
             cancelled=lambda: cancelled is not None and cancelled.is_set(),
             error=LauncherError,
+            logs=proxy_module().proxy_logs,
         )
         lifecycle.transition(LifecycleState.READY); record["lifecycle-state"] = "ready"
         partial["auth"] = handle.schema3_record(); _persist_proxy_state(state.proxy_state, partial)
@@ -1785,9 +1800,11 @@ def build_agent_command(
         "--cap-drop=NET_RAW",
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
-           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime)
-          else ["--secret", "codex-github-token,type=env,target=GH_TOKEN",
-                *(["--entrypoint", "node"] if host_pi else [])]),
+           "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime) and state.github_credential is not None
+          else (["--secret", "codex-github-token,type=env,target=GH_TOKEN",
+                 *(["--entrypoint", "node"] if host_pi else [])]
+                if not isinstance(OUTER_RUNTIME, VMRuntime) else
+                (["--entrypoint", "node"] if host_pi else []))),
         "--env", "JJ_AGENT=pi",
         *(["--env", "CODEX_SANDBOX_TOOL_WORKER=1"] if host_pi else []),
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
@@ -2010,6 +2027,7 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
             host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)
         worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
                           if isinstance(OUTER_RUNTIME, VMRuntime)
+                          and state.github_credential is not None
                           else ["/opt/agent-tools/bin/tool-worker.mjs"])
         with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
             with OUTER_RUNTIME.workload(
@@ -2430,7 +2448,19 @@ def login_codex_sidecar() -> int:
     os.chmod(directory, 0o700)
     environment = os.environ.copy()
     environment["CODEX_HOME"] = str(directory)
-    return subprocess.run(["codex", "login"], env=environment).returncode
+    environment.setdefault(
+        "CODEX_DEVELOPER_INSTRUCTIONS_FILE",
+        str(home / ".codex/developer-instructions.md"),
+    )
+    wrapper_directory = (DOTFILES / "bin").resolve()
+    path_entries = []
+    for entry in environment.get("PATH", "").split(os.pathsep):
+        if Path(entry or ".").resolve() != wrapper_directory:
+            path_entries.append(entry)
+    codex = shutil.which("codex", path=os.pathsep.join(path_entries))
+    if codex is None:
+        raise LauncherError("real Codex executable not found on PATH")
+    return subprocess.run([codex, "login"], env=environment).returncode
 
 
 def tmux_registrations() -> list[dict[str, object]]:

@@ -38,6 +38,30 @@ class DockerHost(Host):
         return ['ssh', '-F', str(config), '-T', '-o', 'SendEnv=COLORTERM',
                 '-o', 'LogLevel=ERROR', 'lima-' + record['instance'], remote]
 
+    def source_files(self):
+        return {'boot-credential.py': SOURCE / 'boot-credential.py',
+                'mount-shares.py': SOURCE / 'mount-shares.py',
+                'mounts.py': SOURCE / 'mounts.py',
+                'install-slirp4netns.py': SOURCE / 'install-slirp4netns.py',
+                'rootless-network.json': SOURCE / 'rootless-network.json',
+                'docker-policy.py': SOURCE / 'docker/policy.py',
+                'docker-install.py': SOURCE / 'docker/install.py',
+                'docker-user.py': SOURCE / 'docker/configure-user.py',
+                'nftables.py': SOURCE / 'docker/nftables.py',
+                'network.nft': SOURCE / 'docker/network.nft',
+                'docker-daemon.json': SOURCE / 'docker/daemon.json',
+                'docker-service.conf': SOURCE / 'docker/docker-service.conf',
+                'docker-reclaim.py': SOURCE / 'docker/reclaim.py',
+                **{name: SOURCE / 'docker' / name for name in
+                   ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer')}}
+
+    def install_snapshot(self, record, temporary):
+        self.guest(record, 'sudo', 'mkdir', '-p', GUEST)
+        for name in record['files']:
+            self.guest(record, 'sudo', 'install', '-m', '0644', temporary + '/' + name, GUEST + '/' + name)
+        self.guest(record, 'sudo', 'python3', GUEST + '/mount-shares.py', input=json.dumps(record).encode())
+        self.guest(record, 'python3', GUEST + '/docker-user.py')
+
     def setup(self, instance='sandbox-host-docker', read=None, write=None, client=None):
         if not re.fullmatch(r'sandbox-host-docker(?:-[a-z0-9-]+)?', instance):
             raise ValueError('Docker prototype requires its own sandbox-host-docker instance')
@@ -80,22 +104,7 @@ class DockerHost(Host):
             pin_buildx(self.state)
             client_artifact = pin_docker(self.state, client)
             snapshot = private_directory(self.state / 'source')
-            inputs = {'boot-credential.py': SOURCE / 'boot-credential.py',
-                      'mount-shares.py': SOURCE / 'mount-shares.py',
-                      'mounts.py': SOURCE / 'mounts.py',
-                      'install-slirp4netns.py': SOURCE / 'install-slirp4netns.py',
-                      'rootless-network.json': SOURCE / 'rootless-network.json',
-                      'docker-policy.py': SOURCE / 'docker/policy.py',
-                      'docker-install.py': SOURCE / 'docker/install.py',
-                      'docker-user.py': SOURCE / 'docker/configure-user.py',
-                      'nftables.py': SOURCE / 'docker/nftables.py',
-                      'network.nft': SOURCE / 'docker/network.nft',
-                      'docker-daemon.json': SOURCE / 'docker/daemon.json',
-                      'docker-service.conf': SOURCE / 'docker/docker-service.conf',
-                      'docker-reclaim.py': SOURCE / 'docker/reclaim.py',
-                      **{name: SOURCE / 'docker' / name for name in
-                         ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer')}}
-            for name, source in inputs.items():
+            for name, source in self.source_files().items():
                 shutil.copyfile(source, snapshot / name)
             (snapshot / 'network-policy.json').write_bytes(policy_bytes())
             generation = uuid.uuid4().hex
@@ -162,11 +171,7 @@ class DockerHost(Host):
             record['vm_identity_source'] = 'guest-machine-id'
             atomic_json(self.record_path, record)
         with self.staged_snapshot(record) as staging:
-            self.guest(record, 'sudo', 'mkdir', '-p', GUEST)
-            for name in record['files']:
-                self.guest(record, 'sudo', 'install', '-m', '0644', staging + '/' + name, GUEST + '/' + name)
-            self.guest(record, 'sudo', 'python3', GUEST + '/mount-shares.py', input=json.dumps(record).encode())
-            self.guest(record, 'python3', GUEST + '/docker-user.py')
+            self.install_snapshot(record, staging)
         info = json.loads(self.guest(record, 'docker', 'info', '--format', '{{json .}}', capture_output=True, text=True).stdout)
         record['engine_id'] = info['ID']
         networks = self.guest(record, 'docker', 'network', 'ls', '--format', '{{.Name}}', capture_output=True, text=True).stdout.splitlines()
@@ -278,7 +283,7 @@ def main():
     setup.add_argument('--share-read', action='append')
     setup.add_argument('--share-write', action='append')
     setup.add_argument('--client', type=Path)
-    for name in ('start', 'stop', 'status', 'doctor', 'pin-buildx'):
+    for name in ('start', 'stop', 'status', 'doctor', 'upgrade', 'pin-buildx'):
         sub.add_parser(name)
     pin = sub.add_parser('pin-client')
     pin.add_argument('--source', type=Path)
@@ -297,6 +302,8 @@ def main():
             record = host.record()
             host.doctor(record)
             record = {**record, 'reclamation': host.reclaim_status(record)}
+        elif args.operation == 'upgrade':
+            record = host.upgrade()
         elif args.operation == 'reclaim':
             record = host.reclaim(args.action)
         elif args.operation == 'pin-buildx':

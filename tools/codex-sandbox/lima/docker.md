@@ -39,6 +39,16 @@ SSH sessions per connection. Docker's default address pools otherwise run out
 before twenty sandboxes can each allocate their two gateway networks. Existing
 VMs retain their pinned daemon configuration until explicitly migrated.
 
+To refresh the installed sandbox scripts in an existing VM without recreating
+the VM or changing its generation, run:
+
+```sh
+python3 tools/codex-sandbox/lima/docker_host.py upgrade
+```
+
+The operation verifies the updated guest policy before publishing its new
+provisioning snapshot.
+
 For existing state, or to repair a missing or altered private CLI, run:
 
 ```sh

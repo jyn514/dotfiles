@@ -46,6 +46,16 @@ the same setup preserves the VM generation. A changed share set, replacement VM,
 altered configuration, or changed installed policy is rejected. Setup does not
 adopt an existing instance without its ownership record.
 
+To refresh provisioning scripts in an existing ready VM without recreating it,
+run the explicit upgrade operation:
+
+```sh
+python3 tools/codex-sandbox/lima/host.py upgrade
+```
+
+Upgrade preserves the VM generation and shares, verifies the new guest files,
+and publishes the new snapshot only after verification succeeds.
+
 ## Start and recover
 
 ```sh

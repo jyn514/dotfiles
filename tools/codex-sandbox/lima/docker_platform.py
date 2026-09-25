@@ -43,7 +43,7 @@ def current() -> PlatformConfig:
         if not kvm_available():
             raise ValueError("Linux Lima-Docker requires readable and writable /dev/kvm")
         return PlatformConfig(
-            "qemu", "x86_64", "9p",
+            "qemu", "x86_64", "virtiofs",
             "https://cloud-images.ubuntu.com/releases/noble/release-20260911/ubuntu-24.04-server-cloudimg-amd64.img",
             "sha256:612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
             None,

@@ -1270,7 +1270,7 @@ class CodexSandboxTest(GuestModeTest):
 
         write_executable(self.fake_bin / "codex", """
             #!/bin/sh
-            printf '%s\t%s\n' "$CODEX_HOME" "$*" > "$FAKE_CODEX_LOG"
+            printf '%s\t%s\t%s\n' "$CODEX_HOME" "$CODEX_DEVELOPER_INSTRUCTIONS_FILE" "$*" > "$FAKE_CODEX_LOG"
         """)
         write_executable(self.fake_bin / "jj", """
             #!/bin/sh
@@ -1849,10 +1849,11 @@ class CodexSandboxTest(GuestModeTest):
         )
 
     def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
-        result = self.run_launcher("auth", "login")
+        path = os.pathsep.join((str(ROOT / "bin"), str(self.fake_bin), os.environ["PATH"]))
+        result = self.run_launcher("auth", "login", PATH=path)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"{self.home / '.codex-sandbox-auth'}\tlogin\n",
+            f"{self.home / '.codex-sandbox-auth'}\t{self.home / '.codex/developer-instructions.md'}\tlogin\n",
             self.codex_log.read_text(encoding="utf-8"),
         )
         self.assertEqual(0o700, (self.home / ".codex-sandbox-auth").stat().st_mode & 0o777)
@@ -2083,6 +2084,8 @@ class CodexSandboxTest(GuestModeTest):
         self.assertNotIn(credential_mount, caddy)
         self.assertIn("--read-only", helper)
         self.assertIn("--read-only", caddy)
+        self.assertEqual("0:0", helper[helper.index("--user") + 1])
+        self.assertEqual("0:0", caddy[caddy.index("--user") + 1])
         socket_mounts = [item for call in (helper, caddy) for item in call
                          if item.startswith("type=volume,") and "dst=/run/profile-helper" in item]
         self.assertEqual(2, len(socket_mounts))

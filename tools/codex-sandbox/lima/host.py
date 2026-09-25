@@ -145,6 +145,75 @@ class Host:
                     raise
                 print(f"Guest staging cleanup failed: {error}", file=sys.stderr)
 
+    def source_files(self):
+        return {name: SOURCE / name for name in (
+            "install-slirp4netns.py", "pin-rootless-network.py", "public-only",
+            "rootless-network.json", "verify-host.py", "configure-network.py",
+            "mount-shares.py", "mounts.py", "boot-credential.py", "relay-network.py")}
+
+    def make_snapshot(self):
+        snapshot = private_directory(self.state / (".source-upgrade-" + uuid.uuid4().hex))
+        inputs = self.source_files()
+        for name, source in inputs.items():
+            shutil.copyfile(source, snapshot / name)
+        (snapshot / "network-policy.json").write_bytes(policy_bytes())
+        files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in snapshot.iterdir() if path.is_file()}
+        return snapshot, files
+
+    def install_snapshot(self, record, temporary):
+        self.guest(record, "sudo", "python3", temporary + "/mount-shares.py", input=json.dumps(record).encode())
+        self.guest(record, "python3", temporary + "/pin-rootless-network.py", temporary + "/rootless-network.json")
+        self.guest(record, "sudo", "install", "-d", "-m", "755", GUEST)
+        for name in ("network-policy.json", "rootless-network.json", "verify-host.py", "mounts.py", "boot-credential.py", "relay-network.py"):
+            self.guest(record, "sudo", "install", "-m", "644", temporary + "/" + name, GUEST + "/" + name)
+        self.guest(record, "sudo", "install", "-m", "755", temporary + "/public-only", "/usr/local/libexec/cni/public-only")
+        self.guest(record, "python3", temporary + "/configure-network.py")
+        record["network_path"] = self.machine(record)["config"]["user"]["home"] + "/.config/cni/net.d/default/nerdctl-codex-public-only.conflist"
+        network = self.guest(record, "cat", record["network_path"], capture_output=True).stdout
+        record["network_digest"] = hashlib.sha256(network).hexdigest()
+
+    def upgrade(self):
+        record = self.record()
+        if record["phase"] != "ready":
+            raise ValueError("only a ready sandbox can be upgraded")
+        self.machine(record)
+        snapshot, files = self.make_snapshot()
+        candidate = {**record, "files": files}
+        old_snapshot = self.state / "source"
+        guest_update_started = False
+        try:
+            with self.staged_snapshot(candidate, snapshot) as temporary:
+                guest_update_started = True
+                self.install_snapshot(candidate, temporary)
+            self.verify(candidate)
+            backup = self.state / (".source-old-" + uuid.uuid4().hex)
+            os.replace(old_snapshot, backup)
+            try:
+                os.replace(snapshot, old_snapshot)
+                atomic_json(self.record_path, candidate)
+            except Exception:
+                if old_snapshot.exists():
+                    shutil.rmtree(old_snapshot)
+                os.replace(backup, old_snapshot)
+                raise
+            try:
+                shutil.rmtree(backup)
+            except OSError as error:
+                print(f"Old snapshot cleanup failed: {error}", file=sys.stderr)
+            return candidate
+        except Exception:
+            if guest_update_started:
+                try:
+                    with self.staged_snapshot(record, old_snapshot) as temporary:
+                        self.install_snapshot(record, temporary)
+                    self.verify(record)
+                except (OSError, subprocess.SubprocessError, ValueError) as error:
+                    print(f"Guest upgrade rollback failed: {error}", file=sys.stderr)
+            if snapshot.exists():
+                shutil.rmtree(snapshot)
+            raise
+
     def machine_identity(self, record):
         machine = machines().get(record["instance"])
         if machine is None:
@@ -207,8 +276,8 @@ class Host:
             generation = uuid.uuid4().hex
             snapshot = self.state / "source"
             private_directory(snapshot)
-            for name in ("install-slirp4netns.py", "pin-rootless-network.py", "public-only", "rootless-network.json", "verify-host.py", "configure-network.py", "mount-shares.py", "mounts.py", "boot-credential.py", "relay-network.py"):
-                shutil.copyfile(SOURCE / name, snapshot / name)
+            for name, source in self.source_files().items():
+                shutil.copyfile(source, snapshot / name)
             (snapshot / "network-policy.json").write_bytes(policy_bytes())
             template = (SOURCE / "network-fixture.yaml").read_text()
             template = template.replace("# Feasibility fixture only; not a production VM or launcher default.",
@@ -252,16 +321,7 @@ class Host:
             record["vm_identity"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
         atomic_json(self.record_path, record)
         with self.staged_snapshot(record, snapshot) as temporary:
-            self.guest(record, "sudo", "python3", temporary + "/mount-shares.py", input=json.dumps(record).encode())
-            self.guest(record, "python3", temporary + "/pin-rootless-network.py", temporary + "/rootless-network.json")
-            self.guest(record, "sudo", "install", "-d", "-m", "755", GUEST)
-            for name in ("network-policy.json", "rootless-network.json", "verify-host.py", "mounts.py", "boot-credential.py", "relay-network.py"):
-                self.guest(record, "sudo", "install", "-m", "644", temporary + "/" + name, GUEST + "/" + name)
-            self.guest(record, "sudo", "install", "-m", "755", temporary + "/public-only", "/usr/local/libexec/cni/public-only")
-            self.guest(record, "python3", temporary + "/configure-network.py")
-            record["network_path"] = machine["config"]["user"]["home"] + "/.config/cni/net.d/default/nerdctl-codex-public-only.conflist"
-            network = self.guest(record, "cat", record["network_path"], capture_output=True).stdout
-            record["network_digest"] = hashlib.sha256(network).hexdigest()
+            self.install_snapshot(record, temporary)
         self.configure_ssh(record)
         self.verify(record)
         record["phase"] = "ready"
@@ -387,6 +447,7 @@ def main():
     setup.add_argument("--share-read", action="append", help="override the default home share (test fixtures)")
     setup.add_argument("--share-write", action="append", help="override the default home share (test fixtures)")
     sub.add_parser("start")
+    sub.add_parser("upgrade")
     sub.add_parser("status")
     sub.add_parser("stop")
     bind = sub.add_parser("check-bind")
@@ -399,6 +460,8 @@ def main():
             record = host.setup(args.instance, args.share_read, args.share_write)
         elif args.operation == "start":
             record = host.start()
+        elif args.operation == "upgrade":
+            record = host.upgrade()
         elif args.operation == "check-bind":
             record = host.check_bind(args.source, args.write)
         elif args.operation == "stop":

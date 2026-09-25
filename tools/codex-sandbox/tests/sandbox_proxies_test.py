@@ -1559,6 +1559,35 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("failed", recovery["lifecycle-state"])
         self.assertEqual("a" * 32, recovery["forwarding"]["owner"])
 
+    def test_jj_proxy_uses_rootless_container_root_for_private_metadata(self) -> None:
+        state_path = self.repo / "state"
+        args = SimpleNamespace(prefix="test", state=str(state_path), network="sandbox",
+                               container_repo=str(self.container_repo), zuliprc=None)
+        command = self.command(argv=["jj-proxy", "serve"])
+        image = "sha256:" + "0" * 64
+        completed = subprocess.CompletedProcess
+
+        def docker(*arguments, capture=False):
+            stdout = "true\n" if arguments[:2] == ("inspect", "--format") else ""
+            return completed(arguments, 0, stdout=stdout)
+
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", mock.Mock(provider="podman")), \
+                mock.patch.object(sandbox_proxies, "_docker", side_effect=docker) as run, \
+                mock.patch.object(sandbox_proxies, "subprocess") as subprocess_module, \
+                mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies, "proxy_git_environment_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies, "git_metadata_paths", return_value=(self.repo / ".git", self.repo / ".git")), \
+                mock.patch.object(sandbox_proxies, "jj_repository_path", return_value=self.repo / ".jj"), \
+                mock.patch.object(sandbox_proxies, "checked_repository_path"):
+            subprocess_module.run.return_value = completed([], 0, stderr="")
+            sandbox_proxies.start_one_proxy(
+                args, self.repo, "repository", {"jj": image},
+                {"proxies": []}, threading.Lock(), "jj", command,
+            )
+
+        run_argv = next(call.args for call in run.call_args_list if call.args[0] == "run")
+        self.assertEqual("0:0", run_argv[run_argv.index("--user") + 1])
+
     def test_failed_alias_cleanup_retains_recovery_and_blocks_resource_removal(self) -> None:
         service_owner = "a" * 32
         proxy = {

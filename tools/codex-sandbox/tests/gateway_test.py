@@ -227,6 +227,20 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertEqual("3456", gateway_run[gateway_run.index("--agent-room-port") + 1])
         bridge.allow_peers.assert_called_once_with({"10.0.0.2", "127.0.0.1"})
 
+    def test_unavailable_agent_room_is_a_warning_when_it_is_the_only_capability(self):
+        state = self.state()
+        state.capabilities = frozenset({"agent-room"})
+        prepare = self.launcher["prepare_gateway"]
+        bridge = Mock()
+        bridge.start.side_effect = ConnectionRefusedError(111, "refused")
+        with patch.dict(prepare.__globals__,
+                        FixedTcpBridge=Mock(return_value=bridge),
+                        create_relay_network=Mock()), \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual([], prepare(state))
+        self.assertIsNone(state.gateway_handle)
+        self.assertIn("warning: agent-room relay unavailable: [Errno 111] refused", stderr.getvalue())
+
     def test_cleanup_closes_registry_before_background_start_can_create(self):
         state = self.state()
         prepare = self.launcher["prepare_gateway"]

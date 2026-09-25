@@ -125,9 +125,7 @@ COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-pro
 
 ENV HOME=/home/codex
 ENV EDITOR=vi VISUAL=vi
-RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace \
-    && chown -R ${AGENT_UID}:${AGENT_GID} \
-        ${HOME} /src
+RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace
 
 # Reuse noninteractive dotfile semantics without personal shell hooks.
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/editorconfig ${HOME}/.editorconfig

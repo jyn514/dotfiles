@@ -1425,6 +1425,10 @@ def start_one_proxy(
     handles: list[Any] | None = None,
 ) -> dict[str, str]:
     service_owner = uuid.uuid4().hex
+    # Rootless Docker maps the VM user's host-owned bind mounts to container
+    # root. The jj metadata directory is intentionally 0700, so only this
+    # proxy uses container root; root remains the unprivileged VM UID.
+    container_uid, container_gid = (0, 0) if name == "jj" else (os.getuid(), os.getgid())
     selected_network = args.network if command["network"] else "none"
     zulip_network = f"{args.prefix}-zulip-application" if name == "zulip" else None
     zulip_pair = None
@@ -1465,7 +1469,7 @@ def start_one_proxy(
         pair_identity = zulip_pair.implementation_identity(helper.implementation_identity)
     else:
         resolved = _command_proxy_resolved(
-            name, command, images[name], selected_network, os.getuid(), os.getgid(),
+            name, command, images[name], selected_network, container_uid, container_gid,
         )
     lifecycle = ServiceLifecycle(resolved, service_owner, owners or OwnerSet())
     lifecycle.transition(LifecycleState.RESOLVED)
@@ -1478,7 +1482,7 @@ def start_one_proxy(
         "name": name, "volume": volume, "container": container, "image": images[name],
         "service-owner": service_owner, "implementation-identity": resolved.implementation_identity,
         "state-schema": COMMAND_PROXY_STATE_SCHEMA, "lifecycle-state": "starting",
-        "identity-parameters": {"uid": os.getuid(), "gid": os.getgid(), "network": selected_network},
+        "identity-parameters": {"uid": container_uid, "gid": container_gid, "network": selected_network},
         "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
     }
     if isinstance(OUTER_RUNTIME, VMRuntime):
@@ -1533,9 +1537,9 @@ def start_one_proxy(
         proxy["resource-status"]["volume"] = "intended"; persist()
         try:
             if isinstance(OUTER_RUNTIME, VMRuntime):
-                OUTER_RUNTIME.initialize_volume(volume, os.getuid(), os.getgid(), proxy["volume-owner"])
+                OUTER_RUNTIME.initialize_volume(volume, container_uid, container_gid, proxy["volume-owner"])
             else:
-                _docker("volume", "create", "--uid", str(os.getuid()), "--gid", str(os.getgid()),
+                _docker("volume", "create", "--uid", str(container_uid), "--gid", str(container_gid),
                         "--label", f"dev.codex.service-owner={service_owner}", volume)
         except BaseException:
             proxy["resource-status"]["volume"] = "unknown"; persist(); raise
@@ -1552,7 +1556,7 @@ def start_one_proxy(
             "--label", f"dev.codex.command={name}",
             "--label", f"dev.codex.service-owner={service_owner}",
             "--security-opt=no-new-privileges", "--read-only",
-            "--user", f"{os.getuid()}:{os.getgid()}",
+            "--user", f"{container_uid}:{container_gid}",
             "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777",
             "--network", selected_network,
             "--pids-limit", "96", "--memory", "2304m", "--cpus", "2",
@@ -1869,7 +1873,9 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
     parameters = managed["identity-parameters"]
     if managed["lifecycle-state"] != "ready":
         raise ConfigError("managed required proxy is not ready")
-    if uid is not None and parameters["uid"] != uid or gid is not None and parameters["gid"] != gid:
+    expected_uid, expected_gid = (0, 0) if managed["name"] == "jj" else (uid, gid)
+    if (expected_uid is not None and parameters["uid"] != expected_uid or
+            expected_gid is not None and parameters["gid"] != expected_gid):
         raise ConfigError("managed proxy UID/GID changed")
     if (command["network"] and parameters["network"] == "none") or (
             not command["network"] and parameters["network"] != "none"):

@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import hashlib
+from contextlib import nullcontext
 from pathlib import Path
 import subprocess
 import sys
@@ -281,6 +282,32 @@ class HostTests(unittest.TestCase):
                     instance.setup("sandbox-host", [], [])
                 command.assert_not_called()
             self.assertFalse(instance.record_path.exists())
+
+    def test_upgrade_publishes_snapshot_only_after_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            instance = host.Host(Path(temporary))
+            source = instance.state / "source"
+            source.mkdir()
+            (source / "old.py").write_text("old")
+            record = {"schema": 1, "instance": "sandbox-host", "phase": "ready",
+                      "shares": [], "files": {"old.py": hashlib.sha256(b"old").hexdigest()}}
+            host.atomic_json(instance.record_path, record)
+            with patch.object(instance, "machine"), \
+                    patch.object(instance, "staged_snapshot", return_value=nullcontext("guest-stage")), \
+                    patch.object(instance, "install_snapshot"), \
+                    patch.object(instance, "verify"):
+                upgraded = instance.upgrade()
+            self.assertNotIn("old.py", upgraded["files"])
+            self.assertEqual(upgraded["files"], instance.record()["files"])
+
+            before = instance.record_path.read_bytes()
+            with patch.object(instance, "machine"), \
+                    patch.object(instance, "staged_snapshot", return_value=nullcontext("guest-stage")), \
+                    patch.object(instance, "install_snapshot"), \
+                    patch.object(instance, "verify", side_effect=[ValueError("verification failed"), None]):
+                with self.assertRaisesRegex(ValueError, "verification failed"):
+                    instance.upgrade()
+            self.assertEqual(before, instance.record_path.read_bytes())
 
     def test_setup_cannot_share_its_control_source(self):
         with tempfile.TemporaryDirectory() as temporary:
