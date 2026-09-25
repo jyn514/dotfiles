@@ -23,6 +23,7 @@ setup_backup() { record backup; }
 setup_install_local() { record local; }
 setup_install_global() { record global; }
 setup_kde() { record kde; }
+setup_sandbox() { record sandbox; }
 """
         source = (ROOT / "setup").read_text()
         marker = 'if ! [ $# = 0 ]; then\n'
@@ -37,7 +38,8 @@ setup_kde() { record kde; }
             "6": ["local", "python"],
             "7": ["global"],
             "8": ["kde"],
-            "9": ["global", "local", "basics", "shell", "python", "vim"],
+            "9": ["global", "local", "basics", "shell", "python", "vim", "sandbox"],
+            "10": ["sandbox"],
         }
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -221,7 +223,8 @@ setup_kde() { record kde; }
 
         self.assertNotIn("setup_macos", setup)
         self.assertNotIn("macos|10", setup)
-        self.assertIn("Please enter a number 0-9", setup)
+        self.assertIn("sandbox*|10) setup_sandbox", setup)
+        self.assertIn("Please enter a number 0-10", setup)
 
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

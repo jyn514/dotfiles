@@ -8,8 +8,9 @@ Set `CODEX_SANDBOX_HOST_PI=0` to retain the older guest-Pi mode.
 Host mode requires the Pi installation at
 `~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
 current sandbox image. The launcher loads its extensions from this checkout;
-`./setup` is not required for the sandbox path. A successful `/reload` restores
-the guest tool extension.
+dotfile installation is not required for the sandbox path, but its default
+Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
+A successful `/reload` restores the guest tool extension.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman; guest-Pi mode also uses the Codex authentication broker.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 

@@ -409,6 +409,15 @@ setup_install_local () {
 
 }
 
+setup_sandbox () {
+	echo Provisioning sandbox VM
+	if ! exists python3; then
+		echo "sandbox setup requires python3; run setup option 7 or 9 first" >&2
+		return 1
+	fi
+	python3 tools/codex-sandbox/lima/docker_host.py setup
+}
+
 setup_all () {
 	echo Doing everything
 	setup_install_global || return  # so we know we have vim, git, etc.
@@ -417,6 +426,7 @@ setup_all () {
 	setup_shell || return
 	setup_python || return
 	setup_vim || return
+	setup_sandbox || return
 	# this is a mess rn
 	# setup_backup
 	return 0
@@ -433,6 +443,7 @@ message () {
 [sudo|7] install (global packages; uses sudo)
 [kde|8] kde
 [all|9] all
+[sandbox|10] provision Lima-Docker sandbox VM
 Choose setup to run: "
 }
 
@@ -460,6 +471,7 @@ run() {
 		l*|6) setup_install_local && setup_python;;
 		sudo*|i*|g*|7) setup_install_global;;
 		kde*|8) setup_kde;;
+		sandbox*|10) setup_sandbox;;
 		all|9) setup_all;;
 		*) return 126;;
 	esac
@@ -482,7 +494,7 @@ else
 	message
 	while read -r choice; do
 		if ! run "$choice"; then
-			echo "Please enter a number 0-9: "
+			echo "Please enter a number 0-10: "
 		fi
 		message
 	done
