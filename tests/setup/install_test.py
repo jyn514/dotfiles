@@ -45,7 +45,7 @@ class InstallationTests(unittest.TestCase):
             "macos": (),
             "ubuntu": ("apt",),
         }[platform["ID"]]
-        for command in (*managers, "brew", "code", "curl", "keymapp", "mise", "pwsh"):
+        for command in (*managers, "brew", "code", "curl", "install", "keymapp", "mise", "pwsh"):
             (self.bin / command).symlink_to(recorder)
 
         apt_cache = self.bin / "apt-cache"
@@ -130,6 +130,8 @@ class InstallationTests(unittest.TestCase):
         for result in results:
             self.assertEqual(0, result.returncode, result.stderr)
         commands = self.commands()
+        if platform["ID"] == "fedora":
+            self.assertEqual(2, len([command for command in commands if command[0] == "install"]))
         manager = {"macos": "brew", "debian": "apt", "ubuntu": "apt",
                    "fedora": "dnf", "alpine": "apk"}.get(platform["ID"])
         if platform["ID"] == "arch":
