@@ -385,7 +385,7 @@ version = "1.0.7"
 backend = "cargo:counts"
 
 [[tools."cargo:https://github.com/jj-vcs/jj"]]
-version = "rev:a0e7ebe7b037e822c506fcf6308055f8eecfb48a"
+version = "rev:f1b29bced933e289096a9c98276153e29dd95674"
 backend = "cargo:https://github.com/jj-vcs/jj"
 
 [tools."cargo:https://github.com/jj-vcs/jj".options]

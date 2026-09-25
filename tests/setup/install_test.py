@@ -672,7 +672,7 @@ class MiseConfigTests(unittest.TestCase):
             )
         self.assertEqual(
             {
-                "version": "rev:a0e7ebe7b037e822c506fcf6308055f8eecfb48a",
+                "version": "rev:f1b29bced933e289096a9c98276153e29dd95674",
                 "crate": "jj-cli",
                 "bin": "jj",
                 "depends": ["rust"],
