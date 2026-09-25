@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Provision the pinned Docker packages in an owned Ubuntu arm64 VM."""
+"""Provision the pinned Docker packages in an owned Ubuntu VM."""
 
 import hashlib
 import os
@@ -18,8 +18,10 @@ def run(*args):
 
 
 def main():
-    if os.getuid() != 0 or platform.machine() != 'aarch64':
-        raise ValueError('Docker setup requires the owned arm64 guest root')
+    architecture = os.environ.get('SANDBOX_DOCKER_ARCH', platform.machine())
+    apt_architecture = {'aarch64': 'arm64', 'x86_64': 'amd64'}.get(architecture)
+    if os.getuid() != 0 or apt_architecture is None or platform.machine() != architecture:
+        raise ValueError('Docker setup requires the owned supported-architecture guest root')
     with urlopen('https://download.docker.com/linux/ubuntu/gpg', timeout=30) as response:
         key = response.read(32768)
     if hashlib.sha256(key).hexdigest() != KEY_SHA256:
@@ -27,7 +29,7 @@ def main():
     Path('/etc/apt/keyrings').mkdir(exist_ok=True)
     Path('/etc/apt/keyrings/docker.asc').write_bytes(key)
     Path('/etc/apt/sources.list.d/docker.list').write_text(
-        'deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] '
+        f'deb [arch={apt_architecture} signed-by=/etc/apt/keyrings/docker.asc] '
         'https://download.docker.com/linux/ubuntu noble stable\n')
     # Mask before package installation: package postinst may start rootful Docker.
     run('systemctl', 'mask', 'docker.service', 'docker.socket')

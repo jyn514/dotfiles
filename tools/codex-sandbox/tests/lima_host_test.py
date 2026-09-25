@@ -209,6 +209,11 @@ class HostTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unexpected"):
             mounts.repair(unrelated + raw.replace("ro,", "rw,"), [share])
 
+    def test_qemu_mount_type_is_preserved_in_fstab_repair(self):
+        raw = "mount0\t/host/share\t9p\trw,nofail,comment=cloudconfig\t0\t0\n"
+        share = {"mountPoint": "/host/share", "writable": True}
+        self.assertEqual(raw, mounts.repair(raw, [share], "9p"))
+
     def test_unmounted_directory_and_changed_mount_mode_are_not_host_shares(self):
         with tempfile.TemporaryDirectory() as temporary:
             share = {"mountPoint": temporary, "writable": True}

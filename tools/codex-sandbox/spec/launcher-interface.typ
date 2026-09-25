@@ -12,6 +12,25 @@ This is the canonical execution-attachment, capability-selection, and image-reso
 the implemented image-command/image-target split, not the proxy trust or
 transport contracts. Adopted from the maintainers-ai-guide sketch of 2026-09-12.
 
+== Host virtualization boundary <host-virtualization>
+
+The selected Linux runtime keeps the container engine inside a dedicated Lima
+virtual machine. On `x86_64` Linux, Lima uses QEMU with KVM acceleration: QEMU
+provides the virtual machine and device model, while KVM lets the guest execute
+compatible CPU instructions through the Linux kernel's hardware virtualization
+interface. Provisioning must verify that KVM is available and must fail rather
+than silently falling back to software CPU emulation.
+
+macOS retains the native VZ Lima backend. Podman remains an explicit backend for
+hosts without the VM setup, but it is not equivalent to this VM boundary and
+must not be described as the same isolation level. The launcher keeps the
+container mounts, protected metadata overlays, and credential boundaries
+unchanged across these host backends; only the outer engine and its lifecycle
+change.
+The Linux path is implemented for `x86_64` hosts but requires native Lima,
+QEMU, Docker, Buildx, and KVM validation before it is considered production
+ready.
+
 Keep ordinary launches quiet and avoid BuildKit solves when images are reusable.
 Simple repositories should declare builds without cache code; projects with an
 existing image lifecycle retain ownership of it.

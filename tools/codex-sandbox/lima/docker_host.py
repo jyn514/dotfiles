@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lima.host import Host, SOURCE, GUEST, atomic_json, command, machines, private_directory, shares
 from network_policy import policy_bytes
 from lima.docker_client import pin_buildx, pin_docker
+from lima.docker_platform import current
 
 
 class DockerHost(Host):
@@ -54,6 +55,7 @@ class DockerHost(Host):
                  not Path(item['location']).is_relative_to(scratch))) for item in requested):
             raise ValueError('a share exposes the host control directory')
         if self.record_path.exists():
+            configuration = current()
             record = self.record()
             if record['instance'] != instance or record['shares'] != requested:
                 raise ValueError('Docker setup identity changed; use a separate state directory')
@@ -66,7 +68,11 @@ class DockerHost(Host):
         else:
             if instance in machines():
                 raise ValueError('refusing to adopt an existing Docker VM')
-            client = Path(client or '/opt/homebrew/bin/docker').resolve(strict=True)
+            configuration = current()
+            client_path = client or configuration.default_client or shutil.which('docker')
+            if client_path is None:
+                raise ValueError('Docker CLI is required; pass --client PATH or install Docker CLI')
+            client = Path(client_path).resolve(strict=True)
             if not command(str(client), '--version', capture_output=True, text=True).stdout.startswith('Docker version '):
                 raise ValueError('the prototype requires the real Docker CLI, not the Podman alias')
             config = private_directory(self.state / 'client')
@@ -93,15 +99,19 @@ class DockerHost(Host):
             (snapshot / 'network-policy.json').write_bytes(policy_bytes())
             generation = uuid.uuid4().hex
             template = {
-                'minimumLimaVersion': '1.2.1', 'vmType': 'vz', 'arch': 'aarch64',
-                'cpus': 8, 'memory': '8GiB', 'disk': '100GiB', 'mountType': 'virtiofs', 'mounts': requested,
-                'images': [{'location': 'http://cloud-images-archive.ubuntu.com/releases/noble/release-20250704/ubuntu-24.04-server-cloudimg-arm64.img',
-                            'arch': 'aarch64', 'digest': 'sha256:bbecbb88100ee65497927ed0da247ba15af576a8855004182cf3c87265e25d35'}],
+                'minimumLimaVersion': '1.2.1', 'vmType': configuration.vm_type,
+                'arch': configuration.guest_arch, 'cpus': 8, 'memory': '8GiB',
+                'disk': '100GiB', 'mountType': configuration.mount_type, 'mounts': requested,
+                'images': [{'location': configuration.image, 'arch': configuration.guest_arch,
+                            'digest': configuration.image_digest}],
                 'containerd': {'system': False, 'user': False},
                 'ssh': {'loadDotSSHPubKeys': False, 'forwardAgent': False},
                 'hostResolver': {'enabled': True, 'ipv6': False,
                                  'hosts': {'host.docker.internal': 'host.lima.internal'}},
-                'propagateProxyEnv': False, 'env': {'SANDBOX_GENERATION': generation},
+                'propagateProxyEnv': False, 'env': {
+                    'SANDBOX_GENERATION': generation,
+                    'SANDBOX_DOCKER_ARCH': configuration.guest_arch,
+                },
                 'provision': [{'mode': 'dependency', 'file': str(snapshot / 'install-slirp4netns.py')},
                               {'mode': 'system', 'file': str(snapshot / 'docker-install.py')}],
                 'portForwards': [{'guestSocket': '/run/user/{{.UID}}/docker.sock',
@@ -111,6 +121,7 @@ class DockerHost(Host):
             command('limactl', 'validate', str(self.state / 'host.yaml'))
             record = {'schema': 1, 'provider': self.provider, 'phase': 'creating',
                       'instance': instance, 'namespace': 'default', 'generation': generation, 'firewall': 'nftables',
+                      'mount_type': configuration.mount_type,
                       'shares': requested, 'client': str(client), 'client_artifact': client_artifact,
                       'template_digest': hashlib.sha256((self.state / 'host.yaml').read_bytes()).hexdigest(),
                       'network_digest': hashlib.sha256(policy_bytes()).hexdigest(),
@@ -134,10 +145,21 @@ class DockerHost(Host):
         atomic_json(self.record_path, record)
         command('limactl', 'start', '--tty=false', instance)
         machine = self.machine(record)
-        record['vm_identity'] = hashlib.sha256((Path(machine['dir']) / 'vz-identifier').read_bytes()).hexdigest()
+        if configuration.vm_type == 'vz':
+            record['vm_identity'] = hashlib.sha256(
+                (Path(machine['dir']) / 'vz-identifier').read_bytes()
+            ).hexdigest()
         record['socket'] = str(Path(machine['dir']) / 'sock/docker.sock')
         atomic_json(self.record_path, record)
         self.configure_ssh(record)
+        if configuration.vm_type == 'qemu':
+            machine_id = self.guest(record, 'cat', '/etc/machine-id', capture_output=True,
+                                    text=True).stdout.strip()
+            if not re.fullmatch(r'[0-9a-f]{32}', machine_id):
+                raise ValueError('guest machine identity is missing or malformed')
+            record['vm_identity'] = hashlib.sha256(machine_id.encode()).hexdigest()
+            record['vm_identity_source'] = 'guest-machine-id'
+            atomic_json(self.record_path, record)
         staging = self.guest(record, 'mktemp', '-d', capture_output=True, text=True).stdout.strip()
         try:
             self.guest(record, 'sudo', 'mkdir', '-p', GUEST)
@@ -263,7 +285,7 @@ def main():
     for name in ('start', 'stop', 'status', 'doctor', 'pin-buildx'):
         sub.add_parser(name)
     pin = sub.add_parser('pin-client')
-    pin.add_argument('--source', type=Path, default=Path('/opt/homebrew/bin/docker'))
+    pin.add_argument('--source', type=Path)
     reclaim = sub.add_parser('reclaim', help='run, enable, or disable guest cache reclamation')
     reclaim.add_argument('action', choices=('once', 'enable', 'disable'), nargs='?', default='once')
     args = parser.parse_args()
@@ -287,7 +309,10 @@ def main():
             return
         elif args.operation == 'pin-client':
             record = host.record()
-            record['client_artifact'] = pin_docker(host.state, args.source)
+            source = args.source or record.get('client')
+            if source is None:
+                raise ValueError('Docker CLI is required; pass --source PATH')
+            record['client_artifact'] = pin_docker(host.state, source)
             atomic_json(host.record_path, record)
         else:
             record = getattr(host, args.operation)()

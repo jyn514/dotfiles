@@ -70,6 +70,12 @@ class Docker(VMRuntime):
         machine = self.host.machine(self.record)
         if self.record['socket'] != str(Path(machine['dir']) / 'sock/docker.sock'):
             raise RuntimeError('Docker socket differs from recorded VM')
+        if self.record.get('vm_identity_source') == 'guest-machine-id':
+            machine_id = self.host.guest(
+                self.record, 'cat', '/etc/machine-id', capture_output=True, text=True,
+            ).stdout.strip()
+            if hashlib.sha256(machine_id.encode()).hexdigest() != self.record['vm_identity']:
+                raise RuntimeError('Docker guest identity changed; refusing recovery')
         info = inspect_docker(self.record['socket'], '/info', ['docker', 'info'])
         if info['ID'] != self.record['engine_id'] or 'name=rootless' not in info['SecurityOptions']:
             raise RuntimeError('Docker engine identity changed; refusing recovery')

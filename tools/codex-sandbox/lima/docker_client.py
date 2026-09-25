@@ -14,8 +14,18 @@ import tempfile
 from lima.host import atomic_json, private_directory
 
 BUILDX_VERSION = 'v0.37.0'
-BUILDX_SOURCE = Path('/opt/homebrew/lib/docker/cli-plugins/docker-buildx')
 DOCKER_VERSION = '29.8.0'
+
+
+def default_buildx_source():
+    candidates = [
+        Path('/opt/homebrew/lib/docker/cli-plugins/docker-buildx'),
+        Path('/usr/libexec/docker/cli-plugins/docker-buildx'),
+        Path('/usr/lib/docker/cli-plugins/docker-buildx'),
+        Path('/usr/local/lib/docker/cli-plugins/docker-buildx'),
+        Path.home() / '.docker/cli-plugins/docker-buildx',
+    ]
+    return next((path for path in candidates if path.is_file()), None)
 
 # Pinning owns these private copies; Homebrew never updates them. Hash only
 # when publishing a copy, not on every command routed through this module.
@@ -62,7 +72,10 @@ def docker_client(state, record):
                          + shlex.quote(str(state)) + ' pin-client') from error
 
 
-def pin_buildx(state, source=BUILDX_SOURCE):
+def pin_buildx(state, source=None):
+    source = source or default_buildx_source()
+    if source is None:
+        raise ValueError('Docker Buildx plugin is required; install docker-buildx-plugin or pass a source')
     source = source.resolve(strict=True)
     client = private_directory(state / 'client')
     with tempfile.TemporaryDirectory(prefix='.pin-buildx-', dir=client) as temporary:

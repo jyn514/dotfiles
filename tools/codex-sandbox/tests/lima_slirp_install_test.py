@@ -19,9 +19,13 @@ class InstallTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.destination = Path(self.directory.name) / "slirp4netns"
-        digest = patch.object(installer, "SHA256", hashlib.sha256(RELEASE).hexdigest())
-        digest.start()
-        self.addCleanup(digest.stop)
+        digests = patch.dict(
+            installer.ARTIFACTS,
+            {"aarch64": hashlib.sha256(RELEASE).hexdigest(),
+             "x86_64": hashlib.sha256(RELEASE).hexdigest()},
+        )
+        digests.start()
+        self.addCleanup(digests.stop)
 
     def test_verified_install_is_executable_and_reboot_needs_no_download(self):
         with patch.object(installer, "urlopen", return_value=io.BytesIO(RELEASE)) as fetch:
@@ -30,6 +34,12 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(RELEASE, self.destination.read_bytes())
         self.assertEqual(0o755, self.destination.stat().st_mode & 0o777)
         fetch.assert_called_once()
+
+    def test_x86_64_artifact_uses_the_architecture_specific_pin(self):
+        with patch.object(installer, "urlopen", return_value=io.BytesIO(RELEASE)) as fetch:
+            installer.install(self.destination, architecture="x86_64")
+        self.assertEqual(RELEASE, self.destination.read_bytes())
+        self.assertIn("slirp4netns-x86_64", fetch.call_args.args[0])
 
     def test_corrupt_download_never_reaches_executable_path(self):
         with patch.object(installer, "urlopen", return_value=io.BytesIO(b"corrupt release")):

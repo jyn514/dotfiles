@@ -13,14 +13,14 @@ def escaped(path):
     return path.replace("\\", "\\134").replace(" ", "\\040")
 
 
-def repair(text, shares):
+def repair(text, shares, mount_type="virtiofs"):
     lines = text.splitlines(keepends=True)
     for index, share in enumerate(shares):
         tag = f"mount{index}"
         path = share["mountPoint"]
         options = ("rw" if share["writable"] else "ro") + ",nofail,comment=cloudconfig"
-        raw = "\t".join((tag, path, "virtiofs", options, "0", "0")) + "\n"
-        fixed = "\t".join((tag, escaped(path), "virtiofs", options, "0", "0")) + "\n"
+        raw = "\t".join((tag, path, mount_type, options, "0", "0")) + "\n"
+        fixed = "\t".join((tag, escaped(path), mount_type, options, "0", "0")) + "\n"
         matches = [position for position, line in enumerate(lines) if line.startswith(tag + "\t")]
         if len(matches) != 1 or lines[matches[0]] not in (raw, fixed):
             raise ValueError(f"refusing to replace an unexpected fstab entry for {tag}")
@@ -31,10 +31,12 @@ def repair(text, shares):
 def main():
     if os.getuid() != 0:
         raise ValueError("mount provisioning requires guest root")
-    shares = json.load(sys.stdin)["shares"]
+    record = json.load(sys.stdin)
+    shares = record["shares"]
+    mount_type = record.get("mount_type", "virtiofs")
     destination = Path("/etc/fstab")
     original = destination.read_text()
-    fixed = repair(original, shares)
+    fixed = repair(original, shares, mount_type)
     if fixed != original:
         descriptor, temporary = tempfile.mkstemp(dir=destination.parent, prefix=".sandbox-fstab-")
         try:
@@ -55,7 +57,7 @@ def main():
         if mounted.returncode != 32:
             raise ValueError(f"cannot inspect mount point: {target}")
         Path(target).mkdir(parents=True, exist_ok=True)
-        subprocess.run(["mount", "-t", "virtiofs", "-o", "rw" if share["writable"] else "ro",
+        subprocess.run(["mount", "-t", mount_type, "-o", "rw" if share["writable"] else "ro",
                         f"mount{index}", target], check=True, timeout=30)
 
 

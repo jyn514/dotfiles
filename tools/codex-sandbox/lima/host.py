@@ -131,8 +131,12 @@ class Host:
         machine = machines().get(record["instance"])
         if machine is None:
             raise ValueError("recorded VM is missing; rerun setup only for unfinished creation")
-        if "vm_identity" in record:
-            identity = hashlib.sha256((Path(machine["dir"]) / "vz-identifier").read_bytes()).hexdigest()
+        if "vm_identity" in record and record.get("vm_identity_source") != "guest-machine-id":
+            identity_path = Path(machine["dir"]) / "vz-identifier"
+            try:
+                identity = hashlib.sha256(identity_path.read_bytes()).hexdigest()
+            except OSError as error:
+                raise ValueError("VM hardware identity is unavailable") from error
             if identity != record["vm_identity"]:
                 raise ValueError("VM hardware identity changed after setup")
         return machine
@@ -225,7 +229,9 @@ class Host:
             command("limactl", "stop", "--force", "--tty=false", instance)
         command("limactl", "start", "--tty=false", instance)
         machine = self.machine(record)
-        record["vm_identity"] = hashlib.sha256((Path(machine["dir"]) / "vz-identifier").read_bytes()).hexdigest()
+        identity_path = Path(machine["dir"]) / "vz-identifier"
+        if identity_path.exists():
+            record["vm_identity"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
         atomic_json(self.record_path, record)
         temporary = self.guest(record, "mktemp", "-d", capture_output=True, text=True).stdout.strip()
         try:

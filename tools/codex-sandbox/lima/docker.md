@@ -4,7 +4,7 @@ Lima-Docker is the default sandbox backend. It uses Docker's host API and
 BuildKit in a separate VM. Existing nerdctl/Lima and Podman VMs, images, and
 sessions are not migrated.
 
-From the dotfiles checkout on Apple Silicon macOS:
+On Apple Silicon macOS, install Lima, Docker, and Buildx with Homebrew:
 
 ```sh
 brew install lima docker docker-buildx
@@ -12,6 +12,22 @@ python3 tools/codex-sandbox/lima/docker_host.py setup
 codex-sandbox --help
 pi
 ```
+
+On `x86_64` Linux, install Lima, QEMU, Docker CLI 29.8.0, and Buildx 0.37.0
+through the host distribution's trusted package sources. The host must expose
+readable and writable `/dev/kvm`; setup selects QEMU with KVM acceleration and
+uses Lima's `9p` host-share driver. It rejects Linux hosts without KVM instead
+of silently running software-emulated CPU instructions:
+
+```sh
+test -r /dev/kvm -a -w /dev/kvm
+python3 tools/codex-sandbox/lima/docker_host.py setup
+CODEX_SANDBOX_RUNTIME=lima-docker pi
+```
+
+The Linux path requires a real Docker CLI and Buildx plugin because the setup
+pins both host executables into private state. A Podman alias is rejected; pass
+`--client PATH` to `setup` when the Docker CLI is outside the usual search path.
 
 Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
 Existing VMs retain their resource sizes when setup is rerun.
