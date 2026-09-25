@@ -9,6 +9,9 @@ import stat
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mounts import source
+
 
 def run(*args):
     result = subprocess.run(args, capture_output=True, text=True, timeout=30)
@@ -18,12 +21,12 @@ def run(*args):
     return result.stdout
 
 
-def verify_mount(share, index):
+def verify_mount(share, index, mount_type="virtiofs"):
     path = Path(share["mountPoint"])
     mounts = json.loads(run("findmnt", "--json", "--target", str(path),
                             "--output", "TARGET,SOURCE,FSTYPE,OPTIONS"))["filesystems"]
     if (len(mounts) != 1 or mounts[0]["target"] != str(path) or
-            mounts[0]["fstype"] != "virtiofs" or mounts[0]["source"] != f"mount{index}" or
+            mounts[0]["fstype"] != mount_type or mounts[0]["source"] != source(share, index, mount_type) or
             ("rw" if share["writable"] else "ro") not in mounts[0]["options"].split(",")):
         raise ValueError(f"effective host share differs from setup: {share!r}; mount{index}: {mounts!r}")
     if not path.is_dir() or not os.access(path, os.R_OK | os.X_OK):
@@ -87,7 +90,7 @@ def main():
     if hashlib.sha256(network_path.read_bytes()).hexdigest() != record["network_digest"]:
         raise ValueError("public CNI network changed since setup")
     for index, share in enumerate(record["shares"]):
-        verify_mount(share, index)
+        verify_mount(share, index, record.get("mount_type", "virtiofs"))
     print("Guest runtime and installed policy verified", file=sys.stderr)
 
 

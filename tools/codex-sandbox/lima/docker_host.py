@@ -82,6 +82,7 @@ class DockerHost(Host):
             snapshot = private_directory(self.state / 'source')
             inputs = {'boot-credential.py': SOURCE / 'boot-credential.py',
                       'mount-shares.py': SOURCE / 'mount-shares.py',
+                      'mounts.py': SOURCE / 'mounts.py',
                       'install-slirp4netns.py': SOURCE / 'install-slirp4netns.py',
                       'rootless-network.json': SOURCE / 'rootless-network.json',
                       'docker-policy.py': SOURCE / 'docker/policy.py',

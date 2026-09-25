@@ -11,6 +11,9 @@ import stat
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mounts import source
+
 BASE = Path('/usr/local/share/codex-sandbox')
 PUBLIC = 'cs-public'
 
@@ -92,7 +95,7 @@ def verify(record):
         mounted = json.loads(run('findmnt', '--json', '--target', share['mountPoint'],
                                  '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS'))['filesystems']
         if (len(mounted) != 1 or mounted[0]['target'] != share['mountPoint'] or
-                mounted[0]['source'] != f'mount{index}' or
+                mounted[0]['source'] != source(share, index, record.get('mount_type', 'virtiofs')) or
                 mounted[0]['fstype'] != record.get('mount_type', 'virtiofs') or
                 ('rw' if share['writable'] else 'ro') not in mounted[0]['options'].split(',')):
             raise ValueError('Docker VM share differs from the recorded mount')

@@ -238,6 +238,11 @@ class HostTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "effective"):
                         verify.verify_mount(share, 0)
 
+            qemu_share = {"location": temporary, "mountPoint": temporary, "writable": True}
+            qemu_mounted = {**mounted, "source": mounts.lima_tag(qemu_share), "fstype": "9p"}
+            with patch.object(verify, "run", return_value=json.dumps({"filesystems": [qemu_mounted]})):
+                verify.verify_mount(qemu_share, 0, "9p")
+
     def test_symlink_cannot_escape_shared_root(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

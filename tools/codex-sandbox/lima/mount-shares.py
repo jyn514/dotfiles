@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 """Mount Lima shares and repair virtiofs paths before accepting host shares."""
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,14 +8,12 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mounts import lima_tag
+
 
 def escaped(path):
     return path.replace("\\", "\\134").replace(" ", "\\040")
-
-
-def lima_tag(share):
-    value = f'{share["location"]}:{share["mountPoint"]}'.encode()
-    return "lima-" + hashlib.sha256(value).digest()[:8].hex()
 
 
 def mount_9p(share):
