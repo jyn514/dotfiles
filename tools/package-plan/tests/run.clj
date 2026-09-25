@@ -29,10 +29,22 @@
          (:packages (planner/disposition policy :fedora :python3-pylsp))))
   (is (= [:neovim]
          (:packages (planner/disposition policy :alpine :nvim))))
+  (is (= [:perl-File-Which]
+         (:packages (planner/disposition policy :fedora :perl-file-which))))
+  (is (= [:sane-backends]
+         (:packages (planner/disposition policy :fedora :sane))))
+  (doseq [package [:fzy :markdown-oxide :signal-desktop]]
+    (is (= :skip
+           (:kind (planner/disposition policy :fedora package)))))
   (is (= :fallback
          (:kind (planner/disposition policy :debian :bacon))))
   (is (= :skip
          (:kind (planner/disposition policy :macos-arm64 :valgrind)))))
+
+(deftest fedora-release-comes-from-os-release
+  (with-redefs [planner/parse-os-release
+                (constantly {:id "fedora" :version_id "42"})]
+    (is (= "42" (:release (planner/detect-host))))))
 
 (deftest alpine-baseline-has-no-duplicate-requests
   (let [host {:target :alpine :release "test" :arch "x86_64" :wsl false}
@@ -79,6 +91,12 @@
           kinds (map :kind (:operations plan))]
       (is (= [:repository :repository :repository :packages]
              (vec (take 4 kinds)))))))
+
+(deftest fedora-codec-install-allows-erasing
+  (let [operation (last (planner/resource-operations
+                         {:target :fedora :release "42" :arch "x86_64" :wsl false}
+                         ["sudo"]))]
+    (is (= "--allowerasing" (last (:argv operation))))))
 
 (deftest dry-run-never-starts-a-process
   (let [started (atom [])

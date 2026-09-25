@@ -119,7 +119,7 @@ The planner supports only the prerequisite operations current setup needs:
 - install the pinned 1Password repository key and repository definition before
   `1password` on Fedora; and
 - install the Fedora-versioned RPM Fusion release packages, then the current
-  codec package set with `--allow-erasing`.
+  codec package set with `--allowerasing`.
 
 These are fixed operations implemented by the planner, not command strings in
 the policy. Their URLs, release interpolation, destination paths, package

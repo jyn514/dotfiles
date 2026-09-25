@@ -41,14 +41,14 @@ dev/package-plan apply
 dev/package-plan apply --yes
 ```
 
-`apply` may elevate privileges, refresh or upgrade package databases, install packages, download package files, and add repositories or signing keys. Host-specific effects include enabling Ubuntu Universe or the Git PPA; configuring Microsoft PowerShell, VS Code, 1Password, or RPM Fusion; installing codecs with DNF `--allow-erasing`; and performing a full Arch `pacman` system upgrade. Operations already completed are not rolled back if a later operation fails.
+`apply` may elevate privileges, refresh or upgrade package databases, install packages, download package files, and add repositories or signing keys. Host-specific effects include enabling Ubuntu Universe or the Git PPA; configuring Microsoft PowerShell, VS Code, 1Password, or RPM Fusion; installing codecs with DNF `--allowerasing`; and performing a full Arch `pacman` system upgrade. Operations already completed are not rolled back if a later operation fails.
 
 ## Safety and recovery
 
 - Preview on the target host immediately before applying. Use `apply --yes` only after reviewing a fresh dry run.
-- `apply` may elevate privileges, refresh or upgrade package databases, install packages, download package files, and add repositories or signing keys. Host-specific effects include enabling Ubuntu Universe or the Git PPA; configuring Microsoft PowerShell, VS Code, 1Password, or RPM Fusion; installing codecs with DNF `--allow-erasing`; and performing a full Arch `pacman` system upgrade.
+- `apply` may elevate privileges, refresh or upgrade package databases, install packages, download package files, and add repositories or signing keys. Host-specific effects include enabling Ubuntu Universe or the Git PPA; configuring Microsoft PowerShell, VS Code, 1Password, or RPM Fusion; installing codecs with DNF `--allowerasing`; and performing a full Arch `pacman` system upgrade.
 - Operations already completed are not rolled back if a later operation fails.
-- Recovery is package-manager-specific: inspect the printed plan, remove unwanted packages or repository files with the native package manager, and restore any replaced packages after DNF `--allow-erasing`.
+- Recovery is package-manager-specific: inspect the printed plan, remove unwanted packages or repository files with the native package manager, and restore any replaced packages after DNF `--allowerasing`.
 - Re-running the corrected policy can add missing state but does not uninstall packages removed from the policy. Cache downloads can be deleted safely and will be fetched again.
 
 ## Tests

@@ -32,12 +32,17 @@
             :manpages [:man-pages]
             :libssl-dev [:openssl-devel]
             :libterm-readline-gnu-perl [:perl-Term-ReadLine-Gnu]
+            :perl-file-which [:perl-File-Which]
             :python3-pylsp [:python3-lsp-server]
+            :sane [:sane-backends]
             :build-essential ["@development-tools"]}
    :skip {:libusb-1.0-0-dev "Unused on Fedora"
+          :fzy "Unavailable"
+          :markdown-oxide "Unavailable"
           :powershell "Debian-family repository operation"
           :manpages-dev "Included with man-pages"
-          :libpam-fscrypt "Fedora setup does not use fscrypt"}}
+          :libpam-fscrypt "Fedora setup does not use fscrypt"
+          :signal-desktop "Unavailable"}}
   :arch
   {:manager :pacman
    :rename {:build-essential [:base-devel]

@@ -221,7 +221,7 @@
               target ({"debian" :debian "ubuntu" :ubuntu "fedora" :fedora
                        "arch" :arch "alpine" :alpine "chimera" :chimera} id)]
           (when-not target (fail! (str "unsupported Linux distribution: " id)))
-          {:target target :release (:version-id release) :arch arch
+          {:target target :release (:version_id release) :arch arch
            :wsl (or (str/includes? (str/lower-case
                                     (or (System/getProperty "os.version") ""))
                                    "microsoft")
@@ -325,7 +325,7 @@
                             (str "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-" release ".noarch.rpm")])}
          {:kind :packages :name :rpmfusion-codecs
           :argv (into sudo ["dnf" "install" "-y" "libavcodec-freeworld"
-                            "h264enc" "x264" "x265" "openh264" "--allow-erasing"])}])))))
+                            "h264enc" "x264" "x265" "openh264" "--allowerasing"])}])))))
 
 (defn package-operations [policy host sudo mise]
   (let [target (:target host)
