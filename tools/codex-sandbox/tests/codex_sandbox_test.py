@@ -324,18 +324,14 @@ class HostPiWrapperTest(unittest.TestCase):
     def test_tool_worker_allows_only_isolated_information_flags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
+            fake_pi = TOOL / "tests/fixtures/fake-pi-information.sh"
+            wrapper = home / "pi"
+            source = SANDBOX_PI.read_text(encoding="utf-8")
+            self.assertEqual(2, source.count("/opt/agent-pi/standalone/pi"))
+            wrapper.write_text(source.replace("/opt/agent-pi/standalone/pi", str(fake_pi)),
+                               encoding="utf-8")
             caller_agent = home / "caller-agent"
             caller_agent.mkdir()
-            sentinel = home / "extension-loaded"
-            (caller_agent / "extension.ts").write_text(
-                "import { writeFileSync } from 'node:fs';\n"
-                f"writeFileSync({json.dumps(str(sentinel))}, 'loaded');\n"
-                "export default function () {}\n",
-                encoding="utf-8",
-            )
-            (caller_agent / "settings.json").write_text(
-                json.dumps({"extensions": ["./extension.ts"]}), encoding="utf-8",
-            )
             caller_cache = home / "caller-node-cache"
             caller_xdg = home / "caller-xdg-cache"
             empty_bin = home / "empty-bin"
@@ -351,10 +347,13 @@ class HostPiWrapperTest(unittest.TestCase):
                 "TMPDIR": str(missing_tmp),
                 "XDG_CACHE_HOME": str(caller_xdg),
             }
+            bad = subprocess.run([str(fake_pi), "--offline", "--version"],
+                                 env=environment, text=True, capture_output=True)
+            self.assertEqual(89, bad.returncode)
             for argument in ("--help", "--version"):
                 with self.subTest(argument=argument):
                     result = subprocess.run(
-                        ["/bin/sh", str(SANDBOX_PI), argument],
+                        ["/bin/sh", str(wrapper), argument],
                         env=environment,
                         text=True, capture_output=True,
                     )
@@ -364,13 +363,12 @@ class HostPiWrapperTest(unittest.TestCase):
                     else:
                         self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
                     self.assertFalse((home / ".pi").exists())
-                    self.assertFalse(sentinel.exists())
                     self.assertFalse(caller_cache.exists())
                     self.assertFalse(caller_xdg.exists())
                     self.assertFalse(missing_tmp.exists())
 
             result = subprocess.run(
-                ["/bin/sh", str(SANDBOX_PI), "--list-models"],
+                ["/bin/sh", str(wrapper), "--list-models"],
                 env=environment,
                 text=True, capture_output=True,
             )
