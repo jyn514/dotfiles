@@ -44,7 +44,7 @@ Recommend only concrete work supported by the session. Prioritize defects that c
 
 Review whether process improvements are warranted.
 Consider the documentation, skills, and tools that materially affected the session or produced friction.
-Look for the following: observed friction, repeated manual work, hidden failure causes, misleading diagnostics, duplicated policy, missing ownership, drift between the implementation and spec, or validation gaps in this session.
+Look for the following: observed friction, repeated manual work, hidden failure causes, misleading diagnostics, duplicated policy, missing ownership, drift between the implementation and spec, or validation gaps in this session, avoidable mistakes, places you had to be corrected.
 Consider things other agents should know that would be hard to recover.
 
 For each suggestion, name the affected owner and the failure it would prevent. Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible. Route implementation to `technical-docs`, `skill-authoring`, `cleanup-triage`, or another owning skill rather than duplicating its procedure here.
