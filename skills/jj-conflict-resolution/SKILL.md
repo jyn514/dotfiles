@@ -25,7 +25,9 @@ jj log -r @ --no-graph \
 
 Use the second command when the working-copy commit is known to be conflicted; otherwise use `jj status`. Identify the exact conflicted revision and target change before creating the resolution commit.
 
-Inspect the whole conflict and surrounding destination code for each file. If the repository provides the `jj-conflict` wrapper, use:
+Inspect the whole conflict and surrounding destination code for each file. See
+the [`jj-conflict` command reference](../libexec/agent-wrappers/README.md) for
+selection semantics. If the repository provides the wrapper, use:
 
 ```bash
 jj-conflict inspect path/to/file --json
@@ -37,7 +39,7 @@ For a checkout that does not install the wrapper, invoke its tracked path direct
 libexec/agent-wrappers/jj-conflict inspect path/to/file --json
 ```
 
-The helper's edit numbers identify conflicts and diff alternatives. A single-diff conflict accepts `1`; a multi-sided conflict requires `conflict:diff`, such as `1:2`. Preview a composition, write it, then check the file:
+Preview a composition, write it, then check the file:
 
 ```bash
 jj-conflict apply path/to/file --edit 1,3:2 --stdout
