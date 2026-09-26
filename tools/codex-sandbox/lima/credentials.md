@@ -2,8 +2,8 @@
 
 The Lima credential helper stores `codex-sandbox/github-token` in the macOS login
 Keychain. First use in each VM boot requests Keychain approval; later containers
-reuse a private guest tmpfs cache. Ordinary launches still use Podman until the
-full-session migration gates pass.
+reuse a private guest tmpfs cache. The import command remains only as a migration
+path for an existing Podman secret.
 
 Import the existing Podman secret once:
 
@@ -12,7 +12,7 @@ python3 tools/codex-sandbox/sandbox_credentials.py import-podman
 ```
 
 Import captures the secret in memory and calls the native Security API. It does
-not overwrite an existing Keychain item or delete the Podman rollback secret.
+not overwrite an existing Keychain item or delete the source Podman secret.
 Neither the token nor its value appears in command arguments, logs, or host
 staging files.
 

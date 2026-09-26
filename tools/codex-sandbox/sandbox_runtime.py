@@ -171,10 +171,10 @@ class Image:
     rootfs: str
 
 
-class Podman:
-    """Keep the existing docker-compatible host entrypoint during migration."""
+class ContainerRuntime:
+    """Shared container-command operations used by admitted runtimes."""
 
-    provider = "podman"
+    provider = "container"
     host_address = "host.docker.internal"
     nonrecursive_bind = 'bind-nonrecursive=true'
     environment_file_in_guest = False
@@ -192,7 +192,7 @@ class Podman:
         expected = self.build_platform()
         if actual != expected:
             raise RuntimeError(
-                f'Podman builder image uses {actual}, expected admitted engine platform {expected}'
+                f'container builder image uses {actual}, expected admitted engine platform {expected}'
             )
         return self.inspect_image(immutable)
 
@@ -442,7 +442,7 @@ class Podman:
         self.run([*arguments, name], stdout=subprocess.DEVNULL)
 
 
-class VMRuntime(Podman):
+class VMRuntime(ContainerRuntime):
     """Shared host mounts, boot credentials, and recorded VM ownership."""
 
     def verify(self):
@@ -837,8 +837,6 @@ class Lima(VMRuntime):
 def image_runtime(provider=None, state=None):
     if provider is None:
         provider = os.environ.get('CODEX_SANDBOX_RUNTIME', 'lima-docker')
-    if provider == "podman":
-        return Podman()
     if provider == "lima":
         return Lima(state or os.environ.get('CODEX_SANDBOX_LIMA_STATE') or Path.home() / ".local/state/codex-sandbox-lima")
     if provider == 'lima-docker':
@@ -848,8 +846,10 @@ def image_runtime(provider=None, state=None):
 
 
 def runtime_identity(runtime):
-    if runtime.provider == "podman":
-        return {"provider": "podman"}
+    if runtime.provider == 'container':
+        # Test and bootstrap callers use the shared command implementation before
+        # an admitted Lima runtime is selected; it is never reconstructible state.
+        return {"provider": "container"}
     record = runtime.record
     fields = ('instance', 'generation', 'namespace', 'vm_identity', 'network_digest')
     if runtime.provider == 'lima-docker':
@@ -859,8 +859,6 @@ def runtime_identity(runtime):
 
 
 def recorded_runtime(identity, *, recovery=False):
-    if identity == {"provider": "podman"}:
-        return Podman()
     fields = {"provider", "state", "instance", "generation", "namespace", "vm_identity", "network_digest"}
     if isinstance(identity, dict) and identity.get('provider') == 'lima-docker':
         fields |= {'engine_id', 'network_id'}
@@ -880,6 +878,6 @@ def recorded_runtime(identity, *, recovery=False):
 
 
 def state_runtime(state, *, recovery=False):
-    # Legacy shared-state files were exclusively Podman. Never reinterpret
-    # absence as the current default, which can change after publication.
-    return recorded_runtime(state.get("runtime", {"provider": "podman"}), recovery=recovery)
+    if "runtime" not in state:
+        raise RuntimeError("shared state has no recorded runtime")
+    return recorded_runtime(state["runtime"], recovery=recovery)

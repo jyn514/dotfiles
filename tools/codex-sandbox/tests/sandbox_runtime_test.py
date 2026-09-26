@@ -77,7 +77,7 @@ class ResourceOperationsTest(unittest.TestCase):
         from docker_runtime import Docker
 
         cases = (
-            (runtime.Podman, "dev.codex.service-owner", "dev.codex.service-owner"),
+            (runtime.ContainerRuntime, "dev.codex.service-owner", "dev.codex.service-owner"),
             (runtime.Lima, "dev.codex.volume-owner", "dev.codex.relay-owner"),
             (Docker, "dev.codex.volume-owner", "dev.codex.relay-owner"),
         )
@@ -116,7 +116,7 @@ class ResourceOperationsTest(unittest.TestCase):
                 )
 
     def test_container_resource_contract_uses_container_metadata_and_validates_kind(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
             SimpleNamespace(args=[], returncode=0, stdout="owned\n", stderr=""),
             SimpleNamespace(args=[], returncode=0, stdout="owner\n", stderr=""),
@@ -141,7 +141,7 @@ class ResourceOperationsTest(unittest.TestCase):
             runtime.resource_exists(backend, "container", "owned")
 
     def test_removal_revalidates_owner_before_mutating_the_resource(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
             SimpleNamespace(args=[], returncode=0, stdout="claimed\n", stderr=""),
             SimpleNamespace(args=[], returncode=0, stdout="another-owner\n", stderr=""),
@@ -155,7 +155,7 @@ class ResourceOperationsTest(unittest.TestCase):
         self.assertEqual(2, backend.run.call_count)
 
     def test_container_removal_uses_recovery_admitted_top_level_commands(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
             SimpleNamespace(returncode=0, stdout="owned\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="owner\n", stderr=""),
@@ -206,16 +206,16 @@ class ResourceOperationsTest(unittest.TestCase):
 
 
 class ImageIdentityTest(unittest.TestCase):
-    def test_builder_environment_binds_selected_podman_and_lima_runtime(self):
-        podman = object.__new__(runtime.Podman)
-        self.assertEqual('podman', podman.builder_environment()['CODEX_SANDBOX_RUNTIME'])
+    def test_builder_environment_binds_selected_runtime(self):
+        container = object.__new__(runtime.ContainerRuntime)
+        self.assertEqual('container', container.builder_environment()['CODEX_SANDBOX_RUNTIME'])
         backend = lima()
         environment = backend.builder_environment()
         self.assertEqual('lima', environment['CODEX_SANDBOX_RUNTIME'])
         self.assertEqual('/owned-state', environment['CODEX_SANDBOX_LIMA_STATE'])
 
-    def test_podman_builder_rejects_wrong_platform(self):
-        backend = object.__new__(runtime.Podman)
+    def test_container_builder_rejects_wrong_platform(self):
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
             SimpleNamespace(stdout=json.dumps([{
                 "Id": CONTENT, "RootFS": {"Layers": [LAYER]},
@@ -238,17 +238,15 @@ class ImageIdentityTest(unittest.TestCase):
 
     def test_default_runtime_and_explicit_rollback_selection(self):
         with patch.dict(os.environ, {}, clear=True), \
-                patch('docker_runtime.Docker') as docker, \
-                patch.object(runtime, 'Podman') as podman:
+                patch('docker_runtime.Docker') as docker:
             self.assertIs(runtime.image_runtime(), docker.return_value)
             with patch.dict(os.environ, CODEX_SANDBOX_RUNTIME='podman'):
-                self.assertIs(runtime.image_runtime(), podman.return_value)
+                with self.assertRaisesRegex(ValueError, "unknown outer runtime"):
+                    runtime.image_runtime()
                 self.assertIs(runtime.image_runtime('lima-docker'), docker.return_value)
             docker.side_effect = ValueError('missing Docker state')
-            podman.reset_mock()
             with self.assertRaisesRegex(ValueError, 'missing Docker state'):
                 runtime.image_runtime()
-            podman.assert_not_called()
 
     def test_lima_creation_hides_only_successful_existing_volume_notice(self):
         notice = 'time="2026-09-09T09:13:27+02:00" level=warning msg="volume \\"proxy-jj\\" already exists and will be returned as-is"\n'
@@ -529,7 +527,7 @@ class TransportTest(unittest.TestCase):
         self.enterContext(runtime.verification_scope())
 
     def test_failed_pre_start_supervision_cleans_created_container_without_attaching(self):
-        backend = runtime.Podman()
+        backend = runtime.ContainerRuntime()
         backend.workload_argv = Mock(return_value=["owned-create"])
         backend.popen = Mock()
         backend.terminate = Mock()
@@ -559,15 +557,16 @@ class TransportTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "owner changed"):
                     runtime.recorded_runtime({**identity, key: "replacement"})
 
-    def test_missing_runtime_identity_means_legacy_podman_not_current_default(self):
+    def test_missing_runtime_identity_is_rejected(self):
         with patch.object(runtime, "Lima") as lima_factory:
-            self.assertEqual("podman", runtime.state_runtime({"proxies": []}).provider)
+            with self.assertRaisesRegex(ValueError, "no recorded runtime"):
+                runtime.state_runtime({"proxies": []})
             with self.assertRaisesRegex(ValueError, "unsupported recorded"):
                 runtime.state_runtime({"runtime": {"provider": "lima"}})
             lima_factory.assert_not_called()
 
     def test_signal_during_creation_awaits_producer_before_removing_container(self):
-        backend = runtime.Podman()
+        backend = runtime.ContainerRuntime()
         image = runtime.Image(REFERENCE, CONTENT, CONFIG, LAYER)
         creation = Mock()
         creation.wait.side_effect = [SystemExit(143), 0]
@@ -584,7 +583,7 @@ class TransportTest(unittest.TestCase):
         self.assertEqual(["owned"], removed)
 
     def test_environment_is_private_and_removed_after_failure(self):
-        backend = runtime.Podman()
+        backend = runtime.ContainerRuntime()
         with self.assertRaisesRegex(ValueError, "owned failure"):
             with backend.environment_file({"OWNED_TOKEN": "dummy $token `literal`"}) as args:
                 path = Path(args[1])
@@ -596,7 +595,7 @@ class TransportTest(unittest.TestCase):
 
     def test_environment_rejects_line_injection_before_staging(self):
         with self.assertRaises(runtime.RuntimeError):
-            with runtime.Podman().environment_file({"TERM": "xterm\nGH_TOKEN=injected"}):
+            with runtime.ContainerRuntime().environment_file({"TERM": "xterm\nGH_TOKEN=injected"}):
                 self.fail("invalid environment published")
 
     def test_nerdctl_environment_file_remains_guest_visible(self):
@@ -627,7 +626,7 @@ class TransportTest(unittest.TestCase):
         self.assertIn("-uhttp_proxy", command)
 
     def test_wait_preserves_workload_status_and_transport_failure(self):
-        for backend in (runtime.Podman(), lima()):
+        for backend in (runtime.ContainerRuntime(), lima()):
             backend.run = Mock(return_value=SimpleNamespace(stdout="37\n"))
             self.assertEqual(37, backend.wait("owned"))
             backend.run.side_effect = subprocess.CalledProcessError(255, ["owned-transport"])
@@ -640,8 +639,8 @@ class TransportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "policy changed"):
             backend.workload_argv(runtime.Image(REFERENCE, CONTENT, CONFIG, LAYER), [])
 
-    def test_podman_service_network_installs_owner_and_prohibited_routes(self):
-        backend = runtime.Podman()
+    def test_container_service_network_installs_owner_and_prohibited_routes(self):
+        backend = runtime.ContainerRuntime()
         backend.run = Mock()
         backend.create_public_service_network("owned-zulip-public-only", "a" * 32)
         arguments = backend.run.call_args.args[0]

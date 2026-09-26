@@ -85,7 +85,7 @@ class ProjectBakeTest(unittest.TestCase):
                 )
 
     def test_wrong_engine_or_platform_never_invokes_bake(self):
-        for provider, platform in [('podman', 'linux/arm64'), ('lima-docker', 'linux/amd64')]:
+        for provider, platform in [('container', 'linux/arm64'), ('lima-docker', 'linux/amd64')]:
             runtime = mock.Mock(provider=provider)
             runtime.build_platform.return_value = platform
             with self.subTest(provider=provider, platform=platform), \

@@ -714,7 +714,7 @@ class BackgroundRelayTest(GuestModeTest):
             stage = mock.Mock()
             acquire = mock.Mock(side_effect=lambda state: setattr(
                 state, 'proxy_lock', SimpleNamespace(shared=False)))
-            with mock.patch.dict(execute.__globals__, OUTER_RUNTIME=SimpleNamespace(provider='podman'),
+            with mock.patch.dict(execute.__globals__, OUTER_RUNTIME=SimpleNamespace(provider='container'),
                                  validate_repository=mock.Mock(), acquire_lock=acquire,
                                  load_repository_policy=mock.Mock(), stage_skills=stage):
                 with self.assertRaisesRegex(execute.__globals__['LauncherError'], 'CODEX_SANDBOX_RUNTIME=lima-docker'):
@@ -844,7 +844,7 @@ class BackgroundRelayTest(GuestModeTest):
 
             with mock.patch.dict(
                 main.__globals__,
-                image_runtime=lambda: launcher['Podman'](),
+                image_runtime=lambda: launcher['ContainerRuntime'](),
                 new_state=lambda _: state,
                 cleanup=cleanup,
                 unregister_tmux_pane=lambda _: None,
@@ -1479,7 +1479,6 @@ class CodexSandboxTest(GuestModeTest):
         environment.pop("TMUX", None)
         environment.pop("TMUX_PANE", None)
         environment.update({
-            "CODEX_SANDBOX_RUNTIME": "podman",  # This fixture supplies a fake Podman CLI.
             "PATH": f"{self.fake_bin}:{environment['PATH']}",
             "HOME": str(self.home),
             "FAKE_REPOSITORY": str(self.repo),
@@ -1872,8 +1871,9 @@ class CodexSandboxTest(GuestModeTest):
         result = self.run_launcher("resume", "session-id")
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
-        self.assertIn("--cap-drop=ALL", run)
-        self.assertIn("--security-opt=no-new-privileges", run)
+        self.assertIn("--cap-drop=NET_RAW", run)
+        self.assertNotIn("--cap-drop=ALL", run)
+        self.assertNotIn("--security-opt=no-new-privileges", run)
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/repository,bind-nonrecursive=true", run)
         self.assertIn(f"type=bind,src={(self.repo / '.git').resolve()},dst=/src/repository/.git,readonly", run)
         self.assertIn(f"type=bind,src={(self.repo / '.jj').resolve()},dst=/src/repository/.jj,readonly", run)
@@ -2249,15 +2249,6 @@ class CodexSandboxTest(GuestModeTest):
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertNotIn("hold-lock", actions)
-
-    def test_non_linux_omits_native_linux_restrictions(self) -> None:
-        result = self.run_launcher(FAKE_UNAME="Darwin")
-        self.assertEqual(0, result.returncode, result.stderr)
-        run = self.final_run()
-        self.assertNotIn("--cap-drop=ALL", run)
-        self.assertIn("--cap-drop=NET_RAW", run)
-        self.assertNotIn("--security-opt=no-new-privileges", run)
-        self.assertNotIn("native Linux sandboxing", result.stderr)
 
     def test_host_editor_relay_is_isolated_and_injected(self) -> None:
         result = self.run_launcher()

@@ -67,7 +67,7 @@ def main():
                 {'container': container, 'volume': volume, 'volume-owner': 'wrong-owner'}]}
             record.write_text(json.dumps(state))
             command = [sys.executable, str(ROOT / 'sandbox-proxies.py'), 'stop', '--state', str(record)]
-            environment = {**os.environ, 'CODEX_SANDBOX_RUNTIME': 'podman'}
+            environment = {**os.environ, 'CODEX_SANDBOX_RUNTIME': 'lima-docker'}
             environment.pop('CODEX_SANDBOX_LIMA_VERIFIED', None)
             failed = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
             assert failed.returncode == 1 and 'another creator' in failed.stderr, failed.stderr

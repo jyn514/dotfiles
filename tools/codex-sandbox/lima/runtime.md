@@ -1,8 +1,7 @@
 # Exercise outer runtime operations
 
-The image helper and runtime contracts support Podman, nerdctl/Lima, and the
-default [Lima-Docker backend](docker.md). Launches and image builders share the
-same runtime selection; [nerdctl/Lima launches](launch.md) remain opt-in.
+The image helper and runtime contracts support the default [Lima-Docker backend](docker.md)
+and opt-in nerdctl/Lima launches. Launches and image builders share the same runtime selection.
 Lima-Docker selects `--provider lima-docker` and
 `CODEX_SANDBOX_DOCKER_STATE`; its host API accepts build contexts outside VM shares.
 It returns local `repo:tag@sha256:HASH` references and uses a separate image store.
@@ -35,8 +34,7 @@ tools/codex-sandbox/sandbox-image --provider lima resolve localhost/example:test
 ```
 
 Use `--state DIRECTORY` before the operation for a separately provisioned host.
-`--provider podman` selects the existing host `docker` entrypoint. The helper
-defaults to `CODEX_SANDBOX_RUNTIME`, or `lima-docker` when unset.
+The helper defaults to `CODEX_SANDBOX_RUNTIME`, or `lima-docker` when unset.
 `CODEX_SANDBOX_DOCKER_STATE` selects Docker state;
 `CODEX_SANDBOX_LIMA_STATE` selects nerdctl state.
 No operation starts a VM, changes the launcher's provider,
@@ -51,11 +49,6 @@ The Dockerfile and context must be visible through verified Lima shares.
 malformed native identity remains an error. Dotfiles' base, Jujutsu, Zulip, and
 authentication proxy builders use this helper through `bin/sandbox-image` or
 its repository path, preserving their content-based cache keys.
-
-Podman returns a configuration digest. Lima returns a registered
-`localhost/codex-sandbox:sha256-HASH@sha256:HASH` reference, with the native
-manifest or index digest. These values are provider-specific; do not pass a
-Podman configuration ID to nerdctl or assume a reference belongs to both stores.
 
 BuildKit 0.31.2 resolves a canonical `FROM` through its tag before checking the
 digest. When the canonical reference and its tag already exist, the helper checks
@@ -93,12 +86,9 @@ base, run:
 ```sh
 python3 tools/codex-sandbox/tests/runtime_integration.py \
   --provider lima --state "$fixture_state" --base "$local_base"
-python3 tools/codex-sandbox/tests/runtime_integration.py \
-  --provider podman --base alpine:3.22
 ```
 
-The Podman test requires its existing `codex-public-only` network. Both tests
-build an owned image, move its mutable tag, verify the original image still runs,
+The Lima test builds an owned image, moves its mutable tag, verifies the original image still runs,
 correlate live network membership, preserve literal argv and stdin/EOF, and check
 exec failure, daemon-side cancellation, and host SIGTERM cleanup. They use dummy
 environment data and remove their owned containers and image registrations.
@@ -124,7 +114,7 @@ SSH cannot consume the request itself.
 
 New publications use session schema 2 and record the outer runtime in shared
 state. Lima ownership includes the host-state locator, instance, generation,
-hardware identity, namespace, and network digest. Schema 1 is explicitly Podman;
+hardware identity, namespace, and network digest. Legacy Podman state is rejected;
 schema 2 without an owner is rejected.
 
 The repository coordination lock remains shared across providers. A launcher
@@ -139,6 +129,6 @@ and native image identity. Displayed image names alone do not establish identity
 Launcher cleanup also checks the pinned VM identity and relay/volume creator
 labels before deletion. Failed cleanup retains recovery metadata.
 
-`tests/session_owner_integration.py --provider podman --base alpine:3.22` checks
-native proxy identity and recorded-owner cleanup using owned resources. The
-disposable Lima host gate runs the same checks before and after reboot.
+`tests/session_owner_integration.py --provider lima --base IMAGE` checks native
+proxy identity and recorded-owner cleanup using owned resources. The disposable
+Lima host gate runs the same checks before and after reboot.

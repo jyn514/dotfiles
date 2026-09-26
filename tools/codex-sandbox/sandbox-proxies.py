@@ -23,7 +23,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import (
-    ResourceKind, ResourceOwnerAuthority, VMRuntime, Podman, image_runtime,
+    ResourceKind, ResourceOwnerAuthority, VMRuntime, ContainerRuntime, image_runtime,
     remove_owned_resource, remove_stopped_sandbox_holders, resource_exists,
     resource_presence, runtime_identity,
     single_json, state_runtime,
@@ -45,7 +45,7 @@ from caddy_foundation import (
 from authenticated_egress import EgressPairPlan, egress_pair_topology, start_egress_pair
 from source_view import check_mount_destinations
 
-OUTER_RUNTIME = Podman()
+OUTER_RUNTIME = ContainerRuntime()
 REPOSITORY_METADATA: tuple[Path, tuple[Path, Path]] | None = None
 
 
@@ -558,7 +558,7 @@ def publish_main(args: argparse.Namespace) -> int:
     runtime = runtime_directory(Path(args.repo))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     owner = runtime_identity(OUTER_RUNTIME)
-    if state.get("runtime", {"provider": "podman"}) != owner:
+    if state.get("runtime") != owner:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
     manifest = load_manifest_file(Path(args.manifest))
@@ -646,8 +646,10 @@ def session_state(metadata):
         raise ConfigError("unsupported shared-session schema; retain metadata for explicit recovery")
     state = metadata["state"]
     if version == 1:
-        if "runtime" in state and state["runtime"] != {"provider": "podman"}:
-            raise ConfigError("legacy session state cannot name a Lima owner")
+        if state.get("runtime") == {"provider": "podman"}:
+            raise ConfigError("legacy session state uses the removed Podman backend")
+        if "runtime" in state:
+            raise ConfigError("legacy session state has an unsupported runtime owner")
     elif "runtime" not in state:
         raise ConfigError("shared-session metadata is missing its runtime owner")
     return state
@@ -659,7 +661,7 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
 
 
 def _valid_runtime_owner(value: Any) -> bool:
-    if value == {"provider": "podman"}:
+    if value == {"provider": "container"}:
         return True
     if not isinstance(value, dict) or value.get("provider") not in {"lima", "lima-docker"}:
         return False
@@ -783,7 +785,7 @@ def cached_session_state(
     if metadata.get("container_repository") != str(container_repository(args.container_repo)):
         return None
     state = session_state(metadata)
-    if state.get("runtime", {"provider": "podman"}) != runtime_identity(OUTER_RUNTIME):
+    if state.get("runtime") != runtime_identity(OUTER_RUNTIME):
         return None
     cached_manifest = metadata.get("manifest")
     if not isinstance(state, dict) or not isinstance(state.get("proxies"), list):
@@ -2125,6 +2127,10 @@ def stop_state(state: dict[str, Any]) -> None:
             raise ConfigError("invalid authentication recovery authority") from error
         managed_auth = auth_kind in {"managed", "managed-single"}
         pair_auth = auth_kind == "managed"
+    # Validate recorded ownership before opening the runtime. A mismatched
+    # recovery record must not trigger any backend interaction.
+    for proxy in all_proxies:
+        _managed_proxy_record(proxy)
     owner = state_runtime(state, recovery=True)
     if (not managed_auth and
             not any(isinstance(proxy, dict) and "service-owner" in proxy for proxy in all_proxies)):

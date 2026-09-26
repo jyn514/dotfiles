@@ -92,17 +92,17 @@ class AuthenticatedEgressTest(unittest.TestCase):
             )
 
     def test_runtime_normalizes_volume_authority_and_disabled_networks(self):
-        class Podman(sandbox_runtime.Podman):
+        class ContainerRuntime(sandbox_runtime.ContainerRuntime):
             def __init__(self): self.arguments = None
             def run(self, arguments, **keywords): self.arguments = arguments
-        podman = Podman()
-        podman.create_owned_volume("socket", 501, 20, "owner", "zulip", "profile-socket")
-        self.assertNotIn("--uid", podman.arguments)
-        self.assertNotIn("--gid", podman.arguments)
-        podman_volume = {"Labels": {"dev.codex.service-owner": "owner",
+        container = ContainerRuntime()
+        container.create_owned_volume("socket", 501, 20, "owner", "zulip", "profile-socket")
+        self.assertNotIn("--uid", container.arguments)
+        self.assertNotIn("--gid", container.arguments)
+        container_volume = {"Labels": {"dev.codex.service-owner": "owner",
             "dev.codex.credential-domain": "zulip", "dev.codex.resource-role": "profile-socket"}}
-        self.assertTrue(podman.owned_volume_matches(
-            podman_volume, "owner", "zulip", "profile-socket"))
+        self.assertTrue(container.owned_volume_matches(
+            container_volume, "owner", "zulip", "profile-socket"))
         docker = object.__new__(sandbox_runtime.VMRuntime)
         docker_volume = {"Labels": {"dev.codex.volume-owner": "owner"}}
         self.assertTrue(docker.owned_volume_matches(

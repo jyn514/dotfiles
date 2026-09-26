@@ -27,7 +27,7 @@ def policy_module():
 
 def execute():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", choices=("podman", "lima", "lima-docker"),
+    parser.add_argument("--provider", choices=("lima", "lima-docker"),
                         help="override CODEX_SANDBOX_RUNTIME (default: lima-docker)")
     parser.add_argument("--state", type=Path)
     sub = parser.add_subparsers(dest="operation", required=True)

@@ -58,7 +58,7 @@ active sessions before changing engines, then run:
 
 ```sh
 python3 tools/codex-sandbox/sandbox-proxies.py reset --repo "$PWD"
-CODEX_SANDBOX_RUNTIME=podman codex-sandbox
+CODEX_SANDBOX_RUNTIME=lima codex-sandbox
 ```
 
 Reset uses the recorded owner even when the current default differs. Failed

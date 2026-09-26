@@ -9,6 +9,7 @@ import sys
 
 tool = Path(__file__).resolve().parents[1]
 launcher = runpy.run_path(str(tool / "codex-sandbox"))
+launcher["main"].__globals__["image_runtime"] = lambda: launcher["ContainerRuntime"]()
 
 
 def helper(*arguments: str, check: bool = True):

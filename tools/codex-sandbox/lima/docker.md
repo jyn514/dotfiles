@@ -181,8 +181,8 @@ restarts during a session, exit and relaunch; the next exclusive launch replaces
 stale listeners. No VM recreation is needed for this forwarding change.
 Setup snapshots its installation source. A changed prototype policy requires
 a new instance and state directory rather than silently rewriting a ready VM.
-Set `CODEX_SANDBOX_RUNTIME=podman` to use the previous backend; leaving it unset
-selects Lima-Docker. Missing Docker state never triggers an engine fallback.
+Leaving `CODEX_SANDBOX_RUNTIME` unset selects Lima-Docker. Missing Docker state
+never triggers an engine fallback or selects another engine.
 
 After sessions have exited, recover their shared proxies with
 `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo /path/to/repository`

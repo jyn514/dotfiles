@@ -200,7 +200,7 @@ class ManifestTest(unittest.TestCase):
 
     @staticmethod
     def pair_auth() -> dict:
-        runtime = {"provider": "podman"}
+        runtime = {"provider": "container"}
         return {
             "container": "codex-auth", "helper-container": "codex-auth-helper",
             "socket-volume": "codex-auth-socket", "key": "a.b.c",
@@ -230,13 +230,13 @@ class ManifestTest(unittest.TestCase):
     def schema4(self, commands: dict[str, dict], *, services=None, helper=None) -> dict:
         policy = sandbox_proxies.serializable_manifest({"version": 1, "commands": commands})
         records = services if services is not None else {
-            name: sandbox_proxies._service_record(name, self.managed_proxy(name), {"provider": "podman"})
+            name: sandbox_proxies._service_record(name, self.managed_proxy(name), {"provider": "container"})
             for name in commands
         }
         return {
             "version": 4, "repository": sandbox_proxies.repository_identity(self.repo),
             "container_repository": str(self.container_repo),
-            "runtime-owner": {"provider": "podman"},
+            "runtime-owner": {"provider": "container"},
             "accepted": {"policy": policy, "source-present": True,
                          "broker-roles": (["codex-broker"] if "codex-broker" in records else []),
                          "images": {"agent": "agent", "helper": helper,
@@ -688,7 +688,8 @@ class ManifestTest(unittest.TestCase):
     def test_publication_checks_proxies_concurrently_before_writing_metadata(self) -> None:
         state = self.repo / "state.json"
         images = {name: "sha256:" + "0" * 64 for name in ("first", "second")}
-        state.write_text(json.dumps({"proxies": [self.managed_proxy(name, image) for name, image in images.items()],
+        state.write_text(json.dumps({"runtime": {"provider": "container"},
+            "proxies": [self.managed_proxy(name, image) for name, image in images.items()],
             "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
                          "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
@@ -712,7 +713,8 @@ class ManifestTest(unittest.TestCase):
     def test_failed_publication_waits_for_other_checks_and_keeps_old_metadata(self) -> None:
         state = self.repo / "state.json"
         images = {name: "sha256:" + "0" * 64 for name in ("bad", "slow")}
-        state.write_text(json.dumps({"proxies": [self.managed_proxy(name, image) for name, image in images.items()],
+        state.write_text(json.dumps({"runtime": {"provider": "container"},
+            "proxies": [self.managed_proxy(name, image) for name, image in images.items()],
             "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
                          "parameters": {"uid": 501, "gid": 20}, "proxy-images": images}}))
         manifest = self.repo / "manifest.json"
@@ -987,7 +989,7 @@ class ManifestTest(unittest.TestCase):
             "shared": True, "state": str(state), "manifest": str(manifest),
             "uid": 501, "gid": 20, "agent_image": "agent", "helper_image": None,
         })
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         owner.builder_image.side_effect = lambda image: "builder:" + image
         owner.inspect_image.return_value = "inspected-helper"
         owner.verify_builder_image.return_value = "inspected-helper"
@@ -1044,7 +1046,7 @@ class ManifestTest(unittest.TestCase):
     def test_empty_schema4_round_trips_publication_join_state_and_recovery(self) -> None:
         state_path = self.repo / "empty-state"
         state_path.write_text(json.dumps({
-            "proxies": [], "runtime": {"provider": "podman"},
+            "proxies": [], "runtime": {"provider": "container"},
             "accepted": {"source-present": False, "agent-image": "agent",
                          "helper-image": None, "parameters": {"uid": 501, "gid": 20},
                          "proxy-images": {}},
@@ -1057,15 +1059,15 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(0, sandbox_proxies.publish_main(args))
         metadata = sandbox_proxies._read_session(self.repo / "session.json")
         self.assertEqual({}, metadata["services"])
-        self.assertEqual({"runtime": {"provider": "podman"}, "proxies": [],
+        self.assertEqual({"runtime": {"provider": "container"}, "proxies": [],
                           "trusted-services": sandbox_proxies.SESSION_LIFECYCLE_SCHEMA},
                          sandbox_proxies.session_state(metadata))
         join_args = SimpleNamespace(container_repo=str(self.container_repo), uid=501, gid=20,
                                     agent_image="agent", helper_image=None)
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         owner.verify_builder_image.return_value = SimpleNamespace(reference="agent")
         with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
-                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "podman"}):
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "container"}):
             state, accepted = sandbox_proxies.accepted_session(join_args, self.repo, metadata)
         self.assertEqual([], state["proxies"])
         self.assertEqual({}, accepted["images"]["proxies"])
@@ -1092,7 +1094,7 @@ class ManifestTest(unittest.TestCase):
         proxy["credential-domain"] = "zulip"
         # An unsolicited broker cannot be admitted merely by appearing in services.
         unsolicited["services"]["extra"] = sandbox_proxies._service_record(
-            "extra", proxy, {"provider": "podman"})
+            "extra", proxy, {"provider": "container"})
         unsolicited["accepted"]["images"]["services"]["extra"] = proxy["image"]
         with self.assertRaises(sandbox_proxies.ConfigError):
             sandbox_proxies._accepted_schema4(unsolicited, expected_parameters={"uid": 501, "gid": 20})
@@ -1100,7 +1102,7 @@ class ManifestTest(unittest.TestCase):
     def test_publication_rejects_duplicate_proxy_roles_before_projection(self) -> None:
         proxy = self.managed_proxy("same")
         state = self.repo / "duplicate-state"
-        state.write_text(json.dumps({"proxies": [proxy, dict(proxy)],
+        state.write_text(json.dumps({"runtime": {"provider": "container"}, "proxies": [proxy, dict(proxy)],
             "accepted": {"source-present": True, "agent-image": "agent", "helper-image": None,
                          "parameters": {"uid": 501, "gid": 20},
                          "proxy-images": {"same": proxy["image"]}}}))
@@ -1147,7 +1149,7 @@ class ManifestTest(unittest.TestCase):
         first["volume-owner"] = first["service-owner"]
         first["resource-status"]["forward"] = "created"
         services = {
-            "first": sandbox_proxies._service_record("first", first, {"provider": "podman"}),
+            "first": sandbox_proxies._service_record("first", first, {"provider": "container"}),
             "second": sandbox_proxies._service_record("second", second, {"provider": "lima", "state": "/tmp/lima", "instance": "i", "generation": "g", "namespace": "n", "vm_identity": "v", "network_digest": "d"}),
         }
         metadata = self.schema4({"first": self.command(), "second": self.command()}, services=services)
@@ -1156,7 +1158,7 @@ class ManifestTest(unittest.TestCase):
             sandbox_proxies._accepted_schema4(metadata, expected_parameters={"uid": 501, "gid": 20})
         first["forwarding"]["owner"] = first["service-owner"]
         services = {
-            "first": sandbox_proxies._service_record("first", first, {"provider": "podman"}),
+            "first": sandbox_proxies._service_record("first", first, {"provider": "container"}),
             "second": sandbox_proxies._service_record("second", second, {"provider": "lima", "state": "/tmp/lima", "instance": "i", "generation": "g", "namespace": "n", "vm_identity": "v", "network_digest": "d"}),
         }
         metadata = self.schema4({"first": self.command(), "second": self.command()}, services=services)
@@ -1164,7 +1166,7 @@ class ManifestTest(unittest.TestCase):
             sandbox_proxies.session_state(metadata)
 
     def test_active_schema3_join_is_rejected_without_mutation_or_policy_load(self) -> None:
-        metadata = {"version": 3, "state": {"runtime": {"provider": "podman"}, "proxies": []}}
+        metadata = {"version": 3, "state": {"runtime": {"provider": "container"}, "proxies": []}}
         before = json.dumps(metadata, sort_keys=True)
         args = SimpleNamespace(container_repo=str(self.container_repo))
         with mock.patch.object(sandbox_proxies, "load_manifest", side_effect=AssertionError("policy loaded")):
@@ -1173,7 +1175,7 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(before, json.dumps(metadata, sort_keys=True))
 
     def test_schema3_remains_available_for_stale_recovery(self) -> None:
-        state = {"runtime": {"provider": "podman"}, "proxies": []}
+        state = {"runtime": {"provider": "container"}, "proxies": []}
         self.assertIs(state, sandbox_proxies.session_state({"version": 3, "state": state}))
         with mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
             sandbox_proxies.stop_state(state)
@@ -1196,7 +1198,7 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(contents, metadata.read_text())
 
     def test_proxy_cleanup_uses_recorded_owner_when_default_changes(self) -> None:
-        state = {"runtime": {"provider": "podman"}, "proxies": [
+        state = {"runtime": {"provider": "container"}, "proxies": [
             {"container": "owned-container", "volume": "owned-volume"}]}
         owner = mock.Mock()
         owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="")
@@ -1210,7 +1212,7 @@ class ManifestTest(unittest.TestCase):
     def test_reset_keeps_metadata_when_engine_reports_surviving_resources(self) -> None:
         self.write()
         metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
-        state = {"runtime": {"provider": "podman"}, "proxies": [{"container": "survivor", "volume": "owned-volume"}]}
+        state = {"runtime": {"provider": "container"}, "proxies": [{"container": "survivor", "volume": "owned-volume"}]}
         contents = json.dumps({"version": 2, "state": state})
         metadata.write_text(contents)
         owner = mock.Mock()
@@ -1225,7 +1227,7 @@ class ManifestTest(unittest.TestCase):
         metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"
         for kind in ("containers", "volumes"):
             with self.subTest(kind=kind):
-                state = {"runtime": {"provider": "podman"}, "proxies": [
+                state = {"runtime": {"provider": "container"}, "proxies": [
                     {"container": "proxy", "volume": "busy-volume"},
                     {"container": "gone", "volume": "gone-volume"},
                 ]}
@@ -1290,7 +1292,7 @@ class ManifestTest(unittest.TestCase):
         metadata = {"version": 2, "repository": sandbox_proxies.repository_identity(self.repo),
                     "container_repository": str(self.container_repo),
                     "manifest": sandbox_proxies.serializable_manifest(manifest),
-                    "state": {"runtime": {"provider": "podman"}, "proxies": []}}
+                    "state": {"runtime": {"provider": "container"}, "proxies": []}}
         args = type("Args", (), {"container_repo": str(self.container_repo)})
         with mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "lima"}), \
                 mock.patch.object(sandbox_proxies, "containers_running") as running:
@@ -1332,7 +1334,7 @@ class ManifestTest(unittest.TestCase):
     def test_route_uses_published_owner_despite_different_current_default(self) -> None:
         self.write()
         directory = sandbox_proxies.runtime_directory(self.repo)
-        state = {"runtime": {"provider": "podman"}, "proxies": []}
+        state = {"runtime": {"provider": "container"}, "proxies": []}
         proxy = self.managed_proxy("example")
         proxy["container"] = "owned"
         metadata = self.schema4({"example": self.command()}, services={
@@ -1358,7 +1360,7 @@ class ManifestTest(unittest.TestCase):
         owner.forward_proxy.assert_called_once_with("owned")
 
     def test_live_identity_requires_native_image_as_well_as_labels(self) -> None:
-        owner = sandbox_proxies.Podman()
+        owner = sandbox_proxies.ContainerRuntime()
         owner.inspect_image = mock.Mock(return_value=SimpleNamespace(config='sha256:expected'))
         raw = {'Image': 'sha256:another', 'Config': {'Labels': {
             'dev.codex.sandbox-proxy': 'true', 'dev.codex.repository': 'repository',
@@ -1477,7 +1479,7 @@ class ManifestTest(unittest.TestCase):
         start.assert_called_once_with(args)
 
     def test_proxy_stop_kills_and_removes_containers_before_volumes(self) -> None:
-        state = {
+        state = {"runtime": {"provider": "container"},
             "auth": {"container": "auth-proxy", "key": "secret", "image": "helper"},
             "proxies": [{
                 "name": "example", "container": "proxy", "volume": "volume",
@@ -1485,20 +1487,22 @@ class ManifestTest(unittest.TestCase):
             }],
         }
         completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-        with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed) as run:
+        owner = mock.Mock()
+        owner.run.return_value = completed
+        with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
             sandbox_proxies.stop_state(state)
-        calls = [call.args[0] for call in run.call_args_list]
-        container_cleanup = [call for call in calls if call[:2] == ["docker", "kill"]]
-        container_removal = [call for call in calls if call[:2] == ["docker", "rm"]]
+        calls = [call.args[0] for call in owner.run.call_args_list]
+        container_cleanup = [call for call in calls if call[:1] == ["kill"]]
+        container_removal = [call for call in calls if call[:1] == ["rm"]]
         self.assertCountEqual([
-            ["docker", "kill", "auth-proxy"],
-            ["docker", "kill", "proxy"],
+            ["kill", "auth-proxy"],
+            ["kill", "proxy"],
         ], container_cleanup)
         self.assertCountEqual([
-            ["docker", "rm", "auth-proxy"],
-            ["docker", "rm", "proxy"],
+            ["rm", "auth-proxy"],
+            ["rm", "proxy"],
         ], container_removal)
-        volume_removal = calls.index(["docker", "volume", "rm", "volume"])
+        volume_removal = calls.index(["volume", "rm", "volume"])
         self.assertGreater(volume_removal, 3)
 
     def test_cleanup_cannot_delete_a_volume_rejected_during_creation(self) -> None:
@@ -1571,7 +1575,7 @@ class ManifestTest(unittest.TestCase):
             stdout = "true\n" if arguments[:2] == ("inspect", "--format") else ""
             return completed(arguments, 0, stdout=stdout)
 
-        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", mock.Mock(provider="podman")), \
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", mock.Mock(provider="container")), \
                 mock.patch.object(sandbox_proxies, "_docker", side_effect=docker) as run, \
                 mock.patch.object(sandbox_proxies, "subprocess") as subprocess_module, \
                 mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
@@ -1626,7 +1630,7 @@ class ManifestTest(unittest.TestCase):
             "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
             "resource-status": {"volume": "intended", "container": "intended", "forward": "absent"},
         }
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         def run(arguments, **_kwargs):
             output = ""
             if arguments[:2] == ["volume", "ls"]:
@@ -1637,7 +1641,7 @@ class ManifestTest(unittest.TestCase):
         owner.run.side_effect = run
         with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
             with self.assertRaisesRegex(sandbox_proxies.ConfigError, "retaining recovery metadata"):
-                sandbox_proxies.stop_state({"runtime": {"provider": "podman"}, "proxies": [proxy]})
+                sandbox_proxies.stop_state({"runtime": {"provider": "container"}, "proxies": [proxy]})
         self.assertFalse(any(call.args[0][:2] == ["volume", "rm"] for call in owner.run.call_args_list))
 
     def test_adapter_identity_changes_when_owned_implementation_changes(self) -> None:
@@ -1723,12 +1727,12 @@ class ManifestTest(unittest.TestCase):
             "implementation-identity": "sha256:" + "2" * 64, "state-schema": 1,
             "lifecycle-state": "published", "credential-domain": "codex",
             "network": "codex-public-only", "network-owner": {"kind": "admitted-runtime-public-egress",
-                              "runtime": {"provider": "podman"}},
+                              "runtime": {"provider": "container"}},
             "endpoint": {"container": "codex-auth", "port": 8787},
             "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
                                   "identity": "sha256:" + "3" * 64,
                                   "lifetime": "shared-session"},
-            "token-lifetime": "shared-session", "runtime-owner": {"provider": "podman"},
+            "token-lifetime": "shared-session", "runtime-owner": {"provider": "container"},
             "resource-status": {"container": "created"},
         }
         with self.assertRaisesRegex(ValueError, "fields"):
@@ -1740,7 +1744,7 @@ class ManifestTest(unittest.TestCase):
             )
 
     def test_managed_auth_recovery_rejects_another_services_container(self) -> None:
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         owner.resource_owner_label.return_value = "dev.codex.service-owner"
 
         def run(arguments, **kwargs):
@@ -1752,7 +1756,7 @@ class ManifestTest(unittest.TestCase):
 
         owner.run.side_effect = run
         state = {
-            "runtime": {"provider": "podman"}, "proxies": [],
+            "runtime": {"provider": "container"}, "proxies": [],
             "auth": {
                 "container": "codex-auth", "helper-container": "codex-auth-helper",
                 "socket-volume": "codex-auth-socket", "key": "a.b.c",
@@ -1770,12 +1774,12 @@ class ManifestTest(unittest.TestCase):
                     "application": "codex-application", "refresh": "codex-refresh"},
                 "refresh-attachment": {"container": "codex-auth-helper", "network": "codex-refresh"},
                 "network-owner": {"kind": "admitted-runtime-public-egress",
-                                  "runtime": {"provider": "podman"}},
+                                  "runtime": {"provider": "container"}},
                 "endpoint": {"container": "codex-auth", "port": 8787},
                 "credential-volume": {"kind": "bind", "target": "/var/lib/codex-auth",
                                       "identity": "sha256:" + "3" * 64,
                                       "lifetime": "shared-session"},
-                "token-lifetime": "shared-session", "runtime-owner": {"provider": "podman"},
+                "token-lifetime": "shared-session", "runtime-owner": {"provider": "container"},
                 "resource-status": {"caddy-container": "unknown", "helper-container": "unknown",
                     "socket-volume": "unknown", "application-network": "unknown",
                     "refresh-network": "unknown", "refresh-attachment": "unknown"},
@@ -1796,7 +1800,7 @@ class ManifestTest(unittest.TestCase):
         }
         removed = []
         lock = threading.Lock()
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         owner.resource_owner_label.return_value = "dev.codex.service-owner"
 
         def run(arguments, **_kwargs):
@@ -1822,7 +1826,7 @@ class ManifestTest(unittest.TestCase):
         owner.run.side_effect = run
         with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner):
             sandbox_proxies.stop_state({
-                "runtime": {"provider": "podman"}, "proxies": [], "auth": auth,
+                "runtime": {"provider": "container"}, "proxies": [], "auth": auth,
             })
 
         self.assertTrue(all(not names for names in resources.values()))
@@ -1860,7 +1864,7 @@ class ManifestTest(unittest.TestCase):
                                   return_value=sandbox_proxies.ResourcePresence.OWNED), \
                 mock.patch.object(sandbox_proxies, "remove_owned_resource", side_effect=remove), \
                 mock.patch.object(sandbox_proxies.ResourceRegistry, "RETRY_DELAYS", ()):
-            result = sandbox_proxies._proxy_registry(mock.Mock(provider="podman"), proxy).cleanup(0)
+            result = sandbox_proxies._proxy_registry(mock.Mock(provider="container"), proxy).cleanup(0)
 
         self.assertFalse(result.remaining)
         self.assertLess(removed.index("zulip-caddy"), removed.index("zulip-application"))
@@ -1874,9 +1878,9 @@ class ManifestTest(unittest.TestCase):
             "identity-parameters": {"uid": 501, "gid": 20, "network": "none"},
             "resource-status": {"volume": "absent", "container": "absent", "forward": "absent"},
         }
-        owner = mock.Mock(provider="podman")
+        owner = mock.Mock(provider="container")
         owner.run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
-        state = {"runtime": {"provider": "podman"}, "proxies": [managed],
+        state = {"runtime": {"provider": "container"}, "proxies": [managed],
                  "auth": {"container": "already-removed", "key": "legacy-key", "image": "helper"}}
         with mock.patch.object(sandbox_proxies, "state_runtime", return_value=owner), \
                 mock.patch.object(sandbox_proxies, "_cleanup_proxy_service"):
@@ -1928,7 +1932,7 @@ class ManifestTest(unittest.TestCase):
 
         with mock.patch.object(sandbox_proxies, "load_manifest_file", return_value=manifest), \
                 mock.patch.object(sandbox_proxies, "resolve_images", return_value={}), \
-                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "podman"}), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "container"}), \
                 mock.patch.object(sandbox_proxies, "repository_identity", return_value="repository"), \
                 mock.patch.object(sandbox_proxies, "start_one_proxy", side_effect=start), \
                 mock.patch.object(sandbox_proxies, "stop_state", side_effect=lambda state: events.append("cleanup")):

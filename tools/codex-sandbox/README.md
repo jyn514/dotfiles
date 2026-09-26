@@ -68,7 +68,6 @@ its disposable Keychain password is `r2-probe-password`.
 Lima-Docker is the default outer runtime (`lima-docker`).
 Follow the [Docker setup guide](lima/docker.md) before launching;
 missing setup is an error, not a fallback to another engine.
-Set `CODEX_SANDBOX_RUNTIME=podman` for Podman.
 [Opt-in Lima launches](lima/launch.md) use a separately provisioned VM, Keychain boot credentials, and runtime-aware image builders.
 The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
@@ -77,12 +76,12 @@ Its [default-readiness record](lima/docker.md#default-readiness) distinguishes p
 
 - Run from a Git checkout.
   The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
-- Install Python 3, Git, Jujutsu, tmux, and a `docker`-compatible Podman/Docker CLI.
+- Install Python 3, Git, Jujutsu, tmux, and the Docker CLI used by the Lima-Docker VM.
   Image builds require network access on first use.
 - Put this repository's `bin/` on `PATH`;
   `pi` delegates to `codex-sandbox`.
 - Provide `~/.codex/config.toml`.
-  The [Lima credential helper](lima/credentials.md) imports the Podman secret `codex-github-token` into Keychain for injection as `GH_TOKEN` and retains the Podman secret for rollback;
+  The [Lima credential helper](lima/credentials.md) can import an existing Podman secret `codex-github-token` into Keychain for migration to `GH_TOKEN`;
   exporting a host `GH_TOKEN` does not provision it.
   guest caching lasts one VM boot.
 - Run inside tmux to use tmux session restart support.
@@ -218,7 +217,7 @@ On exit, the launcher joins gateway startup before removing its container and ne
 An upstream refusal affects that connection;
 a listener process failure stops the whole gateway.
 Editor-only gateways retain the editor's CPU, memory, and process limits.
-Podman-enabled gateways have no such limits, preserving build throughput but sharing Podman's resource and failure domain with the editor.
+Agent-Podman-enabled gateways have no such limits, preserving build throughput but sharing the Agent Podman resource and failure domain with the editor.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals.
 It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports.
@@ -281,8 +280,8 @@ Do not remove unrelated sessions to manufacture a cold run.
 - The Codex sidecar keeps reusable OAuth tokens outside the agent, but the agent can submit model requests, disclose their contents, consume quota, and incur charges.
 - Codex and Zulip credentials are mounted only into their respective profile-helper containers; Caddy and the agent receive no credential mount.
   Agent Podman, when configured, is exposed through a separate SSH relay rather than the outer daemon.
-- On native Linux, dropped capabilities and `no-new-privileges` disable effective sudo elevation.
-  A Podman Machine preserves container sudo without weakening host isolation.
+- The supported outer runtimes are Lima-Docker and opt-in nerdctl/Lima; both run the
+  sandbox workload in a VM.
 - Proxy and authentication failures fail closed and surface as request failures.
   They do not terminate an existing agent or fall back to privileged local execution or credentials mounted in the agent.
   New attachments reject an unhealthy session.

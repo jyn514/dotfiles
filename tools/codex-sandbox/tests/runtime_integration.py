@@ -16,7 +16,7 @@ from sandbox_runtime import image_runtime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--provider", required=True, choices=("podman", "lima"))
+    parser.add_argument("--provider", required=True, choices=("lima",))
     parser.add_argument("--state", type=Path)
     parser.add_argument("--base", required=True, help="already local Alpine-compatible image")
     args = parser.parse_args()

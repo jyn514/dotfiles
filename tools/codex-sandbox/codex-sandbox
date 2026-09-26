@@ -32,7 +32,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sandbox_runtime import (
-    ResourceKind, ResourceOwnerAuthority, VMRuntime, Podman, image_runtime,
+    ResourceKind, ResourceOwnerAuthority, VMRuntime, ContainerRuntime, image_runtime,
     remove_owned_resource, resource_presence, runtime_identity, verification_scope,
 )
 from sandbox_credentials import boot_credential
@@ -58,7 +58,7 @@ from caddy_foundation import (
 )
 from authenticated_egress import EgressPairPlan, start_egress_pair
 
-OUTER_RUNTIME = Podman()
+OUTER_RUNTIME = ContainerRuntime()
 
 
 DOTFILES = Path(__file__).resolve().parents[2]
@@ -2256,14 +2256,6 @@ def execute(state: State) -> int:
                          if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)
         arguments = [*gateway_arguments, *keychain_arguments, state.image,
                      *agent_command]
-        system = run(["uname", "-s"], capture=True).stdout.strip()
-        if system == "Linux":
-            print(
-                "warning: native Linux sandboxing disables sudo elevation with cap-drop=ALL and no-new-privileges.\n"
-                "warning: a Podman Machine micro-VM would allow container sudo without weakening host isolation.",
-                file=sys.stderr,
-            )
-            arguments = ["--cap-drop=ALL", "--security-opt=no-new-privileges", *arguments]
         arguments = [*sidecar_arguments, *arguments]
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)

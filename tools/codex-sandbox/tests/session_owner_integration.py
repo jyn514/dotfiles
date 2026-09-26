@@ -44,7 +44,7 @@ def exercise(runtime, base):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=("podman", "lima"), required=True)
+    parser.add_argument("--provider", choices=("lima",), required=True)
     parser.add_argument("--state", type=Path)
     parser.add_argument("--base", required=True)
     args = parser.parse_args()
