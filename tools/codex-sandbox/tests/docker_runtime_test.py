@@ -3,6 +3,7 @@
 import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'lima'))
 from docker_runtime import Docker
 from image_resolver import ResolverError, prepare_launch_images
 from lima.docker_host import DockerHost
@@ -132,6 +134,49 @@ class DockerRuntimeTest(unittest.TestCase):
         host.runtime_epoch.side_effect = ['a' * 32, 'b' * 32]
         with self.assertRaisesRegex(ValueError, 'restarted during doctor'):
             host.doctor({})
+
+    def test_linux_virtiofs_registration_and_bind_check_use_mapped_identity(self):
+        source = ROOT / 'lima/docker/uidmapped-virtiofsd.sh'
+        with tempfile.TemporaryDirectory() as temporary:
+            host = DockerHost(Path(temporary) / 'state')
+            record = {'vm_type': 'qemu', 'mount_type': 'virtiofs', 'virtiofs_map': {
+                'host_uid': 1000, 'host_gid': 1000,
+                'guest_uid': 100999, 'guest_gid': 100999,
+                'wrapper_digest': hashlib.sha256(source.read_bytes()).hexdigest()}}
+            with patch('lima.docker_host.shutil.which', return_value=sys.executable), \
+                    patch('lima.docker_host.os.access', return_value=True):
+                environment = host.prepare_virtiofs(record)
+            self.assertEqual(':100999:1000:1:', environment['CODEX_SANDBOX_UID_MAP'])
+            self.assertEqual(':100999:1000:1:', environment['CODEX_SANDBOX_GID_MAP'])
+            registration = Path(temporary) / 'state/virtiofs/share/qemu/vhost-user/50-codex-sandbox-virtiofs.json'
+            self.assertEqual(str(Path(temporary) / 'state/virtiofs/uidmapped-virtiofsd'),
+                             json.loads(registration.read_text())['binary'])
+            self.assertEqual(('sudo', 'setpriv', '--reuid=100999', '--regid=100999',
+                              '--clear-groups'), host.bind_check_argv(record)[:5])
+            self.assertEqual('python3', host.bind_check_argv({'vm_type': 'vz'})[0])
+            host.runtime_epoch = Mock(return_value='a' * 32)
+            host.guest = Mock(side_effect=[Mock(stdout=value) for value in (
+                '100999:100999\n', '3661\n',
+                '0 1000 1\n1 100000 65536\n', '0 1000 1\n1 100000 65536\n')])
+            host.verify_runtime(record)
+            self.assertEqual(('sudo', 'stat', '-c', '%u:%g'), host.guest.call_args_list[0].args[1:5])
+            host.guest.side_effect = [Mock(stdout=value) for value in (
+                '100999:100999\n', '3661\n',
+                '0 1000 1\n1 200000 65536\n')]
+            with self.assertRaisesRegex(ValueError, 'Docker uid namespace'):
+                host.verify_runtime(record)
+            host.guest.side_effect = None
+            host.guest.return_value.stdout = '1000:1000\n'
+            with self.assertRaisesRegex(ValueError, 'UID map is inactive'):
+                host.verify_runtime(record)
+
+    def test_old_linux_vm_cannot_bypass_mapping_with_legacy_record(self):
+        host = object.__new__(DockerHost)
+        host.runtime_epoch = Mock(return_value='a' * 32)
+        host.guest = Mock()
+        with self.assertRaisesRegex(ValueError, 'predates UID mapping'):
+            host.verify_runtime({'vm_identity_source': 'guest-machine-id', 'mount_type': 'virtiofs'})
+        host.guest.assert_not_called()
 
     def test_admitted_runtime_does_not_recheck_service_for_commands_or_metadata(self):
         runtime = backend()

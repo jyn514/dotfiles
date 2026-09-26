@@ -406,6 +406,9 @@ class Host:
     def check_bind(self, raw, writable=False):
         return self.check_binds([(raw, writable)])[0]
 
+    def bind_check_argv(self, record):
+        return ('python3', '-c', (SOURCE / 'check-binds.py').read_text())
+
     def check_binds(self, sources):
         record = self.record()
         if record["phase"] != "ready":
@@ -423,7 +426,7 @@ class Host:
         # This read-only client helper travels with the host launcher; installed
         # VM policy remains pinned and is verified separately above.
         try:
-            self.guest(record, "python3", "-c", (SOURCE / "check-binds.py").read_text(),
+            self.guest(record, *self.bind_check_argv(record),
                 input=json.dumps(bindings), text=True, capture_output=True)
         except subprocess.CalledProcessError as error:
             if error.stderr:

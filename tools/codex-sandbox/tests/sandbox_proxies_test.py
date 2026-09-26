@@ -24,6 +24,7 @@ SPEC = importlib.util.spec_from_file_location("sandbox_proxies", MODULE_PATH)
 assert SPEC and SPEC.loader
 sandbox_proxies = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sandbox_proxies)
+from docker_runtime import Docker
 
 
 class RecordedEffectTest(unittest.TestCase):
@@ -1425,6 +1426,56 @@ class ManifestTest(unittest.TestCase):
         ])
         start.assert_called_once_with(args)
 
+    def test_exclusive_session_preserves_replaced_vm_record_without_touching_new_vm(self) -> None:
+        self.write({"example": self.command()})
+        runtime = self.repo / "runtime"
+        runtime.mkdir()
+        old = {"provider": "lima-docker", "state": str(self.repo / "vm-state"),
+               "instance": "sandbox-host-docker", "generation": "old", "namespace": "default",
+               "vm_identity": "old-vm", "network_digest": "policy",
+               "engine_id": "old-engine", "network_id": "old-network"}
+        new = {**old, "generation": "new", "vm_identity": "new-vm",
+               "engine_id": "new-engine", "network_id": "new-network"}
+        metadata = self.schema4({"example": self.command()})
+        metadata["runtime-owner"] = old
+        metadata["services"]["example"]["runtime-owner"] = old
+        original = json.dumps(metadata)
+        session = runtime / "session.json"
+        session.write_text(original)
+        session.chmod(0o600)
+        manifest = self.repo / "manifest"
+        manifest.write_text(json.dumps(
+            sandbox_proxies.serializable_manifest(sandbox_proxies.load_manifest(self.repo))))
+        args = SimpleNamespace(repo=str(self.repo), container_repo=str(self.container_repo),
+                               shared=False, state=str(self.repo / "state"), manifest=str(manifest))
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=new), \
+                mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
+                mock.patch.object(sandbox_proxies, "stop_state") as stop, \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            self.assertEqual(0, sandbox_proxies.attach_main(args))
+        stop.assert_not_called()
+        start.assert_called_once_with(args)
+        self.assertFalse(session.exists())
+        archived = list(runtime.glob("session.replaced-*.json"))
+        self.assertEqual(1, len(archived))
+        self.assertEqual(original, archived[0].read_text())
+        self.assertEqual(0o600, archived[0].stat().st_mode & 0o777)
+
+        session.write_text(original)
+        session.chmod(0o600)
+        policy_change = {**old, "network_digest": "new-policy"}
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=runtime), \
+                mock.patch.object(sandbox_proxies, "runtime_identity", return_value=policy_change), \
+                mock.patch.object(sandbox_proxies, "cached_session_state", return_value=None), \
+                mock.patch.object(sandbox_proxies, "stop_state", side_effect=RuntimeError("policy drift")) as stop, \
+                mock.patch.object(sandbox_proxies, "start_main") as start:
+            with self.assertRaisesRegex(RuntimeError, "policy drift"):
+                sandbox_proxies.attach_main(args)
+        stop.assert_called_once()
+        start.assert_not_called()
+        self.assertTrue(session.exists())
+
     def test_shared_session_rejects_changed_cached_proxies(self) -> None:
         self.write()
         runtime = sandbox_proxies.runtime_directory(self.repo)
@@ -1591,6 +1642,40 @@ class ManifestTest(unittest.TestCase):
 
         run_argv = next(call.args for call in run.call_args_list if call.args[0] == "run")
         self.assertEqual("0:0", run_argv[run_argv.index("--user") + 1])
+
+    def test_jj_proxy_uses_agent_identity_for_uidmapped_virtiofs(self) -> None:
+        args = SimpleNamespace(prefix="test", state=str(self.repo / "state"), network="sandbox",
+                               container_repo=str(self.container_repo), zuliprc=None)
+        command = self.command(argv=["jj-proxy", "serve"])
+        image = "sha256:" + "0" * 64
+        completed = subprocess.CompletedProcess
+
+        def docker(*arguments, capture=False):
+            stdout = "true\n" if arguments[:2] == ("inspect", "--format") else ""
+            return completed(arguments, 0, stdout=stdout)
+
+        owner = mock.Mock(spec=Docker)
+        owner.provider = "lima-docker"
+        owner.record = {"virtiofs_map": {"guest_uid": 100999}}
+        owner.proxy_forward_record = mock.Mock(side_effect=lambda _container, service: {"owner": service})
+        owner.start_proxy_forward = mock.Mock()
+        state = {"proxies": []}
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
+                mock.patch.object(sandbox_proxies, "_docker", side_effect=docker) as run, \
+                mock.patch.object(sandbox_proxies, "subprocess") as subprocess_module, \
+                mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies, "proxy_git_environment_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies, "git_metadata_paths", return_value=(self.repo / ".git", self.repo / ".git")), \
+                mock.patch.object(sandbox_proxies, "jj_repository_path", return_value=self.repo / ".jj"), \
+                mock.patch.object(sandbox_proxies, "checked_repository_path"):
+            subprocess_module.run.return_value = completed([], 0, stderr="")
+            sandbox_proxies.start_one_proxy(args, self.repo, "repository", {"jj": image},
+                                            state, threading.Lock(), "jj", command)
+
+        run_argv = next(call.args for call in run.call_args_list if call.args[0] == "run")
+        self.assertEqual(f"{os.getuid()}:{os.getgid()}", run_argv[run_argv.index("--user") + 1])
+        self.assertEqual({"uid": os.getuid(), "gid": os.getgid(), "network": "none"},
+                         state["proxies"][0]["identity-parameters"])
 
     def test_failed_alias_cleanup_retains_recovery_and_blocks_resource_removal(self) -> None:
         service_owner = "a" * 32

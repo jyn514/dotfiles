@@ -20,7 +20,7 @@ class DockerPlatformTests(unittest.TestCase):
 
         self.assertEqual("qemu", configuration.vm_type)
         self.assertEqual("x86_64", configuration.guest_arch)
-        self.assertEqual("9p", configuration.mount_type)
+        self.assertEqual("virtiofs", configuration.mount_type)
         self.assertIsNone(configuration.default_client)
 
     def test_linux_without_kvm_is_rejected(self):

@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -22,6 +23,82 @@ from lima.docker_platform import current
 class DockerHost(Host):
     provider = 'lima-docker'
     containerd_user = False
+
+    def virtiofs_map(self, record):
+        if (record.get('vm_type') != 'qemu' and
+                record.get('vm_identity_source') != 'guest-machine-id' and
+                not (sys.platform == 'linux' and record.get('mount_type') == 'virtiofs')):
+            return None
+        mapping = record.get('virtiofs_map')
+        if not mapping:
+            raise ValueError('Linux Docker VM predates UID mapping; create a new instance and state directory')
+        return mapping
+
+    def bind_check_argv(self, record):
+        arguments = super().bind_check_argv(record)
+        mapping = self.virtiofs_map(record)
+        if mapping is None:
+            return arguments
+        return ('sudo', 'setpriv', f"--reuid={mapping['guest_uid']}",
+                f"--regid={mapping['guest_gid']}", '--clear-groups', *arguments)
+
+    def prepare_virtiofs(self, record):
+        mapping = self.virtiofs_map(record)
+        if mapping is None:
+            return None
+        qemu = shutil.which('qemu-system-x86_64')
+        daemon = next((path for path in ('/usr/libexec/virtiofsd', '/usr/lib/virtiofsd')
+                       if os.access(path, os.X_OK)), None)
+        if qemu is None or daemon is None:
+            raise ValueError('Linux virtiofs requires QEMU and /usr/libexec/virtiofsd')
+        root = private_directory(self.state / 'virtiofs')
+        binary = private_directory(root / 'bin') / 'qemu-system-x86_64'
+        if not binary.exists():
+            binary.symlink_to(Path(qemu).resolve(strict=True))
+        wrapper = root / 'uidmapped-virtiofsd'
+        source = SOURCE / 'docker/uidmapped-virtiofsd.sh'
+        if not wrapper.exists():
+            shutil.copyfile(source, wrapper)
+            wrapper.chmod(0o700)
+        if hashlib.sha256(wrapper.read_bytes()).hexdigest() != mapping['wrapper_digest']:
+            raise ValueError('UID-mapped virtiofs daemon changed; repair the host state')
+        directory = private_directory(root / 'share/qemu/vhost-user')
+        registration = directory / '50-codex-sandbox-virtiofs.json'
+        expected = {'type': 'fs', 'binary': str(wrapper)}
+        if registration.exists():
+            if json.loads(registration.read_text()) != expected:
+                raise ValueError('UID-mapped virtiofs registration changed')
+        else:
+            atomic_json(registration, expected)
+        return {**os.environ, 'QEMU_SYSTEM_X86_64': str(binary),
+                'CODEX_SANDBOX_VIRTIOFSD': daemon,
+                'CODEX_SANDBOX_UID_MAP': f":{mapping['guest_uid']}:{mapping['host_uid']}:1:",
+                'CODEX_SANDBOX_GID_MAP': f":{mapping['guest_gid']}:{mapping['host_gid']}:1:"}
+
+    def verify_virtiofs(self, record):
+        mapping = self.virtiofs_map(record)
+        if mapping is None:
+            return
+        scratch = self.state / 'scratch'
+        ownership = self.guest(record, 'sudo', 'stat', '-c', '%u:%g', str(scratch),
+                               capture_output=True, text=True).stdout.strip()
+        expected = f"{mapping['guest_uid']}:{mapping['guest_gid']}"
+        if ownership != expected:
+            raise ValueError(f'Linux virtiofs UID map is inactive ({ownership}; expected {expected}); restart through docker_host.py')
+        pids = self.guest(record, 'pgrep', '-x', 'dockerd',
+                          capture_output=True, text=True).stdout.split()
+        if len(pids) != 1 or not pids[0].isdigit():
+            raise ValueError('expected exactly one rootless Docker daemon')
+        for kind in ('uid', 'gid'):
+            lines = self.guest(record, 'cat', f'/proc/{pids[0]}/{kind}_map',
+                               capture_output=True, text=True).stdout.splitlines()
+            pairs = [tuple(map(int, line.split())) for line in lines]
+            container_id = mapping['host_' + kind]
+            guest_id = mapping['guest_' + kind]
+            if not any(start <= container_id < start + length and
+                       outer + container_id - start == guest_id
+                       for start, outer, length in pairs):
+                raise ValueError(f'Docker {kind} namespace does not map agent ID to virtiofs owner')
 
     def machine(self, record):
         """Runtime lookup checks identity; setup/doctor owns configuration drift."""
@@ -131,12 +208,23 @@ class DockerHost(Host):
             command('limactl', 'validate', str(self.state / 'host.yaml'))
             record = {'schema': 1, 'provider': self.provider, 'phase': 'creating',
                       'instance': instance, 'namespace': 'default', 'generation': generation, 'firewall': 'nftables',
+                      'vm_type': configuration.vm_type,
                       'mount_type': configuration.mount_type,
                       'shares': requested, 'client': str(client), 'client_artifact': client_artifact,
                       'template_digest': hashlib.sha256((self.state / 'host.yaml').read_bytes()).hexdigest(),
                       'network_digest': hashlib.sha256(policy_bytes()).hexdigest(),
                       'files': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in snapshot.iterdir()}}
+            if configuration.vm_type == 'qemu':
+                if not 0 < os.getuid() < 65536 or not 0 < os.getgid() < 65536:
+                    raise ValueError('Linux virtiofs mapping requires host UID and GID in 1..65535')
+                # Rootless Docker maps container ID 1 to guest subordinate ID 100000.
+                # Map the host agent ID to the guest ID seen by container agent ID.
+                record['virtiofs_map'] = {
+                    'host_uid': os.getuid(), 'host_gid': os.getgid(),
+                    'guest_uid': 99999 + os.getuid(), 'guest_gid': 99999 + os.getgid(),
+                    'wrapper_digest': hashlib.sha256(
+                        (SOURCE / 'docker/uidmapped-virtiofsd.sh').read_bytes()).hexdigest()}
             atomic_json(self.record_path, record)
         if hashlib.sha256((self.state / 'host.yaml').read_bytes()).hexdigest() != record['template_digest']:
             raise ValueError('Docker template changed during setup')
@@ -153,7 +241,7 @@ class DockerHost(Host):
             command('limactl', 'stop', '--force', '--tty=false', instance)
         record['phase'] = 'installing'
         atomic_json(self.record_path, record)
-        command('limactl', 'start', '--tty=false', instance)
+        command('limactl', 'start', '--tty=false', instance, env=self.prepare_virtiofs(record))
         machine = self.machine(record)
         if configuration.vm_type == 'vz':
             record['vm_identity'] = hashlib.sha256(
@@ -199,9 +287,11 @@ class DockerHost(Host):
         # This controlled VM installs its firewall in ExecStartPost. Admission
         # needs service readiness; configuration drift belongs to setup/doctor.
         self.runtime_epoch(record)
+        self.verify_virtiofs(record)
 
     def doctor(self, record):
         epoch = self.runtime_epoch(record)
+        self.verify_virtiofs(record)
         self.verify(record)
         if self.runtime_epoch(record) != epoch:
             raise ValueError('Docker restarted during doctor; retry the audit')
@@ -211,7 +301,7 @@ class DockerHost(Host):
         if record['phase'] != 'ready':
             raise ValueError('setup is incomplete; rerun setup with the same shares')
         self.machine(record)
-        command('limactl', 'start', '--tty=false', record['instance'])
+        command('limactl', 'start', '--tty=false', record['instance'], env=self.prepare_virtiofs(record))
         self.verify_runtime(record)
         return record
 

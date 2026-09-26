@@ -48,6 +48,41 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_codex_pair_uses_mapped_virtiofs_identity_only_on_linux(self):
+        identity = runpy.run_path(str(LAUNCHER))["codex_pair_identity"]
+        state = SimpleNamespace(uid=1000, gid=1000)
+        with mock.patch.dict(identity.__globals__, OUTER_RUNTIME=SimpleNamespace(
+                provider="lima-docker", record={"virtiofs_map": {"uid": 1000}})):
+            self.assertEqual((1000, 1000), identity(state))
+        with mock.patch.dict(identity.__globals__, OUTER_RUNTIME=SimpleNamespace(
+                provider="lima-docker", record={})):
+            self.assertEqual((0, 0), identity(state))
+
+    def test_prepares_nested_agent_bind_mountpoints(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = SimpleNamespace(pi_agent_tmp=root / "agent", skills_tmp=root / "skills")
+            state.pi_agent_tmp.mkdir(mode=0o700)
+            (state.skills_tmp / "config").mkdir(parents=True)
+            for role, (_, destination) in launcher["STAGED_CONFIG"].items():
+                source = state.skills_tmp / "config" / role
+                if destination.endswith("/agents") or role == "models":
+                    source.mkdir()
+                else:
+                    source.touch()
+            launcher["prepare_agent_mountpoints"](state)
+            agent = Path("/home/codex/.pi/agent")
+            for role, (_, destination) in launcher["STAGED_CONFIG"].items():
+                if not destination.startswith(str(agent) + "/"):
+                    continue
+                target = state.pi_agent_tmp / Path(destination).relative_to(agent)
+                source = state.skills_tmp / "config" / role
+                self.assertEqual(source.is_dir(), target.is_dir())
+                self.assertTrue(target.exists())
+            self.assertTrue((state.pi_agent_tmp / "pi-extensions").is_dir())
+            self.assertTrue((state.pi_agent_tmp / "extensions/codex-sidecar").is_dir())
+
     def test_policy_opt_out_drops_host_credentials(self):
         load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
         with tempfile.TemporaryDirectory() as directory:

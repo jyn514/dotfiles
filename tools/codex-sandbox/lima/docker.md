@@ -16,7 +16,7 @@ pi
 On `x86_64` Linux, install Lima, QEMU, a real Docker CLI, and Buildx through
 the host distribution's trusted package sources. The host must expose
 readable and writable `/dev/kvm`; setup selects QEMU with KVM acceleration and
-uses Lima's `9p` host-share driver. It rejects Linux hosts without KVM instead
+uses virtiofs for host shares. It rejects Linux hosts without KVM instead
 of silently running software-emulated CPU instructions:
 
 ```sh
@@ -28,6 +28,24 @@ CODEX_SANDBOX_RUNTIME=lima-docker pi
 The Linux path requires a real Docker CLI and Buildx plugin because the setup
 pins both host executables into private state. A Podman alias is rejected; pass
 `--client PATH` to `setup` when the Docker CLI is outside the usual search path.
+It also requires the host `virtiofsd` at `/usr/libexec/virtiofsd` or
+`/usr/lib/virtiofsd`. The launcher maps the host user's UID and GID to the
+corresponding subordinate IDs in the guest (host 1000 → guest 100999 by
+default). Rootless Docker then presents those files to agent UID/GID 1000;
+ordinary guest processes see the subordinate owner. The launcher checks this
+ownership and Docker's namespace map before admitting a sandbox, then runs bind
+preflight as that owner.
+Guest root and container root do not own a private host checkout.
+The `jj` proxy and Codex credential pair therefore run as the mapped agent
+UID/GID on Linux; macOS retains container root. The launcher pre-creates file
+mountpoints inside private Pi state because the rootless guest runtime cannot
+create them beneath a host-owned 0700 bind.
+
+Linux VMs created before this mapping need a new VM and state directory;
+`upgrade` cannot change the mount daemon of a running VM. To keep the old VM
+intact while trying the new one, use `--state DIRECTORY` and
+`--instance sandbox-host-docker-NAME` as described below, then point launches
+at that state with `CODEX_SANDBOX_DOCKER_STATE=DIRECTORY`.
 
 Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
 Existing VMs retain their resource sizes when setup is rerun.
@@ -190,6 +208,11 @@ from the dotfiles checkout. Cleanup verifies the
 recorded VM, socket, and rootless engine identity even when installed policy is
 damaged; it cannot launch workloads or repair the firewall. An unavailable or
 replaced engine leaves recovery metadata intact.
+After a VM is recreated under the same state path and instance name, an
+exclusive launch archives the previous proxy session as
+`session.replaced-*.json` in its runtime directory and starts new proxies.
+It does this only when the recorded VM, generation, engine, and network
+identities have all changed; policy drift on the same VM still blocks cleanup.
 
 ## Prototype boundaries
 

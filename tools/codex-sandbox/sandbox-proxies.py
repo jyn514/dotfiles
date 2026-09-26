@@ -1053,7 +1053,22 @@ def attach_main(args: argparse.Namespace) -> int:
         return 0
     previous = recoverable_session_state(metadata)
     if previous is not None:
-        stop_state(previous)
+        old_owner = previous.get("runtime")
+        current_owner = runtime_identity(OUTER_RUNTIME)
+        replaced_vm = (isinstance(old_owner, dict) and
+                       old_owner.get("provider") == current_owner.get("provider") == "lima-docker" and
+                       all(old_owner.get(key) == current_owner.get(key)
+                           for key in ("state", "instance", "namespace")) and
+                       all(old_owner.get(key) != current_owner.get(key)
+                           for key in ("generation", "vm_identity", "engine_id", "network_id")))
+        if replaced_vm:
+            # The old resources cannot exist in this new VM. Retain their
+            # recovery authority without applying it to the replacement.
+            archived = runtime / f"session.replaced-{uuid.uuid4().hex}.json"
+            metadata_path.rename(archived)
+            print(f"Sandbox proxies: preserved replaced VM session at {archived}", file=sys.stderr)
+        else:
+            stop_state(previous)
     metadata_path.unlink(missing_ok=True)
     start_main(args)
     return 0
@@ -1420,6 +1435,14 @@ class CommandProxyHandle:
             print(f"Sandbox proxy cleanup: {diagnostic}", file=sys.stderr)
 
 
+def proxy_container_identity(name: str, uid: int | None, gid: int | None) -> tuple[int | None, int | None]:
+    # macOS VZ presents private host binds to rootless container root. Linux
+    # uidmapped virtiofs presents them to the agent UID instead.
+    mapped = (OUTER_RUNTIME.provider == "lima-docker" and
+              OUTER_RUNTIME.record.get("virtiofs_map") is not None)
+    return (0, 0) if name == "jj" and not mapped else (uid, gid)
+
+
 def start_one_proxy(
     args: argparse.Namespace, repo: Path, identity: str, images: dict[str, str],
     state: dict[str, Any], state_lock: threading.Lock, name: str, command: dict[str, Any],
@@ -1427,10 +1450,7 @@ def start_one_proxy(
     handles: list[Any] | None = None,
 ) -> dict[str, str]:
     service_owner = uuid.uuid4().hex
-    # Rootless Docker maps the VM user's host-owned bind mounts to container
-    # root. The jj metadata directory is intentionally 0700, so only this
-    # proxy uses container root; root remains the unprivileged VM UID.
-    container_uid, container_gid = (0, 0) if name == "jj" else (os.getuid(), os.getgid())
+    container_uid, container_gid = proxy_container_identity(name, os.getuid(), os.getgid())
     selected_network = args.network if command["network"] else "none"
     zulip_network = f"{args.prefix}-zulip-application" if name == "zulip" else None
     zulip_pair = None
@@ -1875,7 +1895,7 @@ def _validate_proxy_implementation(proxy: dict[str, Any], command: dict[str, Any
     parameters = managed["identity-parameters"]
     if managed["lifecycle-state"] != "ready":
         raise ConfigError("managed required proxy is not ready")
-    expected_uid, expected_gid = (0, 0) if managed["name"] == "jj" else (uid, gid)
+    expected_uid, expected_gid = proxy_container_identity(managed["name"], uid, gid)
     if (expected_uid is not None and parameters["uid"] != expected_uid or
             expected_gid is not None and parameters["gid"] != expected_gid):
         raise ConfigError("managed proxy UID/GID changed")

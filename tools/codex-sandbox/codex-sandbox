@@ -1164,6 +1164,14 @@ def _remove_codex_container(container: str, owner: str) -> None:
     remove_owned_resource(OUTER_RUNTIME, ResourceKind.CONTAINER, container, owner)
 
 
+def codex_pair_identity(state: State) -> tuple[int, int]:
+    # Rootless Docker presents host-owned binds as root, except when Linux
+    # virtiofs maps the host UID to the agent UID.
+    mapped = (OUTER_RUNTIME.provider == "lima-docker" and
+              OUTER_RUNTIME.record.get("virtiofs_map") is not None)
+    return (state.uid, state.gid) if mapped else (0, 0)
+
+
 def start_codex_sidecar(state: State, auth_directory: Path, *,
                         cancelled: threading.Event | None = None) -> tuple[CodexBrokerHandle, list[str]]:
     """Create one Caddy/profile-helper pair and durably own every resource."""
@@ -1185,15 +1193,15 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         "codex", "chatgpt.com", token=key)
     configuration_path = state.proxy_state.parent / (caddy + ".json")
     configuration_digest = caddy_configuration_digest(configuration_bytes)
+    pair_uid, pair_gid = codex_pair_identity(state)
     pair_plan = EgressPairPlan(
         domain=CREDENTIAL_DOMAIN, service_owner=owner, caddy_name=caddy,
         helper_name=helper_container, socket_volume=socket_volume,
         configuration_path=configuration_path, configuration=configuration_bytes,
         caddy_image=caddy_identity, helper_image=state.sidecar_image,
-        # Rootless Docker maps host-owned bind mounts to container root. Both
-        # pair members use that identity so the helper can read auth.json and
-        # Caddy can read the helper socket it creates.
-        uid=0, gid=0,
+        # Both members share the identity that can read the private credential
+        # bind and the helper socket; Linux uidmapped virtiofs changes it.
+        uid=pair_uid, gid=pair_gid,
         application_network=application_network, helper_network=refresh_network,
         public_networks=(("application-network", "application", application_network),
                          ("refresh-network", "refresh", refresh_network)),
@@ -1771,6 +1779,25 @@ def prepare_host_pi_resources(state: State) -> None:
     state.host_pi_package = package
 
 
+def prepare_agent_mountpoints(state: State) -> None:
+    # Linux uidmapped virtiofs leaves rootless runc unable to create a nested
+    # mountpoint inside this host-owned, private bind. Create them beforehand.
+    agent = Path("/home/codex/.pi/agent")
+    for role, (_, destination) in STAGED_CONFIG.items():
+        target = Path(destination)
+        if not target.is_relative_to(agent):
+            continue
+        source = staged_config_path(state, role)
+        mountpoint = state.pi_agent_tmp / target.relative_to(agent)
+        mountpoint.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            mountpoint.mkdir(exist_ok=True)
+        else:
+            mountpoint.touch(mode=0o600)
+    (state.pi_agent_tmp / "pi-extensions").mkdir(exist_ok=True)
+    (state.pi_agent_tmp / "extensions/codex-sidecar").mkdir(parents=True, exist_ok=True)
+
+
 def host_pi_resource_paths(state: State) -> dict[str, str]:
     return {
         **{
@@ -1945,6 +1972,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         shutil.copyfile(model_catalog, state.pi_agent_tmp / model_catalog.name)
     for directory in ("extensions", "pi-codex-subagents"):
         (state.pi_agent_tmp / directory).mkdir(mode=0o700)
+    prepare_agent_mountpoints(state)
     state.pi_model_file = state.pi_agent_tmp / "runtime-model.json"
     state.pi_model_file.write_text(json.dumps({
         "session_id": state.pi_model_session_id,
