@@ -18,6 +18,10 @@ class CommandIntegrationTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
+        self.environment = os.environ.copy()
+        self.environment.pop("DISPLAY", None)
+        # A regression must fail locally, never launch the user's browser.
+        self.executable("xdg-open", "exit 99\n")
 
     def executable(self, name: str, contents: str) -> None:
         path = self.directory / name
@@ -42,7 +46,7 @@ class CommandIntegrationTests(unittest.TestCase):
             '  "show "*) printf "unique line\\n\\n";;\n'
             'esac\n',
         )
-        environment = os.environ | {
+        environment = self.environment | {
             "GIT_CALLS": str(calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
             "RELATIVE": source.name,
@@ -96,7 +100,7 @@ class CommandIntegrationTests(unittest.TestCase):
             '  "show "*) exit "${SHOW_STATUS:-0}";;\n'
             'esac\n',
         )
-        environment = os.environ | {
+        environment = self.environment | {
             "PATH": f"{self.directory}:{os.environ['PATH']}",
             "RELATIVE": source.name,
             "REPOSITORY": str(repository.resolve()),
@@ -145,7 +149,7 @@ class CommandIntegrationTests(unittest.TestCase):
         source.write_text("one\ntwo\n")
         calls = self.directory / "git-calls"
         self.executable("git", 'touch "$GIT_CALLS"\nexit 99\n')
-        environment = os.environ | {
+        environment = self.environment | {
             "GIT_CALLS": str(calls),
             "PATH": f"{self.directory}:{os.environ['PATH']}",
         }
@@ -173,7 +177,7 @@ class CommandIntegrationTests(unittest.TestCase):
             '  "remote ") status=${REMOTE_STATUS:-23}; [ "$status" -eq 0 ] || exit "$status"; printf "origin\\n";;\n'
             'esac\n',
         )
-        environment = os.environ | {
+        environment = self.environment | {
             "PATH": f"{self.directory}:{os.environ['PATH']}",
             "REPOSITORY": str(repository.resolve()),
         }
