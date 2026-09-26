@@ -42,9 +42,14 @@ A draft is not approved. A review request is not authority. Approval permits the
 
 ### Product brief
 
-Draft only the brief when `brief` is explicitly requested. Route substantive brief authoring to **`technical-docs`**. This skill records the gate and packet; it does not invent an additional product/brief procedure.
+Briefs **must be written by a human**.
+Agents may review briefs, and may add `TODO: <summary of suggested changes>` comments, but they must not author or edit the brief otherwise.
 
-Before approval, provide a detailed review packet containing the proposed problem, users, outcome, scope, non-goals, assumptions, alternatives or rejected scope, dependencies, and unresolved questions. Require explicit human approval after that detailed review. While approval is pending, keep the brief `draft`; use `blocked` only when review cannot proceed.
+Briefs must be explicitly approved by a human before an agent can draft a requirements document.
+
+Briefs must be reviewed by an agent before they can be approved.
+Ask yourself: are the goals of this tool clear? Do you have enough information to draft a requirements document?
+What open questions remain?
 
 ### Requirements document
 

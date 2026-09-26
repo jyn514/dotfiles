@@ -6,7 +6,7 @@ description: Review a design document or specification for consistency, necessit
 # Specification Review
 
 Review the requested artifact against its purpose and project constraints.
-Report findings; revise the artifact only when requested.
+Report findings; revise the artifact only when requested, except for the TODO comments that `new-tool-development` permits agents to add to human-authored product briefs.
 
 ## Read First
 

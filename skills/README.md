@@ -75,7 +75,7 @@ For agent-driven use, start with `design-deliberation`. It is a thin meta-skill 
 
 ### Focused new-tool workflow
 
-For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`; use `requirements-definition` only for requirements authoring. `technical-docs` writes the requested product brief or implementation spec, while `spec-review` reviews maturity, upstream/downstream consistency, and stale invalidation.
+For a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Product briefs are human-authored; agents may review them and add permitted TODO comments. Use `requirements-definition` for requirements, `technical-docs` for implementation-spec writing, and `spec-review` for maturity, upstream/downstream consistency, and stale invalidation review.
 
 ## Suggested workflow
 
