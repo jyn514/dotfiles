@@ -69,10 +69,6 @@ GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 
 
-def host_pi_enabled() -> bool:
-    return os.environ.get("CODEX_SANDBOX_HOST_PI", "1") == "1"
-
-
 STAGED_CONFIG = {
     "shared": ("$HOME/.agents/shared.md", "/home/codex/.agents/shared.md"),
     "contest": ("$HOME/.agents/contest-dialect.md", "/home/codex/.agents/contest-dialect.md"),
@@ -144,7 +140,6 @@ class State:
     pi_agent_tmp: Path | None = None
     pi_model_file: Path | None = None
     pi_model_session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    pi_auth_mask: Path | None = None
     cd_request: Path | None = None
     handoff_origin: Path | None = None
     gateway_handle: GatewayHandle | None = None
@@ -1732,9 +1727,10 @@ def wait_for_agent(state: State) -> int:
 
 
 def read_cd_request(state: State) -> tuple[Path, Path | None] | None:
-    if state.cd_request is None:
+    cd_request = getattr(state, "cd_request", None)
+    if cd_request is None:
         return None
-    content = state.cd_request.read_text(encoding="utf-8")
+    content = cd_request.read_text(encoding="utf-8")
     if not content:
         return None
     try:
@@ -1763,8 +1759,6 @@ def keychain_environment(state: State) -> dict[str, str]:
 
 
 def prepare_host_pi_resources(state: State) -> None:
-    if not host_pi_enabled():
-        return
     cli = state.home / ".local/share/pi/node/node_modules/.bin/pi"
     try:
         package = cli.resolve(strict=True).parents[2]
@@ -1788,47 +1782,33 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
 
 
 def build_agent_command(
-    state: State, arguments: list[str], *, host_pi: bool, timing: bool,
+    state: State, arguments: list[str], *, timing: bool,
     protected: list[Path], repository_aliases: list[Path],
     external_git_roots: list[tuple[Path, Path]],
-    persistent_package_directories: list[Path], sessions: Path,
     pi_extensions: Path,
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
     command = [
-        "docker", "run", "--name", state.codex_container, *([] if host_pi else ["-it"]),
+        "docker", "run", "--name", state.codex_container,
         "--cap-drop=NET_RAW",
         "--network", SANDBOX_NETWORK, *proxy_flags(),
         *(["--mount", f"type=bind,src={state.github_credential},dst=/run/secrets/github-token,readonly",
            "--entrypoint", "/opt/agent-tools/bin/with-github-token"] if isinstance(OUTER_RUNTIME, VMRuntime) and state.github_credential is not None
-          else (["--secret", "codex-github-token,type=env,target=GH_TOKEN",
-                 *(["--entrypoint", "node"] if host_pi else [])]
-                if not isinstance(OUTER_RUNTIME, VMRuntime) else
-                (["--entrypoint", "node"] if host_pi else []))),
+          else (["--secret", "codex-github-token,type=env,target=GH_TOKEN", "--entrypoint", "node"]
+                if not isinstance(OUTER_RUNTIME, VMRuntime) else ["--entrypoint", "node"])),
         "--env", "JJ_AGENT=pi",
-        *(["--env", "CODEX_SANDBOX_TOOL_WORKER=1"] if host_pi else []),
+        "--env", "CODEX_SANDBOX_TOOL_WORKER=1",
         "--env", "PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json",
         "--env", f"PI_MODEL_SESSION_ID={state.pi_model_session_id}",
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
-        *([] if host_pi else ["--mount", f"type=bind,src={sessions},dst=/home/codex/.pi/agent/sessions"]),
-        *[
-            item
-            for directory in ([] if host_pi else persistent_package_directories)
-            for item in (
-                "--mount",
-                f"type=bind,src={directory},dst=/home/codex/.pi/agent/{directory.name}",
-            )
-        ],
-        "--mount", f"type=bind,src={state.pi_auth_mask},dst=/home/codex/.pi/agent/auth.json,readonly",
         "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
         # Host Pi passes its absolute skill paths to guest-backed tools.
-        *(["--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}"]
-          if host_pi else []),
+        "--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}",
         *[
             item
-            for relative in (PI_RESOURCE_PATHS if host_pi else ())
+            for relative in PI_RESOURCE_PATHS
             for item in (
                 "--mount",
                 f"type=bind,src={state.host_pi_package / relative},"
@@ -1892,7 +1872,7 @@ def build_agent_command(
     return command
 
 
-def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> int:
+def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
@@ -1953,34 +1933,18 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
         raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
     pi_agent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    sessions = pi_agent / "sessions"
-    if sessions.exists() and (sessions.is_symlink() or not sessions.is_dir()):
-        raise LauncherError(f"Pi sessions directory is invalid: {sessions}")
-    sessions.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # Pi's /reload resolves configured packages, installing missing npm packages,
-    # repairing version mismatches, and refreshing eligible Git sources. Keep these
-    # package stores writable and persistent; all other undeclared agent state stays
-    # private to the sandbox so extensions cannot accidentally share runtime data.
-    persistent_package_directories = []
-    for directory in (pi_agent / "npm", pi_agent / "git"):
-        if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
-            raise LauncherError(f"Pi package directory is invalid: {directory}")
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        persistent_package_directories.append(directory)
     pi_extensions = DOTFILES / "config/agents/pi/pi-extensions"
     if not pi_extensions.is_dir():
         raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")
     state.pi_agent_tmp = Path(tempfile.mkdtemp(prefix="codex-private-agent-", dir=scratch_directory()))
     os.chmod(state.pi_agent_tmp, 0o700)
-    # Offline Pi needs the host's refreshed catalog. Copy it so guest updates
-    # remain private and disappear with the rest of this sandbox's runtime state.
+    # Offline Pi needs the host's refreshed catalog. Copy it so tool-worker
+    # updates remain private and disappear with the rest of this sandbox state.
     model_catalog = pi_agent / "models-store.json"
     if model_catalog.exists():
         shutil.copyfile(model_catalog, state.pi_agent_tmp / model_catalog.name)
     for directory in ("extensions", "pi-codex-subagents"):
         (state.pi_agent_tmp / directory).mkdir(mode=0o700)
-    state.pi_auth_mask = temporary_file()
-    state.pi_auth_mask.write_text("{}\n", encoding="utf-8")
     state.pi_model_file = state.pi_agent_tmp / "runtime-model.json"
     state.pi_model_file.write_text(json.dumps({
         "session_id": state.pi_model_session_id,
@@ -1989,9 +1953,8 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
     }) + "\n", encoding="utf-8")
     os.chmod(state.pi_model_file, 0o600)
     command = build_agent_command(
-        state, arguments, host_pi=host_pi, timing=timing, protected=protected,
+        state, arguments, timing=timing, protected=protected,
         repository_aliases=repository_aliases, external_git_roots=external_git_roots,
-        persistent_package_directories=persistent_package_directories, sessions=sessions,
         pi_extensions=pi_extensions,
     )
     reserved = {
@@ -2005,92 +1968,65 @@ def run_agent(state: State, arguments: list[str], *, host_pi: bool = False) -> i
         bridge_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
     bridge_environment.update(keychain_environment(state))
     agent_environment.update(bridge_environment)
-    if host_pi:
-        image_index = command.index(state.image)
-        host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
-        state.cd_request = temporary_file()
-        host_environment = dict(os.environ)
-        pi_resource_paths = host_pi_resource_paths(state)
-        host_environment.update({
-            "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
-            "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
-            "CODEX_SANDBOX_GUEST_CWD": str(state.container_working_directory),
-            "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
-            "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
-            "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
-            "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
-            "JJ_AGENT": "pi",
-            "PI_MODEL_FILE": str(state.pi_model_file),
-            "PI_MODEL_SESSION_ID": state.pi_model_session_id,
-        })
-        if state.handoff_origin is not None:
-            host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)
-        worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
-                          if isinstance(OUTER_RUNTIME, VMRuntime)
-                          and state.github_credential is not None
-                          else ["/opt/agent-tools/bin/tool-worker.mjs"])
-        with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
-            with OUTER_RUNTIME.workload(
-                OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
-                [*command[4:image_index], *environment], worker_command,
-            ) as worker:
-                for _ in range(100):
-                    if worker.poll() is not None:
-                        raise LauncherError("guest tool worker exited during startup")
-                    ready = OUTER_RUNTIME.run(
-                        ["exec", state.codex_container, "test", "-S", "/tmp/codex-tool-worker.sock"],
-                        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-                    if ready.returncode == 0:
-                        break
-                    time.sleep(0.1)
-                else:
-                    raise LauncherError("guest tool worker did not become ready")
-                state.agent_process = subprocess.Popen(
-                    [str(host_pi_bin), *state.codex_arguments],
-                    cwd=state.host_working_directory, env=host_environment,
+    image_index = command.index(state.image)
+    host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
+    state.cd_request = temporary_file()
+    host_environment = dict(os.environ)
+    pi_resource_paths = {
+        str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
+        for relative in PI_RESOURCE_PATHS
+    }
+    host_environment.update({
+        "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
+        "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
+        "CODEX_SANDBOX_GUEST_CWD": str(state.container_working_directory),
+        "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
+        "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
+        "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
+        "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
+        "JJ_AGENT": "pi",
+        "PI_MODEL_FILE": str(state.pi_model_file),
+        "PI_MODEL_SESSION_ID": state.pi_model_session_id,
+    })
+    if state.handoff_origin is not None:
+        host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)
+    worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
+                      if isinstance(OUTER_RUNTIME, VMRuntime)
+                      and state.github_credential is not None
+                      else ["/opt/agent-tools/bin/tool-worker.mjs"])
+    with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
+        with OUTER_RUNTIME.workload(
+            OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
+            [*command[4:image_index], *environment], worker_command,
+        ) as worker:
+            for _ in range(100):
+                if worker.poll() is not None:
+                    raise LauncherError("guest tool worker exited during startup")
+                ready = OUTER_RUNTIME.run(
+                    ["exec", state.codex_container, "test", "-S", "/tmp/codex-tool-worker.sock"],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
-                worker_failed = threading.Event()
-                def watch_worker() -> None:
-                    worker.wait()
-                    if state.agent_process is not None and state.agent_process.poll() is None:
-                        worker_failed.set()
-                        state.agent_process.terminate()
-                threading.Thread(target=watch_worker, daemon=True).start()
-                result = wait_for_agent(state)
-                if worker_failed.is_set():
-                    raise LauncherError("guest tool worker stopped while host Pi was running")
-        state.codex_container_created = False
-        return result
-    if timing:
-        print(
-            f"Sandbox launch setup: {time.monotonic() - setup_started:.2f}s; "
-            f"starting docker run ({state.codex_container})",
-            file=sys.stderr,
-        )
-    launch_started = time.monotonic()
-    if isinstance(OUTER_RUNTIME, VMRuntime):
-        image_index = command.index(state.image)
-        terminal_arguments = (["--interactive", "--tty"]
-                              if sys.stdin.isatty() and sys.stdout.isatty() else [])
-        # Keep create and attach under the runtime's existing producer ownership.
-        # The session key may persist with this container; the GitHub token may not.
-        # Create first so lost supervision can remove an existing container.
-        with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
-            with OUTER_RUNTIME.workload(OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
-                    [*terminal_arguments, *command[5:image_index], *environment],
-                    command[image_index + 1:]) as process:
-                state.agent_process = process
-                result = wait_for_agent(state)
-            state.codex_container_created = False
-        return result
-    state.agent_process = OUTER_RUNTIME.popen(command[1:], env=agent_environment)
-    try:
-        return wait_for_agent(state)
-    finally:
-        if timing:
-            print(f"Sandbox docker run: {time.monotonic() - launch_started:.2f}s", file=sys.stderr)
-            report_container_timing(state)
+                if ready.returncode == 0:
+                    break
+                time.sleep(0.1)
+            else:
+                raise LauncherError("guest tool worker did not become ready")
+            state.agent_process = subprocess.Popen(
+                [str(host_pi_bin), *state.codex_arguments],
+                cwd=state.host_working_directory, env=host_environment,
+            )
+            worker_failed = threading.Event()
+            def watch_worker() -> None:
+                worker.wait()
+                if state.agent_process is not None and state.agent_process.poll() is None:
+                    worker_failed.set()
+                    state.agent_process.terminate()
+            threading.Thread(target=watch_worker, daemon=True).start()
+            result = wait_for_agent(state)
+            if worker_failed.is_set():
+                raise LauncherError("guest tool worker stopped while host Pi was running")
+    state.codex_container_created = False
+    return result
 
 
 class StartupExecutor(ThreadPoolExecutor):
@@ -2152,7 +2088,7 @@ def execute(state: State) -> int:
             timings.append((name, time.monotonic() - phase_started))
 
     phase("repository validation", lambda: validate_repository(state))
-    if host_pi_enabled():
+    if hasattr(state, "codex_arguments") and hasattr(state, "host_working_directory"):
         phase("host session selection", lambda: prepare_host_session(state))
     phase("relay recovery", lambda: recover_relays(state))
     phase("proxy lock", lambda: acquire_lock(state))
@@ -2175,7 +2111,8 @@ def execute(state: State) -> int:
                 not (state.repository / '.agents/sandbox/base-image').is_file()):
             raise LauncherError('repository uses Bake images; select CODEX_SANDBOX_RUNTIME=lima-docker')
     phase("skill staging", lambda: stage_skills(state))
-    phase("host Pi resources", lambda: prepare_host_pi_resources(state))
+    if hasattr(state, "home"):
+        phase("host Pi resources", lambda: prepare_host_pi_resources(state))
     if isinstance(OUTER_RUNTIME, VMRuntime):
         phase("Lima share preflight", lambda: preflight_lima(state))
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
@@ -2250,17 +2187,14 @@ def execute(state: State) -> int:
         if model_future is not None:
             state.image = model_future.result()
         keychain_arguments = keychain_future.result() if keychain_future is not None else []
-        host_pi = host_pi_enabled()
-        agent_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"] if host_pi else
-                         OUTER_RUNTIME.agent_command(state.image, state.codex_arguments)
-                         if isinstance(OUTER_RUNTIME, VMRuntime) else state.codex_arguments)
+        agent_command = ["node", "/opt/agent-tools/bin/tool-worker.mjs"]
         arguments = [*gateway_arguments, *keychain_arguments, state.image,
                      *agent_command]
         arguments = [*sidecar_arguments, *arguments]
         if os.environ.get("CODEX_SANDBOX_TIMING"):
             detail = ", ".join(f"{name}={elapsed:.2f}s" for name, elapsed in timings)
             print(f"Sandbox preparation: {time.monotonic() - started:.2f}s ({detail})", file=sys.stderr)
-        return run_agent(state, arguments, host_pi=True) if host_pi else run_agent(state, arguments)
+        return run_agent(state, arguments)
 
 
 def preflight_lima(state: State) -> None:
@@ -2417,7 +2351,7 @@ def cleanup(state: State) -> bool:
     if state.proxy_lock is not None:
         state.proxy_lock.close()
     for path in (
-        state.proxy_state, state.proxy_args, state.manifest, state.pi_auth_mask,
+        state.proxy_state, state.proxy_args, state.manifest,
         state.prepared_images, getattr(state, "cd_request", None),
     ):
         if path is not None and not keep_scratch:
@@ -2603,9 +2537,7 @@ def launch(arguments: list[str]) -> int:
             state = new_state(next_arguments)
             state.handoff_origin = handoff_origin
             result = execute(state)
-            request = (read_cd_request(state)
-                       if result == 0 and host_pi_enabled()
-                       else None)
+            request = read_cd_request(state) if result == 0 else None
             if request is None:
                 return result
             if not cleanup(state):

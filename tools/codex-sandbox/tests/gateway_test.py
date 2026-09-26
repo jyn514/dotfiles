@@ -301,7 +301,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             state.cleaned = False; state.codex_container_created = False
             state.skills_tmp = None; state.pi_agent_tmp = None
             state.proxy_lock = None; state.proxy_state = None; state.proxy_args = None
-            state.manifest = None; state.pi_auth_mask = None; state.prepared_images = None
+            state.manifest = None; state.prepared_images = None
             state.tmux_registration = None
             handle = self.launcher["GatewayHandle"](state, False, True)
             state.gateway_handle = handle

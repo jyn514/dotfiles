@@ -34,7 +34,7 @@ class AgentCommandTest(unittest.TestCase):
                 paths[str(state.host_pi_package / "docs")],
             )
 
-    def test_guest_command_contains_session_scoped_model_channel(self) -> None:
+    def test_host_worker_command_contains_session_scoped_model_channel(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         build = launcher["build_agent_command"]
         with tempfile.TemporaryDirectory() as directory:
@@ -45,20 +45,23 @@ class AgentCommandTest(unittest.TestCase):
                 term="xterm-256color",
                 pi_model_session_id=str(uuid.uuid4()),
                 pi_agent_tmp=root / "private-agent",
-                pi_auth_mask=root / "auth.json",
                 skills_source=root / "skills",
                 skills_tmp=root / "staged",
                 home=root / "home",
+                host_pi_package=root / "pi-package",
                 container_repository=Path("/src/repository"),
                 repository=root / "repository",
                 git_mount_source=root / "repository/.git",
                 container_working_directory=Path("/src/repository"),
             )
             state.pi_agent_tmp.mkdir()
-            state.pi_auth_mask.touch()
             state.skills_source.mkdir()
             state.skills_tmp.mkdir()
             state.home.mkdir()
+            (state.host_pi_package / "README.md").parent.mkdir(parents=True)
+            for relative in ("README.md", "docs", "examples"):
+                path = state.host_pi_package / relative
+                path.mkdir() if "." not in path.name else path.touch()
             state.repository.mkdir()
             (state.repository / ".jj").mkdir()
             state.git_mount_source.mkdir(parents=True)
@@ -74,10 +77,9 @@ class AgentCommandTest(unittest.TestCase):
                 "check_mount_destinations": mock.Mock(),
             }):
                 command = build(
-                    state, ["image", "pi"], host_pi=False, timing=False,
+                    state, ["image", "pi"], timing=False,
                     protected=[state.repository / ".jj"], repository_aliases=[],
-                    external_git_roots=[], persistent_package_directories=[],
-                    sessions=root / "sessions", pi_extensions=extensions,
+                    external_git_roots=[], pi_extensions=extensions,
                 )
 
             self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", command)

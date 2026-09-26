@@ -4,9 +4,7 @@
 captured Bake inputs, explicit refresh and clean rebuild, and schema 4
 accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
-Host Pi with guest tool execution is the launcher default; set
-`CODEX_SANDBOX_HOST_PI=0` for the retained guest-Pi path. The host path has
-not passed every acceptance check below.
+Host Pi with guest tool execution is the launcher execution path.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
 the implemented image-command/image-target split, not the proxy trust or
@@ -243,8 +241,7 @@ protection, provider credential isolation, and runtime admission cannot be
 disabled as performance options.
 
 A shared session begins with the first sandbox for a checkout and ends when its
-last execution attachment closes. In the implemented guest-Pi mode this follows
-agent exit; the selected host-Pi mode uses the handoff rules above. Starting
+last execution attachment closes. The host-Pi mode uses the handoff rules above. Starting
 another sandbox for that checkout is a join.
 The first launch accepts repository configuration and resolves its selected images.
 Session metadata retains the normalized configuration, including source absence,

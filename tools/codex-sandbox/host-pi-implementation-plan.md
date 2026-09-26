@@ -2,8 +2,8 @@
 
 The selected design is specified in [launcher-interface.typ](spec/launcher-interface.typ),
 [proxy-design.typ](spec/proxy-design.typ), and
-[process-ownership.typ](spec/process-ownership.typ). Host Pi is now the launcher
-default; `CODEX_SANDBOX_HOST_PI=0` retains guest-Pi mode.
+[process-ownership.typ](spec/process-ownership.typ). Host Pi is the launcher
+execution path.
 
 ## Outcome and boundaries
 
@@ -41,8 +41,7 @@ The transport does not replay calls after a possible write.
    fork the conversation, or start fresh if it has no saved messages. Failed
    validation leaves the old session usable; failed cleanup stops the handoff.
    Cross-directory resume also forks.
-6. **Switch the default and document operation.** The host path is the default;
-   guest-Pi mode remains available. The README, image, and test entrypoint reflect
+6. **Switch the default and document operation.** The README, image, and test entrypoint reflect
    the new path. The runtime image builds with a local Pi source context, and a
    real Pi `read` call succeeds in the guest worker. Full launcher RPC `!` calls
    return `/src/dotfiles` and `Linux`, including with child-style
@@ -57,8 +56,8 @@ The transport does not replay calls after a possible write.
 
 - **Decided:** host Pi, guest tool worker, one attachment per Pi session and its
   children, guest execution in normal operation, no automatic call replay.
-- **Implemented default:** host Pi; `CODEX_SANDBOX_HOST_PI=0` retains guest-Pi
-  mode while the remaining acceptance checks are completed.
+- **Implemented:** host Pi with a guest tool worker; guest-Pi execution was removed
+  after the host-Pi acceptance path became operational.
 - **Observed extension seam:** pinned Pi revision
   `929ffac0ce312fa5ccca1ee87f80c8c053d81fe4` permits extensions to override
   built-in tools and replace `user_bash` operations. Subagents already disable
@@ -67,8 +66,7 @@ The transport does not replay calls after a possible write.
 - **Decided:** Pi's `!`/RPC bash commands run in the guest during normal operation.
   A failed extension reload can leave the hook absent and restore Pi's local
   fallback; this is outside the requested security boundary.
-- **Decided:** host Pi uses its existing provider credentials directly; guest-Pi
-  mode retains the sandbox's authenticated broker route.
+- **Decided:** host Pi uses its existing provider credentials directly.
 
 Operational acceptance remains open for worker loss. The direct `/skill:`
 delegation warning is a separate unresolved issue.

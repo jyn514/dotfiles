@@ -36,14 +36,6 @@ HOST_EDITOR_CLIENT = TOOL / "image" / "host-editor"
 HOST_EDITOR_PANE = TOOL / "host-editor-pane"
 
 
-class GuestModeTest(unittest.TestCase):
-    def setUp(self) -> None:
-        # Existing launcher fixtures exercise the retained guest-Pi fallback.
-        environment = mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "0"})
-        environment.start()
-        self.addCleanup(environment.stop)
-
-
 def write_executable(path: Path, content: str) -> None:
     path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
     path.chmod(0o700)
@@ -55,7 +47,7 @@ def read_calls(path: Path) -> list[list[str]]:
     return [line.split("\t")[1:] for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-class ContainerRepositoryPathTest(GuestModeTest):
+class ContainerRepositoryPathTest(unittest.TestCase):
     def test_policy_opt_out_drops_host_credentials(self):
         load = runpy.run_path(str(LAUNCHER))["load_repository_policy"]
         with tempfile.TemporaryDirectory() as directory:
@@ -245,7 +237,7 @@ class ContainerRepositoryPathTest(GuestModeTest):
             self.assertEqual(Path("/src/repository"), function(home, repository))
 
 
-class ProxyHelperTest(GuestModeTest):
+class ProxyHelperTest(unittest.TestCase):
     def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
         helper = runpy.run_path(str(LAUNCHER))["helper"]
         entrypoint = mock.Mock(return_value=0)
@@ -260,7 +252,7 @@ class ProxyHelperTest(GuestModeTest):
             self.assertEqual(1, helper("snapshot", "--repo", "example", check=False).returncode)
 
 
-class ContainerTimingTest(GuestModeTest):
+class ContainerTimingTest(unittest.TestCase):
     def test_daemon_timestamps_keep_host_clock_out_of_durations(self) -> None:
         report = runpy.run_path(str(LAUNCHER))["report_container_timing"]
         timestamps = "|".join(json.dumps(value) for value in (
@@ -293,7 +285,7 @@ class ContainerTimingTest(GuestModeTest):
                 self.assertIn("timing: unavailable", output.getvalue())
 
 
-class HostPiWrapperTest(GuestModeTest):
+class HostPiWrapperTest(unittest.TestCase):
     def test_tool_worker_allows_only_isolated_information_flags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -452,7 +444,7 @@ class HostPiWrapperTest(GuestModeTest):
             )
 
 
-class DirectoryHandoffTest(GuestModeTest):
+class DirectoryHandoffTest(unittest.TestCase):
     def test_cross_directory_session_id_forks_before_pi_starts(self) -> None:
         prepare = runpy.run_path(str(LAUNCHER))["prepare_host_session"]
         with tempfile.TemporaryDirectory() as directory:
@@ -539,7 +531,6 @@ class DirectoryHandoffTest(GuestModeTest):
                 "unregister_tmux_pane": lambda state: events.append(("unregister", state.host_working_directory)),
             }
             with mock.patch.dict(launch.__globals__, replacements), \
-                    mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
                     mock.patch("os.chdir") as change_directory:
                 self.assertEqual(19, launch([]))
             self.assertEqual(("cleanup", ROOT), events[2])
@@ -568,8 +559,7 @@ class DirectoryHandoffTest(GuestModeTest):
                 "read_cd_request": lambda _state: (destination, None),
                 "cleanup": lambda _state: True,
                 "unregister_tmux_pane": lambda _state: None,
-            }), mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
-                    mock.patch("os.chdir") as change_directory:
+            }), mock.patch("os.chdir") as change_directory:
                 self.assertEqual(19, launch([]))
             self.assertEqual([], arguments[0])
             self.assertEqual(["--session-dir", str(ROOT / "sessions"), "--session-id"],
@@ -597,22 +587,14 @@ class DirectoryHandoffTest(GuestModeTest):
             "read_cd_request": lambda _state: (ROOT, ROOT / "source.jsonl"),
             "cleanup": lambda _state: False,
             "unregister_tmux_pane": lambda _state: None,
-        }), mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}), \
-                mock.patch("sys.stderr", new_callable=io.StringIO) as output:
+        }), mock.patch("sys.stderr", new_callable=io.StringIO) as output:
             self.assertEqual(1, launch([]))
         new_state.assert_called_once()
         self.assertIn("cleanup failed", output.getvalue())
 
 
-class BackgroundRelayTest(GuestModeTest):
-    def test_host_pi_is_default_with_guest_fallback(self) -> None:
-        enabled = runpy.run_path(str(LAUNCHER))["host_pi_enabled"]
-        with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertTrue(enabled())
-        with mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "0"}):
-            self.assertFalse(enabled())
-
-    def test_host_pi_selects_guest_worker(self) -> None:
+class BackgroundRelayTest(unittest.TestCase):
+    def test_selects_guest_worker(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
         calls = []
         with tempfile.TemporaryDirectory() as directory:
@@ -633,14 +615,12 @@ class BackgroundRelayTest(GuestModeTest):
                 resolve_agent=mock.Mock(return_value="image"),
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
-                run_agent=lambda _state, arguments, **kwargs: (calls.append((arguments, kwargs)) or 0),
+                run_agent=lambda _state, arguments: (calls.append(arguments) or 0),
             )
-            with mock.patch.dict(execute.__globals__, replacements), \
-                    mock.patch.dict(os.environ, {"CODEX_SANDBOX_HOST_PI": "1"}):
+            with mock.patch.dict(execute.__globals__, replacements):
                 self.assertEqual(0, execute(state))
         self.assertEqual(1, len(calls))
-        self.assertEqual({"host_pi": True}, calls[0][1])
-        self.assertEqual(["node", "/opt/agent-tools/bin/tool-worker.mjs"], calls[0][0][-2:])
+        self.assertEqual(["node", "/opt/agent-tools/bin/tool-worker.mjs"], calls[0][-2:])
 
     def test_fresh_session_reports_image_and_proxy_preparation(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
@@ -950,7 +930,7 @@ class BackgroundRelayTest(GuestModeTest):
                 self.assertEqual(1, output.getvalue().count("injected optional failure"))
 
 
-class AgentSandboxImageTest(GuestModeTest):
+class AgentSandboxImageTest(unittest.TestCase):
     def test_image_creates_source_mount_point_before_chown(self) -> None:
         dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
@@ -1081,7 +1061,7 @@ class AgentSandboxImageTest(GuestModeTest):
         self.assertNotIn("[credential]", config)
 
 
-class HostEditorPaneTest(GuestModeTest):
+class HostEditorPaneTest(unittest.TestCase):
     def test_runs_editor_argv_and_records_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1104,7 +1084,7 @@ class HostEditorPaneTest(GuestModeTest):
             self.assertEqual("value with spaces\n", output.read_text(encoding="utf-8"))
 
 
-class HostEditorBridgeTest(GuestModeTest):
+class HostEditorBridgeTest(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.launcher = runpy.run_path(str(LAUNCHER))
@@ -1238,7 +1218,7 @@ class HostEditorBridgeTest(GuestModeTest):
             socket.create_connection(("127.0.0.1", port), timeout=0.1)
 
 
-class CodexSandboxTest(GuestModeTest):
+class CodexSandboxTest(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.temporary = tempfile.TemporaryDirectory()
@@ -1254,7 +1234,11 @@ class CodexSandboxTest(GuestModeTest):
             self.home / ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"
         )
         (self.pi_package / "dist/bundle").mkdir(parents=True)
-        (self.pi_package / "dist/bundle/cli.js").touch()
+        (self.pi_package / "dist/bundle/cli.js").write_text(
+            "#!/usr/bin/env node\nprocess.exit(Number(process.env.FAKE_AGENT_EXIT || 0));\n",
+            encoding="utf-8",
+        )
+        (self.pi_package / "dist/bundle/cli.js").chmod(0o700)
         (self.pi_package / "README.md").write_text("host readme\n", encoding="utf-8")
         (self.pi_package / "docs").mkdir()
         (self.pi_package / "examples").mkdir()
@@ -1367,6 +1351,33 @@ class CodexSandboxTest(GuestModeTest):
                 done
                 exit 0
             fi
+            if [ "$1" = create ]; then
+                container=
+                worker=0
+                previous=
+                for argument do
+                    [ "$previous" = --name ] && container=$argument
+                    [ "$argument" = /opt/agent-tools/bin/tool-worker.mjs ] && worker=1
+                    previous=$argument
+                done
+                if [ "$worker" = 1 ]; then
+                    : > "$FAKE_DOCKER_LOG.worker.$container"
+                fi
+                exit 0
+            fi
+            if [ "$1" = start ]; then
+                container=
+                for argument do container=$argument; done
+                marker="$FAKE_DOCKER_LOG.worker.$container"
+                if [ -f "$marker" ]; then
+                    if [ "${FAKE_WORKER_EXIT+x}" = x ]; then
+                        exit "$FAKE_WORKER_EXIT"
+                    fi
+                    if [ -n "$FAKE_AGENT_READY" ]; then : > "$FAKE_AGENT_READY"; fi
+                    while [ -f "$marker" ]; do sleep 1; done
+                fi
+                exit 0
+            fi
             if [ "$1" = inspect ]; then
                 case " $* " in
                     *" {{.State.Running}} "*) printf '%s\n' true ;;
@@ -1410,6 +1421,11 @@ class CodexSandboxTest(GuestModeTest):
             if [ "$1" = rm ] && [ -n "$FAKE_CLEANUP_DELAY" ]; then
                 sleep "$FAKE_CLEANUP_DELAY"
             fi
+            if [ "$1" = rm ]; then
+                container=
+                for argument do container=$argument; done
+                rm -f "$FAKE_DOCKER_LOG.worker.$container"
+            fi
             exit 0
         """)
         write_executable(self.fake_bin / "python3", """
@@ -1418,6 +1434,7 @@ class CodexSandboxTest(GuestModeTest):
             # protocol. Keep the launch test independent of a real image build.
             case "$1" in
                 */owned_images.py|*/sandbox-image) printf 'sha256:%064d\\n' 0; exit 0 ;;
+                */sandbox-host-pi) exec /usr/bin/python3 "$@" ;;
             esac
             {
                 printf 'CALL'
@@ -1503,9 +1520,10 @@ class CodexSandboxTest(GuestModeTest):
         )
 
     def final_run(self) -> list[str]:
-        runs = [call for call in read_calls(self.docker_log) if call[:1] == ["run"] and "-it" in call]
-        self.assertEqual(1, len(runs))
-        return runs[0]
+        creates = [call for call in read_calls(self.docker_log)
+                   if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
+        self.assertEqual(1, len(creates))
+        return creates[0]
 
     def test_mounts_host_skills_writable_through_resolved_source(self) -> None:
         skills = self.home / ".agents" / "skills"
@@ -1533,7 +1551,7 @@ class CodexSandboxTest(GuestModeTest):
         self.assertNotIn(mount + ",readonly", self.final_run())
 
     def test_host_pi_marks_guest_as_tool_worker(self) -> None:
-        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+        result = self.run_launcher(FAKE_WORKER_EXIT="17")
         self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
         creates = [call for call in read_calls(self.docker_log)
                    if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
@@ -1546,7 +1564,7 @@ class CodexSandboxTest(GuestModeTest):
         source = self.root / "tracked-skills"
         source.mkdir()
         skills.symlink_to(source, target_is_directory=True)
-        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+        result = self.run_launcher(FAKE_WORKER_EXIT="17")
         self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
         creates = [call for call in read_calls(self.docker_log)
                    if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
@@ -1557,7 +1575,7 @@ class CodexSandboxTest(GuestModeTest):
         )
 
     def test_host_pi_resources_use_guest_paths(self) -> None:
-        result = self.run_launcher(CODEX_SANDBOX_HOST_PI="1")
+        result = self.run_launcher(FAKE_WORKER_EXIT="17")
 
         self.assertNotEqual(0, result.returncode)  # The fake worker exits before Pi starts.
         creates = [call for call in read_calls(self.docker_log)
@@ -1905,30 +1923,6 @@ class CodexSandboxTest(GuestModeTest):
         self.assertEqual(1, len(agent_mounts))
         private_agent = Path(agent_mounts[0].split(",src=", 1)[1].split(",dst=", 1)[0])
         self.assertFalse(private_agent.exists())
-        self.assertIn(
-            f"type=bind,src={pi_agent / 'sessions'},dst=/home/codex/.pi/agent/sessions",
-            run,
-        )
-        for directory in ("npm", "git"):
-            package_store = pi_agent / directory
-            self.assertTrue(package_store.is_dir())
-            self.assertIn(
-                f"type=bind,src={package_store},"
-                f"dst=/home/codex/.pi/agent/{directory}",
-                run,
-            )
-            self.assertNotIn(
-                f"type=bind,src={package_store},"
-                f"dst=/home/codex/.pi/agent/{directory},readonly",
-                run,
-            )
-        auth_mounts = [
-            item for item in run
-            if item.endswith("dst=/home/codex/.pi/agent/auth.json,readonly")
-        ]
-        self.assertEqual(1, len(auth_mounts))
-        auth_mask = Path(auth_mounts[0].split(",src=", 1)[1].split(",dst=", 1)[0])
-        self.assertFalse(auth_mask.exists())
         staged_mounts = [
             item for item in run
             if any(item.endswith(f"dst={destination},readonly") for destination in (
@@ -1955,7 +1949,7 @@ class CodexSandboxTest(GuestModeTest):
         )
         self.assertNotIn("pi-agent-", " ".join(run))
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", run)
-        self.assertNotIn("CODEX_SANDBOX_TOOL_WORKER=1", run)
+        self.assertIn("CODEX_SANDBOX_TOOL_WORKER=1", run)
         self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", run)
         self.assertNotIn("EDITOR=/opt/agent-tools/bin/host-editor", run)
         self.assertNotIn("VISUAL=/opt/agent-tools/bin/host-editor", run)
@@ -1963,58 +1957,11 @@ class CodexSandboxTest(GuestModeTest):
         self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", run)
         self.assertFalse(any(item.startswith("CODEX_SANDBOX_EDITOR_TOKEN=") for item in run))
         self.assertFalse(any("dst=/run/host-editor" in item for item in run))
-        self.assertLess(run.index("resume"), run.index("session-id"))
 
         snapshots = [call for call in read_calls(self.python_log) if len(call) > 1 and call[1] == "snapshot"]
         self.assertEqual(1, len(snapshots))
         builder = snapshots[0][snapshots[0].index("--jj-image-command") + 1]
         self.assertEqual(ROOT / ".agents" / "sandbox" / "jj-proxy-image", Path(builder).resolve())
-
-    def test_seeds_offline_model_catalog_without_sharing_guest_writes(self) -> None:
-        catalog = self.home / ".pi/agent/models-store.json"
-        catalog.parent.mkdir(parents=True)
-        contents = '{"openai-codex":{"models":[{"id":"gpt-6-astra"}]}}\n'
-        catalog.write_text(contents, encoding="utf-8")
-        captured = self.root / "guest-models.json"
-
-        result = self.run_launcher(FAKE_MODEL_STORE_CAPTURE=str(captured))
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(contents, captured.read_text(encoding="utf-8"))
-        self.assertEqual(contents, catalog.read_text(encoding="utf-8"))
-
-    def test_model_catalog_copy_failure_stops_agent_launch(self) -> None:
-        (self.home / ".pi/agent/models-store.json").mkdir(parents=True)
-
-        result = self.run_launcher()
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("models-store.json", result.stderr)
-        self.assertFalse(any("-it" in call for call in read_calls(self.docker_log)))
-
-    def test_rejects_symlinked_persistent_pi_sessions(self) -> None:
-        pi_agent = self.home / ".pi/agent"
-        pi_agent.mkdir(parents=True)
-        target = self.root / "foreign-sessions"
-        target.mkdir()
-        (pi_agent / "sessions").symlink_to(target, target_is_directory=True)
-
-        result = self.run_launcher("resume", "session-id")
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("Pi sessions directory is invalid", result.stderr)
-
-    def test_rejects_symlinked_persistent_pi_package_store(self) -> None:
-        pi_agent = self.home / ".pi/agent"
-        pi_agent.mkdir(parents=True)
-        target = self.root / "foreign-packages"
-        target.mkdir()
-        (pi_agent / "npm").symlink_to(target, target_is_directory=True)
-
-        result = self.run_launcher("resume", "session-id")
-
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("Pi package directory is invalid", result.stderr)
 
     def test_enables_trusted_zulip_proxy_when_credentials_exist(self) -> None:
         zuliprc = self.home / ".zuliprc"
