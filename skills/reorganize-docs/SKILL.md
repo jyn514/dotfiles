@@ -11,7 +11,7 @@ Improve how readers find and use documentation without losing policy, rationale,
 
 Discover and follow the target repository's development lifecycle, documentation entrypoint, prose and ownership rules, source-of-truth policy, and guidance for repository-local skills. Read the nearest index for every documentation subtree in scope.
 
-Use the format-specific owner for specifications, generated documentation, public docs, or Typst files. Use the `tighten-docs` skill before the final prose pass.
+Use the format-specific owner for specifications, generated documentation, public docs, or Typst files. Apply `tighten-docs` to the final prose pass.
 
 ## Observe
 
@@ -35,7 +35,7 @@ Classify each page by its primary reader need:
 - Policy: follow repository-owned constraints
 - Archive: retain historical evidence without presenting it as current guidance
 
-Record the canonical owner for repeated concepts and prefer cross-links over copied rules.
+When consolidating copied guidance, apply the duplicate-policy test in `tighten-docs`; record canonical owners and preserve task-specific routes.
 Organization is suspect when:
 
 - One index mixes ordinary work, specialized authoring, maintenance, and release operations
@@ -99,7 +99,6 @@ Do not turn a historical decision into current policy without verifying that it 
 - Then follow its routers and judge whether conditionally needed material is easier to choose, not merely still reachable
 - Run the smallest format-specific lint or compile check for every changed surface
 - Inspect the final diff for formatting-only churn and unrelated files
-- Use `tighten-docs` on substantially rewritten prose
 - Obtain current-change review for broad, cross-boundary, or policy-ownership changes
 
 ## Report

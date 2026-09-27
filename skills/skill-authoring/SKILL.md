@@ -25,7 +25,7 @@ Use the smallest workflow justified by uncertainty and risk. Give every costly s
 
 State what the skill does, when it applies, and adjacent work it does not own. Define how to derive a deterministic working scope when the request omits one; stop for clarification when no safe default exists. For multi-phase work, say which phase the skill owns and forbid contaminating adjacent phases, such as selecting during critique or mutating during review. Route to another skill when a specialized workflow already exists rather than copying it.
 
-Keep one authoritative owner for each procedure. Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation. For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
+Keep one authoritative owner for each procedure. When removing duplicated policy, apply the duplicate-policy test in `tighten-docs`. Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation. For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
 
 ## 3. Design progressive disclosure
 

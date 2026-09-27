@@ -125,7 +125,7 @@ Include technical precision, but introduce it incrementally.
 - Explain why a schema or invariant exists before listing its fields.
 - Keep requirements, examples, evidence, and unresolved decisions visibly distinct.
 - Break long compound requirements into bullets or short paragraphs.
-- Give one concept one canonical owner and refer back to it instead of redefining it.
+- Give each concept one canonical owner. For cuts to duplicated policy, apply the duplicate-policy test in `tighten-docs`.
 - Preserve exact API, serialization, failure, and lifecycle contracts after the reader has the model needed to understand them.
 
 Do not remove necessary detail merely to shorten a document. Move detail later, label it, or derive it from a clearer authority.
