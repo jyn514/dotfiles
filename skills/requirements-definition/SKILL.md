@@ -56,6 +56,8 @@ Keep requirements solution-neutral. Exclude implementation mechanisms, file path
 
 Separate requirements from rationale, evidence, assumptions, and open decisions. Do not hide a product decision inside acceptance wording.
 
+When a requirement has independently decidable parts, state which parts authoritative sources settle and name each unresolved choice by its effect on observable behavior or acceptance. Do not treat settled parts as open merely because another part remains undecided.
+
 ### 4. Define acceptance evidence
 
 For every requirement, state concise acceptance evidence describing what would demonstrate satisfaction. Evidence must be observable and proportionate; it is not an implementation plan and must not prescribe exact tests.
