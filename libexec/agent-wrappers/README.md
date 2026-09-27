@@ -26,7 +26,8 @@ source and destination, changed lines, and snapshot length.
 
 The numbers used by `apply` are the `edit` numbers in this report. A single
 alternative is selected as `1`; a multi-sided conflict requires the form
-`<conflict>:<diff>`, such as `2:1`.
+`<conflict>:<diff>`, such as `2:1`. Changed lines retain their diff markers in
+text and JSON output: `-` means removed and `+` means added.
 
 ### Apply
 

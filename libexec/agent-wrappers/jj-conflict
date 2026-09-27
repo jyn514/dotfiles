@@ -215,7 +215,7 @@ async function main(argv) {
 				edit: `${conflict.edit}:${index + 1}`,
 				source: diff.source,
 				destination: diff.destination,
-				changes: diff.lines.filter((line) => line.startsWith("-") || line.startsWith("+")).map((line) => line.slice(1)),
+				changes: diff.lines.filter((line) => line.startsWith("-") || line.startsWith("+")),
 			})),
 			snapshotLines: snapshot.length,
 		}));

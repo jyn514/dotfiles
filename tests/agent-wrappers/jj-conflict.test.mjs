@@ -114,6 +114,22 @@ side-c
 	assert.throws(() => compose(multiSided, ["1:3"], () => ["base"]), /does not identify/);
 });
 
+test("inspect preserves added and removed line markers", async () => {
+	const directory = await mkdtemp(`${tmpdir()}/jj-conflict-inspect-`);
+	const path = `${directory}/file.txt`;
+	try {
+		await writeFile(path, fixture);
+		const { stdout: jsonOutput } = await execFileAsync(helper, ["inspect", path, "--json"]);
+		const report = JSON.parse(jsonOutput);
+		assert.deepEqual(report.conflicts[0].alternatives[0].changes, ["-old", "+new"]);
+
+		const { stdout: textOutput } = await execFileAsync(helper, ["inspect", path]);
+		assert.match(textOutput, /\n    -old\n    \+new\n/);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test("resolves a real three-parent jj conflict", async () => {
 	const repo = await mkdtemp(`${tmpdir()}/jj-conflict-real-`);
 	const env = { ...process.env };
