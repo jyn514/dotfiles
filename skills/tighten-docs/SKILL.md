@@ -62,6 +62,7 @@ validation steps, design posture, and examples that prevent likely mistakes.
 
    Tighten what remains:
    - Prefer imperative bullets for procedures.
+   - When restructuring dense prose into bullets, group by concept or decision instead of making every sentence a separate item; keep dependent conditions together and separate normative rules from rationale or examples.
    - Replace paragraphs of conditionals with tables only when the table is shorter.
    - Merge near-duplicate sections under one heading.
    - "in order to" → "to"; "it is important to" → the action.

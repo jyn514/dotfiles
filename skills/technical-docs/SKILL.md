@@ -117,7 +117,7 @@ For implementation specs, outline independently implementable contracts before d
 - Put a worked example before a general algorithm when practical.
 - Explain why a schema or invariant exists before listing its fields.
 - Keep requirements, examples, evidence, and unresolved decisions visibly distinct.
-- Break long compound requirements into bullets or short paragraphs.
+- Split sentences that combine independent rules, exceptions, or validation steps. Group related conditions under a descriptive bullet or subsection; keep dependent conditions together, and separate rationale or examples from the normative rule.
 - Give each concept one canonical owner. For cuts to duplicated policy, apply the duplicate-policy test in `tighten-docs`.
 - Preserve exact API, serialization, failure, and lifecycle contracts after the reader has the model needed to understand them.
 
