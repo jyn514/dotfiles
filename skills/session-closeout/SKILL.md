@@ -54,9 +54,9 @@ Do not make up an improvement simply to satisfy this skill; "things are in good 
 
 ## 5. Commit the session's changes
 
-Before committing, use `commit-quality`. Inspect the complete owned diff and repository status. Commit all session-owned changes using explicit paths and coherent atomic boundaries, including tests and documentation inseparable from each behavior; preserve unrelated working-copy changes.
+Inspect the complete owned diff. Use `commit-quality` for atomic commits, messages, and inseparable tests/docs; use `jj-workflow` for path-limited Jujutsu commits. Commit every session-owned change and leave unrelated work untouched.
 
-After each commit, verify the resulting commit identity and message, then inspect repository status again. Do not complete closeout while an owned change remains uncommitted unless committing is blocked; name the exact blocker and leave the closeout incomplete. A successful commit does not replace the whole-session audit.
+Verify each commit's identity and message, then recheck status. Keep closeout incomplete while owned work remains; if committing is blocked, name the exact blocker. A commit does not replace the whole-session audit.
 
 ## 6. Title the session
 

@@ -68,16 +68,7 @@ Adapt the opening to the form:
 - **Tutorial:** state what the learner will build or understand, prerequisites, and the safe starting state.
 - **How-to:** state the concrete task, prerequisites, expected result, and important hazards.
 - **Reference:** state the covered system, version, scope, notation, and lookup organization. Do not force motivation or design goals into neutral reference material.
-- **Explanation or design:** explain the problem, goals, named proposal, and a concrete example before detailed machinery.
-
-For explanations and designs specifically:
-
-1. Explain the problem or motivation in ordinary language.
-2. State goals and important non-goals.
-3. Define the named proposal on first use. A title such as “selective hybrid,” “v2 pipeline,” or “new resolver” is not a definition.
-4. Give one concrete example or trace showing the current problem and proposed behavior.
-5. Use a glossary when many project-specific terms interact; use inline definitions when only one or two are needed.
-6. State the audience and assumed background when either is not obvious.
+- **Explanation or design:** explain the problem, goals, and important non-goals plainly before the proposal. Define a named proposal on first use (a label alone is not a definition) and show a concrete trace of the problem and proposed behavior before detailed machinery. Use a glossary only when many project-specific terms interact; state the audience and assumed background when either is not obvious.
 
 ## 4. Order explanation before machinery
 
