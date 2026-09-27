@@ -112,3 +112,12 @@ Then inspect `jj diff -r CHANGE_ID` and run the narrowest relevant tests. Before
 - type checks and tests pass, or unrelated baseline failures are recorded precisely.
 
 A resolution is complete only when the resulting file is semantically reviewed, the exact change has received the resolution, descendants have been checked, and validation evidence covers every affected path.
+
+## Review
+
+Consider:
+- Does your conflict resolution preserve the spirit of the original changes?
+- Did you introduce any new bugs?
+- Are any simplifications possible now that the base commit has changes?
+- Did you make any breaking changes?
+- Does the new code follow all existing rules and procedures for the repo? If not, identify which you introduced and which are pre-existing.
