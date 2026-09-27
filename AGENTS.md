@@ -27,10 +27,7 @@ Shell scripts use POSIX `sh` where declared, tab-indented blocks in existing fil
 Python uses standard-library `unittest`, type-friendly signatures, `Path` for filesystem work, and four-space indentation.
 Match each config file's native style rather than normalizing unrelated formatting.
 
-For shell and generated configuration, preserve producer failures.
-Avoid nested command substitutions and unchecked pipelines that can mask an earlier error;
-source generated output only after its producer succeeds, and update persistent caches transactionally.
-Add regression tests for both success and failure paths.
+Check that each command producing shell code, configuration, or cache data succeeds before using its output. Do not hide failures in nested command substitutions or unchecked pipelines. Source generated shell code only after the command that produces it succeeds. Write persistent caches to a temporary file and replace the old cache only after generation succeeds. Add regression tests for success and failure.
 
 When a simple implementation choice preserves a non-obvious historical constraint, add a brief comment explaining the constraint and why that choice preserves it.
 When consolidating orchestration, preserve concurrency of independent operations.
