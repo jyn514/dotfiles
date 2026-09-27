@@ -38,6 +38,8 @@ A `draft` means the artifact exists and is pending review or approval. Use `bloc
 
 A draft is not approved. A review request is not authority. Approval permits the next stage but does not automatically create or draft it.
 
+When recording a status transition, inspect the full artifact for wording that still describes its former status (for example, “this draft” after approval). Correct editorial wording in agent-editable artifacts; for a human-owned brief, report the mismatch or add a permitted TODO instead. If the correction changes meaning, follow the invalidation and approval rules below before proceeding.
+
 ## Stage gates and routing
 
 ### Product brief
