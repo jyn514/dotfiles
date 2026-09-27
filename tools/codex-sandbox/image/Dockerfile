@@ -144,7 +144,7 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ignore
 
 # Package runtime entrypoints only; developer bytecode must not invalidate images.
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/jj-conflict ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/sandbox-wrappers/docker ./libexec/sandbox-wrappers/gateway-transport ./libexec/sandbox-wrappers/podman /libexec/sandbox-wrappers/
 RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && ln -s ../../tools/jj-proxy/client /libexec/agent-wrappers/jj-proxy-client \

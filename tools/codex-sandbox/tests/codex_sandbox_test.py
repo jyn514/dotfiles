@@ -1012,6 +1012,10 @@ class AgentSandboxImageTest(unittest.TestCase):
         dockerfile = SANDBOX_DOCKERFILE.read_text(encoding="utf-8")
 
         self.assertIn(
+            "./libexec/agent-wrappers/jj-conflict",
+            dockerfile,
+        )
+        self.assertIn(
             "cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj", dockerfile
         )
         self.assertIn(
