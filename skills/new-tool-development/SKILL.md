@@ -87,6 +87,12 @@ Also escalate unresolved security, trust, destructive-boundary, dependency/opera
 
 A spec becomes `ready` only after required routed work, validation, and resolution of blocking questions. `ready` does not itself authorize implementation.
 
+An implementation specification should be complete enough that an implementor does not need to make any design decisions.
+Continue revising your spec until it meets this criteria.
+You may perform experiments or develop prototypes to inform your decisions, but these must be temporary and discarded once the spec is complete.
+You may not refer to experiments in the specification.
+If crucial evidence depends on an experiment, document it elsewhere in the repo and refer to that documentation.
+
 ### Implementation plan
 
 Draft an implementation plan only when `implementation-plan` is explicitly requested and the implementation specification is `ready`. Route the plan to **`implementation-plan`**. It is an optional activity, not an artifact stage and not an approval gate; it must not be created speculatively or treated as implementation authority.
