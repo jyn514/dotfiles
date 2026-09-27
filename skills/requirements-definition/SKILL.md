@@ -12,7 +12,7 @@ Use this skill only when both conditions hold:
 1. An approved product brief is available as the authoritative product-intent input.
 2. A person explicitly asks you to draft or revise requirements.
 
-The approved brief is the primary authority. Additional authoritative sources may clarify or constrain intent within the approved brief, but may not expand or contradict product intent. If an additional source would expand or contradict the approved brief, record `NEEDS_PRODUCT_DECISION`, do not author the expanded or conflicting requirement, and require brief revision and reapproval through `new-tool-development`. Other sources may be used only when identified as authoritative by the requester or governing product documentation. Do not infer approval from a draft, discussion, ticket, request for ideas, or an implementation task.
+The approved brief is the primary authority. Additional authoritative sources may clarify or constrain intent within the approved brief, but may not expand or contradict product intent. Do not author a requirement that expands or contradicts the brief: if resolving the conflict is necessary to state the requested requirements, record `NEEDS_PRODUCT_DECISION` and require brief revision and reapproval through `new-tool-development`; otherwise raise the idea only as a non-normative suggestion. Other sources may be used only when identified as authoritative by the requester or governing product documentation. Do not infer approval from a draft, discussion, ticket, request for ideas, or an implementation task.
 
 This skill owns the requirements-definition phase only. It does not discover or approve product intent, invent scope, choose an implementation, write implementation specifications, design architecture, define internal APIs, prescribe files, define exact tests, or plan delivery sequencing. After drafting, route requirements review to `spec-review`; require explicit human approval, then stop. Any later request for an implementation specification returns through `new-tool-development`, not `spec-review`.
 
@@ -35,9 +35,9 @@ Do not turn examples, preferences, implementation suggestions, or ambiguous lang
 
 Give each brief goal, constraint, and non-goal a stable source label, such as `BG-1`, `BC-1`, or `BN-1`. Preserve existing source identifiers when they are authoritative and stable.
 
-For each proposed requirement or exclusion, identify the exact source label(s) that justify it. Positive requirements trace to a brief goal, constraint, or another explicitly authoritative source; exclusions trace to approved non-goals.
+For each proposed requirement or exclusion, identify the exact source label(s) that justify it: positive requirements trace to a brief goal, constraint, or other explicitly authoritative source; exclusions trace to approved non-goals.
 
-When behavior is useful but not supported by an authoritative source, record it as `NEEDS_PRODUCT_DECISION` with the missing decision stated plainly. Never convert it into an invented requirement.
+If a material unsupported choice would change a requirement's meaning or acceptance, record it as `NEEDS_PRODUCT_DECISION` in a clearly non-normative review-decisions section. Put optional, non-blocking agent suggestions in a clearly non-normative skim packet; never convert either into an invented requirement.
 
 ### 3. Draft observable, solution-neutral requirements
 
@@ -58,7 +58,7 @@ Separate requirements from rationale, evidence, assumptions, and open decisions.
 
 For every requirement, state concise acceptance evidence describing what would demonstrate satisfaction. Evidence must be observable and proportionate; it is not an implementation plan and must not prescribe exact tests.
 
-Use evidence that can disprove the requirement, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one. If evidence cannot be defined without inventing behavior, mark the requirement or evidence `NEEDS_PRODUCT_DECISION` and explain why.
+Use evidence that can disprove the requirement, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one. If evidence cannot be defined without inventing behavior, record the missing decision and affected requirement, if any, in the non-normative review-decisions section; do not settle it in the requirement or acceptance evidence.
 
 ### 5. Produce the requirements document
 
@@ -72,7 +72,8 @@ Use this compact structure unless the requester requires an equivalent structure
    - acceptance evidence;
    - dependencies or notes only when authoritative.
 4. **Explicit non-goals** — brief non-goals that prevent scope expansion.
-5. **Traceability coverage** — each brief goal, constraint, and non-goal mapped to requirement IDs, exclusions, `NEEDS_PRODUCT_DECISION`, or explicitly no requirement because it is a non-goal.
+5. **Review decisions and scope, when needed** — non-normative `NEEDS_PRODUCT_DECISION` items naming affected requirements or source labels.
+6. **Traceability coverage** — each brief goal, constraint, and non-goal mapped to requirement IDs, exclusions, `NEEDS_PRODUCT_DECISION`, or explicitly no requirement because it is a non-goal.
 
 Provide an accompanying human skim packet with concise lists of uncovered goals, new decisions requiring review, unresolved ambiguity, and an acceptance summary. Keep it outside the normative requirements document.
 
@@ -85,7 +86,7 @@ Before presenting the draft, verify:
 - no requirement lacks authoritative traceability;
 - every brief goal and supported constraint appears in coverage;
 - non-goals are not accidentally restated as scope;
-- unsupported behavior is `NEEDS_PRODUCT_DECISION`;
+- material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;
 - wording is observable and solution-neutral;
 - implementation specification has not begun;
@@ -99,4 +100,4 @@ Present the requirements as a draft requiring explicit human approval. Route the
 
 ## Output rules
 
-A valid completion consists of the requirements document plus the human skim packet and an explicit approval request. If prerequisites fail, output only the blocking condition and the precise missing authority or decision. If the work reveals unsupported behavior, retain `NEEDS_PRODUCT_DECISION` rather than guessing.
+A valid completion consists of the requirements document plus the human skim packet and an explicit approval request. If prerequisites fail, output only the blocking condition and the precise missing authority or decision. If the work reveals a material unsupported choice affecting a requirement, retain `NEEDS_PRODUCT_DECISION` rather than guessing; keep optional proposals in the non-normative packet.

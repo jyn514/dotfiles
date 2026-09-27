@@ -114,6 +114,8 @@ Mark affected artifacts `invalidated`, record the source change, date, impacted 
 
 ## User-facing packets and completion
 
-Every transition request must include a user-facing packet with: current status, requested activity, canonical artifact, evidence and provenance, approvals required, changes since the last gate, unresolved questions, invalidation impact, and the exact next permissible action.
+Every transition request must include a user-facing packet covering current status, requested activity, canonical artifact, evidence and provenance, required approvals, changes since the last gate, unresolved questions, invalidation impact, and the exact next permissible action. Do not defer a requested review or reapproval merely to batch revisions: show each meaningful change in context for independent human approval and commit.
+
+When a concrete improvement could affect the pending decision, put it in a clearly labeled, non-normative **Suggestions** section of the skim/transition packet. Include an example, tradeoff, and decision owner; suggestions are neither approved nor normative by default. If adopted, route the idea through the human-owned brief, requirements, or implementation specification and its applicable approval gate.
 
 Report ambiguity, blocked decisions, skipped checks, and unexamined scope plainly. Completion means the requested activity was drafted or gated exactly as requested, its status and evidence were recorded, downstream stages were not created automatically, and no implementation authority was implied.
