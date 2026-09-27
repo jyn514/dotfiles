@@ -18,6 +18,8 @@ This skill owns the requirements-definition phase only. It does not discover or 
 
 If the brief is missing, approval is unclear, or the request is not explicit, stop and report the missing prerequisite instead of drafting.
 
+Requirements documents should be written in typst; use `skill:typst`.
+
 ## Procedure
 
 ### 1. Establish the working inputs
