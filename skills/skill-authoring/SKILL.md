@@ -83,7 +83,7 @@ Check both layers independently:
 - **Before loading:** does the description trigger on every intended request without claiming adjacent work?
 - **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition?
 
-Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. Split bulky conditional detail into a referenced file only when the main procedure remains usable without it.
+Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
 ## 7. Validate and tighten
 
