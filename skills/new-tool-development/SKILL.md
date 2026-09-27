@@ -87,11 +87,13 @@ Also escalate unresolved security, trust, destructive-boundary, dependency/opera
 
 A spec becomes `ready` only after required routed work, validation, and resolution of blocking questions. `ready` does not itself authorize implementation.
 
-An implementation specification should be complete enough that an implementor does not need to make any design decisions.
-Continue revising your spec until it meets this criteria.
 You may perform experiments or develop prototypes to inform your decisions, but these must be temporary and discarded once the spec is complete.
 You may not refer to experiments in the specification.
 If crucial evidence depends on an experiment, document it elsewhere in the repo and refer to that documentation.
+
+An implementation specification should be complete enough that an implementor does not need to make any design decisions.
+Continue revising your spec until it meets this criterion.
+Judge readiness by the specified candidate space, evidence and validation rules, limits, and no-results/error outcomes—not by whether a preimplementation probe finds a feasible alternative or explains every sampled case. A probe's gap blocks readiness only if it exposes a missing design decision or shows the specified approach cannot meet an approved requirement; otherwise record the gap as evidence and leave the search to implementation.
 
 ### Implementation plan
 
