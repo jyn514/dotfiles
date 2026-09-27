@@ -110,6 +110,8 @@ Prefer a labeled table or definition list over an uninterrupted wall of figures.
 
 Include technical precision, but introduce it incrementally.
 
+For implementation specs, outline independently implementable contracts before drafting details. Order sections by dependency. Before filling them in, check whether sections bundle separate decisions or make readers reconstruct a contract across distant passages; reorganize as needed. Within each contract, make inputs, required behavior, failure cases, and examples or acceptance evidence easy to locate, and distinguish rationale from normative behavior. This is structural guidance, not a fixed template.
+
 - Introduce one conceptual layer at a time.
 - Put plain-language meaning before formal notation.
 - Put a worked example before a general algorithm when practical.
