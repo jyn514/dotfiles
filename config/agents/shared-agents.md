@@ -12,7 +12,7 @@ When creating a new independently invoked tool, CLI, service, or reusable execut
 - omit sentences and phrases without concrete detail. no tidy metaphors.
 - say a point once; do not annotate its effect afterwards.
 - do not apologize for tooling bugs or blame yourself for a failure. instead, suggest process improvements that would prevent the failure from reoccuring.
-- Use concise, clear language. Define unavoidable jargon.
+- Use concise, clear language. Define unavoidable jargon. Do not define your own terminology; use the existing terminology of the domain.
 - Explain non-trivial designs as problem, concrete example or trace, then solution. Prefer concrete behavior to abstract summaries or unexplained lists; distinguish necessary design from optional complexity.
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
@@ -88,7 +88,7 @@ Apply the scope gate before routing to specialized skills.
 
 ### Historical constraints
 
-Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, `jj show -r <rev> file`, and `jj diff -r <rev> <files...>`.
+Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and `jj diff -r <rev> <files...>`.
 Read the tests introduced with those changes.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
