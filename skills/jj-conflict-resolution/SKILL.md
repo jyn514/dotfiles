@@ -80,7 +80,7 @@ For a multi-sided conflict, inspect every diff alternative and choose the requir
 
 ## Preserve Jujutsu history
 
-Resolve in a fresh working-copy commit on top of the first conflicted change, then squash it into the exact introducing change:
+Resolve in a fresh working-copy commit on top of the first conflicted change. Squash it into the exact introducing change only if that change is mutable and rewriting it is authorized; otherwise stop and use `jj-workflow` to choose an allowed history strategy:
 
 ```bash
 jj new CONFLICTED_CHANGE
