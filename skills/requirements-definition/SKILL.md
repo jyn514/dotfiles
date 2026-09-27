@@ -26,7 +26,7 @@ Focus primarily on making the document easy to review.
 Use `technical-docs`.
 
 - Group requirements by review task.
-- Keep provenance, coverage, and source citations in an appendix.
+- Put each requirement's source IDs after its acceptance evidence; keep full source-label definitions and reverse coverage in an appendix.
 - Do not restate decisions multiple times in the doc. Do not repeat documentation or guidelines already available elsewhere; link it instead.
 - Include a "rejected alternatives" section.
 - Mention relevant edge cases, especially when they explain important boundaries.
@@ -80,15 +80,15 @@ Use evidence that can disprove the requirement, such as an observable scenario, 
 Use this compact structure unless the requester requires an equivalent structure:
 
 1. **Status and authority** — approval state, source documents, and scope.
-2. **Definitions and source labels** — only terms needed to interpret the document.
+2. **Definitions** — only terms needed to interpret the document.
 3. **Requirements** — one entry per stable ID, containing:
    - statement;
-   - source traceability;
    - acceptance evidence;
+   - source IDs;
    - dependencies or notes only when authoritative.
 4. **Explicit non-goals** — brief non-goals that prevent scope expansion.
 5. **Review decisions and scope, when needed** — non-normative `NEEDS_PRODUCT_DECISION` items naming affected requirements or source labels.
-6. **Traceability coverage** — each brief goal, constraint, and non-goal mapped to requirement IDs, exclusions, `NEEDS_PRODUCT_DECISION`, or explicitly no requirement because it is a non-goal.
+6. **Source and coverage appendix** — define source labels and map each brief goal, constraint, and non-goal to requirement IDs, exclusions, `NEEDS_PRODUCT_DECISION`, or explicitly no requirement because it is a non-goal.
 
 Provide an accompanying human skim packet with concise lists of uncovered goals, new decisions requiring review, unresolved ambiguity, and an acceptance summary. Keep it outside the normative requirements document.
 
