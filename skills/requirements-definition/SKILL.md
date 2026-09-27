@@ -20,6 +20,17 @@ If the brief is missing, approval is unclear, or the request is not explicit, st
 
 Requirements documents should be written in typst; use `skill:typst`.
 
+## How to write a good requirements document
+
+Focus primarily on making the document easy to review.
+Use `technical-docs`.
+
+- Group requirements by review task.
+- Keep provenance, coverage, and source citations in an appendix.
+- Do not restate decisions multiple times in the doc. Do not repeat documentation or guidelines already available elsewhere; link it instead.
+- Include a "rejected alternatives" section.
+- Mention relevant edge cases, especially when they explain important boundaries.
+
 ## Procedure
 
 ### 1. Establish the working inputs
