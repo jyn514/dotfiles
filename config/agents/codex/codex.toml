@@ -1,6 +1,6 @@
 approvals_reviewer = "auto_review"
 service_tier = "default"
-model = "gpt-5.6-luna"
+model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 default_permissions = "default_permission_rules"
 
@@ -28,6 +28,7 @@ status_line_use_colors = true
 session_picker_view = "comfortable"
 resume_cwd = "current"
 terminal_title = ["run-state", "context-used", "model"]
+screen_reader_detection_done = true
 
 [mcp_servers.cclsp]
 enabled = false
@@ -51,3 +52,6 @@ url = "https://developers.openai.com/mcp"
 
 [notice]
 hide_rate_limit_model_nudge = true
+
+[realtime]
+voice = "cove"

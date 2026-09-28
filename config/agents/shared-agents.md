@@ -154,6 +154,8 @@ Before creating or reviewing a commit, use the `commit-quality` skill.
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
 - **Subagent routing:** Exact allowlisted skills may route a subagent through the `luna` template; absent, unknown, or mixed skill sets inherit the parent model. Use the explicit `parent` template to bypass automatic routing.
 - **Delegated implementation:** The parent owns integration. Inspect the returned diff against the requirements and agreed boundaries, and run the required acceptance checks before claiming completion; a subagent's summary or test count is not evidence by itself.
+- **Root-cause analysis:** Do not assume the most obvious answer is the correct one. Validate your answers using experiments. Ask yourself: What would distinguish this diagnosis from another diagnosis that would cause the same symptom?
+- **Prevent classes of failures:** Identify the root cause and fix the general case of the problem. Don't play whack-a-mole. Prevent future bugs in this area, fixing them at the appropriate architectural boundary; make the obvious thing the correct one. Keep unrelated cases separate and do not expand scope for hypothetical failures.
 
 ### Records and provenance
 
