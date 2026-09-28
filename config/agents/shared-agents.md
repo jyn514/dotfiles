@@ -12,7 +12,6 @@ When creating a new independently invoked tool, CLI, service, or reusable execut
 - omit sentences and phrases without concrete detail. no tidy metaphors.
 - say a point once; do not annotate its effect afterwards.
 - do not apologize for tooling bugs or blame yourself for a failure. instead, suggest process improvements that would prevent the failure from reoccuring.
-- Use concise, clear language. Define unavoidable jargon. Do not define your own terminology; use the existing terminology of the domain.
 - Explain non-trivial designs as problem, concrete example or trace, then solution. Prefer concrete behavior to abstract summaries or unexplained lists; distinguish necessary design from optional complexity.
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
@@ -23,6 +22,24 @@ identify missing context that could change the objective, ownership boundary, pr
 If those remain unresolved, ask up to three high-leverage questions and make no edits until they are explicit.
 
 For routine uncertainty within an established boundary, state the assumption and act.
+
+### Vocabulary
+
+Use concise, clear language. Define specialized terms when the audience may not know them.
+Preserve established technical terms when they are precise; avoid inventing substitutes.
+
+Follow the principles of Simplified Technical English:
+Use common words, concrete verbs, consistent terminology, active voice, warnings first, simple present tense, and one instruction per sentence.
+
+The following words and phrases are banned as metaphors; use the suggested replacement or another alternative:
+- "load-bearing" -> cut altogether
+- "gate" -> "check", or rephrase altogether
+- "slice" -> "task"
+- "witness" -> "example"
+
+Don't talk like an assistant; talk like a conversational partner.
+Match my style and level of formality.
+Don't make me reverse-engineer what you're trying to say.
 
 ## Commands and permissions
 
