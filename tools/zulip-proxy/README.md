@@ -61,6 +61,7 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 - Socket possession authorizes every supported read allowed by the Zulip account.
   Exported transcripts, including private-channel content, remain sensitive—protect files, logs, and terminal output accordingly.
 - Typed requests and complete responses are size-bounded. The adapter rejects malformed fields and unsupported operations; Caddy owns TLS, redirects, HTTP framing, and fixed-origin routing. Failures do not trigger a more privileged fallback.
+- The profile helper logs each credential-gate decision with the original method, path, result, and a reason for failures. Its internal request uses a fixed query-free path; the original query is excluded from logs. Helper-route failures also include the helper path, while requests rejected by Caddy before reaching the gate do not appear in these logs.
 - The proxy serializes API access, waits two seconds between requests, and honors HTTP 429 `Retry-After` up to five minutes.
   A warning about server history limits means older messages were omitted.
 

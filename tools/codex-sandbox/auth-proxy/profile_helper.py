@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Single-threaded private Unix-socket Caddy credential helper."""
 from __future__ import annotations
-import argparse, base64, configparser, contextlib, hmac, importlib.util, os, signal, sys, time
+import argparse, base64, configparser, contextlib, hmac, importlib.util, json, os, signal, sys, time
 from pathlib import Path
 import socketserver
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from typing import Callable
+from urllib.parse import urlsplit
 
-MAX_AUTHORIZATION=4096; MAX_REQUEST_LINE=8192; MAX_HEADERS=65536; WORK_TIMEOUT=30.0
+MAX_AUTHORIZATION=4096; MAX_REQUEST_LINE=8192; MAX_HEADERS=65536; MAX_LOG_METHOD=64; MAX_LOG_PATH=2048; WORK_TIMEOUT=30.0
 class CredentialFailure(Exception): pass
 
 @contextlib.contextmanager
@@ -70,25 +71,47 @@ class UnixHTTPServer(socketserver.UnixStreamServer):
         if not token or len(("Bearer "+token).encode())>MAX_AUTHORIZATION: raise ValueError("session token is empty or too long")
         self.session_token=token; self.credentials=credentials; self.readiness=readiness or credentials; self.result_log=log
         super().__init__(path,HelperHandler)
-    def result(self,value): print("profile_helper result="+value,file=self.result_log,flush=True)
+    def result(self,decision,method,path,result,reason=None,helper_path=None):
+        line=("profile_helper decision="+decision+" method="+json.dumps(method)+
+              " path="+json.dumps(path)+" result="+result)
+        if reason is not None: line+=" reason="+reason
+        if helper_path is not None: line+=" helper_path="+json.dumps(helper_path)
+        print(line,file=self.result_log,flush=True)
 
 class HelperHandler(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"; server_version="profile-helper"; sys_version=""
     def log_message(self,*args): return
-    def _failure(self,status,result):
-        self.server.result(result); self.send_response_only(status); self.send_header("Content-Length","0"); self.end_headers(); self.close_connection=True
+    def _log_result(self,result,reason=None,helper_path=None):
+        uri=self.headers.get("X-Original-Uri",self.path)
+        try: path=urlsplit(uri).path or "/"
+        except ValueError: path="<invalid>"
+        if len(path)>MAX_LOG_PATH: path=path[:MAX_LOG_PATH]+"…"
+        method=self.headers.get("X-Original-Method",self.command)
+        if len(method)>MAX_LOG_METHOD: method=method[:MAX_LOG_METHOD]+"…"
+        decision="allow" if result in ("ready","admitted") else "error" if result=="credential-failure" else "deny"
+        self.server.result(decision,method,path,result,reason,helper_path)
+    def _failure(self,status,result,reason=None,helper_path=None):
+        self._log_result(result,reason,helper_path); self.send_response_only(status); self.send_header("Content-Length","0"); self.end_headers(); self.close_connection=True
     def do_GET(self):
         header_bytes=sum(len(key.encode())+len(value.encode())+4 for key,value in self.headers.items())
         if header_bytes>MAX_HEADERS:
-            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected")
-        if self.path not in ("/admit","/ready") or "?" in self.path or self.headers.get("Transfer-Encoding") is not None:
-            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected")
+            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected","request-headers-too-large")
+        if "?" in self.path:
+            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected","helper-query-not-allowed",urlsplit(self.path).path)
+        if self.path not in ("/admit","/ready"):
+            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected","helper-path-not-allowed",urlsplit(self.path).path)
+        if self.headers.get("Transfer-Encoding") is not None:
+            return self._failure(HTTPStatus.UNAUTHORIZED,"rejected","transfer-encoding-not-allowed")
         try: length=int(self.headers.get("Content-Length","0"))
-        except ValueError: return self._failure(HTTPStatus.UNAUTHORIZED,"rejected")
+        except ValueError: return self._failure(HTTPStatus.UNAUTHORIZED,"rejected","invalid-content-length")
         authorization=self.headers.get("Authorization","")
         expected="Bearer "+self.server.session_token
-        if length != 0 or len(authorization.encode())>MAX_AUTHORIZATION or not hmac.compare_digest(authorization.encode(),expected.encode()):
-            return self._failure(HTTPStatus.UNAUTHORIZED,"unauthorized")
+        if length != 0:
+            return self._failure(HTTPStatus.UNAUTHORIZED,"unauthorized","request-body-not-empty")
+        if len(authorization.encode())>MAX_AUTHORIZATION:
+            return self._failure(HTTPStatus.UNAUTHORIZED,"unauthorized","authorization-too-large")
+        if not hmac.compare_digest(authorization.encode(),expected.encode()):
+            return self._failure(HTTPStatus.UNAUTHORIZED,"unauthorized","session-token-mismatch")
         try:
             with operation_deadline() as deadline:
                 callback=self.server.readiness if self.path=="/ready" else self.server.credentials
@@ -98,11 +121,11 @@ class HelperHandler(BaseHTTPRequestHandler):
             auth=dict(headers)["Authorization"]
             if not auth.startswith("Bearer ") if len(headers)==2 else not auth.startswith("Basic "): raise CredentialFailure()
         except Exception: return self._failure(HTTPStatus.SERVICE_UNAVAILABLE,"credential-failure")
-        self.server.result("ready" if self.path=="/ready" else "admitted")
+        self._log_result("ready" if self.path=="/ready" else "admitted")
         self.send_response_only(HTTPStatus.NO_CONTENT)
         for key,value in headers: self.send_header(key,value)
         self.send_header("Content-Length","0"); self.end_headers(); self.close_connection=True
-    def unsupported(self): self._failure(HTTPStatus.UNAUTHORIZED,"rejected")
+    def unsupported(self): self._failure(HTTPStatus.UNAUTHORIZED,"rejected","unsupported-method",urlsplit(self.path).path)
     do_HEAD=do_POST=do_PUT=do_DELETE=do_OPTIONS=do_PATCH=unsupported
 
 def serve(profile,socket_path,token):

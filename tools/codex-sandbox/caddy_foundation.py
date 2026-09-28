@@ -135,8 +135,9 @@ def _gate(profile: str, helper_socket: str, operation: str, token: str) -> dict[
         mutations.append({"handler": "headers", "request": {"set": {name: [f"{{http.reverse_proxy.header.{name}}}"]}}})
     success = {"group": "admission", "match": [_nonempty_headers(names)], "handle": mutations}
     malformed = {"group": "admission", "handle": [_static(503)]}
+    # The explicit empty query clears a caller's query on the helper request.
     return {
-        "handler": "reverse_proxy", "rewrite": {"method": "GET", "uri": operation},
+        "handler": "reverse_proxy", "rewrite": {"method": "GET", "uri": operation + "?"},
         "headers": {"request": {"set": {"Content-Length": ["0"], "Host": ["profile-helper"],
             "Authorization": ["Bearer " + token],
             "X-Original-Method": ["{http.request.method}"], "X-Original-Uri": ["{http.request.uri}"]},

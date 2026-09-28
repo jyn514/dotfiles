@@ -47,7 +47,9 @@ class ConfigTest(unittest.TestCase):
   self.assertNotIn("read_body_timeout",server); self.assertNotIn("logs",server); self.assertEqual(server["idle_timeout"],300_000_000_000)
   self.assertEqual(config["logging"]["logs"]["default"]["exclude"],["http.handlers.reverse_proxy"])
   route=server["routes"][1]; self.assertEqual(route["handle"][0]["handler"],"request_body")
-  gate=route["handle"][1]; self.assertEqual(gate["rewrite"],{"method":"GET","uri":"/admit"})
+  gate=route["handle"][1]; self.assertEqual(gate["rewrite"],{"method":"GET","uri":"/admit?"})
+  self.assertEqual(gate["headers"]["request"]["set"]["X-Original-Method"],["{http.request.method}"])
+  self.assertEqual(gate["headers"]["request"]["set"]["X-Original-Uri"],["{http.request.uri}"])
   success=gate["handle_response"][0]["routes"][0]["match"][0]
   self.assertEqual(success["not"][0]["vars"],{"{http.reverse_proxy.header.Authorization}":[""]})
   self.assertEqual(gate["handle_response"][1]["match"],{"status_code":[401]})
@@ -55,7 +57,7 @@ class ConfigTest(unittest.TestCase):
   self.assertEqual(len(proxy["upstreams"]),1)
   self.assertNotIn("lb_retries",proxy); self.assertNotIn("lb_try_duration",proxy)
   self.assertNotIn("lb_retries",proxy["upstreams"][0]); self.assertNotIn("lb_try_duration",proxy["upstreams"][0])
-  self.assertEqual(server["routes"][0]["handle"][0]["rewrite"]["uri"],"/ready")
+  self.assertEqual(server["routes"][0]["handle"][0]["rewrite"]["uri"],"/ready?")
   self.assertEqual(server["errors"]["routes"][0]["handle"][0]["status_code"],503)
  def test_live_gate_mutates_original_request_and_strips_forwarding(self):
   if subprocess.run(["docker","info"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode: self.skipTest("Docker unavailable")
@@ -92,12 +94,24 @@ class HelperTest(unittest.TestCase):
   self.log=io.StringIO(); self.server=helper.UnixHTTPServer(self.path,"secret",lambda d:(("Authorization","Basic abc"),),lambda d:(("Authorization","Basic ready"),),self.log)
   self.thread=threading.Thread(target=self.server.serve_forever); self.thread.start()
  def tearDown(self): self.server.shutdown(); self.server.server_close(); self.thread.join(); self.tmp.cleanup(); helper.operation_deadline=self.old
- def request(self,path="/admit",token="secret"):
-  client=UnixConnection(self.path); client.request("GET",path,headers={"Authorization":"Bearer "+token}); response=client.getresponse(); result=(response.status,dict(response.getheaders()),response.read()); client.close(); return result
- def test_admit_ready_and_failures_are_bodyless_and_logs_are_class_only(self):
-  self.assertEqual(self.request()[0],204); self.assertEqual(self.request("/ready")[0],204)
-  status,headers,body=self.request(token="bad"); self.assertEqual((status,headers,body),(401,{"Content-Length":"0"},b""))
-  self.assertNotIn("secret",self.log.getvalue()); self.assertNotIn("/admit",self.log.getvalue())
+ def request(self,path="/admit",token="secret",original_uri=None):
+  headers={"Authorization":"Bearer "+token}
+  if original_uri is not None: headers["X-Original-Uri"]=original_uri
+  client=UnixConnection(self.path); client.request("GET",path,headers=headers); response=client.getresponse(); result=(response.status,dict(response.getheaders()),response.read()); client.close(); return result
+ def test_admission_logs_original_path_without_query_or_credentials(self):
+  self.assertEqual(self.request(original_uri="/api/v1/streams?include_can_access_content=true")[0],204)
+  self.assertEqual(self.request("/ready")[0],204)
+  status,headers,body=self.request(token="bad",original_uri="/api/v1/messages?anchor=private")
+  self.assertEqual((status,headers,body),(401,{"Content-Length":"0"},b""))
+  self.assertEqual(self.request("/unsupported",original_uri="/api/v1/private?token=hidden")[0],401)
+  self.assertEqual(self.request("/admit?retained=yes",original_uri="/api/v1/streams?anchor=private")[0],401)
+  output=self.log.getvalue()
+  self.assertIn('decision=allow method="GET" path="/api/v1/streams" result=admitted',output)
+  self.assertIn('decision=deny method="GET" path="/api/v1/messages" result=unauthorized reason=session-token-mismatch',output)
+  self.assertIn('decision=deny method="GET" path="/api/v1/private" result=rejected reason=helper-path-not-allowed helper_path="/unsupported"',output)
+  self.assertIn('decision=deny method="GET" path="/api/v1/streams" result=rejected reason=helper-query-not-allowed helper_path="/admit"',output)
+  for sensitive in ("secret","include_can_access_content","anchor=private","token=hidden","retained=yes"):
+   self.assertNotIn(sensitive,output)
  def test_profile_schema_is_exact(self):
   self.server.credentials=lambda d:(("Authorization","bearer wrong"),)
   self.assertEqual(self.request(),(503,{"Content-Length":"0"},b""))
