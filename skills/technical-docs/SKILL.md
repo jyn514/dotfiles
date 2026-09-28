@@ -57,7 +57,8 @@ Assume the reader opens the document directly months later.
 
 For every form:
 
-- define project-specific terms before consequential use;
+- preserve established domain terms when they are precise; do not invent substitutes to avoid jargon;
+- explain specialist or project-specific terms before consequential use when intended readers may not know them;
 - state required background and prerequisites;
 - identify authoritative inputs and important limitations;
 - avoid references such as “the option we chose” unless the document names and explains that option;
@@ -149,7 +150,7 @@ For create or edit work, perform a standalone-reader pass before completion. For
 
 - Can the title and opening be understood without session context?
 - Is every named policy, architecture, or migration defined?
-- Are terms defined before consequential use?
+- Are unfamiliar specialist terms explained before consequential use, while precise established terms remain intact?
 - Does each number have meaning and provenance?
 - Do examples appear before the abstractions they explain?
 - Are single-item and composed or multistage cases treated consistently?

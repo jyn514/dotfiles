@@ -67,6 +67,8 @@ validation steps, design posture, and examples that prevent likely mistakes.
    - Merge near-duplicate sections under one heading.
    - "in order to" → "to"; "it is important to" → the action.
    - Use one term consistently; delete synonym tours.
+   - Preserve precise, established domain terms; do not coin substitutes to avoid jargon. Explain specialist terms when intended readers may not know them.
+   - Apply vocabulary rules in context: avoid banned metaphors, but do not mechanically replace an established technical use of the same word.
    - Keep headings specific, but do not explain the heading below itself.
    - Delete whole duplicate sentences rather than shaving words from good ones — word-shaving makes noisy diffs and weakens intent.
 
@@ -76,6 +78,7 @@ validation steps, design posture, and examples that prevent likely mistakes.
    - For each removed rationale sentence, be able to say "duplicated by X" or "only praised the rule without guiding action."
    - Read each revised section standalone. If it says what to do but no longer gives enough context to choose correctly next time, restore the smallest framing example or analogy.
    - For each common entry point affected by a deduplication, read only that entry point and the documents it directly names. Confirm a reader can find the first action, applicable constraints, required validation, and any condition that routes to another owner.
+   - Check vocabulary against the project's guidance: preserve precise domain terms, explain unfamiliar terms for the intended reader, and apply banned-word rules by meaning rather than matching words mechanically.
    - For every changed hunk, defend it as clearer, more accurate, or easier to use. If the only defense is "shorter" or "fewer words", revert it.
    - After the first pass, name at least one reverted cut, or state explicitly that every hunk is a clear improvement — then scrutinize harder. Treat restored cuts as success, not failure.
    - Confirm references still point to existing files or sections.
