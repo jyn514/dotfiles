@@ -34,7 +34,7 @@ class AgentCommandTest(unittest.TestCase):
                 paths[str(state.host_pi_package / "docs")],
             )
 
-    def test_host_worker_command_contains_session_scoped_model_channel(self) -> None:
+    def test_host_worker_command_uses_resource_paths_and_session_channel(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         build = launcher["build_agent_command"]
         with tempfile.TemporaryDirectory() as directory:
@@ -51,8 +51,8 @@ class AgentCommandTest(unittest.TestCase):
                 host_pi_package=root / "pi-package",
                 container_repository=Path("/src/repository"),
                 repository=root / "repository",
+                host_working_directory=root / "repository",
                 git_mount_source=root / "repository/.git",
-                container_working_directory=Path("/src/repository"),
             )
             state.pi_agent_tmp.mkdir()
             state.skills_source.mkdir()
@@ -68,6 +68,7 @@ class AgentCommandTest(unittest.TestCase):
             extensions = root / "pi-extensions"
             extensions.mkdir()
 
+            resource_paths = launcher["host_pi_resource_paths"](state)
             with mock.patch.dict(build.__globals__, {
                 "OUTER_RUNTIME": SimpleNamespace(nonrecursive_bind="bind-nonrecursive"),
                 "proxy_flags": lambda: [],
@@ -78,6 +79,8 @@ class AgentCommandTest(unittest.TestCase):
             }):
                 command = build(
                     state, ["image", "pi"], timing=False,
+                    resource_paths=resource_paths,
+                    guest_working_directory=Path("/src/repository"),
                     protected=[state.repository / ".jj"], repository_aliases=[],
                     external_git_roots=[], pi_extensions=extensions,
                 )
@@ -93,6 +96,23 @@ class AgentCommandTest(unittest.TestCase):
                 f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
                 command,
             )
+            for relative in launcher["PI_RESOURCE_PATHS"]:
+                source = state.host_pi_package / relative
+                self.assertIn(
+                    f"type=bind,src={source},dst={resource_paths[str(source)]},readonly",
+                    command,
+                )
+            self.assertIn(
+                f"type=bind,src={state.repository},dst={resource_paths[str(state.repository)]},"
+                "bind-nonrecursive",
+                command,
+            )
+            self.assertIn(
+                f"type=bind,src={state.repository / '.jj'},"
+                f"dst={Path(resource_paths[str(state.repository)]) / '.jj'},readonly",
+                command,
+            )
+            self.assertEqual("/src/repository", command[command.index("--workdir") + 1])
 
 
 if __name__ == "__main__":

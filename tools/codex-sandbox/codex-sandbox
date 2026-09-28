@@ -125,7 +125,6 @@ class State:
     git_repository: Path | None = None
     git_mount_source: Path | None = None
     container_repository: Path | None = None
-    container_working_directory: Path | None = None
     zuliprc: Path | None = None
     image: str = ""
     sidecar_image: str = ""
@@ -529,9 +528,6 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
     state.metadata_roots = (jj, jj_repo, *git_roots)
     proxy_module().use_repository_metadata(repository, tuple(git_roots))
     state.container_repository = container_repository_path(state.home, repository)
-    state.container_working_directory = container_working_directory_path(
-        repository, state.container_repository, state.host_working_directory,
-    )
 
 
 def load_repository_policy(state: State) -> None:
@@ -1810,11 +1806,13 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
 
 def build_agent_command(
     state: State, arguments: list[str], *, timing: bool,
+    resource_paths: dict[str, str], guest_working_directory: Path,
     protected: list[Path], repository_aliases: list[Path],
     external_git_roots: list[tuple[Path, Path]],
     pi_extensions: Path,
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
+    repository_path = Path(resource_paths[str(state.repository)])
     command = [
         "docker", "run", "--name", state.codex_container,
         "--cap-drop=NET_RAW",
@@ -1839,7 +1837,7 @@ def build_agent_command(
             for item in (
                 "--mount",
                 f"type=bind,src={state.host_pi_package / relative},"
-                f"dst={GUEST_PI_PACKAGE / relative},readonly",
+                f"dst={resource_paths[str(state.host_pi_package / relative)]},readonly",
             )
         ],
         *(
@@ -1860,11 +1858,11 @@ def build_agent_command(
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",
-        *source_mounts(state.home / 'src', [state.container_repository, *repository_aliases,
+        *source_mounts(state.home / 'src', [repository_path, *repository_aliases,
                        *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
-        "--mount", f"type=bind,src={state.repository},dst={state.container_repository},{OUTER_RUNTIME.nonrecursive_bind}",
-        "--mount", f"type=bind,src={state.git_mount_source},dst={state.container_repository / '.git'},readonly",
-        "--workdir", str(state.container_working_directory),
+        "--mount", f"type=bind,src={state.repository},dst={repository_path},{OUTER_RUNTIME.nonrecursive_bind}",
+        "--mount", f"type=bind,src={state.git_mount_source},dst={repository_path / '.git'},readonly",
+        "--workdir", str(guest_working_directory),
         *[
             item
             for target in repository_aliases
@@ -1878,7 +1876,7 @@ def build_agent_command(
             for path in protected
             for item in (
                 "--mount",
-                f"type=bind,src={path},dst={state.container_repository / path.relative_to(state.repository)},readonly",
+                f"type=bind,src={path},dst={repository_path / path.relative_to(state.repository)},readonly",
             )
         ],
         *[
@@ -1980,10 +1978,16 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "modelId": "",
     }) + "\n", encoding="utf-8")
     os.chmod(state.pi_model_file, 0o600)
+    pi_resource_paths = host_pi_resource_paths(state)
+    container_working_directory = container_working_directory_path(
+        state.repository, Path(pi_resource_paths[str(state.repository)]),
+        state.host_working_directory,
+    )
     command = build_agent_command(
-        state, arguments, timing=timing, protected=protected,
-        repository_aliases=repository_aliases, external_git_roots=external_git_roots,
-        pi_extensions=pi_extensions,
+        state, arguments, timing=timing, resource_paths=pi_resource_paths,
+        guest_working_directory=container_working_directory,
+        protected=protected, repository_aliases=repository_aliases,
+        external_git_roots=external_git_roots, pi_extensions=pi_extensions,
     )
     reserved = {
         "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",
@@ -2000,14 +2004,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
     host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
     state.cd_request = temporary_file()
     host_environment = dict(os.environ)
-    pi_resource_paths = {
-        str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
-        for relative in PI_RESOURCE_PATHS
-    }
     host_environment.update({
         "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
         "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
-        "CODEX_SANDBOX_GUEST_CWD": str(state.container_working_directory),
+        "CODEX_SANDBOX_GUEST_CWD": str(container_working_directory),
         "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
         "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
         "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
