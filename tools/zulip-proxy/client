@@ -25,9 +25,10 @@ MAX_RESPONSE = PROTOCOL["max_response_bytes"]
 
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="zulip")
-    parser.add_argument("channel", help="numeric channel ID or Zulip narrow URL")
+    parser.add_argument("channel", nargs="?", help="numeric channel ID or Zulip narrow URL")
     parser.add_argument("--topic", help="limit the transcript to one topic")
     parser.add_argument("--list-topics", action="store_true", help="list channel topics")
+    parser.add_argument("--list-channels", action="store_true", help="list available channels")
     parser.add_argument("--after", type=iso_date, help="include messages after YYYY-MM-DD")
     parser.add_argument("--before", type=iso_date, help="include messages before YYYY-MM-DD")
     parser.add_argument(
@@ -206,6 +207,23 @@ def request_page(
     return response
 
 
+def request_channels() -> list[dict]:
+    response = exchange({"version": PROTOCOL_VERSION, "operation": "channels"})
+    if set(response) != {"version", "channels"} or not isinstance(response["channels"], list):
+        raise RuntimeError("proxy returned malformed channel data")
+    for channel in response["channels"]:
+        if (
+            not isinstance(channel, dict)
+            or set(channel) != {"stream_id", "name"}
+            or isinstance(channel["stream_id"], bool)
+            or not isinstance(channel["stream_id"], int)
+            or channel["stream_id"] <= 0
+            or not isinstance(channel["name"], str)
+        ):
+            raise RuntimeError("proxy returned malformed channel data")
+    return response["channels"]
+
+
 def request_topics(channel_id: int) -> list[dict]:
     response = exchange({
         "version": PROTOCOL_VERSION, "operation": "topics", "channel_id": channel_id,
@@ -239,6 +257,26 @@ def markdown(message: dict) -> str:
 
 def main() -> int:
     args = arguments()
+    if args.list_channels:
+        if (
+            args.channel is not None or args.list_topics or args.topic is not None
+            or args.after or args.before
+        ):
+            raise RuntimeError(
+                "--list-channels cannot be combined with channel, topic, date, or --list-topics options"
+            )
+        channels = request_channels()
+        if args.format == "jsonl":
+            for item in channels:
+                print(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+        else:
+            print("# Zulip channels")
+            print()
+            for item in channels:
+                print(f"- {item['name']} (ID: {item['stream_id']})")
+        return 0
+    if args.channel is None:
+        raise RuntimeError("a channel ID or narrow URL is required unless --list-channels is used")
     channel_id, topic = parse_channel(args.channel, args.topic)
     if args.after and args.before and args.after >= args.before:
         raise RuntimeError("--after must be earlier than --before")

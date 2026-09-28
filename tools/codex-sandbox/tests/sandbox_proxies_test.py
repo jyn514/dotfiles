@@ -899,6 +899,7 @@ class ManifestTest(unittest.TestCase):
             "zulip", "chat.example.com", token="a.b.c"))
         routes = config["apps"]["http"]["servers"]["egress"]["routes"]
         self.assertIn("/api/v1/messages", routes[1]["match"][0]["expression"])
+        self.assertIn("/api/v1/streams", routes[1]["match"][0]["expression"])
         self.assertIn("/api/v1/users/me/", routes[1]["match"][0]["expression"])
         self.assertEqual(routes[-1]["handle"][0]["status_code"], 404)
         self.assertEqual("test-zulip-application", "test" + "-zulip-application")

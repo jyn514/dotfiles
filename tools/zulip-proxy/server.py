@@ -96,16 +96,23 @@ def parse_request(body: bytes) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise RequestError("request has missing or unknown fields")
     operation = request.get("operation", "messages")
-    fields = {"version", "operation", "channel_id"}
+    if operation not in {"channels", "topics", "messages"}:
+        raise RequestError("unsupported operation")
+    channel_list_request = {"version", "operation"}
+    topic_list_request = {"version", "operation", "channel_id"}
     message_fields = {"version", "channel_id", "topic", "anchor", "include_anchor"}
-    if operation != "topics":
-        fields = set(request)
-        if not message_fields <= fields or fields - message_fields - {"after", "before"}:
+    if operation == "channels":
+        if set(request) != channel_list_request:
             raise RequestError("request has missing or unknown fields")
-    if operation == "topics" and set(request) != fields:
+    elif operation == "topics":
+        if set(request) != topic_list_request:
+            raise RequestError("request has missing or unknown fields")
+    elif not message_fields <= set(request) or set(request) - message_fields - {"after", "before"}:
         raise RequestError("request has missing or unknown fields")
     if request["version"] != PROTOCOL_VERSION:
         raise RequestError("unsupported protocol version")
+    if operation == "channels":
+        return request
     channel_id = request["channel_id"]
     if isinstance(channel_id, bool) or not isinstance(channel_id, int) or channel_id <= 0:
         raise RequestError("channel_id must be a positive integer")
@@ -255,6 +262,45 @@ def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
     raise RequestError("Zulip rate limit exceeded retry attempts")
 
 
+def fetch_channels(
+    endpoint: str,
+    request: dict[str, Any],
+    opener: Callable[..., Any] = URL_OPEN,
+) -> dict[str, Any]:
+    if request != {"version": PROTOCOL_VERSION, "operation": "channels"}:
+        raise RequestError("invalid channel-list request")
+    channels_endpoint = (
+        endpoint.removesuffix("/messages") + "/streams?include_can_access_content=true"
+    )
+    result = fetch_json(HttpRequest(channels_endpoint, method="GET"), opener)
+    if not isinstance(result, dict):
+        raise RequestError("Zulip returned a malformed channel list")
+    unsupported = result.get("ignored_parameters_unsupported", [])
+    if not isinstance(unsupported, list) or not all(isinstance(item, str) for item in unsupported):
+        raise RequestError("Zulip returned malformed unsupported-parameter data")
+    if "include_can_access_content" in unsupported:
+        raise RequestError("Zulip server cannot list every channel with content access")
+    channels = result.get("streams")
+    if result.get("result") != "success" or not isinstance(channels, list):
+        raise RequestError(result.get("msg", "Zulip returned a malformed channel list"))
+    if any(
+        not isinstance(channel, dict)
+        or isinstance(channel.get("stream_id"), bool)
+        or not isinstance(channel.get("stream_id"), int)
+        or channel["stream_id"] <= 0
+        or not isinstance(channel.get("name"), str)
+        for channel in channels
+    ):
+        raise RequestError("Zulip returned malformed channel data")
+    return {
+        "version": PROTOCOL_VERSION,
+        "channels": [
+            {"stream_id": channel["stream_id"], "name": channel["name"]}
+            for channel in channels
+        ],
+    }
+
+
 def fetch_topics(
     endpoint: str,
     request: dict[str, Any],
@@ -286,11 +332,13 @@ def fetch_topics(
 def process_request(body: bytes, endpoint: str) -> bytes:
     try:
         request = parse_request(body)
-        response = (
-            fetch_topics(endpoint, request)
-            if request.get("operation") == "topics"
-            else fetch_page(endpoint, request)
-        )
+        operation = request.get("operation")
+        if operation == "channels":
+            response = fetch_channels(endpoint, request)
+        elif operation == "topics":
+            response = fetch_topics(endpoint, request)
+        else:
+            response = fetch_page(endpoint, request)
     except (OSError, RequestError, ValueError, json.JSONDecodeError) as error:
         response = {"version": PROTOCOL_VERSION, "error": str(error)}
     body = json.dumps(response, separators=(",", ":")).encode()

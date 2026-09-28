@@ -69,12 +69,18 @@ class ZulipHandler(BaseHTTPRequestHandler):
                     "messages": [{"id": 789, "content": "container integration"}],
                     "found_newest": True,
                 }
-            else:
-                assert parsed.path == "/api/v1/users/me/456/topics"
+            elif parsed.path == "/api/v1/users/me/456/topics":
                 assert not query
                 response = {
                     "result": "success",
                     "topics": [{"name": "private/topic", "max_id": 789}],
+                }
+            else:
+                assert parsed.path == "/api/v1/streams"
+                assert query == {"include_can_access_content": ["true"]}
+                response = {
+                    "result": "success",
+                    "streams": [{"stream_id": 456, "name": "general", "description": "ignored"}],
                 }
             body = json.dumps(response).encode()
             self.send_response(200)
@@ -223,6 +229,16 @@ def main() -> None:
                 image, "456", "--list-topics", "--format", "jsonl",
             ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             assert json.loads(result.stdout) == {"name": "private/topic", "max_id": 789}
+
+            channels = run([
+                "docker", "run", "--rm", "--user", "65532:65532",
+                "--entrypoint", "/src/client",
+                "--env", "SANDBOX_PROXY_DIR=/run/sandbox-proxies",
+                "--mount", f"type=volume,src={volume},dst=/run/sandbox-proxies/zulip,readonly",
+                "--mount", f"type=bind,src={CLIENT},dst=/src/client,readonly",
+                image, "--list-channels", "--format", "jsonl",
+            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert json.loads(channels.stdout) == {"stream_id": 456, "name": "general"}
             assert ZulipHandler.request_error is None, ZulipHandler.request_error
             ZulipHandler.reject_credentials = True
             rejected = invoke(message_command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

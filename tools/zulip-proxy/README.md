@@ -34,6 +34,7 @@ zulip 123
 zulip 123 --topic 'release planning'
 zulip 'https://chat.example.com/#narrow/channel/123-name/topic/release.20planning'
 zulip 123 --after 2026-03-01 --before 2026-04-01
+zulip --list-channels
 zulip 123 --list-topics
 zulip 123 --format jsonl > transcript.jsonl
 ```
@@ -41,7 +42,11 @@ zulip 123 --format jsonl > transcript.jsonl
 The default output is Markdown.
 Dates use `YYYY-MM-DD`;
 `--after` must precede `--before`.
-`--list-topics` cannot be combined with topic or date filters.
+`--list-channels` lists channel IDs and names returned by Zulip's `/streams` API with
+`include_can_access_content=true`, limited to channels whose content the account can
+access. The API filter was introduced in Zulip 10.0; the helper rejects responses that
+report it unsupported. This option cannot be combined with a channel, topic, date, or
+`--list-topics` option. `--list-topics` cannot be combined with topic or date filters.
 
 On the host, the client routes through the active repository proxy when one exists and otherwise performs the same read-only request locally.
 In a sandbox, it uses only the mounted proxy socket and never falls back locally.
@@ -50,7 +55,7 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 
 ### Operational and security boundaries
 
-- The protocol supports only paginated `GET` requests for messages and topic lists on one configured Zulip server.
+- The protocol supports only bounded `GET` requests for available channels, topic lists, and paginated messages on one configured Zulip server.
   It cannot send, edit, delete, or react to messages.
 - In sandbox sessions the typed adapter, official pinned Caddy, and Zulip profile helper are separate containers. Only the no-egress helper receives the read-only credential mount; Caddy receives fixed GET routes over the ordinary application network, and credentials are never mounted into the adapter or agent.
 - Socket possession authorizes every supported read allowed by the Zulip account.

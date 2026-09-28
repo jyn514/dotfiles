@@ -179,7 +179,7 @@ def generate_caddy_config(profile: str, upstream: str, helper_socket: str = "/ru
         handlers = [{"handler": "request_body", "max_size": 32 * 1024 * 1024}, _gate(profile, helper_socket, "/admit", token),
                     {"handler": "rewrite", "uri": "/backend-api/codex/responses"}, proxy]
     else:
-        matcher = {"expression": "method('GET') && (path('/api/v1/messages') || path_regexp('^/api/v1/users/me/[0-9]+/topics$'))"}
+        matcher = {"expression": "method('GET') && (path('/api/v1/messages') || path('/api/v1/streams') || path_regexp('^/api/v1/users/me/[0-9]+/topics$'))"}
         handlers = [_gate(profile, helper_socket, "/admit", token), proxy]
     ready_match = {"expression": "method('GET') && path('/ready') && {http.request.uri.query} == ''"}
     routes = [{"match": [ready_match], "handle": [_gate(profile, helper_socket, "/ready", token), _static(204)]},

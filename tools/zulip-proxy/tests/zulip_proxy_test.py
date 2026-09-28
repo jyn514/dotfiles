@@ -205,12 +205,16 @@ class ServerTest(unittest.TestCase):
                 b'"topic":null,"anchor":"oldest","include_anchor":true}'
             )
 
-    def test_accepts_only_bounded_topic_listing_request(self) -> None:
-        request = {"version": 1, "operation": "topics", "channel_id": 123}
-        self.assertEqual(request, server.parse_request(json.dumps(request).encode()))
-        request["anchor"] = "oldest"
+    def test_accepts_only_bounded_channel_and_topic_listing_requests(self) -> None:
+        channel_request = {"version": 1, "operation": "channels"}
+        self.assertEqual(channel_request, server.parse_request(json.dumps(channel_request).encode()))
         with self.assertRaises(server.RequestError):
-            server.parse_request(json.dumps(request).encode())
+            server.parse_request(json.dumps({**channel_request, "channel_id": 123}).encode())
+
+        topic_request = {"version": 1, "operation": "topics", "channel_id": 123}
+        self.assertEqual(topic_request, server.parse_request(json.dumps(topic_request).encode()))
+        with self.assertRaises(server.RequestError):
+            server.parse_request(json.dumps({**topic_request, "anchor": "oldest"}).encode())
 
     def test_fetches_only_fixed_get_messages_endpoint(self) -> None:
         observed = {}
@@ -238,6 +242,54 @@ class ServerTest(unittest.TestCase):
         }], json.loads(query["narrow"][0]))
         self.assertEqual(100, int(query["num_after"][0]))
         self.assertTrue(result["found_newest"])
+
+    def test_fetches_only_fixed_get_channels_endpoint(self) -> None:
+        observed = {}
+
+        def opener(request, timeout):
+            observed.update(url=request.full_url, method=request.method, timeout=timeout)
+            return io.BytesIO(json.dumps({
+                "result": "success",
+                "streams": [
+                    {"stream_id": 123, "name": "general", "description": "ignored"},
+                ],
+            }).encode())
+
+        result = server.fetch_channels(
+            "http://caddy.test/api/v1/messages",
+            {"version": 1, "operation": "channels"}, opener,
+        )
+        self.assertEqual("GET", observed["method"])
+        self.assertEqual(
+            "http://caddy.test/api/v1/streams?include_can_access_content=true", observed["url"],
+        )
+        self.assertEqual(
+            {"version": 1, "channels": [{"stream_id": 123, "name": "general"}]}, result,
+        )
+
+    def test_rejects_unsupported_channel_content_access_filter(self) -> None:
+        result = {
+            "result": "success",
+            "streams": [],
+            "ignored_parameters_unsupported": ["include_can_access_content"],
+        }
+        with self.assertRaisesRegex(server.RequestError, "cannot list every channel"):
+            server.fetch_channels(
+                "http://caddy.test/api/v1/messages",
+                {"version": 1, "operation": "channels"},
+                lambda request, timeout: io.BytesIO(json.dumps(result).encode()),
+            )
+
+    def test_rejects_malformed_channel_list_response(self) -> None:
+        for result in ([], {"result": "success", "streams": [
+            {"stream_id": True, "name": "general"},
+        ]}):
+            with self.subTest(result=result), self.assertRaises(server.RequestError):
+                server.fetch_channels(
+                    "http://caddy.test/api/v1/messages",
+                    {"version": 1, "operation": "channels"},
+                    lambda request, timeout: io.BytesIO(json.dumps(result).encode()),
+                )
 
     def test_fetches_only_fixed_get_topics_endpoint(self) -> None:
         observed = {}
@@ -358,6 +410,75 @@ class ClientTest(unittest.TestCase):
         self.assertEqual("", result.stdout)
         self.assertIn("proxy 'zulip' is unavailable", result.stderr)
         self.assertIn("restart the sandbox", result.stderr)
+
+    def test_channel_listing_rejects_channel_and_filter_arguments(self) -> None:
+        for arguments in (
+            ["--list-channels", "123"],
+            ["--list-channels", "--list-topics"],
+            ["--list-channels", "--topic", "topic"],
+            ["--list-channels", "--after", "2024-01-01"],
+        ):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    [str(CLIENT), *arguments], text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                self.assertEqual(125, result.returncode)
+                self.assertIn("--list-channels cannot be combined", result.stderr)
+
+    def test_channel_list_markdown_output_is_human_scannable(self) -> None:
+        output = io.StringIO()
+        arguments = argparse.Namespace(
+            list_channels=True, channel=None, list_topics=False, topic=None,
+            after=None, before=None, format="markdown",
+        )
+        with (
+            mock.patch.object(client, "arguments", return_value=arguments),
+            mock.patch.object(
+                client, "request_channels",
+                return_value=[{"stream_id": 123, "name": "general"}],
+            ),
+            mock.patch.object(client.sys, "stdout", output),
+        ):
+            self.assertEqual(0, client.main())
+        self.assertEqual("# Zulip channels\n\n- general (ID: 123)\n", output.getvalue())
+
+    def test_lists_channels_without_exporting_messages(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            proxy_dir = Path(temporary) / "proxies"
+            socket_dir = proxy_dir / "zulip"
+            socket_dir.mkdir(parents=True)
+            (socket_dir / "token").write_text("test-token")
+            listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            listener.bind(str(socket_dir / "socket"))
+            listener.listen(1)
+            requests = []
+
+            def serve() -> None:
+                connection, _ = listener.accept()
+                with connection:
+                    length = struct.unpack(">I", receive_exact(connection, 4))[0]
+                    envelope = json.loads(receive_exact(connection, length))
+                    self.assertEqual("test-token", envelope["token"])
+                    requests.append(envelope["request"])
+                    connection.recv(1)
+                    connection.sendall(frame({
+                        "version": 1,
+                        "channels": [{"stream_id": 123, "name": "general"}],
+                    }))
+
+            thread = threading.Thread(target=serve)
+            thread.start()
+            result = subprocess.run(
+                [str(CLIENT), "--list-channels", "--format", "jsonl"],
+                env={**os.environ, "SANDBOX_PROXY_DIR": str(proxy_dir)},
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            thread.join(timeout=2)
+            listener.close()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"stream_id": 123, "name": "general"}, json.loads(result.stdout))
+        self.assertEqual([{"version": 1, "operation": "channels"}], requests)
 
     def test_lists_topics_without_exporting_messages(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
