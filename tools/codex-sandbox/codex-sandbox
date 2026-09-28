@@ -66,6 +66,7 @@ PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
+GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
 PI_RESOURCE_PATHS = (Path("README.md"), Path("docs"), Path("examples"))
 
 
@@ -1795,13 +1796,17 @@ def prepare_agent_mountpoints(state: State) -> None:
 
 
 def host_pi_resource_paths(state: State) -> dict[str, str]:
-    return {
-        **{
-            str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
-            for relative in PI_RESOURCE_PATHS
-        },
-        str(state.repository): str(state.container_repository),
+    paths = {
+        str(state.home / source.removeprefix("$HOME/")): destination
+        for source, destination in STAGED_CONFIG.values()
     }
+    paths[str(state.home / ".agents/skills")] = str(GUEST_AGENT_SKILLS)
+    paths.update({
+        str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
+        for relative in PI_RESOURCE_PATHS
+    })
+    paths[str(state.repository)] = str(state.container_repository)
+    return paths
 
 
 def build_agent_command(
@@ -1828,9 +1833,8 @@ def build_agent_command(
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
-        "--mount", f"type=bind,src={state.skills_source},dst=/home/codex/.agents/skills",
-        # Host Pi passes its absolute skill paths to guest-backed tools.
-        "--mount", f"type=bind,src={state.skills_source},dst={state.home / '.agents/skills'}",
+        "--mount", f"type=bind,src={state.skills_source},"
+        f"dst={resource_paths[str(state.home / '.agents/skills')]}",
         *[
             item
             for relative in PI_RESOURCE_PATHS
@@ -1846,10 +1850,11 @@ def build_agent_command(
         ),
         *[
             item
-            for role, (_, destination) in STAGED_CONFIG.items()
+            for role, (source, _) in STAGED_CONFIG.items()
             for item in (
                 "--mount",
-                f"type=bind,src={staged_config_path(state, role)},dst={destination},readonly",
+                f"type=bind,src={staged_config_path(state, role)},"
+                f"dst={resource_paths[str(state.home / source.removeprefix('$HOME/'))]},readonly",
             )
         ],
         "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",

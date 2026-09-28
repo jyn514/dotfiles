@@ -19,6 +19,7 @@ class AgentCommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = SimpleNamespace(
+                home=root / "home",
                 host_pi_package=root / "pi-package",
                 repository=Path("/Users/jyn/src/personal/lapwing/stint"),
                 container_repository=Path("/src/personal/lapwing/stint"),
@@ -33,6 +34,17 @@ class AgentCommandTest(unittest.TestCase):
                 "/opt/agent-pi/src/packages/coding-agent/docs",
                 paths[str(state.host_pi_package / "docs")],
             )
+            self.assertEqual(
+                "/home/codex/.agents/skills",
+                paths[str(state.home / ".agents/skills")],
+            )
+            self.assertEqual(
+                "/home/codex/.pi/agent/AGENTS.md",
+                paths[str(state.home / ".pi/agent/AGENTS.md")],
+            )
+            for source, destination in launcher["STAGED_CONFIG"].values():
+                host_path = state.home / source.removeprefix("$HOME/")
+                self.assertEqual(destination, paths[str(host_path)])
 
     def test_host_worker_command_uses_resource_paths_and_session_channel(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
@@ -96,6 +108,22 @@ class AgentCommandTest(unittest.TestCase):
                 f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
                 command,
             )
+            host_skills = state.home / ".agents/skills"
+            self.assertIn(
+                f"type=bind,src={state.skills_source},dst={resource_paths[str(host_skills)]}",
+                command,
+            )
+            self.assertNotIn(
+                f"type=bind,src={state.skills_source},dst={host_skills}",
+                command,
+            )
+            for role, (source, _) in launcher["STAGED_CONFIG"].items():
+                host_path = state.home / source.removeprefix("$HOME/")
+                self.assertIn(
+                    f"type=bind,src={root / 'config'},"
+                    f"dst={resource_paths[str(host_path)]},readonly",
+                    command,
+                )
             for relative in launcher["PI_RESOURCE_PATHS"]:
                 source = state.host_pi_package / relative
                 self.assertIn(

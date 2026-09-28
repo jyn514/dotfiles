@@ -44,14 +44,14 @@ launcher-owned bounded operations follow the
 
 An execution attachment binds one Pi launch and its children to one guest worker
 and directory. The launcher selects the repository and guest mount; repository
-tool arguments use guest paths. Host-discovered shared skills are also mounted
-at their host absolute path so guest tools can read the paths Pi advertises.
-Host Pi's README, docs, and examples are mounted read-only at the guest Pi
-package paths, and the guest-tool extension rewrites their advertised host paths
-to those guest paths before each model request. Project-relative resources that
-Pi discovers on the host, including project skills, are rewritten from the host
-repository root to its `/src` guest mount before the request; sibling and
-historical paths are not treated as live guest paths.
+tool arguments use guest paths. Host-discovered shared skills are mounted at
+the guest skills path. The dotfiles extension expands instruction includes
+before the guest-tool extension rewrites mapped host paths in the system
+prompt; Pi sends the request afterward. Host Pi's README, docs, and examples are
+mounted read-only at guest Pi package paths; their advertised host paths map to
+those guest paths. Project-relative resources, including project skills, map
+from the host repository root to its `/src` guest mount. Sibling and historical
+paths remain unchanged.
 A saved conversation's cwd is historical context, not a request to mount that
 directory. Cross-directory resume forks into a new session ID under the selected
 launch directory.

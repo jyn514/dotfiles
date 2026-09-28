@@ -425,9 +425,9 @@ class HostPiWrapperTest(unittest.TestCase):
             )
             args = json.loads(result.stdout)
             self.assertEqual("--extension", args[0])
-            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), args[1])
+            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/index.ts"), args[1])
             self.assertEqual("--extension", args[2])
-            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/index.ts"), args[3])
+            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), args[3])
             self.assertEqual(["--mode", "rpc", "--no-extensions", "--session", "child.jsonl"],
                              args[4:])
 
@@ -445,15 +445,26 @@ class HostPiWrapperTest(unittest.TestCase):
                 "#!/usr/bin/env bun\n"
                 "const { rewritePiResourcePaths } = await import(process.env.FIXTURE_CORE);\n"
                 "const host = process.env.FIXTURE_HOST;\n"
-                "const prompt = `Skill location: ${host}/.agents/skills/spec-review/SKILL.md\\n` +\n"
-                "  `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`;\n"
+                "const home = process.env.FIXTURE_HOME;\n"
+                "const piPackage = process.env.FIXTURE_PI_PACKAGE;\n"
+                "const prompt = [\n"
+                "  `Project config: ${host}/config/agents/breq.md`,\n"
+                "  `Shared skill: ${home}/.agents/skills/spec-review/SKILL.md`,\n"
+                "  `Agent instructions: <project_instructions path=\\\"${home}/.pi/agent/AGENTS.md\\\">`,\n"
+                "  `Pi examples: ${piPackage}/examples`,\n"
+                "  `Guest package: /opt/agent-pi/src/packages/coding-agent/README.md`,\n"
+                "  `Guest checkout: /src/dotfiles/AGENTS.md`,\n"
+                "  `Sibling location: ${host}-old/.agents/skills/spec-review/SKILL.md`,\n"
+                "].join(\"\\n\");\n"
                 "console.log(JSON.stringify({args: process.argv.slice(2),\n"
                 "  prompt: rewritePiResourcePaths(prompt, JSON.parse(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS))}));\n",
                 encoding="utf-8",
             )
             cli.chmod(0o700)
+            host_pi_package = home / ".local/share/pi/source/packages/coding-agent"
             resource_paths = launcher["host_pi_resource_paths"](SimpleNamespace(
-                host_pi_package=home / "pi-package",
+                home=home,
+                host_pi_package=host_pi_package,
                 repository=host_repository,
                 container_repository=Path("/src/personal/lapwing/stint"),
             ))
@@ -462,18 +473,27 @@ class HostPiWrapperTest(unittest.TestCase):
                 env={**os.environ, "HOME": str(home),
                      "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(resource_paths),
                      "FIXTURE_CORE": str(ROOT / "config/agents/pi/pi-extensions/guest-tools-core.ts"),
-                     "FIXTURE_HOST": str(host_repository)},
+                     "FIXTURE_HOME": str(home),
+                     "FIXTURE_HOST": str(host_repository),
+                     "FIXTURE_PI_PACKAGE": str(host_pi_package)},
                 capture_output=True, text=True, check=True,
             )
             output = json.loads(result.stdout)
-            self.assertIn(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), output["args"])
-            self.assertEqual(
-                "Skill location: /src/personal/lapwing/stint/.agents/skills/spec-review/SKILL.md",
-                output["prompt"].splitlines()[0],
+            self.assertLess(
+                output["args"].index(str(ROOT / "config/agents/pi/pi-extensions/index.ts")),
+                output["args"].index(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts")),
             )
             self.assertEqual(
-                f"Sibling location: {host_repository}-old/.agents/skills/spec-review/SKILL.md",
-                output["prompt"].splitlines()[1],
+                [
+                    "Project config: /src/personal/lapwing/stint/config/agents/breq.md",
+                    "Shared skill: /home/codex/.agents/skills/spec-review/SKILL.md",
+                    "Agent instructions: <project_instructions path=\"/home/codex/.pi/agent/AGENTS.md\">",
+                    "Pi examples: /opt/agent-pi/src/packages/coding-agent/examples",
+                    "Guest package: /opt/agent-pi/src/packages/coding-agent/README.md",
+                    "Guest checkout: /src/dotfiles/AGENTS.md",
+                    f"Sibling location: {host_repository}-old/.agents/skills/spec-review/SKILL.md",
+                ],
+                output["prompt"].splitlines(),
             )
 
 
@@ -1607,6 +1627,10 @@ class CodexSandboxTest(unittest.TestCase):
                    if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]
         self.assertEqual(1, len(creates), result.stderr)
         self.assertIn(
+            f"type=bind,src={source},dst=/home/codex/.agents/skills",
+            creates[0],
+        )
+        self.assertNotIn(
             f"type=bind,src={source},dst={skills}",
             creates[0],
         )

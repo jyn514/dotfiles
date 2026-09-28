@@ -7,7 +7,7 @@ export function rewritePiResourcePaths(
     .reduce((rewritten, [hostPath, guestPath]) => {
       const escaped = hostPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return rewritten.replace(
-        new RegExp(`${escaped}(?=$|[/\\\\\\r\\n])`, "g"),
+        new RegExp(`${escaped}(?=$|[/\\\\\\r\\n\\s"'<>(),;:!?])`, "g"),
         () => guestPath,
       );
     }, prompt);

@@ -24,8 +24,8 @@ def main() -> None:
             continue
         args.append(sys.argv[index])
         index += 1
-    os.execv(pi_cli, [str(pi_cli), "--extension", str(extensions / "guest-tools.ts"),
-                      "--extension", str(extensions / "index.ts"), *args])
+    os.execv(pi_cli, [str(pi_cli), "--extension", str(extensions / "index.ts"),
+                      "--extension", str(extensions / "guest-tools.ts"), *args])
 
 
 if __name__ == "__main__":
