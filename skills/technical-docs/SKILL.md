@@ -13,7 +13,7 @@ This skill owns document substance, reader structure, examples, evidence, and te
 
 Route narrower work when its owning skill is available:
 
-- `new-tool-development` owns the lifecycle workflow for a new independently invoked tool, CLI, service, or reusable executable subsystem. Product briefs are human-authored: agents may review them and add only the TODO comments permitted by that skill, not write or rewrite brief prose. This skill still owns routed implementation-spec writing.
+- `new-tool-development` owns the lifecycle workflow for a new independently invoked tool, CLI, service, or reusable executable subsystem. Product briefs are human-authored: agents may review them and add only the TODO comments permitted by that skill, not write or rewrite brief prose. This skill still owns routed implementation-spec writing; do not reproduce the lifecycle procedure here.
 - `requirements-definition` alone owns requirements authoring from an approved product brief.
 - `tighten-docs` owns prose-only requests to make existing documentation shorter or clearer without changing its structure or technical content.
 - `spec-review` owns review-only consistency and completeness analysis of a design or specification.
@@ -24,8 +24,6 @@ Route narrower work when its owning skill is available:
 If a named skill is unavailable, preserve these ownership boundaries. State the limitation, use repository conventions and available validators, and do not claim that the missing specialized review occurred.
 
 A request to review does not authorize prose edits. For a human-authored product brief, `new-tool-development` permits adding TODO comments; otherwise, report findings, evidence, consequence, and the smallest useful correction without editing. Edit other content only when the user requests changes.
-
-Route lifecycle work to `new-tool-development` and requirements authoring to `requirements-definition`; do not reproduce their procedures. Draft only the requested stage.
 
 ## 1. Identify the reader and document form
 
