@@ -20,7 +20,7 @@ Discover and follow the target repository's guidance for review thresholds, test
    Add rows only where behavior can differ; do not enumerate irrelevant combinations.
    Test every applicable row or record why a row is inapplicable.
    Treat a missing row as missing evidence.
-   For cross-process or permission-boundary changes, include the assembled runtime path and a forbidden effect in the matrix; test them where the boundary is enforced. If that runtime is unavailable, mark those rows unverified rather than claiming completion.
+   For cross-process or permission-boundary changes, include the assembled runtime path and a forbidden effect in the matrix, and test at the enforced boundary. Label each test by the process or boundary it reaches: a unit/helper or mocked-launcher test proves only that layer; it does not prove the receiver loaded the extension, ran the hook, or received the transformed payload. For receiver-visible claims, trace the production path from entrypoint through configuration, launch, handler order, and receiver, then use an integration test that reaches the receiver or direct runtime observation. If unavailable, mark the behavior unverified; component-test results support but do not substitute.
 1. Compare the issue's original acceptance text with the implementation, tests, close note, and specification.
    For staged new-tool work, report acceptance drift only when a later artifact is narrower than the governing approved requirements; do not report approved exclusions or non-goals as drift.
 1. Ask yourself: is this the right approach? Are you sure this fixes the underlying bug? Would a better approach be simpler or more maintainable?
