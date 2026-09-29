@@ -282,6 +282,49 @@ url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.21.1/ca
 url_api = "https://api.github.com/repos/cargo-bins/cargo-binstall/releases/assets/489425215"
 provenance = "github-attestations"
 
+[[tools."aqua:getzola/zola"]]
+version = "0.21.0"
+backend = "aqua:getzola/zola"
+
+[tools."aqua:getzola/zola"."platforms.linux-arm64"]
+checksum = "sha256:da7e9def7b9acf0c9b78fb99ce72624504cfee1066ab7a161f09a4126dd7ffe6"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846897"
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.linux-arm64-musl"]
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.linux-x64"]
+checksum = "sha256:5c37a8f706567d6cad3f0dbc0eaebe3b9591cc301bd67089e5ddc0d0401732d6"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846894"
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.linux-x64-musl"]
+checksum = "sha256:78131fce9acf5d7eac4c5bb968a42eab98a47470bea5d9d959b127002750cb40"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846896"
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.macos-arm64"]
+checksum = "sha256:5fa8d33c82ee9990cb41020bff0ce40caf98fe4e46d38fdf2740a81a6c78efda"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846895"
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.macos-x64"]
+checksum = "sha256:1bb896d52877ee637b16f6b8d5827ec1e5abbd4a78b541a771c65cebb10f47e8"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846898"
+provenance = "github-attestations"
+
+[tools."aqua:getzola/zola"."platforms.windows-x64"]
+checksum = "sha256:546e6b45ff08a4c39d0794bb1496fd2c185f62f11e3338b86dcc6ed991caddec"
+url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846899"
+provenance = "github-attestations"
+
 [[tools."aqua:lima-vm/lima"]]
 version = "2.2.0"
 backend = "aqua:lima-vm/lima"
@@ -687,7 +730,7 @@ url = "https://github.com/astral-sh/python-build-standalone/releases/download/20
 provenance = "github-attestations"
 
 [[tools.rust]]
-version = "nightly"
+version = "nightly-2026-09-25"
 backend = "core:rust"
 
 [tools.rust.options]

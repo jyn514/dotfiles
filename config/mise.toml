@@ -4,6 +4,7 @@ python = "latest"
 rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "clippy", "rust-analyzer", "miri"] }
 uv = "latest"
 "asdf:mise-plugins/mise-clojure" = "latest"
+"aqua:getzola/zola" = "0.21.0"
 "aqua:cargo-bins/cargo-binstall" = "latest"
 "github:clojure-lsp/clojure-lsp" = { version = "latest", filter_bins = "clojure-lsp" }
 "aqua:antonmedv/fx" = "latest"
