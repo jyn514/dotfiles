@@ -84,10 +84,18 @@ class BootstrapLockTests(unittest.TestCase):
     def test_release_based_git_entries_record_version_and_revision(self) -> None:
         manifest = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
 
-        for name in ("lazy.nvim", "vim-plug"):
-            entry = manifest["git"][name]
-            self.assertTrue(entry["version"])
-            self.assertEqual(40, len(entry["revision"]))
+        entry = manifest["git"]["vim-plug"]
+        self.assertTrue(entry["version"])
+        self.assertEqual(40, len(entry["revision"]))
+
+    def test_lazy_bootstrap_matches_neovim_plugin_lock(self) -> None:
+        bootstrap_lock = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
+        plugin_lock = json.loads((ROOT / "config/nvim-lazy-lock.json").read_text())
+
+        self.assertEqual(
+            plugin_lock["lazy.nvim"]["commit"],
+            bootstrap_lock["git"]["lazy.nvim"]["revision"],
+        )
 
 
 if __name__ == "__main__":

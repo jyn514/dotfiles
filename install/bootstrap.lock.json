@@ -65,13 +65,11 @@
       "url": "https://github.com/lincheney/fzf-tab-completion.git"
     },
     "lazy.nvim": {
-      "revision": "85c7ff3711b730b4030d03144f6db6375044ae82",
+      "revision": "306a05526ada86a7b30af95c5cc81ffba93fef97",
       "update": {
-        "repository": "folke/lazy.nvim",
-        "type": "github-release"
+        "type": "git-head"
       },
-      "url": "https://github.com/folke/lazy.nvim.git",
-      "version": "v11.17.5"
+      "url": "https://github.com/folke/lazy.nvim.git"
     },
     "nvm.fish": {
       "revision": "85cadd56f71b11574566dbd6c32e0027e361d085",

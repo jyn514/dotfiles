@@ -280,6 +280,7 @@ vim.g['conjure#log#hud#enabled'] = false
 vim.g['conjure#mapping#doc_word'] = '<localleader>d'
 vim.g['conjure#client#clojure#nrepl#connection#auto_repl#cmd'] = 'clojure -M:nrepl'
 
+-- Plugin revisions live in lazy-lock.json. Use :Lazy update to refresh them or :Lazy restore to apply them.
 -- Bootstrap lazy.nvim
 if first_run then
 	local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
