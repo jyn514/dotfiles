@@ -255,7 +255,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                 print(f"PASS: PTY launch {launch}/2 exited successfully.", file=sys.stderr, flush=True)
                 assert boot_credential(runtime, retrieve=lambda: (_ for _ in ()).throw(
                     AssertionError("session exit discarded the boot cache"))) == cache
-                metadata_path, = (home / "runtime/codex-sandbox-proxies").glob("*/session.json")
+                metadata_path, = (home / ".cache/codex-sandbox-proxies").glob("*/session.json")
                 metadata = json.loads(metadata_path.read_text())
                 sidecar = metadata["state"]["auth"]
                 with runtime.workload(runtime.inspect_image(agent), "auth-probe-" + secrets.token_hex(6), [

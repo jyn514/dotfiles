@@ -52,6 +52,8 @@ Existing VMs retain their resource sizes when setup is rerun.
 It shares your home directory with the VM; containers retain the launcher's
 narrow mounts. Setup copies the selected real Docker CLI into private state,
 so package upgrades and the `docker` → Podman alias cannot replace it.
+Proxy session metadata, locks, and generated Caddy configuration live under
+`~/.cache/codex-sandbox-proxies`, where the VM can read required bind sources.
 New VMs allocate `/24` bridge networks from `172.16.0.0/12` and configure twenty
 SSH sessions per connection. Docker's default address pools otherwise run out
 before twenty sandboxes can each allocate their two gateway networks. Existing

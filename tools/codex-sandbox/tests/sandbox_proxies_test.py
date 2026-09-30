@@ -156,6 +156,8 @@ class ManifestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.repo = Path(self.temporary.name)
+        self.home_patch = mock.patch.dict(os.environ, {"HOME": str(self.repo)})
+        self.home_patch.start()
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
         (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.sandbox = self.repo / ".agents" / "sandbox"
@@ -163,7 +165,15 @@ class ManifestTest(unittest.TestCase):
         self.container_repo = Path("/src/example")
 
     def tearDown(self) -> None:
+        self.home_patch.stop()
         self.temporary.cleanup()
+
+    def test_runtime_directory_uses_shared_home_when_xdg_runtime_is_elsewhere(self) -> None:
+        with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.repo / "unshared-run")}):
+            runtime = sandbox_proxies.runtime_directory(self.repo)
+        self.assertEqual(self.repo / ".cache" / "codex-sandbox-proxies" /
+                         sandbox_proxies.repository_identity(self.repo), runtime)
+        self.assertEqual(0o700, runtime.stat().st_mode & 0o777)
 
     def test_explicit_arguments_preserve_caller_argv_and_report_errors(self) -> None:
         output = self.repo / "snapshot.json"

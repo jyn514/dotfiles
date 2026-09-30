@@ -490,7 +490,7 @@ def jj_repository_path(repo: Path) -> Path:
 
 
 def runtime_directory(repo: Path) -> Path:
-    base = Path(os.environ.get("XDG_RUNTIME_DIR", Path.home() / ".cache")) / "codex-sandbox-proxies"
+    base = Path.home() / ".cache" / "codex-sandbox-proxies"
     path = base / repository_identity(repo)
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(path, 0o700)
