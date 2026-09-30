@@ -334,7 +334,8 @@ if first_run then
 		{
 			'nvim-treesitter/nvim-treesitter',
 			build = ':TSUpdate',
-			branch = "master",
+			branch = "main",
+			lazy = false,
 			dependencies = { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main' }
 		},
 		'HiPhish/rainbow-delimiters.nvim',
@@ -663,13 +664,34 @@ local function bind_ts(capture_associations, keymap_opts)
 	end
 end
 
-require('nvim-treesitter.configs').setup {
-	auto_install = true,
-	sync_install = true,
-	ensure_installed = { 'markdown', 'markdown_inline' },
-	highlight = { enable = true },
-	-- incremental_selection = { enable = true },
-}
+local treesitter = require('nvim-treesitter')
+local available_treesitter_languages = treesitter.get_available()
+local function treesitter_parser_installed(lang)
+	return #vim.api.nvim_get_runtime_file('parser/' .. lang .. '.*', false) > 0
+end
+
+vim.api.nvim_create_autocmd('FileType', {
+	group = config_group,
+	pattern = '*',
+	callback = function(args)
+		local lang = vim.treesitter.language.get_lang(args.match)
+		if not lang then return end
+
+		local function start_treesitter()
+			if vim.treesitter.language.add(lang) then
+				vim.treesitter.start(args.buf, lang)
+			end
+		end
+
+		if lang == 'markdown' and not treesitter_parser_installed('markdown_inline') then
+			treesitter.install({ 'markdown', 'markdown_inline' }):await(start_treesitter)
+		elseif treesitter_parser_installed(lang) then
+			start_treesitter()
+		elseif vim.tbl_contains(available_treesitter_languages, lang) then
+			treesitter.install(lang):await(start_treesitter)
+		end
+	end,
+})
 
 require('nvim-treesitter-textobjects').setup {
 	select = { lookahead = true, },
