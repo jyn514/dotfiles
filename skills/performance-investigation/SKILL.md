@@ -7,11 +7,17 @@ description: Diagnose performance regressions, hangs, unexpectedly slow commands
 
 Before editing, record the baseline command, environment, metric, narrowest representative workload, elapsed time, and whether the run is cold or warm. Reproduce the user's actual command resolution; the agent's inherited shell may differ. Prior baselines are useful when environment differences are named, but precise comparisons require same-machine before/after measurements.
 
+## Preserve evidence
+
+Before the first measurement, choose an evidence directory that survives session/environment resets and benchmark cleanup. Save exact runner, query, and analysis sources alongside raw per-run results there, preserving the source version for each run. Temporary copies, terminal output, or hashes alone cannot recover lost evidence.
+
+Keep disposable build outputs separate from evidence. Before cleanup, verify that retained sources and raw results suffice to recompute reported measurements.
+
 ## Diagnose boundedly
 
 When a command exceeds its expected duration or remains unexpectedly silent for 30 seconds:
 
-1. Record elapsed time, output so far, and the process tree. Use shell timestamps when no portable timing tool exists, and keep logs and stack samples under `target/` or temporary storage.
+1. Record elapsed time, output so far, and the process tree. Use shell timestamps when no portable timing tool exists, and retain diagnostic logs and stack samples in the evidence directory.
 2. Capture descendants recursively and, when children are short-lived, repeatedly. Identify the active child operation rather than attributing its time to the outer command.
 3. Classify the active phase as CPU-bound, I/O-bound, blocked, sleeping, or waiting on a child.
 4. For JVM work, take a thread dump; for other runtimes, use a bounded stack or syscall sample.
