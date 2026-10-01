@@ -28,6 +28,15 @@
 
 set -eu
 
+usage() {
+  echo "usage: sudo -u restic $(which backup) [backup|check-subset|prune] [restic arguments...]" >&2
+	exit 2
+}
+
+if ! [ "$(whoami)" = restic ]; then
+	usage
+fi
+
 backup_home=${BACKUP_HOME:-$(cd ~jyn && pwd)}
 restic_home=${RESTIC_HOME:-$(cd ~restic && pwd)}
 restic_env=${RESTIC_ENV_FILE:-$backup_home/.local/config/restic.env}
@@ -38,19 +47,15 @@ restic_env=${RESTIC_ENV_FILE:-$backup_home/.local/config/restic.env}
 cache_dir=${RESTIC_CACHE_DIR:-$restic_home/cache}
 documents=${BACKUP_DOCUMENTS:-$backup_home/Documents}
 backup_tag=${BACKUP_TAG:-documents-backup}
+
 case "${1:-}" in
-backup|check|prune)
+backup|check-subset|prune)
 	command=$1
 	shift
 	;;
 ""|-*) command=backup;;
 *) command=$1;;
 esac
-
-usage() {
-	echo "usage: backup [backup|check|prune] [restic arguments...]" >&2
-	exit 2
-}
 
 ping() {
 	[ -n "${HEALTHCHECKS_URL:-}" ] || return 0
@@ -72,8 +77,6 @@ finish() {
 	exit "$result"
 }
 
-case "$command" in backup|check|prune) ;; *) usage;; esac
-
 trap finish EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
@@ -86,7 +89,7 @@ backup)
 	restic backup --exclude notes/ --skip-if-unchanged \
 		--cache-dir "$cache_dir" --tag "$backup_tag" "$@" .
 	;;
-check)
+check-subset)
 	restic check --read-data-subset=5% "$@"
 	;;
 prune)
@@ -96,4 +99,6 @@ prune)
 		--prune "$@"
 	restic check
 	;;
+*)
+	restic "$@"
 esac
