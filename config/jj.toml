@@ -25,8 +25,11 @@ merge-args = [
 ]
 merge-tool-edits-conflict-markers = true
 
+[git]
+private-commits = "private()"
+
 [revsets]
-bookmark-advance-to = "@-"
+bookmark-advance-to = "@- ~ private()::"
 # i use a bunch of emails; easier to just track author name
 log = '@ | trunk()..author(substring:"jyn") ~ (trunk()..untracked_remote_bookmarks() ~ untracked_remote_bookmarks()) | trunk()'
 
@@ -38,6 +41,7 @@ private-commits = 'subject(exact:"apfs-workaround")'
 bookmark-advance-to = "closest_pushable(@-)"
 
 [revset-aliases]
+"private()" = 'description("private:*")'
 'closest_pushable(to)' = '''
   heads(::to & mutable() & ~description(exact:"") & (~empty() | merges()) & ~subject(exact:"apfs-workaround"))
 '''
