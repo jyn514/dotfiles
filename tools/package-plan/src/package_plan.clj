@@ -219,6 +219,7 @@
         (let [release (parse-os-release "/etc/os-release")
               id (:id release)
               target ({"debian" :debian "ubuntu" :ubuntu "fedora" :fedora
+                       "cachyos" :arch
                        "arch" :arch "alpine" :alpine "chimera" :chimera} id)]
           (when-not target (fail! (str "unsupported Linux distribution: " id)))
           {:target target :release (:version_id release) :arch arch
