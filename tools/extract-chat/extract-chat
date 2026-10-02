@@ -32,6 +32,7 @@
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
   (println "With --session, extracts the Codex or Pi session whose filename ends in ID.")
   (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
+  (println "Empty scans report source paths on stderr and retain exit status 0.")
   (println "Pi Markdown includes saved goal changes, model switches, and assistant or shell cancellations.")
   (println "With --native, exports Pi sessions through pi --export to HTML; other formats stay Markdown.")
   (println "Native exports require pi on PATH and keep the full session, ignoring --final-only.")
@@ -368,12 +369,13 @@
   (let [{:keys [archived? final-only? native? help? paths extract-dir session]} (parse-args args)]
     (if help?
       (usage)
-      (let [files (if session
+      (let [roots (when-not session
+                    (if (seq paths)
+                      paths
+                      [(default-root (System/getenv) archived?)]))
+            files (if session
                     [(find-session session archived?)]
-                    (let [roots (if (seq paths)
-                                  paths
-                                  [(default-root (System/getenv) archived?)])]
-                      (mapcat (comp files-under path) roots)))]
+                    (mapcat (comp files-under path) roots))]
         (when (and
                (not (seq paths))
                (not session)
@@ -381,6 +383,9 @@
           (println "Cowardly refusing to extract all conversations to stdout")
           (usage)
           (System/exit 1))
+        (when-not (seq files)
+          (binding [*out* *err*]
+            (println (str "extract-chat: No session files found in: " (str/join ", " roots)))))
         (if extract-dir
           (let [sessions (->> files
                               (map #(read-session final-only? %))

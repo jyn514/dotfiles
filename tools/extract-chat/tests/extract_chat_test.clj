@@ -48,6 +48,59 @@
                   "Tea is ready.\n\n")
              markdown)))))
 
+(deftest extract-chat-empty-input-reports-sources-without-changing-success-status
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-empty"})
+        empty-dir (fs/file root "empty sessions")
+        missing-dir (fs/file root "missing sessions")
+        extract-dir (fs/file root "exports")]
+    (try
+      (fs/create-dirs empty-dir)
+      (spit (fs/file empty-dir "not-a-session.txt") "Ignored")
+      (doseq [options [[] ["--native"] ["--extract-dir" (str extract-dir)]
+                      ["--extract-dir" (str extract-dir) "--native"]]]
+        (let [{:keys [exit out err]}
+              (apply shell/sh "bb" "tools/extract-chat/extract-chat"
+                     (concat options [(str empty-dir) (str missing-dir)]))]
+          (is (= 0 exit))
+          (is (= "" out))
+          (is (= (str "extract-chat: No session files found in: " empty-dir ", " missing-dir "\n")
+                 err))
+          (is (not (fs/exists? extract-dir)))))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-empty-default-root-reports-the-selected-root
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-empty-default"})
+        extract-dir (fs/file root "exports")
+        stdout (java.io.StringWriter.)
+        stderr (java.io.StringWriter.)]
+    (try
+      (with-redefs [extract-chat/default-root (constantly (str root))]
+        (binding [*out* stdout *err* stderr]
+          (extract-chat/main ["--extract-dir" (str extract-dir)])))
+      (is (= "" (str stdout)))
+      (is (= (str "extract-chat: No session files found in: " root "\n") (str stderr)))
+      (is (not (fs/exists? extract-dir)))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-empty-first-root-does-not-warn-when-later-root-has-sessions
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-empty-first"})
+        empty-dir (fs/file root "empty")
+        populated-dir (fs/file root "populated")
+        stdout (java.io.StringWriter.)
+        stderr (java.io.StringWriter.)]
+    (try
+      (fs/create-dirs empty-dir)
+      (fs/create-dirs populated-dir)
+      (let [session-file (fs/file populated-dir "session.jsonl")]
+        (spit session-file
+              (str (json/generate-string {:type "message" :message {:role "user" :content "Make tea."}})
+                   "\n"))
+        (binding [*out* stdout *err* stderr]
+          (extract-chat/main [(str empty-dir) (str populated-dir)]))
+        (is (= (str "# " session-file "\n\n## User\n\nMake tea.\n\n") (str stdout)))
+        (is (= "" (str stderr))))
+      (finally (fs/delete-tree root)))))
+
 (deftest extract-chat-extract-dir-deduplicates-resumed-codex-prefix
   (let [root (fs/create-temp-dir {:prefix "flower-extract-resumed-chat"})
         first-session (fs/file root "rollout-z-original.jsonl")
