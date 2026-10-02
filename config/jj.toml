@@ -74,6 +74,7 @@ worktree = ["workspace"]
 remote = ["git", "remote"]
 push = ["git", "push"]
 fetch = ["git", "fetch"]
+clone = ["git", "clone"]
 tug = ["bookmark", "advance"]
 init = ["git", "init"]
 
