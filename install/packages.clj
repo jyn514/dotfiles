@@ -8,8 +8,8 @@
   :libssl-dev :libterm-readline-gnu-perl :liburi-perl :libusb-1.0-0-dev
   :perl-file-which :manpages :manpages-dev :markdown-oxide :ninja-build
   :nmap :nvim :openjdk21 :pam-u2f :perl :pkg-config :python3-pip
-  :python3-pylsp :rclone :sane :sane-airscan :shellcheck :signal-desktop
-  :skanpage :strace :tcsh :traceroute :tree :tmux :unzip :valgrind
+  :python3-pylsp :qemu-img :qemu-system-x86 :rclone :sane :sane-airscan :shellcheck :signal-desktop
+  :skanpage :strace :tcsh :traceroute :tree :tmux :unzip :valgrind :virtiofsd
   :xdg-utils :xdot :zoxide :zsh]
 
  :additions
