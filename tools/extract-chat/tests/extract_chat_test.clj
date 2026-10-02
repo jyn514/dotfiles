@@ -148,6 +148,76 @@
                   "## Assistant\n\nTea is ready.\n\n")
              (str stdout))))))
 
+(deftest extract-chat-pi-goals-models-and-cancellations-keep-transcript-order
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-events"})
+        session-file (fs/file root "session.jsonl")
+        extract-dir (fs/file root "markdown")
+        goal (fn [status]
+               {:type "custom" :customType "pi-codex-goal"
+                :data {:version 1 :kind "set"
+                       :goal {:objective "Make tea." :status status :tokenBudget 200}}})
+        message (fn [value] {:type "message" :message value})]
+    (try
+      (spit session-file
+            (str (str/join "\n" (map json/generate-string
+                  [{:type "session" :version 3 :id "pi-events"}
+                   {:type "message" :message {:role "user" :content "Start."}}
+                   (goal "active")
+                   {:type "model_change" :provider "openai-codex" :modelId "model-one"}
+                   {:type "custom" :customType "pi-codex-goal"
+                    :data {:version 1 :kind "usage" :usage {:tokensUsed 900}}}
+                   {:type "custom_message" :customType "pi-codex-goal"
+                    :content "Do not repeat this goal continuation."}
+                   (message {:role "assistant" :content [{:type "text" :text "Heating water."}]
+                             :stopReason "aborted" :errorMessage "Operation aborted"})
+                   {:type "model_change" :provider "anthropic" :modelId "model-two"}
+                   (goal "paused")
+                   (message {:role "assistant" :content [] :stopReason "aborted"})
+                   (message {:role "bashExecution" :command "boil-water"
+                             :output "Tool output stays hidden" :cancelled true})
+                   (message {:role "assistant" :content "Tea is ready." :stopReason "stop"
+                             :provider "anthropic" :model "model-two"})
+                   (goal "complete")])) "\n"))
+      (let [expected (str "# " session-file "\n\n"
+                          "## User\n\nStart.\n\n"
+                          "## Goal (active)\n\nMake tea.\n\nToken budget: 200\n\n"
+                          "## Model change\n\nopenai-codex/model-one\n\n"
+                          "## Assistant\n\nHeating water.\n\n"
+                          "## Cancellation\n\nOperation aborted\n\n"
+                          "## Model change\n\nanthropic/model-two\n\n"
+                          "## Goal (paused)\n\nMake tea.\n\nToken budget: 200\n\n"
+                          "## Cancellation\n\nAssistant response cancelled.\n\n"
+                          "## Cancellation\n\nShell command cancelled.\n\nCommand: boil-water\n\n"
+                          "## Assistant\n\nTea is ready.\n\n"
+                          "## Goal (complete)\n\nMake tea.\n\nToken budget: 200\n\n")]
+        (is (= expected (with-out-str (extract-chat/main [(str session-file)]))))
+        (extract-chat/main ["--final-only" "--extract-dir" (str extract-dir) (str session-file)])
+        (is (= expected (slurp (fs/file extract-dir "session.md")))))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-pi-event-only-sessions-produce-markdown
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-event-only"})
+        extract-dir (fs/file root "markdown")]
+    (try
+      (doseq [[name event expected]
+              [["goal" {:type "custom" :customType "pi-codex-goal"
+                        :data {:version 1 :kind "set" :source "command"
+                               :goal {:objective "Make tea." :status "active" :tokenBudget nil}}}
+                "## Goal (active)\n\nMake tea.\n\n"]
+               ["model" {:type "model_change" :provider "openai-codex" :modelId "model-one"}
+                "## Model change\n\nopenai-codex/model-one\n\n"]
+               ["cancellation" {:type "message"
+                                :message {:role "assistant" :content [{:type "thinking" :thinking "hidden"}]
+                                          :stopReason "aborted"}}
+                "## Cancellation\n\nAssistant response cancelled.\n\n"]]]
+        (let [session-file (fs/file root (str name ".jsonl"))]
+          (spit session-file (str (json/generate-string {:type "session" :version 3 :id name})
+                                 "\n" (json/generate-string event) "\n"))
+          (extract-chat/main ["--extract-dir" (str extract-dir) (str session-file)])
+          (is (= (str "# " session-file "\n\n" expected)
+                 (slurp (fs/file extract-dir (str name ".md")))))))
+      (finally (fs/delete-tree root)))))
+
 (deftest extract-chat-matches-session-id-filename-forms
   (let [root (fs/create-temp-dir {:prefix "flower-extract-session-names"})
         matcher (deref #'extract-chat/session-file-name-matches?)]

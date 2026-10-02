@@ -32,6 +32,7 @@
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
   (println "With --session, extracts the Codex or Pi session whose filename ends in ID.")
   (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
+  (println "Pi Markdown includes saved goal changes, model switches, and assistant or shell cancellations.")
   (println "With --native, exports Pi sessions through pi --export to HTML; other formats stay Markdown.")
   (println "Native exports require pi on PATH and keep the full session, ignoring --final-only.")
   (println "Without --extract-dir, Pi chooses the HTML filename in the current directory."))
@@ -173,21 +174,52 @@
             {:role role
              :text text}))))))
 
-(defn- pi-message [event]
+(defn- pi-goal-message [event]
+  (let [{:keys [version kind goal]} (:data event)
+        {:keys [objective status tokenBudget]} goal]
+    (when (and (= "custom" (:type event))
+               (= "pi-codex-goal" (:customType event))
+               (= 1 version) (= "set" kind)
+               (string? objective) (seq (str/trim objective)))
+      {:heading (str "Goal" (when status (str " (" status ")")))
+       :text (str objective
+                  (when (some? tokenBudget) (str "\n\nToken budget: " tokenBudget)))})))
+
+(defn- pi-model-message [event]
+  (when (= "model_change" (:type event))
+    {:heading "Model change"
+     :text (str (:provider event) "/" (:modelId event))}))
+
+(defn- pi-messages [event]
   (when (and (map? event) (= "message" (:type event)))
     (let [message (:message event)
           role (:role message)
           text (content-text (:content message))]
-      (when (and (case role ("assistant" "user") role nil)
-                 (seq (str/trim text)))
-        {:role role
-         :text text}))))
+      (concat
+       (when (and (case role ("assistant" "user") role nil)
+                  (seq (str/trim text)))
+         [{:role role :text text}])
+       (cond
+         (and (= "assistant" role) (= "aborted" (:stopReason message)))
+         [{:heading "Cancellation"
+           :text (or (not-empty (str/trim (or (:errorMessage message) "")))
+                     "Assistant response cancelled.")}]
+
+         (and (= "bashExecution" role) (true? (:cancelled message)))
+         [{:heading "Cancellation"
+           :text (str "Shell command cancelled."
+                      (when (seq (:command message))
+                        (str "\n\nCommand: " (:command message))))}])))))
 
 (defn- messages [events]
   (or (seq (keep event-message events))
       (seq (keep response-item-message events))
       (seq (keep claude-message events))
-      (seq (keep pi-message events))))
+      (seq (mapcat (fn [event]
+                     (if-let [metadata (or (pi-goal-message event) (pi-model-message event))]
+                       [metadata]
+                       (pi-messages event)))
+                   events))))
 
 (defn- codex-session-meta [events]
   (some (fn [{:keys [type payload timestamp]}]
@@ -203,14 +235,15 @@
       (nil? phase)
       (= "final_answer" phase)))
 
-(defn- role-heading [{:keys [role phase]}]
+(defn- role-heading [{:keys [heading role phase]}]
   (str "## "
-       (case role
-         "user" "User"
-         "assistant" "Assistant"
-         role)
-       (when (and phase (not= phase "final_answer"))
-         (str " (" phase ")"))))
+       (or heading
+           (str (case role
+                  "user" "User"
+                  "assistant" "Assistant"
+                  role)
+                (when (and phase (not= phase "final_answer"))
+                  (str " (" phase ")"))))))
 
 (defn- read-session [final-only? file]
   (let [events (read-events file)]
