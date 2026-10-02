@@ -34,6 +34,6 @@
   "fullscreenExitOutput": "resume-hint",
   "defaultProvider": "openai-codex",
   "defaultThinkingLevel": "medium",
-  "defaultModel": "gpt-6-luna",
+  "defaultModel": "gpt-6.1-sol",
   "hideThinkingBlock": false
 }
