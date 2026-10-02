@@ -13,6 +13,22 @@ release assets, and checksums. Run it without `--dry-run` to update
 and run `dev/test`. The updater uses `GITHUB_TOKEN` when it is already set,
 but does not require or export one.
 
+## Pi compaction
+
+The Luna extension uses [`compaction.md`](compaction.md) for one checkpoint covering
+history and any split-turn prefix. If Luna fails or is unavailable, the active
+model uses the same instructions; if generation fails, session history is kept.
+
+After generation, the extension appends full `jj status` output, the session's
+working directory, and a capture timestamp. Failed captures, including the
+10-second timeout, report unknown state. Saved checkpoint metadata keeps this
+caller-produced block out of the next summarization request. It is a snapshot,
+not evidence of task completion; later edits can make it stale.
+
+Run `/reload` in Pi after extension changes. Instructions are read afresh for each
+compaction. Run `bun test tests/pi/luna_compaction_test.ts` for offline tests,
+including native extension loading and resumed-context reconstruction.
+
 
 
 

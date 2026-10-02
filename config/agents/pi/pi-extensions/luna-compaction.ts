@@ -1,42 +1,131 @@
-import { compact, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  convertToLlm,
+  serializeConversation,
+  type ExtensionAPI,
+  type SessionBeforeCompactEvent,
+} from "@earendil-works/pi-coding-agent";
 
 export const COMPACTION_MODEL = {
   provider: "openai-codex",
   id: "gpt-5.6-luna",
 } as const;
 
+// Installed entrypoints are symlinks; resolve the source checkout, not ~/.pi.
+export const COMPACTION_INSTRUCTIONS = resolve(
+  dirname(realpathSync(fileURLToPath(import.meta.url))),
+  "../../../../compaction.md",
+);
+
+function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
+  const previous = event.preparation.previousSummary;
+  const entry = event.branchEntries.findLast((entry) => entry.type === "compaction");
+  if (!previous || entry?.type !== "compaction" || entry.summary !== previous) return previous;
+  const length = (entry.details as { checkpointLength?: number } | undefined)?.checkpointLength;
+  // The saved offset separates generated prose from the caller's status block.
+  return typeof length === "number" && Number.isSafeInteger(length) && length > 0 && length <= previous.length
+    ? previous.slice(0, length)
+    : previous;
+}
+
 export default function lunaCompaction(pi: ExtensionAPI): void {
   pi.on("session_before_compact", async (event, ctx) => {
-    const model = ctx.modelRegistry.find(
-      COMPACTION_MODEL.provider,
-      COMPACTION_MODEL.id,
-    );
-    if (!model) return;
-
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok) return;
-
+    const { preparation, signal } = event;
     try {
-      const result = await compact(
-        event.preparation,
-        model,
-        auth.apiKey,
-        auth.headers,
-        event.customInstructions,
-        event.signal,
-        "low",
-        undefined,
-        auth.env,
-      );
-      return { compaction: result };
-    } catch (error) {
-      if (!event.signal.aborted) {
-        ctx.ui.notify(
-          `Luna compaction failed; using the active model: ${error instanceof Error ? error.message : String(error)}`,
-          "warning",
-        );
+      const instructions = readFileSync(COMPACTION_INSTRUCTIONS, "utf8");
+      const conversation = serializeConversation(convertToLlm([
+        ...preparation.messagesToSummarize,
+        ...preparation.turnPrefixMessages,
+      ]));
+      const previous = previousCheckpoint(event);
+      const prompt = [
+        previous ? `<previous-checkpoint>\n${previous}\n</previous-checkpoint>` : "",
+        `<conversation>\n${conversation}\n</conversation>`,
+        event.customInstructions ? `Additional compaction instructions:\n${event.customInstructions}` : "",
+      ].filter(Boolean).join("\n\n");
+      const luna = ctx.modelRegistry.find(COMPACTION_MODEL.provider, COMPACTION_MODEL.id);
+      const models = luna ? [luna] : [];
+      const active = ctx.model;
+      if (active && (!luna || active.provider !== luna.provider || active.id !== luna.id)) {
+        models.push(active);
       }
-      return;
+      let checkpoint: string | undefined;
+      let usage;
+      for (const [index, model] of models.entries()) {
+        try {
+          signal.throwIfAborted();
+          const response = await ctx.modelRegistry.complete(model, {
+            systemPrompt: instructions,
+            messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
+          }, {
+            maxTokens: Math.min(Math.floor(0.8 * preparation.settings.reserveTokens), model.maxTokens > 0 ? model.maxTokens : Infinity),
+            signal,
+            cacheRetention: "none",
+            sessionId: randomUUID(),
+            reasoningEffort: "low",
+          });
+          signal.throwIfAborted();
+          if (["error", "length", "aborted"].includes(response.stopReason)) {
+            throw new Error(response.errorMessage || `Compaction ended with ${response.stopReason}`);
+          }
+          if (response.content.some((block) => block.type === "toolCall")) {
+            throw new Error("Compaction attempted to call a tool");
+          }
+          const text = response.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
+          if (!text.trim()) throw new Error("Compaction summary was empty");
+          checkpoint = text;
+          usage = response.usage;
+          break;
+        } catch (error) {
+          if (signal.aborted || index === models.length - 1) throw error;
+          ctx.ui.notify(`Luna compaction failed; using the active model: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
+      }
+      if (checkpoint === undefined) throw new Error("No compaction model is available");
+
+      let repositoryState;
+      try {
+        // Keep the subcommand first for the sandbox's jj wrapper.
+        const result = await pi.exec("jj", ["status", "--no-pager", "--color=never"], {
+          cwd: ctx.cwd,
+          signal,
+          timeout: 10_000,
+        });
+        repositoryState = {
+          cwd: ctx.cwd,
+          capturedAt: new Date().toISOString(),
+          state: result.code === 0 && !result.killed ? "observed" : "unknown",
+          ...result,
+        };
+      } catch (error) {
+        repositoryState = {
+          cwd: ctx.cwd,
+          capturedAt: new Date().toISOString(),
+          state: "unknown",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      signal.throwIfAborted();
+      const modified = new Set([...preparation.fileOps.edited, ...preparation.fileOps.written]);
+      const modifiedFiles = [...modified].sort();
+      const readFiles = [...preparation.fileOps.read].filter((file) => !modified.has(file)).sort();
+      return {
+        compaction: {
+          summary: `${checkpoint}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${JSON.stringify(repositoryState, null, 2)}`,
+          firstKeptEntryId: preparation.firstKeptEntryId,
+          tokensBefore: preparation.tokensBefore,
+          usage,
+          details: { readFiles, modifiedFiles, checkpointLength: checkpoint.length },
+        },
+      };
+    } catch (error) {
+      if (!signal.aborted) {
+        ctx.ui.notify(`Compaction failed; keeping session history: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      }
+      return { cancel: true };
     }
   });
 }
