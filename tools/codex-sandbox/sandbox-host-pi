@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep every host Pi process attached to the guest tool worker."""
+"""Launch host Pi; attach agent sessions to the guest tool worker."""
 
 import os
 from pathlib import Path
@@ -11,6 +11,11 @@ def main() -> None:
     pi_cli = home / ".local/share/pi/node/node_modules/.bin/pi"
     if not pi_cli.is_file():
         raise SystemExit(f"Host Pi is not installed at {pi_cli}")
+    if sys.argv[1:2] == ["--export"]:
+        # Extra flags can overwrite export mode and start an agent without guest tools.
+        if len(sys.argv) not in (3, 4) or any(not argument for argument in sys.argv[2:]):
+            raise SystemExit("Usage: pi --export SESSION.jsonl [OUTPUT.html]")
+        os.execv(pi_cli, [str(pi_cli), *sys.argv[1:]])
     extensions = Path(__file__).resolve().parents[2] / "config/agents/pi/pi-extensions"
     old_sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
     installed_index = home / ".pi/agent/pi-extensions/index.ts"

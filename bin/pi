@@ -1,2 +1,11 @@
 #!/bin/sh
+
+case ${1:-} in
+	--export)
+		# Standalone exports need no guest worker or sandbox startup.
+		script=$(realpath -- "$0") || exit
+		root=$(CDPATH='' cd -- "${script%/*}/.." && pwd -P) || exit
+		exec "$root/tools/codex-sandbox/sandbox-host-pi" "$@"
+		;;
+esac
 exec codex-sandbox "$@"

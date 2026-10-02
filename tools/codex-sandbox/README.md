@@ -81,7 +81,9 @@ Its [default-readiness record](lima/docker.md#default-readiness) distinguishes p
 - Install Python 3, Git, Jujutsu, tmux, and the Docker CLI used by the Lima-Docker VM.
   Image builds require network access on first use.
 - Put this repository's `bin/` on `PATH`;
-  `pi` delegates to `codex-sandbox`.
+  `pi` normally delegates agent sessions to `codex-sandbox`.
+  `pi --export SESSION.jsonl [OUTPUT.html]` must put `--export` first and runs native Pi on the host,
+  without a Git checkout, VM, or guest worker. Relative paths use the caller's current directory.
 - Provide `~/.codex/config.toml`.
   The [Lima credential helper](lima/credentials.md) can import an existing Podman secret `codex-github-token` into Keychain for migration to `GH_TOKEN`;
   exporting a host `GH_TOKEN` does not provision it.
@@ -152,6 +154,7 @@ Its Git distribution loads TypeScript, making cache misses more expensive.
 ```sh
 pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
+pi --export session.jsonl out.html  # export HTML locally without sandbox startup
 codex-sandbox auth login        # authenticate the Codex sidecar used by guest tools
 codex-sandbox restart-all       # restart registered sessions; run inside tmux
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
