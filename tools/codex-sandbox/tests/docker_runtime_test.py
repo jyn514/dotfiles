@@ -170,6 +170,18 @@ class DockerRuntimeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'UID map is inactive'):
                 host.verify_runtime(record)
 
+    def test_linux_virtiofs_reports_the_missing_host_executable(self):
+        host = object.__new__(DockerHost)
+        record = {'vm_type': 'qemu', 'virtiofs_map': {'host_uid': 1000}}
+        with patch('lima.docker_host.shutil.which', return_value=None), \
+                patch('lima.docker_host.os.access', return_value=True):
+            with self.assertRaisesRegex(ValueError, 'qemu-system-x86_64 in PATH'):
+                host.prepare_virtiofs(record)
+        with patch('lima.docker_host.shutil.which', return_value='/usr/bin/qemu-system-x86_64'), \
+                patch('lima.docker_host.os.access', return_value=False):
+            with self.assertRaisesRegex(ValueError, '/usr/libexec/virtiofsd or /usr/lib/virtiofsd'):
+                host.prepare_virtiofs(record)
+
     def test_old_linux_vm_cannot_bypass_mapping_with_legacy_record(self):
         host = object.__new__(DockerHost)
         host.runtime_epoch = Mock(return_value='a' * 32)

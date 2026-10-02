@@ -49,8 +49,11 @@ class DockerHost(Host):
         qemu = shutil.which('qemu-system-x86_64')
         daemon = next((path for path in ('/usr/libexec/virtiofsd', '/usr/lib/virtiofsd')
                        if os.access(path, os.X_OK)), None)
-        if qemu is None or daemon is None:
-            raise ValueError('Linux virtiofs requires QEMU and /usr/libexec/virtiofsd')
+        if qemu is None:
+            raise ValueError('Linux virtiofs requires qemu-system-x86_64 in PATH')
+        if daemon is None:
+            raise ValueError('Linux virtiofs requires an executable virtiofsd at '
+                             '/usr/libexec/virtiofsd or /usr/lib/virtiofsd')
         root = private_directory(self.state / 'virtiofs')
         binary = private_directory(root / 'bin') / 'qemu-system-x86_64'
         if not binary.exists():
