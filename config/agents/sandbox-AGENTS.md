@@ -16,8 +16,10 @@
 - Public network acccess is allowed, but must be READ-ONLY unless explicitly authorized by a human.
   Be considerate of others and do not hammer expensive network endpoints.
 - Root, `sudo`, and the exposed `docker` or `podman` command do not grant access to the outer container daemon or sibling proxy containers.
-  You may use `sudo` to install user-wide tools.
+
 
 ## Behavior
 
 - jyn does not have easy access to the container; if you need to show them a temporary file, put it in an ignored local folder (e.g. target/ or notes/) rather than /tmp.
+- You may use `sudo` to install user-wide tools. Missing tools likely indicate a deficiency in `.agents/sandbox`; install the ones you need and report the missing tool at the end of your turn.
+- You may write or edit user-shared skills in `$HOME/.agents/skills`.
