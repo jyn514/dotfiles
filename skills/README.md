@@ -99,6 +99,7 @@ After choosing a design and before implementation:
 Use these independently when their target is already selected:
 
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
+- `autonomous-implementation` — execute authorized multi-task implementations while preserving end-to-end acceptance, integration ownership, and resumable state.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `double-check` — audit completed work against requirements and concrete evidence.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
