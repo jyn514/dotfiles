@@ -45,7 +45,9 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 ## Content and device tools
 
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
-- [`extract-chat`](extract-chat/) extracts user and assistant turns from local Codex or Claude JSON/JSONL sessions. It supports session lookup, final-answer filtering, and per-session Markdown; output may expose private conversations.
+- [`extract-chat`](extract-chat/) extracts user and assistant turns from local Pi, Codex, or Claude JSON/JSONL sessions. It supports session lookup, `--final-only`, and per-session Markdown.
+  For Pi, `--native` uses `pi --export` to produce HTML (`pi` must be on PATH); other formats remain Markdown. Native Pi exports include the full session regardless of `--final-only`; without `--extract-dir`, Pi writes to the current directory.
+  Output may expose private conversations.
 - [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.
 - [`lapwing-prototype`](lapwing-prototype/) is a compact, heap-free Lapwing stenography translator prototype for Moonlander/QMK. Start with its [README](lapwing-prototype/README.md), then the [firmware specification](lapwing-prototype/SPEC.md); it is not hardware-verified.
 - [`moonlander`](moonlander/) implements `sync-moonlander` and `flash-moonlander` for ZSA Oryx synchronization and QMK compilation or flashing. These can change remote state, a QMK checkout, or hardware; `COMPILE_ONLY=1` avoids flashing. See the [operator guide](moonlander/README.md).

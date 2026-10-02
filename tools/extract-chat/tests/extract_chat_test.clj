@@ -1,6 +1,7 @@
 (ns tools.extract-chat-test
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
+            [clojure.java.shell :as shell]
             [clojure.string :as str]
             [clojure.test :refer [deftest is run-tests]]))
 
@@ -263,6 +264,80 @@
         (extract-chat/main [(str session-file)]))
       (is (= (str "# " session-file "\n\n## User\n\nMake tea.\n\n")
              (str stdout))))))
+
+(deftest extract-chat-native-exports-pi-html-and-keeps-other-formats-markdown
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-native"})
+        input-dir (fs/file root "sessions with spaces")
+        extract-dir (fs/file root "exports with spaces")
+        calls (atom [])]
+    (try
+      (fs/create-dirs input-dir)
+      ;; A Pi session with only tool output still has a native export.
+      (doseq [filename ["pi.jsonl" "tool-only.json"]]
+        (spit (fs/file input-dir filename)
+              (str (json/generate-string {:type "session" :version 3 :id filename})
+                   "\n"
+                   (json/generate-string
+                    {:type "message" :message {:role "toolResult" :content "Tool output"}})
+                   "\n")))
+      (spit (fs/file input-dir "codex.jsonl")
+            (str (json/generate-string
+                  {:type "event_msg" :payload {:type "user_message" :message "Make tea."}})
+                 "\n"))
+      (spit (fs/file input-dir "claude.jsonl")
+            (str (json/generate-string
+                  {:type "user" :message {:role "user" :content "Pour tea."}})
+                 "\n"))
+      (with-redefs [shell/sh (fn [& args]
+                              (swap! calls conj (vec args))
+                              (spit (last args) "<html>Native Pi export</html>")
+                              {:exit 0 :out (str (last args) "\n") :err ""})]
+        (extract-chat/main ["--native" "--final-only" "--extract-dir"
+                            (str extract-dir) (str input-dir)]))
+      (is (= [["pi" "--export" (str (fs/file input-dir "pi.jsonl"))
+               (str (fs/file extract-dir "pi.html"))]
+              ["pi" "--export" (str (fs/file input-dir "tool-only.json"))
+               (str (fs/file extract-dir "tool-only.html"))]]
+             @calls))
+      (is (= ["claude.md" "codex.md" "pi.html" "tool-only.html"]
+             (sort (map fs/file-name (fs/list-dir extract-dir)))))
+      (is (= "<html>Native Pi export</html>" (slurp (fs/file extract-dir "pi.html"))))
+      (is (str/includes? (slurp (fs/file extract-dir "codex.md")) "Make tea."))
+      (is (str/includes? (slurp (fs/file extract-dir "claude.md")) "Pour tea."))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-native-without-output-dir-uses-pi-default-output
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-native-default"})
+        session-id "test-native-session"
+        session-file (fs/file root (str "timestamp_" session-id ".jsonl"))
+        calls (atom [])]
+    (try
+      (spit session-file (str (json/generate-string {:type "session" :version 3 :id session-id}) "\n"))
+      (with-redefs [extract-chat/pi-root (constantly (str root))
+                    shell/sh (fn [& args]
+                               (swap! calls conj (vec args))
+                               {:exit 0 :out "Exported to pi-session.html\n" :err ""})]
+        (is (= "Exported to pi-session.html\n"
+               (with-out-str (extract-chat/main ["--native" "--session" session-id])))))
+      (is (= [["pi" "--export" (str session-file)]] @calls))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-native-export-failure-stops-without-markdown-fallback
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-native-failure"})
+        session-file (fs/file root "pi.jsonl")
+        extract-dir (fs/file root "exports")
+        calls (atom [])]
+    (try
+      (spit session-file (str (json/generate-string {:type "session" :version 3 :id "pi"}) "\n"))
+      (with-redefs [shell/sh (fn [& args]
+                              (swap! calls conj (vec args))
+                              {:exit 2 :out "" :err "Export refused"})]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Pi export failed.*Export refused"
+                             (extract-chat/main ["--native" "--extract-dir" (str extract-dir)
+                                                 (str session-file) (str session-file)]))))
+      (is (= 1 (count @calls)))
+      (is (empty? (fs/list-dir extract-dir)))
+      (finally (fs/delete-tree root)))))
 
 (let [{:keys [fail error]} (run-tests 'tools.extract-chat-test)]
   (when (pos? (+ fail error))

@@ -6,10 +6,12 @@
 ;;   extract-chat --archived --session 019abcde-1234-7000-8000-0123456789ab
 ;;   extract-chat --final-only ~/.codex/sessions
 ;;   extract-chat --extract-dir out ~/.codex/sessions
+;;   extract-chat --native --extract-dir out ~/.pi/agent/sessions
 
 (ns tools.extract-chat
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
+            [clojure.java.shell :as shell]
             [clojure.string :as str])
   (:import (java.nio.file Files Path)))
 
@@ -24,12 +26,15 @@
   (str (System/getProperty "user.home") "/.pi/agent/sessions"))
 
 (defn- usage []
-  (println "Usage: extract-chat [--archived] [--final-only] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
+  (println "Usage: extract-chat [--archived] [--final-only] [--native] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
   (println)
   (println "With no paths, recursively scans ~/.codex/sessions for .json and .jsonl files.")
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
-  (println "With --session, extracts the Codex session whose filename ends in ID.")
-  (println "With --extract-dir, writes one markdown file per session instead of printing to stdout."))
+  (println "With --session, extracts the Codex or Pi session whose filename ends in ID.")
+  (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
+  (println "With --native, exports Pi sessions through pi --export to HTML; other formats stay Markdown.")
+  (println "Native exports require pi on PATH and keep the full session, ignoring --final-only.")
+  (println "Without --extract-dir, Pi chooses the HTML filename in the current directory."))
 
 (defn- path [s]
   (.toPath (io/file s)))
@@ -210,6 +215,7 @@
 (defn- read-session [final-only? file]
   (let [events (read-events file)]
     (merge {:file file
+            :pi? (= "session" (:type (first events)))
             :messages (vec (filter #(keep-message? final-only? %)
                                    (messages events)))}
            (codex-session-meta events))))
@@ -251,20 +257,38 @@
                (conj deduplicated current)))
       deduplicated)))
 
-(defn- print-session [final-only? file]
-  (when-let [markdown (session-markdown (read-session final-only? file))]
-    (print markdown)))
-
-(defn- session-output-path [extract-dir file]
+(defn- session-output-path [extract-dir file extension]
   (let [file-name (str (.getFileName ^Path file))
-        markdown-name (str/replace file-name #"\.jsonl?$" ".md")]
-    (.toPath (io/file extract-dir markdown-name))))
+        output-name (str/replace file-name #"\.jsonl?$" extension)]
+    (.toPath (io/file extract-dir output-name))))
 
-(defn- write-session [extract-dir {:keys [file] :as session}]
-  (when-let [markdown (session-markdown session)]
-    (let [output-file (session-output-path extract-dir file)]
-      (io/make-parents (.toFile output-file))
-      (spit (.toFile output-file) markdown))))
+(defn- export-pi-session [extract-dir file]
+  (let [output-file (when extract-dir (session-output-path extract-dir file ".html"))
+        args (cond-> ["pi" "--export" (.getAbsolutePath (.toFile ^Path file))]
+               output-file (conj (.getAbsolutePath (.toFile ^Path output-file))))]
+    (when output-file
+      (io/make-parents (.toFile ^Path output-file)))
+    (let [{:keys [exit out err]} (apply shell/sh args)]
+      (when-not (zero? exit)
+        (throw (ex-info (str "Pi export failed for " file ": " (str/trim err))
+                        {:file (str file) :exit exit})))
+      (print out)
+      (binding [*out* *err*] (print err)))))
+
+(defn- print-session [final-only? native? file]
+  (let [{:keys [pi?] :as session} (read-session final-only? file)]
+    (if (and native? pi?)
+      (export-pi-session nil file)
+      (when-let [markdown (session-markdown session)]
+        (print markdown)))))
+
+(defn- write-session [extract-dir native? {:keys [file pi?] :as session}]
+  (if (and native? pi?)
+    (export-pi-session extract-dir file)
+    (when-let [markdown (session-markdown session)]
+      (let [output-file (session-output-path extract-dir file ".md")]
+        (io/make-parents (.toFile output-file))
+        (spit (.toFile output-file) markdown)))))
 
 (defn- parse-args [args]
   (loop [opts {:paths []}
@@ -273,6 +297,9 @@
       opts
       (let [arg (first args)]
         (cond
+          (= "--native" arg)
+          (recur (assoc opts :native? true) (next args))
+
           (= "--final-only" arg)
           (recur (assoc opts :final-only? true) (next args))
 
@@ -305,7 +332,7 @@
           (recur (update opts :paths conj arg) (next args)))))))
 
 (defn main [args]
-  (let [{:keys [archived? final-only? help? paths extract-dir session]} (parse-args args)]
+  (let [{:keys [archived? final-only? native? help? paths extract-dir session]} (parse-args args)]
     (if help?
       (usage)
       (let [files (if session
@@ -327,9 +354,9 @@
                               (sort-by (juxt :timestamp (comp str :file)))
                               without-replayed-prefixes)]
             (doseq [session sessions]
-              (write-session extract-dir session)))
+              (write-session extract-dir native? session)))
           (doseq [file files]
-            (print-session final-only? file)))))))
+            (print-session final-only? native? file)))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -100,6 +102,28 @@ class PiWrapperTests(unittest.TestCase):
     def test_export_after_prompt_separator_still_uses_sandbox(self) -> None:
         self.assertEqual(["--", "--export", "a prompt"],
                          self.run_wrapper("--", "--export", "a prompt"))
+
+    @unittest.skipUnless(shutil.which("bb"), "requires Babashka")
+    def test_extract_chat_batch_native_writes_relative_receipts_directory(self) -> None:
+        source_dir = self.root / "sessions"
+        source_dir.mkdir()
+        for name in ("one", "two"):
+            (source_dir / f"{name}.jsonl").write_text(
+                json.dumps({"type": "session", "version": 3, "id": name}) + "\n"
+            )
+        result = subprocess.run(
+            ["bb", str(ROOT / "tools/extract-chat/extract-chat"),
+             "--extract-dir", "receipts", str(source_dir), "--native"],
+            cwd=self.root, env=self.environment, capture_output=True, text=True, check=True,
+        )
+        receipts = self.root / "receipts"
+        self.assertEqual(["one.html", "two.html"], sorted(path.name for path in receipts.iterdir()))
+        for name in ("one", "two"):
+            source = source_dir / f"{name}.jsonl"
+            output = receipts / f"{name}.html"
+            self.assertEqual(f"<html>{source.read_text()}</html>", output.read_text())
+            self.assertIn(str(output), result.stdout)
+        self.assertFalse((self.root / "pi-session-one.html").exists())
 
     def test_one_shot_commands_remain_first_argument(self) -> None:
         for command in ("auth", "config", "install", "list", "remove", "uninstall", "update"):
