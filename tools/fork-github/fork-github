@@ -80,28 +80,13 @@ def configure(
     runner: Callable[..., Result] = run,
 ) -> int:
     cloned = runner(
-        ["git", "clone", "--filter=blob:none", repository.url, str(directory)]
+        ["jj", "git", "clone", "--quiet", "--remote=upstream", repository.url, str(directory)]
     )
     if cloned.status:
         return cloned.status
 
-    renamed = runner(["git", "remote", "rename", "origin", "upstream"], cwd=directory)
-    if renamed.status:
-        return renamed.status
-
     origin = f"git@{repository.host}:jyn514/{repository.name}.git"
-    added = runner(["git", "remote", "add", "origin", origin], cwd=directory)
-    if not added.status:
-        return 0
-
-    restored = runner(
-        ["git", "remote", "rename", "upstream", "origin"], cwd=directory
-    )
-    if restored.status:
-        print(
-            "fork-github: failed to restore origin after remote setup failure",
-            file=sys.stderr,
-        )
+    added = runner(["jj", "git", "remote", "add", "origin", origin], cwd=directory)
     return added.status
 
 
