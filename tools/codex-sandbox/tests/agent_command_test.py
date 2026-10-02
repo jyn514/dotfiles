@@ -42,6 +42,10 @@ class AgentCommandTest(unittest.TestCase):
                 "/home/codex/.pi/agent/AGENTS.md",
                 paths[str(state.home / ".pi/agent/AGENTS.md")],
             )
+            self.assertEqual(
+                "/home/codex/.pi/agent/sessions",
+                paths[str(state.home / ".pi/agent/sessions")],
+            )
             for source, destination in launcher["STAGED_CONFIG"].values():
                 host_path = state.home / source.removeprefix("$HOME/")
                 self.assertEqual(destination, paths[str(host_path)])
@@ -107,6 +111,15 @@ class AgentCommandTest(unittest.TestCase):
             self.assertIn(
                 f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
                 command,
+            )
+            session_mounts = [
+                item for item in command
+                if "dst=/home/codex/.pi/agent/sessions" in item
+            ]
+            self.assertEqual(
+                [f"type=bind,src={state.home / '.pi/agent/sessions'},"
+                 "dst=/home/codex/.pi/agent/sessions,readonly"],
+                session_mounts,
             )
             host_skills = state.home / ".agents/skills"
             self.assertIn(

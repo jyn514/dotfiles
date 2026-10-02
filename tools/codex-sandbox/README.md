@@ -15,6 +15,9 @@ Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
 A successful `/reload` restores the guest tool extension.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
+Host `~/.pi/agent/sessions` is mounted read-only at
+`/home/codex/.pi/agent/sessions` so guest tools can search past conversations.
+Pi continues to write sessions on the host.
 
 Agent containers drop `NET_RAW` on every backend, including after container-local sudo.
 Sidecars drop all capabilities.

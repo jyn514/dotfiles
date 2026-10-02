@@ -1951,6 +1951,13 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
         self.assertIn("--cap-drop=NET_RAW", run)
+        self.assertTrue((pi_agent / "sessions").is_dir())
+        self.assertEqual(
+            [f"type=bind,src={pi_agent / 'sessions'},"
+             "dst=/home/codex/.pi/agent/sessions,readonly"],
+            [argument for argument in run
+             if "dst=/home/codex/.pi/agent/sessions" in argument],
+        )
         self.assertNotIn("--cap-drop=ALL", run)
         self.assertNotIn("--security-opt=no-new-privileges", run)
         self.assertIn(f"type=bind,src={self.repo.resolve()},dst=/src/repository,bind-nonrecursive=true", run)

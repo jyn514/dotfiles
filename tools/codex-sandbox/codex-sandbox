@@ -1793,6 +1793,7 @@ def prepare_agent_mountpoints(state: State) -> None:
             mountpoint.touch(mode=0o600)
     (state.pi_agent_tmp / "pi-extensions").mkdir(exist_ok=True)
     (state.pi_agent_tmp / "extensions/codex-sidecar").mkdir(parents=True, exist_ok=True)
+    (state.pi_agent_tmp / "sessions").mkdir(exist_ok=True)
 
 
 def host_pi_resource_paths(state: State) -> dict[str, str]:
@@ -1801,6 +1802,7 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
         for source, destination in STAGED_CONFIG.values()
     }
     paths[str(state.home / ".agents/skills")] = str(GUEST_AGENT_SKILLS)
+    paths[str(state.home / ".pi/agent/sessions")] = "/home/codex/.pi/agent/sessions"
     paths.update({
         str(state.host_pi_package / relative): str(GUEST_PI_PACKAGE / relative)
         for relative in PI_RESOURCE_PATHS
@@ -1833,6 +1835,9 @@ def build_agent_command(
         "--env", f"TERM={state.term}",
         *(["--env", "PI_TIMING=1"] if timing else []),
         "--mount", f"type=bind,src={state.pi_agent_tmp},dst=/home/codex/.pi/agent",
+        # Pi writes on the host; guest tools need read-only conversation search.
+        "--mount", f"type=bind,src={state.home / '.pi/agent/sessions'},"
+        f"dst={resource_paths[str(state.home / '.pi/agent/sessions')]},readonly",
         "--mount", f"type=bind,src={state.skills_source},"
         f"dst={resource_paths[str(state.home / '.agents/skills')]}",
         *[
@@ -1963,6 +1968,10 @@ def run_agent(state: State, arguments: list[str]) -> int:
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
         raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
     pi_agent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sessions = pi_agent / "sessions"
+    if sessions.is_symlink() or (sessions.exists() and not sessions.is_dir()):
+        raise LauncherError(f"Pi persistent directory is invalid: {sessions}")
+    sessions.mkdir(mode=0o700, exist_ok=True)
     pi_extensions = DOTFILES / "config/agents/pi/pi-extensions"
     if not pi_extensions.is_dir():
         raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")
