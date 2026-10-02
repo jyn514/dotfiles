@@ -189,6 +189,28 @@
 (defn- run-wrapper [ctx patch-content]
   (run-wrapper-with-args ctx patch-content))
 
+(deftest ^:needs/bb ^:needs/git ^:needs/jj jj-split-patch-preserves-message-paragraphs
+  (with-repo*
+    (fn [{:keys [repo]}]
+      (let [patch (fs/file repo "target" "jj-split" "selected.patch")
+            _ (write-file! patch selected-patch)
+            result (run repo "env" "-u" "SANDBOX_PROXY_DIR"
+                        "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent"
+                        "bb" script "--json" (str patch)
+                        "-m" "Extract selected change"
+                        "-m" "Keep the other hunk separate."
+                        "-m" "--json" "@")]
+        (is (zero? (:exit result)) (:err result))
+        (when (zero? (:exit result))
+          (let [{:keys [selected remaining]} (json/parse-string (:out result) true)]
+            (is (= "Extract selected change\n\nKeep the other hunk separate.\n\n--json\n"
+                   (:out (shell! repo "jj" "log" "-r" selected "--no-graph"
+                                 "-T" "description"))))
+            (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
+                   (:out (shell! repo "jj" "file" "show" "-r" selected "note.txt"))))
+            (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
+                   (:out (shell! repo "jj" "file" "show" "-r" remaining "note.txt"))))))))))
+
 (deftest jj-split-patch-recounts-without-accepting-invented-content
   (doseq [replacement ["TWO" "INVENTED"]]
     (with-repo*

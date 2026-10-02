@@ -62,10 +62,10 @@
   nil)
 
 (defn- usage! []
-  (fail! "Usage" "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [revision]"))
+  (fail! "Usage" "bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [-m <message> ...] [revision]"))
 
 (defn- print-help! []
-  (println "Usage: bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [revision]")
+  (println "Usage: bb agent-split [--json] [--remaining-message <message>] <patch-file> -m <message> [-m <message> ...] [revision]")
   (println "Splits the selected Git-style patch from a Jujutsu revision; revision defaults to @.")
   (println "The patch paths and hunks define the fileset to select and must be contained in the revision's diff.")
   (println "The patch and helper artifacts must be outside the visible workspace or under ignored target/jj-split/.")
@@ -74,6 +74,7 @@
   (println "Exit status 1 means preflight failure, 2 means jj split failure, and 3 means post-split verification failure.")
   (println "--json suppresses human progress output and prints full selected and remaining change IDs as JSON.")
   (println "--remaining-message describes the remaining commit before verification completes.")
+  (println "Repeat -m to join message paragraphs with a blank line; each value is literal text.")
   (println "Use -- to stop recognizing wrapper options; arguments after -- are validated as operands."))
 
 (defn- parse-wrapper-options [args]
@@ -90,23 +91,33 @@
         (if-let [message (first more)]
           (recur (rest more) (assoc options :remaining-message message) operands)
           (usage!))
+        (= "-m" arg)
+        (if-let [message (first more)]
+          (recur (rest more) options (into operands [arg message]))
+          (usage!))
         :else (recur more options (conj operands arg))))))
 
 (defn- parse-args [args]
   (let [[options operands] (parse-wrapper-options args)
-        [patch flag message revision & extra] operands]
+        [patch & tail] operands]
     (when (:help? options)
       (print-help!)
       (System/exit 0))
-    (when (or (nil? patch)
-              (not= "-m" flag)
-              (nil? message)
-              (seq extra))
+    (when (nil? patch)
       (usage!))
-    (merge (dissoc options :help?)
-           {:patch patch
-            :message message
-            :revision (or revision "@")})))
+    (loop [[arg message & more :as remaining] tail
+           messages []]
+      (if (= "-m" arg)
+        (if (some? message)
+          (recur more (conj messages message))
+          (usage!))
+        (do
+          (when (or (empty? messages) (> (count remaining) 1))
+            (usage!))
+          (merge (dissoc options :help?)
+                 {:patch patch
+                  :message (str/join "\n\n" messages)
+                  :revision (or arg "@")}))))))
 
 (defn- split-diff-paths [line]
   (when-let [[_ left right] (re-matches #"diff --git a/(.+) b/(.+)" line)]

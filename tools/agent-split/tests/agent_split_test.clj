@@ -82,6 +82,33 @@
            ["--remaining-message" "Keep other work"
             "selected.patch" "-m" "Extract change" "change-id"])))))
 
+(deftest jj-split-patch-joins-message-paragraphs
+  (let [parse-args (ns-resolve 'scripts.jj-split-patch 'parse-args)]
+    (doseq [revision [nil "change-id"]]
+      (let [args (cond-> ["selected.patch" "-m" "Subject"
+                         "-m" "First paragraph" "-m" "Second paragraph"]
+                   revision (conj revision))
+            result (parse-args args)]
+        (is (= "Subject\n\nFirst paragraph\n\nSecond paragraph" (:message result)))
+        (is (= (or revision "@") (:revision result)))))))
+
+(deftest jj-split-patch-keeps-message-values-literal
+  (let [result ((ns-resolve 'scripts.jj-split-patch 'parse-args)
+                ["selected.patch" "-m" "--json" "-m" "--remaining-message"
+                 "-m" "--" "-m" "--help"])]
+    (is (= "--json\n\n--remaining-message\n\n--\n\n--help" (:message result)))
+    (is (false? (:json? result)))
+    (is (nil? (:remaining-message result)))))
+
+(deftest jj-split-patch-rejects-incomplete-message-paragraphs
+  (doseq [args [["selected.patch" "-m"]
+               ["selected.patch" "-m" "Subject" "-m"]
+               ["selected.patch" "-m" "Subject" "revision" "extra"]]]
+    (let [{:keys [exit err]}
+          (captured-failure #((ns-resolve 'scripts.jj-split-patch 'parse-args) args))]
+      (is (= 1 exit))
+      (is (str/includes? err "Usage:")))))
+
 (deftest jj-split-patch-help-recognition-stops-at-double-dash
   (let [{:keys [exit err]}
         (captured-failure

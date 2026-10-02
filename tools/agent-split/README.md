@@ -33,6 +33,10 @@ Hunk line counts are recalculated automatically, so removing lines from a hunk d
 ```sh
 bb agent-split target/jj-split/my-change.patch -m 'Extract focused change' @
 
+bb agent-split target/jj-split/my-change.patch \
+  -m 'Extract focused change' \
+  -m 'Explain why this change belongs in a separate commit.' @
+
 bb agent-split --remaining-message 'Keep unrelated cleanup' \
   target/jj-split/my-change.patch -m 'Extract focused change' @
 
@@ -41,6 +45,8 @@ bb agent-split --json target/jj-split/my-change.patch \
 ```
 
 The revision defaults to `@`. `--json` emits full selected and remaining change IDs for automation. Use `--` to stop wrapper-option parsing.
+Repeat `-m` to join message paragraphs with a blank line, in argument order.
+Each `-m` consumes the next argument as literal text, even when it looks like an option.
 
 After success, inspect the IDs reported by the wrapper:
 
