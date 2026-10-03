@@ -17,7 +17,7 @@ export const COMPACTION_MODEL = {
 // Installed entrypoints are symlinks; resolve the source checkout, not ~/.pi.
 export const COMPACTION_INSTRUCTIONS = resolve(
   dirname(realpathSync(fileURLToPath(import.meta.url))),
-  "../../../../compaction.md",
+  "compaction.md",
 );
 
 function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
