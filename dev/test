@@ -71,7 +71,7 @@ elif command -v uv >/dev/null 2>&1; then
 		--with "$instafail_requirement" \
 		pytest $pytest_args
 else
-	echo "pytest with xdist, sugar, and instafail is required; run setup option 6" >&2
+	echo "pytest with xdist, sugar, and instafail is required; install uv to run the pinned requirements in install/test.txt" >&2
 	exit 1
 fi
 

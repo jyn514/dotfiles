@@ -9,7 +9,8 @@ uv = "latest"
 "github:clojure-lsp/clojure-lsp" = { version = "latest", filter_bins = "clojure-lsp" }
 "aqua:antonmedv/fx" = "latest"
 "aqua:LuaLS/lua-language-server" = "latest"
-"aqua:mvdan/sh" = { version = "latest", filter_bins = "shfmt" }
+# Unix uses native packages; keep mise as the Windows provider.
+"aqua:mvdan/sh" = { version = "latest", filter_bins = "shfmt", os = ["windows"] }
 "cargo:broot" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
 "github:rustsec/rustsec" = { version = "latest", version_prefix = "cargo-audit/v", matching = "cargo-audit-", filter_bins = "cargo-audit" }
 "cargo:cargo-outdated" = { version = "latest", depends = ["rust", "aqua:cargo-bins/cargo-binstall"] }
@@ -21,7 +22,7 @@ uv = "latest"
 "aqua:Byron/dua-cli" = "latest"
 "aqua:lima-vm/lima" = "latest"
 "cargo:https://github.com/jj-vcs/jj" = { version = "rev:f1b29bced933e289096a9c98276153e29dd95674", crate = "jj-cli", bin = "jj", depends = ["rust"] }
-"aqua:BurntSushi/ripgrep" = "latest"
+"aqua:BurntSushi/ripgrep" = { version = "latest", os = ["windows"] }
 "aqua:Myriad-Dreamin/tinymist" = "latest"
 "github:glide-browser/glide" = { version = "latest", os = ["linux"], filter_bins = "glide" }
 "aqua:pnpm/pnpm" = "latest"
@@ -31,7 +32,6 @@ uv = "latest"
 "npm:oxlint" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "npm:vscode-langservers-extracted" = { version = "latest", depends = ["node", "aqua:pnpm/pnpm"] }
 "pipx:git-revise" = { version = "latest", depends = ["uv"] }
-"pipx:pytest" = { version = "latest", depends = ["uv"], uvx_args = "--with pytest-xdist --with pytest-sugar --with pytest-instafail" }
 "pipx:pylint" = { version = "latest", depends = ["uv"] }
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 

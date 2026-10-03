@@ -664,7 +664,7 @@ class MiseConfigTests(unittest.TestCase):
             "oxlint",
             "vscode-langservers-extracted",
         }
-        pipx_tools = {"git-revise", "pytest", "pylint", "yt-dlp"}
+        pipx_tools = {"git-revise", "pylint", "yt-dlp"}
         github_tools = {
             "clojure-lsp/clojure-lsp",
             "glide-browser/glide",
@@ -689,10 +689,6 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual(aqua_tools, self.backend_packages(tools, "aqua"))
         self.assertEqual(npm_tools, self.backend_packages(tools, "npm"))
         self.assertEqual(pipx_tools, self.backend_packages(tools, "pipx"))
-        self.assertEqual(
-            "--with pytest-xdist --with pytest-sugar --with pytest-instafail",
-            tools["pipx:pytest"]["uvx_args"],
-        )
         self.assertEqual(github_tools, self.backend_packages(tools, "github"))
         self.assertEqual(asdf_tools, self.backend_packages(tools, "asdf"))
         self.assertEqual(
@@ -767,6 +763,9 @@ class MiseConfigTests(unittest.TestCase):
 
         mise_packages = {
             self.mise_package_name(tool, options) for tool, options in tools.items()
+            if not isinstance(options, dict)
+            or "os" not in options
+            or set(options["os"]) & {"linux", "macos"}
         }
         aliases = {"fd-find": "fd", "git-delta": "delta"}
         system_commands = {aliases.get(package, package) for package in system_packages}

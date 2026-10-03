@@ -2,6 +2,7 @@
 
 import os
 import platform
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -18,6 +19,7 @@ class MiseSmokeTests(unittest.TestCase):
     def mise_exec(self, *command: str) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["MISE_GLOBAL_CONFIG_FILE"] = str(ROOT / "config/mise.toml")
+        env["MISE_AUTO_INSTALL"] = "0"
         return subprocess.run(
             ["mise", "exec", "--", *command],
             cwd=ROOT,
@@ -70,7 +72,6 @@ class MiseSmokeTests(unittest.TestCase):
             "oxlint",
             "vscode-css-language-server",
             "git-revise",
-            "pytest",
             "pylint",
             "yt-dlp",
         ]
@@ -89,6 +90,31 @@ class MiseSmokeTests(unittest.TestCase):
             "-c",
             "import toml, tomli",
         )
+
+    @unittest.skipIf(platform.system() == "Windows", "Windows uses mise providers")
+    def test_native_search_and_formatter_resolve_through_mise_exec(self) -> None:
+        env = os.environ.copy()
+        env.update(MISE_GLOBAL_CONFIG_FILE=str(ROOT / "config/mise.toml"),
+                   MISE_AUTO_INSTALL="0")
+        native_paths = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        if platform.system() == "Darwin":
+            brew_prefix = subprocess.check_output(["brew", "--prefix"], text=True).strip()
+            native_paths.insert(0, str(Path(brew_prefix) / "bin"))
+        env["PATH"] = os.pathsep.join(native_paths)
+        # An old mise installation must not make a missing native package pass.
+        mise = shutil.which("mise")
+        self.assertIsNotNone(mise)
+        for command in ("rg", "shfmt"):
+            with self.subTest(command=command):
+                native = shutil.which(command, path=env["PATH"])
+                self.assertIsNotNone(native, f"missing native {command}")
+                result = subprocess.run(
+                    [mise, "exec", "--", "sh", "-c", f"command -v {command}"],
+                    cwd=ROOT, env=env, text=True, capture_output=True,
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                resolved = Path(result.stdout.strip()).resolve()
+                self.assertEqual(Path(native).resolve(), resolved)
 
 
 if __name__ == "__main__":

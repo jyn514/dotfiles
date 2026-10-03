@@ -7,6 +7,11 @@ version = "15.2.0"
 backend = "aqua:BurntSushi/ripgrep"
 specifiers = ["latest"]
 
+[tools."aqua:BurntSushi/ripgrep"."platforms.windows-x64"]
+checksum = "sha256:71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478119643"
+
 [[tools."aqua:Byron/dua-cli"]]
 version = "2.45.0"
 backend = "aqua:Byron/dua-cli"
@@ -55,6 +60,10 @@ specifiers = ["latest"]
 [tools."aqua:mvdan/sh".options]
 "vars.filter_bins" = "shfmt"
 
+[tools."aqua:mvdan/sh"."platforms.windows-x64"]
+checksum = "sha256:13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_windows_amd64.exe"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320827"
 [[tools."aqua:pnpm/pnpm"]]
 version = "12.8.1"
 backend = "aqua:pnpm/pnpm"
@@ -163,14 +172,6 @@ version = "4.0.9"
 backend = "pipx:pylint"
 specifiers = ["latest"]
 uv = { path = ".mise/locks/pipx-pylint/4.0.9", digest = "sha256:5721e4c8505994d191f23677b6cb9cab61e2ddaa4031c1b2e964df68bfbfba87" }
-
-[[tools."pipx:pytest"]]
-version = "9.1.1"
-backend = "pipx:pytest"
-specifiers = ["latest"]
-
-[tools."pipx:pytest".options]
-uvx_args = "--with pytest-xdist --with pytest-sugar --with pytest-instafail"
 
 [[tools."pipx:yt-dlp"]]
 version = "2026.8.19"

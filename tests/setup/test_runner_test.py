@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import shlex
+import shutil
 import subprocess
 import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -13,15 +12,70 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestRunnerTests(unittest.TestCase):
-    def test_pytest_plugin_options_match_the_lock(self) -> None:
-        config = tomllib.loads((ROOT / "config/mise.toml").read_text())
-        lock = tomllib.loads((ROOT / "config/mise.lock").read_text())
+    def run_fallback(self, *, missing_plugin=False, uv_available=True):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "dev").mkdir()
+            (root / "dev/test").write_bytes((ROOT / "dev/test").read_bytes())
+            (root / "install").mkdir()
+            (root / "install/test.txt").write_bytes((ROOT / "install/test.txt").read_bytes())
+            bin_directory = root / "bin"
+            bin_directory.mkdir()
+            for command in ("dirname", "mktemp", "date", "grep", "rm"):
+                (bin_directory / command).symlink_to(shutil.which(command))
+            log = root / "uvx.args"
+            if missing_plugin:
+                pytest = bin_directory / "pytest"
+                pytest.write_text(
+                    "#!/bin/sh\n"
+                    "if [ \"${1-}\" = --help ]; then\n"
+                    "  echo '--instafail --numprocesses'\n"
+                    "  exit 0\n"
+                    "fi\n"
+                    "exit 99\n"
+                )
+                pytest.chmod(0o755)
+            if uv_available:
+                for command in ("uv", "uvx"):
+                    executable = bin_directory / command
+                    executable.write_text(
+                        "#!/bin/sh\n"
+                        "printf '%s\\n' \"$@\" > \"$TEST_LOG\"\n"
+                        "exit 23\n"
+                    )
+                    executable.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/sh", root / "dev/test", "--test-environment-ready", "--jobs", "3"],
+                cwd=root,
+                env=os.environ | {"PATH": str(bin_directory), "TEST_LOG": str(log)},
+                text=True,
+                capture_output=True,
+            )
+            return result, log.read_text().splitlines() if log.exists() else []
 
-        configured = shlex.split(config["tools"]["pipx:pytest"]["uvx_args"])
-        locked = shlex.split(
-            lock["tools"]["pipx:pytest"][0]["options"]["uvx_args"]
+    def test_missing_global_pytest_uses_pinned_requirements(self) -> None:
+        result, arguments = self.run_fallback()
+        self.assertEqual(23, result.returncode, result.stderr)
+        requirements = (ROOT / "install/test.txt").read_text().splitlines()
+        self.assertEqual(
+            ["--from", requirements[0], "--with", requirements[1],
+             "--with", requirements[2], "--with", requirements[3], "pytest"],
+            arguments[:9],
         )
-        self.assertEqual(configured, locked)
+        self.assertEqual("3", arguments[arguments.index("-n") + 1])
+        self.assertIn("--instafail", arguments)
+
+    def test_installed_pytest_missing_a_plugin_uses_uvx(self) -> None:
+        result, arguments = self.run_fallback(missing_plugin=True)
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertIn("pytest", arguments)
+
+    def test_missing_uv_explains_how_to_get_pinned_test_dependencies(self) -> None:
+        result, arguments = self.run_fallback(uv_available=False)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("install uv", result.stderr)
+        self.assertIn("install/test.txt", result.stderr)
+        self.assertEqual([], arguments)
 
     def test_jobs_are_dispatched_to_pytest_and_failures_are_propagated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

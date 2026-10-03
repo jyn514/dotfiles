@@ -12,6 +12,12 @@ No manual Babashka or mise installation is required. The launcher downloads chec
 
 ## Common commands
 
+Ripgrep and shfmt come from native packages on Linux and Homebrew on macOS; Windows keeps their mise providers. Run global package setup before relying on these commands in local setup or `mise exec`. On Chimera, applying the plan enables the official `current/user` repository and refreshes its index before installing packages. Dry runs do not edit repositories.
+
+Repository tests use an installed pytest with the required plugins, or `uvx` with the pinned requirements in `install/test.txt`; pytest is no longer a global mise tool. Bacon keeps its existing native/Homebrew routing, without introducing a source build. Markdown-oxide also retains its existing policy because the tested official prebuilt Linux release does not run on Alpine or Chimera. See the [compatibility evidence](evidence/2026-10-03/README.md).
+
+Existing installed copies are not removed automatically. Verify replacement command paths before removing an old mise installation or Homebrew formula.
+
 ### Inspect and validate
 
 ```sh
@@ -65,6 +71,21 @@ Container bootstrap tests require [Podman](https://podman.io/docs) and network a
 ```sh
 python3 tools/package-plan/tests/container.py
 ```
+
+The migration's Chimera integration slice can also run in a disposable Docker container:
+
+```sh
+docker run --rm -v "$PWD:/repo:ro" -w /repo -e XDG_CACHE_HOME=/tmp/cache \
+  chimeralinux/chimera:latest sh -eu -c '
+    apk add curl ca-certificates libarchive-progs
+    dev/package-plan validate
+    /tmp/cache/dotfiles/package-plan/babashka/1.13.219/bb \
+      -cp tools/package-plan/src tools/package-plan/tests/chimera-native.clj
+    rg --version
+    shfmt --version'
+```
+
+This checks actual repository discovery and package installation, dry-run purity, and repeat application. It exercises the two migrated packages rather than every existing package request.
 
 ## Design and reference
 

@@ -63,6 +63,29 @@
             "--needed" "--"]
            (subvec (:argv operation) 0 7)))))
 
+(deftest portable-search-and-formatter-use-one-native-request-per-target
+  (with-redefs [planner/command-exists? (constantly true)]
+    (doseq [[target manager] {:debian :apt :ubuntu :apt :fedora :dnf
+                             :arch :pacman :alpine :apk :chimera :apk
+                             :macos-arm64 :brew}]
+      (let [host {:target target :release "test" :arch "x86_64" :wsl false}
+            operations (:operations (planner/package-operations policy host [] "/mise"))
+            requests (mapcat (fn [{:keys [argv manager]}]
+                               (if (= manager :pacman)
+                                 (rest (drop-while #(not= "--" %) argv))
+                                 (filter #(clojure.string/starts-with?
+                                           % (str (name manager) ":")) argv)))
+                             operations)]
+        (is (= (count requests) (count (distinct requests))) (str target))
+        (doseq [package [:ripgrep :shfmt]]
+          (let [request (str (when-not (= manager :pacman) (str (name manager) ":"))
+                             (name package))]
+            (is (= {:kind :native :manager manager :packages [package]}
+                   (planner/disposition policy target package))
+                (str target " " package))
+            (is (= 1 (get (frequencies requests) request 0))
+                (str target " " package))))))))
+
 (deftest debian-does-not-select-ubuntu-resources
   (with-redefs [planner/command-exists? (constantly true)
                 planner/old-git? (constantly true)]
@@ -97,6 +120,86 @@
                          {:target :fedora :release "42" :arch "x86_64" :wsl false}
                          ["sudo"]))]
     (is (= "--allowerasing" (last (:argv operation))))))
+
+(deftest chimera-enables-user-and-refreshes-before-installing
+  (with-redefs [planner/root? (constantly true)]
+    (let [plan (planner/build-plan policy
+                                   {:target :chimera :arch "x86_64" :wsl false}
+                                   "/mise")
+          operations (:operations plan)]
+      (is (= [:chimera-user :chimera-user-index]
+             (mapv :name (take 2 operations))))
+      (is (= ["apk" "update"] (:argv (second operations))))
+      (is (= :packages (:kind (nth operations 2 nil)))))))
+
+(deftest chimera-repository-is-idempotent-and-dry-run-does-not-write
+  (let [directory (fs/create-temp-dir {:prefix "chimera-repository-"})
+        repositories (fs/path directory "repositories")
+        original "# user repository is needed for developer commands\nhttps://repo.chimera-linux.org/current/main"
+        plan {:host {:target :chimera} :skipped []
+              :operations [(planner/chimera-user-operation [] repositories)]}]
+    (try
+      (spit (str repositories) original)
+      (with-redefs [planner/root? (constantly true)]
+        (planner/execute! plan true true)
+        (is (= original (slurp (str repositories))))
+        (planner/execute! plan false true)
+        (let [enabled (slurp (str repositories))]
+          (is (= (str original "\nhttps://repo.chimera-linux.org/current/user\n")
+                 enabled))
+          (planner/execute! plan false true)
+          (is (= enabled (slurp (str repositories))))))
+      (finally (fs/delete-tree directory)))))
+
+(deftest chimera-repository-creates-a-missing-fragment
+  (let [directory (fs/create-temp-dir {:prefix "chimera-new-repository-"})
+        repositories (fs/path directory "repositories.d" "user.list")
+        plan {:host {:target :chimera} :skipped []
+              :operations [(planner/chimera-user-operation [] repositories)]}]
+    (try
+      (with-redefs [planner/root? (constantly true)]
+        (planner/execute! plan true true)
+        (is (not (fs/exists? (fs/parent repositories))))
+        (planner/execute! plan false true)
+        (let [enabled (slurp (str repositories))]
+          (is (= "\nhttps://repo.chimera-linux.org/current/user\n" enabled))
+          (planner/execute! plan false true)
+          (is (= enabled (slurp (str repositories))))))
+      (finally (fs/delete-tree directory)))))
+
+(deftest failed-chimera-refresh-prevents-install-and-can-be-retried
+  (let [directory (fs/create-temp-dir {:prefix "chimera-refresh-"})
+        repositories (fs/path directory "repositories")
+        installed (fs/path directory "installed")
+        repository (planner/chimera-user-operation [] repositories)
+        install {:kind :packages :manager :apk
+                 :argv ["touch" (str installed)]}
+        plan {:host {:target :chimera} :skipped []
+              :operations [repository {:kind :repository :argv ["false"]} install]}]
+    (try
+      (spit (str repositories) "https://repo.chimera-linux.org/current/main\n")
+      (with-redefs [planner/root? (constantly true)]
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"operation failed"
+                              (planner/execute! plan false true)))
+        (is (not (fs/exists? installed)))
+        (let [enabled (slurp (str repositories))]
+          (planner/execute! (assoc-in plan [:operations 1 :argv] ["true"]) false true)
+          (is (fs/exists? installed))
+          (is (= enabled (slurp (str repositories))))))
+      (finally (fs/delete-tree directory)))))
+
+(deftest chimera-repository-operations-use-the-doas-sudo-shim
+  (let [options (atom [])
+        plan {:host {:target :chimera} :skipped []
+              :operations [(planner/chimera-user-operation ["sudo"] "/etc/apk/repositories")]}]
+    (with-redefs [planner/require-elevation! (constantly nil)
+                  babashka.process/process
+                  (fn [_ opts]
+                    (swap! options conj opts)
+                    (delay {:exit 0}))]
+      (planner/execute! plan false true))
+    (is (clojure.string/starts-with? (get-in @options [0 :extra-env "PATH"])
+                                   (str planner/root "/vendor/doas-sudo-shim:")))))
 
 (deftest dry-run-never-starts-a-process
   (let [started (atom [])

@@ -12,7 +12,7 @@
 (def targets [:debian :ubuntu :fedora :arch :alpine :chimera :macos-arm64])
 (def managers #{:apt :dnf :pacman :apk :brew})
 (def resources #{:ubuntu-universe :powershell-repository :vscode-deb :git-ppa
-                 :onepassword-fedora :rpmfusion-codecs})
+                 :onepassword-fedora :rpmfusion-codecs :chimera-user})
 (def package-name-pattern #"^[@A-Za-z0-9][A-Za-z0-9+_.@/-]*$")
 
 (defn fail! [message]
@@ -280,6 +280,20 @@
                                            "apt-cache" "policy"))
                       "l=Ubuntu,c=universe")))
 
+(defn chimera-user-operation [sudo repositories]
+  {:kind :repository :name :chimera-user
+   :argv (into sudo
+               ["sh" "-eu" "-c"
+                (str "mkdir -p \"${1%/*}\"\n"
+                     "if [ -f \"$1\" ]; then\n"
+                     "while IFS= read -r line || [ -n \"$line\" ]; do\n"
+                     "  [ \"$line\" != \"$2\" ] || exit 0\n"
+                     "done < \"$1\"\n"
+                     "fi\n"
+                     "printf '\\n%s\\n' \"$2\" >> \"$1\"")
+                "package-plan" (str repositories)
+                "https://repo.chimera-linux.org/current/user"])})
+
 (defn resource-operations [{:keys [target release wsl]} sudo]
   (let [cache (str (or (System/getenv "XDG_CACHE_HOME")
                        (some-> (System/getenv "HOME") (str "/.cache"))
@@ -287,6 +301,10 @@
                    "/dotfiles/package-plan")]
     (vec
      (concat
+      (when (= target :chimera)
+        [(chimera-user-operation sudo "/etc/apk/repositories.d/90-package-plan-user.list")
+         {:kind :repository :name :chimera-user-index
+          :argv (into sudo ["apk" "update"])}])
       (when (and (= target :ubuntu) (not (universe-enabled?)))
         [{:kind :repository :name :ubuntu-universe
           :argv (into sudo ["add-apt-repository" "-y" "universe"])}])
@@ -375,12 +393,10 @@
       (flush)
       (when-not (= "y" (some-> (read-line) str/lower-case))
         (fail! "package plan declined")))
-    (doseq [{:keys [argv kind manager destination]} (:operations plan)]
+    (doseq [{:keys [argv destination]} (:operations plan)]
       (when destination (fs/create-dirs (fs/parent destination)))
       (let [options (cond-> {:inherit true}
-                      (and (= :chimera (get-in plan [:host :target]))
-                           (= :packages kind)
-                           (= :apk manager))
+                      (= :chimera (get-in plan [:host :target]))
                       (assoc :extra-env {"PATH" (str root "/vendor/doas-sudo-shim:"
                                                      (System/getenv "PATH"))}))
             result @(process/process argv options)]
