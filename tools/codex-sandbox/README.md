@@ -13,6 +13,8 @@ The launcher loads its extensions from this checkout;
 dotfile installation is not required for the sandbox path, but its default
 Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
 A successful `/reload` restores the guest tool extension.
+Expanded `/skill:name` messages use guest resource paths when sent to the model,
+including messages from resumed sessions. Stored messages retain their host paths.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 Host `~/.pi/agent/sessions` is mounted read-only at

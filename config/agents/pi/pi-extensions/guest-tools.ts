@@ -105,6 +105,27 @@ export default function guestTools(pi: ExtensionAPI) {
         callGuest("user_bash", { command, timeout }, signal, undefined, onData),
     },
   }));
+  pi.on("context", (event) => {
+    // Pi expands /skill commands on the host into user messages, separately
+    // from the system prompt. Rewrite the model's copy, including resumed history.
+    const rewriteSkill = (text: string) =>
+      /^<skill name="[^"]+" location="[^"]+">\n/.test(text)
+        ? rewritePiResourcePaths(text, resourcePaths)
+        : text;
+    return {
+      messages: event.messages.map((message) => {
+        if (message.role !== "user") return message;
+        return {
+          ...message,
+          content: typeof message.content === "string"
+            ? rewriteSkill(message.content)
+            : message.content.map((block) => block.type === "text"
+              ? { ...block, text: rewriteSkill(block.text) }
+              : block),
+        };
+      }),
+    };
+  });
   pi.on("before_agent_start", (event) => {
     const rewrittenPrompt = rewritePiResourcePaths(event.systemPrompt, resourcePaths);
     const systemPrompt = rewrittenPrompt.replace(
