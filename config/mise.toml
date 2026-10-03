@@ -43,6 +43,7 @@ run = "python libexec/setup/install_pi.py"
 [settings]
 lockfile = true
 locked = true
+lockfile_platforms = ["linux-x64", "macos-arm64"]
 npm.package_manager = "pnpm"
 cargo.binstall = true
 cargo.binstall_only = true
