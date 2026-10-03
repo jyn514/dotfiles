@@ -217,6 +217,49 @@ exclusive launch archives the previous proxy session as
 It does this only when the recorded VM, generation, engine, and network
 identities have all changed; policy drift on the same VM still blocks cleanup.
 
+## Troubleshoot published ports
+
+For a Python-equipped container publishing a UI on port 8084, run these from the
+host; replace `CONTAINER` and the VM name as needed:
+
+```sh
+curl -v --max-time 5 http://127.0.0.1:8084/
+limactl shell sandbox-host-docker curl -v --max-time 5 http://127.0.0.1:8084/
+limactl shell sandbox-host-docker docker port CONTAINER 8084/tcp
+limactl shell sandbox-host-docker docker exec CONTAINER python3 -c \
+  'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8084/", timeout=5).status)'
+```
+
+Compare HTTP responses: a VM response without a host response points to Lima
+forwarding; a container-only response points to Docker publication or filtering.
+TCP acceptance is insufficient: the proxy can accept a connection while filtering
+blocks container replies. Require an HTTP response. Rootless bridge addresses are
+not normally reachable from the outer VM, so a failed VM request to a container IP
+alone does not establish a firewall fault.
+
+This backend uses RootlessKit's `--detach-netns`. Inspecting `/proc/PID/ns/net`
+for `dockerd`, or running `nft` directly in the VM, can inspect the outer VM rather
+than Docker's network. Enter the detached namespace through the daemon's mount view:
+
+```sh
+limactl shell sandbox-host-docker sh -c '
+  pid=$(cat "$XDG_RUNTIME_DIR/docker.pid") || exit
+  netns="/proc/$pid/root$XDG_RUNTIME_DIR/dockerd-rootless/netns"
+  sudo nsenter --net="$netns" nft -a list ruleset
+'
+```
+
+Recompute the path after Docker restarts. The Docker namespace listing includes
+Docker's NAT/filter rules and the sandbox's `codex_sandbox` tables; only `LIMADNS`
+means the wrong namespace. As VM root, enter only the network namespace; entering
+Docker's user namespace can lose the authority needed to inspect its firewall.
+
+Do not flush the firewall or edit installed policy files. Change
+[`docker/network.nft`](docker/network.nft), then use the documented upgrade to
+install and audit it; a temporary rule makes `doctor` report policy drift.
+For an authorized temporary diagnostic rule, pass nftables source on stdin with
+`nft -f -` rather than sending a quoted rule through Lima's command transport.
+
 ## Prototype boundaries
 
 The guest Docker Engine 29.8.0, containerd 2.3.5, Buildx 0.37.0, and
