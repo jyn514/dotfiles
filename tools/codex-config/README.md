@@ -8,6 +8,8 @@
 ~/.codex/dotfiles.config.toml -> ~/.codex/config.toml
 ```
 
+The wrapper adds `--profile dotfiles` for runtime commands, MCP, sandbox commands, and `debug prompt-input`. Administrative subcommands such as `app-server`, `login`, `doctor`, and `features` must come first and receive no automatic profile: Codex rejects runtime profiles for those commands. Instruction expansion and config migration still run.
+
 The tool preserves all other TOML text and writes the destination before removing source tables. The active profile replaces stale model-availability state; conflicting project tables leave both files unchanged. Publishing the destination first makes interruption recoverable: a retry removes any harmless duplicate. Post-exit migration removes state Codex writes during startup or the session without racing the running process.
 
 Run the tests with:

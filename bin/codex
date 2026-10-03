@@ -36,7 +36,20 @@ trap 'rm -f "$COMBINED"' 0 1 2 15
 DEVELOPER_INSTRUCTIONS=$(jq -Rs . < "$COMBINED")
 rm -f "$COMBINED"
 trap - 0 1 2 15
-if "$REAL" --profile dotfiles -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"; then
+# Administrative commands reject runtime profiles. Keep the profile for sessions,
+# MCP, sandbox commands, and debug prompt-input, which use runtime configuration.
+use_profile=1
+case ${1:-} in
+	agents|app-server|login|logout|completion|update|doctor|plugin|remote-control|apply|cloud|exec-server|features|migrate-rollouts|help)
+		use_profile=0 ;;
+	debug)
+		[ "${2:-}" = prompt-input ] || use_profile=0 ;;
+esac
+set -- -c "developer_instructions=$DEVELOPER_INSTRUCTIONS" "$@"
+if [ "$use_profile" = 1 ]; then
+	set -- --profile dotfiles "$@"
+fi
+if "$REAL" "$@"; then
 	status=0
 else
 	status=$?

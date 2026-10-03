@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -47,6 +48,47 @@ class CodexWrapperTests(unittest.TestCase):
                 self.assertEqual(arguments, result.stdout.splitlines())
                 self.assertEqual("", result.stderr)
                 self.assertFalse(codex_home.exists())
+
+    def test_administrative_commands_do_not_receive_runtime_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            (fake_bin / "codex").symlink_to(shutil.which("echo"))
+            codex_home = root / ".codex"
+            codex_home.mkdir()
+            (codex_home / "developer-instructions.md").write_text("")
+            environment = os.environ | {
+                "DOTFILES_SANDBOX": "1",
+                "CODEX_HOME": str(codex_home),
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            }
+            for arguments in (
+                ["app-server", "daemon", "stop"], ["features", "list"],
+                ["login", "status"], ["doctor"], ["update"], ["plugin", "list"],
+                ["completion", "fish"], ["logout"], ["remote-control", "--help"],
+                ["apply", "--help"], ["cloud", "--help"], ["exec-server", "--help"],
+                ["migrate-rollouts"], ["help"], ["debug", "models"],
+            ):
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run(
+                        [str(WRAPPER), *arguments], env=environment,
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertNotIn("--profile", result.stdout.split())
+                    self.assertTrue(result.stdout.rstrip().endswith(" ".join(arguments)))
+            for arguments in (
+                ["resume", "--all"], ["exec", "prompt"], ["mcp", "list"],
+                ["debug", "prompt-input"], ["prompt"],
+            ):
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run(
+                        [str(WRAPPER), *arguments], env=environment,
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(["--profile", "dotfiles"], result.stdout.split()[:2])
 
     def test_instruction_includes_resolve_from_symlink_location(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
