@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Rename the current Codex session through its running app-server daemon."""
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import socket
+import struct
+import sys
+
+
+class AppServer:
+    def __init__(self, connection: socket.socket) -> None:
+        self.connection = connection
+        self.pending = b""
+        self.request_id = 0
+
+    def receive(self, size: int) -> bytes:
+        while len(self.pending) < size:
+            data = self.connection.recv(65536)
+            if not data:
+                raise RuntimeError("app-server connection closed before replying")
+            self.pending += data
+        result, self.pending = self.pending[:size], self.pending[size:]
+        return result
+
+    def connect(self) -> None:
+        # The Unix control socket uses HTTP Upgrade and WebSocket frames,
+        # unlike a standalone app-server's JSONL stdio transport.
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.connection.sendall((
+            "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
+            "Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n\r\n"
+        ).encode())
+        while b"\r\n\r\n" not in self.pending:
+            data = self.connection.recv(65536)
+            if not data:
+                raise RuntimeError("app-server closed during WebSocket upgrade")
+            self.pending += data
+        headers, self.pending = self.pending.split(b"\r\n\r\n", 1)
+        lines = headers.decode().split("\r\n")
+        fields = dict(line.split(":", 1) for line in lines[1:])
+        fields = {key.lower(): value.strip() for key, value in fields.items()}
+        expected = base64.b64encode(hashlib.sha1(
+            (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
+        ).digest()).decode()
+        if not lines[0].startswith("HTTP/1.1 101 ") or fields.get("sec-websocket-accept") != expected:
+            raise RuntimeError("app-server rejected WebSocket upgrade")
+        self.request("initialize", {"clientInfo": {"name": "codex_rename", "version": "1.0.0"}})
+        self.send({"method": "initialized", "params": {}})
+
+    def frame(self, payload: bytes, opcode: int = 1) -> None:
+        mask = os.urandom(4)
+        size = len(payload)
+        header = bytes([0x80 | opcode])
+        if size < 126:
+            header += bytes([0x80 | size])
+        elif size < 65536:
+            header += bytes([0x80 | 126]) + struct.pack("!H", size)
+        else:
+            header += bytes([0x80 | 127]) + struct.pack("!Q", size)
+        self.connection.sendall(header + mask + bytes(
+            value ^ mask[i % 4] for i, value in enumerate(payload)
+        ))
+
+    def send(self, message: dict) -> None:
+        self.frame(json.dumps(message).encode())
+
+    def request(self, method: str, params: dict) -> dict:
+        self.request_id += 1
+        self.send({"id": self.request_id, "method": method, "params": params})
+        fragments = b""
+        while True:
+            first, second = self.receive(2)
+            opcode, size = first & 15, second & 127
+            if size == 126:
+                size = struct.unpack("!H", self.receive(2))[0]
+            elif size == 127:
+                size = struct.unpack("!Q", self.receive(8))[0]
+            if second & 128:
+                raise RuntimeError("unexpected masked app-server frame")
+            payload = self.receive(size)
+            if opcode == 8:
+                raise RuntimeError("app-server closed the WebSocket")
+            if opcode == 9:
+                self.frame(payload, 10)
+                continue
+            if opcode == 10:
+                continue
+            if opcode not in (0, 1):
+                raise RuntimeError("unexpected app-server frame type")
+            fragments += payload
+            if not first & 128:
+                continue
+            message = json.loads(fragments)
+            fragments = b""
+            if "method" in message or message.get("id") != self.request_id:
+                continue
+            if "error" in message:
+                raise RuntimeError(message["error"]["message"])
+            return message["result"]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("title", help="new name for the session identified by CODEX_THREAD_ID")
+    args = parser.parse_args()
+    if not args.title.strip() or "\n" in args.title or "\r" in args.title:
+        parser.error("title must be a nonempty single line")
+    thread_id = os.environ.get("CODEX_THREAD_ID")
+    if not thread_id:
+        parser.error("CODEX_THREAD_ID is unset; run this command inside a Codex session")
+    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+    socket_path = home / "app-server-control/app-server-control.sock"
+    phase = "connecting to the Codex daemon"
+    update_attempted = False
+    try:
+        print("connecting to the Codex daemon", file=sys.stderr)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(15)
+            connection.connect(str(socket_path))
+            client = AppServer(connection)
+            client.connect()
+            phase = "reading the current session"
+            client.request("thread/read", {"threadId": thread_id, "includeTurns": False})
+            phase = "renaming the current session"
+            print(f"renaming current session to {json.dumps(args.title, ensure_ascii=False)}", file=sys.stderr)
+            update_attempted = True
+            client.request("thread/name/set", {"threadId": thread_id, "name": args.title})
+            phase = "verifying the session name"
+            after = client.request("thread/read", {"threadId": thread_id, "includeTurns": False})
+            if after["thread"].get("name") != args.title:
+                raise RuntimeError("read-back name differs from requested name")
+        print(f"renamed current session to {json.dumps(args.title, ensure_ascii=False)} (verified)")
+        return 0
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+        recovery = ("name update is unverified; rerun this command to set and verify it"
+                    if update_attempted else "name update was not sent; check the running Codex daemon")
+        print(f"codex-rename: {phase} failed: {error}; {recovery}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
