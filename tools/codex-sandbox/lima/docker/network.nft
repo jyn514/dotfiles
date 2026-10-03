@@ -10,6 +10,9 @@ table inet codex_sandbox {
     }
     chain input {
         type filter hook input priority -10; policy accept;
+        # Published-port proxies initiate connections from this namespace.
+        # Permit their IPv4 replies, not container-initiated host connections.
+        iifname { "cs-public", "csp*", "csl*" } meta nfproto ipv4 ct state established ct direction reply counter accept
         iifname { "cs-public", "csp*", "csl*" } counter reject
         iifname "cse*" meta nfproto ipv6 counter reject
     }

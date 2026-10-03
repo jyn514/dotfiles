@@ -66,8 +66,9 @@ the VM or changing its generation, run:
 python3 tools/codex-sandbox/lima/docker_host.py upgrade
 ```
 
-The operation verifies the updated guest policy before publishing its new
-provisioning snapshot.
+The operation restarts Docker, stopping running containers, then verifies the
+updated guest policy before publishing its new provisioning snapshot.
+Stop active sessions and other VM workloads before upgrading.
 
 For existing state, or to repair a missing or altered private CLI, run:
 
@@ -230,8 +231,14 @@ Use a new instance and state directory to adopt nftables.
 
 The rootless service installs filtering atomically on every activation before
 systemd reports it ready. Agent traffic rejects private destinations and IPv6;
-internal gateway links cannot route between sessions. Each sandbox gateway has
-one private egress network and fixed editor and optional Podman SSH listeners.
+internal gateway links cannot route between sessions. IPv4 replies to established,
+namespace-initiated connections are allowed on public-only and internal bridges;
+container-initiated connections to namespace services remain blocked. This lets
+Docker's userland proxy receive replies from published container services.
+Loopback publications bind to VM loopback; host access also requires Lima forwarding.
+Use `docker_host.py upgrade` above to install this policy in an existing VM.
+Each sandbox gateway has one private egress network and fixed editor and optional
+Podman SSH listeners.
 Neither listener accepts a client-selected destination.
 Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.

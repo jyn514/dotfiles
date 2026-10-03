@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ def main():
     image = runtime.inspect_image(args.image)
     prefix = 'docker-policy-test-' + uuid.uuid4().hex[:12]
     link, other, egress = [prefix + '-' + suffix for suffix in ('link', 'other', 'egress')]
+    service = prefix + '-service'
     networks = []
     server = ThreadingHTTPServer(('127.0.0.1', 0), BaseHTTPRequestHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -44,12 +46,32 @@ def main():
                 '--entrypoint', 'python3'], ['/probe.py', mode, target]) as process:
             assert process.wait(timeout=30) == 0
 
+    def published_endpoint(container):
+        # Docker allocates the guest loopback port at start, asynchronously to
+        # workload's attached transport. Do not reserve a fixed test port.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            result = runtime.run(['port', container, '18765/tcp'], capture_output=True,
+                                 check=False, timeout=5)
+            target = result.stdout.strip()
+            if result.returncode == 0 and target:
+                address, port = target.rsplit(':', 1)
+                assert address == '127.0.0.1' and 0 < int(port) < 65536, target
+                return target
+            time.sleep(0.1)
+        raise AssertionError(f'no published loopback port for {container}')
+
     try:
         for name, internal in ((link, True), (other, True), (egress, False)):
             runtime.create_relay_network(name, internal=internal, owner=uuid.uuid4().hex)
             networks.append(name)
+        # Relay egress bridges are cse*, not the csp* used by Strix. Use the
+        # service-network API to own a bridge subject to the public-only policy.
+        runtime.create_public_service_network(service, uuid.uuid4().hex)
+        networks.append(service)
         probe(egress, 'allow', endpoint)
-        probe('codex-public-only', 'deny', endpoint)
+        for network in ('codex-public-only', service):
+            probe(network, 'deny', endpoint)
         probe('codex-public-only', 'public', '-')
         probe('codex-public-only', 'dns-tcp', '10.0.2.3')
         with ExitStack() as stack:
@@ -64,7 +86,8 @@ def main():
                 'nsenter', f'--net=/run/user/{uid}/dockerd-rootless/netns', '--',
                 'python3', '-m', 'http.server', '18766', '--bind', '10.254.254.1'], timeout=30)
             probe(egress, 'allow', '10.254.254.1:18766')
-            probe('codex-public-only', 'deny', '10.254.254.1:18766')
+            for network in ('codex-public-only', service):
+                probe(network, 'deny', '10.254.254.1:18766')
             peer = prefix + '-peer'
             stack.enter_context(runtime.workload(image, peer,
                 ['--network', link, '--entrypoint', 'python3'], ['-m', 'http.server', '18765']))
@@ -72,12 +95,22 @@ def main():
             probe(link, 'allow', address + ':18765')
             probe(other, 'deny', address + ':18765')
             probe('codex-public-only', 'deny', address + ':18765')
-            public_peer = prefix + '-public-peer'
-            stack.enter_context(runtime.workload(image, public_peer,
-                ['--network', 'codex-public-only', '--entrypoint', 'python3'],
-                ['-m', 'http.server', '18765']))
-            probe('codex-public-only', 'allow', runtime.network_address(public_peer, 'codex-public-only') + ':18765')
+            for index, network in enumerate(('codex-public-only', service)):
+                public_peer = prefix + '-public-peer-' + str(index)
+                stack.enter_context(runtime.workload(image, public_peer,
+                    ['--network', network, '--publish', '127.0.0.1::18765',
+                     '--entrypoint', 'python3'], ['-m', 'http.server', '18765']))
+                probe(network, 'allow', runtime.network_address(public_peer, network) + ':18765')
+                target = published_endpoint(public_peer)
+                # A rootless port proxy could accept TCP while INPUT rejected
+                # the container's reply. Demand an entire HTTP 200 in the VM,
+                # then through Lima's host loopback forwarding as well.
+                runtime.guest(['python3', str(ROOT / 'tests/docker_network_probe.py'),
+                               'http', target], timeout=30)
+                subprocess.run([sys.executable, str(ROOT / 'tests/docker_network_probe.py'),
+                                'http', target], check=True, timeout=30)
         print('PASS: public DNS/HTTP, private-host denial, internal-link isolation, IPv6 denial', flush=True)
+        print('PASS: complete VM/host loopback HTTP 200 on cs-public and owned csp* bridge', flush=True)
         if runtime.record.get('firewall') == 'nftables':
             namespace = ['dockerd-rootless-setuptool.sh', 'nsenter', '--', 'nsenter',
                          f'--net=/run/user/{uid}/dockerd-rootless/netns', '--']
