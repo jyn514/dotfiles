@@ -20,15 +20,18 @@ export const COMPACTION_INSTRUCTIONS = resolve(
   "compaction.md",
 );
 
+export function checkpointText(entry: { summary: string; details?: unknown }): string {
+  const length = (entry.details as { checkpointLength?: number } | undefined)?.checkpointLength;
+  // The saved offset separates generated prose from the caller's status block.
+  return typeof length === "number" && Number.isSafeInteger(length) && length > 0 && length <= entry.summary.length
+    ? entry.summary.slice(0, length)
+    : entry.summary;
+}
+
 function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
   const previous = event.preparation.previousSummary;
   const entry = event.branchEntries.findLast((entry) => entry.type === "compaction");
-  if (!previous || entry?.type !== "compaction" || entry.summary !== previous) return previous;
-  const length = (entry.details as { checkpointLength?: number } | undefined)?.checkpointLength;
-  // The saved offset separates generated prose from the caller's status block.
-  return typeof length === "number" && Number.isSafeInteger(length) && length > 0 && length <= previous.length
-    ? previous.slice(0, length)
-    : previous;
+  return previous && entry?.type === "compaction" && entry.summary === previous ? checkpointText(entry) : previous;
 }
 
 export default function lunaCompaction(pi: ExtensionAPI): void {

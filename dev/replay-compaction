@@ -1,0 +1,75 @@
+#!/usr/bin/env bun
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
+import {
+  buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS, ModelRegistry,
+  ModelRuntime, parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
+import codexSidecar from "../config/agents/pi/pi-extensions/codex-sidecar.ts";
+import { checkpointText, COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../config/agents/pi/pi-extensions/luna-compaction.ts";
+
+export function replayInput(text, entryId) {
+  // Parse without SessionManager.open, which can migrate and rewrite the source.
+  const entries = parseSessionEntries(text).filter(entry => entry.type !== "session");
+  const original = entryId
+    ? entries.find(entry => entry.id === entryId)
+    : buildContextEntries(entries).find(entry => entry.type === "compaction");
+  if (original?.type !== "compaction") throw new Error(entryId ? `No compaction entry ${entryId}` : "No compaction on the active branch");
+  const context = buildContextEntries(entries, original.parentId);
+  const cut = context.findIndex(entry => entry.id === original.firstKeptEntryId);
+  if (cut < 0) throw new Error(`Recorded boundary ${original.firstKeptEntryId} is missing from the compaction's parent context`);
+  const previous = context[0]?.type === "compaction" ? context[0] : undefined;
+  const messages = context.slice(previous ? 1 : 0, cut).flatMap(sessionEntryToContextMessages);
+  const conversation = serializeConversation(convertToLlm(messages));
+  const prompt = [
+    previous ? `<previous-checkpoint>\n${checkpointText(previous)}\n</previous-checkpoint>` : "",
+    `<conversation>\n${conversation}\n</conversation>`,
+  ].filter(Boolean).join("\n\n");
+  return { original, prompt };
+}
+
+async function main() {
+  const { positionals, values } = parseArgs({ options: { help: { type: "boolean", short: "h" } }, allowPositionals: true });
+  const usage = "Usage: dev/replay-compaction SESSION.jsonl [COMPACTION_ID]";
+  if (values.help) { console.log(usage); return; }
+  if (positionals.length < 1 || positionals.length > 2) throw new Error(usage);
+  const [sessionPath, entryId] = positionals;
+  const { original, prompt } = replayInput(readFileSync(sessionPath, "utf8"), entryId);
+  const instructions = readFileSync(COMPACTION_INSTRUCTIONS, "utf8");
+  const output = mkdtempSync(join(tmpdir(), "compaction-replay-"));
+  writeFileSync(join(output, "original.md"), checkpointText(original));
+  writeFileSync(join(output, "input.txt"), prompt);
+  writeFileSync(join(output, "instructions.md"), instructions);
+  console.error(`Replaying ${sessionPath}, compaction ${original.id}; requesting ${COMPACTION_MODEL.id}.`);
+  try {
+    const runtime = await ModelRuntime.create({ allowModelNetwork: false });
+    const registry = new ModelRegistry(runtime);
+    // Use Pi's broker registration rather than discover credentials separately.
+    codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
+    const model = registry.find(COMPACTION_MODEL.provider, COMPACTION_MODEL.id);
+    if (!model) throw new Error(`${COMPACTION_MODEL.id} is unavailable`);
+    const response = await registry.complete(model, {
+      systemPrompt: instructions,
+      messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
+    }, {
+      maxTokens: Math.min(Math.floor(0.8 * DEFAULT_COMPACTION_SETTINGS.reserveTokens), model.maxTokens || Infinity),
+      signal: AbortSignal.timeout(180000), cacheRetention: "none", sessionId: randomUUID(), reasoningEffort: "low",
+    });
+    if (["error", "length", "aborted"].includes(response.stopReason) || response.content.some(block => block.type === "toolCall")) {
+      throw new Error(response.errorMessage || `Invalid summary: ${response.stopReason}`);
+    }
+    const summary = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+    if (!summary.trim()) throw new Error("Luna returned an empty summary");
+    writeFileSync(join(output, "new.md"), summary);
+    writeFileSync(join(output, "usage.json"), JSON.stringify({ compaction: original.id, model: model.id, original: original.usage, replay: response.usage }, null, 2) + "\n");
+    console.error(`Luna completed: ${response.usage.input} input tokens, ${response.usage.output} output tokens.`);
+    console.log(`Saved comparison to ${output}\nCompare original.md and new.md manually.`);
+  } catch (error) {
+    throw new Error(`${error.message}; replay inputs retained at ${output}`);
+  }
+}
+
+if (import.meta.main) main().catch(error => { console.error(`Replay failed: ${error.message}`); process.exitCode = 1; });

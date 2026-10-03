@@ -15,7 +15,7 @@ but does not require or export one.
 
 ## Pi compaction
 
-The Luna extension uses [`compaction.md`](compaction.md) for one checkpoint covering
+The Luna extension uses [`compaction.md`](config/agents/pi/pi-extensions/compaction.md) for one checkpoint covering
 history and any split-turn prefix. If Luna fails or is unavailable, the active
 model uses the same instructions; if generation fails, session history is kept.
 
@@ -28,6 +28,27 @@ not evidence of task completion; later edits can make it stale.
 Run `/reload` in Pi after extension changes. Instructions are read afresh for each
 compaction. Run `bun test tests/pi/luna_compaction_test.ts` for offline tests,
 including native extension loading and resumed-context reconstruction.
+
+To compare instruction changes against a saved compaction, run:
+
+```sh
+dev/replay-compaction SESSION.jsonl [COMPACTION_ID]
+```
+
+Requires Bun and the existing Pi SDK dependency. By default, it selects the
+latest compaction on the session's active branch; an entry ID selects a specific
+one. The command makes a live Luna request using normal Pi authentication or the
+sandbox model broker, so it may incur model cost. It saves `original.md`,
+`new.md`, the input and instructions, and token usage in a private temporary
+directory for manual comparison. The session file is never modified; failed
+requests retain the replay inputs.
+
+Replay uses the recorded cut point and previous checkpoint, not today's retention
+settings. It uses current instructions, SDK serialization, and the default model
+budget; original custom compaction instructions and generation settings are not
+recorded and cannot be reconstructed. Caller-added status is excluded when the
+saved checkpoint offset is available; older summaries without it remain intact.
+Run `bun test tests/pi/replay_compaction_test.ts` for offline replay tests.
 
 
 
