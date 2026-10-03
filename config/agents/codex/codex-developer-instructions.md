@@ -1,2 +1,2 @@
-@breq.md
+@~/.agents/irc.md
 @~/.agents/shared.md
