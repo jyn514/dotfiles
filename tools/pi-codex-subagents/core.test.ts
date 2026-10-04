@@ -1242,6 +1242,44 @@ describe("extension completion delivery and TUI", () => {
       process.env.PI_SUBAGENT_PI_BIN = FAKE_RPC_CHILD;
       expect(notifications.slice(failureNotificationCount).some((message) => message.startsWith("Direct skill delegation failed:"))).toBe(true);
 
+      // The tool lists only eligible names; Pi's parent prompt owns skill descriptions.
+      const skillPath = path.join(TEST_AGENT_DIR, "skills", "tighten-docs", "SKILL.md");
+      const skillDescription = "Unique parent skill guidance that must not be repeated by spawn_agent.";
+      const skillsSection = () => tools.get("spawn_agent").description.split("Available parent skills that may be added by name:\n")[1];
+      expect(skillsSection()).toBe("No model-invocable skills are loaded in the parent session.");
+      await emit("before_agent_start", { systemPromptOptions: { skills: [
+        { name: "tighten-docs", description: skillDescription, filePath: skillPath },
+        { name: "session-title-curation", description: "A different parent-owned description.", filePath: path.join(TEST_AGENT_DIR, "skills", "session-title-curation", "SKILL.md") },
+        { name: "blocked", description: "Hidden from model invocation.", filePath: path.join(TEST_AGENT_DIR, "skills", "blocked", "SKILL.md"), disableModelInvocation: true },
+        { name: "missing-path", description: "Invalid skill metadata." },
+      ] } });
+      expect(skillsSection()).toBe("- `tighten-docs`\n- `session-title-curation`");
+      expect(tools.get("spawn_agent").description).not.toContain(skillDescription);
+      for (const skill of ["blocked", "missing-path", "unknown"]) {
+        const task = `invalid-skill-${skill}`;
+        await expect(tools.get("spawn_agent").execute("skill-invalid", {
+          task_name: task, message: "work", skills: [skill],
+        }, undefined, undefined, ctx)).rejects.toThrow("skills are not loaded in the parent session");
+        expect(getAgent(task, parentSessionId)).toBeNull();
+      }
+      const skillSpawn = await tools.get("spawn_agent").execute("skill-loaded", {
+        task_name: "explicit-loaded-skill", message: "work", skills: ["tighten-docs"],
+      }, undefined, undefined, ctx);
+      const skillAgent = getAgent("explicit-loaded-skill", parentSessionId)!;
+      expect(skillAgent.skills).toEqual(["tighten-docs"]);
+      expect(skillAgent.skillPaths).toEqual([skillPath]);
+      const started = fs.readFileSync(skillAgent.sessionFile, "utf8").trim().split("\n")
+        .map((line) => JSON.parse(line)).find((entry) => entry.type === "started");
+      expect(started.args[started.args.indexOf("--skill") + 1]).toBe(skillPath);
+      expect(skillSpawn.details.task_name).toBe("/explicit-loaded-skill");
+      // Refreshing the parent list also revokes previously permitted names.
+      await emit("before_agent_start", { systemPromptOptions: { skills: [] } });
+      expect(skillsSection()).toBe("No model-invocable skills are loaded in the parent session.");
+      await expect(tools.get("spawn_agent").execute("skill-removed", {
+        task_name: "removed-skill", message: "work", skills: ["tighten-docs"],
+      }, undefined, undefined, ctx)).rejects.toThrow("skills are not loaded in the parent session");
+      expect(getAgent("removed-skill", parentSessionId)).toBeNull();
+
       // Unconfigured takes both runtime arguments away again even though Pi still has enabledModels.
       fs.writeFileSync(configFile, "{}");
       await emit("session_start", { reason: "restart" });

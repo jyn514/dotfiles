@@ -30,6 +30,11 @@ pi install /absolute/path/to/pi-extensions/packages/pi-codex-subagents
 
 Agent names are unique within their parent session. The same task name can exist safely in different Pi sessions. Read and control tools are always scoped to the current parent session; only `list_agents(include_all: true)` crosses session boundaries, and that view is read-only.
 
+`spawn_agent.skills` adds model-invocable skills currently loaded in the parent by
+name. The tool lists permitted names without repeating descriptions from Pi's
+parent skill catalog. Disabled or unloaded skills are refused; refreshing the
+parent's skill list updates the permitted names.
+
 ## Agent templates
 
 Templates are user-defined Markdown files in:

@@ -253,7 +253,7 @@ Available agent templates:
 ${getAgentDefinitionsDescription()}
 
 Available parent skills that may be added by name:
-${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\` — ${skill.description}`).join("\n") : "No model-invocable skills are loaded in the parent session."}`;
+${cachedSkills.length ? cachedSkills.map((skill) => `- \`${skill.name}\``).join("\n") : "No model-invocable skills are loaded in the parent session."}`;
     },
     get parameters() {
       return Type.Object({
