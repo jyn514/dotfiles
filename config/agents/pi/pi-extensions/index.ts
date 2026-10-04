@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import agentRoom from "./agent-room.ts";
+import askUser from "./ask-user.ts";
 import contextBreakdown from "./context-breakdown.ts";
 import currentDate from "./current-date.ts";
 import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
@@ -16,6 +17,7 @@ import webSearch from "./pi-web-search.ts";
 
 export default function dotfilesExtensions(pi: ExtensionAPI) {
   agentRoom(pi);
+  askUser(pi);
   contextBreakdown(pi);
   currentDate(pi);
   skillReferenceAutocomplete(pi);
