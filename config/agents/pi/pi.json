@@ -24,6 +24,7 @@
     }
   ],
   "compaction": {
+    "reserveTokens": 80000,
     "enabled": true
   },
   "showCacheMissNotices": true,
