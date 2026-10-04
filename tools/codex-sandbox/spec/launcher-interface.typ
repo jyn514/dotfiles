@@ -4,7 +4,8 @@
 captured Bake inputs, explicit refresh and clean rebuild, and schema 4
 accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
-Host Pi with guest tool execution is the launcher execution path.
+Host Pi with guest tool execution is the launcher execution path; the host
+extension authority requirements below are not yet fully verified.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
 the implemented image-command/image-target split, not the proxy trust or
@@ -38,18 +39,21 @@ existing image lifecycle retain ownership of it.
 The parent Pi and its Pi subagents run on the host. Pi owns conversation
 persistence, model requests, and UI; the launcher owns execution attachments,
 and the tool backend executes arbitrary model-selected filesystem and process
-operations inside the guest. Other Pi extensions retain their host authority;
-launcher-owned bounded operations follow the
-#link("proxy-design.typ")[extension authority contract].
+operations inside the guest during normal operation. Host extensions follow the
+#link("proxy-design.typ")[extension authority contract]; guest tool routing is
+guaranteed during normal operation only.
+Installation alone does not authorize a host handler. Host code and executable
+configuration must remain inaccessible to guest writes through every mount alias.
 
 An execution attachment binds one Pi launch and its children to one guest worker
 and directory. The launcher selects the repository and guest mount; repository
 tool arguments use guest paths. Host-discovered shared skills are mounted at
-the guest skills path. The dotfiles extension expands instruction includes
-before the guest-tool extension rewrites mapped host paths in the system
-prompt; Pi sends the request afterward. Host Pi's README, docs, and examples are
-mounted read-only at guest Pi package paths; their advertised host paths map to
-those guest paths. Project-relative resources, including project skills, map
+the guest skills path. Recursive project instruction includes and resource reads
+resolve in the guest view under the extension authority contract. Rewrite mapped
+host resource paths to guest paths before Pi sends the system prompt; path
+rewriting alone does not constrain the preceding resource reads. Host Pi's README,
+docs, and examples are mounted read-only at guest Pi package paths; their
+advertised host paths map to those guest paths. Project-relative resources, including project skills, map
 from the host repository root to its `/src` guest mount. Sibling and historical
 paths remain unchanged.
 A saved conversation's cwd is historical context, not a request to mount that
@@ -59,16 +63,18 @@ launch directory.
 The host backend sends structured tool calls to a persistent guest worker and
 returns progress, text, images, errors, and completion to Pi. Through this
 attachment, it reuses Pi's guest tool implementations for normal built-in and
-`!` calls; backend absence or guest failure returns an error. A failed extension
-reload may restore Pi's local fallback. This path is not a malicious-code
-security boundary.
+`!` calls. With the guest-tool extension loaded, backend absence or guest failure
+returns an error. A failed extension reload may restore Pi's host-local tools;
+guest tool routing is a normal-operation guarantee, not a malicious-code security
+boundary. Bind each routed call to its inherited attachment until it settles.
 Cancellation requirements belong to
 #link("process-ownership.typ")[process ownership].
 
 === Directory changes and attachment lifetime
 
-`/cd` is a Pi command handled from human input. It validates an existing
-Jujutsu workspace before stopping the current session.
+`/cd` is a Pi command handled from human input. Model text, copied conversation
+state, and tool requests cannot authorize a new writable repository. It validates
+an existing Jujutsu workspace before stopping the current session.
 
 `/cd` is a session handoff, including changes within the same repository:
 
@@ -99,25 +105,61 @@ locks and per-launch services follow that existing cleanup path.
 === Subagents without a second lifecycle implementation
 
 Keep the subagent extension's host process manager, RPC pipes, transcripts, and
-overlay sockets. The child wrapper adds the same guest-tool extension and inherits
-the attachment; the guest process does not receive host Pi credentials.
+overlay sockets. The child wrapper loads the guest-tool extension and inherits
+the attachment; guest processes receive no host Pi credentials. Child tasks and
+templates use that backend during normal operation and do not authorize
+unreviewed host handlers.
 
 Use the existing `PI_SUBAGENT_PI_BIN` entrypoint override. The wrapper launches
 host Pi with the guest-tool extension; it does not own a second guest Pi process.
 
+=== Model-requested session forks <sandbox-session-forks>
+
+A sandboxed agent may request a host-managed fork of its current conversation.
+For example, a fork can investigate a second approach using copied context while
+its file reads and shell commands still run in the parent's guest worker.
+This creates a conversation branch, not a new execution environment or authority.
+
+Pi owns copying the current branch into a fresh session ID through its session
+APIs. The trusted child manager starts and tracks the fork using the same backend
+and attachment inheritance as subagents. The host resolves the source from the
+requesting session; model input cannot select a host transcript path, executable,
+environment, repository, mount, credential source, or attachment.
+
+Copied messages, paths, and tool results remain untrusted context. Do not copy
+live child handles, pending tool calls, or executable extension state. A fork
+loads only admitted host code and guest-view resources, retains the parent's
+accepted capability set, and uses the same authenticated provider routes.
+A fork request cannot invoke `/cd` or reauthorize sandbox policy.
+
+Return the new session identity after guest-tool extension loading, attachment
+binding, and session creation succeed. Report startup failures and clean up child
+resources through the existing manager. Forks share the normal-operation routing
+and failed-reload limitation above. The child manager owns cancellation and
+cleanup; the fork cannot outlive the attachment that supplies its tools. This is
+a selected capability, not an implemented fork API.
+
 === Execution migration and acceptance
 
-Operational acceptance checks are:
+Required acceptance checks are:
 
 - Built-in read, write, edit, shell, and human `!` calls use the guest during
   normal operation and after a successful `/reload`.
-- A child Pi process inherits the guest attachment; worker loss interrupts its
-  owner, and disconnect cancels outstanding guest work.
+- A child or model-requested fork inherits the guest attachment; worker loss
+  interrupts its owner, and disconnect cancels outstanding guest work.
+- Forked reads and shell commands use the guest during normal operation, including
+  with supported child templates and flags; a host-only fixture is inaccessible.
+- A fork creates a new session ID without modifying its source or transferring
+  live handles or pending calls. Failed startup cleans child resources and leaves
+  the parent's session and attachment usable.
 - `/cd` validates first, then closes the old guest before starting a new session
-  in the destination; invalid paths leave the old session usable.
+  in the destination; invalid paths leave the old session usable. Model-originated
+  input cannot authorize that handoff.
 - Cross-directory resume forks the conversation under a fresh session ID.
-- Host Pi uses its existing credentials directly; they are not mounted into
-  the guest. A failed extension reload may restore host-local execution.
+- Unclassified model-executable host handlers are rejected. Guest-modified code
+  cannot become host executable code through `/reload` or fork startup.
+- Authenticated model requests use admitted broker routes; no reusable provider
+  credentials enter guest processes, and failures never select direct fallback.
 
 == Configuration belongs to the loader
 

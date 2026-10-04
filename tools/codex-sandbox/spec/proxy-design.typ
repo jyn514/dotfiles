@@ -3,7 +3,8 @@
 *Status:* Proxy isolation, transports, capability selection, image resolution, and
 request-failure isolation are implemented. Caddy 2.11.4-alpine with private profile
 helpers is the selected authenticated-egress architecture; Codex and Zulip remain
-separate trust domains. The host-Pi execution split is selected but not implemented;
+separate trust domains. Host Pi with guest tools is implemented as an execution
+path, but conformance to the host extension authority contract remains unverified;
 the `git` built-in mount is implemented in the launcher, not yet consumed by the
 `bug` proxy. Manifest examples use the temporary version 1 format.
 
@@ -55,8 +56,13 @@ A proxy must not load executable code from the agent-writable working tree.
 The selected #link("launcher-interface.typ")[host-Pi design] moves conversation
 and UI code to the host while retaining the untrusted guest workload and proxy
 boundaries. In container descriptions below, “agent” then means the guest tool
-worker and its descendants. Host Pi is trusted mediation code; model-controlled
-input does not acquire its ambient filesystem, credentials, or process authority.
+worker and its descendants. Host Pi is trusted mediation code. During normal
+operation, model-controlled input uses guest tools or admitted bounded host
+capabilities rather than Pi's ambient filesystem, credentials, or process authority.
+Guest tool routing is not a malicious-code security boundary: a failed extension
+reload may restore host-local built-in tools and `!` commands in parents and
+children. Proxy and authenticated-route failures still fail closed: they cannot
+fall back to privileged local commands or direct credentials.
 
 Classify operations by their trigger, inputs, and granted effects rather than by
 whether an extension imports a filesystem or subprocess API. Human commands and
@@ -89,8 +95,9 @@ hooks can consume model-writable data and must retain that data's authority.
    model-writable instruction text can select paths. Explicit personal host
    resources are separately selected by trusted configuration.],
   [Subagents],
-  [Host manager and UI with mandatory inherited guest execution, as specified by
-   the launcher. Model-selected tasks or templates cannot replace that backend.],
+  [Host manager and UI with inherited guest execution during normal operation,
+   as specified by the launcher. Tasks or templates do not select another backend;
+   failed extension reload has the routing limitation described above.],
   [Other execution extensions and MCP],
   [Guest execution by default; host admission requires a reviewed bounded capability.
    Installed packages or staged configuration alone do not establish activation

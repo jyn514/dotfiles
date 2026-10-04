@@ -12,7 +12,14 @@ To repeat just this step, run `mise run pi-install` from this repository.
 The launcher loads its extensions from this checkout;
 dotfile installation is not required for the sandbox path, but its default
 Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
-A successful `/reload` restores the guest tool extension.
+A successful `/reload` restores the guest tool extension. Failed reload may
+restore host-local built-in tools and `!` commands; guest routing is a
+normal-operation guarantee, not a malicious-code security boundary.
+The [host extension authority contract](spec/proxy-design.typ) still requires
+admitted host handlers and brokered model requests; conformance remains unverified.
+Proxy and credential failures still fail closed.
+[Model-requested session forks](spec/launcher-interface.typ) are selected but not
+implemented; they must inherit the parent's guest backend and authority.
 Expanded `/skill:name` messages use guest resource paths when sent to the model,
 including messages from resumed sessions. Stored messages retain their host paths.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman.

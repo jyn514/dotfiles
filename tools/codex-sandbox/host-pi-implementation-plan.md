@@ -3,18 +3,23 @@
 The selected design is specified in [launcher-interface.typ](spec/launcher-interface.typ),
 [proxy-design.typ](spec/proxy-design.typ), and
 [process-ownership.typ](spec/process-ownership.typ). Host Pi is the launcher
-execution path.
+execution path. Its normal-operation checks do not establish conformance to
+proxy-design's host extension authority contract; that contract controls the
+required security boundary.
 
 ## Outcome and boundaries
 
-Pi, its UI, conversations, model requests, and subagents run on the host using
-host credentials. The launcher starts one guest worker for each Pi launch. Pi's
-built-in tools and human `!` commands run there during normal operation. Other
-host extensions retain their existing host authority; this is not a malicious-code
-security boundary.
+Pi, its UI, conversations, model requests, subagents, and model-requested session
+forks run on the host. The launcher supplies their inherited guest attachment.
+Guest tools run there during normal operation; failed extension reload may
+restore host-local tools. Routing is not a malicious-code security boundary.
+Host handlers and authenticated traffic retain proxy-design's admission and broker
+rules, including fail-closed proxy and credential failures.
+The launcher contract owns the selected fork behavior and acceptance checks.
 
-Pi owns its conversation store; the guest does not mount it. The launcher starts
-host Pi only after the worker is ready, and a lost worker interrupts host Pi.
+Pi owns its conversation store; the guest's host-session mount is read-only.
+The launcher starts host Pi only after the worker is ready, and a lost worker
+interrupts host Pi.
 The transport does not replay calls after a possible write.
 
 ## Work and logical commits
@@ -23,19 +28,19 @@ The transport does not replay calls after a possible write.
    implementations and route `!` and RPC bash through `user_bash`, as Pi's SSH
    extension example does. Load the extension in parent and child processes;
    `PI_SUBAGENT_PI_BIN` can enforce child launch arguments. Verify ordinary
-   `/reload` and child behavior. A failed extension reload can restore local
-   execution; that failure mode is outside the requested security boundary.
+   `/reload` and child behavior. Fail-closed host tool dispatch is not required;
+   failed reload may restore local tools.
 2. **Add a guest worker and attachment.** Reuse the existing agent mount and
    service setup in `codex-sandbox`, replacing the guest Pi entrypoint with a
    persistent tool worker. The JSON-line transport carries progress, images,
    completion, and errors. A disconnect aborts the active call; no call is replayed.
-3. **Start host Pi with built-in guest tools.** Keep sessions and model requests
-   on the host using its existing credentials. Bind built-in
-   reads, writes, and shell operations to the guest backend. A successful
-   extension reload restores those bindings; a failed reload may not.
-4. **Route subagents.** Use `PI_SUBAGENT_PI_BIN` so child Pi processes receive
-   the guest-tool extension and the same worker binding. Other extensions keep
-   their existing host behavior.
+3. **Start host Pi with built-in guest tools.** Keep sessions on the host and
+   bind reads, writes, and shell operations to the guest backend. Route model
+   requests through admitted brokers. Successful reload restores guest routing.
+4. **Route subagents and session forks.** Use `PI_SUBAGENT_PI_BIN` and the existing
+   child manager with inherited guest routing during normal operation. Admit host
+   handlers under proxy-design's authority contract; model-selected templates
+   cannot widen it.
 5. **Implement lifecycle and directory handoff.** On `/cd`, validate first,
    settle and close the old session and guest, then start a fresh attachment and
    fork the conversation, or start fresh if it has no saved messages. Failed
@@ -63,10 +68,13 @@ The transport does not replay calls after a possible write.
   built-in tools and replace `user_bash` operations. Subagents already disable
   extension discovery and accept explicit extension paths, so they can load the
   same guest extension through their existing process manager.
-- **Decided:** Pi's `!`/RPC bash commands run in the guest during normal operation.
-  A failed extension reload can leave the hook absent and restore Pi's local
-  fallback; this is outside the requested security boundary.
-- **Decided:** host Pi uses its existing provider credentials directly.
+- **Decided:** host-local tool fallback after failed reload is outside the
+  guest-routing guarantee. Proxy and credential failures still fail closed.
+- **Implementation gap:** direct host provider credentials do not satisfy
+  proxy-design's selected broker contract.
 
-Operational acceptance remains open for worker loss. The direct `/skill:`
-delegation warning is a separate unresolved issue.
+Security acceptance remains open for host handler admission, protected host code
+sources, guest-view resource reads, and brokered model requests.
+Model-requested session forks remain selected, not implemented. Operational
+acceptance remains open for worker loss. The direct `/skill:` delegation warning
+is a separate unresolved issue.
