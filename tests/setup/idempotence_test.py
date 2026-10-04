@@ -11,27 +11,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SetupIdempotenceTests(unittest.TestCase):
-    def test_backup_option_does_not_duplicate_its_cron_entry(self) -> None:
+    def test_backup_option_routes_to_native_scheduler_installer(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             home = directory / "home"
             binaries = directory / "bin"
-            crontab_state = directory / "crontab"
             home.mkdir()
             binaries.mkdir()
-            crontab = binaries / "crontab"
-            crontab.write_text(
+            log = directory / "installer-calls"
+            python = binaries / "python3"
+            python.write_text(
                 "#!/bin/sh\n"
-                'if [ "${1:-}" = -l ]; then\n'
-                '  [ ! -e "$CRONTAB_STATE" ] || cat "$CRONTAB_STATE"\n'
-                "else\n"
-                '  cp "$1" "$CRONTAB_STATE"\n'
-                "fi\n"
+                'printf "%s\\n" "$*" >> "$INSTALLER_CALLS"\n'
             )
-            crontab.chmod(0o755)
+            python.chmod(0o755)
             env = os.environ.copy()
             env.update(
-                CRONTAB_STATE=str(crontab_state),
+                INSTALLER_CALLS=str(log),
                 HOME=str(home),
                 PATH=f"{binaries}:{env['PATH']}",
             )
@@ -50,9 +46,7 @@ class SetupIdempotenceTests(unittest.TestCase):
 
             for result in results:
                 self.assertEqual(0, result.returncode, result.stderr)
-            entries = crontab_state.read_text().splitlines()
-            self.assertEqual(1, len(entries))
-            self.assertTrue(entries[0].endswith("/bin/backup"))
+            self.assertEqual(["tools/backup/install.py"] * 2, log.read_text().splitlines())
 
     def test_kde_keybinding_patch_accepts_an_already_applied_patch(self) -> None:
         setup = (ROOT / "setup").read_text()

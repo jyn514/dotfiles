@@ -1,0 +1,12 @@
+[Unit]
+Description=Documents and consistent Mica backups to restic
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@PYTHON@ -I @INSTALL@/job.py daily
+ExecStopPost=@PYTHON@ -I @INSTALL@/job.py recover
+TimeoutStartSec=infinity
+TimeoutStopSec=120
+UMask=0077

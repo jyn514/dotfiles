@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 class BackupTests(unittest.TestCase):
@@ -31,6 +31,9 @@ class BackupTests(unittest.TestCase):
             'exit "${RESTIC_TEST_STATUS:-0}"\n'
         )
         restic.chmod(0o755)
+        whoami = self.bin / "whoami"
+        whoami.write_text("#!/bin/sh\necho restic\n")
+        whoami.chmod(0o755)
 
     def run_backup(self, *arguments: str, status: int = 0) -> subprocess.CompletedProcess[str]:
         environment = os.environ | {
@@ -56,13 +59,13 @@ class BackupTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            f"backup --exclude notes/ --skip-if-unchanged "
-            f"--cache-dir {self.directory}/cache --tag documents-backup --dry-run .\n",
+            f"backup --skip-if-unchanged "
+            f"--cache-dir {self.directory}/cache --tag documents-backup --exclude notes/ --dry-run .\n",
             self.log.read_text(),
         )
 
     def test_check_reads_a_random_subset_without_the_persistent_cache(self) -> None:
-        result = self.run_backup("check", "--no-lock")
+        result = self.run_backup("check-subset", "--no-lock")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
@@ -87,11 +90,17 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(17, result.returncode)
         self.assertIn("backup: check failed with status 17", result.stderr)
 
-    def test_unknown_command_does_not_invoke_restic(self) -> None:
-        result = self.run_backup("destroy")
+    def test_arbitrary_restic_commands_remain_available(self) -> None:
+        result = self.run_backup("snapshots", "--json")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("snapshots --json\n", self.log.read_text())
 
+    def test_human_account_cannot_source_repository_credentials(self) -> None:
+        (self.bin / "whoami").write_text("#!/bin/sh\necho human\n")
+        self.env_file.write_text('echo credentials-were-read >&2\n')
+        result = self.run_backup()
         self.assertEqual(2, result.returncode)
-        self.assertIn("usage:", result.stderr)
+        self.assertNotIn("credentials-were-read", result.stderr)
         self.assertFalse(self.log.exists())
 
 
@@ -117,6 +126,11 @@ class BackupResticIntegrationTests(unittest.TestCase):
             f"export RESTIC_REPOSITORY={self.repository}\n"
             "export RESTIC_PASSWORD=test-password\n"
         )
+        self.bin = self.directory / "bin"
+        self.bin.mkdir()
+        whoami = self.bin / "whoami"
+        whoami.write_text("#!/bin/sh\necho restic\n")
+        whoami.chmod(0o755)
         self.environment = os.environ | {
             "BACKUP_DOCUMENTS": str(self.documents),
             "BACKUP_HOME": str(self.directory),
@@ -126,6 +140,7 @@ class BackupResticIntegrationTests(unittest.TestCase):
             "RESTIC_HOME": str(self.directory),
             "RESTIC_PASSWORD": "test-password",
             "RESTIC_REPOSITORY": str(self.repository),
+            "PATH": f"{self.bin}:{os.environ['PATH']}",
         }
         self.run_restic("init")
 
@@ -181,6 +196,18 @@ class BackupResticIntegrationTests(unittest.TestCase):
         )
         self.assertEqual("document data\n", (restore / "letter.txt").read_text())
         self.assertFalse((restore / "notes").exists())
+
+    def test_explicit_state_root_keeps_notes_and_archive_data(self) -> None:
+        self.environment.update(BACKUP_ROOT=str(self.documents), BACKUP_TAG="mica-state",
+                                BACKUP_HOST="fixture-host")
+        backup = subprocess.run([str(ROOT / "bin/backup")], env=self.environment,
+                                text=True, capture_output=True, timeout=30)
+        self.assertEqual(0, backup.returncode, backup.stderr)
+        restore = self.directory / "restore"
+        self.run_restic("restore", "latest", "--tag", "mica-state", "--host", "fixture-host",
+                        "--target", str(restore))
+        self.assertEqual("excluded\n", (restore / "notes/private.txt").read_text())
+        self.assertEqual("backup data\n", (restore / "backups/nested.txt").read_text())
 
 
 if __name__ == "__main__":

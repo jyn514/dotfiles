@@ -319,42 +319,8 @@ unset LAZYDIR
 	fi
 }
 
-prepare_backup_setup () {
-	BACKUP_COMMAND=$(realpath bin/backup)
-	if ! [ -x "$BACKUP_COMMAND" ]; then
-		echo "backup command not found: $BACKUP_COMMAND" >&2
-		return 1
-	fi
-	if ! exists crontab; then
-		echo "backup setup requires crontab" >&2
-		return 1
-	fi
-}
-
 setup_backup () {
-	echo Setting up daily backup
-	prepare_backup_setup || return
-	TMP_FILE=$(tmp_file cronjob.XXXXXX)
-	# tried piping this straight to `crontab -`
-	# it failed when non-interactive for some reason
-	crontab -l > "$TMP_FILE" 2>/dev/null || true;  # ignore missing crontab
-	cron_entry="0 12 * * * $BACKUP_COMMAND"
-	if ! grep -Fqx "$cron_entry" "$TMP_FILE"; then
-		printf '%s\n' "$cron_entry" >> "$TMP_FILE" || {
-			result=$?
-			rm -f "$TMP_FILE"
-			unset BACKUP_COMMAND TMP_FILE cron_entry
-			return "$result"
-		}
-	fi
-	crontab "$TMP_FILE" || {
-		result=$?
-		rm -f "$TMP_FILE"
-		unset BACKUP_COMMAND TMP_FILE cron_entry
-		return "$result"
-	}
-	rm -f "$TMP_FILE"
-	unset BACKUP_COMMAND TMP_FILE cron_entry
+	python3 tools/backup/install.py
 }
 
 setup_install_global () {
