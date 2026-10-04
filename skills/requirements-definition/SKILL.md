@@ -48,7 +48,7 @@ Do not turn examples, preferences, implementation suggestions, or ambiguous lang
 
 Give each brief goal, constraint, and non-goal a stable source label, such as `BG-1`, `BC-1`, or `BN-1`. Preserve existing source identifiers when they are authoritative and stable.
 
-For each proposed requirement or exclusion, identify the exact source label(s) that justify it: positive requirements trace to a brief goal, constraint, or other explicitly authoritative source; exclusions trace to approved non-goals.
+For each proposed requirement or exclusion, identify the exact source label(s) that justify it: positive requirements trace to a brief goal, constraint, or other explicitly authoritative source; exclusions trace to approved non-goals. Trace eligibility restrictions, rejection conditions, and evidence burdens to the source clauses, not just their labels. Preserve each clause's population, conditions, and phase in definitions and acceptance wording; do not extend a restriction to cases its source permits.
 
 If a material unsupported choice would change a requirement's meaning or acceptance, record it as `NEEDS_PRODUCT_DECISION` in a clearly non-normative review-decisions section. Put optional, non-blocking agent suggestions in a clearly non-normative skim packet; never convert either into an invented requirement.
 
@@ -72,6 +72,8 @@ When a requirement has independently decidable parts, state which parts authorit
 ### 4. Define acceptance evidence
 
 For every requirement, state concise acceptance evidence describing what would demonstrate satisfaction. Evidence must be observable and proportionate; it is not an implementation plan and must not prescribe exact tests.
+
+For each source-permitted explanation mode, state minimum sufficient observable acceptance evidence; do not let “explained,” “justified,” “supported” or “valid” defer eligibility to implementers. Preserve rule derivation versus other permitted explanation modes. If sources leave evidence unsettled and plausible readings admit different cases, record `NEEDS_PRODUCT_DECISION`, not an invented burden. Apply `spec-review`'s Non-narrowing check, including its eligibility-ambiguity procedure.
 
 Use evidence that can disprove the requirement, such as an observable scenario, result, boundary, or recorded operational measure when the source supports one. If evidence cannot be defined without inventing behavior, record the missing decision and affected requirement, if any, in the non-normative review-decisions section; do not settle it in the requirement or acceptance evidence.
 
@@ -100,6 +102,7 @@ Before presenting the draft, verify:
 
 - no requirement lacks authoritative traceability;
 - every brief goal and supported constraint appears in coverage;
+- concrete permitted and rejected cases preserve the brief and explicitly approved product decisions; apply `spec-review`'s Non-narrowing check to flag eligibility ambiguity and unsupported restrictions, not merely check source labels;
 - non-goals are not accidentally restated as scope;
 - material unsupported choices affecting requirements are `NEEDS_PRODUCT_DECISION`; optional suggestions remain in the non-normative packet;
 - defaults, errors, compatibility, trust, performance, and operations are included only where supported;

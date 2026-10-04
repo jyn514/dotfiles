@@ -30,6 +30,18 @@ For a new-tool workflow, distinguish these artifact maturities:
 
 Review upstream/downstream consistency and identify dependent artifacts or evidence invalidated by stale upstream decisions. These distinctions supplement the consistency, necessity, duplication, completeness, rationale, orthogonality, and findings rules below; they do not replace them.
 
+## Non-narrowing check
+
+For requirements and implementation specs, establish upstream permissions before evaluating downstream eligibility. Agreement between requirements and an implementation spec does not establish agreement with the brief.
+
+1. Read the approved brief, incorporated policy, and explicitly approved product decisions first. Record a few otherwise-valid permitted cases, their source populations, and the minimum sufficient evidence for each source-permitted explanation mode. If eligibility differs by origin or scope, include otherwise-similar cases from both populations; checking only the more restricted population does not check the other's permission. Keep uncertainty visible; draft definitions and source labels cannot authorize themselves.
+2. Inspect eligibility, rejection conditions, and evidence burdens in definitions, examples, and acceptance criteria. Trace every stronger condition to an authoritative source and show why it is needed to enforce that source. Preserve the source's population, conditions, and phase: a restriction on new forms must not silently cover inherited forms, nor may a final-adoption condition become a pre-review condition.
+3. Audit “explained,” “justified,” “supported,” and “valid.” Establish observable evidence sufficient for each permitted mode; do not assume every mode requires rule derivation or the same justification.
+4. Where two plausible readings of an eligibility term fit the draft, apply both to the same otherwise-valid upstream case. Different admissions are a material ambiguity, even without a literal contradiction. If the source settles the case, request wording and acceptance evidence that preserve it; otherwise name the product decision needed before approval. Do not default to the stricter reading as “safer.”
+5. Trace each case to the downstream condition that rejects it or leaves acceptance unresolved. Flag unsupported narrowing, including safety or validation framing, while preserving approved limits. Missing authority limits the review; it does not prove a restriction false.
+
+For example, where the source permits non-rule-derived inherited mappings explicitly counted as memorized exceptions, assess an exact retained mapping with verified source identity and a recorded selected-rule derivation gap in an otherwise-valid alternative. Compare whether those facts suffice for the memorized role or whether independent conflict/irregularity evidence is also required. Resolve the difference before approval; “justified exception” alone is undefined. Lack of a rule derivation does not mean lack of an explanation when the source permits memorized mappings as an explanation mode.
+
 ## Consistency
 
 Flag contradictions and conceptual mismatches between sections, examples, and
