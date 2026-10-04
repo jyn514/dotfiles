@@ -185,6 +185,8 @@ Panes share working-tree files, not later messages. Native `/clone`, `/fork`, an
 
 Either pane may close first: the container, relays, and shared-session lock remain
 until the final Pi attachment exits. Ordinary subagents remain owned by their Pi.
+See [startup terminal ownership](#startup-terminal-ownership) before changing
+launcher stdio or process ownership.
 Failed startup leaves existing panes running; worker loss affects all attached
 panes. `/side` is a human command, accepts no arguments, and is unavailable outside
 an interactive sandbox.
@@ -255,6 +257,44 @@ The runtime interval includes the whole session;
 use `CODEX_SANDBOX_TIMING=1 pi --help` for a bounded probe, not a measurement of interactive readiness.
 
 Timestamp inspection runs after exit, has a five-second timeout, and preserves the agent's exit status.
+
+### Startup terminal ownership
+
+Redirecting the detached owner's stdio at fork made BuildKit lose its TUI:
+Lima's `sandbox_runtime.py` build path needs both stdin and stderr to be TTYs
+so SSH requests a guest PTY for automatic progress display. Keeping only stderr
+on the terminal is not sufficient.
+
+Preserve these boundaries when changing launcher output or process ownership:
+
+- During interactive provisioning, `host_pi_owner.detached_frontend` keeps the
+  invoking terminal's original stdin, stdout, and stderr. Do not force progress
+  with `BUILDKIT_PROGRESS` or plain-progress output.
+- Before bootstrap completes, `codex-sandbox.run_agent` starts the guest worker
+  with explicit `DEVNULL` stdin and `OWNER_LOG_FD` stdout/stderr; inheriting the
+  owner's stdio would retain the source pane's terminal.
+- `HostPiOwner.mark_bootstrapped()` redirects owner stdin to `DEVNULL` and
+  stdout/stderr to the private owner log before starting attachment service or
+  delivering the first Pi launch spec. Keep `OWNER_LOG_FD` open until owner exit.
+- Non-TTY startup retains the existing file-log relay. Startup failures remain
+  visible without duplicate diagnostics; interactive output preserves carriage
+  returns rather than passing through the text-file relay.
+- Terminal handling must not change `/side` lifetime: either pane may close
+  first, and shared resources remain until the final Pi attachment exits.
+
+Run the regressions from the repository root:
+
+```sh
+dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p host_pi_owner_test.py
+dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p codex_sandbox_test.py
+```
+
+`StartupTerminalTest` checks real PTY descriptors during build startup,
+post-bootstrap detachment, exact output bytes, startup failure, and non-TTY
+relay behavior. The launcher worker-stdio test checks the production handoff
+with a native child. Owner tests also cover either pane closing first.
+These local tests do not verify actual VM BuildKit rendering; check that on a
+host with the supported runtime before claiming VM acceptance.
 
 ### Measure interactive startup
 

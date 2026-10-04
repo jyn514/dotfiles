@@ -35,6 +35,8 @@ When presenting many results, choose a review surface suited to the batch rather
 
 For Pi UI extensions, verify documented hooks against the installed implementation and reuse Pi's authoritative providers instead of duplicating resource discovery.
 
+Before changing sandbox launcher stdio or process ownership, read [`tools/codex-sandbox/README.md`](tools/codex-sandbox/README.md#startup-terminal-ownership) for terminal boundaries and regression checks.
+
 ## Testing Guidelines
 
 Keep subsystem-owned tests under `tools/<name>/tests/`;
