@@ -99,7 +99,7 @@ After choosing a design and before implementation:
 Use these independently when their target is already selected:
 
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
-- `autonomous-implementation` — execute authorized multi-task implementations while preserving end-to-end acceptance, integration ownership, and resumable state.
+- [autonomous-implementation](autonomous-implementation/SKILL.md) — control explicitly requested autonomous or unattended runs, including milestone order and resumable state; links to [design-for-change](design-for-change/SKILL.md) for implementation/testing and [double-check](double-check/SKILL.md) for evidence standards and completion audits.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `double-check` — audit completed work against requirements and concrete evidence.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
@@ -114,7 +114,7 @@ You do not need the whole chain every time.
 - Small refactor: `boundary-declaration` → `second-user` → implementation.
 - Architecture decision: `design-space-scout` → 3× `independent-plan` → `cross-critic` → `council-review`.
 - Legacy subsystem: start with `pain-axis` before scouting.
-- Long autonomous run: add `ratchet` early and keep extending it as the agent learns new invariants.
+- Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its companion-skill links. Use `ratchet` only for established invariants or diagnosed failures.
 
 ## Important rule
 
