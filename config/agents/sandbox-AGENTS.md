@@ -5,7 +5,7 @@
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
 - `/src` is a read-only view of the host's source directory. The current repository is overlaid writable at its host-relative path beneath `/src` when possible, and the initial working directory names that path; do not modify neighboring repositories.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
-- `/home/codex/.agents/skills` is writable and host-backed. Shared and sandbox instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
+- `/home/codex/.agents/skills` is writable and host-backed, you may edit it. Other shared instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
 - Most `/home/codex/.pi/agent` state is private and disposable. Host sessions are mounted read-only at `/home/codex/.pi/agent/sessions` for searching past conversations. Staged configuration is read-only; edit its tracked source and start a new sandbox session to refresh startup-loaded state.
 - If you see `/home/jyn` in a path, that's a bug in the sandbox. Establish the proper path, and report the bug at the end of your turn.
 
