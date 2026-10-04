@@ -45,8 +45,11 @@ snapshot; this is the default, not an unresolved partial merge.
 
 The command fetches each selected diff's base file with `jj file show`, applies
 the diff to that base, and replaces the corresponding conflict region in the
-destination snapshot. It rejects malformed conflict sections, ambiguous diff
-context, missing bases, duplicate selections, and invalid alternative numbers.
+destination snapshot. When a source label contains a change ID and commit hash,
+it uses the hash because the change ID may be divergent. It rejects malformed
+conflict sections, ambiguous diff context, missing bases, duplicate selections,
+and invalid alternative numbers. A context-free insertion into a nonempty base
+cannot be placed safely; inspect the snapshots and resolve that change manually.
 
 ### Check
 

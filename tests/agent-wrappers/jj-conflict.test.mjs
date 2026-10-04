@@ -80,18 +80,68 @@ test("accepts long markers and CRLF input", () => {
 	assert.equal(parseConflicts(longMarkers).length, 2);
 });
 
-test("rejects ambiguous edits", () => {
+test("apply uses the embedded commit hash when the source change ID is unresolved", async () => {
+	const repo = await mkdtemp(`${tmpdir()}/jj-conflict-source-revision-`);
+	const env = { ...process.env };
+	delete env.JJ_AGENT;
+	delete env.JJ_PROXY_REPO;
+	delete env.JJ_REAL;
+	try {
+		const runJj = (args) => execFileAsync(jj, args, { cwd: repo, env });
+		await runJj(["git", "init", "--colocate"]);
+		await writeFile(`${repo}/file.txt`, "before\nold\nafter\n");
+		await runJj(["commit", "-m", "base"]);
+		const { stdout: baseOutput } = await runJj(["log", "-r", "@", "--no-graph", "-T", "commit_id"]);
+		const baseCommit = baseOutput.trim();
+		const conflict = `<<<<<<< conflict 1 of 1
+%%%%%%% diff from: spumopow ${baseCommit} (rebased revision)
+\\\\\\        to: destination 12345678
+ before
+-old
++new
+ after
++++++++ snapshot 87654321
+other
+>>>>>>> conflict 1 of 1 ends\n`;
+		await writeFile(`${repo}/file.txt`, conflict);
+		const { stdout: resolved } = await execFileAsync(helper, ["apply", `${repo}/file.txt`, "--edit", "1", "--stdout"], {
+			cwd: repo,
+			env: { ...env, JJ_BIN: jj },
+		});
+		assert.equal(resolved, "before\nnew\nafter\n");
+	} finally {
+		await rm(repo, { recursive: true, force: true });
+	}
+});
+
+test("rejects repeated diff context", () => {
 	const ambiguous = `<<<<<<< conflict 1 of 1
 +++++++ base
 same
+old
 same
+old
 %%%%%%% diff from: base
 \\\\\\        to: side
  same
 -old
 +new
 >>>>>>> conflict 1 of 1 ends\n`;
-	assert.throws(() => compose(ambiguous, [1], () => ["same", "same"]), /does not apply/);
+	assert.throws(() => compose(ambiguous, [1], () => ["same", "old", "same", "old"]), /context occurs more than once/);
+});
+
+test("rejects context-free insertions into nonempty bases with manual-resolution guidance", () => {
+	const contextFree = `<<<<<<< conflict 1 of 1
++++++++ snapshot
+base
+%%%%%%% diff from: source 74526c22
+\\\\\\        to: side
++added
+>>>>>>> conflict 1 of 1 ends\n`;
+	assert.throws(
+		() => compose(contextFree, [1], () => ["before", "after"]),
+		/no context to locate its insertion.*resolve it manually/,
+	);
 });
 
 test("selects a specific alternative from a multi-sided conflict", () => {

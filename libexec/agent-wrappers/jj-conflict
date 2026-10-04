@@ -95,15 +95,26 @@ function applyDiff(base, diff, edit) {
 			throw new Error(`Edit ${edit} contains an unrecognised diff line: ${line}`);
 		}
 	}
+	if (oldLines.length === 0 && base.length > 0) {
+		throw new Error(`Edit ${edit} has no context to locate its insertion in the base snapshot; resolve it manually against the inspected snapshots.`);
+	}
 	let at = -1;
 	for (let index = 0; index <= base.length - oldLines.length; index++) {
 		if (oldLines.every((line, offset) => base[index + offset] === line)) {
-			if (at !== -1) throw new Error(`Edit ${edit} is ambiguous: its context occurs more than once`);
+			if (at !== -1) throw new Error(`Edit ${edit} is ambiguous: its context occurs more than once; resolve it manually against the inspected snapshots.`);
 			at = index;
 		}
 	}
 	if (at === -1) throw new Error(`Edit ${edit} does not apply to its base snapshot`);
 	return newLines;
+}
+
+function sourceRevision(source) {
+	const firstSource = source.trim().split(",", 1)[0].trim();
+	const [changeId, commitId] = firstSource.split(/\s+/, 2);
+	if (commitId && /^[0-9a-f]{8,40}$/i.test(commitId)) return commitId;
+	if (/^[0-9a-f]{8,40}$/i.test(changeId)) return changeId;
+	return changeId;
 }
 
 function selectionMap(selectedEdits, conflicts) {
@@ -156,13 +167,13 @@ async function composeFile(path, text, selectedEdits) {
 		const selectedDiff = selections.get(conflict.edit);
 		if (selectedDiff === undefined) continue;
 		const source = conflict.diffs[selectedDiff - 1].source;
-		const revision = source.trim().split(/\s+/, 1)[0];
+		const revision = sourceRevision(source);
 		if (!baseCache.has(revision)) {
 			const { stdout } = await execFileAsync(process.env.JJ_BIN ?? "jj", ["file", "show", "--revision", revision, "--", path]);
 			baseCache.set(revision, stdout.endsWith("\n") ? stdout.slice(0, -1).split("\n") : stdout.split("\n"));
 		}
 	}
-	return compose(text, selectedEdits, (source) => baseCache.get(source.trim().split(/\s+/, 1)[0]));
+	return compose(text, selectedEdits, (source) => baseCache.get(sourceRevision(source)));
 }
 
 function usage() {
