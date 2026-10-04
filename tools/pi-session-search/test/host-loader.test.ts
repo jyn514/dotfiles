@@ -17,6 +17,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
+function parameterDescription(parameter: object): string {
+	assert.ok("description" in parameter);
+	assert.equal(typeof parameter.description, "string");
+	return String(parameter.description);
+}
 
 it("loads the package through Pi's real TypeScript extension loader", async () => {
 	const sandbox = mkdtempSync(join(tmpdir(), "pi-session-host-loader-"));
@@ -30,6 +37,30 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 		const extension = result.extensions[0];
 		assert.deepEqual([...extension.tools.keys()].sort(), ["read_session", "search_sessions"]);
 		assert.deepEqual([...extension.commands.keys()], ["find-sessions"]);
+
+		const search = extension.tools.get("search_sessions")?.definition;
+		const read = extension.tools.get("read_session")?.definition;
+		assert.ok(search);
+		assert.ok(read);
+		const searchGuidance = (search.promptGuidelines ?? []).join("\n");
+		const readGuidance = (read.promptGuidelines ?? []).join("\n");
+		assert.match(search.description, /prior discussions or decisions/);
+		assert.match(searchGuidance, /focused query.*cwd/);
+		assert.match(searchGuidance, /candidates, not complete evidence/);
+		assert.match(searchGuidance, /read promising hits with read_session/);
+		assert.match(searchGuidance, /deduplicate.*same session or task/);
+		assert.match(readGuidance, /sessionFile unchanged.*modest maxMessages/);
+		assert.ok(Type.IsObject(search.parameters));
+		assert.ok(Type.IsObject(read.parameters));
+		assert.match(parameterDescription(search.parameters.properties.query), /substring.*\/regex\/flags/);
+		assert.match(parameterDescription(search.parameters.properties.includeToolCalls), /exact tool name or distinctive argument/);
+		assert.match(parameterDescription(read.parameters.properties.aroundTimestamp), /search hit's timestamp.*ISO/);
+		// Guidelines are rendered without tool-name prefixes. Keep each rule
+		// identifiable, and leave parameter syntax in the schema rather than
+		// restoring the former 790-character standing guidance.
+		const guidelines = [...(search.promptGuidelines ?? []), ...(read.promptGuidelines ?? [])];
+		assert.ok(guidelines.every((rule) => /search_sessions|read_session/.test(rule)));
+		assert.ok(guidelines.join("\n").length <= 400, "Keep standing guidance compact; document syntax in parameters");
 	} finally {
 		rmSync(sandbox, { recursive: true, force: true });
 	}

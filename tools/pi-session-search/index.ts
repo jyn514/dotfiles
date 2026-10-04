@@ -648,13 +648,11 @@ export default function (pi: ExtensionAPI) {
 		name: "search_sessions",
 		label: "Search prior pi sessions",
 		description:
-			"Search past pi session transcripts (~/.pi/agent/sessions) for a topic. Use when the user asks 'have we discussed X before?', 'what did we decide about Y?', or wants to find a prior session without resuming it. Read-only.",
+			"Search prior Pi session transcripts (~/.pi/agent/sessions) without resuming them. Use for prior discussions or decisions. Read-only.",
 		promptSnippet: "Find prior pi sessions matching a query.",
 		promptGuidelines: [
-			"Use search_sessions when the user references prior conversations or asks if a topic was discussed before.",
-			"Pass a focused `query` (substring or `/regex/flags`). Narrow with `cwd` if you know which project.",
-			"When investigating past tool usage, search for the exact tool name or distinctive argument with `includeToolCalls: true`.",
-			"Treat search hits as candidates, not complete evidence. For promising hits, read surrounding context using `read_session` on the returned `sessionFile` (and optionally `aroundTimestamp`) and deduplicate repeated hits from the same session or coherent task.",
+			"Use search_sessions with a focused query; narrow by cwd when the project is known.",
+			"Treat search_sessions hits as candidates, not complete evidence: read promising hits with read_session and deduplicate hits from the same session or task.",
 		],
 		parameters: Type.Object({
 			query: Type.String({
@@ -678,7 +676,7 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			includeToolCalls: Type.Optional(
-				Type.Boolean({ description: "Also search assistant tool-call names/arguments. Use with a focused query when investigating past tool usage. Default false." }),
+				Type.Boolean({ description: "Also search assistant tool-call names/arguments; for past tool usage, query the exact tool name or distinctive argument. Default false." }),
 			),
 			maxResults: Type.Optional(
 				Type.Integer({
@@ -748,19 +746,17 @@ export default function (pi: ExtensionAPI) {
 		name: "read_session",
 		label: "Read a window of a prior pi session",
 		description:
-			"Read a slice of a prior pi session transcript. Use after search_sessions returns a promising hit to pull surrounding context. Read-only.",
+			"Read a window of a prior Pi session transcript. Read-only.",
 		promptSnippet: "Read a window from a prior pi session JSONL file.",
 		promptGuidelines: [
-			"Pass `sessionFile` exactly as returned by search_sessions.",
-			"If you have a hit's `timestamp`, pass it as `aroundTimestamp` to center the window on it.",
-			"Keep `maxMessages` modest — these transcripts can be huge.",
+			"Use read_session with the returned sessionFile unchanged and a modest maxMessages.",
 		],
 		parameters: Type.Object({
 			sessionFile: Type.String({
 				description: "Path to a session .jsonl file. Either absolute, or relative to the configured sessions root (as returned by search_sessions).",
 			}),
 			aroundTimestamp: Type.Optional(
-				Type.String({ description: "ISO timestamp to center the window on (e.g. a hit's timestamp)." }),
+				Type.String({ description: "Center the window on a search hit's timestamp (ISO date/time)." }),
 			),
 			contextMessages: Type.Optional(
 				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Messages of context on each side of the target. Default 6." }),

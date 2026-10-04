@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduce standing tool guidance by keeping query syntax and timestamp centering
+  in parameter descriptions. Preserve focused searches, tool-call search advice,
+  contextual reads, and deduplication; parameters, defaults, and runtime behavior
+  are unchanged.
 - Migrate the host peer and type imports to `@earendil-works/pi-coding-agent`
   1.0.2. Node.js >=22.19.0 is now required, matching that host's manifest.
   Users of the deprecated `@mariozechner/pi-coding-agent` must migrate their
