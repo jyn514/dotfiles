@@ -299,6 +299,18 @@ class DockerHost(Host):
         if self.runtime_epoch(record) != epoch:
             raise ValueError('Docker restarted during doctor; retry the audit')
 
+    def source_drift(self, record):
+        current = {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                   for name, path in self.source_files().items()}
+        current['network-policy.json'] = hashlib.sha256(policy_bytes()).hexdigest()
+        installed = record['files']
+        return {
+            'added': sorted(current.keys() - installed.keys()),
+            'changed': sorted(name for name in current.keys() & installed.keys()
+                              if current[name] != installed[name]),
+            'removed': sorted(installed.keys() - current.keys()),
+        }
+
     def start(self):
         record = self.record()
         if record['phase'] != 'ready':
@@ -394,7 +406,15 @@ def main():
         elif args.operation == 'doctor':
             record = host.record()
             host.doctor(record)
-            record = {**record, 'reclamation': host.reclaim_status(record)}
+            drift = host.source_drift(record)
+            record = {**record, 'reclamation': host.reclaim_status(record), 'source_drift': drift}
+            if any(drift.values()):
+                changes = '; '.join(f"{kind}: {', '.join(names)}" for kind, names in drift.items() if names)
+                upgrade = shlex.join([sys.executable, str(Path(__file__).resolve()),
+                                      '--state', str(host.state), 'upgrade'])
+                print(f'Installed Docker configuration passed; current source differs ({changes}). '
+                      f'Use {upgrade} to apply it; upgrade restarts shared Docker '
+                      'and stops running containers.', file=sys.stderr)
         elif args.operation == 'upgrade':
             record = host.upgrade()
         elif args.operation == 'reclaim':

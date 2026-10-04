@@ -183,6 +183,16 @@ it reports failures without repairing them. Out-of-band configuration changes
 are an operator responsibility: run `doctor` after making them. `status` and
 `start` check readiness without the full audit.
 
+`doctor` also compares the recorded provisioning snapshot with current setup
+sources, including the generated network policy. Its JSON result adds
+`source_drift`, with sorted `added`, `changed`, and `removed` filename lists.
+Empty lists mean the source matches. A valid older installation still exits
+successfully, but source differences produce a stderr warning naming the files
+and the `upgrade` recovery command. Source drift does not mean the installed
+firewall is damaged or that a newer fix is already active. Only an explicit
+`upgrade` applies source changes; it restarts shared Docker and stops running
+containers. `doctor` never updates the snapshot or restarts services.
+
 Service-readiness queries reuse Lima's generated SSH configuration directly.
 Guest commands also use that SSH configuration, retaining Lima's login shell
 and `/tmp` working directory. Credential transfers remain on stdin.

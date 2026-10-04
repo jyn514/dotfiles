@@ -1,9 +1,11 @@
 """Rootless Docker identity, command preservation, and firewall regressions."""
 
 import importlib.util
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -22,6 +24,7 @@ sys.path.insert(0, str(ROOT / 'lima'))
 from docker_runtime import Docker
 from image_resolver import ResolverError, prepare_launch_images
 from lima.docker_host import DockerHost
+from lima import docker_host
 from lima.docker import nftables
 from sandbox_runtime import Image, RuntimeError
 
@@ -134,6 +137,59 @@ class DockerRuntimeTest(unittest.TestCase):
         host.runtime_epoch.side_effect = ['a' * 32, 'b' * 32]
         with self.assertRaisesRegex(ValueError, 'restarted during doctor'):
             host.doctor({})
+
+    def test_doctor_reports_unapplied_source_without_repairing_valid_installation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            host = DockerHost(Path(temporary) / 'state')
+            firewall = Path(temporary) / 'network.nft'
+            firewall.write_text('installed firewall')
+            helper = Path(temporary) / 'helper.py'
+            helper.write_text('installed helper')
+            sources = {'network.nft': firewall, 'helper.py': helper}
+            host.source_files = lambda: sources
+            files = {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                     for name, path in sources.items()}
+            files['network-policy.json'] = hashlib.sha256(docker_host.policy_bytes()).hexdigest()
+            record = {'files': files}
+            original = json.dumps(record, sort_keys=True)
+            host.record = Mock(return_value=record)
+            host.locked = lambda: nullcontext()
+            host.runtime_epoch = Mock(return_value='a' * 32)
+            host.verify_virtiofs = Mock()
+            host.verify = Mock()
+            host.reclaim_status = Mock(return_value={})
+            host.install_snapshot = Mock(side_effect=AssertionError('doctor installed files'))
+            host.make_snapshot = Mock(side_effect=AssertionError('doctor staged an upgrade'))
+
+            def run():
+                output, diagnostics = io.StringIO(), io.StringIO()
+                with patch.object(docker_host, 'DockerHost', return_value=host), \
+                        patch.object(sys, 'argv', ['docker_host.py', 'doctor']), \
+                        redirect_stdout(output), redirect_stderr(diagnostics):
+                    docker_host.main()
+                return json.loads(output.getvalue()), diagnostics.getvalue()
+
+            result, warning = run()
+            self.assertEqual(result['source_drift'], {'added': [], 'changed': [], 'removed': []})
+            self.assertEqual(warning, '')
+            firewall.write_text('published-port reply fix')
+            sources.pop('helper.py')
+            sources['replacement.py'] = helper
+            with patch.object(docker_host, 'policy_bytes', return_value=b'updated generated policy'):
+                result, warning = run()
+            self.assertEqual(result['source_drift'], {
+                'added': ['replacement.py'], 'changed': ['network-policy.json', 'network.nft'],
+                'removed': ['helper.py']})
+            self.assertIn('Installed Docker configuration passed', warning)
+            self.assertIn('network.nft', warning)
+            self.assertIn('--state ' + str(host.state), warning)
+            self.assertIn('upgrade restarts shared Docker', warning)
+            self.assertEqual(json.dumps(record, sort_keys=True), original)
+            host.install_snapshot.assert_not_called()
+            host.make_snapshot.assert_not_called()
+            host.verify.side_effect = ValueError('installed policy drift')
+            with self.assertRaisesRegex(ValueError, 'installed policy drift'):
+                run()
 
     def test_linux_virtiofs_registration_and_bind_check_use_mapped_identity(self):
         source = ROOT / 'lima/docker/uidmapped-virtiofsd.sh'
