@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pin TypeScript and Node.js type declarations as development dependencies so
+  `npm run typecheck` works without a host-installed compiler.
 - Stream session records instead of loading entire transcripts.
 - Keep `PI_SESSION_SEARCH_MAX_BYTES`, but redefine it as the per-record
   raw-byte cap (default 5 MiB, 5,242,880 bytes, excluding the LF delimiter).

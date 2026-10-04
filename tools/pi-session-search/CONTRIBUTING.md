@@ -16,6 +16,19 @@ Start by filing an issue. The existing committers on this project work to reach
 consensus around project direction and issue solutions within issue threads
 (when appropriate).
 
+## Development checks
+
+Run from the repository root:
+
+```bash
+npm install
+npm run typecheck
+npm test
+```
+
+The pinned development dependencies provide the local TypeScript compiler and
+Node.js type declarations. No global `tsc` installation is required.
+
 ## Contributor License Agreement
 
 All third-party contributions to this project must be accompanied by a signed contributor
