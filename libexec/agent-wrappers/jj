@@ -35,12 +35,94 @@ is_jj_write() {
   esac
 }
 
+# Discover stripped-environment sandbox sockets before asking the read-only
+# router. Socket presence enables routing; it does not select the backend.
+if [ -z "${SANDBOX_PROXY_DIR:-}" ]; then
+  sandbox_proxy_default=${SANDBOX_PROXY_DEFAULT_DIR:-/run/sandbox-proxies}
+  if [ -S "$sandbox_proxy_default/jj/socket" ]; then
+    SANDBOX_PROXY_DIR=$sandbox_proxy_default
+    export SANDBOX_PROXY_DIR
+  fi
+fi
+
+private_split=false
+if [ "${1:-}" = --agent-split ]; then
+  if [ "$#" -ne 4 ]; then
+    printf '%s\n' 'jj wrapper: --agent-split requires PATCH MESSAGE REVISION' >&2
+    exit 125
+  fi
+  private_split=true
+fi
+
+# The image supplies the helper role. Source-checkout invocation also works;
+# an older standalone host wrapper retains its native behavior without it.
+route_helper=${JJ_ROUTE_HELPER:-}
+if [ -z "$route_helper" ] && [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
+  route_helper=/tools/jj-proxy/route.py
+fi
+if [ -n "$route_helper" ] && [ ! -f "$route_helper" ] && [ -z "${JJ_ROUTE_HELPER:-}" ]; then
+  source_path=$0
+  while [ -L "$source_path" ]; do
+    link=$(readlink "$source_path") || exit 125
+    case "$link" in
+      /*) source_path=$link ;;
+      *) source_path=$(dirname -- "$source_path")/$link ;;
+    esac
+  done
+  source_dir=$(CDPATH='' cd -- "$(dirname -- "$source_path")" && pwd -P) || exit 125
+  route_helper=$source_dir/../../tools/jj-proxy/route.py
+fi
+
+backend=native
+subcommand=${1:-}
+hooks=true
+hook_target=
+if [ -n "$route_helper" ] && [ -f "$route_helper" ]; then
+  if [ "$private_split" = true ]; then
+    route=$(python3 "$route_helper" -- split) || exit "$?"
+  else
+    route=$(python3 "$route_helper" -- "$@") || exit "$?"
+  fi
+  if ! printf '%s\n' "$route" | jq -se '
+      length == 1 and (.[0] |
+        type == "object"
+        and (.backend == "native" or .backend == "proxy")
+        and (.workspace == null or (.workspace | type == "string" and startswith("/")))
+        and (.destination == null or (.destination | type == "string" and startswith("/")))
+        and (.command | type == "array" and all(.[]; type == "string"))
+        and (.hooks | type) == "boolean")
+    ' >/dev/null 2>&1; then
+    printf '%s\n' 'jj wrapper: invalid route result; repository left unchanged' >&2
+    exit 125
+  fi
+  backend=$(printf '%s\n' "$route" | jq -r .backend) || exit 125
+  subcommand=$(printf '%s\n' "$route" | jq -r '.command[0] // ""') || exit 125
+  hooks=$(printf '%s\n' "$route" | jq -r .hooks) || exit 125
+  hook_target=$(printf '%s\n' "$route" | jq -r '.destination // .workspace // ""') || exit 125
+elif [ -n "${SANDBOX_PROXY_DIR:-}" ] || [ -n "${JJ_ROUTE_HELPER:-}" ]; then
+  printf '%s\n' "jj wrapper: route helper is missing: $route_helper; rebuild the agent image" >&2
+  exit 125
+else
+  hook_target=$(pwd -P) || exit 125
+  # A standalone host shim has no router. Skip unresolved selector hooks rather
+  # than stamp a different workspace; ordinary host execution needs no Python.
+  for arg in "$@"; do
+    case "$arg" in
+      --ignore-working-copy|--at-op*|-@*|--help|-h|--version|-V|-R*|--repository*) hooks=false ;;
+    esac
+  done
+fi
+
+if [ "$private_split" = true ] && [ "$backend" != proxy ]; then
+  printf '%s\n' 'jj wrapper: --agent-split is proxy-only; use ordinary jj split in a local repository' >&2
+  exit 125
+fi
+
 # Identity by agent, auto-detected from each runner's own env. Resolve it before
 # forwarding sandbox calls so the trusted proxy can stamp the same identity.
 agent=${JJ_AGENT:-${CLAUDECODE:+claude}}
 agent=${agent:-${PI_CODING_AGENT:+pi}}
 agent=${agent:-${CODEX_THREAD_ID:+codex}}
-subcommand=${1:-}
 case "$agent" in
   claude) JJ_USER='Claude Opus 4.8'; JJ_EMAIL='lifer@jyn.dev' ;;
   pi)
@@ -73,15 +155,7 @@ case "$agent" in
     esac
 esac
 
-if [ -z "${SANDBOX_PROXY_DIR:-}" ]; then
-  sandbox_proxy_default=${SANDBOX_PROXY_DEFAULT_DIR:-/run/sandbox-proxies}
-  if [ -S "$sandbox_proxy_default/jj/socket" ]; then
-    SANDBOX_PROXY_DIR=$sandbox_proxy_default
-    export SANDBOX_PROXY_DIR
-  fi
-fi
-
-if [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
+if [ "$backend" = proxy ]; then
   export JJ_USER JJ_EMAIL
   exec /libexec/agent-wrappers/jj-proxy-client "$@"
 fi
@@ -147,24 +221,38 @@ if [ -n "${JJ_USER:-}" ]; then
   # `commit` makes one, `split` makes two. Reset the working-copy author to our
   # identity first, so recorded commits have author == committer. Best-effort:
   # never block the command if metaedit has nothing to do.
-  case "$subcommand" in
-    commit|split)
-      "$real_jj" --config "user.name=$JJ_USER" --config "user.email=$JJ_EMAIL" \
-        metaedit --update-author -r @ --quiet || true
-      ;;
-  esac
+  if [ "$hooks" = true ] && [ -n "$hook_target" ]; then
+    case "$subcommand" in
+      commit|split)
+        env "JJ_USER=$JJ_USER" "JJ_EMAIL=$JJ_EMAIL" "$real_jj" \
+          --repository "$hook_target" metaedit --update-author -r @ --quiet || true
+        ;;
+    esac
+  fi
 
-  set -- --config "user.name=$JJ_USER" --config "user.email=$JJ_EMAIL" "$@"
 fi
 
 if should_force_plain_diff "$subcommand" && ! has_diff_formatter_config "$@"; then
   set -- --config ui.diff-formatter=:git "$@"
 fi
 
-if "$real_jj" "$@"; then
-  if [ -n "${JJ_USER:-}" ]; then
-    # Intentionally use the real jj config here, not the agent identity.
-    "$real_jj" metaedit --update-author -r @ --quiet || true
+# JJ drops leading --config values if a subcommand has its own --config. Use
+# native identity environment only for this invocation, not human-author cleanup.
+if [ -n "${JJ_USER:-}" ]; then
+  set -- env "JJ_USER=$JJ_USER" "JJ_EMAIL=$JJ_EMAIL" "$real_jj" "$@"
+else
+  set -- "$real_jj" "$@"
+fi
+
+if "$@"; then
+  if [ -n "${JJ_USER:-}" ] && [ "$hooks" = true ] && [ -n "$hook_target" ]; then
+    # Target bootstrap attribution at its destination, not the invoking repo.
+    # Intentionally use the real jj config here, not the agent identity,
+    # including when JJ_USER/JJ_EMAIL arrived as exported environment values.
+    (
+      unset JJ_USER JJ_EMAIL
+      "$real_jj" --repository "$hook_target" metaedit --update-author -r @ --quiet
+    ) || true
   fi
 else
   exit "$?"

@@ -128,10 +128,12 @@ ENV EDITOR=vi VISUAL=vi
 RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace
 
 # Reuse noninteractive dotfile semantics without personal shell hooks.
+ENV JJ_CONFIG=${HOME}/.config/jj/config.toml
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/editorconfig ${HOME}/.editorconfig
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/inputrc ${HOME}/.config/readline/inputrc
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/gitconfig ${HOME}/.config/git/config
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client /tools/jj-proxy/client
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/jj.toml ${JJ_CONFIG}
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client ./tools/jj-proxy/route.py /tools/jj-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/zulip-proxy/client ./tools/zulip-proxy/protocol.json /tools/zulip-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
@@ -166,6 +168,7 @@ ENV BB_SOURCE_ROOT=/
 ENV CONTAINER_CLI_REAL_DIR=/opt/agent-tools/libexec
 ENV JAVA_REAL=/opt/agent-tools/libexec/java
 ENV JJ_REAL=/opt/agent-tools/libexec/jj
+ENV JJ_ROUTE_HELPER=/tools/jj-proxy/route.py
 ENV RG_REAL=/opt/agent-tools/libexec/rg
 ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:/opt/agent-tools/bin:/opt/agent-pi/bin:${PATH}
 

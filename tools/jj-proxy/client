@@ -43,7 +43,7 @@ def main() -> int:
         try:
             cwd = str(current.relative_to(repository))
         except ValueError as error:
-            raise RuntimeError("current directory is outside the protected repository") from error
+            raise RuntimeError("current directory is outside the protected repository; run from the mounted workspace") from error
     argv = sys.argv[1:]
     request = {"version": 1, "mode": "inspect" if inspect else "mutate", "cwd": cwd, "argv": argv}
     if argv[:1] == ["--agent-split"]:

@@ -9,7 +9,8 @@
 
 Allow an LLM-controlled Codex container to edit a repository and create or
 reorganize Jujutsu commits without giving arbitrary processes direct write
-access to `.jj` or `.git`.
+access to host-backed `.jj` or `.git`. Independent guest repositories retain
+native Jujutsu operation with the existing container permissions.
 
 The protection is against accidental or adversarial filesystem operations such
 as `rm -rf .git .jj`. It is not intended to prevent the agent from making bad
@@ -24,7 +25,7 @@ into the container.
 
 The agent must not be able to:
 
-- write, rename, replace, or remove repository metadata directly;
+- write, rename, replace, or remove protected host repository metadata directly;
 - choose the executable run by the proxy;
 - escape through a shell, alias, editor, pager, diff tool, signing program, or
   untrusted Jujutsu configuration;
@@ -57,7 +58,7 @@ outer Docker or Podman daemon
     +-- .git overlaid by a read-only bind mount
     +-- .jj overlaid by a read-only bind mount
     +-- proxy socket volume mounted read-only
-    `-- jj wrapper forwards argv to the proxy
+    `-- jj wrapper routes host metadata to proxy, independent guest repos to native
 ```
 
 The proxy is outside the LLM-controlled container but need not run directly on
@@ -204,11 +205,38 @@ admission; the selected repository remains the sole mutation target.
 
 == Wrapper
 
-Replace the current `jj` shim's final invocation with a small client that sends
-the current working directory and argument vector to the socket. Preserve its
-existing agent identity and plain-diff behavior either by translating those
-choices into request fields or, preferably, by moving identity selection into
-the trusted proxy.
+The wrapper uses one read-only router shared with agent-split. The router
+resolves repository selectors, symlinks, JJ workspace/store pointers, Git
+indirections, and effective mounts. Targets backed by the existing host source
+views or protected metadata use the proxy; independent guest repositories use
+native JJ, including private tmpfs and guest-created volumes. Unknown mount
+provenance alone does not deny native invocation. Kernel mounts and server
+policy, not routing, enforce authorization.
+
+Bootstrap commands route by destination and any shared backing, not the
+invoking repository. Array aliases are read as inert data from the same native
+global configuration installed from `config/jj.toml`; execution retains the
+original argv and cwd. A read-only clone source does not make the destination
+host-backed. A guest workspace sharing a protected store routes to the proxy,
+but its guest-only cwd remains outside the server namespace and is rejected
+without changing cwd or enlarging admission.
+
+The shared router returns checked JSON containing backend, physical workspace,
+bootstrap destination, expanded command prefix, and whether native author hooks
+may run. It never probes JJ or Git, executes configuration, or writes metadata.
+Native attribution hooks target only the selected workspace or newly created
+destination and skip help/version, historical-operation, and
+`--ignore-working-copy` modes. Identity and plain noninteractive diff handling
+remain wrapper responsibilities; proxy serialization and policy are unchanged.
+
+The private `jj --agent-split PATCH MESSAGE REVISION` operation is recognized
+before ordinary argument parsing. Its three operands are opaque. The wrapper
+requires exactly four arguments, queries the workspace route, and resolves the
+ordinary runtime identity before forwarding a proxy request. A native route
+rejects this operation before hooks or socket access. Agent-split uses ordinary
+native split/editor execution for local workspaces and retains operation capture
+and recovery even while a proxy is mounted; proxy failures never trigger native
+recovery.
 
 === Runtime agent identity
 
@@ -246,13 +274,13 @@ warning and use the explicit unknown-model identity policy. It must not
 silently claim that the configured default is active. Non-Pi agents retain
 their existing identity sources.
 
-All Jujutsu commands go through the proxy. Mutation-mode commands may snapshot
-the working copy and write metadata. Inspection-mode commands must add
+Commands targeting host-backed metadata go through the proxy. Mutation-mode
+commands may snapshot the working copy and write metadata. Inspection-mode commands must add
 `--ignore-working-copy` and use read-only metadata mounts; the real binary
 cannot otherwise be trusted to preserve the read-only boundary.
 
-If the socket is unavailable, the wrapper fails closed with a concise error. It
-must not fall back to a local real `jj` binary.
+If a proxy route's socket is unavailable, the client fails closed with a concise
+error. It must not retry using native JJ. Local routes do not access the socket.
 
 == Command policy
 
@@ -384,8 +412,8 @@ sessions.
 + Add the Pi runtime identity channel and exercise a model switch before and
   after `jj status` and `jj commit`; verify that each commit uses the active
   model rather than the configured default.
-+ Move the existing wrapper's identity behavior behind the proxy and remove any
-  local-real-`jj` fallback.
++ Preserve wrapper identity through proxy requests and prohibit native retry
+  after proxy failure. Route independent guest repositories natively.
 + Exercise normal status, diff, commit, split, rebase, undo, and Git fetch flows.
 + Attempt direct metadata writes as the ordinary user and through `sudo`; both
   must fail while proxy commits succeed.
@@ -401,7 +429,16 @@ sessions.
 - Direct writes, renames, symlink replacement, and writes through `/proc` or an
   alternate path to the same mounts fail.
 - Metadata cannot be changed through a hard-link alias in any writable mount.
-- Absolute invocation of the real `jj` inside Codex cannot mutate metadata.
+- Absolute invocation of the real `jj` inside Codex cannot mutate protected
+  host metadata; independent guest repositories remain writable.
+- Rootfs, private tmpfs, and guest-volume repositories support native commits
+  and agent-split recovery with the proxy mounted.
+- Bootstrap aliases use the installed native configuration and route by
+  destination even from a protected checkout. Target-scoped attribution leaves
+  other workspaces unchanged; no-working-copy modes suppress both hooks.
+- Private split operands remain opaque; native routes reject the private
+  operation without hooks or socket access, and protected splits preserve the
+  active agent identity.
 - Binaries and scripts in the proxy's working-tree mount cannot execute, and
   trusted interpreters or tools cannot be selected to interpret working-tree
   content.

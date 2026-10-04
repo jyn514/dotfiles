@@ -5,6 +5,7 @@ import socket
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -13,6 +14,14 @@ WRAPPER = ROOT / "libexec/agent-wrappers/jj"
 
 
 class JjWrapperTest(unittest.TestCase):
+    def setUp(self) -> None:
+        helper = patch.dict(os.environ, {
+            "JJ_ROUTE_HELPER": str(ROOT / "tools/jj-proxy/route.py"),
+            "JJ_PROXY_REPO": str(ROOT),
+        })
+        helper.start()
+        self.addCleanup(helper.stop)
+
     def test_uses_configured_real_binary_outside_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
@@ -72,6 +73,27 @@ class ImageInputsTest(unittest.TestCase):
                 selected = set(map(str, sources()))
             self.assertTrue(set(runtime) <= selected)
             self.assertFalse(set(noise) & selected)
+
+    def test_jj_router_and_native_configuration_invalidate_agent_image(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('tools/codex-sandbox/image/Dockerfile',
+                         'tools/jj-proxy/route.py', 'config/jj.toml'):
+                destination = root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(['cp', str(ROOT / name), str(destination)], check=True)
+                subprocess.run(['cmp', str(ROOT / name), str(destination)], check=True)
+            sources = set(map(str, owned['agent_sources'](root)))
+            self.assertIn('tools/jj-proxy/route.py', sources)
+            self.assertIn('config/jj.toml', sources)
+            base = SimpleNamespace(content='base', config='config', rootfs='rootfs')
+            key = lambda: owned['agent_cache_key'](1000, 1000, 'linux/amd64', base, root=root)
+            for name in ('tools/jj-proxy/route.py', 'config/jj.toml'):
+                before = key()
+                with (root / name).open('a') as output:
+                    output.write('\n# changed authoritative input\n')
+                self.assertNotEqual(before, key(), name)
 
     def test_zulip_protocol_is_captured_and_changes_image_identity(self):
         owned_images = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))

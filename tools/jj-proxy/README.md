@@ -25,8 +25,8 @@ instructions when adding image sources.
 
 The sandbox launcher must validate all metadata indirections, create the private socket volume, mount the repository and metadata as specified by the design, set `JJ_PROXY_REPO`, `JJ_PROXY_GIT_DIR`, `JJ_PROXY_COMMON_DIR`, and `JJ_PROXY_JJ_REPO`, and wait for readiness before starting the agent. A manually started proxy without those mounts is not protected.
 
-The agent-side `jj` wrapper needs `SANDBOX_PROXY_DIR`; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
-From another Jujutsu repository under `/src`, the wrapper sends inspection requests.
+The agent-side `jj` wrapper discovers the mounted proxy socket if `SANDBOX_PROXY_DIR` is absent; `JJ_PROXY_REPO` defaults to `/src/work`. `JJ_USER` and `JJ_EMAIL` may set a validated identity.
+For another host-backed Jujutsu repository under `/src`, the wrapper sends inspection requests.
 These use `--ignore-working-copy` and a separate read-only Landlock policy;
 commands that change repository state are rejected. Inspection of linked workspaces
 requires their metadata to be visible in the proxy container.
@@ -38,6 +38,23 @@ Use `jj -R /src/flower/paracress status` to inspect another repository without
 changing directories. Relative `-R` paths resolve from the invoking directory;
 `--repository` is equivalent. A selector outside `/src` is refused, and mutation
 access is granted only to the selected workspace.
+
+## Independent container-local repositories
+
+Ordinary `jj` uses native JJ for independent guest repositories, including `/tmp`, private tmpfs, and guest-created volumes, even with the proxy mounted. The read-only router resolves repository selectors, symlinks, linked JJ stores, and Git indirections against effective mounts. A `/tmp` workspace sharing a host store still needs the proxy; its guest-only cwd is not admitted by the server. Run protected commands from the mounted workspace instead. The wrapper never changes cwd or retries a failed proxy command natively.
+
+Bootstrap routing follows the destination rather than the invoking repository:
+
+```sh
+jj init /tmp/replay
+jj -R /tmp/replay commit -m 'Record local work'
+```
+
+The image installs `config/jj.toml` as native global configuration. The router reads its array aliases as data, so `init` and `clone` use the same definitions as native JJ. Native tools and credentials remain guest-only; this configuration is not the trusted proxy's `jj.toml`.
+
+`JJ_ROUTE_HELPER` identifies the packaged read-only router. Its internal CLI is `python3 route.py -- <jj-arguments>` from the actual invoking cwd; successful stdout is one JSON object with `backend`, `workspace`, `destination`, expanded `command` prefix, and `hooks`. Paths are physical absolute paths or null. Nonzero status invalidates all output; diagnostics use stderr. The wrapper owns identity and execution, while agent-split consumes the same backend/workspace result for recovery. This internal interface deploys with both consumers.
+
+The existing private `jj --agent-split PATCH MESSAGE REVISION` operation is proxy-only. The wrapper checks its four opaque arguments before ordinary parsing, selects the workspace backend, resolves runtime identity, and forwards to the unchanged client. A native route rejects this operation before hooks or socket access; local agent-split uses ordinary `jj split`.
 
 ## Common commands
 
@@ -59,9 +76,9 @@ Common history, bookmark, file, and workspace operations are also allowed.
 ## Safety and recovery
 
 - Never mount the outer Docker/Podman daemon socket or write-capable protected-remote credentials into the agent container.
-- Keep `.git` and `.jj` read-only there; all `jj` commands, including `status` and `diff`, must use the proxy.
+- Keep host-backed `.git` and `.jj` read-only there; commands targeting that metadata, including `status` and `diff`, use the proxy. The wrapper is a convenience dispatcher, not an authorization boundary. Absolute native invocation retains the same guest permissions and cannot write protected metadata.
 - The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and unapproved fetch remotes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
-- Socket or proxy failure is fail-closed: the client exits `125` and never falls back to local `jj`.
+- For a proxy route, socket failure returns `125` and never falls back to native JJ. A local route does not connect to the proxy.
 - A command timeout returns `124`; policy/request failures normally return `2`. Inspect stderr, correct the request, and retry.
 - Recover history edits with `jj undo` or an explicit `jj op restore <operation>`. If the proxy was interrupted during a metadata write, stop the agent, inspect/recover the repository from a trusted environment, then restart the whole proxy session.
 
@@ -75,7 +92,7 @@ python3 -m unittest discover -s tools/jj-proxy/tests -p '*_test.py'
 docker build -f tools/jj-proxy/Dockerfile -t jj-proxy .
 ```
 
-The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover the client framing and the trusted split editor. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary.
+The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. These checks do not establish acceptance in a real container.
 
 ## Design and reference
 
