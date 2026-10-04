@@ -152,7 +152,7 @@
                             (fn []
                               (with-redefs-fn {restore-operation! (constantly true)}
                                 (fn []
-                                  (recover! "operation-id" "tree mismatch")))))]
+                                  (recover! {:backend "native" :workspace "/repo"} "operation-id" "tree mismatch")))))]
     (is (= 3 exit))
     (is (str/includes? err "restored operation operation-id"))))
 
@@ -220,3 +220,88 @@
         (is (= 1 exit))
         (is (str/includes? err "snapshot safety:"))
         (is (str/includes? err "patch file is inside the Jujutsu workspace"))))))
+
+(deftest split-route-checks-the-consumer-contract
+  (let [check (ns-resolve 'scripts.jj-split-patch 'checked-route)
+        valid {:backend "native" :workspace "/tmp/repo" :destination nil
+               :command ["split"] :hooks true}]
+    (is (= valid (check (cheshire.core/generate-string valid))))
+    (doseq [route [(assoc valid :backend "fallback")
+                   (assoc valid :workspace "relative")
+                   (assoc valid :destination 3)
+                   (assoc valid :command [3])
+                   (assoc valid :hooks "true")
+                   (dissoc valid :workspace)]]
+      (is (= 1 (:exit (captured-failure #(check (cheshire.core/generate-string route)))))))
+    (doseq [text ["not JSON" "" "   "
+                  (str (cheshire.core/generate-string valid) "\n" (cheshire.core/generate-string valid))
+                  (str (cheshire.core/generate-string valid) " trailing garbage")]]
+      (is (= 1 (:exit (captured-failure #(check text))))))))
+
+(deftest ordinary-host-split-does-not-need-the-sandbox-helper
+  (with-redefs-fn {(ns-resolve 'scripts.jj-split-patch 'sandbox-proxy-dir) (constantly nil)
+                  (ns-resolve 'scripts.jj-split-patch 'run) (fn [& _] (throw (Exception. "helper invoked")))}
+    #(is (= "native" (:backend ((ns-resolve 'scripts.jj-split-patch 'split-route)))))))
+
+(deftest split-and-recovery-use-the-resolved-backend-not-socket-presence
+  (let [calls (atom [])
+        shell (fn [opts & args] (swap! calls conj [opts (vec args)]) {:exit 0 :out "op-id"})
+        run-read (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
+        capture (ns-resolve 'scripts.jj-split-patch 'current-operation-id)
+        restore (ns-resolve 'scripts.jj-split-patch 'restore-operation!)
+        split (ns-resolve 'scripts.jj-split-patch 'run-split!)
+        native {:backend "native" :workspace "/tmp/independent"}
+        proxy {:backend "proxy" :workspace "/src/protected"}]
+    (with-redefs-fn {#'babashka.process/shell shell
+                    run-read (fn [& args] (swap! calls conj args) {:out "op-id"})
+                    (ns-resolve 'scripts.jj-split-patch 'sandbox-proxy-dir) (constantly "/mounted")}
+      (fn []
+        (is (= "op-id" (capture native)))
+        (is (true? (restore native "op-id")))
+        (split native "/patch" "message" "@")
+        (is (nil? (capture proxy)))
+        (is (nil? (restore proxy "op-id")))
+        (split proxy "/opaque -R patch" "--message" "--revision")))
+    (is (= {:dir "/tmp/independent"} (second (first @calls))))
+    (is (= "/tmp/independent" (:dir (first (second @calls)))))
+    (is (= ["jj" "op" "restore" "op-id"] (second (second @calls))))
+    (is (= ["jj" "--agent-split" "/opaque -R patch" "--message" "--revision"]
+           (second (last @calls))))))
+
+(deftest recovery-launch-failure-preserves-the-original-diagnostic
+  (let [route {:backend "native" :workspace "/tmp/repo"}
+        result (with-redefs-fn {#'babashka.process/shell (fn [& _] (throw (Exception. "recovery launch failed")))}
+                 #(captured-failure
+                   (fn [] ((ns-resolve 'scripts.jj-split-patch 'recover-verification-failure!)
+                           route "original-op" "original tree mismatch"))))]
+    (is (= 3 (:exit result)))
+    (is (str/includes? (:err result) "original tree mismatch"))
+    (is (str/includes? (:err result) "jj op restore original-op"))))
+
+(deftest unexpected-exceptions-are-captured-only-after-mutation
+  (let [capture (ns-resolve 'scripts.jj-split-patch 'capture-failure)
+        fail #(do (binding [*out* *err*] (println "verification dispatch"))
+                  (throw (java.io.IOException. "unavailable verification executable")))
+        result (capture fail true)]
+    (is (= 3 (:status result)))
+    (is (str/includes? (:error result) "verification dispatch"))
+    (is (str/includes? (:error result) "java.io.IOException: unavailable verification executable"))
+    (is (thrown? java.io.IOException (capture fail)))
+    (is (str/includes? (:error (capture #(throw (ex-info "discovery failed" {})) true))
+                       "discovery failed"))))
+
+(deftest proxy-post-split-exceptions-never-attempt-local-operation-recovery
+  (let [capture (ns-resolve 'scripts.jj-split-patch 'capture-failure)
+        recover (ns-resolve 'scripts.jj-split-patch 'recover-verification-failure!)
+        original (capture #(throw (java.io.IOException. "proxy verification launch failed")) true)
+        calls (atom [])
+        result (with-redefs-fn {#'babashka.process/shell (fn [& args]
+                                                        (swap! calls conj args)
+                                                        (throw (Exception. "native recovery forbidden")))}
+                 #(captured-failure
+                   (fn [] (recover {:backend "proxy" :workspace "/protected"}
+                                   nil (:error original)))))]
+    (is (= 3 (:exit result)))
+    (is (str/includes? (:err result) "proxy verification launch failed"))
+    (is (str/includes? (:err result) "automatic recovery was unavailable"))
+    (is (empty? @calls))))

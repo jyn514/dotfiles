@@ -66,7 +66,10 @@ Run tests or lint appropriate to each newly separated change.
 - Always provide `-m`; interactive patch and description editors are outside this workflow.
 - Do not continue after a failure. Exit `1` means preflight failed before mutation, `2` means `jj split` failed, and `3` means post-split verification failed.
 - For exit `1`, regenerate the patch from the current diff and retry. For exit `2`, inspect `jj status` and `jj op log` before retrying.
-- On verification failure, the wrapper attempts to restore the operation recorded before mutation. If it cannot, stderr names the required `jj op restore <operation>` command; run it before further history edits.
+- Independent container-local repositories use native `jj split`, even with a sandbox proxy mounted. The shared JJ router resolves the workspace and backing metadata against effective mounts, not socket presence. Rootfs, private tmpfs, and guest-created volumes are supported; a local workspace linked to protected host metadata is not independent.
+- Native verification failures trigger restoration of the operation captured in the same workspace before the split. If recovery fails, the original failure and `jj op restore <operation>` guidance remain on stderr. Inspect the operation before further history edits.
+- Protected repositories use the wrapper's structured proxy split, which resolves the active agent identity. Proxy failures never retry natively or attempt native operation recovery; inspect repository history before retrying.
+- With a sandbox proxy active, `JJ_ROUTE_HELPER` selects the shared routing helper (configured by the image); source checkouts otherwise use `tools/jj-proxy/route.py`. Ordinary non-sandbox hosts need neither the helper nor Linux mount information.
 - A successful mechanical split can still be behaviorally incoherent. Include required adjacent/generated changes or choose a different boundary.
 
 ## Tests

@@ -420,20 +420,49 @@
    "merge-tools.agent-split.edit-args=[\"$left\",\"$right\"]"])
 
 (defn- sandbox-proxy-dir []
-  (or (System/getenv "SANDBOX_PROXY_DIR")
-      (let [directory (or (System/getenv "SANDBOX_PROXY_DEFAULT_DIR")
+  (or (not-empty (System/getenv "SANDBOX_PROXY_DIR"))
+      (let [directory (or (not-empty (System/getenv "SANDBOX_PROXY_DEFAULT_DIR"))
                           "/run/sandbox-proxies")]
         (when (fs/exists? (fs/file directory "jj" "socket"))
           directory))))
 
-(defn- run-split! [patch message revision]
+(defn- route-helper []
+  (or (not-empty (System/getenv "JJ_ROUTE_HELPER"))
+      (str (fs/file (-> (script-dir) fs/parent fs/parent fs/parent)
+                    "jj-proxy" "route.py"))))
+
+(defn- checked-route [text]
+  (let [results (try (vec (json/parsed-seq (java.io.StringReader. text) true))
+                     (catch Exception _
+                       (fail! "routing" "helper returned invalid JSON")))
+        route (if (= 1 (count results))
+                (first results)
+                (fail! "routing" "helper must return one JSON object"))
+        nullable-path? #(or (nil? %) (and (string? %) (fs/absolute? %)))]
+    (when-not (and (map? route)
+                   (every? #(contains? route %) [:backend :workspace :destination :command :hooks])
+                   (#{"native" "proxy"} (:backend route))
+                   (nullable-path? (:workspace route))
+                   (nullable-path? (:destination route))
+                   (vector? (:command route))
+                   (every? string? (:command route))
+                   (boolean? (:hooks route)))
+      (fail! "routing" "helper returned an invalid split route"))
+    route))
+
+(defn- split-route []
+  ;; Ordinary hosts must not depend on the sandbox helper or Linux mount data.
+  ;; Keep the caller environment intact, including stripped-env socket discovery.
+  (if-let [proxy-dir (sandbox-proxy-dir)]
+    (checked-route (:out (run "routing" {:extra-env {"SANDBOX_PROXY_DIR" proxy-dir}}
+                             "python3" (route-helper) "--" "split")))
+    {:backend "native" :workspace nil :destination nil :command ["split"] :hooks true}))
+
+(defn- run-split! [route patch message revision]
   (let [editor (str (fs/file (script-dir) "agent-split-editor"))
         [program-config args-config] (split-tool-config editor)
-        proxy-dir (sandbox-proxy-dir)
-        command (if proxy-dir
-                  ["env" (str "SANDBOX_PROXY_DIR=" proxy-dir)
-                   "/libexec/agent-wrappers/jj-proxy-client"
-                   "--agent-split" (str patch) message revision]
+        command (if (= "proxy" (:backend route))
+                  ["jj" "--agent-split" (str patch) message revision]
                   ["env" (str "JJ_AGENT_SPLIT_PATCH=" patch)
                    "jj" "split"
                    "--config" program-config
@@ -450,15 +479,17 @@
       (fail-with-status! 2 "split" (str "jj split failed\n" (:out result) (:err result))))
     nil))
 
-(defn- current-operation-id []
-  (when-not (sandbox-proxy-dir)
+(defn- current-operation-id [route]
+  (when (= "native" (:backend route))
     (str/trim-newline
-     (:out (run-jj-read "preflight" "op" "log" "--limit" "1" "--no-graph"
+     (:out (run-jj-read "preflight" {:dir (:workspace route)}
+                        "op" "log" "--limit" "1" "--no-graph"
                         "-T" "id.short()")))))
 
-(defn- restore-operation! [operation-id]
-  (when operation-id
-    (let [result (process/shell {:out :string
+(defn- restore-operation! [route operation-id]
+  (when (and (= "native" (:backend route)) operation-id)
+    (let [result (process/shell {:dir (:workspace route)
+                                 :out :string
                                  :err :string
                                  :shutdown nil
                                  :continue true}
@@ -583,24 +614,38 @@
 
       :else nil)))
 
-(defn- capture-failure [f]
-  (let [err (java.io.StringWriter.)]
-    (binding [*err* err
-              *exit!* (fn [status]
-                        (throw (ex-info "captured exit" {:status status})))]
-      (try
-        {:value (f)}
-        (catch clojure.lang.ExceptionInfo ex
-          (if-let [status (:status (ex-data ex))]
-            {:status status
-             :error (str/trim (str err))}
-            (throw ex)))))))
+(defn- capture-failure
+  ([f] (capture-failure f false))
+  ([f post-split?]
+   (let [err (java.io.StringWriter.)]
+     (binding [*err* err
+               *exit!* (fn [status]
+                         (throw (ex-info "captured exit" {:status status})))]
+       (try
+         {:value (f)}
+         (catch Exception ex
+           (if-let [status (:status (ex-data ex))]
+             {:status status
+              :error (str/trim (str err))}
+             (if post-split?
+               ;; Once split succeeds, launch/discovery exceptions need the same
+               ;; recovery boundary as an explicit verification failure.
+               {:status 3
+                :error (str/join "\n"
+                                 (remove str/blank?
+                                         [(str/trim (str err))
+                                          (failure-text "verify" (str ex))]))}
+               (throw ex)))))))))
 
-(defn- recover-verification-failure! [operation-id message]
-  (if (restore-operation! operation-id)
+(defn- recover-verification-failure! [route operation-id message]
+  ;; A failed recovery launch must not replace the original verification failure.
+  (if (try (restore-operation! route operation-id)
+           (catch Exception _ false))
     (verify-fail! (str message "; restored operation " operation-id))
     (verify-fail! (str message
-                       "; automatic recovery was unavailable; use jj op restore to recover"))))
+                       (if operation-id
+                         (str "; automatic recovery was unavailable; use jj op restore " operation-id " to recover")
+                         "; automatic recovery was unavailable; inspect repository history before retrying")))))
 
 (defn- hunk-summary [patch-text]
   (loop [[line & more] (str/split-lines patch-text)
@@ -620,15 +665,18 @@
   (doseq [[file hunks] (sort (hunk-summary patch-text))]
     (println (str "  " file " (" hunks " hunk" (when-not (= 1 hunks) "s") ")"))))
 
-(defn main [args]
+(defn- execute-main [args]
   (let [{:keys [patch message revision json? remaining-message]} (parse-args args)
         patch (fs/canonicalize patch)
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
                      (fail! "preflight" (str "patch file does not exist: " patch)))
+        route (split-route)
         ;; Establish one authoritative preflight snapshot. Revision-only reads reuse it.
         _ (snapshot-workspace!)
-        repo-root (str/trim-newline (:out (run-jj-read "snapshot safety" "workspace" "root")))
+        repo-root (or (:workspace route)
+                      (str/trim-newline (:out (run-jj-read "snapshot safety" "workspace" "root"))))
+        route (assoc route :workspace repo-root)
         artifact-root (fs/file repo-root "target" "jj-split")
         _ (fs/create-dirs artifact-root)
         helper-root (fs/create-temp-dir {:dir (temp-root)
@@ -641,8 +689,8 @@
             preflight (preflight! patch-text revision helper-root)]
         (check-snapshot-safety! repo-root artifact-root patch helper-root)
         (reject-already-applied! preflight revision message helper-root)
-        (let [operation-id (current-operation-id)
-              _ (run-split! patch message revision)
+        (let [operation-id (current-operation-id route)
+              _ (run-split! route patch message revision)
               post-split (capture-failure
                           #(let [split-revisions (discover-split-revisions preflight
                                                                            selected-change-id
@@ -656,12 +704,13 @@
                               :verification-error (verify! preflight
                                                            original-commit
                                                            split-revisions
-                                                           helper-root)}))]
+                                                           helper-root)})
+                          true)]
           (when-let [error (:error post-split)]
-            (recover-verification-failure! operation-id error))
+            (recover-verification-failure! route operation-id error))
           (let [{:keys [split-revisions verification-error]} (:value post-split)]
             (when verification-error
-              (recover-verification-failure! operation-id verification-error))
+              (recover-verification-failure! route operation-id verification-error))
             (if json?
               (println (json/generate-string (select-keys split-revisions
                                                           [:selected :remaining])))
@@ -671,6 +720,13 @@
                 (println (str "remaining revision: " (:remaining split-revisions))))))))
       (finally
         (fs/delete-tree helper-root)))))
+
+(defn main [args]
+  ;; Defer process exit until execute-main's artifact cleanup has run.
+  (let [result (capture-failure #(execute-main args))]
+    (when-let [status (:status result)]
+      (binding [*out* *err*] (println (:error result)))
+      (*exit!* status))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

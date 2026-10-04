@@ -374,3 +374,196 @@
         (is (str/includes? selected "deleted file mode 120000"))
         (is (not (str/includes? selected "+remaining")))
         (is (str/includes? remaining "+remaining"))))))
+
+(def wrappers (str (fs/canonicalize "libexec/agent-wrappers")))
+(def route-helper (str (fs/canonicalize "tools/jj-proxy/route.py")))
+
+(defn- mounted-proxy-env! [root]
+  (let [proxy (fs/file root "proxy")
+        socket (fs/file proxy "jj" "socket")
+        model-file (fs/file root "pi-model.json")]
+    ;; Presence alone activates routing; no proxy connection is allowed for local splits.
+    (fs/create-dirs (fs/parent socket))
+    ;; Leave a real socket inode after closing its listener. Both consumers discover it,
+    ;; but an accidental proxy connection fails rather than hanging the test.
+    (shell! root "python3" "-c"
+            "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()"
+            (str socket))
+    (write-file! model-file
+                 (json/generate-string {:session_id "agent-split-test-session"
+                                        :provider "test" :modelId "agent-split-test-model"}))
+    {"PI_MODEL_FILE" (str model-file)
+     "PI_MODEL_SESSION_ID" "agent-split-test-session"
+     "PATH" (str wrappers ":" (System/getenv "PATH"))
+     "BB_REAL" (or (not-empty (System/getenv "DOTFILES_TEST_BB_REAL")) (str (fs/which "bb")))
+     "JJ_REAL" (or (not-empty (System/getenv "DOTFILES_TEST_JJ_REAL")) (str (fs/which "jj")))
+     "JJ_ROUTE_HELPER" route-helper
+     "JJ_AGENT" "pi"
+     "SANDBOX_PROXY_DEFAULT_DIR" (str proxy)}))
+
+(defn- run-mounted [repo env & args]
+  (apply process/shell {:dir (str repo) :extra-env env
+                        :out :string :err :string :shutdown nil :continue true}
+         "env" "-u" "SANDBOX_PROXY_DIR" "bb" args))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj local-split-with-default-proxy-discovery
+  (doseq [configured-helper? [true false]]
+    (with-repo*
+      (fn [{:keys [root repo]}]
+        (let [env (cond-> (mounted-proxy-env! root)
+                    (not configured-helper?) (assoc "JJ_ROUTE_HELPER" ""))
+            patch (fs/file repo "target/jj-split/selected.patch")
+            _ (write-file! patch selected-patch)
+            result (run-mounted repo env script "--json" (str patch) "-m" "selected" "@")]
+        (is (zero? (:exit result)) (:err result))
+        (when (zero? (:exit result))
+          (let [{:keys [selected remaining]} (json/parse-string (:out result) true)
+                identity (:out (shell! repo "jj" "log" "--ignore-working-copy"
+                                       "-r" selected "--no-graph" "-T"
+                                       "self.author().name() ++ \"|\" ++ self.author().email() ++ \"|\" ++ self.committer().name() ++ \"|\" ++ self.committer().email()"))]
+            (is (= (str "Pi agent-split-test-model|"
+                        "325577925+one-esk-nineteen@users.noreply.github.com|"
+                        "Pi agent-split-test-model|"
+                        "325577925+one-esk-nineteen@users.noreply.github.com")
+                   identity))
+            (is (str/blank? (:err result)))
+            (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n"
+                   (:out (shell! repo "jj" "file" "show" "-r" selected "note.txt"))))
+            (is (= (slurp (str (fs/file repo "note.txt")))
+                   (:out (shell! repo "jj" "file" "show" "-r" remaining "note.txt")))))))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj mounted-native-verification-failure-recovers-and-cleans-up
+  (doseq [recovery-fails? [false true]]
+    (with-repo*
+      (fn [{:keys [root repo]}]
+        (let [env (mounted-proxy-env! root)
+              helper-temp (fs/file root "helpers")
+              _ (fs/create-dirs helper-temp)
+              env (assoc env "TMPDIR" (str helper-temp))
+              patch (fs/file repo "target/jj-split/selected.patch")
+              _ (write-file! patch selected-patch)
+              _ (shell! repo "jj" "status")
+              captured-commit (fs/file root "captured-commit")
+              runner (fs/file root "injected.clj")
+              _ (write-file! runner
+                             (str "(load-file " (pr-str script) ")\n"
+                                  "(alter-var-root (ns-resolve 'scripts.jj-split-patch 'script-dir) (constantly (fn [] "
+                                  (pr-str (str (fs/parent script))) ")))\n"
+                                  "(let [v (ns-resolve 'scripts.jj-split-patch 'current-operation-id) original @v] "
+                                  "(alter-var-root v (constantly (fn [route] (spit " (pr-str (str captured-commit))
+                                  " ((ns-resolve 'scripts.jj-split-patch 'revision-commit-id) \"@\")) (original route)))))\n"
+                                  "(alter-var-root (ns-resolve 'scripts.jj-split-patch 'verify!) "
+                                  "(constantly (fn [& _] \"injected tree mismatch\")))\n"
+                                  (when recovery-fails?
+                                    "(alter-var-root (ns-resolve 'scripts.jj-split-patch 'restore-operation!) (constantly (fn [& _] (throw (Exception. \"injected recovery failure\")))))\n")
+                                  "(scripts.jj-split-patch/main *command-line-args*)\n"))
+              result (run-mounted repo env (str runner) (str patch) "-m" "selected" "@")]
+          (is (= 3 (:exit result)) (:err result))
+          (is (str/includes? (:err result) "injected tree mismatch"))
+          (is (empty? (fs/list-dir helper-temp)))
+          (if recovery-fails?
+            (is (str/includes? (:err result) "automatic recovery was unavailable"))
+            (do
+              (is (str/includes? (:err result) "restored operation"))
+              (is (= (slurp (str captured-commit))
+                     (:out (shell! repo "jj" "log" "--ignore-working-copy"
+                                   "-r" "@" "--no-graph" "-T" "commit_id")))))))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj protected-structured-split-uses-public-wrapper-and-never-native-recovery
+  (with-repo*
+    (fn [{:keys [root repo]}]
+      (let [env (mounted-proxy-env! root)
+            bin (fs/file root "bin")
+            calls (fs/file root "jj-calls.jsonl")
+            helper-temp (fs/file root "helpers")
+            _ (fs/create-dirs helper-temp)
+            patch (fs/file repo "target/jj-split/selected.patch")
+            _ (write-file! patch selected-patch)
+            jj (fs/file bin "jj")
+            fixture (str (fs/canonicalize "tools/agent-split/tests/fixtures/structured_jj.py"))
+            _ (fs/create-dirs bin)
+            _ (shell! root "cp" fixture (str jj))
+            _ (shell! root "cmp" fixture (str jj))
+            _ (.setExecutable (fs/file jj) true)
+            env (assoc env "PATH" (str bin ":" (get env "PATH"))
+                       "JJ_PROXY_REPO" (str repo)
+                       "STRUCTURED_JJ_WORKSPACE" (str repo)
+                       "STRUCTURED_JJ_LOG" (str calls)
+                       "TMPDIR" (str helper-temp) "CALLER_MARKER" "preserved")
+            message "opaque --message\nsecond paragraph"
+            result (run-mounted repo env script (str patch) "-m" message "@")
+            commands (map #(json/parse-string %) (str/split-lines (slurp (str calls))))]
+        (is (= 2 (:exit result)) (:err result))
+        (is (= ["--agent-split" (str patch) message "@"] (last commands)))
+        (is (not-any? #(= "op" (first %)) commands))
+        (is (= 1 (count (filter #(= "--agent-split" (first %)) commands))))
+        (is (not-any? #(= "split" (first %)) commands))
+        (is (empty? (fs/list-dir helper-temp)))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj mounted-native-post-split-launch-failures-recover
+  (doseq [failure-command ["log" "diff"]
+          recovery-fails? [false true]]
+    (with-repo*
+      (fn [{:keys [root repo]}]
+        (let [helper-temp (fs/file root "helpers")
+              _ (fs/create-dirs helper-temp)
+              env (assoc (mounted-proxy-env! root) "TMPDIR" (str helper-temp))
+              patch (fs/file repo "target/jj-split/selected.patch")
+              _ (write-file! patch selected-patch)
+              captured-commit (fs/file root "captured-commit")
+              captured-operation (fs/file root "captured-operation")
+              commands-file (fs/file root "commands.jsonl")
+              missing-verification (str (fs/file root "unavailable-verification-executable"))
+              missing-recovery (str (fs/file root "unavailable-recovery-executable"))
+              runner (fs/file root "launch-failure.clj")
+              _ (write-file! runner
+                  (str "(load-file " (pr-str script) ")\n"
+                       "(require '[babashka.process :as process] '[cheshire.core :as json])\n"
+                       "(def split-completed? (atom false))\n"
+                       "(def injected? (atom false))\n"
+                       "(alter-var-root (ns-resolve 'scripts.jj-split-patch 'script-dir) "
+                       "(constantly (fn [] " (pr-str (str (fs/parent script))) ")))\n"
+                       "(let [v (ns-resolve 'scripts.jj-split-patch 'current-operation-id) original @v] "
+                       "(alter-var-root v (constantly (fn [route] "
+                       "(spit " (pr-str (str captured-commit))
+                       " ((ns-resolve 'scripts.jj-split-patch 'revision-commit-id) \"@\")) "
+                       "(let [op (original route)] (spit " (pr-str (str captured-operation)) " op) op)))))\n"
+                       "(let [v (ns-resolve 'scripts.jj-split-patch 'run-split!) original @v] "
+                       "(alter-var-root v (constantly (fn [& args] "
+                       "(apply original args) (reset! split-completed? true)))))\n"
+                       "(alter-var-root #'process/shell "
+                       "(fn [original] (fn [opts & argv] "
+                       "(spit " (pr-str (str commands-file))
+                       " (str (json/generate-string {:opts (select-keys opts [:dir]) :argv argv}) \"\\n\") :append true) "
+                       "(cond "
+                       "(and @split-completed? (= [\"jj\" " (pr-str failure-command)
+                       "] (vec (take 2 argv))) (compare-and-set! injected? false true)) "
+                       "(apply original opts " (pr-str missing-verification) " (rest argv)) "
+                       (when recovery-fails?
+                         (str "(= [\"jj\" \"op\" \"restore\"] (vec (take 3 argv))) "
+                              "(apply original opts " (pr-str missing-recovery) " (rest argv)) "))
+                       ":else (apply original opts argv)))))\n"
+                       "(scripts.jj-split-patch/main *command-line-args*)\n"))
+              result (run-mounted repo env (str runner) (str patch) "-m" "selected" "@")
+              commands (map #(json/parse-string % true)
+                            (str/split-lines (slurp (str commands-file))))
+              op (slurp (str captured-operation))
+              recovery (filter #(= ["jj" "op" "restore"] (take 3 (:argv %))) commands)]
+          (is (= 3 (:exit result)) (:err result))
+          (is (str/includes? (:err result) missing-verification))
+          (is (not (str/includes? (:err result) missing-recovery)))
+          (is (= 1 (count recovery)))
+          (is (= {:dir (str repo)} (:opts (first recovery))))
+          (is (= ["jj" "op" "restore" op] (:argv (first recovery))))
+          (is (not-any? #(= ["jj" "--agent-split"] (take 2 (:argv %))) commands))
+          (is (empty? (fs/list-dir helper-temp)))
+          (if recovery-fails?
+            (is (str/includes? (:err result) (str "jj op restore " op " to recover")))
+            (do
+              (is (str/includes? (:err result) (str "restored operation " op)))
+              (is (= (slurp (str captured-commit))
+                     (:out (shell! repo "jj" "log" "--ignore-working-copy" "-r" "@"
+                                   "--no-graph" "-T" "commit_id"))))
+              (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
+                     (:out (shell! repo "jj" "file" "show" "--ignore-working-copy"
+                                   "-r" "@" "note.txt")))))))))))
