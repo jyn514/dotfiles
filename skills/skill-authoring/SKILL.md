@@ -23,7 +23,7 @@ Use the smallest workflow justified by uncertainty and risk. Give every costly s
 
 ## 2. Declare scope and authority
 
-State what the skill does, when it applies, and adjacent work it does not own. Define how to derive a deterministic working scope when the request omits one; stop for clarification when no safe default exists. For multi-phase work, say which phase the skill owns and forbid contaminating adjacent phases, such as selecting during critique or mutating during review. Route to another skill when a specialized workflow already exists rather than copying it.
+State what the skill does, when it applies, and adjacent work it does not own. Define how to derive a deterministic working scope when the request omits one; stop for clarification when no safe default exists. For multi-phase work, say which phase the skill owns and forbid contaminating adjacent phases, such as selecting during critique or mutating during review. Before adding a procedure, check nearby skills for an owner; refer to it under §3 rather than copying its workflow.
 
 Keep one authoritative owner for each procedure. When removing duplicated policy, apply the duplicate-policy test in `tighten-docs`. Briefly repeat a safety constraint at the point of action only when removing it would make that step unsafe in isolation. For effectful workflows, state what grants mutation authority; inspection, suggestion, or review must not imply permission to write.
 
@@ -35,7 +35,7 @@ Create `<skill-name>/SKILL.md`, with the directory name matching the frontmatter
 - `scripts/` for deterministic operations that prose should not reimplement;
 - `assets/` for templates or static inputs.
 
-Keep the main skill sufficient to choose and begin the workflow. Link directly to optional material and say when to read or run it. Resolve every relative path from the skill directory.
+Keep the main skill sufficient to choose and begin the workflow. Refer to owning skills by name rather than copying their procedures; links to specific sections are optional. Say when to read or run each reference and distinguish its scope from local work. Preserve referenced triggers and phase boundaries: for example, consult `double-check`'s evidence standards before work without invoking its completion audit.
 
 ## 4. Write the frontmatter
 
