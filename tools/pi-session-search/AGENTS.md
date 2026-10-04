@@ -19,7 +19,7 @@ Adobe-internal dependencies, no servers, no network calls.
 
 ```bash
 npm install        # if node_modules is missing
-npm test           # runs unit + integration tests (currently 47 tests)
+npm test           # runs unit + integration tests
 npm run typecheck  # tsc --noEmit against tsconfig.check.json
 ```
 
@@ -79,8 +79,9 @@ without an explicit discussion on the PR:
 - **`realpath` containment.** Both per-subdirectory and per-file. A
   `.jsonl` symlinked outside the configured sessions root must be
   detected and skipped. Don't substitute `lstat`-only checks.
-- **Per-file size cap** (`PI_SESSION_SEARCH_MAX_BYTES`, default 5 MB).
-  A pathological session file must not be able to OOM the process.
+- **Bounded streaming records.** Follow README's “Bounded record parsing”
+  security contract when changing the reader. Do not restore a whole-file
+  size ceiling or retain the full transcript in memory.
 - **Regex `g` and `y` flags stay stripped.** They break match-position
   bookkeeping in the snippet logic and have caused real bugs.
 - **`maxResults` is schema-clamped to `[1, 1000]`.** Don't relax the

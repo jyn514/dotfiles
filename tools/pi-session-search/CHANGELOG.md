@@ -5,6 +5,28 @@ All notable changes to `pi-session-search` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Stream session records instead of loading entire transcripts.
+- Keep `PI_SESSION_SEARCH_MAX_BYTES`, but redefine it as the per-record
+  raw-byte cap (default 5 MiB, 5,242,880 bytes, excluding the LF delimiter).
+  Existing file-size overrides should be revisited because the setting now
+  limits one record's memory use; there is no whole-file size cap.
+- Skip records exceeding the configured cap before decoding/parsing, then
+  resume at the next record. Search results include `skippedRecords` and
+  `incompleteCoverage`; window reads and `/find-sessions` show
+  incomplete-coverage warnings. Skipped records are excluded from window
+  counts and indexes.
+- Search retains only hits and stops at the hit limit or cancellation. Window
+  reads use two passes: the first counts eligible messages and selects the
+  nearest timestamp (first in file order on ties), and the second retains only
+  the requested window. Both use the initial file length.
+- Support cancellation during streaming for both tools. `contextMessages` and
+  `maxMessages` accept non-negative safe integers, including `0`; defaults are
+  6 and 30.
+
 ## [0.1.0] — 2026-05-04
 
 Initial public release.

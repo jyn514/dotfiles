@@ -214,7 +214,6 @@ describe("searchSessions (integration)", () => {
 
 describe("readSessionWindow (integration)", () => {
 	const original = process.env.PI_SESSION_SEARCH_ROOT;
-	const originalMax = process.env.PI_SESSION_SEARCH_MAX_BYTES;
 
 	let fixture: ReturnType<typeof buildFixtureSessions>;
 
@@ -226,8 +225,6 @@ describe("readSessionWindow (integration)", () => {
 	afterEach(() => {
 		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 		else process.env.PI_SESSION_SEARCH_ROOT = original;
-		if (originalMax === undefined) delete process.env.PI_SESSION_SEARCH_MAX_BYTES;
-		else process.env.PI_SESSION_SEARCH_MAX_BYTES = originalMax;
 	});
 
 	it("returns a markdown-formatted window for an in-root path", async () => {
@@ -266,14 +263,6 @@ describe("readSessionWindow (integration)", () => {
 		);
 	});
 
-	it("rejects files larger than PI_SESSION_SEARCH_MAX_BYTES", async () => {
-		// Lower the cap so our fixture is over the limit
-		process.env.PI_SESSION_SEARCH_MAX_BYTES = "100";
-		await assert.rejects(
-			() => readSessionWindow({ sessionFile: fixture.sessionFile }),
-			/exceeds PI_SESSION_SEARCH_MAX_BYTES/,
-		);
-	});
 
 	it("refuses a symlinked file that escapes the root, even by relative path", async () => {
 		const escaped = mkdtempSync(join(tmpdir(), "pi-session-escape-"));

@@ -105,8 +105,14 @@ Environment variables:
 
 - `PI_SESSION_SEARCH_ROOT` — override the sessions directory (default
   `~/.pi/agent/sessions`).
-- `PI_SESSION_SEARCH_MAX_BYTES` — per-file size cap to keep search snappy
-  (default 5 MB; oversized files are reported as `skippedFiles`).
+- `PI_SESSION_SEARCH_MAX_BYTES` — per-record raw-byte cap (default 5 MiB,
+  5,242,880 bytes). It is enforced before decoding/parsing and excludes the LF
+  delimiter. Existing overrides still apply, but revisit old file-size
+  overrides: this setting now limits one record's memory use, not whole files.
+  Files have no whole-file size ceiling. Oversized records are skipped through
+  the next newline, then reading continues. `search_sessions` reports
+  `skippedRecords` and `incompleteCoverage`; `read_session` and
+  `/find-sessions` show an incomplete-coverage warning.
 
 ## How it works
 
@@ -117,8 +123,18 @@ are `message` entries (and a few other types).
 
 `search_sessions` walks that directory, streams each JSONL file, parses
 `message` entries, extracts text content (skipping images and, by default, raw
-tool args), and matches against your query. `read_session` parses one file and
-emits a Markdown-formatted window centered on a target timestamp.
+tool args), and matches against your query. It retains only hits and stops at
+`maxResults` or cancellation. `incompleteCoverage` means records or files were
+skipped, or the search was cancelled; `truncated` separately marks the hit limit.
+Skipped-record counts cover only the portion actually scanned.
+
+`read_session` makes two streaming passes: one counts eligible messages and
+finds the nearest timestamp; the other collects only the requested window.
+Equal-distance timestamps select the first message in file order. Both passes
+use the file's initial byte length, so later appends wait until the next call.
+`contextMessages` and `maxMessages` accept non-negative safe integers,
+including `0` (defaults 6 and 30). Memory use depends on one bounded record
+plus retained hits or the requested window, not the transcript's total size.
 
 No model is called. No external network. No session is mutated.
 
@@ -142,15 +158,19 @@ exfiltration primitive if the active LLM is operating on untrusted input.
 - **Read-only.** No tool here writes, deletes, or transmits anything.
 - **Path containment in `read_session`.** Resolves symlinks on both the file
   and the configured root, rejects any path that doesn't end up under the
-  resolved root, and stat-caps the file size at
-  `PI_SESSION_SEARCH_MAX_BYTES` (default 5 MB) so a pathological session
-  file can't OOM the pi process.
+  resolved root.
 - **Path containment in `search_sessions`.** Per-subdirectory and per-file
   symlink containment: a `.jsonl` symlinked outside the root is detected at
   `realpath` time and skipped (counted as `skippedFiles` in the result).
+- **Bounded record parsing.** Both tools enforce the configured raw-record
+  limit (default 5 MiB, 5,242,880 bytes) before UTF-8 decoding or JSON parsing.
+  Oversized records are discarded up to the next newline, even if they contain
+  images or tool results rather
+  than searchable text. Skips are counted and reported; window message
+  indexes and totals exclude skipped records.
 - **`maxResults` is bounded.** The schema enforces `[1, 1000]`; the runtime
-  re-clamps any out-of-range value (including `0`, negative, NaN, Infinity)
-  to the default of 20.
+  rejects explicit invalid values (including `0`, negative, NaN, Infinity).
+  The default is 20.
 - **Regex flag stripping.** The `/.../flags` form respects user flags
   (including case-sensitivity) **except** `g` and `y`, which are stripped
   because they break match-position bookkeeping (`g` removes `.index`, `y`
@@ -162,8 +182,9 @@ exfiltration primitive if the active LLM is operating on untrusted input.
 **Accepted risks / things the threat model doesn't try to defend against.**
 
 - **Same-user filesystem attacker.** TOCTOU between the symlink check and
-  the `readFile` is theoretically exploitable but the threat model assumes
-  the user controls their own home directory.
+  opening the stream is theoretically exploitable, as is rewriting a file
+  between window-reading passes. The threat model assumes the user controls
+  her own home directory.
 - **Prompt injection from past content.** Anything text-shaped in a previous
   session can land back in the active model's context as tool output. If
   hostile instructions were ever pasted into a prior chat, an LLM that
@@ -182,6 +203,10 @@ exfiltration primitive if the active LLM is operating on untrusted input.
   timeout.
 
 ## Limitations
+
+- Large transcripts take proportionally longer to scan even though memory
+  use is bounded. Tool calls support cancellation between records and reads;
+  a synchronous regex still cannot be interrupted mid-match.
 
 - The encoded cwd directory name is decoded with a naive `-`→`/` rewrite.
   Sessions started in a path containing literal `-` will look slightly odd in
