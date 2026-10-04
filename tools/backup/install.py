@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import plistlib
 import pwd
+import shlex
 import shutil
 import socket
 import stat
@@ -161,7 +162,9 @@ def main():
             arguments += ['--credentials', str(args.credentials)]
         if args.mica is not None:
             arguments += ['--mica' if args.mica else '--no-mica']
-        os.execvp('sudo', ['sudo', *arguments])
+        elevated = ['sudo', *arguments]
+        print('backup: elevated command: ' + shlex.join(elevated), file=sys.stderr, flush=True)
+        os.execvp('sudo', elevated)
     config = configuration(args.owner, args.restic, args.docker, args.mica, args.credentials)
     files = artifacts(platform, config)
     if args.render:

@@ -7,6 +7,13 @@ if [ "$(uname -s)" = Darwin ]; then
 	IS_MACOS=1
 fi
 
+run_elevated() {
+	printf 'setup: elevated command:' >&2
+	printf ' %s' "$@" >&2
+	printf '\n' >&2
+	"$@"
+}
+
 install_macos_local() {
 	brew install -q duti || return
 	brew install --cask glide-browser || return
@@ -28,7 +35,7 @@ install_glide_native() {
 	fi
 	# Glide is normally in the AUR, which pacman cannot fetch itself.
 	if pacman -Si glide-browser-bin >/dev/null 2>&1; then
-		sudo pacman -S --needed glide-browser-bin
+		run_elevated sudo pacman -S --needed glide-browser-bin
 	elif exists paru; then
 		paru -S --needed glide-browser-bin
 	elif exists yay; then
@@ -350,9 +357,9 @@ setup_install_global () {
 	if [ "$(id -u)" = 0 ]; then
 		./libexec/setup/setup_sudo.sh main
 	elif exists sudo; then
-		sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh main
+		run_elevated sudo --preserve-env=PATH ./libexec/setup/setup_sudo.sh main
 	elif exists doas; then
-		doas ./libexec/setup/setup_sudo.sh main
+		run_elevated doas ./libexec/setup/setup_sudo.sh main
 	else
 		echo "global setup requires root, sudo, or doas" >&2
 		return 1

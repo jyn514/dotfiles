@@ -20,8 +20,9 @@ From the dotfiles checkout:
 ./setup backup
 ```
 
-The installer asks for sudo, creates the `restic` service account if absent, and
-requires `~/.local/config/restic.env` to be owned by restic with no group or other
+The installer prints the shell-quoted sudo command to stderr before elevation.
+It creates the `restic` service account if absent and requires
+`~/.local/config/restic.env` to be owned by restic with no group or other
 permissions. It checks the file's metadata and readability without reading its
 contents. Supply existing repository credentials yourself; installation never
 initializes a repository or copies OAuth credentials.

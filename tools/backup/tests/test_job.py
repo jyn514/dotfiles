@@ -1,4 +1,6 @@
 import json
+import contextlib
+import io
 import os
 from pathlib import Path
 import plistlib
@@ -137,6 +139,24 @@ class CaptureTests(unittest.TestCase):
 
 
 class NativeSchedulerTests(unittest.TestCase):
+    def test_sudo_command_is_printed_before_elevation_with_quoted_arguments(self):
+        stderr = io.StringIO()
+
+        def invoke_sudo(program, arguments):
+            self.assertEqual('sudo', program)
+            self.assertIn("'/path with spaces/restic'", stderr.getvalue())
+            self.assertEqual('/path with spaces/restic', arguments[arguments.index('--restic') + 1])
+            raise RuntimeError('sudo invocation reached')
+
+        with patch.object(sys, 'argv', ['install.py', '--owner', 'jyn',
+                                      '--restic', '/path with spaces/restic']):
+            with patch.object(install.os, 'getuid', return_value=1000):
+                with patch.object(install.os, 'execvp', side_effect=invoke_sudo):
+                    with contextlib.redirect_stderr(stderr):
+                        with self.assertRaisesRegex(RuntimeError, 'sudo invocation reached'):
+                            install.main()
+        self.assertIn('elevated command: sudo ', stderr.getvalue())
+
     def test_documents_only_config_records_host_without_docker(self):
         owner = pwd.getpwuid(os.getuid()).pw_name
         config = install.configuration(owner, '/usr/bin/restic', None, False, None)
