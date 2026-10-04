@@ -1,108 +1,83 @@
 #!/usr/bin/env python3
-"""Rename the current Codex session through its running app-server daemon."""
+"""Rename the current Codex session through a temporary app-server."""
 
 import argparse
-import base64
-import hashlib
+from contextlib import contextmanager
 import json
 import os
-from pathlib import Path
-import socket
-import struct
+import selectors
+import subprocess
 import sys
+import time
 
 
 class AppServer:
-    def __init__(self, connection: socket.socket) -> None:
-        self.connection = connection
+    """The documented app-server stdio transport is newline-delimited JSON."""
+
+    def __init__(self, process: subprocess.Popen) -> None:
+        self.process = process
         self.pending = b""
         self.request_id = 0
-
-    def receive(self, size: int) -> bytes:
-        while len(self.pending) < size:
-            data = self.connection.recv(65536)
-            if not data:
-                raise RuntimeError("app-server connection closed before replying")
-            self.pending += data
-        result, self.pending = self.pending[:size], self.pending[size:]
-        return result
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(process.stdout, selectors.EVENT_READ)
 
     def connect(self) -> None:
-        # The Unix control socket uses HTTP Upgrade and WebSocket frames,
-        # unlike a standalone app-server's JSONL stdio transport.
-        key = base64.b64encode(os.urandom(16)).decode()
-        self.connection.sendall((
-            "GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n"
-            "Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
-            f"Sec-WebSocket-Key: {key}\r\n\r\n"
-        ).encode())
-        while b"\r\n\r\n" not in self.pending:
-            data = self.connection.recv(65536)
-            if not data:
-                raise RuntimeError("app-server closed during WebSocket upgrade")
-            self.pending += data
-        headers, self.pending = self.pending.split(b"\r\n\r\n", 1)
-        lines = headers.decode().split("\r\n")
-        fields = dict(line.split(":", 1) for line in lines[1:])
-        fields = {key.lower(): value.strip() for key, value in fields.items()}
-        expected = base64.b64encode(hashlib.sha1(
-            (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()
-        ).digest()).decode()
-        if not lines[0].startswith("HTTP/1.1 101 ") or fields.get("sec-websocket-accept") != expected:
-            raise RuntimeError("app-server rejected WebSocket upgrade")
         self.request("initialize", {"clientInfo": {"name": "codex_rename", "version": "1.0.0"}})
         self.send({"method": "initialized", "params": {}})
 
-    def frame(self, payload: bytes, opcode: int = 1) -> None:
-        mask = os.urandom(4)
-        size = len(payload)
-        header = bytes([0x80 | opcode])
-        if size < 126:
-            header += bytes([0x80 | size])
-        elif size < 65536:
-            header += bytes([0x80 | 126]) + struct.pack("!H", size)
-        else:
-            header += bytes([0x80 | 127]) + struct.pack("!Q", size)
-        self.connection.sendall(header + mask + bytes(
-            value ^ mask[i % 4] for i, value in enumerate(payload)
-        ))
-
     def send(self, message: dict) -> None:
-        self.frame(json.dumps(message).encode())
+        self.process.stdin.write(json.dumps(message).encode() + b"\n")
+        self.process.stdin.flush()
 
     def request(self, method: str, params: dict) -> dict:
         self.request_id += 1
         self.send({"id": self.request_id, "method": method, "params": params})
-        fragments = b""
+        deadline = time.monotonic() + 15
         while True:
-            first, second = self.receive(2)
-            opcode, size = first & 15, second & 127
-            if size == 126:
-                size = struct.unpack("!H", self.receive(2))[0]
-            elif size == 127:
-                size = struct.unpack("!Q", self.receive(8))[0]
-            if second & 128:
-                raise RuntimeError("unexpected masked app-server frame")
-            payload = self.receive(size)
-            if opcode == 8:
-                raise RuntimeError("app-server closed the WebSocket")
-            if opcode == 9:
-                self.frame(payload, 10)
-                continue
-            if opcode == 10:
-                continue
-            if opcode not in (0, 1):
-                raise RuntimeError("unexpected app-server frame type")
-            fragments += payload
-            if not first & 128:
-                continue
-            message = json.loads(fragments)
-            fragments = b""
+            while b"\n" not in self.pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self.selector.select(remaining):
+                    raise RuntimeError("app-server reply timed out")
+                data = os.read(self.process.stdout.fileno(), 65536)
+                if not data:
+                    raise RuntimeError("app-server closed before replying")
+                self.pending += data
+            line, self.pending = self.pending.split(b"\n", 1)
+            message = json.loads(line)
             if "method" in message or message.get("id") != self.request_id:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("app-server reply timed out")
                 continue
             if "error" in message:
                 raise RuntimeError(message["error"]["message"])
             return message["result"]
+
+
+@contextmanager
+def temporary_server():
+    process = subprocess.Popen(
+        ["codex", "app-server", "--listen", "stdio://"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    )
+    client = AppServer(process)
+    try:
+        yield client
+    finally:
+        client.selector.close()
+        try:
+            process.stdin.close()
+        except BrokenPipeError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        process.stdout.close()
 
 
 def main() -> int:
@@ -114,16 +89,11 @@ def main() -> int:
     thread_id = os.environ.get("CODEX_THREAD_ID")
     if not thread_id:
         parser.error("CODEX_THREAD_ID is unset; run this command inside a Codex session")
-    home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-    socket_path = home / "app-server-control/app-server-control.sock"
-    phase = "connecting to the Codex daemon"
+    phase = "starting a temporary Codex app-server"
     update_attempted = False
     try:
-        print("connecting to the Codex daemon", file=sys.stderr)
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(15)
-            connection.connect(str(socket_path))
-            client = AppServer(connection)
+        print("starting a temporary Codex app-server", file=sys.stderr)
+        with temporary_server() as client:
             client.connect()
             phase = "reading the current session"
             client.request("thread/read", {"threadId": thread_id, "includeTurns": False})
@@ -139,7 +109,7 @@ def main() -> int:
         return 0
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
         recovery = ("name update is unverified; rerun this command to set and verify it"
-                    if update_attempted else "name update was not sent; check the running Codex daemon")
+                    if update_attempted else "name update was not sent; check that codex app-server can start")
         print(f"codex-rename: {phase} failed: {error}; {recovery}", file=sys.stderr)
         return 1
 

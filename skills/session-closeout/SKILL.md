@@ -62,13 +62,13 @@ Verify each commit's identity and message, then recheck status. Keep closeout in
 
 When the harness supports current-session titles, leave the session with a concise title reflecting its durable purpose or result, including substantial secondary work when one title can do so cleanly. Prefer the final outcome over the opening wording or an abandoned approach; distinguish investigation, design, repair, and implementation accurately.
 
-Use the harness's supported current-session title mechanism; do not edit session storage directly. In Codex with `CODEX_THREAD_ID` set and a running local app-server daemon, use [codex-rename](../../libexec/agent-wrappers/codex-rename):
+Use the harness's supported current-session title mechanism; do not edit session storage directly. In Codex with `CODEX_THREAD_ID` set, use [codex-rename](../../libexec/agent-wrappers/codex-rename):
 
 ```sh
 codex-rename 'Fix sandbox skill paths'
 ```
 
-If the command is not on `PATH`, invoke the linked file from this checkout. It calls `thread/name/set` and verifies the name through `thread/read`; a successful exit establishes the applied title. It uses the daemon socket under `CODEX_HOME` (default `~/.codex`) and may need sandbox approval to connect. If it fails, report whether the rename was sent and whether read-back verified it. If no supported mechanism is available, skip title mutation without blocking closeout. For other mechanisms, verify the applied title when the harness exposes an independent read path.
+If the command is not on `PATH`, invoke the linked file from this checkout. It starts a temporary `codex app-server` over stdio, calls `thread/name/set`, verifies the name through `thread/read`, and stops the child process. A successful exit establishes the applied title. It inherits `CODEX_HOME` (default `~/.codex`) and may need sandbox approval to write Codex state. No running daemon is required. If it fails, report whether the rename was sent and whether read-back verified it. If no supported mechanism is available, skip title mutation without blocking closeout. For other mechanisms, verify the applied title when the harness exposes an independent read path.
 
 ## 7. Report and stop
 
