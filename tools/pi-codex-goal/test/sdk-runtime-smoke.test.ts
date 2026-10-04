@@ -91,8 +91,10 @@ test("SDK completion report includes its calling response exactly once", async (
     settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
   });
   let requests = 0;
-  session.agent.streamFunction = (model) => {
+  let providerPrompt = "";
+  session.agent.streamFunction = (model, context) => {
     requests += 1;
+    if (requests === 1) providerPrompt = JSON.stringify(context.messages);
     if (requests > 2) {
       assert.equal(requests, 3, "completed goals must not queue another continuation");
       return assistantResponse(model, 7, "Done");
@@ -111,6 +113,16 @@ test("SDK completion report includes its calling response exactly once", async (
     await createGoal.execute("create", { objective: "ship it", token_budget: 500_000 },
       undefined, undefined, runner.createToolContext("create", undefined));
     await session.prompt("Complete the goal");
+
+    // Check the actual provider transcript, including all three tools, not
+    // just one producer's guidelines. Repeated inline aliases are noise.
+    assert.deepEqual(providerPrompt.match(/\bpi__\w+_goal\b/g), ["pi__update_goal"]);
+    assert.match(providerPrompt, /every explicit requirement has concrete verification evidence and no required work remains/);
+    assert.match(providerPrompt, /Only explicit \/goal resume reactivates a blocked goal; ordinary input does not/);
+    assert.equal(providerPrompt.match(/For a tracked goal requesting implementation through verified completion/g)?.length, 1,
+      "model-created goals receive skill routing through standing guidance without a command continuation");
+    assert.match(providerPrompt, /read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work/);
+    assert.match(providerPrompt, /Do not activate this skill for plan-only, review, research, or writing goals/);
 
     const entries = session.sessionManager.getBranch();
     const goal = reconstructGoal(entries).goal;

@@ -4,62 +4,32 @@ import type { ThreadGoal } from "./types.ts";
 const CONTINUATION_MARKER_PREFIX = "<pi_goal_continuation goal_id=\"";
 
 export const GOAL_TOOL_NAME_GUIDANCE =
-  "Call each goal tool by the name exposed in your available tool list. In pi that is usually get_goal, create_goal, and update_goal; in bridged MCP runs it may be a namespaced variant such as pi__get_goal, pi__create_goal, or pi__update_goal. Do not assume display, history, or transcript tool names are callable unless they appear in your tool list.";
+  "Use goal-tool names from your available tool list; canonical names such as update_goal may be namespaced in MCP (e.g. pi__update_goal). Do not infer callable names from display, history, or transcript labels.";
 
 type GoalToolName = "get_goal" | "create_goal" | "update_goal";
 
 export function goalToolReference(toolName: GoalToolName): string {
-  return `${toolName} (or the exposed namespaced equivalent, such as pi__${toolName})`;
+  return toolName;
 }
 
-const UPDATE_GOAL_REF_PLACEHOLDER = "{update_goal_ref}";
+// The completion invariant applies even when implementation skills are unavailable.
+const COMPLETION_GUIDELINE =
+  `Call ${goalToolReference("update_goal")} with status "complete" only when every explicit requirement has concrete verification evidence and no required work remains.`;
 
-const COMPLETION_AUDIT_TOOL_GUIDELINE_TEMPLATES = [
-  `Use ${UPDATE_GOAL_REF_PLACEHOLDER} with status complete only after a completion audit proves the objective is actually achieved and no required work remains.`,
-  `Before using ${UPDATE_GOAL_REF_PLACEHOLDER}, map every explicit requirement in the goal to concrete evidence from files, command output, test results, PR state, or other real artifacts; uncertainty means the goal is not complete.`,
-  `Do not use ${UPDATE_GOAL_REF_PLACEHOLDER} merely because work is stopping, substantial progress was made, tests passed without covering every requirement, or the token budget is nearly exhausted.`,
-];
+const AUTONOMOUS_SKILL_GUIDELINE =
+  "For a tracked goal requesting implementation through verified completion, read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work. If you are stuck or repeatedly making no progress on that implementation goal, re-read its recovery guidance before choosing the next action. Do not activate this skill for plan-only, review, research, or writing goals.";
 
-const COMPLETION_AUDIT_CHECKLIST_LINES = [
-  "- Restate the objective as concrete deliverables or success criteria.",
-  "- Build a prompt-to-artifact checklist that maps every explicit requirement, numbered item, named file, command, test, gate, and deliverable to concrete evidence.",
-  "- Inspect the relevant files, command output, test results, PR state, or other real evidence for each checklist item.",
-  "- Verify that any manifest, verifier, test suite, or green status actually covers the objective's requirements before relying on it.",
-  "- Do not accept proxy signals as completion by themselves. Passing tests, a complete manifest, a successful verifier, or substantial implementation effort are useful evidence only if they cover every requirement in the objective.",
-  "- Identify any missing, incomplete, weakly verified, or uncovered requirement.",
-  "- Treat uncertainty as not achieved; do more verification or continue the work.",
-];
-
-function renderUpdateGoalTemplate(template: string): string {
-  return template.replaceAll(UPDATE_GOAL_REF_PLACEHOLDER, goalToolReference("update_goal"));
-}
-
-function completionAuditToolGuidelines(): string[] {
-  return COMPLETION_AUDIT_TOOL_GUIDELINE_TEMPLATES.map(renderUpdateGoalTemplate);
-}
-
-function completionAuditContinuationPromptSection(): string[] {
-  return [
-    "Before deciding that the goal is achieved, perform a completion audit against the actual current state:",
-    ...COMPLETION_AUDIT_CHECKLIST_LINES,
-    "",
-    renderUpdateGoalTemplate(
-      `Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call ${UPDATE_GOAL_REF_PLACEHOLDER} with status "complete" so usage accounting is preserved. Report the final elapsed time, and if the achieved goal has a token budget, report the final consumed token budget to the user after the goal-completion tool succeeds.`,
-    ),
-    "",
-    renderUpdateGoalTemplate(
-      `Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work. If missing user input or external work prevents meaningful progress, call ${UPDATE_GOAL_REF_PLACEHOLDER} with status "blocked" and a reason explaining the dependency; do not block while actionable work remains. Only explicit /goal resume reactivates a blocked goal.`,
-    ),
-  ];
-}
+const BLOCKED_GOAL_GUIDELINE =
+  `If missing user input or external work prevents meaningful progress, call ${goalToolReference("update_goal")} with status "blocked" and a dependency reason, then explain what is needed to the user. Do not block while useful work remains. Only explicit /goal resume reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.`;
 
 export const TOOL_PROMPT_GUIDELINES = [
   GOAL_TOOL_NAME_GUIDANCE,
   `Use ${goalToolReference("get_goal")} when you need to inspect the current long-running user objective.`,
   `Use ${goalToolReference("create_goal")} only when the user explicitly asks you to start tracking a concrete goal; do not infer goals from ordinary tasks and do not create a second goal while a non-complete goal already exists. After a goal is complete, ${goalToolReference("create_goal")} replaces it with a new active goal.`,
-  ...completionAuditToolGuidelines(),
+  COMPLETION_GUIDELINE,
+  AUTONOMOUS_SKILL_GUIDELINE,
   "When a goal is active, keep working through clear low-risk next steps instead of stopping at a plan.",
-  `If missing user input or external work prevents meaningful progress, use ${goalToolReference("update_goal")} with status "blocked" and a reason describing the dependency, then explain what is needed. Ordinary input does not reactivate a blocked goal; only explicit /goal resume does. Never mark it complete while blocked.`,
+  BLOCKED_GOAL_GUIDELINE,
 ];
 
 export function continuationGoalIdFromPrompt(prompt: string): string | null {
@@ -122,9 +92,9 @@ export function compactContinuationPrompt(goal: ThreadGoal): string {
     "",
     ...budgetPromptLines(goal, true),
     "",
-    "Avoid repeating work that is already done. Choose the next concrete action toward the objective.",
+    AUTONOMOUS_SKILL_GUIDELINE,
     "",
-    `Before marking the goal complete, audit progress against the objective and call ${goalToolReference("update_goal")} with status \"complete\" only when every requirement is verified.`,
+    COMPLETION_GUIDELINE,
     `If missing input or external work prevents meaningful progress, call ${goalToolReference("update_goal")} with status "blocked" and explain the dependency in reason; wait for explicit /goal resume.`,
     GOAL_TOOL_NAME_GUIDANCE,
     "</pi_goal_continuation>",
@@ -144,9 +114,13 @@ export function continuationPrompt(goal: ThreadGoal): string {
     "",
     ...budgetPromptLines(goal, true),
     "",
-    "Avoid repeating work that is already done. Choose the next concrete action toward the objective.",
+    AUTONOMOUS_SKILL_GUIDELINE,
     "",
-    ...completionAuditContinuationPromptSection(),
+    COMPLETION_GUIDELINE,
+    "",
+    BLOCKED_GOAL_GUIDELINE,
+    "",
+    "After the completion tool succeeds, report final elapsed time and, if the goal has a token budget, final consumed token budget.",
     "",
     GOAL_TOOL_NAME_GUIDANCE,
     "</pi_goal_continuation>",

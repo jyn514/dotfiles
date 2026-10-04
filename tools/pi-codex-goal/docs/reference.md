@@ -22,7 +22,10 @@ npm, Git, and local directory installs all load the TypeScript source (`extensio
 
 The [README command table](../README.md#goal-controls) covers the usual controls.
 
-`/create-goal <task>` expands the task into an objective covering outcome, verification, constraints, iteration, a completion audit, and a blocked-stop condition. It asks the model to call `create_goal` with explicit replacement enabled, so you do not need to run `/goal clear` before setting a new goal.
+`/create-goal <task>` expands the task into an objective with an outcome, verification evidence, task-specific constraints, and a completion condition.
+Drafting must not add requirements or narrow the requested scope.
+Standing workflow instructions stay out of the saved objective.
+It asks the model to call `create_goal` with explicit replacement enabled, so you do not need to run `/goal clear` before setting a new goal.
 
 The template follows the goal-writing practices in OpenAI's [Codex follow-goals guide](https://developers.openai.com/codex/use-cases/follow-goals) and [Using goals in Codex cookbook](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
@@ -63,7 +66,9 @@ Completed goals are terminal for automatic transitions: pause, resume, and hidde
 
 ### MCP tool names
 
-In bridged MCP environments, Pi may expose these tools under namespaced names such as `pi__get_goal`, `pi__create_goal`, and `pi__update_goal`. Prompt guidance tells models to call whichever goal-tool name is actually exposed in the current run, rather than display or transcript labels.
+In bridged MCP environments, Pi may expose these tools under namespaced names such as `pi__get_goal`, `pi__create_goal`, and `pi__update_goal`.
+Prompt guidance explains naming once per prompt: call the exposed tool name, not display or transcript labels.
+Standing instructions and standalone full continuation prompts share an evidence-backed completion and blocked/resume contract; automatic continuations retain brief reminders.
 
 ## Behavior
 
@@ -81,6 +86,8 @@ While a goal is active, the extension:
 - Treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` and explicit `create_goal` replacement to replace goals.
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
+- Routes tracked implementation-through-verified-completion goals to the `autonomous-implementation` skill, when available, at start or resume and back to its recovery guidance when stuck.
+  Standing tool guidance covers model-created goals too; plan-only, review, research, and writing goals do not activate the skill.
 - Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
 - Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available.
 

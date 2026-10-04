@@ -12,38 +12,17 @@ This prompt invocation is an explicit user request to set a new goal. When the g
 
 Do not set a token budget limit unless the user explicitly provides a budget/limit in the task. If no explicit budget is provided, omit the token budget field entirely. Follow the exposed creation tool's token-budget policy: when supported, explicit budgets must meet its configured minimum (500,000 tokens by default); when the field is absent, explicit budgets are disabled. If the supplied budget violates that policy, ask for a valid budget or no limit instead of raising it or silently dropping it.
 
-The goal must be a completion contract, not a task summary. Preserve the user's full intent. Do not weaken broad acceptance criteria such as "all", "any", "complete", "no tech debt", "do it right", "fully", or "hard acceptance criteria".
+The goal must be a completion contract, not a task summary. Preserve the user's full intent, including broad acceptance criteria such as "all", "complete", or "no tech debt" when requested. Do not add requirements or narrow scope without user approval.
 
-The goal must require:
+Include:
 
-1. Outcome
-   - State what must be true when complete.
-   - Preserve the full requested end state.
-   - Do not narrow scope after the fact unless the original user task explicitly defined that scope.
+1. Outcome: what must be true when complete, preserving the full requested end state.
+2. Verification evidence: the concrete checks or artifacts needed to demonstrate that outcome. Require the repository's existing validation command when relevant.
+3. Task-specific constraints: preserve the user's permissions, protected behavior and files, acceptance boundaries, and any explicit stopping or review points. Preserve existing behavior unless the task changes it, and do not discard user changes.
+4. Completion condition: every explicit requirement must have concrete verification evidence and no required work may remain.
 
-2. Verification evidence
-   - Name the concrete evidence required before completion.
-   - Include relevant tests, lint, type checks, builds, smoke checks, diffs, docs, generated outputs, rendered UI inspection, or artifact checks when applicable.
-   - If the repo has an existing local CI/validation command, require it unless clearly irrelevant.
+Keep standing workflow instructions out of the saved objective. For a tracked goal requesting implementation through verified completion, read the `autonomous-implementation` skill file at its advertised path, if available, before starting work. Do not activate that skill for plan-only, review, research, or writing goals. The skill owns work selection, iteration, recovery, and completion-review procedure; the goal tools own status changes.
 
-3. Constraints
-   - Preserve existing behavior unless the task explicitly changes it.
-   - Do not discard user changes.
-   - Do not leave unapproved shortcuts, compatibility shims, TODO placeholders, dead code, duplicated logic, hidden assumptions, or undocumented behavior changes.
-
-4. Iteration policy
-   - After each attempt, inspect evidence, update the plan, and keep taking the next low-risk useful step.
-   - Do not stop at a plan when implementation or verification remains.
-   - If validation fails, triage and fix the cause rather than reporting partial completion.
-
-5. Completion audit
-   - Before marking the goal complete, map every explicit requirement in the goal to fresh evidence from files, commands, diffs, tests, screenshots, artifacts, or logs.
-   - The goal is not complete if any requirement is unverified, narrowed, deferred, or only probably satisfied.
-   - Phrases like "for the scope this is complete", "good enough", "out of scope", or "remaining tech debt" are not valid completion evidence unless the original user task explicitly allowed that limitation.
-
-6. Blocked stop condition
-   - If missing user input or external work prevents meaningful progress, call `update_goal` with status `blocked` and a reason describing the dependency, then explain what is needed. Wait for explicit `/goal resume`; ordinary input does not reactivate the goal.
-   - If completion is impossible with current access, tools, or budget, stop without marking complete.
-   - Report attempted paths, evidence gathered, exact blockers, remaining unmet requirements, and what input would unblock progress.
+If missing user input or external work prevents meaningful progress, call `update_goal` with status `blocked` and a dependency reason, then explain what is needed. Do not block while useful work remains. Only explicit `/goal resume` reactivates a blocked goal; ordinary input does not. Never complete a blocked goal.
 
 Use concise imperative language in the goal. If the task is blank or only whitespace, infer the goal based on the conversation context or ask the user to clarify.
