@@ -2,7 +2,7 @@
 name: luna
 description: Cheap, fast agent for bounded extraction, summarization, classification, and mechanical transformations
 provider: openai-codex
-model: gpt-5.6-luna
+model: gpt-6-luna
 thinking: low
 hint: Give Luna explicit inputs, output shape, and acceptance criteria. Use a stronger model for subtle judgment or final review.
 ---
