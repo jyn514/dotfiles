@@ -9,12 +9,33 @@ fi
 
 install_macos_local() {
 	brew install -q duti || return
+	brew install --cask glide-browser || return
 	cmd_alias gdu gdu-go || return
 	if exists cargo; then
 		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision) || return
 		cargo install --git https://github.com/jyn514/brew-command-not-found \
 			--rev "$brew_revision" --locked || return
 		unset brew_revision
+	fi
+}
+
+install_glide_native() {
+	if ! exists pacman; then
+		return 0
+	fi
+	if pacman -Q glide-browser-bin >/dev/null 2>&1; then
+		return 0
+	fi
+	# Glide is normally in the AUR, which pacman cannot fetch itself.
+	if pacman -Si glide-browser-bin >/dev/null 2>&1; then
+		sudo pacman -S --needed glide-browser-bin
+	elif exists paru; then
+		paru -S --needed glide-browser-bin
+	elif exists yay; then
+		yay -S --needed glide-browser-bin
+	else
+		echo "Install glide-browser-bin from the AUR with paru or yay, then rerun setup" >&2
+		return 1
 	fi
 }
 
@@ -350,6 +371,15 @@ setup_install_local () {
 		return 1
 	fi
 	mkdir -p ~/.local/bin || return
+	install_glide_native || return
+	# The explicit setup config bypasses global conf.d, so carry its exclusion
+	# into mise_exec as well as ordinary shell invocations.
+	glide_disabled=$(python3 libexec/setup/glide.py) || return
+	if [ -n "$glide_disabled" ]; then
+		MISE_DISABLE_TOOLS=${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}$glide_disabled
+		export MISE_DISABLE_TOOLS
+	fi
+	unset glide_disabled
 	install_mise || return
 	install_pi || return
 	install_platform_bundles || return

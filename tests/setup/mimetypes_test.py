@@ -119,6 +119,9 @@ class LinuxMimetypeTests(unittest.TestCase):
         xdg_settings = binaries / "xdg-settings"
         xdg_settings.write_text("#!/bin/sh\nprintf 'browser.desktop\\n'\n")
         xdg_settings.chmod(0o755)
+        mise = binaries / "mise"
+        mise.write_text("#!/bin/sh\nexit 1\n")
+        mise.chmod(0o755)
         env = os.environ.copy()
         env.update(
             HOME=str(home),
@@ -164,6 +167,10 @@ class LinuxMimetypeTests(unittest.TestCase):
         xdg_mime = binaries / "xdg-mime"
         xdg_mime.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$MIME_LOG"\n')
         xdg_mime.chmod(0o755)
+        for command in ("mise", "xdg-settings"):
+            executable = binaries / command
+            executable.write_text("#!/bin/sh\nexit 1\n")
+            executable.chmod(0o755)
         env = os.environ.copy()
         env.update(
             HOME=str(home),

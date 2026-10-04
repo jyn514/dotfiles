@@ -469,7 +469,8 @@ class LocalInstallationTests(unittest.TestCase):
         result = self.run_install()
 
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertFalse(self.log.exists())
+        commands = self.commands() if self.log.exists() else []
+        self.assertFalse(any(command[0] == "mise" for command in commands))
 
     def test_installs_all_declarative_tools_in_one_mise_command(self) -> None:
         result = self.run_install()
@@ -608,7 +609,7 @@ class LocalInstallationTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(
             [["mise", "token", "github"], ["mise", "install", "--yes"]],
-            self.commands()[:2],
+            [command for command in self.commands() if command[0] == "mise"][:2],
         )
         self.assertIn(["mise", "run", "pi-install"], self.commands())
         self.assertIn("Some mise tools failed to install; continuing", result.stderr)

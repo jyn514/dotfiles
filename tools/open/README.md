@@ -24,7 +24,17 @@ Apply them:
 ./setup mimetypes
 ```
 
-A second dry-run should report `(none)` in every section. The setup owns only the types listed in `lib/mimetypes.json`; it does not reset the complete Launch Services database.
+On macOS, a second dry-run should report `(none)` in every section. The setup owns only the types listed in `lib/mimetypes.json`; it does not reset the complete Launch Services database.
+
+On Linux, setup assigns HTML, XHTML, and SVG to the browser after registering editor defaults. When Glide is installed, it selects Glide for those types and HTTP/HTTPS URLs. Otherwise it uses the current default browser for the file types.
+
+`./setup install-local` installs `glide-browser-bin` on Arch, using pacman when a repository supplies it or an existing paru/yay for the AUR. macOS uses `brew install --cask glide-browser`; other Linux systems retain the locked mise provider. Native Linux Glide disables its mise provider through a managed `~/.config/mise/conf.d/dotfiles-glide.toml`. Setup leaves old installed copies in place.
+
+The native package supplies `glide-browser-bin.desktop`. The mise fallback gets a generated `glide-mise.desktop` that invokes mise directly, so GUI launching does not require shell activation. Run `./setup mimetypes` after local installation to register the selected launcher.
+
+Some AUR releases ship partially quoted executable paths and duplicate desktop-entry keys. MIME setup generates a corrected user override from the package's entry, leaving pacman-owned files intact and refreshing the override on subsequent runs.
+
+When migrating a manual installation, replace stale `userapp-Glide-*.desktop` and `glide.desktop` associations with the selected desktop entry before removing the old launchers. After checking that `/usr/bin/glide-bin --version` works, remove the duplicate with `mise uninstall --all github:glide-browser/glide`.
 
 ## Verify changes
 

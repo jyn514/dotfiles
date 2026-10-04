@@ -78,7 +78,7 @@ class MiseSmokeTests(unittest.TestCase):
         if platform.machine() not in {"aarch64", "arm64"}:
             commands.append("librespot")
         if platform.system() == "Linux":
-            commands.append("glide")
+            commands.append("glide-bin" if Path("/usr/bin/glide-bin").exists() else "glide")
         script = "set -e; " + "; ".join(f"command -v {command}" for command in commands)
 
         self.assert_mise_command("sh", "-c", script)
