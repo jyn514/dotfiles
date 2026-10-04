@@ -89,6 +89,7 @@ node --test tools/codex-sandbox/tests/tool_worker_test.mjs
 node --test tools/codex-sandbox/tests/guest_skill_context_test.mjs
 bun test tools/codex-sandbox/tests/guest_tools_test.ts
 bun test tools/codex-sandbox/tests/session_handoff_test.ts
+bun test tools/codex-sandbox/tests/session_side_test.ts
 if [ -n "${DOTFILES_TEST_JJ_REAL:-}" ]; then
 	export JJ_PROXY_TEST_JJ="$DOTFILES_TEST_JJ_REAL"
 fi

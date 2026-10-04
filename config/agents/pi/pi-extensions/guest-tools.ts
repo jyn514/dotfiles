@@ -1,10 +1,17 @@
 import { spawn } from "node:child_process";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool, createEditTool, createFindTool, createGrepTool,
   createLsTool, createReadTool, createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { rewritePiResourcePaths } from "./guest-tools-core.ts";
+
+type CallModel = { provider: string; modelId: string } | null;
+
+function callModel(ctx: ExtensionContext): CallModel {
+  const model = ctx.model;
+  return model ? { provider: model.provider, modelId: model.id } : null;
+}
 
 type GuestFrame =
   | { kind: "update"; result: unknown }
@@ -15,6 +22,7 @@ type GuestFrame =
 function callGuest(
   tool: string,
   params: Record<string, unknown>,
+  model: CallModel,
   signal?: AbortSignal,
   onUpdate?: (result: any) => void,
   onData?: (data: Buffer) => void,
@@ -34,7 +42,7 @@ function callGuest(
     child.on("error", (error) => { protocolError = error; });
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
-    child.stdin.write(`${JSON.stringify({ tool, params })}\n`);
+    child.stdin.write(`${JSON.stringify({ tool, params, model })}\n`);
     child.stdout.on("data", (data: Buffer) => {
       pending += data.toString("utf8");
       if (pending.length > 32 * 1024 * 1024) {
@@ -95,16 +103,19 @@ export default function guestTools(pi: ExtensionAPI) {
   for (const tool of tools) {
     pi.registerTool({
       ...tool,
-      execute: (id, params, signal, onUpdate) =>
-        callGuest(tool.name, params as Record<string, unknown>, signal, onUpdate),
+      execute: (id, params, signal, onUpdate, ctx) =>
+        callGuest(tool.name, params as Record<string, unknown>, callModel(ctx), signal, onUpdate),
     });
   }
-  pi.on("user_bash", () => ({
-    operations: {
-      exec: (command, _cwd, { onData, signal, timeout }) =>
-        callGuest("user_bash", { command, timeout }, signal, undefined, onData),
-    },
-  }));
+  pi.on("user_bash", (_event, ctx) => {
+    const model = callModel(ctx);
+    return {
+      operations: {
+        exec: (command, _cwd, { onData, signal, timeout }) =>
+          callGuest("user_bash", { command, timeout }, model, signal, undefined, onData),
+      },
+    };
+  });
   pi.on("context", (event) => {
     // Pi expands /skill commands on the host into user messages, separately
     // from the system prompt. Rewrite the model's copy, including resumed history.

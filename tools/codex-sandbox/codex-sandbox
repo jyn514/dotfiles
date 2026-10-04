@@ -59,6 +59,9 @@ from caddy_foundation import (
 from authenticated_egress import EgressPairPlan, start_egress_pair
 
 OUTER_RUNTIME = ContainerRuntime()
+# Set only in the early detached owner, before any service threads exist.
+HOST_PI_BOOTSTRAP: socket.socket | None = None
+HOST_PI_OWNER = None
 
 
 DOTFILES = Path(__file__).resolve().parents[2]
@@ -2016,13 +2019,12 @@ def run_agent(state: State, arguments: list[str]) -> int:
     agent_environment.update(bridge_environment)
     image_index = command.index(state.image)
     host_pi_bin = DOTFILES / "tools/codex-sandbox/sandbox-host-pi"
-    state.cd_request = temporary_file()
+    state.cd_request = temporary_file() if HOST_PI_BOOTSTRAP is None else None
     host_environment = dict(os.environ)
     host_environment.update({
         "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
         "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
         "CODEX_SANDBOX_GUEST_CWD": str(container_working_directory),
-        "CODEX_SANDBOX_CD_REQUEST": str(state.cd_request),
         "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
         "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
         "PI_SUBAGENT_PI_BIN": str(host_pi_bin),
@@ -2030,8 +2032,25 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "PI_MODEL_FILE": str(state.pi_model_file),
         "PI_MODEL_SESSION_ID": state.pi_model_session_id,
     })
+    if state.cd_request is not None:
+        host_environment["CODEX_SANDBOX_CD_REQUEST"] = str(state.cd_request)
     if state.handoff_origin is not None:
         host_environment["CODEX_SANDBOX_PREVIOUS_CWD"] = str(state.handoff_origin)
+    if HOST_PI_BOOTSTRAP is not None:
+        from host_pi_owner import HostPiOwner
+        global HOST_PI_OWNER
+        HOST_PI_OWNER = HostPiOwner(host_pi_bin, state.codex_arguments,
+                                    state.host_working_directory, host_environment)
+        HOST_PI_OWNER.original.pane = os.environ.get("TMUX_PANE")
+        bridge = state.host_editor
+        if bridge is not None:
+            HOST_PI_OWNER.pane_changed = lambda pane: setattr(bridge, "target_pane", pane)
+    worker_io = {}
+    if HOST_PI_BOOTSTRAP is not None:
+        from host_pi_owner import OWNER_LOG_FD
+        # Startup retains the build terminal, but this transport outlives it.
+        worker_io = {"stdin": subprocess.DEVNULL,
+                     "stdout": OWNER_LOG_FD, "stderr": OWNER_LOG_FD}
     worker_command = (["node", "/opt/agent-tools/bin/tool-worker.mjs"]
                       if isinstance(OUTER_RUNTIME, VMRuntime)
                       and state.github_credential is not None
@@ -2039,7 +2058,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     with OUTER_RUNTIME.environment_file(bridge_environment) as environment:
         with OUTER_RUNTIME.workload(
             OUTER_RUNTIME.inspect_image(state.image), state.codex_container,
-            [*command[4:image_index], *environment], worker_command,
+            [*command[4:image_index], *environment], worker_command, **worker_io,
         ) as worker:
             for _ in range(100):
                 if worker.poll() is not None:
@@ -2053,20 +2072,34 @@ def run_agent(state: State, arguments: list[str]) -> int:
                 time.sleep(0.1)
             else:
                 raise LauncherError("guest tool worker did not become ready")
-            state.agent_process = subprocess.Popen(
-                [str(host_pi_bin), *state.codex_arguments],
-                cwd=state.host_working_directory, env=host_environment,
-            )
-            worker_failed = threading.Event()
-            def watch_worker() -> None:
-                worker.wait()
-                if state.agent_process is not None and state.agent_process.poll() is None:
-                    worker_failed.set()
-                    state.agent_process.terminate()
-            threading.Thread(target=watch_worker, daemon=True).start()
-            result = wait_for_agent(state)
-            if worker_failed.is_set():
-                raise LauncherError("guest tool worker stopped while host Pi was running")
+            if HOST_PI_BOOTSTRAP is not None:
+                from host_pi_owner import send
+                HOST_PI_OWNER.mark_bootstrapped()
+                HOST_PI_OWNER.start()
+                try:
+                    send(HOST_PI_BOOTSTRAP, HOST_PI_OWNER.launch_spec(HOST_PI_OWNER.original))
+                except OSError:
+                    HOST_PI_OWNER.drop(HOST_PI_OWNER.original)
+                try:
+                    HOST_PI_OWNER.wait(worker)
+                except RuntimeError as error:
+                    raise LauncherError(str(error)) from error
+                result = 0
+            else:
+                state.agent_process = subprocess.Popen(
+                    [str(host_pi_bin), *state.codex_arguments],
+                    cwd=state.host_working_directory, env=host_environment,
+                )
+                worker_failed = threading.Event()
+                def watch_worker() -> None:
+                    worker.wait()
+                    if state.agent_process is not None and state.agent_process.poll() is None:
+                        worker_failed.set()
+                        state.agent_process.terminate()
+                threading.Thread(target=watch_worker, daemon=True).start()
+                result = wait_for_agent(state)
+                if worker_failed.is_set():
+                    raise LauncherError("guest tool worker stopped while host Pi was running")
     state.codex_container_created = False
     return result
 
@@ -2513,6 +2546,33 @@ def restart_all_tmux_sessions() -> int:
 
 
 def main(arguments: list[str]) -> int:
+    """Public CLI/import entry; interactive callers must have no live threads."""
+    # Administrative and noninteractive interfaces retain their existing process
+    # ownership. Interactive UI is separated before execute creates any resources.
+    administrative = arguments[:1] in (["validate-cd"], ["restart-all"], ["auth"])
+    options = arguments[:arguments.index("--")] if "--" in arguments else arguments
+    noninteractive = any(argument in ("--print", "-p", "--export") for argument in options)
+    for index, argument in enumerate(options):
+        if argument == "--mode" and index + 1 < len(options):
+            noninteractive |= options[index + 1] in ("rpc", "json")
+        noninteractive |= argument in ("--mode=rpc", "--mode=json")
+    if not administrative and not noninteractive:
+        from host_pi_owner import detached_frontend
+        if threading.active_count() != 1:
+            raise LauncherError("interactive launcher must start before service threads")
+        return detached_frontend(arguments, detached_owner_main)
+    with verification_scope():
+        return launch(arguments)
+
+
+def cli_main(arguments: list[str]) -> int:
+    """Script frontend alias: imports and direct invocation share one interface."""
+    return main(arguments)
+
+
+def detached_owner_main(arguments: list[str], bootstrap: socket.socket) -> int:
+    global HOST_PI_BOOTSTRAP
+    HOST_PI_BOOTSTRAP = bootstrap
     with verification_scope():
         return launch(arguments)
 
@@ -2579,7 +2639,7 @@ def launch(arguments: list[str]) -> int:
             state = new_state(next_arguments)
             state.handoff_origin = handoff_origin
             result = execute(state)
-            request = read_cd_request(state) if result == 0 else None
+            request = read_cd_request(state) if result == 0 and HOST_PI_BOOTSTRAP is None else None
             if request is None:
                 return result
             if not cleanup(state):
@@ -2619,9 +2679,12 @@ def launch(arguments: list[str]) -> int:
     finally:
         for signum in previous_handlers:
             signal.signal(signum, signal.SIG_IGN)
+        cleanup_succeeded = True
         if state is not None:
-            cleanup(state)
+            cleanup_succeeded = cleanup(state)
             unregister_tmux_pane(state)
+        if HOST_PI_OWNER is not None:
+            HOST_PI_OWNER.finish(cleanup_succeeded)
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
 

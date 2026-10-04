@@ -98,6 +98,9 @@ hooks can consume model-writable data and must retain that data's authority.
   [Host manager and UI with inherited guest execution during normal operation,
    as specified by the launcher. Tasks or templates do not select another backend;
    failed extension reload has the routing limitation described above.],
+  [Human interactive `/side`],
+  [Copies invoking context and attaches a peer pane to the existing guest worker;
+   grants no model-selected host launch inputs or additional sandbox authority.],
   [Other execution extensions and MCP],
   [Guest execution by default; host admission requires a reviewed bounded capability.
    Installed packages or staged configuration alone do not establish activation
@@ -379,6 +382,9 @@ After a crash or reboot, successful exclusive session-lock acquisition proves th
 If a command proxy or Caddy authenticated-egress instance becomes unavailable after startup, affected requests fail closed and report the failure. Attached agents remain running; the launcher does not monitor sibling liveness to terminate them. Required readiness checks still gate startup, and join-time validation rejects an unavailable shared service. Recovery requires attached agents to exit before shared services restart.
 
 Any number of launchers may share one checkout's proxy set.
+Under the selected #link("launcher-interface.typ")[interactive `/side` plan],
+one launcher retains its guest worker and session lock across peer panes; the first
+Pi's exit is not final-holder release.
 Linked worktrees retain distinct repository identities and proxy sets.
 
 == Trusted execution

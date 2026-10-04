@@ -1,19 +1,20 @@
 import { writeFile } from "node:fs/promises";
 
-export function createAllTools() {
+export function createReadTool() {
   return {
-    read: {
-      async execute(_id, params) {
-        return { content: [{ type: "text", text: `guest:${params.path}` }] };
-      },
+    async execute(_id, params) {
+      return { content: [{ type: "text", text: `guest:${params.path}` }] };
     },
-    bash: {
-      async execute(_id, _params, signal, onUpdate) {
-        onUpdate({ content: [{ type: "text", text: "started" }] });
-        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
-        await writeFile(process.env.CODEX_SANDBOX_CANCEL_MARKER, "cancelled");
-        return { content: [{ type: "text", text: "cancelled" }] };
-      },
+  };
+}
+
+export function createBashTool() {
+  return {
+    async execute(_id, _params, signal, onUpdate) {
+      onUpdate({ content: [{ type: "text", text: "started" }] });
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      await writeFile(process.env.CODEX_SANDBOX_CANCEL_MARKER, "cancelled");
+      return { content: [{ type: "text", text: "cancelled" }] };
     },
   };
 }

@@ -11,6 +11,7 @@ import promptHistorySearch from "./prompt-history-search.ts";
 import runtimeIdentity from "./runtime-identity.ts";
 import sessionTitle from "./session-title.ts";
 import sessionHandoff from "./session-handoff.ts";
+import sessionSide from "./session-side.ts";
 import subagentRouting from "./subagent-routing.ts";
 import systemPrompt from "./system-prompt.ts";
 import webSearch from "./pi-web-search.ts";
@@ -28,6 +29,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   runtimeIdentity(pi);
   sessionTitle(pi);
   sessionHandoff(pi);
+  sessionSide(pi);
   subagentRouting(pi);
   systemPrompt(pi);
   webSearch(pi);

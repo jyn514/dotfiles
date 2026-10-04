@@ -245,34 +245,39 @@ active model may change while the container is running, so `pi.json` and the
 container's initial environment are not authoritative sources for commit
 attribution.
 
-The Pi integration owns the current model and writes its `provider` and
-`modelId` to a session-scoped file whenever the active model changes. The
-launcher gives Pi and its shell children a stable `PI_MODEL_FILE` path, but
-the integration replaces the file atomically after each change. The file is a
-transport representation, not an authorization source; the `jj` wrapper reads
-it for every invocation, constructs the agent identity from the current value,
-and includes that identity in the proxy request:
+At dispatch, each guest operation snapshots its invoking Pi context's model;
+separate panes and ordinary subagents share a worker, so last-writer state cannot
+identify a call. The host extension sends required metadata outside tool
+parameters: `model` is `null` or an object with exactly nonempty, control-free
+`provider` and `modelId` strings. The worker rejects missing or malformed
+metadata and arbitrary environment fields before execution, deriving only
+`PI_CALL_MODEL` for that individual shell via documented Pi APIs, without
+process-wide environment or file changes.
+
+The flow is:
 
 ```text
-Pi gpt-5.6-sol
+Invoking Pi context's model at dispatch
+  -> guest request carries {provider, modelId}, or null
+  -> worker sets this shell's PI_CALL_MODEL
+  -> jj wrapper resolves the invocation's identity
+  -> proxy request carries that identity
+  -> trusted jj commit records it as author and committer
 ```
 
-The flow is therefore:
+Presence of `PI_CALL_MODEL` is authoritative, including an empty value for an
+unknown model. Empty or control-bearing values produce the existing warning and
+`Pi unknown-model`; they never fall back to a shared file. With that variable
+absent, standalone host Pi retains its session-matched `PI_MODEL_FILE` behavior:
+the integration publishes an atomically replaced model record, and a missing,
+malformed, or mismatched record produces the same unknown identity. The stale
+`PI_MODEL` variable remains ignored. These values describe attribution, not
+authorization. Non-Pi agents retain their existing identity sources.
 
-```text
-Pi model switch
-  -> Pi integration updates PI_MODEL_FILE
-  -> jj wrapper reads the current file
-  -> proxy request carries the resolved agent identity
-  -> trusted jj commit records that identity as author and committer
-```
-
-The proxy must not infer the model from `pi.json`, a default model, repository
-configuration, or an earlier request. A missing or malformed file, or a file
-from another session, is an attribution failure: the wrapper must report a
-warning and use the explicit unknown-model identity policy. It must not
-silently claim that the configured default is active. Non-Pi agents retain
-their existing identity sources.
+The proxy must not infer a model from `pi.json`, a default, repository
+configuration, or an earlier request. Model changes in B cannot alter A's
+already dispatched call. Restart existing sandbox panes to deploy the updated
+host extension and guest worker together; `/reload` replaces only the extension.
 
 Commands targeting host-backed metadata go through the proxy. Mutation-mode
 commands may snapshot the working copy and write metadata. Inspection-mode commands must add
@@ -409,9 +414,9 @@ sessions.
 + Add an integration fixture containing colocated `.jj` and `.git` metadata.
 + Add launcher support for the proxy container, socket volume, readiness, nested
   read-only mounts, and cleanup.
-+ Add the Pi runtime identity channel and exercise a model switch before and
-  after `jj status` and `jj commit`; verify that each commit uses the active
-  model rather than the configured default.
++ Exercise the Pi per-call identity channel through `jj status` and `jj commit`,
+  including overlapping panes and ordinary subagents with different models.
+  Verify that later selection changes cannot overwrite dispatched attribution.
 + Preserve wrapper identity through proxy requests and prohibit native retry
   after proxy failure. Route independent guest repositories natively.
 + Exercise normal status, diff, commit, split, rebase, undo, and Git fetch flows.
@@ -453,9 +458,10 @@ sessions.
   protected remotes.
 - Supported commands preserve stdout, stderr, and exit status closely enough
   for interactive agent use.
-- A Pi model switch is reflected by the next `jj` request and commit; a missing
-  or malformed model file produces an explicit attribution warning rather than
-  silently using `pi.json`'s default model.
+- Pi calls retain their invoking model under overlap. Missing or malformed guest
+  call metadata prevents execution; explicit unknown models produce an attribution
+  warning rather than a stale-file or configured-default identity. Standalone host
+  Pi retains its session-matched model-file validation.
 - Concurrent requests are serialized; timed-out, oversized, and interrupted
   requests leave neither the proxy wedged nor descendant processes running.
 - Proxy failure is fail-closed, and launcher cleanup removes only resources for

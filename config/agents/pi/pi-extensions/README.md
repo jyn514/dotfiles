@@ -12,6 +12,22 @@ pi -e ./config/agents/pi/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+## Side conversations: `/side`
+
+Under tmux, `/side` opens another host Pi pane on the same guest worker and
+copies the active branch's completed context into a fresh saved session. It does
+not stop the source or submit a prompt; pending tool batches and live
+extension/child state are not transferred. Panes share files, not later messages.
+
+The worker remains until its last Pi attachment closes; ordinary subagents remain
+parent-owned. `/side` takes no arguments and is unavailable to ordinary subagents
+or outside an interactive sandbox. Native `/clone`, `/fork`, and `/resume` are
+unchanged.
+
+Refused startup removes only its unpublished snapshot. If the host connection
+fails after submission, the outcome is unknown: retain the snapshot and do not
+retry. Check tmux before invoking `/side` again.
+
 ## Asynchronous questions: `ask_user`
 
 The model queues one batch per tool call. `ask_user` returns question IDs

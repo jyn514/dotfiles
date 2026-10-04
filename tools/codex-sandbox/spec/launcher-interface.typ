@@ -6,6 +6,8 @@ accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
 Host Pi with guest tool execution is the launcher execution path; the host
 extension authority requirements below are not yet fully verified.
+Interactive `/side` panes use shared guest-workload lifetime. Native Pi/tmux
+checks use a real local tool worker; VM-backed acceptance remains unverified.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
 the implemented image-command/image-target split, not the proxy trust or
@@ -45,10 +47,12 @@ guaranteed during normal operation only.
 Installation alone does not authorize a host handler. Host code and executable
 configuration must remain inaccessible to guest writes through every mount alias.
 
-An execution attachment binds one Pi launch and its children to one guest worker
-and directory. The launcher selects the repository and guest mount; repository
-tool arguments use guest paths. Host-discovered shared skills are mounted at
-the guest skills path. Recursive project instruction includes and resource reads
+An execution attachment binds one interactive host Pi and its ordinary children
+to a guest worker and directory. Human-created `/side` panes have separate
+attachments to that worker, not separate containers. Pi conversation files remain
+on the host. The launcher selects the repository and guest mount; repository tool
+arguments use guest paths. Host-discovered shared skills are mounted at the guest
+skills path. Recursive project instruction includes and resource reads
 resolve in the guest view under the extension authority contract. Rewrite mapped
 host resource paths to guest paths before Pi sends the system prompt; path
 rewriting alone does not constrain the preceding resource reads. Host Pi's README,
@@ -67,6 +71,8 @@ attachment, it reuses Pi's guest tool implementations for normal built-in and
 returns an error. A failed extension reload may restore Pi's host-local tools;
 guest tool routing is a normal-operation guarantee, not a malicious-code security
 boundary. Bind each routed call to its inherited attachment until it settles.
+The #link("../../jj-proxy/design.typ")[runtime agent identity contract] defines
+per-operation model snapshots and their metadata and shell-environment representation.
 Cancellation requirements belong to
 #link("process-ownership.typ")[process ownership].
 
@@ -80,8 +86,10 @@ an existing Jujutsu workspace before stopping the current session.
 
 + Check the destination path without creating resources. An invalid path leaves
   the current session usable.
-+ Abort and settle the current turn, then shut down Pi and its child manager.
-  Close the old guest attachment before starting the destination.
++ Abort and settle the current turn, then shut down this Pi and its child manager.
+  Release this pane's old attachment before starting the destination. Peer panes
+  keep their attachments and guest worker; remove the old workload only
+  after its final attachment releases.
 + Start the destination through ordinary startup or accepted-session joining, then
   fork the settled conversation into a fresh Pi session with normal resource
   loading. Preserve historical messages and paths; add the directory transition
@@ -95,12 +103,12 @@ The new session follows Pi's ordinary fork behavior. Historical child results
 remain conversation data; live child processes and extension state are not
 transferred. Rebuild the runtime rather than rebind a live session.
 
-Only one attachment is owned by this handoff at a time. Destination startup or
+This pane owns only one attachment during handoff. Destination startup or
 session creation failure runs ordinary failed-start cleanup. Preserve the saved
 conversation; retain recovery records only for resources whose cleanup failed.
 Report failure without claiming rollback or automatically resuming the old session.
-The launcher owns the attachment until guest cleanup finishes; shared-session
-locks and per-launch services follow that existing cleanup path.
+The launcher owns attachment release and final guest cleanup. Shared-session locks
+and per-launch services remain held while another pane uses that workload.
 
 === Subagents without a second lifecycle implementation
 
@@ -113,12 +121,64 @@ unreviewed host handlers.
 Use the existing `PI_SUBAGENT_PI_BIN` entrypoint override. The wrapper launches
 host Pi with the guest-tool extension; it does not own a second guest Pi process.
 
+=== Interactive `/side` panes <interactive-side>
+
+Human `/side` opens a host Pi tmux pane with copied context, using the same guest
+worker, working tree, and accepted authority. It creates no container or policy
+reload; Pi and saved conversations stay on the host. Use a normal extension command
+and leave native `/clone`, `/fork`, and `/resume` unchanged. Without tmux or a live
+sandbox attachment, report an error and leave the invoking session alone.
+
+A continues while `/side` opens B. Closing A ends its ordinary subagents, but B
+and the container remain; closing B then removes the container. Panes share files,
+not subsequent conversation messages.
+
+Pi copies the invoking session's active branch through its supported session APIs
+into a fresh session ID with an empty editor. Use completed context; do not copy
+or replay an unfinished response or tool batch, live children, or executable
+extension state. Do not interrupt the source or automatically submit a prompt.
+
+The launcher owns the guest workload and its Pi attachments; cleanup is not tied
+to the first Pi's exit. Reserve an attachment before pane startup and release it
+on failure. Keep the worker, launch-scoped relays, and shared-session lock until
+final release. Ordinary subagents and model-requested forks remain owned by their
+invoking Pi and do not independently retain the workload.
+
+On pane exit, existing Pi/child shutdown and tool cancellation precede attachment
+release. `/cd` releases only the invoking attachment; peers keep the old worker.
+Final release uses existing workload and trusted-service cleanup. Keep editor
+ targets valid for survivors. Failed startup cleans only that attempt; worker loss
+affects all panes. Reuse existing owner-loss recovery and unknown-write-outcome
+handling; add no cancellation protocol, tmux-restart feature, or worker replacement.
+
+The host derives the conversation, worker, directory, executable, and pane target
+from the invoking session. This is a bounded human operation, not a model-facing
+host shell or a way to select another container, environment, or capability set.
+
+A detached launcher owns workload lifetime. Each interactive `sandbox-host-pi`
+wrapper holds one private lifetime connection; short readiness and `/side` requests
+are not leases. Final release acknowledges after existing cleanup. Captured host
+environment travels over the private socket, not tmux arguments. The extension
+copies context and starts the fixed wrapper with the existing worker connector;
+there is no native command interception, Pi patch, durable attachment registry,
+or second subagent manager.
+
+Verify on disposable resources:
+- B has a fresh session ID and completed source context, uses A's worker, and leaves
+  A's running work unchanged. No container creation or pending-call replay occurs.
+- Closing either pane first preserves its peer; final release cleans the workload.
+  Include source exit during pane startup and parent-bounded ordinary subagents.
+- Failed startup leaves A usable. Worker loss has no host-local fallback; editor
+  use and `/cd` from surviving panes preserve their peers and existing cleanup rules.
+
 === Model-requested session forks <sandbox-session-forks>
 
 A sandboxed agent may request a host-managed fork of its current conversation.
 For example, a fork can investigate a second approach using copied context while
 its file reads and shell commands still run in the parent's guest worker.
 This creates a conversation branch, not a new execution environment or authority.
+Unlike human #link(<interactive-side>)[side panes], these forks remain
+children of the invoking Pi and do not acquire independent attachments.
 
 Pi owns copying the current branch into a fresh session ID through its session
 APIs. The trusted child manager starts and tracks the fork using the same backend
@@ -152,9 +212,10 @@ Required acceptance checks are:
 - A fork creates a new session ID without modifying its source or transferring
   live handles or pending calls. Failed startup cleans child resources and leaves
   the parent's session and attachment usable.
-- `/cd` validates first, then closes the old guest before starting a new session
-  in the destination; invalid paths leave the old session usable. Model-originated
-  input cannot authorize that handoff.
+- `/cd` validates first, then releases the invoking pane's old attachment before
+  starting a destination session; peer panes retain their worker. With no
+  remaining attachments, old guest cleanup precedes startup. Invalid paths leave
+  the old session usable. Model-originated input cannot authorize that handoff.
 - Cross-directory resume forks the conversation under a fresh session ID.
 - Unclassified model-executable host handlers are rejected. Guest-modified code
   cannot become host executable code through `/reload` or fork startup.

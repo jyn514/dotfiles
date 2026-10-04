@@ -112,20 +112,25 @@ remote identities, and credential handling with their current owners.
 == Host Pi and guest tool calls
 
 The #link("launcher-interface.typ")[host-Pi path] keeps parent and subagent Pi
-processes on the host. The existing subagent manager owns child processes and RPC
-pipes. The launcher owns one guest workload per Pi launch; the trusted-service
-supervisor retains only the services in
-#link("trusted-service-lifecycle.typ")[its lifecycle contract].
+processes on the host; the existing subagent manager owns child processes and RPC
+pipes. The implemented launcher owns one guest workload per Pi launch. Under the
+#link("launcher-interface.typ")[interactive `/side` plan], peer panes attach
+independently; the workload owner survives the first pane's exit and cleans up at
+final release. Ordinary subagents remain owned by their invoking Pi. The trusted-
+service supervisor retains only services in #link("trusted-service-lifecycle.typ")[its lifecycle contract].
 
 Each tool call uses a separate socket to the persistent guest worker; closing it
 aborts that call's Pi tool signal. The host Pi wrapper gives children the same
-worker binding. A lost worker interrupts host Pi, and the launcher's existing
-workload cleanup removes the guest container.
+worker binding. Worker loss interrupts host Pi and existing workload cleanup
+removes the container; the multi-pane owner reports loss to every attachment.
 
-Cancellation and transport loss do not roll back a possible write. Never replay
-a call automatically after an unknown outcome. On `/cd`, close and clean the old
-workload before starting the destination; if cleanup fails, stop the handoff.
-Background processes inside the guest end when its container is removed.
+Cancellation and transport loss do not roll back a possible write; never replay a
+call automatically after an unknown outcome. Side panes reuse existing Pi/child
+shutdown and per-call cancellation, with no stronger guest-descendant isolation
+promise. Releasing one pane preserves peers' worker. On `/cd`, release the invoking
+attachment before destination startup; final release cleans the old workload first.
+Incomplete release or cleanup stops handoff. Guest background processes end when
+the container is removed.
 
 Live operational probes remain for parent and child death, guest disappearance,
 detached descendants, and disconnect after a write but before its response.

@@ -14,6 +14,14 @@ codex_version() {
 }
 
 pi_model() {
+  # A worker snapshot is invocation-scoped, including an explicitly unknown model.
+  # Never fall back to shared session state when that snapshot is present.
+  if [ "${PI_CALL_MODEL+x}" = x ]; then
+    jq -ner --arg model "$PI_CALL_MODEL" '
+        $model | select(length > 0 and test("^[^[:cntrl:]]+$"))
+      ' 2>/dev/null
+    return
+  fi
   [ -n "${PI_MODEL_FILE:-}" ] || return 1
   [ -n "${PI_MODEL_SESSION_ID:-}" ] || return 1
   jq -er --arg session "$PI_MODEL_SESSION_ID" '

@@ -47,6 +47,7 @@ class JjDispatchTest(unittest.TestCase):
             "SANDBOX_PROXY_DEFAULT_DIR": str(self.root / "no-default"),
             "JJ_TEST_RECORD": str(self.record),
         }
+        self.env.pop("PI_CALL_MODEL", None)
         (self.root / "config.toml").write_text("")
 
     def repo(self, name="local"):
@@ -135,6 +136,77 @@ class JjDispatchTest(unittest.TestCase):
         self.assertEqual(125, result.returncode, result.stderr)
         self.assertIn("run from the mounted workspace", result.stderr)
         self.assertEqual([], self.calls())
+
+    def test_per_call_pi_model_overrides_shared_state_on_native_and_proxy(self):
+        local = self.repo()
+        model = self.root / "shared-model.json"
+        model.write_text(json.dumps({"session_id": "s", "provider": "provider",
+                                     "modelId": "stale-shared-model"}))
+        env = {**self.env, "JJ_AGENT": "pi", "PI_MODEL": "stale-env-model",
+               "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
+        # Reuse the same shared file while independent calls select different models.
+        # Whitespace and shell punctuation are safe under the existing ID policy.
+        for role, cwd in (("native", local), ("proxy", ROOT)):
+            for name in ("call-model-A", "call-model-B ; $()", " spaced model "):
+                with self.subTest(role=role, model=name):
+                    self.record.unlink(missing_ok=True)
+                    args = ["status", "--no-pager"]
+                    result = self.run_wrapper(*args, cwd=cwd,
+                                              env={**env, "PI_CALL_MODEL": name})
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    calls = self.calls()
+                    self.assertEqual(role, calls[0]["role"])
+                    self.assertEqual(args, calls[0]["argv"])
+                    self.assertEqual("Pi " + name, calls[0]["user"])
+                    self.assertEqual("325577925+one-esk-nineteen@users.noreply.github.com",
+                                     calls[0]["email"])
+                    self.assertNotIn("could not determine active Pi model", result.stderr)
+
+    def test_unknown_call_pi_model_never_falls_back_on_native_or_proxy(self):
+        local = self.repo()
+        model = self.root / "shared-model.json"
+        model.write_text(json.dumps({"session_id": "s", "provider": "provider",
+                                     "modelId": "stale-shared-model"}))
+        env = {**self.env, "JJ_AGENT": "pi", "PI_MODEL": "stale-env-model",
+               "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
+        for role, cwd in (("native", local), ("proxy", ROOT)):
+            for name in ("", "bad\nmodel", "bad\rmodel", "bad\tmodel", "bad\x1fmodel", "bad\x7fmodel"):
+                with self.subTest(role=role, model=name):
+                    self.record.unlink(missing_ok=True)
+                    args = ["status", "--no-pager"]
+                    result = self.run_wrapper(*args, cwd=cwd,
+                                              env={**env, "PI_CALL_MODEL": name})
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    calls = self.calls()
+                    self.assertEqual(role, calls[0]["role"])
+                    self.assertEqual(args, calls[0]["argv"])
+                    self.assertEqual("Pi unknown-model", calls[0]["user"])
+                    self.assertEqual("325577925+one-esk-nineteen@users.noreply.github.com",
+                                     calls[0]["email"])
+                    self.assertIn("could not determine active Pi model", result.stderr)
+
+    def test_absent_call_pi_model_keeps_legacy_session_and_id_validation(self):
+        model = self.root / "shared-model.json"
+        env = {**self.env, "JJ_AGENT": "pi", "PI_MODEL": "stale-env-model",
+               "PI_MODEL_FILE": str(model), "PI_MODEL_SESSION_ID": "s"}
+        valid = {"session_id": "s", "provider": "provider", "modelId": "legacy-model"}
+        cases = [(valid, "Pi legacy-model")]
+        for fields in ({"session_id": "other-session"}, {"provider": ""},
+                       {"modelId": ""}, {"modelId": None}, {"modelId": 7},
+                       {"modelId": "bad\nmodel"}, {"modelId": "bad\x7fmodel"}):
+            cases.append(({**valid, **fields}, "Pi unknown-model"))
+        for contents, identity in cases:
+            with self.subTest(contents=contents):
+                self.record.unlink(missing_ok=True)
+                model.write_text(json.dumps(contents))
+                result = self.run_wrapper("status", "--no-pager", cwd=ROOT, env=env)
+                self.assertEqual(0, result.returncode, result.stderr)
+                call = self.calls()[0]
+                self.assertEqual("proxy", call["role"])
+                self.assertEqual(["status", "--no-pager"], call["argv"])
+                self.assertEqual(identity, call["user"])
+                self.assertEqual(identity == "Pi unknown-model",
+                                 "could not determine active Pi model" in result.stderr)
 
     def test_private_split_is_opaque_proxy_only_and_uses_runtime_pi_identity(self):
         model = self.root / "model.json"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import json
 import os
@@ -11,6 +12,7 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -48,6 +50,77 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_detached_owner_worker_uses_log_and_null_stdin_before_bootstrap(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        run_agent = launcher["run_agent"]
+        import host_pi_owner
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "repo"
+            git_directory = repository / ".git"
+            git_directory.mkdir(parents=True)
+            state = SimpleNamespace(
+                repository=repository, git_repository=repository,
+                container_repository=Path("/src/repo"), home=root / "home",
+                host_working_directory=repository, skills_tmp=root / "skills",
+                image="agent-image", codex_container="worker-container",
+                codex_arguments=[], pi_model_session_id="test-session",
+                host_editor=None, handoff_origin=None,
+            )
+            for role, (_, destination) in launcher["STAGED_CONFIG"].items():
+                source = state.skills_tmp / "config" / role
+                source.parent.mkdir(parents=True, exist_ok=True)
+                if destination.endswith("/agents") or role == "models":
+                    source.mkdir()
+                else:
+                    source.touch()
+            log_path = root / "owner.log"
+            with log_path.open("w+") as log:
+                @contextlib.contextmanager
+                def workload(_image, _name, _options, _command, **stdio):
+                    self.assertEqual(subprocess.DEVNULL, stdio.get("stdin"))
+                    for stream in ("stdout", "stderr"):
+                        descriptor = stdio[stream]
+                        self.assertIsInstance(descriptor, int)
+                        self.assertTrue(stat.S_ISREG(os.fstat(descriptor).st_mode))
+                        self.assertEqual(os.stat(log_path), os.fstat(descriptor))
+                    # Exercise the exact production handoff with a native child.
+                    with subprocess.Popen([
+                        sys.executable, "-c",
+                        "import json, os, sys; "
+                        "print(json.dumps([os.isatty(fd) for fd in range(3)])); "
+                        "print('worker stderr', file=sys.stderr); "
+                        "assert sys.stdin.read() == ''; sys.exit(17)",
+                    ], **stdio) as worker:
+                        self.assertEqual(17, worker.wait(timeout=5))
+                        yield worker
+
+                runtime = SimpleNamespace(
+                    environment_file=lambda _environment: contextlib.nullcontext([]),
+                    inspect_image=mock.Mock(return_value="inspected-image"),
+                    workload=workload,
+                )
+                with mock.patch.object(host_pi_owner, "OWNER_LOG_FD", log.fileno()), \
+                        mock.patch.object(host_pi_owner, "HostPiOwner") as owner, \
+                        mock.patch.dict(run_agent.__globals__, {
+                            "HOST_PI_BOOTSTRAP": object(), "OUTER_RUNTIME": runtime,
+                            "scratch_directory": lambda: root,
+                            "run": mock.Mock(return_value=SimpleNamespace(
+                                stdout=f"{git_directory}\n{git_directory}\n")),
+                            "host_pi_resource_paths": lambda _state: {
+                                str(repository): "/src/repo"},
+                            "build_agent_command": mock.Mock(return_value=[
+                                "docker", "run", "--name", "worker-container", "agent-image"]),
+                        }):
+                    with self.assertRaisesRegex(launcher["LauncherError"],
+                                                "guest tool worker exited during startup"):
+                        run_agent(state, [])
+                    owner.return_value.start.assert_not_called()
+                log.seek(0)
+                self.assertEqual({"[false, false, false]", "worker stderr"},
+                                 set(log.read().splitlines()))
+
     def test_codex_pair_uses_mapped_virtiofs_identity_only_on_linux(self):
         identity = runpy.run_path(str(LAUNCHER))["codex_pair_identity"]
         state = SimpleNamespace(uid=1000, gid=1000)
@@ -201,7 +274,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 mock.patch.dict(launcher["main"].__globals__, image_runtime=initialize,
                     new_state=lambda _: state, execute=lambda _: 0, cleanup=cleanup,
                     unregister_tmux_pane=lambda _: None):
-            self.assertEqual(0, launcher["main"]([]))
+            self.assertEqual(0, launcher["main"](["--mode", "rpc"]))
             self.assertEqual("parent-launch", os.environ[key])
 
     def test_lima_rejects_a_whole_home_container_bind_through_a_symlink(self) -> None:
@@ -820,7 +893,9 @@ class BackgroundRelayTest(unittest.TestCase):
 
     def test_signal_during_image_build_waits_before_proxy_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        main = launcher["main"]
+        # Exercise the primary owner body below the early-fork frontend. This
+        # test intentionally creates an in-process thread that sends its signal.
+        main = launcher["launch"]
         build_release = threading.Event()
         build_finished = threading.Event()
         proxy_attached = threading.Event()
@@ -892,7 +967,7 @@ class BackgroundRelayTest(unittest.TestCase):
 
     def test_signal_during_join_cannot_race_cleanup(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        main = launcher["main"]
+        main = launcher["launch"]
         state = SimpleNamespace(joining_workers=False, deferred_signal=None)
         abort = threading.Event()
         finished = threading.Event()
@@ -1291,10 +1366,8 @@ class CodexSandboxTest(unittest.TestCase):
             self.home / ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"
         )
         (self.pi_package / "dist/bundle").mkdir(parents=True)
-        (self.pi_package / "dist/bundle/cli.js").write_text(
-            "#!/usr/bin/env node\nprocess.exit(Number(process.env.FAKE_AGENT_EXIT || 0));\n",
-            encoding="utf-8",
-        )
+        shutil.copyfile(Path(__file__).with_name("host_pi_cli_fixture.mjs"),
+                        self.pi_package / "dist/bundle/cli.js")
         (self.pi_package / "dist/bundle/cli.js").chmod(0o700)
         (self.pi_package / "README.md").write_text("host readme\n", encoding="utf-8")
         (self.pi_package / "docs").mkdir()
@@ -2244,7 +2317,7 @@ class CodexSandboxTest(unittest.TestCase):
         ready = self.root / "agent-ready"
         process = subprocess.Popen(
             [sys.executable, str(LAUNCHER_FIXTURE)], cwd=self.repo,
-            env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_AGENT_READY=str(ready)),
+            env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_HOST_PI_READY=str(ready)),
             text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
         )
         deadline = time.monotonic() + 5
@@ -2264,6 +2337,85 @@ class CodexSandboxTest(unittest.TestCase):
         actions = [call[1] for call in read_calls(self.python_log) if len(call) > 1]
         self.assertIn("attach", actions)
         self.assertNotIn("hold-lock", actions)
+
+    def test_cli_literal_print_and_rpc_prompt_after_separator_still_holds_interactive_lease(self) -> None:
+        ready = self.root / "literal-prompt-ready"
+        result = self.run_launcher("--", "-p", "--mode", "rpc", FAKE_HOST_PI_READY=str(ready))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertTrue(ready.exists())
+        self.assertIsInstance(json.loads(ready.read_text())["owner"], str)
+
+    @unittest.skipUnless(shutil.which("tmux"), "tmux unavailable")
+    def test_cli_side_keeps_exact_worker_and_relays_after_original_sigkill(self) -> None:
+        server = "sandbox-cli-owner-" + uuid.uuid4().hex
+        started = subprocess.run(["tmux", "-L", server, "new-session", "-d", "-P", "-F",
+                                  "#{pane_id}", "sleep 60"], text=True, capture_output=True)
+        if started.returncode:
+            self.skipTest(started.stderr)
+        pane = started.stdout.strip()
+        tmux = subprocess.check_output(["tmux", "-L", server, "display-message", "-p",
+                                        "#{socket_path},#{pid},0"], text=True).strip()
+        ready = self.root / "actual-host-pi-ready"
+        process = subprocess.Popen([sys.executable, str(LAUNCHER_FIXTURE)], cwd=self.repo,
+            env=self.launcher_environment(FAKE_AGENT_BLOCK="1", FAKE_HOST_PI_READY=str(ready),
+                                          TMUX=tmux, TMUX_PANE=pane),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+        def wait_for(predicate):
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if predicate():
+                    return
+                time.sleep(.025)
+            self.fail("native CLI controller condition did not become ready")
+
+        def controller(info, value):
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(8)
+                connection.connect(info["owner"])
+                connection.sendall((json.dumps({"attachment": info["attachment"], **value}) + "\n").encode())
+                with connection.makefile("rb") as stream:
+                    return json.loads(stream.readline())
+
+        try:
+            wait_for(ready.exists)
+            original = json.loads(ready.read_text())
+            snapshot = self.root / "copied-session.jsonl"
+            snapshot.write_text('{}\n')
+            answer = controller(original, {"op": "side", "session": str(snapshot)})
+            self.assertTrue(answer["ok"], answer)
+            copied_ready = Path(str(snapshot) + ".fixture-ready")
+            wait_for(copied_ready.exists)
+            copied = json.loads(copied_ready.read_text())
+            self.assertEqual(original["owner"], copied["owner"])
+            self.assertEqual(original["container"], copied["container"])
+            process.kill()
+            process.wait(timeout=5)
+            subprocess.run(["tmux", "-L", server, "kill-pane", "-t", pane], check=True)
+            time.sleep(.2)
+            removals = [call for call in read_calls(self.docker_log) if call[:1] == ["rm"]]
+            self.assertFalse(any(original["container"] in call for call in removals))
+            self.assertFalse(any(call[:2] == ["container", "ls"] for call in read_calls(self.docker_log)))
+            self.assertTrue(controller(copied, {"op": "ready", "session": str(snapshot)})["ok"])
+            Path(str(snapshot) + ".fixture-exit").touch()
+            wait_for(lambda: not Path(original["owner"]).exists())
+            self.assertEqual(1, len([call for call in read_calls(self.docker_log)
+                                    if call[:1] == ["create"] and "/opt/agent-tools/bin/tool-worker.mjs" in call]))
+            removals = [call for call in read_calls(self.docker_log) if call[:1] == ["rm"]]
+            self.assertTrue(any(original["container"] in call for call in removals))
+            gateway_starts = [call for call in read_calls(self.docker_log)
+                              if call[:2] == ["run", "--detach"] and
+                              any(argument.startswith("codex-gateway-") for argument in call)]
+            self.assertEqual(1, len(gateway_starts))
+            # The existing engine fixture reports relay presence as absent. Its
+            # cleanup presence query (rather than an unsafe name-based removal)
+            # must still occur only after the final lease.
+            self.assertTrue(any(call[:2] == ["container", "ls"] for call in read_calls(self.docker_log)))
+        finally:
+            subprocess.run(["tmux", "-L", server, "kill-server"], capture_output=True)
+            if process.poll() is None:
+                process.kill()
+            process.wait()
 
     def test_host_editor_relay_is_isolated_and_injected(self) -> None:
         result = self.run_launcher()

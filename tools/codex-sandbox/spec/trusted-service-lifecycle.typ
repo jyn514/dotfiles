@@ -109,7 +109,10 @@ The complete record is atomically published as one owner-validated host runtime 
 It may contain authenticated-egress session tokens, which are passed only to their service and validated joining agents; it contains no reusable upstream credentials, application request fields, or mutable refresh state.
 All agents attached to the accepted shared session receive the same route authority, so per-attachment token issuance and revocation add no useful isolation.
 Final-holder cleanup removes the record after stopping the shared services; each token is useless upstream and expires when its service stops.
-Per-launch services are not published as shared state and cannot be inherited by another launcher.
+Per-launch services are not shared state and cannot be inherited by another
+launcher. Under the #link("launcher-interface.typ")[`/side` plan], peer Pi panes
+share one existing agent-launch resource owner, not a new launcher or relay
+authorization.
 
 == Scope and availability
 
@@ -117,11 +120,11 @@ Per-launch services are not published as shared state and cannot be inherited by
 Command proxies and Caddy authenticated-egress instances normally use this scope.
 The first launcher owns publication; the final attached launcher owns cleanup.
 
-`agent-launch` services belong to one launcher and one agent attachment.
-In host-Pi mode, one Pi session and its children use that execution attachment.
-Directory changes shut down the old session and attachment before enabling the
-new session. Each new attachment authorizes its own per-launch services even
-when it joins the same shared session.
+`agent-launch` services belong to one launcher-owned guest workload, initially
+used by one Pi attachment and its ordinary children. `/side` keeps these services
+until final attachment release; they do not become shared-session services.
+Directory changes release only the invoking attachment, and a new workload gets
+its own per-launch authorization.
 Host editor and Agent Podman gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
 
@@ -245,9 +248,9 @@ The supervisor stops accepting new work, cancels startup workers, and waits for 
 Each service adapter gets at most one bounded graceful-shutdown hook appropriate to its protocol; generic lifecycle code does not invent application cancellation messages or retries.
 After the deadline, the runtime terminates the complete owned process or container and reaps descendants according to #link("process-ownership.typ")[process ownership].
 
-Per-launch services stop when their agent attachment ends or its startup fails.
-For host Pi, attachment release follows the session shutdown and guest-work drain
-rules in the launcher contract; host process exit alone does not prove release.
+Per-launch services stop on startup failure or final attachment release. Host Pi
+release follows the launcher contract; `/side` keeps the workload owner and
+shared-session lock alive while peers remain.
 Shared services stop only after the final launcher proves final ownership through the host session lock.
 Cleanup runs in reverse dependency order derived from the declared resource attachments: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.
 Independent removals may run concurrently when ownership and dependency order permit it.

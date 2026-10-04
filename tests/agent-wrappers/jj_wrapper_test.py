@@ -20,6 +20,7 @@ class JjWrapperTest(unittest.TestCase):
             "JJ_PROXY_REPO": str(ROOT),
         })
         helper.start()
+        os.environ.pop("PI_CALL_MODEL", None)
         self.addCleanup(helper.stop)
 
     def test_uses_configured_real_binary_outside_path(self) -> None:
@@ -132,6 +133,7 @@ class JjWrapperTest(unittest.TestCase):
                 env={
                     **os.environ,
                     "JJ_AGENT": "pi",
+                    "PI_MODEL": "stale-env-model",
                     "PI_MODEL_FILE": str(model_file),
                     "PI_MODEL_SESSION_ID": "session-1",
                     "RESULT_FILE": str(result_file),
@@ -178,6 +180,7 @@ class JjWrapperTest(unittest.TestCase):
             env.update(
                 {
                     "PI_CODING_AGENT": "true",
+                    "PI_MODEL": "stale-env-model",
                     "PI_MODEL_FILE": str(model_file),
                     "PI_MODEL_SESSION_ID": "session-1",
                     "RESULT_FILE": str(result_file),

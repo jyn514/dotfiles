@@ -4,34 +4,53 @@
 import os
 from pathlib import Path
 import sys
+import subprocess
 
 
-def main() -> None:
+def main() -> int:
+    interactive = sys.argv[1:2] == ["--sandbox-interactive"]
+    arguments = sys.argv[2:] if interactive else sys.argv[1:]
+    if not interactive:
+        # Ordinary children inherit guest tools, not their parent's pane lease
+        # or a request file capable of handing off the parent's session.
+        for key in ("CODEX_SANDBOX_PI_OWNER", "CODEX_SANDBOX_PI_ATTACHMENT",
+                    "CODEX_SANDBOX_PI_OWNER_FD", "CODEX_SANDBOX_CD_REQUEST",
+                    "CODEX_SANDBOX_PREVIOUS_CWD"):
+            os.environ.pop(key, None)
     home = Path.home()
     pi_cli = home / ".local/share/pi/node/node_modules/.bin/pi"
     if not pi_cli.is_file():
         raise SystemExit(f"Host Pi is not installed at {pi_cli}")
-    if sys.argv[1:2] == ["--export"]:
+    if arguments[:1] == ["--export"]:
         # Extra flags can overwrite export mode and start an agent without guest tools.
-        if len(sys.argv) not in (3, 4) or any(not argument for argument in sys.argv[2:]):
+        if interactive or len(arguments) not in (2, 3) or any(not argument for argument in arguments[1:]):
             raise SystemExit("Usage: pi --export SESSION.jsonl [OUTPUT.html]")
-        os.execv(pi_cli, [str(pi_cli), *sys.argv[1:]])
+        os.execv(pi_cli, [str(pi_cli), *arguments])
     extensions = Path(__file__).resolve().parents[2] / "config/agents/pi/pi-extensions"
     old_sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
     installed_index = home / ".pi/agent/pi-extensions/index.ts"
     args = []
-    index = 1
-    while index < len(sys.argv):
-        if (sys.argv[index] in ("--extension", "-e") and index + 1 < len(sys.argv)
-                and Path(sys.argv[index + 1]).expanduser() in (old_sidecar, installed_index)):
+    index = 0
+    while index < len(arguments):
+        if (arguments[index] in ("--extension", "-e") and index + 1 < len(arguments)
+                and Path(arguments[index + 1]).expanduser() in (old_sidecar, installed_index)):
             # Drop the guest-only provider and replace the index with its source.
             index += 2
             continue
-        args.append(sys.argv[index])
+        args.append(arguments[index])
         index += 1
-    os.execv(pi_cli, [str(pi_cli), "--extension", str(extensions / "index.ts"),
-                      "--extension", str(extensions / "guest-tools.ts"), *args])
+    command = [str(pi_cli), "--extension", str(extensions / "index.ts"),
+               "--extension", str(extensions / "guest-tools.ts"), *args]
+    if interactive:
+        from host_pi_owner import run_interactive
+        try:
+            return run_interactive(command)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"Host Pi attachment failed: {error}", file=sys.stderr)
+            return 1
+    os.execv(pi_cli, command)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

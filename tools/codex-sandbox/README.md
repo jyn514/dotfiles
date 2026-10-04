@@ -28,6 +28,12 @@ Host `~/.pi/agent/sessions` is mounted read-only at
 `/home/codex/.pi/agent/sessions` so guest tools can search past conversations.
 Pi continues to write sessions on the host.
 
+Guest `jj` calls snapshot the invoking Pi's model at dispatch, including in side
+panes and ordinary subagents; later model changes cannot alter in-flight
+attribution. Close existing sandbox panes and start a new sandbox to deploy the
+host extension and guest worker together; `/reload` alone does not replace the
+worker.
+
 Agent containers drop `NET_RAW` on every backend, including after container-local sudo.
 Sidecars drop all capabilities.
 This takes effect on new launches;
@@ -171,10 +177,26 @@ tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images wi
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
 
-In host mode, `/cd DIRECTORY` validates an existing Jujutsu workspace, closes
-the current guest, and forks the conversation into a new session there. Resuming
-a session from another directory also forks it; the saved session is preserved.
-An empty session starts fresh in the destination; unsaved messages block handoff.
+Under tmux, `/side` opens a Pi pane with completed context, a fresh session ID,
+and an empty editor, using the same guest container. It leaves the source and its
+running work alone; unfinished tool batches and live subagents are not copied.
+Panes share working-tree files, not later messages. Native `/clone`, `/fork`, and
+`/resume` are unchanged.
+
+Either pane may close first: the container, relays, and shared-session lock remain
+until the final Pi attachment exits. Ordinary subagents remain owned by their Pi.
+Failed startup leaves existing panes running; worker loss affects all attached
+panes. `/side` is a human command, accepts no arguments, and is unavailable outside
+an interactive sandbox.
+
+`/cd DIRECTORY` validates an existing Jujutsu workspace, releases only this pane's
+attachment, and forks into a new sandbox. Peers retain the old guest, which is
+cleaned up before handoff only after its final attachment releases. Cross-directory
+resume also forks and preserves the saved session. An empty session starts fresh;
+unsaved messages block handoff.
+
+`restart-all` does not manage side panes. Close them before restarting registered
+sessions; there is no tmux-restart or automatic worker-replacement feature.
 
 `refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
 it retains BuildKit caches.
