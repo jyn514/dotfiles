@@ -7,12 +7,12 @@ agent-specific in spirit.
 ## What this is
 
 A TypeScript extension for the third-party open-source CLI
-[`@mariozechner/pi-coding-agent`](https://github.com/mariozechner/pi).
+[`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi).
 It exposes two read-only tools (`search_sessions`, `read_session`) and
 a `/find-sessions` slash command that grep prior pi session transcripts
 on disk.
 
-Peer-deps only on `@mariozechner/pi-coding-agent` and `typebox`. No
+Peer-deps only on `@earendil-works/pi-coding-agent` and `typebox`. No
 Adobe-internal dependencies, no servers, no network calls.
 
 ## Build / test / typecheck
@@ -27,14 +27,11 @@ npm run typecheck  # tsc --noEmit against tsconfig.check.json
 
 ## Packaging & runtime (read before touching `engines` or the loader)
 
-- pi loads `.ts` extensions through its bundled TypeScript loader
-  (`@mariozechner/jiti`), **not** Node's native `--experimental-strip-types`.
-  So the published package's `engines.node` must mirror the host CLI
-  (`@mariozechner/pi-coding-agent`, currently `>=20.6.0`), **not** the Node
-  version the `npm test` script happens to need. Do not bump `engines.node`
-  to 22.x just because the test script passes `--experimental-strip-types`;
-  that flag is a dev/test-only concern and is irrelevant to how the shipped
-  extension is loaded at runtime.
+- pi loads `.ts` extensions through its TypeScript loader (`jiti`), **not**
+  Node's native `--experimental-strip-types`. The published package's
+  `engines.node` must mirror the supported host CLI's manifest, **not** the
+  Node version the test script happens to need. Check the installed host's
+  loader and manifest before changing this boundary.
 - pi has first-class npm support: `pi install npm:@adobe/pi-session-search`
   is the primary install path. Keep the published tarball loadable as-is
   (no build step) — ship the `.ts` sources, not compiled JS.

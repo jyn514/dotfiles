@@ -1,6 +1,6 @@
 # pi-session-search
 
-A [pi-coding-agent](https://github.com/mariozechner/pi) extension that lets the
+A [pi-coding-agent](https://github.com/earendil-works/pi) extension that lets the
 active LLM (and you) search prior pi session transcripts on disk **without
 resuming them**.
 
@@ -29,8 +29,18 @@ tool call). Read-only — never modifies session files.
 
 ## Prerequisites
 
-[pi-coding-agent](https://github.com/mariozechner/pi) installed and working.
-That's it. No API keys, no extra services.
+Node.js **>=22.19.0** and
+[`@earendil-works/pi-coding-agent` 1.0.2](https://github.com/earendil-works/pi)
+installed and working. This extension requires no API keys or extra services.
+
+If you use the deprecated `@mariozechner/pi-coding-agent`, migrate to the
+maintained CLI before installing or reloading this extension. For an npm-global
+installation, remove the old package first because both CLIs provide `pi`:
+
+```bash
+npm uninstall -g @mariozechner/pi-coding-agent
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.0.2
+```
 
 ## Installation
 

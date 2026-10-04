@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerExtension, { formatHitsForCommand, readSessionWindow, searchSessions } from "../index.ts";
 
 const MAX_RECORD_BYTES = 5 * 1024 * 1024;

@@ -23,7 +23,7 @@
     "adobe"
   ],
   "engines": {
-    "node": ">=20.6.0"
+    "node": ">=22.19.0"
   },
   "publishConfig": {
     "access": "public"
@@ -45,7 +45,7 @@
     "test": "node --test --experimental-strip-types 'test/**/*.test.ts'"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "1.0.2",
     "typebox": "*"
   },
   "devDependencies": {

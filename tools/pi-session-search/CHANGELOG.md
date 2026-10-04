@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate the host peer and type imports to `@earendil-works/pi-coding-agent`
+  1.0.2. Node.js >=22.19.0 is now required, matching that host's manifest.
+  Users of the deprecated `@mariozechner/pi-coding-agent` must migrate their
+  CLI before installing or reloading this extension.
 - Pin TypeScript and Node.js type declarations as development dependencies so
   `npm run typecheck` works without a host-installed compiler.
 - Stream session records instead of loading entire transcripts.
