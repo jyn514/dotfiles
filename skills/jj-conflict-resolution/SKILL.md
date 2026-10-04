@@ -9,7 +9,7 @@ Resolve the file result, not marker text. Jujutsu conflict content is a complete
 
 ## Scope and authority
 
-This skill owns semantic resolution and validation. It does not choose rebase targets, abandon changes, rewrite shared history, or decide product behavior; use `jj-workflow` for those decisions. If the conflict representation is unclear, investigate it before editing. Inspection does not authorize mutation: edit only when the user requests resolution or repair.
+This skill owns semantic resolution and validation. It does not choose rebase targets, abandon changes, rewrite shared history, or decide product behavior; use `jj-workflow` for those decisions. If the conflict representation is unclear, investigate it before editing.
 
 Treat existing working-copy changes as protected until ownership is established. If a dirty file contains unrelated work, stop and ask before overwriting it.
 
