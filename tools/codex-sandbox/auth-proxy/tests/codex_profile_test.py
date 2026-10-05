@@ -23,6 +23,11 @@ helper = importlib.util.module_from_spec(HELPER_SPEC)
 HELPER_SPEC.loader.exec_module(helper)
 
 
+def blocked_dns_child(_writer):
+    """Picklable fault-injection target for forkserver and spawn workers."""
+    time.sleep(10)
+
+
 def token(exp: float, account: str | None = "account") -> str:
     claims = {"exp": exp}
     if account is not None:
@@ -154,10 +159,15 @@ class CodexProfileTest(unittest.TestCase):
         process.kill.assert_called_once(); process.join.assert_called_once()
 
     def test_helper_sigalrm_bounds_blocked_dns_child(self):
-        def blocked(_writer):
-            time.sleep(10)
+        real_process = profile.multiprocessing.Process
+
+        def blocked_process(*, target, args, daemon):
+            # Override the dynamically imported resolver in the parent, while
+            # leaving the real child and the runner's start method intact.
+            return real_process(target=blocked_dns_child, args=args, daemon=daemon)
+
         started = time.monotonic()
-        with mock.patch.object(profile, "_resolve_in_child", blocked):
+        with mock.patch.object(profile.multiprocessing, "Process", blocked_process):
             with self.assertRaisesRegex(TimeoutError, "operation deadline"):
                 with helper.operation_deadline(.05) as deadline:
                     profile._public_addresses(deadline + 10)

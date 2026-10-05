@@ -25,6 +25,7 @@ assert SPEC and SPEC.loader
 sandbox_proxies = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sandbox_proxies)
 from docker_runtime import Docker
+import sandbox_runtime
 
 
 class RecordedEffectTest(unittest.TestCase):
@@ -1056,9 +1057,14 @@ class ManifestTest(unittest.TestCase):
                 sandbox_proxies._read_session(path)
 
     def test_empty_schema4_round_trips_publication_join_state_and_recovery(self) -> None:
+        owner = mock.Mock(provider="lima")
+        owner.host.state = Path("/recorded/lima")
+        owner.record = {"instance": "owned-vm", "generation": "g", "namespace": "default",
+                        "vm_identity": "v", "network_digest": "d"}
+        identity = sandbox_runtime.runtime_identity(owner)
         state_path = self.repo / "empty-state"
         state_path.write_text(json.dumps({
-            "proxies": [], "runtime": {"provider": "container"},
+            "proxies": [], "runtime": identity,
             "accepted": {"source-present": False, "agent-image": "agent",
                          "helper-image": None, "parameters": {"uid": 501, "gid": 20},
                          "proxy-images": {}},
@@ -1067,25 +1073,26 @@ class ManifestTest(unittest.TestCase):
         manifest_path.write_text('{"version":1,"commands":{}}')
         args = SimpleNamespace(repo=str(self.repo), state=str(state_path), manifest=str(manifest_path),
                                container_repo=str(self.container_repo))
-        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo):
+        with mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo), \
+                mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner):
             self.assertEqual(0, sandbox_proxies.publish_main(args))
         metadata = sandbox_proxies._read_session(self.repo / "session.json")
         self.assertEqual({}, metadata["services"])
-        self.assertEqual({"runtime": {"provider": "container"}, "proxies": [],
+        self.assertEqual({"runtime": identity, "proxies": [],
                           "trusted-services": sandbox_proxies.SESSION_LIFECYCLE_SCHEMA},
                          sandbox_proxies.session_state(metadata))
         join_args = SimpleNamespace(container_repo=str(self.container_repo), uid=501, gid=20,
                                     agent_image="agent", helper_image=None)
-        owner = mock.Mock(provider="container")
         owner.verify_builder_image.return_value = SimpleNamespace(reference="agent")
-        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner), \
-                mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "container"}):
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", owner):
             state, accepted = sandbox_proxies.accepted_session(join_args, self.repo, metadata)
         self.assertEqual([], state["proxies"])
         self.assertEqual({}, accepted["images"]["proxies"])
-        with mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
+        with mock.patch.object(sandbox_runtime, "image_runtime", return_value=owner) as reconstruct, \
+                mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
             sandbox_proxies.stop_state(state)
-        cleanup.assert_called_once_with(state)
+        reconstruct.assert_called_once_with("lima", Path(identity["state"]))
+        cleanup.assert_called_once_with(state, owner)
 
     def test_schema4_strictly_parses_policy_and_broker_selection(self) -> None:
         args = SimpleNamespace(uid=501, gid=20)
@@ -1187,11 +1194,18 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(before, json.dumps(metadata, sort_keys=True))
 
     def test_schema3_remains_available_for_stale_recovery(self) -> None:
-        state = {"runtime": {"provider": "container"}, "proxies": []}
+        owner = mock.Mock(provider="lima")
+        owner.host.state = Path("/recorded/lima")
+        owner.record = {"instance": "owned-vm", "generation": "g", "namespace": "default",
+                        "vm_identity": "v", "network_digest": "d"}
+        identity = sandbox_runtime.runtime_identity(owner)
+        state = {"runtime": identity, "proxies": []}
         self.assertIs(state, sandbox_proxies.session_state({"version": 3, "state": state}))
-        with mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
+        with mock.patch.object(sandbox_runtime, "image_runtime", return_value=owner) as reconstruct, \
+                mock.patch.object(sandbox_proxies, "_stop_legacy_state") as cleanup:
             sandbox_proxies.stop_state(state)
-        cleanup.assert_called_once_with(state)
+        reconstruct.assert_called_once_with("lima", Path(identity["state"]))
+        cleanup.assert_called_once_with(state, owner)
 
     def test_new_schema_requires_an_explicit_owner_and_legacy_is_podman(self) -> None:
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "missing its runtime"):

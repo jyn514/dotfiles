@@ -1769,6 +1769,7 @@ def _stop_legacy_state(state: dict[str, Any], owner=None) -> None:
         raise ConfigError(
             f"recorded {kind} remain after cleanup; retaining recovery metadata:\n"
             + "\n".join(details)
+            + f"\nrecovery: {RECOVERY_COMMAND}"
         )
 
     # Podman's forced removal waits for the container stop timeout. Send SIGKILL

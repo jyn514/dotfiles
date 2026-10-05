@@ -2,14 +2,25 @@ from __future__ import annotations
 import contextlib, http.client, importlib.util, io, json, os
 from pathlib import Path
 import socket, subprocess, sys, tempfile, threading, time, unittest
+from unittest.mock import patch
 ROOT=Path(__file__).parents[1]
 def load(name,path):
  spec=importlib.util.spec_from_file_location(name,path); module=importlib.util.module_from_spec(spec); sys.modules[name]=module; spec.loader.exec_module(module); return module
 caddy=load("caddy_foundation",ROOT/"caddy_foundation.py"); helper=load("profile_helper",ROOT/"auth-proxy/profile_helper.py")
 
+def native_caddy_image():
+ # Query the daemon, not the client host: DOCKER_HOST may be remote. Foreign
+ # manifests are admitted policy, but executing them requires optional emulation.
+ result=subprocess.run(["docker","info","--format","{{.OSType}}/{{.Architecture}}"],capture_output=True,text=True)
+ if result.returncode: raise unittest.SkipTest("Docker unavailable: "+result.stderr.strip())
+ platform=result.stdout.strip()
+ platform={"linux/x86_64":"linux/amd64","linux/aarch64":"linux/arm64/v8","linux/arm64":"linux/arm64/v8"}.get(platform,platform)
+ if platform not in caddy.PLATFORMS: raise AssertionError("Unsupported Docker engine platform: "+platform)
+ return platform,"caddy@"+caddy.PLATFORMS[platform][0]
+
 class RuntimeContract:
- def __init__(self,bad=False): self.bad=bad
- def build_platform(self): return "linux/amd64"
+ def __init__(self,bad=False,platform="linux/amd64"): self.bad=bad; self.platform=platform
+ def build_platform(self): return self.platform
  def verify_external_image(self,repository,manifest,configuration,platform):
   from types import SimpleNamespace
   return SimpleNamespace(reference=repository+"@"+manifest,content=manifest,config=("sha256:"+"0"*64 if self.bad else configuration))
@@ -26,6 +37,12 @@ class IdentityTest(unittest.TestCase):
  def test_exact_chain_and_configuration_binding(self):
   identity=caddy.resolve_caddy_image(RuntimeContract()); self.assertEqual(identity.configuration_digest,"sha256:af555904a0961945f16bb323a501457b13a4f7e9bde969b145b97da80b38ecbe")
   digest=caddy.configuration_digest(caddy.generate_caddy_config("codex","chatgpt.com")); self.assertRegex(identity.implementation_identity(digest),r"^sha256:[0-9a-f]{64}$")
+ def test_resolves_both_admitted_platforms_without_foreign_execution(self):
+  for platform in ("linux/amd64","linux/arm64"):
+   with self.subTest(platform=platform):
+    identity=caddy.resolve_caddy_image(RuntimeContract(platform=platform))
+    self.assertEqual(identity.platform,"linux/arm64/v8" if platform == "linux/arm64" else platform)
+    self.assertEqual((identity.manifest_digest,identity.configuration_digest),caddy.PLATFORMS[identity.platform])
  def test_rejects_inspection_mismatch(self):
   with self.assertRaises(caddy.CaddyIdentityError): caddy.resolve_caddy_image(RuntimeContract(True))
  def test_captured_dependency_descriptors_match_installed_policy(self):
@@ -34,13 +51,27 @@ class IdentityTest(unittest.TestCase):
   observed={m["platform"]["os"]+"/"+m["platform"]["architecture"]+("/"+m["platform"]["variant"] if "variant" in m["platform"] else ""):(m["digest"],m["config"]) for m in evidence["manifests"]}
   self.assertEqual(observed,caddy.PLATFORMS)
 
+class NativeImageTest(unittest.TestCase):
+ def test_daemon_architecture_selects_its_pinned_manifest(self):
+  for architecture,platform in (("amd64","linux/amd64"),("x86_64","linux/amd64"),("arm64","linux/arm64/v8"),("aarch64","linux/arm64/v8")):
+   with self.subTest(architecture=architecture),patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],0,"linux/"+architecture+"\n","")) as info:
+    self.assertEqual(native_caddy_image(),(platform,"caddy@"+caddy.PLATFORMS[platform][0]))
+    self.assertEqual(info.call_args.args[0],["docker","info","--format","{{.OSType}}/{{.Architecture}}"])
+ def test_present_engine_validation_failure_is_not_skipped(self):
+  with patch(__name__+".native_caddy_image",return_value=("linux/amd64","caddy@"+caddy.PLATFORMS["linux/amd64"][0])),patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],1,b"",b"exec format error")):
+   with self.assertRaisesRegex(AssertionError,"exec format error"):
+    ConfigTest("test_real_pinned_native_caddy_validates_both_profiles").test_real_pinned_native_caddy_validates_both_profiles()
+ def test_present_unsupported_engine_fails_instead_of_skipping(self):
+  with patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],0,"linux/riscv64\n","")):
+   with self.assertRaisesRegex(AssertionError,"Unsupported Docker engine platform"): native_caddy_image()
+
 class ConfigTest(unittest.TestCase):
- def test_real_pinned_caddy_validates_both_platforms(self):
-  if subprocess.run(["docker","info"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode: self.skipTest("Docker unavailable")
+ def test_real_pinned_native_caddy_validates_both_profiles(self):
+  platform,image=native_caddy_image()
   for profile,upstream in (("codex","chatgpt.com"),("zulip","chat.example.com")):
-   config=caddy.generate_caddy_config(profile,upstream)
-   for platform,digest in (("linux/amd64",caddy.PLATFORMS["linux/amd64"][0]),("linux/arm64",caddy.PLATFORMS["linux/arm64/v8"][0])):
-    result=subprocess.run(["docker","run","--rm","-i","--platform",platform,"caddy@"+digest,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
+   with self.subTest(platform=platform,profile=profile):
+    config=caddy.generate_caddy_config(profile,upstream)
+    result=subprocess.run(["docker","run","--rm","-i","--platform",platform,image,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
     self.assertEqual(result.returncode,0,result.stderr.decode())
  def test_security_semantics_are_in_generated_json(self):
   config=json.loads(caddy.generate_caddy_config("codex","chatgpt.com")); server=config["apps"]["http"]["servers"]["egress"]
@@ -60,13 +91,13 @@ class ConfigTest(unittest.TestCase):
   self.assertEqual(server["routes"][0]["handle"][0]["rewrite"]["uri"],"/ready?")
   self.assertEqual(server["errors"]["routes"][0]["handle"][0]["status_code"],503)
  def test_live_gate_mutates_original_request_and_strips_forwarding(self):
-  if subprocess.run(["docker","info"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode: self.skipTest("Docker unavailable")
+  platform,image=native_caddy_image()
   config=json.loads(caddy.generate_caddy_config("codex","localhost","/tmp/helper.sock")); servers=config["apps"]["http"]["servers"]
   app=servers["egress"]; proxy=app["routes"][1]["handle"][-1]; proxy["upstreams"]=[{"dial":"localhost:9999"}]; proxy["transport"]={"protocol":"http"}
   servers["helper"]={"listen":["unix//tmp/helper.sock"],"routes":[{"handle":[{"handler":"static_response","status_code":204,"headers":{"Authorization":["Bearer trusted"],"Chatgpt-Account-Id":["acct"]}}]}]}
   body='auth={{.Req.Header.Get "Authorization"}} acct={{.Req.Header.Get "Chatgpt-Account-Id"}} xff={{.Req.Header.Get "X-Forwarded-For"}} safe={{.Req.Header.Get "X-Safe"}} path={{.Req.URL.Path}}'
   servers["upstream"]={"listen":[":9999"],"routes":[{"handle":[{"handler":"templates"},{"handler":"static_response","body":body}]}]}
-  image="caddy@"+caddy.PLATFORMS["linux/arm64/v8"][0]; container=subprocess.check_output(["docker","create",image,"sh","-c","sleep 3600"],text=True).strip()
+  container=subprocess.check_output(["docker","create","--platform",platform,image,"sh","-c","sleep 3600"],text=True).strip()
   try:
    subprocess.run(["docker","start",container],check=True,stdout=subprocess.DEVNULL)
    with tempfile.NamedTemporaryFile("w") as stream:

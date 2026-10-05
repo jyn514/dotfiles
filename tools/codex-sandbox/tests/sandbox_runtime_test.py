@@ -43,7 +43,7 @@ def lima():
 
 class ResourceOperationsTest(unittest.TestCase):
     def test_removes_only_stopped_codex_sandbox_containers_holding_recorded_volumes(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(side_effect=[
             SimpleNamespace(stdout="codex-sandbox-stopped\nother-container\n", returncode=0),
             SimpleNamespace(stdout="", returncode=0),
@@ -60,7 +60,7 @@ class ResourceOperationsTest(unittest.TestCase):
         backend.inspect_container.assert_called_once_with("codex-sandbox-stopped")
 
     def test_does_not_remove_running_codex_sandbox_container_holding_recorded_volume(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
         backend.run = Mock(return_value=SimpleNamespace(
             stdout="codex-sandbox-running\n", returncode=0,
         ))
@@ -172,7 +172,7 @@ class ResourceOperationsTest(unittest.TestCase):
         self.assertEqual(subprocess.PIPE, backend.run.call_args_list[-1].kwargs["stderr"])
 
     def test_volume_removal_keeps_engine_stderr_on_failure(self):
-        backend = object.__new__(runtime.Podman)
+        backend = object.__new__(runtime.ContainerRuntime)
 
         def run(arguments, **kwargs):
             if arguments[:2] == ["volume", "ls"]:
