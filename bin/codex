@@ -6,10 +6,11 @@ set -eu
 DOTFILES=$(realpath "$(dirname -- "$(realpath "$0")")/..")
 . "$DOTFILES/lib/shell/lib.sh"
 shim_resolve "$0" codex
-# Metadata clients need the native transport without regenerating interactive config.
-if [ "${1:-}" = app-server ]; then
-	exec "$REAL" "$@"
-fi
+# Native transport and offline policy parsing must not load interactive config
+# or receive runtime-only options such as --profile.
+case ${1:-} in
+	app-server|execpolicy) exec "$REAL" "$@" ;;
+esac
 export PATH="$DOTFILES/libexec/agent-wrappers:$PATH"
 # Agent commands need man output in their transcript, not an interactive editor.
 export MANPAGER='col -b'

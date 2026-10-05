@@ -13,6 +13,41 @@ WRAPPER = ROOT / "bin/codex"
 
 
 class CodexWrapperTests(unittest.TestCase):
+    def test_native_commands_bypass_interactive_setup(self) -> None:
+        commands = [
+            ["app-server", "--listen", "stdio://"],
+            ["execpolicy", "check", "--rules", "generated rules", "jj", "status"],
+        ]
+        for arguments in commands:
+            with self.subTest(command=arguments[0]), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                fake_bin = root / "bin"
+                fake_bin.mkdir()
+                (fake_bin / "codex").symlink_to(ROOT / "tests/fixtures/codex_native_command.sh")
+                (fake_bin / "bb").symlink_to(
+                    ROOT / "tests/fixtures/codex_unexpected_permission_generation.sh"
+                )
+                codex_home = root / "private-codex"
+                environment = os.environ | {
+                    "HOME": str(root),
+                    "CODEX_HOME": str(codex_home),
+                    "CODEX_DEVELOPER_INSTRUCTIONS_FILE": str(root / "missing-manifest"),
+                    "CODEX_TEST_EXIT_STATUS": "23",
+                    "CODEX_TEST_GENERATION_EXIT_STATUS": "89",
+                    "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                }
+                environment.pop("DOTFILES_SANDBOX", None)
+
+                result = subprocess.run(
+                    [str(WRAPPER), *arguments],
+                    env=environment, text=True, capture_output=True,
+                )
+
+                self.assertEqual(23, result.returncode, result.stderr)
+                self.assertEqual(arguments, result.stdout.splitlines())
+                self.assertEqual("", result.stderr)
+                self.assertFalse(codex_home.exists())
+
     def test_instruction_includes_resolve_from_symlink_location(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -267,8 +267,11 @@ class AgentPermissionRendererTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("codex"), "Codex CLI is unavailable")
     def test_codex_accepts_and_evaluates_generated_rules(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            rules = Path(temporary) / "generated.rules"
-            rules.write_text(self.render_fixture("codex").stdout)
+            directory = Path(temporary)
+            rules = directory / "generated.rules"
+            rendered = self.render_fixture("codex")
+            self.assertEqual(0, rendered.returncode, rendered.stderr)
+            rules.write_text(rendered.stdout)
             result = subprocess.run(
                 [
                     "codex",
