@@ -614,8 +614,24 @@ class LocalInstallationTests(unittest.TestCase):
             [["mise", "token", "github"], ["mise", "install", "--yes"]],
             [command for command in self.commands() if command[0] == "mise"][:2],
         )
-        self.assertIn(["mise", "run", "pi-install"], self.commands())
+        commands = self.commands()
+        # Setup detects Alpine through apk on the install command's PATH and
+        # intentionally skips Pi there; native platforms must still install it.
+        install_path = f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin"
+        if shutil.which("apk", path=install_path):
+            self.assertNotIn(["mise", "run", "pi-install"], commands)
+        else:
+            self.assertIn(["mise", "run", "pi-install"], commands)
         self.assertIn("Some mise tools failed to install; continuing", result.stderr)
+        # Aliases are published at the end of local setup. Check the command
+        # names, not resolved targets: every fake tool points to one recorder.
+        for alias, target in (
+            ("python", "python3"), ("py", "python3"), ("pip", "pip3"),
+            ("vi", "nvim"), ("vim", "nvim"),
+        ):
+            destination = self.home / ".local/bin" / alias
+            self.assertTrue(destination.is_symlink(), destination)
+            self.assertEqual(str(self.bin / target), os.readlink(destination))
 
     def test_local_install_can_run_twice(self) -> None:
         first = self.run_install_with(CI="1")
