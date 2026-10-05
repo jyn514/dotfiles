@@ -74,10 +74,14 @@ if [ -n "$route_helper" ] && [ ! -f "$route_helper" ] && [ -z "${JJ_ROUTE_HELPER
     link=$(readlink "$source_path") || exit 125
     case "$link" in
       /*) source_path=$link ;;
-      *) source_path=$(dirname -- "$source_path")/$link ;;
+      *)
+        source_parent=$(dirname -- "$source_path") || exit 125
+        source_path=$source_parent/$link
+        ;;
     esac
   done
-  source_dir=$(CDPATH='' cd -- "$(dirname -- "$source_path")" && pwd -P) || exit 125
+  source_parent=$(dirname -- "$source_path") || exit 125
+  source_dir=$(CDPATH='' cd -- "$source_parent" && pwd -P) || exit 125
   route_helper=$source_dir/../../tools/jj-proxy/route.py
 fi
 

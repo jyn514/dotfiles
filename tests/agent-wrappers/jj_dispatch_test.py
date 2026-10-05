@@ -68,6 +68,66 @@ class JjDispatchTest(unittest.TestCase):
     def calls(self):
         return [json.loads(line) for line in self.record.read_text().splitlines()] if self.record.exists() else []
 
+    def discovery_wrapper(self, mode):
+        layout = self.root / ("discovery-" + mode)
+        checkout = layout / "source checkout"
+        wrapper = checkout / "libexec/agent-wrappers/jj"
+        wrapper.parent.mkdir(parents=True)
+        subprocess.run(["cp", str(self.root / "jj"), str(wrapper)], check=True)
+        subprocess.run(["cmp", str(self.root / "jj"), str(wrapper)], check=True)
+        wrapper.write_text(wrapper.read_text().replace(
+            "route_helper=/tools/jj-proxy/route.py",
+            "route_helper=" + str(self.root / "missing-image-helper")))
+        wrapper.chmod(0o755)
+        helper = checkout / "tools/jj-proxy/route.py"
+        helper.parent.mkdir(parents=True)
+        subprocess.run(["cp", str(HELPER), str(helper)], check=True)
+        subprocess.run(["cmp", str(HELPER), str(helper)], check=True)
+        if mode == "direct":
+            return wrapper
+        aliases = layout / "aliases with spaces"
+        aliases.mkdir()
+        entry = aliases / "jj"
+        if mode == "absolute":
+            entry.symlink_to(wrapper)
+        else:
+            entry.symlink_to("middle")
+            (aliases / "middle").symlink_to("../source checkout/libexec/agent-wrappers/jj")
+        return entry
+
+    def test_source_helper_discovery_preserves_direct_and_symlink_invocations(self):
+        for mode in ("direct", "absolute", "relative-chain"):
+            with self.subTest(mode=mode):
+                self.record.unlink(missing_ok=True)
+                self.wrapper = self.discovery_wrapper(mode)
+                env = dict(self.env)
+                env.pop("JJ_ROUTE_HELPER")
+                result = self.run_wrapper("status", "--no-pager", cwd=ROOT, env=env)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(["proxy"], [call["role"] for call in self.calls()])
+                self.assertEqual(["status", "--no-pager"], self.calls()[0]["argv"])
+
+    def test_failed_dirname_discovery_never_reaches_a_backend(self):
+        real_dirname = shutil.which("dirname")
+        self.assertIsNotNone(real_dirname)
+        commands = self.root / "commands"
+        commands.mkdir()
+        dirname = commands / "dirname"
+        fixture = ROOT / "tests/fixtures/jj_dirname_failure.sh"
+        subprocess.run(["cp", str(fixture), str(dirname)], check=True)
+        subprocess.run(["cmp", str(fixture), str(dirname)], check=True)
+        dirname.chmod(0o755)
+        for mode in ("direct", "relative-chain"):
+            with self.subTest(mode=mode):
+                self.wrapper = self.discovery_wrapper(mode)
+                env = {**self.env, "REAL_DIRNAME": real_dirname,
+                       "PATH": str(commands) + os.pathsep + self.env["PATH"]}
+                env.pop("JJ_ROUTE_HELPER")
+                result = self.run_wrapper("status", cwd=ROOT, env=env)
+                self.assertEqual(125, result.returncode, result.stderr)
+                self.assertIn("fixture: dirname failed", result.stderr)
+                self.assertEqual([], self.calls())
+
     def test_local_commit_uses_native_and_scopes_both_hooks_to_selected_workspace(self):
         selected = self.repo()
         result = self.run_wrapper("--repository", str(selected), "commit", "-m", "literal ; $() message", cwd=ROOT)
