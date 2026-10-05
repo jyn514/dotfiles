@@ -97,7 +97,8 @@ The Rust suite covers command and Landlock execution policy plus protocol behavi
 ## Design and reference
 
 For the security model, mount topology, protocol, and rationale, read the [design](./design.typ).
-The checked-in [`policy.toml`](./policy.toml) defines command permissions, blocked privilege-crossing options, and author hooks. [`src/policy.rs`](./src/policy.rs) embeds it at build time; policy edits require rebuilding the proxy image.
+The checked-in [`policy.toml`](./policy.toml) defines command permissions, blocked privilege-crossing options, and author hooks. The image packages it at `/trusted/policy.toml`; the server loads and validates it once before opening the readiness socket. Policy edits require rebuilding the proxy image, but do not require recompiling the binary.
+The library's `Policy::load` takes a trusted caller-selected path; request arguments and environment variables cannot override the production path. Tests load the checked-in file through `CARGO_MANIFEST_DIR` and need no host `/trusted` directory.
 
 ### Policy format
 

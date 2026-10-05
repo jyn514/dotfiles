@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 const DEFAULT_SOCKET: &str = "/run/sandbox-proxy/socket";
 const TRUSTED_PROXY: &str = "/trusted/bin/jj-proxy";
 const TRUSTED_JJ_CONFIG: &str = "/trusted/jj.toml";
+const TRUSTED_COMMAND_POLICY: &str = "/trusted/policy.toml";
 
 fn socket_path() -> String {
     std::env::var("SANDBOX_PROXY_SOCKET").unwrap_or_else(|_| DEFAULT_SOCKET.to_owned())
@@ -295,6 +296,7 @@ fn limits_and_cwd(fd: RawFd) -> impl FnMut() -> io::Result<()> {
 
 fn execute(
     request: &Request,
+    command_policy: &policy::Policy,
     root: RawFd,
     selected_repo: &Path,
     remotes: &HashSet<String>,
@@ -349,7 +351,7 @@ fn execute(
         Err(error) => return failure(error.to_string()),
     };
     let decision = if request.agent_split.is_none() {
-        let validation = if inspect { policy::validate_inspect(&argv) } else { policy::validate(&argv, remotes) };
+        let validation = if inspect { command_policy.validate_inspect(&argv) } else { command_policy.validate(&argv, remotes) };
         match validation {
             Ok(decision) => Some(decision),
             Err(error) => return failure(error.to_string()),
@@ -443,6 +445,7 @@ fn execute(
 }
 
 fn serve() -> Result<()> {
+    let command_policy = policy::Policy::load(Path::new(TRUSTED_COMMAND_POLICY))?;
     // The server retains its mutation policy; inspection children add a
     // read-only policy before executing Jujutsu.
     let repo = env::var("JJ_PROXY_REPO").unwrap_or_else(|_| "/src/work".to_owned());
@@ -470,6 +473,7 @@ fn serve() -> Result<()> {
             .and_then(|bytes| serde_json::from_slice::<Request>(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))) {
             Ok(request) => execute(
                 &request,
+                &command_policy,
                 if matches!(request.mode, RequestMode::Inspect) {
                     source_root.as_raw_fd()
                 } else {
@@ -746,10 +750,11 @@ mod tests {
 
     #[test]
     fn command_policy_declares_author_update_effects() {
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let remotes = HashSet::new();
-        assert!(policy::validate(&["commit".into()], &remotes).unwrap().updates_author);
-        assert!(policy::validate(&["split".into()], &remotes).unwrap().updates_author);
-        assert!(!policy::validate(&["status".into()], &remotes).unwrap().updates_author);
+        assert!(policy.validate(&["commit".into()], &remotes).unwrap().updates_author);
+        assert!(policy.validate(&["split".into()], &remotes).unwrap().updates_author);
+        assert!(!policy.validate(&["status".into()], &remotes).unwrap().updates_author);
 
         let command = author_update_command("agent", "agent@example.test");
         let args: Vec<_> = command
@@ -767,6 +772,7 @@ mod tests {
 
     #[test]
     fn inspection_rejects_agent_split_before_staging_a_patch() {
+        let policy = policy::Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml"))).unwrap();
         let root = File::open("/tmp").unwrap();
         let request = Request {
             version: 1,
@@ -781,7 +787,7 @@ mod tests {
             user: None,
             email: None,
         };
-        let response = execute(&request, root.as_raw_fd(), Path::new("/tmp"), &HashSet::new(), "/tmp");
+        let response = execute(&request, &policy, root.as_raw_fd(), Path::new("/tmp"), &HashSet::new(), "/tmp");
         assert_eq!(2, response.exit);
         assert!(response.stderr.contains("agent split is not allowed"));
     }

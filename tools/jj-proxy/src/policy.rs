@@ -1,7 +1,7 @@
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result, WrapErr};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
-use std::sync::OnceLock;
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommandKind {
@@ -52,7 +52,7 @@ struct CommandRule {
     updates_author: bool,
 }
 
-struct Policy {
+pub struct Policy {
     global: GlobalPolicy,
     inspect: Vec<CommandRule>,
     mutate: Vec<CommandRule>,
@@ -89,6 +89,22 @@ fn expand_rules(specs: BTreeMap<String, RuleSpec>) -> Result<Vec<CommandRule>> {
 }
 
 impl Policy {
+    /// Load a caller-selected trusted file once. Request data must not select this path.
+    pub fn load(path: &Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path)
+            .wrap_err_with(|| format!("cannot read command policy: {}", path.display()))?;
+        Self::parse(&text)
+            .wrap_err_with(|| format!("invalid command policy: {}", path.display()))
+    }
+
+    pub fn validate_inspect(&self, argv: &[String]) -> Result<Decision> {
+        evaluate(self, argv, true, &HashSet::new())
+    }
+
+    pub fn validate(&self, argv: &[String], remotes: &HashSet<String>) -> Result<Decision> {
+        evaluate(self, argv, false, remotes)
+    }
+
     fn parse(text: &str) -> Result<Self> {
         let file: PolicyFile = toml::from_str(text)?;
         Ok(Self {
@@ -104,15 +120,6 @@ impl Policy {
             .find(|rule| argv.starts_with(&rule.path))
             .ok_or_else(|| eyre!("command is not allowed: {}", argv.first().map(String::as_str).unwrap_or("")))
     }
-}
-
-static POLICY: OnceLock<Policy> = OnceLock::new();
-
-fn policy() -> &'static Policy {
-    POLICY.get_or_init(|| {
-        Policy::parse(include_str!("../policy.toml"))
-            .expect("embedded jj-proxy policy.toml must be valid")
-    })
 }
 
 fn option_name(arg: &str) -> &str { arg.split_once('=').map_or(arg, |pair| pair.0) }
@@ -154,14 +161,6 @@ pub fn extract_repository(argv: &[String]) -> Result<(Option<String>, Vec<String
         index += 1;
     }
     Ok((repository, command))
-}
-
-pub fn validate_inspect(argv: &[String]) -> Result<Decision> { validate_for_mode(argv, true, &HashSet::new()) }
-
-pub fn validate(argv: &[String], remotes: &HashSet<String>) -> Result<Decision> { validate_for_mode(argv, false, remotes) }
-
-fn validate_for_mode(argv: &[String], inspect: bool, remotes: &HashSet<String>) -> Result<Decision> {
-    evaluate(policy(), argv, inspect, remotes)
 }
 
 fn evaluate(policy: &Policy, argv: &[String], inspect: bool, remotes: &HashSet<String>) -> Result<Decision> {
@@ -208,10 +207,45 @@ fn validate_shape(argv: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn checked_in_policy() -> Result<Policy> {
+        Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/policy.toml")))
+    }
+    fn validate(args: &[String], remotes: &HashSet<String>) -> Result<Decision> {
+        checked_in_policy()?.validate(args, remotes)
+    }
+    fn validate_inspect(args: &[String]) -> Result<Decision> {
+        checked_in_policy()?.validate_inspect(args)
+    }
     fn check(args: &[&str]) -> bool {
         validate(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>(), &HashSet::from(["origin".into()])).is_ok()
     }
     const COMPACT_POLICY: &str = include_str!("../tests/fixtures/compact-policy.toml");
+
+    #[test]
+    fn loaded_instances_use_their_selected_files_without_shared_state() {
+        let ordinary = checked_in_policy().unwrap();
+        let compact = Policy::load(Path::new(concat!(env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/compact-policy.toml"))).unwrap();
+        let status = ["status".to_owned()];
+        let state = ["state".to_owned()];
+        assert!(ordinary.validate_inspect(&status).is_ok());
+        assert!(ordinary.validate_inspect(&state).is_err());
+        assert!(compact.validate_inspect(&state).is_ok());
+        assert!(compact.validate_inspect(&status).is_err());
+    }
+
+    #[test]
+    fn missing_and_invalid_policy_files_return_errors_without_fallback() {
+        let missing = Path::new(concat!(env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/missing-policy.toml"));
+        let error = Policy::load(missing).err().expect("missing policy was accepted");
+        assert!(error.to_string().contains("cannot read command policy"));
+        assert!(error.to_string().contains(missing.to_str().unwrap()));
+        let invalid = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"));
+        let error = Policy::load(invalid).err().expect("invalid policy was accepted");
+        assert!(error.to_string().contains("invalid command policy"));
+        assert!(error.to_string().contains(invalid.to_str().unwrap()));
+    }
 
     #[test]
     fn true_rules_are_equivalent_to_empty_tables() {

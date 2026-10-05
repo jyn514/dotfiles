@@ -350,7 +350,12 @@ bookmark commands, workspace commands, and constrained Git fetch commands. The p
 Git push; publishing to protected remotes remains a host-side operation outside
 the agent container.
 
-The trusted, checked-in `policy.toml` is embedded at build time. `inspect` grants
+The image packages the trusted, checked-in `policy.toml` at `/trusted/policy.toml`.
+The server loads and validates it once before opening the readiness socket,
+then passes the parsed policy to request validation. `Policy::load` accepts a
+trusted caller-selected path; request data and environment variables cannot
+override the production path. Tests load the checked-in file through
+`CARGO_MANIFEST_DIR`, without a host `/trusted` directory. `inspect` grants
 inspection permissions; mutation mode inherits them and adds `mutate` rules.
 A command value of `true` or an empty table permits its prefix; an optional,
 nonempty `subcmds` list in a table limits it to those prefixes. A value of `false`
@@ -360,8 +365,8 @@ mutation rule takes precedence over an inherited inspection rule. Fetch checks
 and remote expansion are fixed evaluator behavior, not policy fields. The
 evaluator in `src/policy.rs` returns the command kind, normalized arguments,
 read-only classification, and author-update hook; execution consumes this
-decision rather than repeating command-name checks. Because the policy is
-embedded at build time, policy edits require rebuilding the proxy.
+decision rather than repeating command-name checks. Policy edits require
+rebuilding the image, but do not require recompiling the proxy binary.
 
 The current compatibility-preserving policy rejects known privilege-crossing
 options and recognizes approved command paths, while leaving ordinary option
