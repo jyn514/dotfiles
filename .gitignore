@@ -1,5 +1,9 @@
 *.pdf
 __pycache__/
+node_modules/
+notes/
+.pytest_cache/
+.session.vim
 /private/
 
 target/

@@ -6,16 +6,38 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
+
+
+def mise_tool_path(tool: str, environment: dict[str, str]) -> str:
+    command = shutil.which(tool, path=environment.get("PATH"))
+    if command is None or Path(command).resolve().name != "mise":
+        return ""
+    # Shims consult HOME for trust and tool selection. Resolve them before
+    # changing HOME rather than letting a setup failure look like no matches.
+    result = subprocess.run(
+        [str(Path(command).resolve()), "which", tool], env=environment,
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode:
+        raise OSError(f"cannot resolve {tool} before isolation: {result.stderr.strip()}")
+    path = result.stdout.strip()
+    if not Path(path).is_absolute() or not os.access(path, os.X_OK):
+        raise OSError(f"mise returned an invalid executable for {tool}: {path!r}")
+    return path
 
 
 def main(arguments: list[str]) -> int:
     environment = dict(os.environ)
     for tool in ("BB", "JAVA", "JJ", "RG"):
         key = f"DOTFILES_TEST_{tool}_REAL"
-        environment[key] = environment.get(key) or environment.get(f"{tool}_REAL", "")
+        environment[key] = (
+            environment.get(key) or environment.get(f"{tool}_REAL")
+            or mise_tool_path(tool.lower(), environment)
+        )
     key = "DOTFILES_TEST_SANDBOX_PROXY_DIR"
     environment[key] = environment.get(key) or environment.get("SANDBOX_PROXY_DIR", "")
 

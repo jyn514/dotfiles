@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import selectors
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -123,6 +124,51 @@ class TestEnvironmentTest(unittest.TestCase):
         ):
             self.assertNotIn(name, environment)
 
+    def mise_shim(self) -> dict[str, str]:
+        shims = self.root / "shims"
+        installed = self.root / "installed"
+        shims.mkdir()
+        installed.mkdir()
+        (shims / "rg").symlink_to(ROOT / "tests/fixtures/mise")
+        (installed / "rg").symlink_to(shutil.which("env"))
+        self.inherited["PATH"] = str(shims) + os.pathsep + self.inherited["PATH"]
+        return {
+            "FIXTURE_MISE_CALL": str(self.root / "mise-home"),
+            "FIXTURE_RG_PATH": str(installed / "rg"),
+        }
+
+    def test_mise_shim_resolves_before_home_isolation_and_child_uses_real_tool(self) -> None:
+        values = self.mise_shim()
+        result = subprocess.run(
+            [WRAPPER, "rg"], env=self.inherited | values,
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        environment = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        self.assertEqual(str(self.old_home), Path(values["FIXTURE_MISE_CALL"]).read_text())
+        self.assertEqual(values["FIXTURE_RG_PATH"], environment["DOTFILES_TEST_RG_REAL"])
+        self.assertNotEqual(str(self.old_home), environment["HOME"])
+        self.assertFalse(Path(environment["HOME"]).exists())
+
+    def test_mise_resolution_failure_prevents_child_start(self) -> None:
+        values = self.mise_shim() | {"FIXTURE_MISE_FAIL": "1"}
+        before = self.snapshot(self.old_home)
+        result = subprocess.run(
+            [WRAPPER, sys.executable, PROBE, "write", "0"],
+            env=self.inherited | values, text=True, capture_output=True,
+            check=False, timeout=15,
+        )
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertIn("cannot resolve rg before isolation: fixture resolution failed", result.stderr)
+        self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_real_tool_override_does_not_consult_mise_shim(self) -> None:
+        values = self.mise_shim() | {"FIXTURE_MISE_FAIL": "1", "RG_REAL": "/original/rg"}
+        environment = self.run_environment(**values)
+        self.assertEqual("/original/rg", environment["DOTFILES_TEST_RG_REAL"])
+        self.assertFalse(Path(values["FIXTURE_MISE_CALL"]).exists())
+
     def test_nested_use_retains_the_original_real_tool(self) -> None:
         environment = self.run_environment(
             BB_REAL="/replacement/bb", DOTFILES_TEST_BB_REAL="/original/bb",
@@ -186,6 +232,39 @@ class TestEnvironmentTest(unittest.TestCase):
             self.assertEqual("/original/bb", report["environment"]["DOTFILES_TEST_BB_REAL"])
             self.assert_private_home(report)
         self.assertEqual(before, self.snapshot(self.old_home))
+
+    @unittest.skipUnless(shutil.which("jj"), "native jj is required")
+    def test_private_home_jj_does_not_track_repository_local_state(self) -> None:
+        jj = os.environ.get("DOTFILES_TEST_JJ_REAL") or shutil.which("jj")
+        checkout = self.root / "checkout"
+        subprocess.run(
+            [jj, "git", "init", "--colocate", str(checkout)], cwd=self.root,
+            env=self.inherited, text=True, capture_output=True, check=True,
+        )
+        subprocess.run(["cp", ROOT / ".gitignore", checkout / ".gitignore"], check=True)
+        subprocess.run(["cmp", ROOT / ".gitignore", checkout / ".gitignore"], check=True)
+        (checkout / "keep.py").write_text("tracked source\n")
+        generated = (
+            "node_modules/package/index.js", "notes/draft.md",
+            ".pytest_cache/state", ".session.vim", "config/.session.vim",
+        )
+        for name in generated:
+            path = checkout / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("local state\n")
+        result = subprocess.run(
+            [WRAPPER, jj, "status"], cwd=checkout, env=self.inherited,
+            text=True, capture_output=True, check=False, timeout=15,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        files = subprocess.run(
+            [jj, "--ignore-working-copy", "file", "list", "-r", "@"],
+            cwd=checkout, env=self.inherited, text=True, capture_output=True,
+            check=True,
+        ).stdout.splitlines()
+        self.assertEqual([".gitignore", "keep.py"], files)
+        for name in generated:
+            self.assertEqual("local state\n", (checkout / name).read_text())
 
     def test_stdin_reaches_child_unchanged(self) -> None:
         text = "ordinary stdin\nsecond line\twith spaces\n"

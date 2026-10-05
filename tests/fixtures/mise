@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Controlled mise resolution fixture; never reads or changes real tool state."""
+
+import os
+from pathlib import Path
+import sys
+
+if sys.argv[1:] != ["which", "rg"]:
+    raise SystemExit(2)
+Path(os.environ["FIXTURE_MISE_CALL"]).write_text(os.environ["HOME"])
+if os.environ.get("FIXTURE_MISE_FAIL"):
+    print("fixture resolution failed", file=sys.stderr)
+    raise SystemExit(7)
+print(os.environ["FIXTURE_RG_PATH"])
