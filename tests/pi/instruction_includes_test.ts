@@ -43,7 +43,6 @@ describe("instruction includes", () => {
     await mkdir(agent, { recursive: true });
     await mkdir(shared, { recursive: true });
     await writeFile(join(agent, "breq.md"), "Breq");
-    await writeFile(join(agent, "coordination-dialect.md"), "Coordination");
     await writeFile(join(shared, "shared.md"), "Shared");
     const content = await readFile(join(import.meta.dir, "../../config/pi-agent/AGENTS.md"), "utf8");
 
@@ -52,8 +51,12 @@ describe("instruction includes", () => {
       agent,
     );
 
-    expect(result).toHaveLength(3);
-    expect(result[2]).toContain("Shared");
+    // Both the persona and the cross-directory shared rules must reach Pi,
+    // exactly once and in declaration order.
+    expect(result).toEqual([
+      expect.stringContaining("Breq"),
+      expect.stringContaining("Shared"),
+    ]);
   });
 
   test("ignores directives inside fenced code blocks", async () => {

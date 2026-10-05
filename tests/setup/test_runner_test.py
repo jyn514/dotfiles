@@ -116,6 +116,41 @@ class TestRunnerTests(unittest.TestCase):
             self.assertEqual("3", arguments[arguments.index("-n") + 1])
             self.assertIn("--instafail", arguments)
 
+    def test_pi_suite_is_dispatched_and_its_failure_stops_the_runner(self) -> None:
+        for status in (0, 29):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "dev").mkdir()
+                runner = root / "dev/test"
+                subprocess.run(["cp", ROOT / "dev/test", runner], check=True)
+                subprocess.run(["cmp", ROOT / "dev/test", runner], check=True)
+                binaries = root / "bin"
+                binaries.mkdir()
+                for command in ("pytest", "bb", "node", "bun", "cargo", "python3"):
+                    (binaries / command).symlink_to(ROOT / "tests/fixtures/test_runner_command.sh")
+                log = root / "commands.log"
+                environment = {
+                    key: value for key, value in os.environ.items()
+                    if key not in ("DOTFILES_TEST_BB_REAL", "DOTFILES_TEST_JJ_REAL")
+                }
+                environment.update(
+                    PATH=f"{binaries}:{environment['PATH']}", TEST_LOG=str(log),
+                    PI_TEST_STATUS=str(status),
+                )
+                result = subprocess.run(
+                    ["/bin/sh", runner, "--test-environment-ready"], cwd=root,
+                    env=environment, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(status, result.returncode, result.stderr)
+                commands = log.read_text().splitlines()
+                self.assertEqual(1, commands.count("bun <test> <tests/pi>"))
+                later_suite = "bun <test> <tools/codex-sandbox/tests/guest_tools_test.ts>"
+                if status:
+                    self.assertNotIn(later_suite, commands)
+                else:
+                    self.assertIn(later_suite, commands)
+                    self.assertIn("All checks passed", result.stdout)
+
     def test_rejects_invalid_job_counts_before_dispatch(self) -> None:
         result = subprocess.run(
             [ROOT / "dev/test", "--jobs", "0"], text=True, capture_output=True

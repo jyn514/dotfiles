@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 import contextBreakdown, {
   buildContextBreakdown,
   formatContextBreakdown,
@@ -71,7 +72,10 @@ describe("context breakdown", () => {
       disableModelInvocation: false,
     };
 
-    const custom = buildContextBreakdown("custom", {
+    // Pi appends the catalog even to a custom prompt when read is available.
+    // Feed the actual catalog text into the accounting boundary, not a prompt
+    // that claims skills were included while containing only six characters.
+    const custom = buildContextBreakdown(`custom${formatSkillsForPrompt([skill])}`, {
       cwd: "/work",
       customPrompt: "custom",
       selectedTools: ["read"],
