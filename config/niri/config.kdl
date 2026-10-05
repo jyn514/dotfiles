@@ -1,0 +1,138 @@
+// Trial config for Niri 26.04 and Noctalia 5; install both before starting.
+// Copy to ~/.config/niri/config.kdl. Start `niri` inside Plasma to try nesting,
+// or select Niri at login for gestures, portals, and the complete session.
+// Nested mode uses Alt for Mod; standalone mode uses Super.
+// Noctalia owns the bar, launcher, clipboard, notifications, and lock screen.
+// Portals and login keyring unlock must be configured outside this file.
+// Noctalia integration: https://docs.noctalia.dev/noctalia/compositor-settings/niri/
+
+spawn-at-startup "noctalia"
+
+input {
+    keyboard {
+        xkb {}
+    }
+    touchpad {
+        tap
+        natural-scroll
+    }
+}
+
+layout {
+    gaps 12
+    center-focused-column "on-overflow"
+    default-column-width { proportion 0.5; }
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+    focus-ring {
+        width 2
+        active-color "#89b4fa"
+        inactive-color "#45475a"
+    }
+    border { off; }
+}
+
+overview { backdrop-color "#1e1e2e"; }
+
+// Four-finger vertical swipe opens overview; three fingers navigate workspaces.
+// Mod+left drag inserts a tile; in overview, plain left drag does the same.
+// Mod+right drag resizes; right-click during a move toggles floating/tiling.
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+window-rule {
+    match app-id="^dev.noctalia.Noctalia$"
+    open-floating true
+    default-column-width { fixed 1080; }
+    default-window-height { fixed 920; }
+}
+debug {
+    // Noctalia needs this for notification actions and window activation.
+    honor-xdg-activation-with-invalid-serial
+}
+
+binds {
+    // Noctalia's documented shortcuts.
+    Mod+Space hotkey-overlay-title="Launcher" { spawn "noctalia" "msg" "panel-toggle" "launcher"; }
+    Mod+S hotkey-overlay-title="Wi-Fi, Bluetooth, audio and notifications" { spawn "noctalia" "msg" "panel-toggle" "control-center"; }
+    Mod+Comma hotkey-overlay-title="Noctalia settings" { spawn "noctalia" "msg" "settings-toggle"; }
+    Alt+Tab repeat=false { spawn "noctalia" "msg" "window-switcher" "hold"; }
+    XF86AudioRaiseVolume { spawn "noctalia" "msg" "volume-up"; }
+    XF86AudioLowerVolume { spawn "noctalia" "msg" "volume-down"; }
+    XF86AudioMute { spawn "noctalia" "msg" "volume-mute"; }
+    XF86MonBrightnessUp { spawn "noctalia" "msg" "brightness-up"; }
+    XF86MonBrightnessDown { spawn "noctalia" "msg" "brightness-down"; }
+
+    // Extra desktop controls; clipboard is also available in Noctalia's UI.
+    Mod+T hotkey-overlay-title="Kitty terminal" { spawn "kitty"; }
+    Super+Alt+L hotkey-overlay-title="Lock screen" { spawn "noctalia" "msg" "session" "lock"; }
+    Mod+Shift+Slash { show-hotkey-overlay; }
+    Mod+O repeat=false { toggle-overview; }
+    Mod+Q repeat=false { close-window; }
+
+    // Niri's standard navigation and tile controls.
+    Mod+Left { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Up { focus-window-up; }
+    Mod+Down { focus-window-down; }
+    Mod+H { focus-column-left; }
+    Mod+L { focus-column-right; }
+    Mod+K { focus-window-up; }
+    Mod+J { focus-window-down; }
+    Mod+Ctrl+H { move-column-left; }
+    Mod+Ctrl+L { move-column-right; }
+    Mod+Ctrl+K { move-window-up; }
+    Mod+Ctrl+J { move-window-down; }
+    Mod+Page_Up { focus-workspace-up; }
+    Mod+Page_Down { focus-workspace-down; }
+    Mod+Ctrl+Page_Up { move-window-to-workspace-up; }
+    Mod+Ctrl+Page_Down { move-window-to-workspace-down; }
+    Mod+BracketLeft { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+    Mod+R { switch-preset-column-width; }
+    Mod+Ctrl+R { reset-window-height; }
+    Mod+F { maximize-column; }
+    Mod+M { maximize-window-to-edges; }
+    Mod+Shift+F { fullscreen-window; }
+    Mod+C { center-column; }
+    Mod+Minus { set-column-width "-10%"; }
+    Mod+Equal { set-column-width "+10%"; }
+    Mod+V { toggle-window-floating; }
+    Mod+Shift+V { switch-focus-between-floating-and-tiling; }
+    Print { screenshot; }
+    Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
+    Mod+Shift+E { quit; }
+
+    // jyn's KDE mappings translated where an equivalent exists.
+    // Replace conflicting active binds above before uncommenting these.
+    // H/J/K/L focus, Mod+T terminal, and Mod+Q close already match.
+    // Mod+Space { spawn "noctalia" "msg" "panel-toggle" "launcher"; }
+    // Mod+W { toggle-overview; }
+    // Mod+Shift+H { move-column-left; }
+    // Mod+Shift+L { move-column-right; }
+    // Mod+Shift+J { move-window-down; }
+    // Mod+Shift+K { move-window-up; }
+    // Mod+F { toggle-window-floating; }
+    // Mod+Up { maximize-window-to-edges; }
+    // Mod+Ctrl+H { move-window-to-monitor-left; }
+    // Mod+Ctrl+L { move-window-to-monitor-right; }
+    // Mod+Left { focus-monitor-left; }
+    // Mod+Right { focus-monitor-right; }
+    // Mod+Ctrl+Left { focus-workspace-up; }
+    // Mod+Ctrl+Right { focus-workspace-down; }
+    // Mod+Ctrl+Shift+Left { move-window-to-workspace-up; }
+    // Mod+Ctrl+Shift+Right { move-window-to-workspace-down; }
+    // Mod+Ctrl+J { set-window-height "+10%"; }
+    // Mod+Ctrl+K { set-window-height "-10%"; }
+    // Mod+Alt+H { set-column-width "+10%"; }
+    // Mod+Alt+L { set-column-width "-10%"; }
+    // Mod+Ctrl+Q { spawn "noctalia" "msg" "session" "lock"; }
+    // Mod+Shift+V { spawn "noctalia" "msg" "panel-toggle" "clipboard"; }
+    // Mod+Shift+Print { screenshot; }
+    // Krohnkite master, rotation, monocle, and float-all have no direct equivalent.
+    // Niri has no native minimize/restore pair matching Mod+- / Mod+Backspace.
+}

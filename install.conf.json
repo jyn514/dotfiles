@@ -45,6 +45,7 @@
       "$HOME/.config/fish/conf.d/mise-activate.fish": "config/mise-activate.fish",
       "$HOME/.config/containers/containers.conf": "config/containers.conf",
       "$HOME/.config/clojure/deps.edn": "config/deps.edn",
+      "$HOME/.config/niri/config.kdl": "config/niri/config.kdl",
       "$HOME/.editorconfig": "config/editorconfig",
       "$HOME/.local/share/applications/fx-usercreated-1.desktop": "config/fx.desktop",
       "$HOME/.config/gdb/gdbearlyinit": "config/gdbearlyinit",
