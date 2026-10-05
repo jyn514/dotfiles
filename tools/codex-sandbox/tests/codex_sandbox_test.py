@@ -478,7 +478,7 @@ class HostPiWrapperTest(unittest.TestCase):
                     self.assertFalse((home / ".pi").exists())
 
     def test_subagent_extensions_come_from_host_wrapper(self) -> None:
-        config = json.loads((ROOT / "config/agents/pi/pi-codex-subagents.json").read_text())
+        config = json.loads((ROOT / "config/pi-agent/pi-codex-subagents/config.json").read_text())
         self.assertEqual([], config.get("defaults", {}).get("extensions", []))
 
     def test_child_keeps_guest_tools_and_drops_guest_credential_provider(self) -> None:
@@ -498,9 +498,9 @@ class HostPiWrapperTest(unittest.TestCase):
             )
             args = json.loads(result.stdout)
             self.assertEqual("--extension", args[0])
-            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/index.ts"), args[1])
+            self.assertEqual(str(ROOT / "config/pi-agent/pi-extensions/index.ts"), args[1])
             self.assertEqual("--extension", args[2])
-            self.assertEqual(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"), args[3])
+            self.assertEqual(str(ROOT / "config/pi-agent/pi-extensions/guest-tools.ts"), args[3])
             self.assertEqual(["--mode", "rpc", "--no-extensions", "--session", "child.jsonl"],
                              args[4:])
 
@@ -545,7 +545,7 @@ class HostPiWrapperTest(unittest.TestCase):
                 [str(TOOL / "sandbox-host-pi"), "--mode", "rpc"],
                 env={**os.environ, "HOME": str(home),
                      "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(resource_paths),
-                     "FIXTURE_CORE": str(ROOT / "config/agents/pi/pi-extensions/guest-tools-core.ts"),
+                     "FIXTURE_CORE": str(ROOT / "config/pi-agent/pi-extensions/guest-tools-core.ts"),
                      "FIXTURE_HOME": str(home),
                      "FIXTURE_HOST": str(host_repository),
                      "FIXTURE_PI_PACKAGE": str(host_pi_package)},
@@ -553,8 +553,8 @@ class HostPiWrapperTest(unittest.TestCase):
             )
             output = json.loads(result.stdout)
             self.assertLess(
-                output["args"].index(str(ROOT / "config/agents/pi/pi-extensions/index.ts")),
-                output["args"].index(str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts")),
+                output["args"].index(str(ROOT / "config/pi-agent/pi-extensions/index.ts")),
+                output["args"].index(str(ROOT / "config/pi-agent/pi-extensions/guest-tools.ts")),
             )
             self.assertEqual(
                 [
@@ -1724,20 +1724,26 @@ class CodexSandboxTest(unittest.TestCase):
 
     def test_staging_uses_install_mapping_for_config_source_names(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        renamed = self.root / "renamed-agents-source.md"
+        checkout = self.root / "alternate-dotfiles"
+        renamed = checkout / "renamed-pi-config/AGENTS.md"
+        renamed.parent.mkdir(parents=True)
         renamed.write_text("renamed source\n", encoding="utf-8")
         sources = launcher["installed_config_sources"]()
+        mappings = {target: str(source) for target, source in sources.items()
+                    if target != "$HOME/.pi/agent/AGENTS.md"}
+        mappings["$HOME/.pi/agent/"] = {"glob": True, "path": "renamed-pi-config/**"}
+        (checkout / "install.conf.json").write_text(json.dumps([{"link": mappings}]))
+        launcher["installed_config_sources"].cache_clear()
         state = SimpleNamespace(home=self.home, repository=self.repo, skills_tmp=None)
         try:
-            with mock.patch.dict(
-                sources, {"$HOME/.pi/agent/AGENTS.md": renamed}, clear=False,
-            ):
+            with mock.patch.dict(launcher["stage_skills"].__globals__, {"DOTFILES": checkout}):
                 launcher["stage_skills"](state)
             self.assertEqual(
                 "renamed source\n",
                 (state.skills_tmp / "config/agents").read_text(encoding="utf-8"),
             )
         finally:
+            launcher["installed_config_sources"].cache_clear()
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
@@ -2084,7 +2090,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len({source.parent for source in staged_sources}))
         self.assertTrue(all(not source.is_relative_to(ROOT) for source in staged_sources))
         self.assertIn(
-            f"type=bind,src={ROOT / 'config/agents/pi/pi-extensions'},"
+            f"type=bind,src={ROOT / 'config/pi-agent/pi-extensions'},"
             "dst=/home/codex/.pi/agent/pi-extensions,readonly",
             run,
         )

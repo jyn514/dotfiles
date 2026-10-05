@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import agentRoom, {
   prepareAgentRoomRequest,
   requestAgentRoom,
-} from "../../config/agents/pi/pi-extensions/agent-room";
+} from "../../config/pi-agent/pi-extensions/agent-room";
 
 const ROOM = "http://127.0.0.1:3000/r/example.capability";
 

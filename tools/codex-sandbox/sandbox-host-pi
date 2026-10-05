@@ -26,7 +26,7 @@ def main() -> int:
         if interactive or len(arguments) not in (2, 3) or any(not argument for argument in arguments[1:]):
             raise SystemExit("Usage: pi --export SESSION.jsonl [OUTPUT.html]")
         os.execv(pi_cli, [str(pi_cli), *arguments])
-    extensions = Path(__file__).resolve().parents[2] / "config/agents/pi/pi-extensions"
+    extensions = Path(__file__).resolve().parents[2] / "config/pi-agent/pi-extensions"
     old_sidecar = home / ".pi/agent/pi-extensions/codex-sidecar.ts"
     installed_index = home / ".pi/agent/pi-extensions/index.ts"
     args = []

@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 REGEX_SCRIPT = ROOT / "lib" / "shell" / "search-regex.sh"
-TMUX_CONFIG = ROOT / "config" / "tmux.conf"
+TMUX_CONFIG = ROOT / "config" / "tmux" / "tmux.conf"
 
 
 @unittest.skipUnless(shutil.which("tmux"), "tmux is required")

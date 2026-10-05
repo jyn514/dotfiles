@@ -7,7 +7,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import skillReferenceAutocomplete, {
   createSkillReferenceAutocompleteProvider,
-} from "../../config/agents/pi/pi-extensions/skill-reference-autocomplete";
+} from "../../config/pi-agent/pi-extensions/skill-reference-autocomplete";
 
 const signal = new AbortController().signal;
 

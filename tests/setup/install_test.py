@@ -748,17 +748,6 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual("config/mise.toml", links["$HOME/.config/mise/config.toml"])
         self.assertEqual("config/mise.lock", links["$HOME/.config/mise/mise.lock"])
 
-    def test_dotbot_installs_tmux_helpers_at_stable_paths(self) -> None:
-        install = json.loads((ROOT / "install.conf.json").read_text())
-        links = next(section["link"] for section in install if "link" in section)
-        expected = {
-            "$HOME/.config/tmux/attach-session.sh": "libexec/tmux/attach-session.sh",
-            "$HOME/.config/tmux/dragon.sh": "libexec/tmux/dragon.sh",
-            "$HOME/.config/tmux/renumber-sessions.sh": "libexec/tmux/renumber-tmux-sessions.sh",
-            "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
-        }
-        self.assertEqual(expected, {destination: links[destination] for destination in expected})
-
     @staticmethod
     def backend_packages(tools: dict[str, object], backend: str) -> set[str]:
         prefix = f"{backend}:"
@@ -836,7 +825,7 @@ class MiseConfigTests(unittest.TestCase):
     def test_shell_startup_files_parse(self) -> None:
         checks = (
             ("bash", "-n", ROOT / "config/bashrc"),
-            ("zsh", "-n", ROOT / "config/zshrc"),
+            ("zsh", "-n", ROOT / "config/zsh/.zshrc"),
             ("fish", "--no-execute", ROOT / "config/config.fish"),
             ("fish", "--no-execute", ROOT / "config/z.fish"),
         )
@@ -861,10 +850,10 @@ class MiseConfigTests(unittest.TestCase):
         self.assertEqual("opus", settings["model"])
 
     def test_kitty_disables_automatic_shell_integration(self) -> None:
-        kitty = (ROOT / "config/kitty.conf").read_text()
+        kitty = (ROOT / "config/kitty/kitty.conf").read_text()
         bash = (ROOT / "config/bashrc").read_text()
         fish = (ROOT / "config/config.fish").read_text()
-        zsh = (ROOT / "config/zshrc").read_text()
+        zsh = (ROOT / "config/zsh/.zshrc").read_text()
 
         self.assertIn("\nshell_integration disabled\n", kitty)
         self.assertNotIn("#shell_integration disabled", kitty)

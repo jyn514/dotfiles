@@ -23,7 +23,7 @@ test("guest context rewrites expanded skills in history without changing stored 
       "/home/jyn/.agents/skills": "/home/codex/.agents/skills",
     });
     const loaded = await discoverAndLoadExtensions([
-      join(root, "config/agents/pi/pi-extensions/guest-tools.ts"),
+      join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
     ], directory, directory);
     assert.deepEqual(loaded.errors, []);
     const runner = new ExtensionRunner(

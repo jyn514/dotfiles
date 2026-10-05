@@ -50,9 +50,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn(command, (ROOT / "config/profile").read_text())
         self.assertIn(command, (ROOT / "config/config.fish").read_text())
 
-        host_editor = (ROOT / "config/nvim-host-editor.lua").read_text()
-        shared = (ROOT / "config/nvim-shared.lua").read_text()
-        normal = (ROOT / "config/nvim.lua").read_text()
+        host_editor = (ROOT / "config/nvim/host-editor.lua").read_text()
+        shared = (ROOT / "config/nvim/shared.lua").read_text()
+        normal = (ROOT / "config/nvim/init.lua").read_text()
         self.assertIn("vim.opt.loadplugins = false", host_editor)
         self.assertIn("vim.opt.modeline = false", host_editor)
         self.assertIn("vim.opt.exrc = false", host_editor)
@@ -305,7 +305,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn("/snap/bin", path.split(":"))
 
     def test_tmux_paste_bindings_do_not_paste_after_clipboard_failure(self) -> None:
-        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
         commands = re.findall(
             r"bash -o pipefail -c '([^']*paste(?: --primary)? \| tmux load-buffer[^']*)'",
             tmux_config,
@@ -341,7 +341,7 @@ class ProfileContractTests(unittest.TestCase):
             self.assertNotIn("paste-buffer", tmux_calls)
 
     def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
-        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
         dragon_commands = re.findall(
             r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/dragon\.sh --read0)'",
             tmux_config,
@@ -447,7 +447,7 @@ class ProfileContractTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
     def test_zsh_sudo_uses_the_current_buffer_when_present(self) -> None:
-        zshrc = (ROOT / "config/zshrc").read_text()
+        zshrc = (ROOT / "config/zsh/.zshrc").read_text()
         function = re.search(r"zle-sudo\(\) \{(.*?)\n\}", zshrc, re.DOTALL)
         self.assertIsNotNone(function)
         body = function.group(1)
@@ -456,8 +456,8 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('LBUFFER="sudo $LBUFFER"', body)
 
     def test_neovim_tab_alignment_and_alternate_buffer_use_editor_columns(self) -> None:
-        shared = (ROOT / "config/nvim-shared.lua").read_text()
-        nvim = (ROOT / "config/nvim.lua").read_text()
+        shared = (ROOT / "config/nvim/shared.lua").read_text()
+        nvim = (ROOT / "config/nvim/init.lua").read_text()
 
         self.assertIn("local byte_col = vim.fn.getcurpos()[3] - 1", shared)
         self.assertIn("local display_col = vim.fn.virtcol('.') - 1", shared)
@@ -469,7 +469,7 @@ class ProfileContractTests(unittest.TestCase):
 
     def test_dynamic_shell_and_editor_values_are_computed_when_used(self) -> None:
         fish_z = (ROOT / "config/z.fish").read_text()
-        nvim = (ROOT / "config/nvim.lua").read_text()
+        nvim = (ROOT / "config/nvim/init.lua").read_text()
 
         self.assertTrue(fish_z.startswith("function __z_arguments\n"))
         self.assertIn(
@@ -485,7 +485,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIn('os.date("%Y-%m-%d")', command.group(1))
 
     def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
-        tmux_config = (ROOT / "config/tmux.conf").read_text()
+        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
         [command] = re.findall(
             r"bash -o pipefail -c '([^']*attach-session\.sh[^']*)'",
             tmux_config,
@@ -610,7 +610,7 @@ class ProfileContractTests(unittest.TestCase):
                     'if [[ -o SH_WORD_SPLIT ]]; then mode=sh; else mode=zsh; fi; '
                     'printf "%s:%s\\n" "$source_status" "$mode"',
                     "zsh",
-                    str(ROOT / "config/zshrc"),
+                    str(ROOT / "config/zsh/.zshrc"),
                 ],
                 env=os.environ | {"HOME": str(home)},
                 text=True,

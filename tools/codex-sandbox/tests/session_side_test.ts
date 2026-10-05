@@ -23,7 +23,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
 const { SessionManager } = sdk;
-const { default: sessionSide, requestOwner, snapshotSession } = await import("../../../config/agents/pi/pi-extensions/session-side.ts");
+const { default: sessionSide, requestOwner, snapshotSession } = await import("../../../config/pi-agent/pi-extensions/session-side.ts");
 
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };

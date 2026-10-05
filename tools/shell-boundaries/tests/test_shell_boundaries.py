@@ -25,6 +25,23 @@ class ShellBoundaryTests(unittest.TestCase):
             finally:
                 shell_boundaries.ROOT = original_root
 
+    def test_discovers_hidden_startup_files_without_a_shebang(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config/zsh"
+            config.mkdir(parents=True)
+            startup = config / ".zprofile"
+            startup.write_text('. ~/.profile || return\n')
+            non_shell = config / "settings.json"
+            non_shell.write_text('{}\n')
+            original_root = shell_boundaries.ROOT
+            shell_boundaries.ROOT = root
+            try:
+                self.assertIn(startup, shell_boundaries.shell_files())
+                self.assertNotIn(non_shell, shell_boundaries.shell_files())
+            finally:
+                shell_boundaries.ROOT = original_root
+
     def test_flags_complex_shell_boundaries(self) -> None:
         cases = {
             'value=$(dirname "$(readlink "$file")")\n': "nested-substitution",

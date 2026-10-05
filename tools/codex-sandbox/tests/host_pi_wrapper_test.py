@@ -53,8 +53,8 @@ class HostPiWrapperTest(unittest.TestCase):
             "CODEX_SANDBOX_GUEST_CWD": "/src/example",
         }, native["sandbox_environment"])
         self.assertEqual([
-            "--extension", str(ROOT / "config/agents/pi/pi-extensions/index.ts"),
-            "--extension", str(ROOT / "config/agents/pi/pi-extensions/guest-tools.ts"),
+            "--extension", str(ROOT / "config/pi-agent/pi-extensions/index.ts"),
+            "--extension", str(ROOT / "config/pi-agent/pi-extensions/guest-tools.ts"),
             "--mode", "rpc", "--no-extensions", "--session", "child.jsonl",
         ], native["arguments"])
 

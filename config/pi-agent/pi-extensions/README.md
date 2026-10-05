@@ -1,13 +1,13 @@
 # Pi extension bundle
 
-`index.ts` is loaded by the existing `config/agents/pi/pi.json` settings as
+`index.ts` is loaded by the existing `config/pi-agent/settings.json` settings as
 `./pi-extensions/index.ts`, relative to the installed agent directory. Keep the
 whole directory available because the entry point imports sibling modules. This
 installation needs no separate `ask-user.ts` setting or package install. After
 updating the bundle, run `/reload` in Pi. To test a checkout temporarily:
 
 ```sh
-pi -e ./config/agents/pi/pi-extensions/index.ts
+pi -e ./config/pi-agent/pi-extensions/index.ts
 ```
 
 Do not load `ask-user.ts` independently alongside the bundle.

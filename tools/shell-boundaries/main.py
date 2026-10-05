@@ -54,10 +54,11 @@ RULES = (
 
 
 def is_shell_file(path: Path) -> bool:
-    if path.name in SHELL_NAMES or path.suffix in {".sh", ".bash", ".zsh", ".fish"}:
+    if path.name.lstrip(".") in SHELL_NAMES or path.suffix in {".sh", ".bash", ".zsh", ".fish"}:
         return True
     try:
-        first_line = path.open("rb").readline(256)
+        with path.open("rb") as source:
+            first_line = source.readline(256)
     except OSError:
         return False
     return first_line.startswith(b"#!") and any(shell in first_line for shell in (b"sh", b"bash", b"zsh", b"fish"))

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionContext, MarkdownTransformer, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, getKeybindings, Markdown, type MarkdownTheme, visibleWidth } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
-import askUser from "../../config/agents/pi/pi-extensions/ask-user";
+import askUser from "../../config/pi-agent/pi-extensions/ask-user";
 
 const ESC = "\x1b";
 const LEFT = "\x1b[1;3D";

@@ -8,7 +8,7 @@ import {
   loadPromptHistoryFiles,
   mergePromptHistories,
   searchPromptHistory,
-} from "../../config/agents/pi/pi-extensions/prompt-history-search-core";
+} from "../../config/pi-agent/pi-extensions/prompt-history-search-core";
 
 describe("prompt history collection", () => {
   test("returns newest unique user prompts and joins text blocks", () => {

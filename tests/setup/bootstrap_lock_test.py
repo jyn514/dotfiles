@@ -90,7 +90,7 @@ class BootstrapLockTests(unittest.TestCase):
 
     def test_lazy_bootstrap_matches_neovim_plugin_lock(self) -> None:
         bootstrap_lock = json.loads((ROOT / "install/bootstrap.lock.json").read_text())
-        plugin_lock = json.loads((ROOT / "config/nvim-lazy-lock.json").read_text())
+        plugin_lock = json.loads((ROOT / "config/nvim/lazy-lock.json").read_text())
 
         self.assertEqual(
             plugin_lock["lazy.nvim"]["commit"],

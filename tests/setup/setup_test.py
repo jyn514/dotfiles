@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-import json
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "libexec"))
+from dotfile_links import configured_links
 
 
 class DotfileSetupTests(unittest.TestCase):
@@ -48,15 +50,7 @@ class DotfileSetupTests(unittest.TestCase):
 
     @staticmethod
     def configured_links() -> list[tuple[str, Path]]:
-        config = json.loads((ROOT / "install.conf.json").read_text())
-        links = next(directive["link"] for directive in config if "link" in directive)
-        return [
-            (
-                destination,
-                ROOT / (specification if isinstance(specification, str) else specification["path"]),
-            )
-            for destination, specification in links.items()
-        ]
+        return list(configured_links(ROOT / "install.conf.json").items())
 
     def destinations_for(self, source: Path) -> list[Path]:
         destinations = []
@@ -94,6 +88,96 @@ class DotfileSetupTests(unittest.TestCase):
         self.assert_all_dotfiles_installed()
         self.assertTrue((self.home / ".config/git/credentials").is_file())
         self.assertTrue((self.home / ".local/state/zsh").is_dir())
+
+    def test_pi_glob_installs_resources_without_moving_sessions_or_credentials(self) -> None:
+        agent = self.home / ".pi/agent"
+        (agent / "sessions").mkdir(parents=True)
+        (agent / "sessions/existing.jsonl").write_text("session\n")
+        (agent / "auth.json").write_text("credentials\n")
+        (agent / "settings.json").write_text("local Pi settings\n")
+        # Previous setup linked the entire template directory, not its files.
+        templates = agent / "pi-codex-subagents/agents"
+        templates.parent.mkdir()
+        templates.symlink_to(ROOT / "config/agents/pi/pi-codex-subagents/agents", target_is_directory=True)
+
+        result = self.run_setup()
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("session\n", (agent / "sessions/existing.jsonl").read_text())
+        self.assertEqual("credentials\n", (agent / "auth.json").read_text())
+        self.assertEqual("local Pi settings\n", (self.home / ".local/config/settings.json").read_text())
+        self.assertFalse(agent.is_symlink())
+        self.assertTrue(templates.is_symlink())
+        self.assertEqual((ROOT / "config/pi-agent/pi-codex-subagents/agents").resolve(), templates.resolve())
+        for name in ("settings.json", "AGENTS.md", "breq.md", "mcp.json", "keybindings.json",
+                     "pi-codex-subagents/config.json", "pi-extensions/index.ts", "pi-extensions/compaction.md"):
+            with self.subTest(name=name):
+                self.assertTrue((agent / name).is_symlink())
+                self.assertEqual((ROOT / "config/pi-agent" / name).resolve(), (agent / name).resolve())
+
+    def test_grouped_configs_migrate_old_links_without_moving_local_resources(self) -> None:
+        installed = {
+            "Library/LaunchAgents/com.jyn.agent-room.plist": "config/LaunchAgents/com.jyn.agent-room.plist",
+            ".config/nvim/init.lua": "config/nvim/init.lua",
+            ".config/nvim/after/queries/markdown/textobjects.scm": "config/nvim/after/queries/markdown/textobjects.scm",
+            ".config/tmux/tmux.conf": "config/tmux/tmux.conf",
+            ".config/tmux/attach-session.sh": "libexec/tmux/attach-session.sh",
+            ".config/tmux/dragon.sh": "libexec/tmux/dragon.sh",
+            ".config/tmux/renumber-sessions.sh": "libexec/tmux/renumber-tmux-sessions.sh",
+            ".config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
+            ".config/tmux/picker-action": "bin/picker-action",
+            ".config/zsh/.zprofile": "config/zsh/.zprofile",
+            ".config/zsh/.zsh_plugins.txt": "config/zsh/.zsh_plugins.txt",
+            ".config/zsh/.zshrc": "config/zsh/.zshrc",
+            ".config/kitty/kitty.conf": "config/kitty/kitty.conf",
+            ".config/kitty/campbell.conf": "config/kitty/campbell.conf",
+            ".local/share/applications/Helix.desktop": "config/applications/Helix.desktop",
+            ".local/share/applications/fx-usercreated-1.desktop": "config/applications/fx-usercreated-1.desktop",
+            ".local/share/applications/nvim.desktop": "config/applications/nvim.desktop",
+            ".local/share/applications/spotify-qt.desktop": "config/applications/spotify-qt.desktop",
+        }
+        old_links = {
+            ".config/nvim/init.lua": "config/nvim.lua",
+            ".config/tmux/tmux.conf": "config/tmux.conf",
+            ".config/zsh/.zprofile": "config/zprofile",
+            ".config/kitty/campbell.conf": "config/kitty-campbell.conf",
+            ".local/share/applications/fx-usercreated-1.desktop": "config/fx.desktop",
+        }
+        for name, old_source in old_links.items():
+            destination = self.home / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.symlink_to(ROOT / old_source)
+        local_resources = (
+            "Library/LaunchAgents/local.plist",
+            ".config/nvim/local/plugin.lua",
+            ".config/tmux/plugins/tpm/tpm",
+            ".config/zsh/antidote/antidote.zsh",
+            ".config/zsh/.zsh_plugins.zsh",
+            ".config/kitty/kitty_search/search.py",
+            ".local/share/applications/nvim-generated.desktop",
+        )
+        for name in local_resources:
+            path = self.home / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("local resource\n")
+        collision = self.home / ".config/kitty/kitty.conf"
+        collision.write_text("local Kitty settings\n")
+
+        first = self.run_setup()
+        second = self.run_setup()
+
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assertEqual("local Kitty settings\n", (self.home / ".local/config/kitty.conf").read_text())
+        for name, source in installed.items():
+            with self.subTest(installed=name):
+                destination = self.home / name
+                self.assertTrue(destination.is_symlink())
+                self.assertEqual((ROOT / source).resolve(), destination.resolve())
+        for name in local_resources:
+            with self.subTest(preserved=name):
+                self.assertEqual("local resource\n", (self.home / name).read_text())
+                self.assertFalse((self.home / name).is_symlink())
 
     def test_backs_up_existing_file_and_replaces_stale_symlink(self) -> None:
         zshrc = self.home / ".config/zsh/.zshrc"

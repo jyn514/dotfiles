@@ -13,25 +13,29 @@
       "$HOME/.codex/breq.md": "config/agents/breq.md",
       "$HOME/.codex/dotfiles.config.toml": "config/agents/codex/codex.toml",
       "$HOME/.codex/developer-instructions.md": "config/agents/codex/codex-developer-instructions.md",
-      "$HOME/.pi/agent/AGENTS.md": "config/agents/pi/pi-AGENTS.md",
-      "$HOME/.pi/agent/breq.md": "config/agents/breq.md",
-      "$HOME/.pi/agent/mcp.json": "config/agents/pi/pi-mcp.json",
-      "$HOME/.pi/agent/settings.json": "config/agents/pi/pi.json",
-      "$HOME/.pi/agent/pi-extensions/index.ts": "config/agents/pi/pi-extensions/index.ts",
-      "$HOME/.pi/agent/pi-extensions/codex-sidecar.ts": "config/agents/pi/pi-extensions/codex-sidecar.ts",
-      "$HOME/.pi/agent/pi-codex-subagents/config.json": "config/agents/pi/pi-codex-subagents.json",
-      "$HOME/.pi/agent/pi-codex-subagents/agents": "config/agents/pi/pi-codex-subagents/agents",
-      "$HOME/.pi/agent/keybindings.json": "config/agents/pi/pi-keybindings.json",
+      "$HOME/.pi/agent/": {
+        "glob": true,
+        "path": "config/pi-agent/**",
+        "exclude": [
+          "config/pi-agent/pi-codex-subagents/agents/**"
+        ]
+      },
+      "$HOME/.pi/agent/pi-codex-subagents/agents": "config/pi-agent/pi-codex-subagents/agents",
       "$HOME/.claude/CLAUDE.md": "config/agents/claude/CLAUDE.md",
-      "$HOME/Library/LaunchAgents/com.jyn.agent-room.plist": "config/LaunchAgents/com.jyn.agent-room.plist",
-      "$HOME/Library/LaunchAgents/com.jyn.agent-room-backup.plist": "config/LaunchAgents/com.jyn.agent-room-backup.plist",
-      "$HOME/Library/LaunchAgents/com.jyn.lapwing.plist": "config/LaunchAgents/com.jyn.lapwing.plist",
-      "$HOME/.local/share/applications/Helix.desktop": "config/Helix.desktop",
+      "$HOME/Library/LaunchAgents/": {
+        "glob": true,
+        "path": "config/LaunchAgents/*.plist"
+      },
+      "$HOME/.local/share/applications/": {
+        "glob": true,
+        "path": "config/applications/*.desktop"
+      },
       "$HOME/.XCompose": "config/XCompose",
       "$HOME/.Xdefaults": "config/Xdefaults",
-      "$HOME/.config/tmux/attach-session.sh": "libexec/tmux/attach-session.sh",
-      "$HOME/.config/tmux/picker-action": "bin/picker-action",
-      "$HOME/.config/tmux/dragon.sh": "libexec/tmux/dragon.sh",
+      "$HOME/.config/tmux/": {
+        "glob": true,
+        "path": "config/tmux/*"
+      },
       "$HOME/.config/atuin/config.toml": "config/atuin.toml",
       "$HOME/.config/bacon/prefs.toml": "config/bacon.toml",
       "$HOME/.bash_aliases": "config/bash_aliases",
@@ -47,7 +51,6 @@
       "$HOME/.config/clojure/deps.edn": "config/deps.edn",
       "$HOME/.config/niri/config.kdl": "config/niri/config.kdl",
       "$HOME/.editorconfig": "config/editorconfig",
-      "$HOME/.local/share/applications/fx-usercreated-1.desktop": "config/fx.desktop",
       "$HOME/.config/gdb/gdbearlyinit": "config/gdbearlyinit",
       "$HOME/.config/gdb/gdbinit": "config/gdbinit",
       "$HOME/.config/git/config": "config/gitconfig",
@@ -62,43 +65,38 @@
       "$HOME/.config/kak/kakrc": "config/kakrc",
       "$HOME/.config/gitui/key_bindings.ron": "config/key_bindings.ron",
       "$HOME/.keybindings.ahk": "config/keybindings.ahk",
-      "$HOME/.config/kitty/campbell.conf": "config/kitty-campbell.conf",
-      "$HOME/.config/kitty/kitty.conf": "config/kitty.conf",
+      "$HOME/.config/kitty/": {
+        "glob": true,
+        "path": "config/kitty/*.conf"
+      },
       "$HOME/.config/lesskey": "config/lesskey",
-      "$HOME/.config/nvim/after/queries/markdown/textobjects.scm": "config/markdown-objects.scm",
+      "$HOME/.config/nvim/": {
+        "glob": true,
+        "path": "config/nvim/**"
+      },
       "$HOME/.config/mise/config.toml": "config/mise.toml",
       "$HOME/.config/mise/mise.lock": "config/mise.lock",
-      "$HOME/.config/nvim/syntax/mumps.vim": "config/mumps.vim",
-      "$HOME/.config/nvim/colors/ayu-evolve.lua": "config/nvim-ayu-evolve.lua",
-      "$HOME/.local/share/applications/nvim.desktop": "config/nvim.desktop",
-      "$HOME/.config/nvim/host-editor.lua": "config/nvim-host-editor.lua",
-      "$HOME/.config/nvim/lazy-lock.json": "config/nvim-lazy-lock.json",
-      "$HOME/.config/nvim/shared.lua": "config/nvim-shared.lua",
-      "$HOME/.config/nvim/init.lua": "config/nvim.lua",
       "$HOME/.config/openbox/lubuntu-rc.xml": "config/openbox.xml",
       "$HOME/.profile": "config/profile",
       "$HOME/.config/pylintrc": "config/pylintrc",
       "$HOME/.config/clojure/rebel_readline.edn": "config/rebel_readline.edn",
-      "$HOME/.config/tmux/renumber-sessions.sh": "libexec/tmux/renumber-tmux-sessions.sh",
       "$HOME/.selected_editor": "config/selected_editor",
-      "$HOME/.config/tmux/set-env.sh": "libexec/tmux/set-tmux-env.sh",
       "$HOME/.agents/shared.md": "config/agents/shared-agents.md",
       "$HOME/.agents/irc.md": "config/agents/irc.md",
       "$HOME/.agents/contest-dialect.md": "config/agents/contest-dialect.md",
       "$HOME/.agents/coordination-dialect.md": "config/agents/coordination-dialect.md",
       "$HOME/.agents/sandbox/AGENTS.md": "config/agents/sandbox-AGENTS.md",
       "$HOME/.agents/skills": "skills",
-      "$HOME/.local/share/applications/spotify-qt.desktop": "config/spotify-qt.desktop",
       "$HOME/.julia/config/startup.jl": "config/startup.jl",
-      "$HOME/.config/tmux/tmux.conf": "config/tmux.conf",
       "$HOME/.vimrc": "config/vimrc",
       "$HOME/.config/wezterm/wezterm.lua": "config/wezterm.lua",
       "$HOME/.config/youtube-dl/config": "config/youtube-dl",
       "$HOME/.config/fish/completions/__zoxide_z.fish": "config/z.fish",
       "$HOME/.zshenv": "config/zshenv",
-      "$HOME/.config/zsh/.zprofile": "config/zprofile",
-      "$HOME/.config/zsh/.zsh_plugins.txt": "config/zsh_plugins.txt",
-      "$HOME/.config/zsh/.zshrc": "config/zshrc"
+      "$HOME/.config/zsh/": {
+        "glob": true,
+        "path": "config/zsh/.*"
+      }
     }
   },
   {

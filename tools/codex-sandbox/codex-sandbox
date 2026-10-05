@@ -65,6 +65,9 @@ HOST_PI_OWNER = None
 
 
 DOTFILES = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(DOTFILES / "libexec"))
+from dotfile_links import configured_links
+
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
 HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
@@ -1427,9 +1430,7 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
 
 @cache
 def installed_config_sources() -> dict[str, Path]:
-    data = json.loads((DOTFILES / "install.conf.json").read_text(encoding="utf-8"))
-    links = next(section["link"] for section in data if "link" in section)
-    return {target: DOTFILES / source for target, source in links.items()}
+    return configured_links(DOTFILES / "install.conf.json")
 
 
 def installed_config_source(target: str) -> Path:
@@ -1975,7 +1976,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     if sessions.is_symlink() or (sessions.exists() and not sessions.is_dir()):
         raise LauncherError(f"Pi persistent directory is invalid: {sessions}")
     sessions.mkdir(mode=0o700, exist_ok=True)
-    pi_extensions = DOTFILES / "config/agents/pi/pi-extensions"
+    pi_extensions = DOTFILES / "config/pi-agent/pi-extensions"
     if not pi_extensions.is_dir():
         raise LauncherError(f"Pi extensions directory is missing: {pi_extensions}")
     state.pi_agent_tmp = Path(tempfile.mkdtemp(prefix="codex-private-agent-", dir=scratch_directory()))

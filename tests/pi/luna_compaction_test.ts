@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { discoverAndLoadExtensions, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "bun:test";
-import lunaCompaction, { COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../../config/agents/pi/pi-extensions/luna-compaction";
+import lunaCompaction, { COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
 
 const usage = { input: 12, output: 8, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const message = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: 1 });
@@ -176,15 +176,15 @@ describe("Luna compaction", () => {
 
   test("native loader resolves installed symlinks, executes status after generation, and rebuilds parent context", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi compaction-"));
-    const source = join(root, "checkout/config/agents/pi/pi-extensions/luna-compaction.ts");
-    const policy = join(root, "checkout/config/agents/pi/pi-extensions/compaction.md");
+    const source = join(root, "checkout/config/pi-agent/pi-extensions/luna-compaction.ts");
+    const policy = join(root, "checkout/config/pi-agent/pi-extensions/compaction.md");
     const installed = join(root, "agent/pi-extensions/luna-compaction.ts");
     const project = join(root, "project");
     const bin = join(root, "bin");
     const oldPath = process.env.PATH;
     try {
       for (const directory of [dirname(source), dirname(installed), project, bin]) mkdirSync(directory, { recursive: true });
-      const original = resolve("config/agents/pi/pi-extensions/luna-compaction.ts");
+      const original = resolve("config/pi-agent/pi-extensions/luna-compaction.ts");
       expect(Bun.spawnSync(["cp", original, source]).exitCode).toBe(0);
       expect(Bun.spawnSync(["cmp", original, source]).exitCode).toBe(0);
       symlinkSync(source, installed);

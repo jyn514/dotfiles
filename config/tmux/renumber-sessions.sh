@@ -1,0 +1,1 @@
+../../libexec/tmux/renumber-tmux-sessions.sh

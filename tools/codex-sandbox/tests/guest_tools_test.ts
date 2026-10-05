@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { rewritePiResourcePaths } from "../../../config/agents/pi/pi-extensions/guest-tools-core.ts";
+import { rewritePiResourcePaths } from "../../../config/pi-agent/pi-extensions/guest-tools-core.ts";
 
 test("host Pi resource paths are rewritten to guest paths", () => {
   const host = "/Users/jyn/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent";
@@ -56,7 +56,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 }
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
-const { default: guestTools } = await import("../../../config/agents/pi/pi-extensions/guest-tools.ts");
+const { default: guestTools } = await import("../../../config/pi-agent/pi-extensions/guest-tools.ts");
 
 async function eventually(predicate: () => boolean) {
   for (let i = 0; i < 100; i++) {

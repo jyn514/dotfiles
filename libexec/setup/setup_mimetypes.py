@@ -285,7 +285,7 @@ def linux_setup(policy: dict, dry_run: bool) -> None:
         for mime in mimes:
             print(f"  {mime}")
     else:
-        write_linux_desktop(ROOT / "config/nvim.desktop", desktop, mimes)
+        write_linux_desktop(ROOT / "config/applications/nvim.desktop", desktop, mimes)
         if command_exists("update-desktop-database"):
             run(["update-desktop-database", str(desktop.parent)])
         for mime in mimes:

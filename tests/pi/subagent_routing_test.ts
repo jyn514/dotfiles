@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import subagentRouting from "../../config/agents/pi/pi-extensions/subagent-routing";
+import subagentRouting from "../../config/pi-agent/pi-extensions/subagent-routing";
 import {
   classifySubagentRoute,
   LUNA_SAFE_SKILLS,
-} from "../../config/agents/pi/pi-extensions/subagent-routing-core";
+} from "../../config/pi-agent/pi-extensions/subagent-routing-core";
 
 describe("automatic subagent routing", () => {
   test("routes allowlisted skills to Luna", () => {

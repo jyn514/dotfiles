@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import runtimeIdentity from "../../config/agents/pi/pi-extensions/runtime-identity";
+import runtimeIdentity from "../../config/pi-agent/pi-extensions/runtime-identity";
 
 describe("Pi runtime identity", () => {
 	test("publishes the session model at startup and after a model switch", () => {

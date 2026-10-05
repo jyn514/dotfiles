@@ -22,7 +22,7 @@ def run(image: str, *arguments: str, mounts: tuple[str, ...] = (),
         result = subprocess.run(
             ["docker", "run", "--rm", "--name", container, "--network", "none",
              "--env", "PI_OFFLINE=1", "--env", "JITI_DEBUG=1",
-             "--mount", f"type=bind,src={ROOT / 'config/agents/pi/pi-extensions'},dst={EXTENSIONS},readonly",
+             "--mount", f"type=bind,src={ROOT / 'config/pi-agent/pi-extensions'},dst={EXTENSIONS},readonly",
              *[argument for mount in mounts for argument in ("--mount", mount)],
              "--entrypoint", entrypoint, image, *arguments],
             text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,

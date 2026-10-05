@@ -32,9 +32,32 @@ Do not wrap the [configured startup benchmark](tools/codex-sandbox/README.md#mea
 or live `dev/replay-compaction` requests: those intentionally use installed
 configuration, caches, or authentication. Isolated runs do not measure that setup.
 
+## Configuration layout
+
+Grouped sources use their installed filenames under `config/LaunchAgents/`,
+`config/applications/`, `config/nvim/`, `config/tmux/`, `config/zsh/`, and
+`config/kitty/`. Dotbot globs link individual files, leaving local plugins,
+generated desktop entries, and unmanaged configuration in place. Zsh uses an
+explicit dotfile glob; Neovim uses a recursive file glob. The tmux script links
+point to their authoritative implementations in `libexec/tmux/` and `bin/`.
+
+Run `./setup dotfiles` on the host after a layout change to update old symlinks.
+Conflicting regular files move to `~/.local/config/`; setup does not replace the
+whole grouped directory. Add files matching the group's glob without adding
+manifest entries. Backups and sandbox staging resolve globs through
+`libexec/dotfile_links.py`.
+
+## Pi configuration
+
+`config/pi-agent/` mirrors `~/.pi/agent/`. Setup links its files with a recursive
+Dotbot glob, leaving sessions, credentials, installed packages, and other
+machine-local files in the home directory. The subagent `agents/` directory keeps
+its existing whole-directory link; the glob excludes its contents. `breq.md` is a
+source symlink to the shared instructions in `config/agents/`.
+
 ## Pi compaction
 
-The Luna extension uses [`compaction.md`](config/agents/pi/pi-extensions/compaction.md) for one checkpoint covering
+The Luna extension uses [`compaction.md`](config/pi-agent/pi-extensions/compaction.md) for one checkpoint covering
 history and any split-turn prefix. If Luna fails or is unavailable, the active
 model uses the same instructions; if generation fails, session history is kept.
 

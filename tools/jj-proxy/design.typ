@@ -241,7 +241,7 @@ recovery.
 === Runtime agent identity
 
 Agent identity is dynamic session state, not repository configuration. Pi's
-active model may change while the container is running, so `pi.json` and the
+active model may change while the container is running, so `settings.json` and the
 container's initial environment are not authoritative sources for commit
 attribution.
 
@@ -274,7 +274,7 @@ malformed, or mismatched record produces the same unknown identity. The stale
 `PI_MODEL` variable remains ignored. These values describe attribution, not
 authorization. Non-Pi agents retain their existing identity sources.
 
-The proxy must not infer a model from `pi.json`, a default, repository
+The proxy must not infer a model from `settings.json`, a default, repository
 configuration, or an earlier request. Model changes in B cannot alter A's
 already dispatched call. Restart existing sandbox panes to deploy the updated
 host extension and guest worker together; `/reload` replaces only the extension.

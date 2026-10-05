@@ -87,8 +87,8 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertNotIn("MimeType=text/plain;\n", generated)
 
     def test_helix_desktop_selects_helix(self) -> None:
-        desktop = (ROOT / "config/Helix.desktop").read_text()
-        nvim_desktop = (ROOT / "config/nvim.desktop").read_text()
+        desktop = (ROOT / "config/applications/Helix.desktop").read_text()
+        nvim_desktop = (ROOT / "config/applications/nvim.desktop").read_text()
 
         self.assertIn("TryExec=hx-hax\n", desktop)
         self.assertIn("Exec=env REAL_EDITOR=hx hx-hax %f\n", desktop)
@@ -96,7 +96,7 @@ class LinuxMimetypeTests(unittest.TestCase):
         self.assertNotIn("%F", desktop + nvim_desktop)
 
     def test_fx_desktop_passes_the_selected_json_file(self) -> None:
-        desktop = (ROOT / "config/fx.desktop").read_text()
+        desktop = (ROOT / "config/applications/fx-usercreated-1.desktop").read_text()
 
         self.assertIn("Exec=fx %f\n", desktop)
 

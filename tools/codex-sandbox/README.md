@@ -157,7 +157,7 @@ The agent image provides a `codex` wrapper that routes a base image's Codex CLI 
 session authentication proxy. It does not install Codex; invoking it reports how to repair the
 base image when no later `codex` executable is present on `PATH`, or when proxy setup is missing.
 
-The image build installs the packages selected by `config/agents/pi/pi.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
+The image build installs the packages selected by `config/pi-agent/settings.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
 Only the cache enters the final image, at `/tmp/jiti`;
 build-time package stores and extension runtime state are discarded.
 
@@ -165,7 +165,7 @@ Pi loads the installed host extensions and `/reload` uses Pi's normal host cache
 Local extension and settings changes invalidate the image;
 moving Git refs are captured when the package-install layer builds and may produce runtime cache misses after an upstream update.
 
-The goal extension uses the precompiled npm release pinned in `config/agents/pi/pi.json`.
+The goal extension uses the precompiled npm release pinned in `config/pi-agent/settings.json`.
 Its Git distribution loads TypeScript, making cache misses more expensive.
 
 ## Common commands
@@ -225,7 +225,7 @@ The command does not reload repository policy, so a version 2 command resolver c
 
 Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor;
 otherwise `VISUAL`, `EDITOR`, then `vi` is used.
-The dotfiles profile selects `config/nvim-host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim-shared.lua`;
+The dotfiles profile selects `config/nvim/host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim/shared.lua`;
 normal Neovim loads the same shared behavior before its IDE configuration.
 
 Each sandbox has one gateway for the host editor and, when configured, Agent Podman and agent-room.

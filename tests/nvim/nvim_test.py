@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-NVIM_CONFIG = ROOT / "config/nvim.lua"
+NVIM_CONFIG = ROOT / "config/nvim/init.lua"
 LAZY = Path.home() / ".local/share/nvim/lazy/lazy.nvim"
 
 

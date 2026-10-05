@@ -87,16 +87,16 @@ v2      git@codeberg.org:jyn514/paracress.git (push)
                 pattern,
                 """\
 open config/wezterm.lua
-edit ./config/tmux.conf:53
-abs /Users/jyn/src/dotfiles/config/kitty.conf:6:1
+edit ./config/tmux/tmux.conf:53
+abs /Users/jyn/src/dotfiles/config/kitty/kitty.conf:6:1
 home ~/.config/wezterm/wezterm.lua
 """,
                 replace="$1",
             ),
             [
                 "config/wezterm.lua",
-                "./config/tmux.conf:53",
-                "/Users/jyn/src/dotfiles/config/kitty.conf:6:1",
+                "./config/tmux/tmux.conf:53",
+                "/Users/jyn/src/dotfiles/config/kitty/kitty.conf:6:1",
                 "~/.config/wezterm/wezterm.lua",
             ],
         )

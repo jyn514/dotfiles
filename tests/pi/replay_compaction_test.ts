@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { replayInput } from "../../dev/replay-compaction";
-import { checkpointText } from "../../config/agents/pi/pi-extensions/luna-compaction";
+import { checkpointText } from "../../config/pi-agent/pi-extensions/luna-compaction";
 
 const header = { type: "session", version: 3, id: "0537ee54-642f-4ce4-a67b-ff9b06b39104", timestamp: "2026-10-03T00:00:00Z", cwd: "/owned" };
 const user = (id: string, parentId: string | null, text: string) => ({ type: "message", id, parentId, timestamp: header.timestamp, message: { role: "user", content: [{ type: "text", text }], timestamp: 1 } });
