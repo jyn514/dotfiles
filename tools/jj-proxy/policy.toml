@@ -6,182 +6,37 @@ forbidden_options = [
 ]
 forbidden_prefixes = ["--config-", "--repository-"]
 
-[[command]]
-path = ["status"]
-modes = ["inspect", "mutate"]
+[inspect]
+status = true
+diff = true
+log = true
+show = true
+interdiff = true
+help = true
+file = { subcmds = ["annotate", "list", "search", "show"] }
+workspace = { subcmds = ["list"] }
+op = { subcmds = ["log", "show"] }
+git = { subcmds = ["root"] }
 
-[[command]]
-path = ["diff"]
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["log"]
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["show"]
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["interdiff"]
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["help"]
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["commit"]
-modes = ["mutate"]
-updates_author = true
-
-[[command]]
-path = ["describe"]
-modes = ["mutate"]
-
-[[command]]
-path = ["new"]
-modes = ["mutate"]
-
-[[command]]
-path = ["split"]
-modes = ["mutate"]
-updates_author = true
-
-[[command]]
-path = ["squash"]
-modes = ["mutate"]
-
-[[command]]
-path = ["rebase"]
-modes = ["mutate"]
-
-[[command]]
-path = ["restore"]
-modes = ["mutate"]
-
-[[command]]
-path = ["abandon"]
-modes = ["mutate"]
-
-[[command]]
-path = ["duplicate"]
-modes = ["mutate"]
-
-[[command]]
-path = ["edit"]
-modes = ["mutate"]
-
-[[command]]
-path = ["next"]
-modes = ["mutate"]
-
-[[command]]
-path = ["prev"]
-modes = ["mutate"]
-
-[[command]]
-path = ["undo"]
-modes = ["mutate"]
-
-[[command]]
-path = ["file", "annotate"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["file", "list"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["file", "search"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["file", "show"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["file"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["workspace", "list"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["workspace"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["op", "log"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["op", "show"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["git", "root"]
-prefix = true
-modes = ["inspect", "mutate"]
-
-[[command]]
-path = ["bookmark", "create"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "delete"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "forget"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "list"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "move"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "rename"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "set"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "track"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["bookmark", "untrack"]
-prefix = true
-modes = ["mutate"]
-
-[[command]]
-path = ["git", "fetch"]
-prefix = true
-modes = ["mutate"]
-kind = "git-fetch"
-approved_remote = true
+# Mutation mode also permits every inspection rule.
+[mutate]
+commit = { updates_author = true }
+describe = true
+new = true
+split = { updates_author = true }
+squash = true
+rebase = true
+restore = true
+abandon = true
+duplicate = true
+edit = true
+next = true
+prev = true
+undo = true
+file = true
+workspace = true
+bookmark = { subcmds = [
+  "create", "delete", "forget", "list", "move",
+  "rename", "set", "track", "untrack",
+] }
+git = { subcmds = ["fetch"] }

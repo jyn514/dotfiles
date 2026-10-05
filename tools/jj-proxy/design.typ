@@ -350,13 +350,18 @@ bookmark commands, workspace commands, and constrained Git fetch commands. The p
 Git push; publishing to protected remotes remains a host-side operation outside
 the agent container.
 
-The command policy is declared in the trusted, checked-in `policy.toml` and
-embedded into the proxy at build time. Each rule names its command path,
-permitted modes, special constraints, and execution effects. The evaluator in
-`src/policy.rs` returns a decision containing the command kind, normalized
-arguments, read-only classification, author-update hook, and fetch-remote
-behavior. The executor consumes that decision; it must not repeat command-name
-checks when selecting hooks, inspection behavior, or generated arguments.
+The trusted, checked-in `policy.toml` is embedded at build time. `inspect` grants
+inspection permissions; mutation mode inherits them and adds `mutate` rules.
+A command value of `true` or an empty table permits its prefix; an optional,
+nonempty `subcmds` list in a table limits it to those prefixes. A value of `false`
+is rejected; omit a command to deny it. Keys and list entries must each be one nonempty token.
+`updates_author` defaults to false and applies to every path in its rule. A
+mutation rule takes precedence over an inherited inspection rule. Fetch checks
+and remote expansion are fixed evaluator behavior, not policy fields. The
+evaluator in `src/policy.rs` returns the command kind, normalized arguments,
+read-only classification, and author-update hook; execution consumes this
+decision rather than repeating command-name checks. Because the policy is
+embedded at build time, policy edits require rebuilding the proxy.
 
 The current compatibility-preserving policy rejects known privilege-crossing
 options and recognizes approved command paths, while leaving ordinary option

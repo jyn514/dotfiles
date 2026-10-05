@@ -17,6 +17,7 @@ COPY tools/jj-proxy/Cargo.lock ./
 COPY tools/jj-proxy/jj.toml ./
 COPY tools/jj-proxy/policy.toml ./policy.toml
 COPY tools/jj-proxy/src ./src
+COPY tools/jj-proxy/tests/fixtures ./tests/fixtures
 RUN --mount=type=cache,target=/build/target \
     cargo test --release --locked \
     && cargo build --release --locked \

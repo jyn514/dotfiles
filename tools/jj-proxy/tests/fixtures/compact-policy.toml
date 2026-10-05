@@ -1,0 +1,12 @@
+[global]
+forbidden_options = ["--blocked"]
+forbidden_prefixes = ["--private-"]
+
+[inspect]
+state = true
+history = { subcmds = ["list", "show"] }
+
+[mutate]
+change = { subcmds = ["create", "amend"], updates_author = true }
+history = { subcmds = ["restore"] }
+files = true

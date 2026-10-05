@@ -97,5 +97,27 @@ The Rust suite covers command and Landlock execution policy plus protocol behavi
 ## Design and reference
 
 For the security model, mount topology, protocol, and rationale, read the [design](./design.typ).
-The checked-in [`policy.toml`](./policy.toml) is the policy source; [`src/policy.rs`](./src/policy.rs) embeds and evaluates it. It is authoritative for recognized command paths, blocked privilege-crossing options, execution mode, author hooks, and fetch-remote expansion. This policy is not a complete per-command grammar: ordinary option and operand validation remains with the pinned Jujutsu binary. The executor consumes the evaluator’s decision rather than repeating command-policy checks.
+The checked-in [`policy.toml`](./policy.toml) defines command permissions, blocked privilege-crossing options, and author hooks. [`src/policy.rs`](./src/policy.rs) embeds it at build time; policy edits require rebuilding the proxy image.
+
+### Policy format
+
+`[inspect]` allows inspection commands. Mutation mode also allows every inspection rule; `[mutate]` adds mutation-only permissions.
+
+```toml
+[inspect]
+status = true
+file = { subcmds = ["annotate", "list", "search", "show"] }
+git = { subcmds = ["root"] }
+
+[mutate]
+commit = { updates_author = true }
+file = true
+git = { subcmds = ["fetch"] }
+```
+
+Each key is one command token. `true` and `{}` are equivalent: both permit that command prefix, including all its subcommands. `false` is rejected; omit a command to deny it. `subcmds` restricts permission to the listed subcommand prefixes; trailing options and operands remain allowed. The list must be nonempty and each entry must be one nonempty token. `updates_author` defaults to `false` and applies to every path in the rule. Mutation entries take precedence over inherited inspection entries. Unknown fields are rejected; there are no `prefix`, `kind`, or `approved_remote` fields.
+
+`[global]` defines `forbidden_options` and `forbidden_prefixes` lists. The evaluator checks options after the matched command path: exact option names are compared before `=`, while forbidden prefixes match the option name. Ordinary option and operand validation remains with the pinned Jujutsu binary.
+
+Allowing `git fetch` does not make its behavior configurable: the evaluator always checks approved remotes, expands an omitted remote selection, and marks the decision for fetch execution. The executor consumes that decision rather than repeating command-policy checks.
 See the [tools overview](../README.md).
