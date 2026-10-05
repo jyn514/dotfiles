@@ -68,6 +68,10 @@ When comparing toolchains, alternate sequential trials on the real workload, inc
 
 When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
 
+Before adding documentation, choose its reader and owner, including for small additions during implementation. Keep repository-wide orientation, common starting instructions, and routes in the root README; put task-specific procedures with their subsystem. Put implementation rationale beside the code it explains. Omit facts that serve no reader decision, action, or necessary understanding. Link to existing owners instead of repeating them.
+
+Use `technical-docs` for new sections or unclear documentation placement; use its placement check alone for small additions. Use `reorganize-docs` when restructuring existing pages or navigation, not merely choosing where a new paragraph belongs.
+
 ### AGENTS.md files
 
 Treat `AGENTS.md` as an early routing and correction layer. Include only rules that always apply within its scope, routes to canonical task documentation, and constraints that must change the agent's plan before further work.

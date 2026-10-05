@@ -1,11 +1,14 @@
 ---
 name: reorganize-docs
-description: "Reorganize project documentation: information architecture, consolidation, splits, renames, archives, and navigation. Not for prose-only tightening or docs-site correctness review."
+description: "Restructure existing project documentation or navigation: information architecture, consolidation, splits, renames, and archives. Use when repairing a document tree or moving existing material between owners. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site correctness review; route new-content placement to technical-docs."
 ---
 
 # Reorganize Documentation
 
-Improve how readers find and use documentation without losing policy, rationale, examples, or historical evidence.
+Improve how readers find and use documentation without losing policy, rationale, examples, or historical evidence needed by its readers.
+
+Use `technical-docs` to choose where new content belongs. Do not invoke this
+workflow merely to add a paragraph or section to an existing owner.
 
 ## Read first
 
@@ -93,7 +96,8 @@ Do not turn a historical decision into current policy without verifying that it 
   distinguish intentional former-path provenance from live stale references
 - Compare moved or split pages with the prior revision;
   account for policy, rationale, commands, examples, and warnings
-- Treat changed introductions, relative links, headings, and ownership statements as expected differences, then investigate every other missing block
+- Account for removed blocks by their reader purpose and owner, not merely their presence in the old page. A block may move to another owner, be omitted because code already owns an implementation detail readers do not need, or be deleted because it serves no reader decision, action, or necessary understanding. Name the owner or reason; do not silently discard operative guidance or historical constraints.
+- Treat changed introductions, relative links, headings, and ownership statements as expected differences. Investigate unexplained omissions rather than automatically restoring old detail.
 - Read each common entrypoint alone first;
   confirm it still contains every rule needed to begin, decide, act safely, stop, and validate
 - Then follow its routers and judge whether conditionally needed material is easier to choose, not merely still reachable

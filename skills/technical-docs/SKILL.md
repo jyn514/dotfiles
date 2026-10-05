@@ -1,6 +1,6 @@
 ---
 name: technical-docs
-description: Create or substantively edit standalone technical documentation, or review it for reader usability and technical correctness. Use for READMEs, tutorials, how-to guides, reference pages, explanations, and design documents. Do not author product briefs; route new-tool lifecycles to new-tool-development. Do not use for prose-only tightening, skill authoring, documentation information architecture, or review-only design/spec consistency or completeness work; route those to their owning skills.
+description: Create or substantively edit technical documentation, add new sections, choose where new documentation belongs, or review reader usability and technical correctness. Use for READMEs, tutorials, how-to guides, reference pages, explanations, and design documents, including documentation added during implementation. For small additions or destination choices, use only the placement check; routine wording or link fixes need no full workflow. Do not author product briefs; route new-tool lifecycles to new-tool-development. Do not use for prose-only tightening, skill authoring, restructuring existing pages or navigation, or review-only design/spec consistency or completeness work; route those to their owning skills.
 ---
 
 # Technical documentation
@@ -11,6 +11,10 @@ Write for readers without the originating conversation, investigation, or design
 
 This skill owns document substance, reader structure, examples, evidence, and technical correctness.
 
+When changing the boundary between human documentation, agent instructions, and
+skills, consult [Process engineering](https://ai-maintainers.jyn.dev/general/process-engineering.html)
+for the rationale. Keep the procedure here; do not reproduce that guide locally.
+
 Route narrower work when its owning skill is available:
 
 - `new-tool-development` owns the lifecycle workflow for a new independently invoked tool, CLI, service, or reusable executable subsystem. Product briefs are human-authored: agents may review them and add only the TODO comments permitted by that skill, not write or rewrite brief prose. This skill still owns routed implementation-spec writing; do not reproduce the lifecycle procedure here.
@@ -18,14 +22,44 @@ Route narrower work when its owning skill is available:
 - `tighten-docs` owns prose-only requests to make existing documentation shorter or clearer without changing its structure or technical content.
 - `spec-review` owns review-only consistency and completeness analysis of a design or specification.
 - `skill-authoring` owns skills.
-- `reorganize-docs` owns multi-page information architecture, consolidation, splits, renames, archives, and navigation.
+- `reorganize-docs` owns restructuring existing pages or navigation: consolidation, splits, renames, archives, and multi-page information architecture. Choosing a destination for new content belongs here and does not require that workflow.
 - `typst` owns Typst markup syntax; this skill still owns the document's content and reader structure. Load both when writing a technical design in Typst.
 
 If a named skill is unavailable, preserve these ownership boundaries. State the limitation, use repository conventions and available validators, and do not claim that the missing specialized review occurred.
 
 A request to review does not authorize prose edits. For a human-authored product brief, `new-tool-development` permits adding TODO comments; otherwise, report findings, evidence, consequence, and the smallest useful correction without editing. Edit other content only when the user requests changes.
 
-## 1. Identify the reader and document form
+## 1. Choose placement before drafting
+
+For a small addition or destination choice, perform this check and validate the
+changed text and links; do not run the full authoring workflow. Continue with
+§2 onward for a new standalone document, a substantive rewrite, or a usability
+review. Route restructuring of existing pages or navigation to `reorganize-docs`.
+
+1. Name the reader and the decision, action, or understanding the content serves.
+   Omit content with no such purpose; do not document a detail merely because it
+   changed during implementation.
+2. Read the nearest documentation entrypoint and existing owner before choosing
+   a destination. Prefer an existing task or subsystem page to a new page.
+3. Match the content to its scope:
+   - Root README: repository-wide orientation, common starting instructions, and
+     routes to specialized tasks—not an inventory of subsystem internals.
+   - Subsystem or task documentation: usage, prerequisites, observable contracts,
+     hazards, recovery, and reader-relevant limitations.
+   - Code comments: local implementation rationale and non-obvious constraints
+     needed when modifying that code. Keep operator instructions and guarantees
+     between independently maintained components in their documentation.
+4. Link to the owner from relevant entrypoints rather than copying its content.
+   Keep safety constraints needed at the point of action; do not make a reader
+   follow a link to discover that a command costs money or can destroy data.
+
+For example, document compaction replay cost and failure recovery in operator
+instructions. Keep a saved checkpoint offset's encoding beside the code that
+reads and writes it; document the resulting replay limitation for operators. An
+internal capture timeout belongs in a README only if readers need it to diagnose
+or operate the system.
+
+## 2. Identify the reader and document form
 
 Identify:
 
@@ -43,13 +77,13 @@ Keep Diátaxis forms distinct:
 
 A design document is primarily explanation plus an implementation and verification contract. Within one page, separate mixed needs with clear sections or links. Route a multi-page split or navigation redesign to `reorganize-docs`.
 
-## 2. Inspect before writing or reviewing
+## 3. Inspect before writing or reviewing
 
 Read the current artifact, its entry points, linked documentation, source of truth, and representative consumers. Establish what is observed, selected, provisional, and unresolved.
 
 Do not turn conversation context, search snippets, generated output, or an analysis script into unexplained authority. Preserve provenance for measurements and reconstructed decisions.
 
-## 3. Make every form standalone
+## 4. Make every form standalone
 
 Assume the reader opens the document directly months later.
 
@@ -69,7 +103,7 @@ Adapt the opening to the form:
 - **Reference:** state the covered system, version, scope, notation, and lookup organization. Do not force motivation or design goals into neutral reference material.
 - **Explanation or design:** explain the problem, goals, and important non-goals plainly before the proposal. Define a named proposal on first use (a label alone is not a definition) and show a concrete trace of the problem and proposed behavior before detailed machinery. Use a glossary only when many project-specific terms interact; state the audience and assumed background when either is not obvious.
 
-## 4. Order explanation before machinery
+## 5. Order explanation before machinery
 
 For nontrivial designs, use this progression unless the artifact has a stronger natural structure:
 
@@ -91,7 +125,7 @@ Explain a nontrivial mechanism as:
 2. a concrete example or trace;
 3. the solution and its invariant.
 
-## 5. Define evidence rather than displaying numbers
+## 6. Define evidence rather than displaying numbers
 
 For each important measurement, explain:
 
@@ -105,7 +139,7 @@ For each important measurement, explain:
 
 Prefer a labeled table or definition list over an uninterrupted wall of figures. Comparative claims must include the alternatives and their comparable results, not merely the winning conclusion.
 
-## 6. Keep precision without front-loading density
+## 7. Keep precision without front-loading density
 
 Include technical precision, but introduce it incrementally.
 
@@ -124,7 +158,7 @@ Do not remove necessary detail merely to shorten a document. Move detail later, 
 
 Avoid wide Markdown tables. Use bullets or short subsections when cells contain prose, commands, or more than three columns; reserve tables for compact comparisons and lookup data.
 
-## 7. Write designs for review
+## 8. Write designs for review
 
 A selected design should make these reviewable without reconstructing hidden decisions:
 
@@ -142,10 +176,11 @@ A selected design should make these reviewable without reconstructing hidden dec
 
 Write design documents in Typst by default when the `typst` skill and compiler are available. Use Markdown when repository convention, tooling, or the requested destination requires it.
 
-## 8. Review from a fresh-reader position
+## 9. Review from a fresh-reader position
 
 For create or edit work, perform a standalone-reader pass before completion. For review-only work, use the same questions as review criteria:
 
+- Does each addition belong on this page, serve its reader, and avoid repeating another owner?
 - Can the title and opening be understood without session context?
 - Is every named policy, architecture, or migration defined?
 - Are unfamiliar specialist terms explained before consequential use, while precise established terms remain intact?
@@ -155,7 +190,7 @@ For create or edit work, perform a standalone-reader pass before completion. For
 - Can the reader distinguish facts, decisions, proposals, and unresolved questions?
 - Could another engineer implement or review the design without inventing policy?
 
-## 9. Validate and report
+## 10. Validate and report
 
 For create or edit work:
 

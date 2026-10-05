@@ -24,7 +24,8 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
    - Skill: preserve the triggering description, non-obvious procedure, and references needed for progressive disclosure.
    - Prompt/instructions: preserve priority, constraints, and decision rules.
 
-2. Mark load-bearing text:
+2. Mark text needed by the artifact's readers:
+   Judge preservation against the reader's task, not merely the old text's existence. An implementation detail already owned by code need not remain in operator documentation unless it affects a reader's decision, action, or necessary understanding. Preserve the observable contract and needed rationale, not every literal detail of its implementation.
    - MUST/SHOULD/MAY style obligations, even if not capitalized.
    - Inputs, outputs, defaults, edge cases, errors, and compatibility promises.
    - Concrete examples that disambiguate syntax or behavior.
@@ -81,8 +82,8 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
 
 5. Validate:
    - Re-read original and revised side by side, as prose. If the old version has better force, rhythm, scanability, or framing, restore it.
-   - Confirm no requirement, exception, command, path, or example-only behavior disappeared, and that the reason for each unusual rule, tradeoff, compatibility boundary, and rejected alternative survives.
-   - For each removed rationale sentence, be able to say "duplicated by X" or "only praised the rule without guiding action."
+   - Account for removed requirements, exceptions, commands, paths, and example-only behavior. Preserve those needed by this artifact's readers or route them to their owner; preserve the reasons for unusual rules, tradeoffs, compatibility boundaries, and rejected alternatives that still govern the task.
+   - For each removal, name the reason: duplicated by a named owner, implementation detail owned by code and not needed by this reader, or content serving no reader decision, action, or necessary understanding. Do not restore text solely because it existed before the edit. Do not use relocation to hide safety constraints needed at the point of action.
    - Read each revised section standalone. If it says what to do but no longer gives enough context to choose correctly next time, restore the smallest framing example or analogy.
    - For each common entry point affected by a deduplication, read only that entry point and the documents it directly names. Confirm a reader can find the first action, applicable constraints, required validation, and any condition that routes to another owner.
    - Check vocabulary against the project's guidance: preserve precise domain terms, explain unfamiliar terms for the intended reader, and apply banned-word rules by meaning rather than matching words mechanically.
