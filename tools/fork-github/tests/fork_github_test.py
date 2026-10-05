@@ -47,65 +47,34 @@ class ForkGithubTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(fork_github.parse_repository(url).host, host)
 
-    def test_configures_exact_remotes_in_checkout_directory(self):
-        calls = []
-
-        def runner(arguments, *, cwd=None):
-            calls.append((arguments, cwd))
-            return fork_github.Result(0)
-
-        repository = fork_github.parse_repository("owner/repository")
-        directory = Path("custom checkout")
-        self.assertEqual(fork_github.configure(repository, directory, runner), 0)
-        self.assertEqual(
-            calls,
-            [
-                (
-                    [
-                        "git",
-                        "clone",
-                        "--filter=blob:none",
-                        "https://github.com/owner/repository.git",
-                        "custom checkout",
-                    ],
-                    None,
-                ),
-                (["git", "remote", "rename", "origin", "upstream"], directory),
-                (
-                    [
-                        "git",
-                        "remote",
-                        "add",
-                        "origin",
-                        "git@github.com:jyn514/repository.git",
-                    ],
-                    directory,
-                ),
-            ],
-        )
-
-    def test_each_git_failure_stops_or_rolls_back(self):
-        repository = fork_github.parse_repository("owner/repository")
-        directory = Path("checkout")
-        for stage, status, call_count in ((0, 21, 1), (1, 22, 2), (2, 23, 4)):
+    def test_clone_and_remote_setup_failures_stop_without_publishing_directory(self):
+        # Clone creates upstream directly; there is no rename to roll back.
+        for stage, status in ((0, 21), (1, 22)):
             with self.subTest(stage=stage):
-                results = [fork_github.Result(0)] * stage + [fork_github.Result(status)]
-                if stage == 2:
-                    results.append(fork_github.Result(0))
-                runner = mock.Mock(side_effect=results)
-
-                self.assertEqual(
-                    fork_github.configure(repository, directory, runner), status
-                )
-                self.assertEqual(runner.call_count, call_count)
-                if stage == 2:
+                runner = mock.Mock(side_effect=(
+                    [fork_github.Result(0)] * stage + [fork_github.Result(status)]
+                ))
+                with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
                     self.assertEqual(
-                        runner.call_args_list[-1],
-                        mock.call(
-                            ["git", "remote", "rename", "upstream", "origin"],
-                            cwd=directory,
-                        ),
+                        fork_github.fork(["owner/repository", "checkout"], runner),
+                        status,
                     )
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertEqual(runner.call_count, stage + 1)
+
+    def test_execution_errors_are_diagnostic_and_have_shell_statuses(self):
+        for error, status in ((FileNotFoundError("missing"), 127),
+                              (PermissionError("denied"), 126)):
+            with self.subTest(error=error):
+                with mock.patch.object(fork_github.subprocess, "run", side_effect=error):
+                    with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                        self.assertEqual(fork_github.run(["jj"]).status, status)
+                self.assertIn("could not execute 'jj'", stderr.getvalue())
+
+    def test_signal_exit_status_is_preserved(self):
+        completed = fork_github.subprocess.CompletedProcess(["jj"], -15)
+        with mock.patch.object(fork_github.subprocess, "run", return_value=completed):
+            self.assertEqual(fork_github.run(["jj"]).status, 143)
 
     def test_prints_directory_only_after_complete_configuration(self):
         runner = mock.Mock(return_value=fork_github.Result(0))
