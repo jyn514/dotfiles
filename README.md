@@ -13,6 +13,25 @@ release assets, and checksums. Run it without `--dry-run` to update
 and run `dev/test`. The updater uses `GITHUB_TOKEN` when it is already set,
 but does not require or export one.
 
+## Testing and probes
+
+Run `dev/test` for the suite, or use `dev/test-environment COMMAND [ARGS...]`
+for focused tests and ad-hoc Pi probes, including `--help` checks. Each
+invocation uses Python 3's standard library to create a private HOME and Pi/XDG
+state directories, then removes them after the child exits normally, nonzero, or
+by forwarded signal. The wrapper preserves stdin, stdout, stderr, and exit
+status.
+
+An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
+installed Pi SDK under the original HOME before replacing HOME, so tests can
+read the installed SDK without loading personal settings or using its caches.
+This is environment isolation, not a filesystem sandbox: commands can still
+write explicit paths outside HOME.
+
+Do not wrap the [configured startup benchmark](tools/codex-sandbox/README.md#measure-interactive-startup)
+or live `dev/replay-compaction` requests: those intentionally use installed
+configuration, caches, or authentication. Isolated runs do not measure that setup.
+
 ## Pi compaction
 
 The Luna extension uses [`compaction.md`](config/agents/pi/pi-extensions/compaction.md) for one checkpoint covering

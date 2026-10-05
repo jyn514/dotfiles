@@ -1,28 +1,94 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env python3
+"""Run tests and probes with private HOME and no inherited sandbox authority."""
 
-DOTFILES_TEST_BB_REAL=${DOTFILES_TEST_BB_REAL:-${BB_REAL:-}}
-DOTFILES_TEST_JAVA_REAL=${DOTFILES_TEST_JAVA_REAL:-${JAVA_REAL:-}}
-DOTFILES_TEST_JJ_REAL=${DOTFILES_TEST_JJ_REAL:-${JJ_REAL:-}}
-DOTFILES_TEST_RG_REAL=${DOTFILES_TEST_RG_REAL:-${RG_REAL:-}}
-DOTFILES_TEST_SANDBOX_PROXY_DIR=${DOTFILES_TEST_SANDBOX_PROXY_DIR:-${SANDBOX_PROXY_DIR:-}}
-export DOTFILES_TEST_BB_REAL DOTFILES_TEST_JAVA_REAL DOTFILES_TEST_JJ_REAL DOTFILES_TEST_RG_REAL
-export DOTFILES_TEST_SANDBOX_PROXY_DIR
+from __future__ import annotations
 
-# Prefer private binaries over sandbox wrappers. Tests can still prepend fakes,
-# while explicitly invoked wrappers resolve these binaries after skipping self.
-for real_tool in "$DOTFILES_TEST_BB_REAL" "$DOTFILES_TEST_JAVA_REAL" \
-        "$DOTFILES_TEST_JJ_REAL" "$DOTFILES_TEST_RG_REAL"; do
-	case $real_tool in
-		*/*) PATH=${real_tool%/*}:$PATH ;;
-	esac
-done
-export PATH
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
 
-unset BB_REAL BB_SOURCE_ROOT JAVA_REAL JJ_REAL RG_REAL
-unset CLAUDECODE CODEX_THREAD_ID JJ_AGENT PI_CODING_AGENT
-unset CODEX_SIDECAR_KEY CODEX_SIDECAR_URL SANDBOX_PROXY_DIR
-SANDBOX_PROXY_DEFAULT_DIR=/nonexistent
-export SANDBOX_PROXY_DEFAULT_DIR
 
-exec "$@"
+def main(arguments: list[str]) -> int:
+    environment = dict(os.environ)
+    for tool in ("BB", "JAVA", "JJ", "RG"):
+        key = f"DOTFILES_TEST_{tool}_REAL"
+        environment[key] = environment.get(key) or environment.get(f"{tool}_REAL", "")
+    key = "DOTFILES_TEST_SANDBOX_PROXY_DIR"
+    environment[key] = environment.get(key) or environment.get("SANDBOX_PROXY_DIR", "")
+
+    # Keep installed SDK discovery independent of the disposable HOME.
+    if not environment.get("PI_PACKAGE_DIR"):
+        package = Path.home() / ".local/share/pi/node/node_modules/@earendil-works/pi-coding-agent"
+        if (package / "package.json").is_file():
+            environment["PI_PACKAGE_DIR"] = str(package)
+        else:
+            environment.pop("PI_PACKAGE_DIR", None)
+
+    # Prefer private binaries over sandbox wrappers, retaining nested-call values.
+    for tool in ("BB", "JAVA", "JJ", "RG"):
+        real = environment[f"DOTFILES_TEST_{tool}_REAL"]
+        if "/" in real:
+            environment["PATH"] = str(Path(real).parent) + os.pathsep + environment.get("PATH", os.defpath)
+    for key in (
+        "BB_REAL", "BB_SOURCE_ROOT", "JAVA_REAL", "JJ_REAL", "RG_REAL",
+        "CLAUDECODE", "CODEX_THREAD_ID", "JJ_AGENT", "PI_CODING_AGENT",
+        "CODEX_SIDECAR_KEY", "CODEX_SIDECAR_URL", "SANDBOX_PROXY_DIR",
+        "PI_MODEL_FILE", "PI_MODEL_SESSION_ID", "PI_CALL_MODEL",
+        "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR",
+        "XDG_CONFIG_DIRS", "XDG_DATA_DIRS",
+    ):
+        environment.pop(key, None)
+    environment["SANDBOX_PROXY_DEFAULT_DIR"] = "/nonexistent"
+    if not arguments:
+        return 0
+
+    with tempfile.TemporaryDirectory(prefix="dotfiles-test-home-") as directory:
+        home = Path(directory)
+        environment["HOME"] = directory
+        for key, relative in {
+            "XDG_CONFIG_HOME": ".config", "XDG_CACHE_HOME": ".cache",
+            "XDG_DATA_HOME": ".local/share", "XDG_STATE_HOME": ".local/state",
+            "XDG_RUNTIME_DIR": ".runtime", "PI_SUBAGENT_TEMP_DIR": "tmp/subagents",
+        }.items():
+            path = home / relative
+            path.mkdir(mode=0o700, parents=True, exist_ok=True)
+            environment[key] = str(path)
+
+        process = None
+        previous = {}
+
+        def forward(signum, _frame):
+            if process is not None:
+                try:
+                    process.send_signal(signum)
+                except ProcessLookupError:
+                    pass
+
+        # Cleanup requires waiting for a child rather than exec. Python avoids
+        # POSIX background jobs' ignored SIGINT and redirected stdin.
+        for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, forward)
+        try:
+            process = subprocess.Popen(arguments, env=environment)
+            return process.wait()
+        finally:
+            for signum, handler in previous.items():
+                signal.signal(signum, handler)
+
+
+if __name__ == "__main__":
+    try:
+        status = main(sys.argv[1:])
+    except OSError as error:
+        print(f"test-environment: {error}", file=sys.stderr)
+        raise SystemExit(1)
+    if status < 0:
+        # Preserve native signal status, after removing the private HOME.
+        signum = -status
+        if signum != signal.SIGKILL:
+            signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+    raise SystemExit(status)

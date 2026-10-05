@@ -39,6 +39,8 @@ Before changing sandbox launcher stdio or process ownership, read [`tools/codex-
 
 ## Testing Guidelines
 
+Run tests and ad-hoc Pi probes through `dev/test-environment`; see [Testing and probes](README.md#testing-and-probes) for isolation and real-configuration exceptions.
+
 Keep subsystem-owned tests under `tools/<name>/tests/`;
 add cross-cutting tests under the matching `tests/<feature>/` directory.
 Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection.
