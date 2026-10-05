@@ -12,6 +12,25 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+## Compaction
+
+The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
+covering history and any split-turn prefix. If Luna fails or is unavailable, the
+active model uses the same instructions. If generation fails, session history is
+kept.
+
+The extension appends a repository-state snapshot with `jj status`, the working
+directory, and a capture timestamp. Failed captures report unknown state. The
+snapshot can become stale and is not evidence of task completion. It is excluded
+from later compaction requests rather than summarized again.
+
+Instructions are read afresh for each compaction; instruction-only edits need no
+reload. After changing extension code, use `/reload` as described above. Follow
+the [testing guide](../../../dev/README.md#testing-and-probes) to install locked
+dependencies and run the offline compaction tests, including native extension
+loading and resumed-context reconstruction. See [compaction replay](../../../dev/README.md#replay-a-compaction)
+to compare instruction changes against saved sessions.
+
 ## Side conversations: `/side`
 
 Under tmux, `/side` opens another host Pi pane on the same guest worker and

@@ -1,106 +1,35 @@
 # dotfiles
-Configuration and options for various common Unix commands.
 
-See the [`tools/` reference](tools/README.md) for the repository's standalone commands and executable subsystems.
+Shell and desktop configuration, bootstrap scripts, and agent tooling.
 
 Partly taken (with love) from Charles Daniels' [excellent repository](https://github.com/charlesdaniels/dotfiles).
 
-## Maintenance
+## Setup and configuration
 
-Run `dev/update-bootstrap-lock --dry-run` to preview newer plugin revisions,
-release assets, and checksums. Run it without `--dry-run` to update
-`install/bootstrap.lock.json` and `install/bundles.json`, then review the diff
-and run `dev/test`. The updater uses `GITHUB_TOKEN` when it is already set,
-but does not require or export one.
+Run `./setup dotfiles` from the repository root to install or refresh configuration
+links. Conflicting regular files move to `~/.local/config/`. Other `./setup`
+options can install packages or change system configuration; read the relevant
+function before running them on a new machine.
+
+See [configuration layout](config/README.md) for grouped sources and adding files,
+and [Pi configuration](config/pi-agent/README.md) for agent settings and extensions.
+
+## Tools and skills
+
+- [Tools reference](tools/README.md): standalone commands and executable subsystems.
+- [Agent skills](skills/README.md): installation, use, and publishing.
 
 ## Testing and probes
 
-Run `dev/test` for the suite, or use `dev/test-environment COMMAND [ARGS...]`
-for focused tests and ad-hoc Pi probes, including `--help` checks. Each
-invocation uses Python 3's standard library to create a private HOME and Pi/XDG
-state directories, then removes them after the child exits normally, nonzero, or
-by forwarded signal. The wrapper preserves stdin, stdout, stderr, and exit
-status.
+Run `dev/test` for the suite. Use `dev/test-environment COMMAND [ARGS...]` for
+focused tests and ad-hoc Pi probes, including `--help` checks. The wrapper uses a
+private HOME and Pi/XDG state; it is not a filesystem sandbox and cannot prevent
+writes to explicit paths outside HOME.
 
-An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
-installed Pi SDK under the original HOME before replacing HOME, so tests can
-read the installed SDK without loading personal settings or using its caches.
-This is environment isolation, not a filesystem sandbox: commands can still
-write explicit paths outside HOME.
-
-Do not wrap the [configured startup benchmark](tools/codex-sandbox/README.md#measure-interactive-startup)
-or live `dev/replay-compaction` requests: those intentionally use installed
-configuration, caches, or authentication. Isolated runs do not measure that setup.
-
-## Configuration layout
-
-Grouped sources use their installed filenames under `config/LaunchAgents/`,
-`config/applications/`, `config/nvim/`, `config/tmux/`, `config/zsh/`, and
-`config/kitty/`. Dotbot globs link individual files, leaving local plugins,
-generated desktop entries, and unmanaged configuration in place. Zsh uses an
-explicit dotfile glob; Neovim uses a recursive file glob. The tmux script links
-point to their authoritative implementations in `libexec/tmux/` and `bin/`.
-
-Run `./setup dotfiles` on the host after a layout change to update old symlinks.
-Conflicting regular files move to `~/.local/config/`; setup does not replace the
-whole grouped directory. Add files matching the group's glob without adding
-manifest entries. Backups and sandbox staging resolve globs through
-`libexec/dotfile_links.py`.
-
-## Pi configuration
-
-`config/pi-agent/` mirrors `~/.pi/agent/`. Setup links its files with a recursive
-Dotbot glob, leaving sessions, credentials, installed packages, and other
-machine-local files in the home directory. The subagent `agents/` directory keeps
-its existing whole-directory link; the glob excludes its contents. `breq.md` is a
-source symlink to the shared instructions in `config/agents/`.
-
-## Pi compaction
-
-The Luna extension uses [`compaction.md`](config/pi-agent/pi-extensions/compaction.md) for one checkpoint covering
-history and any split-turn prefix. If Luna fails or is unavailable, the active
-model uses the same instructions; if generation fails, session history is kept.
-
-After generation, the extension appends full `jj status` output, the session's
-working directory, and a capture timestamp. Failed captures, including the
-10-second timeout, report unknown state. Saved checkpoint metadata keeps this
-caller-produced block out of the next summarization request. It is a snapshot,
-not evidence of task completion; later edits can make it stale.
-
-Before running Pi tests or `dev/replay-compaction`, install the locked
-dependencies from the repository root. This requires Node/npm and Bun:
-
-```sh
-npm ci --ignore-scripts --no-audit --no-fund
-```
-
-This makes tests and replays use the locked Pi SDK instead of Bun's
-auto-installed or cached version.
-
-Run `/reload` in Pi after extension changes. Instructions are read afresh for each
-compaction. Run `bun test tests/pi/luna_compaction_test.ts` for offline tests,
-including native extension loading and resumed-context reconstruction.
-
-To compare instruction changes against a saved compaction, run:
-
-```sh
-dev/replay-compaction SESSION.jsonl [COMPACTION_ID]
-```
-
-Requires Bun and the existing Pi SDK dependency. By default, it selects the
-latest compaction on the session's active branch; an entry ID selects a specific
-one. The command makes a live Luna request using normal Pi authentication or the
-sandbox model broker, so it may incur model cost. It saves `original.md`,
-`new.md`, the input and instructions, and token usage in a private temporary
-directory for manual comparison. The session file is never modified; failed
-requests retain the replay inputs.
-
-Replay uses the recorded cut point and previous checkpoint, not today's retention
-settings. It uses current instructions, SDK serialization, and the default model
-budget; original custom compaction instructions and generation settings are not
-recorded and cannot be reconstructed. Caller-added status is excluded when the
-saved checkpoint offset is available; older summaries without it remain intact.
-Run `bun test tests/pi/replay_compaction_test.ts` for offline replay tests.
+Before running tests, follow the [development guide](dev/README.md#testing-and-probes)
+for dependencies and exceptions that require installed configuration or authentication.
+See [bootstrap maintenance](dev/README.md#bootstrap-maintenance) to update locked
+plugin revisions and release assets.
 
 
 
