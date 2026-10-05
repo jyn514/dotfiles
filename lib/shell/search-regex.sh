@@ -1,6 +1,6 @@
 #!/bin/sh
 
-word_start='(^|\<)'
+word_start='(^|[[:space:]"])'
 context_start='[[:space:]"]'
 
 relative_path='(\.|\.\.)'
@@ -43,9 +43,9 @@ bare_diagnostic="CMakeLists\\.txt${position}[[:space:]]"
 
 diagnostic_candidate="($parenthesized_colon|$parenthesized_comma|$comma_position|$traceback|$line_word|$bare_diagnostic)"
 
-# Word-starting paths use a zero-width boundary so tmux copies only the path.
-# Non-word paths need a consumed context delimiter because tmux's regex engine
-# has no lookbehind; open normalizes that delimiter before dispatch.
+# Require a separated token: a word boundary also occurs after URL slashes.
+# tmux's regex engine has no lookbehind, so the match consumes its separator;
+# open normalizes that delimiter before dispatch.
 regex="($diagnostic_candidate|^$path_tail|$word_start$word_candidate|$context_start$context_candidate)"
 
 # Behavioral coverage uses tmux's regex engine directly; see

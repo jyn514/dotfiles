@@ -194,7 +194,20 @@ class SearchRegexTest(unittest.TestCase):
         )
 
     def test_does_not_match_url_as_a_path(self) -> None:
-        self.assertIsNone(self.tmux_match("https://example.com/a/b"))
+        for url in (
+            "https://example.com/a/b",
+            "https://example.com/src/main.rs",
+            "git@github.com:owner/project.git",
+            "ssh://host/src/main.rs",
+            "file:///work/src/main.rs",
+        ):
+            with self.subTest(url=url):
+                self.assertIsNone(self.tmux_match(url))
+
+    def test_matches_path_beside_url_without_selecting_url_suffix(self) -> None:
+        match = self.tmux_match("https://example.com/a/b src/main.rs:12")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.strip(), "src/main.rs:12")
 
     def test_matches_abbreviated_prompt_path_through_final_component(self) -> None:
         match = self.tmux_match("(-fish@hephaestus) ~/.../llms/pi (jj: main)")
