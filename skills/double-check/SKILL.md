@@ -1,11 +1,13 @@
 ---
 name: double-check
-description: Audit completed implementation or refactor work before claiming it is done or closing its issue. Use after the owned edits are complete when acceptance, specification match, tests, migrations, or loose ends must be checked. It may be consulted earlier only to define completion evidence; do not run the audit for read-only exploration or early progress reports.
+description: Audit completed substantial implementation or refactor work when acceptance spans multiple components, a specification, migration, or consequential boundary. Use after owned edits are complete, or when the user explicitly requests a completion audit. For a routine localized edit or simple config, inspect the diff and run the appropriate native check without loading this skill. Its evidence standards may be consulted separately; do not run the audit for read-only exploration or progress updates.
 ---
 
 # Double-check your work
 
 Audit completion against evidence, not confidence. Run the full procedure after the owned edits are complete; before then, use only the original request and governing specification to identify evidence the eventual audit must require.
+
+Use the full audit for changes such as a multi-component refactor or persisted-data migration. A documented keybinding change needs a diff review and native config validation, not this workflow. In either case, report what was checked and leave unavailable runtime evidence explicit.
 
 ## Read First
 

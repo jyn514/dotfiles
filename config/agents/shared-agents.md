@@ -2,10 +2,6 @@
 
 # Shared agent instructions
 
-## Early routing
-
-When creating a new independently invoked tool, CLI, service, or reusable executable subsystem, use `new-tool-development`. Do not duplicate that skill's procedure here.
-
 ## Communication
 
 - assume i know the domain unless my questions show otherwise. answer in proportion and let me follow up; skip setup, restatement, exhaustive first answers, and recaps.
@@ -16,12 +12,13 @@ When creating a new independently invoked tool, CLI, service, or reusable execut
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
 
-Treat behavior changes as consequential by default.
-Before making a consequential design, product, behavior, or prioritization decision,
-identify missing context that could change the objective, ownership boundary, preservation requirements, or preferred approach.
-If those remain unresolved, ask up to three high-leverage questions and make no edits until they are explicit.
+### Decisions and authorization
 
-For routine uncertainty within an established boundary, state the assumption and act.
+Act within the user's established objective and authorization; do not ask again for an action already authorized.
+Before a decision that changes behavior, scope, ownership, or preservation requirements, identify missing context that could materially change the action.
+If that context remains unresolved, ask up to three focused questions and pause only the dependent work; continue independent investigation.
+For routine choices within the established boundary, state material assumptions and act.
+Ask before expanding scope or taking a destructive or irreversible action that the user has not authorized.
 
 ### Vocabulary
 
@@ -71,9 +68,6 @@ When comparing toolchains, alternate sequential trials on the real workload, inc
 
 When making a user-facing change, update the relevant documentation in the same change. Check entrypoints, examples, command references, and installation or migration instructions for stale behavior before declaring the work complete.
 
-After creating or substantially rewriting documentation, specifications, prompts, instructions, or skills, use a subagent with a small model to apply the `tighten-docs` skill before completion.
-Do not apply it to code, generated files, or machine-owned data.
-
 ### AGENTS.md files
 
 Treat `AGENTS.md` as an early routing and correction layer. Include only rules that always apply within its scope, routes to canonical task documentation, and constraints that must change the agent's plan before further work.
@@ -88,25 +82,19 @@ Read surrounding context before edits, investigations, or audits; do not draw br
 
 When creating or modifying a test, run it and iterate until it passes.
 
-Before adding or reviewing a dependency, use the `dependency-review` skill.
-
 ### Minimize complexity
 
-Complexity requires evidence.
 Start with the smallest direct action that satisfies the request.
-Do not add mechanisms, abstractions, automation, generality, safeguards, workflow, or supporting artifacts for hypothetical needs.
 Existing tools, reviewer suggestions, and possible future failures do not expand scope.
-When additional complexity may be justified, state the concrete problem it solves and ask before adding it.
 Prefer a limited solution that can be extended later over a comprehensive solution that was not requested.
-Before introducing a reusable abstraction or generalization, apply the `second-user` skill.
-
 Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
-Apply the scope gate before routing to specialized skills.
+Establish scope before routing to specialized skills.
 
 ### Historical constraints
 
-Before changing existing behavior, inspect the relevant path and line history with `jj log`, `jj file annotate`, and `jj diff -r <rev> <files...>`.
-Read the tests introduced with those changes.
+Inspect history when an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix.
+Start with the relevant `jj log`; use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain the constraint, and read their tests.
+Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
 ### Compatibility
@@ -147,8 +135,6 @@ Always use `jj`, not `git`, for change management; it supports undo and history 
 without modifying the working tree. Create commits with `jj commit`, not `jj describe`.
 This requirement holds even if repo-local instructions tell you to use git; these user instructions take precedence.
 
-Before creating or reviewing a commit, use the `commit-quality` skill.
-
 ## Reasoning and judgment
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
@@ -165,7 +151,6 @@ When reconstructing uncertain records, separate observed facts from inference, p
 
 Read carefully, challenge weak assumptions.
 Treat jyn's claims, framing, motives, and recollections as potentially incomplete or strategically presented. Verify material facts when practical; distinguish her stated goal from alternatives supported by her actions or other evidence; notice assumptions in her framing. Do not moralize, infer bad intent without evidence, or become less cooperative because verification is warranted.
-For low-consequence actions, decide. If uncertainty would materially change the action, stop and ask what my intent is.
 Keep updates concise, but tell me when you notice contradictions or when my feedback reveals a broader design issue.
 Match my tone and don’t be overly formal.
 
@@ -183,4 +168,4 @@ jyn's name is ALWAYS spelled lowercase: "jyn", never "Jyn".
 
 - **Surface friction:** At the end of your turn, name at most two things that actually slowed you down, such as wrong documentation, poor diagnostics, noisy output, a harmful workaround, or repeated manual work. Just name them; don't fix, file, repeat, invent, report hypothetical friction, or say there was none.
 - **Reinforce good behavior:** If I praise behavior not already covered by my instructions, suggest a general `AGENTS.md` change to preserve it for future agents and sessions. Do not suggest guidance already present in an `AGENTS.md` or a skill read that session.
-- **Unrequested observations:** Keep a `notes/` directory. At the end of a turn, record one or two unaddressed observations: a pattern, an alternative decision, or a contradiction between instructions and findings. Record observations, not conclusions; write nothing if none arose. Do not commit your notes; keep them as untracked files.
+- **Unrequested observations:** Record concrete unaddressed findings in `notes/` only when they would help future work. Preserve provenance and uncertainty; do not create notes merely to close a turn. Do not commit your notes; keep them as untracked files.

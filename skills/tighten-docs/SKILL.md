@@ -1,6 +1,6 @@
 ---
 name: tighten-docs
-description: Make docs, specs, prompts, and skills clearer and shorter while preserving required meaning, examples, rationale, constraints, and trigger behavior. Use to rewrite documentation for concision, trim verbose specs or design notes, reduce repeated guidance, or make a SKILL.md leaner.
+description: Make docs, specs, prompts, instructions, and skills clearer and shorter while preserving required meaning, examples, rationale, constraints, and trigger behavior. Use for explicit prose-tightening requests and before completion after creating a substantial document or substantially rewriting documentation, specifications, prompts, instructions, or skills. For short documents or localized edits without an explicit tightening request, review prose directly without loading this skill. Do not apply to code, generated files, or machine-owned data.
 ---
 
 # Tighten Docs
@@ -8,6 +8,13 @@ description: Make docs, specs, prompts, and skills clearer and shorter while pre
 Shorten without weakening. Treat "shorter" as subordinate to "better."
 Preserve behavior-changing requirements, safety constraints, public API details,
 validation steps, design posture, and examples that prevent likely mistakes.
+
+## Delegate the prose pass
+
+The main agent delegates this skill to a small-model subagent to reduce subscription usage. It supplies the owned files or hunks, the requested change, and requirements to preserve.
+The assigned subagent runs the workflow directly, without further delegation, and returns its edits for review.
+The main agent reviews the returned diff and completes the required checks. If small-model delegation is unavailable, the main agent runs the workflow directly and reports that limitation.
+One completed pass meets the post-rewrite requirement for the reviewed files, including this skill. Check corrections in the same pass; prose edits made during the pass do not require another pass.
 
 ## Workflow
 

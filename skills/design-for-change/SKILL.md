@@ -1,11 +1,9 @@
 ---
 name: design-for-change
-description: Apply jyn's design and testing preferences when designing, implementing, reviewing, debugging, or refactoring code, APIs, schemas, configuration, or tests. Use for ordinary code changes too, especially data modeling, parsing, invariants, regression coverage, test strategy, and maintainability. Load once per coherent change; do not reactivate for continuation or commit-only prompts unless the design or testing problem changes.
+description: Apply jyn's design and testing preferences only when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, or regression-test strategy. Examples include changing a parser's accepted language or separating a CLI from its library. Do not load for routine edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice. Load once per coherent change; reload only when scope or governing constraints change.
 ---
 
 # Design for Change
-
-Apply these principles throughout one coherent change after loading them once. A continuation, review checkpoint, or commit request does not require reloading unless new information changes the design or testing problem.
 
 ## Model the domain
 

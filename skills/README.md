@@ -91,7 +91,7 @@ For an uncertain design question:
 After choosing a design and before implementation:
 
 7. `boundary-declaration` — state ownership/effect boundaries and invariants explicitly.
-8. `second-user` — challenge any new abstraction that lacks a second concrete consumer.
+8. `second-user` — justify proposed complexity when its current requirement, independent consumers, or hard constraints are unclear.
 9. `ratchet` — turn verified invariants and discovered failure modes into mechanical checks where possible.
 
 ## Focused workflows
@@ -101,7 +101,8 @@ Use these independently when their target is already selected:
 - `architecture-design` — assess or design one bounded subsystem when there is no material design fork.
 - [autonomous-implementation](autonomous-implementation/SKILL.md) — control explicitly requested autonomous or unattended runs, including milestone order and resumable state; links to [design-for-change](design-for-change/SKILL.md) for implementation/testing and [double-check](double-check/SKILL.md) for evidence standards and completion audits.
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
-- `double-check` — audit completed work against requirements and concrete evidence.
+- `design-for-change` — resolve modeling, invariant, interface, ownership, or regression-test decisions; skip routine edits with an established shape.
+- `double-check` — audit substantial completed work across components, specifications, migrations, or consequential boundaries; use a diff review and native check for localized edits.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
@@ -111,7 +112,8 @@ Use these independently when their target is already selected:
 
 You do not need the whole chain every time.
 
-- Small refactor: `boundary-declaration` → `second-user` → implementation.
+- Small refactor: implement directly when ownership and invariants are clear; use `design-for-change` for unresolved design or test decisions, and `second-user` only when added machinery needs justification.
+- Simple configuration edit: inspect the diff and validate with the native parser; no design or completion-audit skill is required.
 - Architecture decision: `design-space-scout` → 3× `independent-plan` → `cross-critic` → `council-review`.
 - Legacy subsystem: start with `pain-axis` before scouting.
 - Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its companion-skill links. Use `ratchet` only for established invariants or diagnosed failures.
