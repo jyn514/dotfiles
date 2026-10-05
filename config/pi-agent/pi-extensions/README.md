@@ -73,6 +73,21 @@ answers are always available.
 A pending count and **Alt+A** hint appear above the normal editor; the extension
 does not modify that editor.
 
+### Cancelling obsolete questions
+
+The model can call `cancel_ask_user({ "question_ids": ["<ID from ask_user>"] })`
+when later work makes a question unnecessary. Cancellation removes only those
+pending questions and their drafts in the active session. It preserves unrelated
+questions and drafts, switches away from a cancelled selection, and closes an
+empty panel immediately.
+
+The result reports `cancelled` and `notPending` IDs. Duplicate IDs are processed
+once; unknown, already answered, or already cancelled IDs are reported as not
+pending. Cancellation persists before changing the panel; a synchronous save
+failure leaves the questions and drafts intact. Reload restores the saved queue
+without cancelled questions. Cancellation does not recall an answer already
+dispatched, supply an answer, or grant permission to do dependent work.
+
 ### Panel controls and drafts
 
 - **Alt+A** opens the last-viewed pending question, or the oldest if none was viewed.

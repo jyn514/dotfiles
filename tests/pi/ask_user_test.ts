@@ -15,7 +15,7 @@ const theme = { fg: (_color: string, text: string) => text, bold: (text: string)
 // doubled: the component uses the installed real Editor, keybindings and schema.
 // sendUserMessage deliberately returns void, matching Pi's extension API.
 function host() {
-  let tool: any;
+  const tools = new Map<string, any>();
   let transformer: MarkdownTransformer;
   const handlers = new Map<string, Function>();
   const shortcuts = new Map<string, Function>();
@@ -33,7 +33,7 @@ function host() {
   let failPersist = false;
   let duringSend: (() => void) | undefined;
   const pi = {
-    registerTool(value: any) { tool = value; },
+    registerTool(value: any) { tools.set(value.name, value); },
     registerMarkdownTransformer(value: MarkdownTransformer) { transformer = value; },
     registerShortcut(key: string, value: any) { shortcuts.set(key, value.handler); },
     on(event: string, handler: Function) { handlers.set(event, handler); return () => {}; },
@@ -78,7 +78,10 @@ function host() {
       return transformer(markdown, { messageType, availableWidth, isStreaming });
     },
     async ask(questions: any[], mode = "tui", signal?: AbortSignal) {
-      return tool.execute("call", { questions }, signal, undefined, { ...ctx, mode });
+      return tools.get("ask_user").execute("call", { questions }, signal, undefined, { ...ctx, mode });
+    },
+    async cancel(question_ids: any, mode = "tui", signal?: AbortSignal) {
+      return tools.get("cancel_ask_user").execute("cancel", { question_ids }, signal, undefined, { ...ctx, mode });
     },
     open() { return shortcuts.get("alt+a")!(ctx) as Promise<void>; },
     key(data: string) { component!.handleInput!(data); },
@@ -128,6 +131,94 @@ describe("asynchronous ask_user", () => {
     h.key(ESC);
     await open;
     expect(h.messages).toHaveLength(0);
+  });
+
+  test("cancellation preserves unrelated selection and drafts, replaces a cancelled selection, and closes an empty panel", async () => {
+    const h = host();
+    const queued = await h.ask([question("obsolete"), question("keep"), question("also obsolete")]);
+    const [obsolete, keep, alsoObsolete] = queued.details.questions.map((q: any) => q.id);
+    const open = h.open();
+    h.key("Discard this draft");
+    h.key(RIGHT);
+    h.key("Keep this draft");
+    const before = h.renders;
+    const result = await h.cancel([obsolete, obsolete, "unknown"]);
+    expect(result.details).toEqual({ cancelled: [obsolete], notPending: ["unknown"] });
+    expect(result.content[0].text).toContain("not an answer or permission");
+    expect(h.renders).toBeGreaterThan(before);
+    expect(h.text()).toContain("Question 1 of 2 — keep");
+    expect(h.text()).toContain("Keep this draft");
+    h.key(RIGHT);
+    h.key("Another discarded draft");
+    await h.cancel([alsoObsolete]);
+    // Submit without rendering first: cancellation must switch the editor now.
+    h.key(ENTER);
+    await open;
+    expect(h.messages).toHaveLength(1);
+    expect(h.messages[0].content).toContain(keep);
+    expect(h.messages[0].content).toEndWith("Keep this draft");
+    expect(h.entries.at(-1).data.questions).toEqual([]);
+
+    const last = await h.ask([question("last obsolete")]);
+    const lastOpen = h.open();
+    h.key("Never dispatch");
+    const stale = h.panel;
+    await h.cancel([last.details.questions[0].id]);
+    expect(h.closed).toBe(2);
+    await lastOpen;
+    stale.handleInput!(ENTER);
+    expect(h.messages).toHaveLength(1);
+    expect(h.widget).toBeUndefined();
+    expect(h.entries.at(-1).data.questions).toEqual([]);
+  });
+
+  test("cancelled questions stay absent after reload; retries and already answered IDs are harmless", async () => {
+    const h = host();
+    const queued = await h.ask([question("obsolete"), question("keep")]);
+    const [obsolete, keep] = queued.details.questions.map((q: any) => q.id);
+    await h.cancel([obsolete]);
+    const snapshots = h.entries.length;
+    expect((await h.cancel([obsolete])).details).toEqual({ cancelled: [], notPending: [obsolete] });
+    expect(h.entries).toHaveLength(snapshots);
+    h.emit("session_shutdown");
+    h.emit("session_start");
+    const open = h.open();
+    expect(h.text()).toContain("Question 1 of 1 — keep");
+    expect(h.text()).not.toContain("obsolete");
+    h.key("Answered already");
+    h.key(ENTER);
+    await open;
+    expect((await h.cancel([keep])).details).toEqual({ cancelled: [], notPending: [keep] });
+    expect(h.messages).toHaveLength(1);
+  });
+
+  test("failed cancellation preserves the prompt and exact draft; invalid, aborted and stale-session calls remove nothing", async () => {
+    const h = host();
+    const queued = await h.ask([question("keep")]);
+    const id = queued.details.questions[0].id;
+    const open = h.open();
+    h.key("Preserve this answer");
+    const snapshots = h.entries.length;
+    h.failPersist = true;
+    await expect(h.cancel([id])).rejects.toThrow("disk unavailable");
+    h.failPersist = false;
+    for (const mode of ["rpc", "print", "json"]) {
+      await expect(h.cancel([id], mode)).rejects.toThrow("requires interactive TUI");
+    }
+    for (const ids of [[], [" "], [id, 12], undefined]) {
+      await expect(h.cancel(ids)).rejects.toThrow("requires non-empty question IDs");
+    }
+    await expect(h.cancel([id], "tui", AbortSignal.abort())).rejects.toThrow("aborted");
+    h.sessionId = "replacement";
+    await expect(h.cancel([id])).rejects.toThrow("session is not active");
+    h.sessionId = "first";
+    expect(h.entries).toHaveLength(snapshots);
+    expect(h.text()).toContain("Question 1 of 1 — keep");
+    expect(h.text()).toContain("Preserve this answer");
+    expect(h.widget).toEqual(["1 pending question(s) · Alt+A to answer"]);
+    h.key(ENTER);
+    await open;
+    expect(h.messages[0].content).toEndWith("Preserve this answer");
   });
 
   test("separate free-text and option drafts survive cycling, Escape and reopening at last viewed", async () => {

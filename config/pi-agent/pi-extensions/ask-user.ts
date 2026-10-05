@@ -14,6 +14,10 @@ const QuestionSchema = Type.Object({
 });
 const Parameters = Type.Object({ questions: Type.Array(QuestionSchema, { minItems: 1 }) });
 export type AskUserInput = Static<typeof Parameters>;
+const CancelParameters = Type.Object({
+  question_ids: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+});
+export type CancelAskUserInput = Static<typeof CancelParameters>;
 const PendingSchema = Type.Object({ id: Type.String({ minLength: 1 }), ...QuestionSchema.properties });
 type PendingQuestion = Static<typeof PendingSchema>;
 const SnapshotSchema = Type.Object({ version: Type.Literal(1), questions: Type.Array(PendingSchema) });
@@ -78,6 +82,12 @@ class QuestionsPanel implements Component, Focusable {
     this.finish();
   }
 
+  update(): void {
+    if (this.closed) return;
+    this.load();
+    this.refresh();
+  }
+
   private current(): PendingQuestion {
     return this.state.pending.find((q) => q.id === this.state.viewed) ?? this.state.pending[0];
   }
@@ -129,6 +139,7 @@ class QuestionsPanel implements Component, Focusable {
   handleInput(data: string): void {
     if (this.closed) return;
     this.load();
+    if (this.closed) return;
     if (matchesKey(data, Key.escape) || this.keys.matches(data, "tui.select.cancel")) {
       this.close();
     } else if (matchesKey(data, Key.alt("left"))) {
@@ -247,7 +258,7 @@ export default function askUser(pi: ExtensionAPI): void {
     label: "Ask user asynchronously",
     description: "Queue questions and return IDs immediately. Answers arrive later as user steering messages. Continue only independent work; silence is not an answer or permission.",
     promptSnippet: "Ask questions asynchronously; returns IDs, not answers",
-    promptGuidelines: ["After ask_user, continue only independent work; do not assume an answer or permission from silence. Answers arrive later as user steering messages with question IDs."],
+    promptGuidelines: ["After ask_user, continue only independent work; do not assume an answer or permission from silence. Answers arrive later as user steering messages with question IDs. Use cancel_ask_user to remove questions made obsolete by later work."],
     parameters: Parameters,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       if (ctx.mode !== "tui") throw new Error("ask_user requires interactive TUI mode; no questions were queued.");
@@ -271,6 +282,40 @@ export default function askUser(pi: ExtensionAPI): void {
     },
   });
 
+  pi.registerTool({
+    name: "cancel_ask_user",
+    label: "Cancel pending questions",
+    description: "Cancel pending ask_user questions by ID in the active session. Removes their prompts and drafts; does not recall dispatched answers or grant permission. Returns cancelled and not-pending IDs.",
+    promptSnippet: "Cancel obsolete pending ask_user questions by ID",
+    parameters: CancelParameters,
+    async execute(_callId, params, signal, _onUpdate, ctx) {
+      if (ctx.mode !== "tui") throw new Error("cancel_ask_user requires interactive TUI mode; no questions were cancelled.");
+      if (signal?.aborted) throw new Error("cancel_ask_user aborted; no questions were cancelled.");
+      if (sessionId !== ctx.sessionManager.getSessionId()) throw new Error("cancel_ask_user session is not active; no questions were cancelled.");
+      if (!Check(CancelParameters, params) || params.question_ids.some((id) => !id.trim())) {
+        throw new Error("cancel_ask_user requires non-empty question IDs.");
+      }
+      const ids = [...new Set(params.question_ids)];
+      const pendingIds = new Set(state.pending.map((q) => q.id));
+      const cancelled = ids.filter((id) => pendingIds.has(id));
+      const notPending = ids.filter((id) => !pendingIds.has(id));
+      if (cancelled.length) {
+        const removed = new Set(cancelled);
+        const pending = state.pending.filter((q) => !removed.has(q.id));
+        persist(pending); // Keep prompts and drafts intact if saving fails.
+        state.pending = pending;
+        for (const id of cancelled) state.drafts.delete(id);
+        if (state.viewed && removed.has(state.viewed)) state.viewed = undefined;
+        panel?.update(); // Switch a cancelled selection, or close an empty panel now.
+        status(ctx);
+      }
+      return {
+        content: [{ type: "text", text: `Cancelled questions: ${cancelled.join(", ") || "none"}. Not pending: ${notPending.join(", ") || "none"}. Cancellation is not an answer or permission; dispatched answers cannot be recalled.` }],
+        details: { cancelled, notPending },
+      };
+    },
+  });
+
   pi.registerShortcut(Key.alt("a"), {
     description: "Answer pending questions",
     handler: async (ctx) => {
@@ -289,6 +334,7 @@ export default function askUser(pi: ExtensionAPI): void {
             if (openedGeneration !== generation || sessionId !== ctx.sessionManager.getSessionId()) {
               throw new Error("Session changed");
             }
+            if (!state.pending.some((q) => q.id === question.id)) throw new Error("Question is no longer pending");
             // The void API accepts dispatch synchronously, not delivery. Pi reports
             // asynchronous failures; never await or invent an acknowledgement.
             const body = `${question.question.split("\n").map((line) => `> ${line}`).join("\n")}\n\n${answer}`;
