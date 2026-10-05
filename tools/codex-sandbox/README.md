@@ -12,6 +12,10 @@ To repeat just this step, run `mise run pi-install` from this repository.
 The launcher loads its extensions from this checkout;
 dotfile installation is not required for the sandbox path, but its default
 Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
+These commands also create or update the `lima` Docker context and make it the
+persistent default for ordinary `docker` commands. Rerunning setup selects it
+again; use `docker context use default` to switch back to the local engine.
+`DOCKER_HOST` and `DOCKER_CONTEXT` environment variables override this selection.
 A successful `/reload` restores the guest tool extension. Failed reload may
 restore host-local built-in tools and `!` commands; guest routing is a
 normal-operation guarantee, not a malicious-code security boundary.

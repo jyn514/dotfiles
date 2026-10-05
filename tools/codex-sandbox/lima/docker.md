@@ -48,6 +48,10 @@ intact while trying the new one, use `--state DIRECTORY` and
 at that state with `CODEX_SANDBOX_DOCKER_STATE=DIRECTORY`.
 
 Setup creates `sandbox-host-docker` with 8 CPUs, 8 GiB RAM, and a 100 GiB disk.
+`./setup sandbox` also selects this VM as the default Docker endpoint through
+the `lima` context. Direct VM setup leaves your Docker context unchanged unless
+you pass `setup --default-context lima`; the context uses the provisioned socket,
+including for custom instances or state directories.
 Existing VMs retain their resource sizes when setup is rerun.
 It shares your home directory with the VM; containers retain the launcher's
 narrow mounts. Setup copies the selected real Docker CLI into private state,

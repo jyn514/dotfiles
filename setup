@@ -444,7 +444,7 @@ setup_sandbox () {
 		echo "sandbox setup requires python3; run setup option 7 or 9 first" >&2
 		return 1
 	fi
-	python3 tools/codex-sandbox/lima/docker_host.py setup
+	python3 tools/codex-sandbox/lima/docker_host.py setup --default-context lima
 }
 
 setup_all () {

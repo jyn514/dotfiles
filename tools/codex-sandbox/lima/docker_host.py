@@ -16,7 +16,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lima.host import Host, SOURCE, GUEST, atomic_json, command, machines, private_directory, shares
 from network_policy import policy_bytes
-from lima.docker_client import pin_buildx, pin_docker
+from lima.docker_client import docker_client, pin_buildx, pin_docker
 from lima.docker_platform import current
 
 
@@ -388,6 +388,7 @@ def main():
     setup.add_argument('--share-read', action='append')
     setup.add_argument('--share-write', action='append')
     setup.add_argument('--client', type=Path)
+    setup.add_argument('--default-context', help='create or update this Docker context and select it as the default')
     for name in ('start', 'stop', 'status', 'doctor', 'upgrade', 'pin-buildx'):
         sub.add_parser(name)
     pin = sub.add_parser('pin-client')
@@ -399,6 +400,15 @@ def main():
     with host.locked():
         if args.operation == 'setup':
             record = host.setup(args.instance, args.share_read, args.share_write, args.client)
+            if args.default_context:
+                client = docker_client(host.state, record)
+                contexts = command(client, 'context', 'ls', '--format', '{{.Name}}',
+                                   capture_output=True, text=True).stdout.splitlines()
+                operation = 'update' if args.default_context in contexts else 'create'
+                command(client, 'context', operation, args.default_context,
+                        '--description', 'Docker in Lima ' + record['instance'],
+                        '--docker', 'host=unix://' + record['socket'])
+                command(client, 'context', 'use', args.default_context)
         elif args.operation == 'status':
             record = host.record()
             host.verify_runtime(record)
