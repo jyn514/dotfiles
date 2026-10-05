@@ -16,7 +16,8 @@ npm ci --ignore-scripts --no-audit --no-fund
 This makes tests and replays use the locked Pi SDK instead of Bun's
 auto-installed or cached version.
 
-Run `dev/test` for the suite. It invokes `dev/test-environment` automatically.
+Run `dev/test` for the suite, including `tests/pi`, with the prerequisites above.
+It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.
 For focused tests and ad-hoc Pi probes, including `--help` checks, use
 `dev/test-environment COMMAND [ARGS...]`. For example:
 
@@ -29,6 +30,11 @@ directories. It removes them after the child exits normally, nonzero, or by
 forwarded signal, preserving stdin, stdout, stderr, and exit status. This is
 environment isolation, not a filesystem sandbox: commands can still write
 explicit paths outside HOME.
+
+For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides
+or resolves mise shims before changing HOME. Failed resolution stops the run before
+a child starts. Repository-local exclusions keep dependencies, notes, test caches,
+and editor sessions untracked even when private HOME hides global ignore rules.
 
 An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
 installed Pi SDK under the original HOME before replacing HOME, so tests can

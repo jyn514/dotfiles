@@ -398,6 +398,11 @@ python3 -m unittest tools/codex-sandbox/tests/codex_sandbox_test.py
 python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
 ```
 
+Live Caddy checks in `tests/caddy_foundation_test.py` execute the pinned manifest
+for the Docker daemon's platform. Unit checks verify identity selection for both
+supported platforms. Foreign-architecture execution requires emulation and is
+not part of the default suite.
+
 The runtime integration test builds real images and requires a working Docker-compatible daemon and network access:
 
 ```sh
