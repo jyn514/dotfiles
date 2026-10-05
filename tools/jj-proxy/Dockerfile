@@ -14,13 +14,10 @@ RUN --mount=type=cache,target=/build/target \
     cargo chef cook --release --all-targets --locked --recipe-path recipe.json
 COPY tools/jj-proxy/Cargo.toml ./
 COPY tools/jj-proxy/Cargo.lock ./
-COPY tools/jj-proxy/jj.toml ./
-COPY tools/jj-proxy/policy.toml ./policy.toml
 COPY tools/jj-proxy/src ./src
 COPY tools/jj-proxy/tests/fixtures ./tests/fixtures
 RUN --mount=type=cache,target=/build/target \
-    cargo test --release --locked \
-    && cargo build --release --locked \
+    cargo build --release --locked \
     && cp target/release/jj-proxy /jj-proxy
 
 FROM chef AS jj
@@ -38,8 +35,10 @@ RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
 FROM build AS verified
 COPY --from=jj /jj-bin /jj-bin
-RUN JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked \
-    inspection_prepares_config_without_changing_repository_metadata
+COPY tools/jj-proxy/jj.toml ./
+COPY tools/jj-proxy/policy.toml ./policy.toml
+RUN --mount=type=cache,target=/build/target \
+    JJ_PROXY_TEST_JJ=/jj-bin cargo test --release --locked
 
 FROM alpine:3.22 AS editor
 RUN apk add --no-cache git \
