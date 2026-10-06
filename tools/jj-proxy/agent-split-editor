@@ -8,5 +8,6 @@ patch=/tmp/jj-config/agent-split.patch
 
 rm -rf -- "$right"/* "$right"/.[!.]* "$right"/..?*
 cp -a -- "$left"/. "$right"/
-git -C "$right" apply --check < "$patch"
-git -C "$right" apply < "$patch"
+# Hand-edited hunk counts must match the wrapper's recounting preflight.
+git -C "$right" apply --recount --check < "$patch"
+git -C "$right" apply --recount < "$patch"

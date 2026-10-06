@@ -56,6 +56,11 @@ The image installs `config/jj.toml` as native global configuration. The router r
 
 The existing private `jj --agent-split PATCH MESSAGE REVISION` operation is proxy-only. The wrapper checks its four opaque arguments before ordinary parsing, selects the workspace backend, resolves runtime identity, and forwards to the unchanged client. A native route rejects this operation before hooks or socket access; local agent-split uses ordinary `jj split`.
 
+The trusted split editor recounts hand-edited hunk lengths during both dry-run
+and application, matching agent-split's preflight. Stale context still fails.
+Editor changes require rebuilding the proxy image and starting a new sandbox;
+they do not update an already-running proxy.
+
 ## Common commands
 
 Once the launcher has installed the wrapper, use ordinary commands:
