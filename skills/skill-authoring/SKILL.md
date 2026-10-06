@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create or structurally revise portable agent skills with precise triggers, progressive disclosure, executable procedures, and validation. Use when adding a SKILL.md or changing a skill’s scope, routing, workflow, package structure, scripts, or references. For review-only work use spec-review; for prose-only tightening use tighten-docs.
+description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use spec-review; for prose-only tightening use tighten-docs.
 ---
 
 # Skill authoring
