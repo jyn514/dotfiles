@@ -73,7 +73,7 @@ function host() {
   const emit = (event: string) => handlers.get(event)?.({}, ctx);
   emit("session_start");
   return {
-    ctx, pi, messages, notifications, emit,
+    ctx, pi, tools, messages, notifications, emit,
     display(markdown: string, messageType: "user" | "assistant" | "assistant-thinking" = "user", availableWidth = 140, isStreaming = false) {
       return transformer(markdown, { messageType, availableWidth, isStreaming });
     },
@@ -103,6 +103,17 @@ function host() {
 const question = (title: string, options?: string[]) => ({ title, question: `Decide ${title}?`, ...(options ? { options } : {}) });
 
 describe("asynchronous ask_user", () => {
+  test("registers asynchronous steering and unique cancellation guidance", () => {
+    const h = host();
+    const askTool = h.tools.get("ask_user");
+    expect(askTool.description).toContain("user steering messages with question IDs");
+    expect(askTool.description).toContain("Continue only independent work");
+    expect(askTool.description).toContain("silence is not an answer or permission");
+    expect(askTool.promptGuidelines).toEqual([
+      "Use cancel_ask_user to remove questions made obsolete by later work.",
+    ]);
+    expect(h.tools.get("cancel_ask_user").description).toContain("does not recall dispatched answers or grant permission");
+  });
   test("returns unique IDs without opening UI; appends batches to an open panel without moving selection", async () => {
     const h = host();
     const first = await h.ask([question("scope"), question("format", ["JSON", "YAML"])]);

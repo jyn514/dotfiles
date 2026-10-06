@@ -188,10 +188,10 @@ describe("historic session title editing", () => {
 
     const currentTool = tools.get("set_current_session_title");
     expect(currentTool?.description).toContain("authoritative session API");
-    expect(currentTool?.promptGuidelines).toEqual([
-      "Use set_current_session_title only for the active session.",
-      "Use an empty title to clear the current session title.",
-    ]);
+    expect(currentTool?.description).toContain("current Pi session");
+    expect(currentTool?.description).toContain("Newlines are replaced with spaces");
+    expect(currentTool?.description).toContain("an empty title clears it");
+    expect(currentTool?.promptGuidelines).toBeUndefined();
     const changed = await currentTool?.execute(undefined as never, {
       title: " New\ntitle ",
     } as never);
@@ -208,11 +208,13 @@ describe("historic session title editing", () => {
     expect(unchanged?.content[0].text).toBe("Session title unchanged");
     const historicTool = tools.get("edit_session_title");
     expect(historicTool?.description).toContain("validated batch");
-    expect(historicTool?.promptGuidelines).toEqual([
-      "Use edit_session_title for saved historic sessions, not the active session.",
-      "Identify each historic session by its exact session ID or absolute JSONL path.",
-      "Use an empty title to clear a historic session title.",
-    ]);
+    expect(historicTool?.description).toContain("exact session ID or absolute JSONL path");
+    expect(historicTool?.description).toContain("Use set_current_session_title for the active session");
+    expect(historicTool?.description).toContain("An empty title clears it");
+    expect(historicTool?.description).toContain("refuses active or duplicate sessions");
+    expect(historicTool?.description).toContain("validates all targets before writing");
+    expect(historicTool?.description).toContain("reports partial application if a write fails");
+    expect(historicTool?.promptGuidelines).toBeUndefined();
     expect(historicTool?.parameters).toBeDefined();
     expect(events).toContain("tool_result");
   });

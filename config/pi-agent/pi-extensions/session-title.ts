@@ -144,10 +144,6 @@ export default function sessionTitle(pi: ExtensionAPI) {
     label: "Set Current Session Title",
     description:
       "Set or clear the current Pi session title through Pi's authoritative session API. Newlines are replaced with spaces and an empty title clears it.",
-    promptGuidelines: [
-      "Use set_current_session_title only for the active session.",
-      "Use an empty title to clear the current session title.",
-    ],
     parameters: Type.Object({
       title: Type.String({ description: "New title, or an empty string to clear the title" }),
     }),
@@ -174,11 +170,6 @@ export default function sessionTitle(pi: ExtensionAPI) {
     label: "Edit Session Title",
     description:
       "Set or clear titles for saved historic Pi sessions in one validated batch. Identify each session by its exact session ID or absolute JSONL path. Use set_current_session_title for the active session. An empty title clears it. The tool refuses active or duplicate sessions, validates all targets before writing, and reports partial application if a write fails.",
-    promptGuidelines: [
-      "Use edit_session_title for saved historic sessions, not the active session.",
-      "Identify each historic session by its exact session ID or absolute JSONL path.",
-      "Use an empty title to clear a historic session title.",
-    ],
     parameters: Type.Object({
       edits: Type.Array(Type.Object({
         session: Type.String({ description: "Exact saved session ID or absolute JSONL path" }),

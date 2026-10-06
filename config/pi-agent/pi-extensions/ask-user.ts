@@ -256,9 +256,9 @@ export default function askUser(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "ask_user",
     label: "Ask user asynchronously",
-    description: "Queue questions and return IDs immediately. Answers arrive later as user steering messages. Continue only independent work; silence is not an answer or permission.",
+    description: "Queue questions and return IDs immediately. Answers arrive later as user steering messages with question IDs. Continue only independent work; silence is not an answer or permission.",
     promptSnippet: "Ask questions asynchronously; returns IDs, not answers",
-    promptGuidelines: ["After ask_user, continue only independent work; do not assume an answer or permission from silence. Answers arrive later as user steering messages with question IDs. Use cancel_ask_user to remove questions made obsolete by later work."],
+    promptGuidelines: ["Use cancel_ask_user to remove questions made obsolete by later work."],
     parameters: Parameters,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       if (ctx.mode !== "tui") throw new Error("ask_user requires interactive TUI mode; no questions were queued.");

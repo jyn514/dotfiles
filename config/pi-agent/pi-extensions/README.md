@@ -36,6 +36,10 @@ Pi still supplies documentation paths and topic routes. The hook runs before gue
 routing and leaves missing docs sections or unrecognized policies unchanged. Its
 native regression checks Pi's rendered format and rule wording when Pi is updated.
 
+Tool descriptions and parameter schemas retain input and lifecycle contracts.
+Prompt guidelines add workflow rules rather than repeat those contracts. Parameter
+defaults do not replace observation sequencing or user-authorization requirements.
+
 ## Skill validation: `validate_skill`
 
 Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether
