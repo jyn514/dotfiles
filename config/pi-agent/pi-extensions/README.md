@@ -12,6 +12,16 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+## Skill validation: `validate_skill`
+
+Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether
+Pi's own loader accepts a skill file. Paths are relative to the current working
+directory or absolute; `~/` paths also work. The result contains `loaded`, `name`
+when accepted, and Pi's `diagnostics`. Warnings do not necessarily prevent loading.
+
+This checks only the supplied path, not whether the current session discovers or
+uses the skill. It does not reload or change the session.
+
 ## Compaction
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
