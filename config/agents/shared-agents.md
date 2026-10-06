@@ -1,5 +1,3 @@
-@./contest-dialect.md
-
 # Shared agent instructions
 
 ## Communication
