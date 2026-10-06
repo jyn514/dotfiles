@@ -26,6 +26,9 @@ Ask before expanding scope or taking a destructive or irreversible action that t
 
 Use concise, clear language. Define specialized terms when the audience may not know them.
 Preserve established technical terms when they are precise; avoid inventing substitutes.
+Do not assume that your audience has all the context that you do.
+Avoid technical terms when they add no information; say "the Pi API currently installed", not "the local SDK".
+Prioritize clarity -> precision -> concision, in that order.
 
 Follow the principles of Simplified Technical English:
 Use common words, concrete verbs, consistent terminology, active voice, warnings first, simple present tense, and one instruction per sentence.

@@ -27,6 +27,9 @@ When using subagents:
 
 ## Commands and permissions
 
+Avoid `sed` wherever possible because it is not approved in the sandbox;
+prefer `rg`, `head`, `tail`, and other read-only commands.
+
 `$''` bash strings always require sandbox approval due to a harness limitation. Prefer simpler syntax, or writing temporary files.
 
 Do not use `&&` to combine commands that don't need a sandbox with commands that do; use your harness-level parallelism instead.
