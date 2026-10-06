@@ -21,9 +21,10 @@ def run(*args: str) -> str:
     ).stdout
 
 
-def build(tag: str, base_image: str | None = None) -> None:
+def build(tag: str, pi_revision: str, base_image: str | None = None) -> None:
     command = [
         "docker", "build", "-f", str(DOCKERFILE),
+        "--build-arg", f"PI_REVISION={pi_revision}",
     ]
     if base_image is not None:
         command.extend(["--build-arg", f"BASE_IMAGE={base_image}"])
@@ -43,7 +44,13 @@ def main() -> None:
             (alpine, None),
             (debian, "node:20-bookworm-slim"),
         ):
-            build(tag, base_image)
+            build(tag, args.expected_revision, base_image)
+            label = run(
+                'docker', 'image', 'inspect', '--format',
+                '{{ index .Config.Labels "dev.codex.pi-revision" }}', tag,
+            ).strip()
+            if label != args.expected_revision:
+                raise RuntimeError(f'unexpected Pi revision label: {label!r}')
             output = run(
                 "docker", "run", "--rm", "--entrypoint", "sh", tag, "-c",
                 "node --version; cat /opt/agent-pi/REVISION; "

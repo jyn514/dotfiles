@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 from unittest import mock
@@ -26,6 +27,9 @@ class Runtime:
     def build_platform(self):
         return "linux/test"
 
+    def upstream_image(self, reference):
+        return reference + '@sha256:' + 'e' * 64
+
     def builder_environment(self):
         return os.environ.copy()
 
@@ -41,6 +45,73 @@ class Runtime:
 
 
 class ImageResolverTest(unittest.TestCase):
+    def setUp(self):
+        home = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(mock.patch.dict(os.environ, HOME=home))
+        self.pi_marker = Path(home) / '.local/share/pi/node/.source-revision'
+        self.pi_marker.parent.mkdir(parents=True)
+        self.pi_marker.write_text('a' * 40 + '\n')
+        cache = Path(home) / 'image-cache'
+        cache.mkdir(mode=0o700)
+        self.enterContext(mock.patch('bake._cache_directory', return_value=cache))
+
+    def test_installed_pi_commit_selects_build_argument_and_cached_image(self):
+        runtime = Runtime()
+        images = {}
+        builds = []
+        runtime.image_if_available = images.get
+
+        def build(tag, dockerfile, context, *, build_args):
+            image = Image(tag + '@sha256:' + 'd' * 64, tag, 'config', 'rootfs')
+            images[tag] = image
+            builds.append(build_args)
+            return image
+
+        runtime.build = build
+        first = owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertIn('PI_REVISION=' + 'a' * 40, builds[-1])
+        self.assertEqual(first, owned_images.resolve_agent(runtime, 501, 20, 'base'))
+        self.assertEqual(1, len(builds))
+
+        self.pi_marker.write_text('b' * 40 + '\n')
+        second = owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(builds))
+        self.assertIn('PI_REVISION=' + 'b' * 40, builds[-1])
+        self.assertEqual(second, owned_images.resolve_agent(runtime, 501, 20, 'base'))
+        self.assertEqual(2, len(builds))
+
+    def test_missing_or_invalid_pi_metadata_stops_before_engine_work(self):
+        for record in (None, b'', b'main\n', b'a' * 39, b'a' * 41,
+                       b'g' * 40, b'a' * 40 + b'\ninjected', b'\xff'):
+            with self.subTest(record=record):
+                if record is None:
+                    self.pi_marker.unlink()
+                else:
+                    self.pi_marker.write_bytes(record)
+                runtime = mock.Mock()
+                with self.assertRaisesRegex(ValueError, 'run mise run pi-install'):
+                    owned_images.resolve_agent(runtime, 501, 20, 'base')
+                self.assertEqual([], runtime.mock_calls)
+
+    def test_build_keeps_the_commit_captured_before_host_metadata_changes(self):
+        runtime = Runtime()
+        runtime.image_if_available = lambda _tag: None
+        inspect = runtime.inspect_image
+
+        def inspect_and_update(reference):
+            self.pi_marker.write_text('b' * 40 + '\n')
+            return inspect(reference)
+
+        runtime.inspect_image = inspect_and_update
+        runtime.build = mock.Mock(return_value=Image('agent', 'agent', 'config', 'rootfs'))
+        cache_key = owned_images.agent_cache_key
+        with mock.patch.object(owned_images, 'agent_cache_key', wraps=cache_key) as key:
+            owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertEqual('a' * 40, key.call_args.args[4])
+        self.assertIn('PI_REVISION=' + 'a' * 40,
+                      runtime.build.call_args.kwargs['build_args'])
+
     def test_default_base_is_pulled_only_when_missing(self):
         for available in (False, True):
             with self.subTest(available=available):

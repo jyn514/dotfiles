@@ -43,8 +43,8 @@ RUN npm ci --ignore-scripts --prefix /opt/pi-npm
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
-ARG PI_REVISION=929ffac0ce312fa5ccca1ee87f80c8c053d81fe4
-RUN printf '%s\n' "${PI_REVISION}" > /REVISION
+ARG PI_REVISION
+RUN test -n "${PI_REVISION}" && printf '%s\n' "${PI_REVISION}" > /REVISION
 RUN curl -L --fail-with-body --show-error -o /pi.zip https://github.com/jyn514/pi/archive/${PI_REVISION}.zip
 RUN mkdir /src && bsdtar -xf pi.zip --strip-components=1 -C /src
 
@@ -106,6 +106,8 @@ COPY ./tools/codex-sandbox/image/host-editor-protocol.json /opt/agent-tools/bin/
 COPY --chmod=755 ./tools/codex-sandbox/image/with-github-token /opt/agent-tools/bin/with-github-token
 
 FROM pi-runtime
+ARG PI_REVISION
+LABEL dev.codex.pi-revision="${PI_REVISION}"
 COPY --from=tools /opt/agent-tools /opt/agent-tools
 
 COPY ./tools/codex-sandbox/image/create-user.sh .

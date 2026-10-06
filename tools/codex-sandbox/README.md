@@ -9,6 +9,15 @@ Host mode requires the Pi installation at
 current sandbox image. `./setup local` builds `jyn514/pi` from upstream main
 checkout and installs that package at this path; `./setup all` includes it.
 To repeat just this step, run `mise run pi-install` from this repository.
+Guest Pi builds use the installed host commit recorded in
+`~/.local/share/pi/node/.source-revision`, with guest-specific dependencies and binaries.
+That commit is part of the image cache key: updating host Pi selects a new guest
+image when starting a fresh sandbox. Missing or invalid revision metadata stops
+image resolution; rerun `mise run pi-install` to repair it. Joining sessions check
+the accepted image's Pi revision and reject a different or unknown commit;
+run `codex-sandbox restart-all` to rebuild shared sandboxes after a host Pi update
+or when migrating from images without revision labels. Existing sessions keep
+their current worker until restarted.
 The launcher loads its extensions from this checkout;
 dotfile installation is not required for the sandbox path, but its default
 Lima-Docker VM must be provisioned with `./setup sandbox` (or `./setup all`).
@@ -409,14 +418,17 @@ The runtime integration test builds real images and requires a working Docker-co
 python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
 ```
 
-Use the `PI_REVISION` selected by `image/Dockerfile`.
-The test builds the Dockerfile as written and checks its recorded revision against this explicit expectation, retaining Alpine Node and Debian Node-20/Bun coverage.
+Use the full host commit recorded in `~/.local/share/pi/node/.source-revision`.
+The test passes that commit as the required `PI_REVISION` build argument and checks
+its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
+Direct Dockerfile builds must also supply `--build-arg PI_REVISION=<full-pi-commit>`;
+there is no independent guest revision default.
 
 Check the image caches against a built final image;
 test containers run without network access:
 
 ```sh
-docker build --target pi-extension-cache -f tools/codex-sandbox/image/Dockerfile -t pi-cache-test .
+docker build --build-arg PI_REVISION=<full-pi-commit> --target pi-extension-cache -f tools/codex-sandbox/image/Dockerfile -t pi-cache-test .
 python3 tools/codex-sandbox/tests/cache_integration.py --runtime <sandbox-image> --builder pi-cache-test
 docker image rm pi-cache-test
 ```

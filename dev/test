@@ -5,8 +5,19 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 if [ "${1:-}" = --test-environment-ready ]; then
 	shift
 else
+	# Capture host installation metadata before test-environment replaces HOME.
+	DOTFILES_TEST_PI_REVISION=
+	for argument do
+		if [ "$argument" = --containers ]; then
+			DOTFILES_TEST_PI_REVISION=$(python3 "$root/tools/codex-sandbox/owned_images.py")
+			break
+		fi
+	done
+	export DOTFILES_TEST_PI_REVISION
 	exec "$root/dev/test-environment" "$0" --test-environment-ready "$@"
 fi
+pi_revision=${DOTFILES_TEST_PI_REVISION:-}
+unset DOTFILES_TEST_PI_REVISION
 
 jobs=${TEST_JOBS:-8}
 run_containers=0
@@ -123,7 +134,6 @@ if [ "$run_containers" = 1 ]; then
 	printf 'Running package planner bootstrap integration...\n'
 	python3 tools/package-plan/tests/container.py
 	printf 'Running codex sandbox runtime integration...\n'
-	pi_revision=$(awk -F= '/^ARG PI_REVISION=/ { print $2 }' tools/codex-sandbox/image/Dockerfile)
 	python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision "$pi_revision"
 	container_results=$results/containers
 	mkdir "$container_results"

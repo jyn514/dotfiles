@@ -3,6 +3,7 @@
 import hashlib
 import os
 from pathlib import Path
+import re
 import stat
 import sys
 import tempfile
@@ -47,11 +48,42 @@ def agent_sources(root=ROOT):
     return dockerfile_sources(root, Path("tools/codex-sandbox/image/Dockerfile"))
 
 
-def agent_cache_key(uid, gid, platform, base, *, root=None):
+def installed_pi_revision():
+    """Read the commit recorded by the successful host Pi installation."""
+    marker = Path.home() / '.local/share/pi/node/.source-revision'
+    try:
+        revision = marker.read_text(encoding='ascii').strip()
+    except (OSError, UnicodeError) as error:
+        raise ValueError(
+            f'Cannot read installed Pi revision at {marker}; run mise run pi-install: {error}'
+        ) from error
+    if re.fullmatch(r'[0-9a-f]{40}', revision) is None:
+        raise ValueError(
+            f'Invalid installed Pi revision at {marker}; run mise run pi-install'
+        )
+    return revision
+
+
+def check_agent_pi_revision(runtime, reference):
+    """Reject shared images built from a different or unknown host Pi commit."""
+    expected = installed_pi_revision()
+    result = runtime.run([
+        'image', 'inspect', '--format', '{{ index .Config.Labels "dev.codex.pi-revision" }}',
+        reference,
+    ], capture_output=True)
+    if result.stdout.strip() != expected:
+        raise ValueError(
+            'Shared sandbox image uses a different or unknown Pi revision; '
+            'run codex-sandbox restart-all to rebuild for the installed host Pi'
+        )
+
+
+def agent_cache_key(uid, gid, platform, base, pi_revision, *, root=None):
     root = ROOT if root is None else root
     identity = hashlib.sha256()
     identity.update(f"agent-cache-contract={AGENT_CACHE_CONTRACT}\0".encode())
     identity.update(f"uid={uid}\0gid={gid}\0platform={platform}\0".encode())
+    identity.update(f"pi-revision={pi_revision}\0".encode())
     identity.update(
         f"base={base.content}\0{base.config}\0{base.rootfs}\0".encode()
     )
@@ -67,6 +99,8 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
     if operation not in {"resolve", "refresh", "clean"}:
         raise ValueError(f"unsupported agent image operation: {operation}")
     from bake import _capture, _pin_dockerfile
+    # Capture once so the image identity and build use the same installed commit.
+    pi_revision = installed_pi_revision()
     with tempfile.TemporaryDirectory(prefix="sandbox-agent-image-") as directory:
         captured = Path(directory).resolve() / "context"
         _capture(ROOT, ROOT, captured, hashlib.sha256(), agent_sources())
@@ -80,7 +114,7 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
             {"BASE_IMAGE": base.reference}, set(), refresh=operation == "refresh",
         )
         tag = "codex-sandbox:" + agent_cache_key(
-            uid, gid, runtime.build_platform(), base, root=captured,
+            uid, gid, runtime.build_platform(), base, pi_revision, root=captured,
         )
         existing = None if operation == "clean" else runtime.image_if_available(tag)
         if existing is not None:
@@ -88,7 +122,8 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
         build_options = {"no_cache": True} if operation == "clean" else {}
         return runtime.build(
             tag, captured / "tools/codex-sandbox/image/Dockerfile", captured,
-            build_args=[f"AGENT_UID={uid}", f"AGENT_GID={gid}", f"BASE_IMAGE={base.reference}"],
+            build_args=[f"AGENT_UID={uid}", f"AGENT_GID={gid}",
+                        f"PI_REVISION={pi_revision}", f"BASE_IMAGE={base.reference}"],
             **build_options,
         ).reference
 
@@ -132,6 +167,13 @@ def declaration(requested=('auth', 'jj', 'zulip')):
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        try:
+            print(installed_pi_revision())
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
     image = declaration([sys.argv[1]])['target'][sys.argv[1]]
     executable = str(ROOT / 'tools/codex-sandbox/sandbox-image')
     os.chdir(ROOT)

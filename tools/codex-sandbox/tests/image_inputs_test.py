@@ -88,7 +88,7 @@ class ImageInputsTest(unittest.TestCase):
             self.assertIn('tools/jj-proxy/route.py', sources)
             self.assertIn('config/jj.toml', sources)
             base = SimpleNamespace(content='base', config='config', rootfs='rootfs')
-            key = lambda: owned['agent_cache_key'](1000, 1000, 'linux/amd64', base, root=root)
+            key = lambda: owned['agent_cache_key'](1000, 1000, 'linux/amd64', base, 'a' * 40, root=root)
             for name in ('tools/jj-proxy/route.py', 'config/jj.toml'):
                 before = key()
                 with (root / name).open('a') as output:

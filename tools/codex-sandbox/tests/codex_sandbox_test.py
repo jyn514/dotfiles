@@ -186,14 +186,14 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             for value in (b'', b'hello\n', b'hello\r\n', b'\xff\0binary'):
                 (root / source).write_bytes(value)
                 with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
-                    actual = key(501, 20, "linux/arm64", base)
+                    actual = key(501, 20, "linux/arm64", base, 'a' * 40)
                 self.assertNotEqual(actual, previous)
                 previous = actual
             with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
-                self.assertNotEqual(actual, key(502, 20, "linux/arm64", base))
-                self.assertNotEqual(actual, key(501, 20, "linux/amd64", base))
+                self.assertNotEqual(actual, key(502, 20, "linux/arm64", base, 'a' * 40))
+                self.assertNotEqual(actual, key(501, 20, "linux/amd64", base, 'a' * 40))
                 changed = SimpleNamespace(**{**vars(base), "config": "sha256:" + "d" * 64})
-                self.assertNotEqual(actual, key(501, 20, "linux/arm64", changed))
+                self.assertNotEqual(actual, key(501, 20, "linux/arm64", changed, 'a' * 40))
 
     def test_failed_publication_keeps_coordination_until_cleanup(self):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
@@ -1375,6 +1375,9 @@ class CodexSandboxTest(unittest.TestCase):
         pi_cli = self.home / ".local/share/pi/node/node_modules/.bin/pi"
         pi_cli.parent.mkdir(parents=True, exist_ok=True)
         pi_cli.symlink_to(self.pi_package / "dist/bundle/cli.js")
+        self.pi_revision = 'a' * 40
+        self.pi_marker = self.home / '.local/share/pi/node/.source-revision'
+        self.pi_marker.write_text(self.pi_revision + '\n')
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
         self.docker_log = self.root / "docker.log"
@@ -1448,6 +1451,9 @@ class CodexSandboxTest(unittest.TestCase):
                 exit
             fi
             if [ "$1 $2" = "image inspect" ]; then
+                case " $* " in
+                    *"dev.codex.pi-revision"*) printf '%s\n' "$FAKE_IMAGE_PI_REVISION"; exit 0 ;;
+                esac
                 for image do :; done
                 if [ "${FAKE_IMAGE_EXISTS:-1}" != 1 ] && [ "${image#codex-sandbox:}" != "$image" ] && [ ! -f "$FAKE_DOCKER_LOG.$image" ]; then
                     exit 1
@@ -1636,6 +1642,7 @@ class CodexSandboxTest(unittest.TestCase):
             "AGENT_PODMAN_ACCESS_DIR": str(self.root / "no-agent-podman"),
             "FAKE_NETWORK_EXISTS": "1",
             "FAKE_UNAME": "Linux",
+            "FAKE_IMAGE_PI_REVISION": self.pi_revision,
         })
         environment.update(updates)
         return environment
@@ -2301,9 +2308,39 @@ class CodexSandboxTest(unittest.TestCase):
         builds = [call for call in read_calls(self.docker_log) if call[:1] == ["build"]]
         # Sidecar builds belong to sandbox-image; this launcher must use the
         # immutable result of its own freshly built agent image.
-        self.assertTrue(any(any(argument.endswith("tools/codex-sandbox/image/Dockerfile")
-                                for argument in call) for call in builds))
+        agent_builds = [call for call in builds if any(
+            argument.endswith("tools/codex-sandbox/image/Dockerfile") for argument in call)]
+        self.assertEqual(1, len(agent_builds))
+        self.assertIn('PI_REVISION=' + self.pi_revision, agent_builds[0])
         self.assertIn("sha256:" + "0" * 64, self.final_run())
+
+    def test_shared_image_requires_the_installed_host_pi_revision(self) -> None:
+        for revision in ('b' * 40, '', self.pi_revision):
+            with self.subTest(revision=revision):
+                self.docker_log.unlink(missing_ok=True)
+                result = self.run_launcher(FAKE_SESSION='shared',
+                                           FAKE_IMAGE_PI_REVISION=revision)
+                if revision == self.pi_revision:
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.final_run()
+                else:
+                    self.assertEqual(1, result.returncode)
+                    self.assertIn('run codex-sandbox restart-all', result.stderr)
+                    calls = read_calls(self.docker_log)
+                    self.assertFalse(any(call[:1] == ['build'] for call in calls))
+                    self.assertFalse(any('/opt/agent-tools/bin/tool-worker.mjs' in call
+                                         for call in calls))
+
+    def test_missing_host_revision_does_not_build_or_start_guest_worker(self) -> None:
+        self.pi_marker.unlink()
+        result = self.run_launcher(FAKE_IMAGE_EXISTS='0')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('run mise run pi-install', result.stderr)
+        calls = read_calls(self.docker_log)
+        self.assertFalse(any(call[:1] == ['build'] and any(
+            argument.endswith('tools/codex-sandbox/image/Dockerfile') for argument in call
+        ) for call in calls))
+        self.assertFalse(any('/opt/agent-tools/bin/tool-worker.mjs' in call for call in calls))
 
     def test_network_failure_stops_before_proxy_and_agent_start(self) -> None:
         result = self.run_launcher(FAKE_NETWORK_EXISTS="0", FAKE_NETWORK_CREATE_FAIL="1")

@@ -39,6 +39,11 @@ and editor sessions untracked even when private HOME hides global ignore rules.
 An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
 installed Pi SDK under the original HOME before replacing HOME, so tests can
 read the installed SDK without loading personal settings or using its caches.
+For `dev/test --containers`, the runner also captures the validated host Pi
+installation revision before replacing HOME. The runtime-image probe builds and
+checks that commit. Missing or invalid revision metadata stops the runner before
+any tests; repair the installation with `mise run pi-install`.
+
 The native prompt-section regression needs an installed Pi build with
 `systemPromptOptions.sections`; the locked test SDK predates that API. Run it
 without Bun's module mocks:
