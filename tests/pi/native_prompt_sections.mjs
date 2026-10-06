@@ -173,3 +173,106 @@ test("native session renders four sections once and sends only changed-section p
     "the provider consumed the session's real system transcript");
 });
 
+// Compare against Pi's own generated docs instead of copying its path/routing
+// template into the extension or test. The guest case reaches the forced-prompt
+// projection received by a provider, not just the extension's options.
+test("the bundle replaces only documentation policy and guest routing preserves it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-task-directed-docs-"));
+  const environmentKeys = ["CODEX_SANDBOX_TOOL_CONTAINER", "CODEX_SANDBOX_GUEST_CWD",
+    "CODEX_SANDBOX_PI_RESOURCE_PATHS", "CODEX_SANDBOX_PREVIOUS_CWD"];
+  const saved = Object.fromEntries(environmentKeys.map((key) => [key, process.env[key]]));
+  const sessions = [];
+  t.after(async () => {
+    for (const session of sessions) session.dispose();
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  for (const key of environmentKeys) delete process.env[key];
+  const cwd = join(root, "project");
+  const agentDir = join(root, "agent");
+  const guestCwd = join(root, "guest");
+  await Promise.all([cwd, agentDir, guestCwd].map((path) => mkdir(path)));
+  const resourcePaths = {
+    [getReadmePath()]: "/guest/pi/README.md",
+    [getDocsPath()]: "/guest/pi/docs",
+    [getExamplesPath()]: "/guest/pi/examples",
+  };
+  const faux = fauxProvider({ provider: "task-directed-docs", api: "anthropic-messages" });
+  const requests = [];
+  const capture = (context) => {
+    requests.push(structuredClone(context));
+    return fauxAssistantMessage("offline documentation policy check");
+  };
+  faux.setResponses([capture, capture, capture]);
+  const inspections = [];
+  const bundle = join(extensionDir, "index.ts");
+  for (const extensionPaths of [[], [bundle], [bundle, join(extensionDir, "guest-tools.ts")]]) {
+    if (extensionPaths.length === 2) {
+      process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture-not-contacted";
+      process.env.CODEX_SANDBOX_GUEST_CWD = guestCwd;
+      process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify(resourcePaths);
+    }
+    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(), modelsPath: null,
+      modelsStorePath: join(agentDir, "models-store.json"),
+      allowModelNetwork: false, refreshOnCreate: false,
+    });
+    const loader = new DefaultResourceLoader({
+      cwd, agentDir, settingsManager,
+      noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      additionalExtensionPaths: extensionPaths,
+      extensionFactories: [(pi) => {
+        pi.registerProvider(faux.provider);
+        pi.on("before_agent_start", (event) => {
+          inspections.push({ force: event.systemPromptOptions.forceSystemPrompt,
+            prompt: event.systemPrompt, docs: event.systemPromptOptions.sections.docs });
+        });
+      }],
+    });
+    await loader.reload();
+    assert.deepEqual(loader.getExtensions().errors, []);
+    const { session } = await createAgentSession({
+      cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+      sessionManager: SessionManager.inMemory(cwd), model: faux.getModel(), tools: [],
+    });
+    sessions.push(session);
+    await session.prompt("check documentation policy");
+  }
+  assert.equal(requests.length, 3, "baseline, bundle, and guest all reached the provider");
+  const prompts = requests.map((request) => getSystemMessageText(systems(request)[0]));
+  const bodies = prompts.map((prompt) => {
+    assert.equal(prompt.match(/^<docs>$/gm)?.length, 1, "docs renders exactly once");
+    const body = prompt.match(/^<docs>\n([\s\S]*?)\n<\/docs>$/m)?.[1];
+    assert.ok(body, "generated docs must remain present");
+    return body;
+  });
+  const oldRule = (line) => line.startsWith("- When working on pi topics,") || line.startsWith("- Always read pi .md files");
+  const newRule = (line) => line.startsWith("- Before implementing Pi-specific behavior,");
+  assert.equal(bodies[0].split("\n").filter(oldRule).length, 2, "baseline contains the two rules being replaced");
+  const retained = bodies[0].split("\n").filter((line) => !oldRule(line));
+  for (const body of bodies.slice(1)) {
+    assert.equal(body.split("\n").filter(oldRule).length, 0, "neither blanket rule may survive");
+    const policy = body.split("\n").filter(newRule);
+    assert.equal(policy.length, 1, "replacement policy occurs exactly once");
+    assert.match(policy[0], /read the relevant documentation sections/);
+    assert.match(policy[0], /Follow references when they define an API or constraint needed for the task/);
+    assert.match(policy[0], /Read whole files only when the task requires understanding them as a whole/);
+  }
+  assert.deepEqual(bodies[1].split("\n").filter((line) => !newRule(line)), retained,
+    "all generated documentation paths and topic routes are unchanged");
+  assert.equal(inspections[1].force, undefined, "the policy extension must not force the full prompt");
+  assert.equal(inspections[1].docs, bodies[1], "Pi wraps the replacement section once");
+  let expectedGuest = bodies[1];
+  for (const [host, guest] of Object.entries(resourcePaths)) {
+    expectedGuest = expectedGuest.replaceAll(host, guest);
+    assert.ok(bodies[2].includes(guest), "each documentation path is translated for guest tools");
+    assert.equal(bodies[2].includes(host), false, "host documentation paths do not leak");
+  }
+  assert.equal(bodies[2], expectedGuest, "guest routing changes paths, not policy or topic routes");
+  assert.equal(inspections[2].force, prompts[2], "provider receives the guest hook's final forced prompt");
+  assert.equal(prompts[1], inspections[1].prompt);
+});

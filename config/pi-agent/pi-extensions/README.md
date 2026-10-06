@@ -29,6 +29,13 @@ later turns unless another extension forces a full-prompt replacement.
 prompt, including Pi's generated docs section, then replaces the full prompt.
 Section-only updates do not apply while that guest-routing hook is active.
 
+`task-directed-docs.ts` replaces Pi's blanket complete-file reading rules in the
+`docs` section. Read relevant sections and references that define a needed API or
+constraint; read whole files only when the task needs whole-file understanding.
+Pi still supplies documentation paths and topic routes. The hook runs before guest
+routing and leaves missing docs sections or unrecognized policies unchanged. Its
+native regression checks Pi's rendered format and rule wording when Pi is updated.
+
 ## Skill validation: `validate_skill`
 
 Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether

@@ -15,6 +15,7 @@ import sessionHandoff from "./session-handoff.ts";
 import sessionSide from "./session-side.ts";
 import subagentRouting from "./subagent-routing.ts";
 import systemPrompt from "./system-prompt.ts";
+import taskDirectedDocs from "./task-directed-docs.ts";
 import validateSkill from "./validate-skill.ts";
 import webSearch from "./pi-web-search.ts";
 
@@ -35,6 +36,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   sessionSide(pi);
   subagentRouting(pi);
   systemPrompt(pi);
+  taskDirectedDocs(pi);
   validateSkill(pi);
   webSearch(pi);
 }
