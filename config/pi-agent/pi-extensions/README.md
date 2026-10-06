@@ -20,6 +20,15 @@ use `/system-prompt` to inspect it after `/reload`.
 
 The bundle requires a Pi build with the mutable `systemPromptOptions.sections` API.
 
+Prompt additions use named sections: `current_date`, `host_os`,
+`instruction_includes`, and `web_search`. Each extension owns its section;
+web-search guidance disappears
+when the active provider does not support it. Pi patches changed sections on
+later turns unless another extension forces a full-prompt replacement.
+`guest-tools.ts` remains an explicit exception: it rewrites paths in the rendered
+prompt, including Pi's generated docs section, then replaces the full prompt.
+Section-only updates do not apply while that guest-routing hook is active.
+
 ## Skill validation: `validate_skill`
 
 Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether

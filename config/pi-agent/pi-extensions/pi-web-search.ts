@@ -21,8 +21,11 @@ export default function webSearch(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", (event, ctx) => {
-    if (!ctx.model || !SUPPORTED_SEARCH_APIS.has(ctx.model.api)) return;
-    return { systemPrompt: `${event.systemPrompt}\n\n${SEARCH_INSTRUCTIONS}` };
+    if (!ctx.model || !SUPPORTED_SEARCH_APIS.has(ctx.model.api)) {
+      delete event.systemPromptOptions.sections.web_search;
+      return;
+    }
+    event.systemPromptOptions.sections.web_search = SEARCH_INSTRUCTIONS;
   });
 
   pi.on("turn_start", () => {

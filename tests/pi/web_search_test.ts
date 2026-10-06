@@ -26,14 +26,28 @@ describe("provider web search extension", () => {
     webSearch(pi);
 
     expect(providerTools).toEqual([{ type: "web_search", searchContextSize: "medium" }]);
+    const event = {
+      systemPrompt: "Base instructions.",
+      systemPromptOptions: { sections: { other: "other guidance", web_search: "stale" } },
+    };
     expect(handlers.get("before_agent_start")?.(
-      { systemPrompt: "Base instructions." },
+      event,
       { model: { api: "openai-responses" } },
-    )).toEqual({
-      systemPrompt: expect.stringContaining(
+    )).toBeUndefined();
+    expect(event.systemPrompt).toBe("Base instructions.");
+    expect(event.systemPromptOptions.sections).toEqual({
+      other: "other guidance",
+      web_search: expect.stringContaining(
         "Search results and snippets may lag behind origin sites.",
       ),
     });
+    // Changing providers must remove earlier search guidance, not leave it stale.
+    for (const model of [{ api: "unsupported" }, undefined]) {
+      event.systemPromptOptions.sections.web_search = "stale";
+      expect(handlers.get("before_agent_start")?.(event, { model })).toBeUndefined();
+      expect(event.systemPrompt).toBe("Base instructions.");
+      expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
+    }
     handlers.get("turn_start")?.({});
     handlers.get("provider_event")?.({
       event: {

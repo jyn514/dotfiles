@@ -39,6 +39,13 @@ and editor sessions untracked even when private HOME hides global ignore rules.
 An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
 installed Pi SDK under the original HOME before replacing HOME, so tests can
 read the installed SDK without loading personal settings or using its caches.
+The native prompt-section regression needs an installed Pi build with
+`systemPromptOptions.sections`; the locked test SDK predates that API. Run it
+without Bun's module mocks:
+
+```sh
+dev/test-environment node --test tests/pi/native_prompt_sections.mjs
+```
 
 Do not wrap the [configured startup benchmark](../tools/codex-sandbox/README.md#measure-interactive-startup)
 or live `dev/replay-compaction` requests: those intentionally use installed

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { expandInstructionIncludes } from "../../config/pi-agent/pi-extensions/pi-instruction-includes";
+import instructionIncludes, { expandInstructionIncludes } from "../../config/pi-agent/pi-extensions/pi-instruction-includes";
 
 const temporaryDirectories: string[] = [];
 
@@ -17,6 +17,39 @@ afterEach(async () => {
 });
 
 describe("instruction includes", () => {
+  test("updates include guidance without forcing the prompt and clears absent includes", async () => {
+    const root = await fixture();
+    await writeFile(join(root, "rules.md"), "Included rules");
+    const event = {
+      systemPrompt: "Base instructions.",
+      systemPromptOptions: {
+        cwd: root,
+        contextFiles: [{ path: join(root, "AGENTS.md"), content: "@rules.md" }],
+        sections: { other: "other guidance", instruction_includes: "stale" },
+      },
+    };
+    let handler: (input: typeof event) => Promise<unknown>;
+    instructionIncludes({
+      on(name: string, callback: typeof handler) {
+        expect(name).toBe("before_agent_start");
+        handler = callback;
+      },
+    } as never);
+    for (let turn = 0; turn < 2; turn++) {
+      expect(await handler!(event)).toBeUndefined();
+      expect(event.systemPrompt).toBe("Base instructions.");
+      expect(event.systemPromptOptions.sections).toEqual({
+        other: "other guidance",
+        instruction_includes: expect.stringContaining("## Expanded instruction includes\n\n"),
+      });
+      expect(event.systemPromptOptions.sections.instruction_includes).toContain("Included rules");
+    }
+    event.systemPromptOptions.contextFiles = [];
+    expect(await handler!(event)).toBeUndefined();
+    expect(event.systemPrompt).toBe("Base instructions.");
+    expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
+  });
+
   test("expands nested relative includes in declaration order", async () => {
     const root = await fixture();
     await mkdir(join(root, "rules"));

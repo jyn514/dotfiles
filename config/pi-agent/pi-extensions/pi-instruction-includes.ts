@@ -97,10 +97,12 @@ export default function instructionIncludes(pi: ExtensionAPI) {
       event.systemPromptOptions.contextFiles,
       event.systemPromptOptions.cwd,
     );
-    if (expanded.length === 0) return;
+    if (expanded.length === 0) {
+      delete event.systemPromptOptions.sections.instruction_includes;
+      return;
+    }
 
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n## Expanded instruction includes\n\n${expanded.join("\n\n")}`,
-    };
+    event.systemPromptOptions.sections.instruction_includes =
+      `## Expanded instruction includes\n\n${expanded.join("\n\n")}`;
   });
 }
