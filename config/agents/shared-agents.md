@@ -42,9 +42,6 @@ The following words and phrases are banned as metaphors; use the suggested repla
 
 For version-sensitive CLI questions, check the installed command's built-in help before searching online documentation.
 
-Avoid `sed` wherever possible because it is not approved in the sandbox;
-prefer `rg`, `head`, `tail`, and other read-only commands.
-
 To view remote source, use `git clone --depth 1` into a temporary directory, not `gh api`.
 
 When copying an existing file, use `cp` and verify it with `cmp` before any targeted edits.
@@ -54,8 +51,6 @@ Use `diff-check`, never `git diff --check`; the latter may not be installed.
 ### Execution boundaries
 
 When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
-
-When comparing toolchains, alternate sequential trials on the real workload, include artifact finalization, and exclude setup runs with unequal cache state.
 
 ### Shell command construction
 

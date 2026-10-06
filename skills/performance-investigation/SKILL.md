@@ -55,6 +55,8 @@ Stop when the cheapest measurement settles the decision. Do not spend quota to i
 
 Before comparing timings, verify that the optimization is active using runtime evidence and a negative control. Do not infer activation from configuration alone: in Node, even `NODE_DISABLE_COMPILE_CACHE=0` disables the compile cache.
 
+When comparing toolchains, alternate sequential trials on the real workload, include artifact finalization, and exclude setup runs with unequal cache state.
+
 Measure the changed phase and the full user command. Preserve correctness checks, compare cold and warm results on the same machine, and repeat runs when variance could change the conclusion. Report missing tools and other environmental failures separately from performance results. Confirm the optimization did not merely move work into an unmeasured phase.
 
 When controllable, instrument opaque subprocesses with phase timing; an enclosing test or CI-job duration is insufficient attribution. Completion requires the consumer-visible evidence artifact, not terminal output or a handwritten summary.
