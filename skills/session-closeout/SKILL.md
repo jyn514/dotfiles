@@ -1,6 +1,6 @@
 ---
 name: session-closeout
-description: Finish a work session by auditing the whole session, resolving or recording loose ends, reviewing docs/skills/tooling lessons, committing the session's owned changes, and setting an accurate title when the harness supports it. Use when asked to wrap up or end the session. Use for forgotten-work or docs/skills/tooling reviews only when they are explicitly framed as ending the session. Do not use for an ordinary commit request, audit, or mid-session process review.
+description: Finish a work session by auditing the whole session, resolving or recording loose ends, reviewing the usefulness of docs and skills and lessons from tooling, committing the session's owned changes, and setting an accurate title when the harness supports it. Use when asked to wrap up or end the session. Use for forgotten-work or docs/skills/tooling reviews only when they are explicitly framed as ending the session. Do not use for an ordinary commit request, audit, or mid-session process review.
 ---
 
 # Session closeout
@@ -40,12 +40,29 @@ For remaining work, distinguish:
 
 Recommend only concrete work supported by the session. Prioritize defects that can cause wrong behavior, lost work, misleading validation, or repeated operator error over polish. Do not manufacture suggestions to fill a list.
 
-## 4. Review docs, skills, and tooling lessons
+## 4. Review the usefulness of docs, skills, and tooling
 
-Review whether process improvements are warranted.
-Consider the documentation, skills, and tools that materially affected the session or produced friction.
-Look for the following: observed friction, repeated manual work, hidden failure causes, misleading diagnostics, duplicated policy, missing ownership, drift between the implementation and spec, or validation gaps in this session, avoidable mistakes, places you had to be corrected.
-Consider things other agents should know that would be hard to recover.
+Review materials used during the session and concrete missed or mistimed routes,
+not the entire documentation tree or skill catalog. Assess:
+
+- **Selection:** Did skills trigger when the task warranted them, too early, or
+  not at all? Did documentation routes lead to the relevant owner and sections?
+- **Effect:** Which advice changed a decision, implementation, or verification?
+  Which guidance was redundant or gave no useful direction once loaded?
+- **Reading cost:** What extraneous content, duplicated policy, broad triggers,
+  or required full-document reads had to be sorted through? Would a narrower
+  trigger, focused section, or separate reference preserve the useful advice?
+- **Correctness:** Did instructions, examples, and commands work? Identify
+  missing ownership, hidden failure causes, misleading diagnostics, drift from
+  implementation, validation gaps, repeated manual work, and user corrections.
+
+Support conclusions with concrete actions, errors, or corrections from the
+session. Loading a skill does not establish that it helped; distinguish observed
+benefit or cost from uncertain attribution. Briefly report material benefits and
+costs, even when no change is warranted, rather than listing every file read.
+Record knowledge that another agent would otherwise have to reconstruct.
+
+Use that assessment to decide whether process improvements are warranted.
 
 For each suggestion, name the affected owner and the failure it would prevent. Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible. Route implementation to `technical-docs`, `skill-authoring`, `cleanup-triage`, or another owning skill rather than duplicating its procedure here.
 
@@ -78,7 +95,7 @@ Report:
 - verification evidence and its limits;
 - commits created or owned changes left uncommitted;
 - required or recommended follow-ups;
-- process improvements, or the reason no process improvement is necessary;
+- material benefits and costs of the docs and skills used, with process improvements or the reason none is necessary;
 - anything else that would be hard for another agent to recover without reading the session log.
 
 Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected. When title tooling is supported, the title must also be applied. A commit blocker leaves closeout incomplete.
