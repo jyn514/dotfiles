@@ -12,6 +12,14 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+The bundle adds the current date and Pi's host OS to the system prompt. On Linux,
+the OS name comes from `/etc/os-release`, or `/usr/lib/os-release` when the former
+cannot be read. Without a display name, and on other platforms, it uses the OS
+and kernel release. This describes the host running Pi, not its guest shell tools;
+use `/system-prompt` to inspect it after `/reload`.
+
+The bundle requires a Pi build with the mutable `systemPromptOptions.sections` API.
+
 ## Skill validation: `validate_skill`
 
 Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether

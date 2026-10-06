@@ -9,7 +9,7 @@ function localDate(): string {
 }
 
 export default function currentDate(pi: ExtensionAPI) {
-  pi.on("before_agent_start", (event) => ({
-    systemPrompt: `${event.systemPrompt}\n\nToday's date: ${localDate()}.`,
-  }));
+  pi.on("before_agent_start", (event) => {
+    event.systemPromptOptions.sections.current_date = `Today's date: ${localDate()}.`;
+  });
 }
