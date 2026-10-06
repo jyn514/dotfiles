@@ -106,7 +106,7 @@ Use these independently when their target is already selected:
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
-`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. `technical-docs` owns documentation content; `reorganize-docs` owns its organization.
+`opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. Use [Documentation placement](technical-docs/references/placement.md) for new-content destinations and routine additions to established sections, without loading an authoring skill. `technical-docs` owns new standalone documentation, substantive changes to reader structure or explanation, and explicit usability/correctness reviews; `reorganize-docs` owns restructuring existing documentation and navigation.
 
 ## Minimal use
 

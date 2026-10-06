@@ -1,14 +1,15 @@
 ---
 name: reorganize-docs
-description: "Restructure existing project documentation or navigation: information architecture, consolidation, splits, renames, and archives. Use when repairing a document tree or moving existing material between owners. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site correctness review; route new-content placement to technical-docs."
+description: "Restructure existing project documentation or navigation: information architecture, consolidation, splits, renames, and archives. Use when repairing a document tree or moving existing material between owners. Not for choosing where a new paragraph or section belongs, prose-only tightening, or docs-site correctness review; new-content placement uses the technical-docs placement reference, not the authoring skill."
 ---
 
 # Reorganize Documentation
 
 Improve how readers find and use documentation without losing policy, rationale, examples, or historical evidence needed by its readers.
 
-Use `technical-docs` to choose where new content belongs. Do not invoke this
-workflow merely to add a paragraph or section to an existing owner.
+Use the [documentation placement reference](../technical-docs/references/placement.md)
+to choose where new content belongs, without loading the authoring skill. Do not
+invoke this workflow merely to add a paragraph or section to an existing owner.
 
 ## Read first
 
