@@ -51,6 +51,11 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
    - **Duplicate routing** exposes the same owner from different entry points or indexes. Usually keep it; readers and small models need local routes more than a perfectly normalized document graph.
    - **Duplicate context** briefly repeats a safety constraint or prerequisite where a reader acts. Keep it when removing it would make the section unsafe or misleading in isolation.
 
+   Before marking policies as duplicates, compare required behavior and conditions,
+   not just shared words. A priority ranking does not replace a direct instruction:
+   “Prioritize clarity → precision → concision” ranks goals; “Use concise, clear
+   language” directs writing style. Keep both.
+
    Reduce repeated text only when one source is clearly authoritative, every affected entry point links directly to it, the link says why the reader needs it, and no safety-critical constraint disappears at the moment of action. Prefer “Before source edits, follow the red/green workflow in `testing.md`” over “See `testing.md`.” Preserve deliberate two-level routing such as task → owner and owner → focused topic; flatten or add a short local guard when reaching the operative rule would otherwise require more than three hops.
 
 4. Cut, then rewrite for density. Before deleting rationale, ask:
