@@ -14,11 +14,16 @@ workaround rather than forcing it into a bug report.
 
 ## Gather the authoritative inputs
 
-1. Read the target project's current issue template and contribution instructions
-   before drafting. For remote source, shallow-clone the repository into a
-   temporary directory. Use the applicable bug template, retaining its headings,
-   order, and required fields; omit template comments and metadata. If no template
-   is available, tell the user. Put the required LLM disclosure before the first
+1. Read the target project's `CONTRIBUTING.md` and current issue template before
+   drafting. Follow its issue-reporting requirements, including instructions it
+   links to; reading them alone is not sufficient. If `CONTRIBUTING.md` is absent,
+   check the project's documented contribution instructions. Distinguish reporting
+   requirements from PR-only requirements; drafting a report does not authorize
+   fixes or running unrelated PR checks. For remote source, shallow-clone the
+   repository into a temporary directory. Use the applicable bug template,
+   retaining its headings, order, and required fields; omit template comments and
+   metadata. If no template is available, tell the user. Put the required LLM
+   disclosure before the first
    template heading; then preserve the template's heading order and required
    fields. Lead with the installation or invocation and visible failure; include
    reproduction, expected behavior, and output, then put version details at the end.
@@ -53,6 +58,11 @@ workaround rather than forcing it into a bug report.
   Include facts that help the maintainer reproduce, diagnose, or fix the failure;
   omit investigation narration and redundant checks when a working control
   already establishes the relevant difference.
+- Use familiar words: "I got this output", not "I obtained this output".
+  State relevant facts directly; omit defensive commentary about claims the
+  report does not make. For related reports, describe the connection and link
+  the evidence; do not add "I am linking that history rather than claiming that
+  nobody has reported this behavior before".
 - Use active voice throughout authored prose, including delivery commentary.
   Name the actor for actions and checks; avoid impersonal subjects such as
   "a diagnostic check confirms" even though they are grammatically active.
@@ -91,9 +101,10 @@ workaround rather than forcing it into a bug report.
 
 ## Check and deliver
 
-Check the final body against the template and latest user evidence. Verify that
-each code link identifies the inspected revision and lines, reproduction commands
-match the reported test, and required fields are filled or explicitly unknown.
+Check the final body against the template, applicable contribution requirements,
+and latest user evidence. Verify that each code link identifies the inspected
+revision and lines, reproduction commands match the reported test, and required
+fields are filled or explicitly unknown.
 Check template attestations individually; do not mark research, clean-environment,
 or latest-version checks as completed without evidence.
 Review each authored sentence for passive voice and hidden actors before
