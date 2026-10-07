@@ -24,8 +24,13 @@ class NeovimConfigTests(unittest.TestCase):
             config.mkdir(parents=True)
             work.mkdir()
             (config / "init.lua").symlink_to(NVIM_CONFIG)
+            (config / "shared.lua").symlink_to(NVIM_CONFIG.parent / "shared.lua")
             script = root / "test.lua"
-            script.write_text(lua)
+            script.write_text(
+                "local ok, err = xpcall(function()\n" + lua
+                + "\nend, debug.traceback)\n"
+                + "if not ok then print(err); vim.cmd('cquit 1') end\n"
+            )
 
             env = os.environ.copy()
             env["XDG_CONFIG_HOME"] = str(root / "config")
@@ -87,6 +92,8 @@ vim.cmd.tabnew()
 local second = make_uneven_tab()
 vim.api.nvim_set_current_tabpage(first)
 vim.api.nvim_exec_autocmds('VimResized', {})
+assert(vim.v.errmsg == '', vim.v.errmsg)
+assert(vim.api.nvim_get_current_tabpage() == first)
 for _, tabpage in ipairs({ first, second }) do
   local widths = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do

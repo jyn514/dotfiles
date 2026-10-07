@@ -53,7 +53,8 @@ vim.api.nvim_create_autocmd('VimResized', {
 	desc = 'Automatically equalize windows on terminal size change',
 	callback = function()
 		for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
-			vim.api.nvim_tabpage_call(tabpage, function() vim.cmd.wincmd('=') end)
+			local window = vim.api.nvim_tabpage_get_win(tabpage)
+			vim.api.nvim_win_call(window, function() vim.cmd.wincmd('=') end)
 		end
 	end,
 })
