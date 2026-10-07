@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
+  addWebSearchToPayload,
   appendWebSearchSources,
   createMetadataCollector,
   SUPPORTED_SEARCH_APIS,
@@ -11,13 +12,10 @@ Search results and snippets may lag behind origin sites. For claims about what i
 Honor any domain, date-range, result-count, or primary-source constraints in the user's request.`;
 
 export default function webSearch(pi: ExtensionAPI) {
-  if (typeof pi.registerProviderTool !== "function") return;
-
   let collector = createMetadataCollector();
 
-  pi.registerProviderTool({
-    type: "web_search",
-    searchContextSize: "medium",
+  pi.on("before_provider_request", (event, ctx) => {
+    return addWebSearchToPayload(event.payload, ctx.model?.api);
   });
 
   pi.on("before_agent_start", (event, ctx) => {
@@ -32,9 +30,18 @@ export default function webSearch(pi: ExtensionAPI) {
     collector = createMetadataCollector();
   });
 
-  pi.on("provider_event", ({ event }) => {
-    collector.observe(event.payload);
-  });
+  // The installed SDK calls this provider_event; stock v0.99 calls it
+  // provider_stream_event. Register both notification shapes for the upgrade.
+  type ProviderNotification = { data: unknown } | { event: { payload: unknown } };
+  const onProviderEvent = pi.on.bind(pi) as (
+    name: "provider_event" | "provider_stream_event",
+    handler: (event: ProviderNotification) => void,
+  ) => unknown;
+  const observe = (event: ProviderNotification) => {
+    collector.observe("data" in event ? event.data : event.event.payload);
+  };
+  onProviderEvent("provider_event", observe);
+  onProviderEvent("provider_stream_event", observe);
 
   pi.on("message_end", (event) => {
     if (event.message.role !== "assistant") return;

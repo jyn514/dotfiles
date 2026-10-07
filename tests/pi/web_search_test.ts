@@ -2,82 +2,145 @@ import { describe, expect, test } from "bun:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import webSearch from "../../config/pi-agent/pi-extensions/pi-web-search";
 import {
+  addWebSearchToPayload,
   appendWebSearchSources,
   createMetadataCollector,
-  SUPPORTED_SEARCH_APIS,
 } from "../../config/pi-agent/pi-extensions/pi-web-search-core";
 
 describe("provider web search extension", () => {
-  test("does not break startup on Pi versions without provider tools", () => {
-    expect(() => webSearch({} as ExtensionAPI)).not.toThrow();
-  });
+  for (const [notificationName, notification] of [
+    ["provider_event", { event: { payload: { type: "url_citation", url: "https://example.com/a", title: "A" } } }],
+    ["provider_stream_event", { data: { type: "url_citation", url: "https://example.com/a", title: "A" } }],
+  ] as const) {
+    test(`injects provider search without fork registration and persists ${notificationName} citations on the same turn`, () => {
+      const handlers = new Map<string, (...args: unknown[]) => unknown>();
+      // This API deliberately has no registerProviderTool().
+      const pi = {
+        on(event: string, handler: (...args: unknown[]) => unknown) {
+          handlers.set(event, handler);
+        },
+      } as unknown as ExtensionAPI;
+      webSearch(pi);
 
-  test("registers provider search and persists citations on the same assistant turn", () => {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>();
-    const providerTools: unknown[] = [];
-    const pi = {
-      registerProviderTool(tool: unknown) {
-        providerTools.push(tool);
-      },
-      on(event: string, handler: (...args: unknown[]) => unknown) {
-        handlers.set(event, handler);
-      },
-    } as unknown as ExtensionAPI;
-    webSearch(pi);
-
-    expect(providerTools).toEqual([{ type: "web_search", searchContextSize: "medium" }]);
-    const event = {
-      systemPrompt: "Base instructions.",
-      systemPromptOptions: { sections: { other: "other guidance", web_search: "stale" } },
-    };
-    expect(handlers.get("before_agent_start")?.(
-      event,
-      { model: { api: "openai-responses" } },
-    )).toBeUndefined();
-    expect(event.systemPrompt).toBe("Base instructions.");
-    expect(event.systemPromptOptions.sections).toEqual({
-      other: "other guidance",
-      web_search: expect.stringContaining(
-        "Search results and snippets may lag behind origin sites.",
-      ),
-    });
-    // Changing providers must remove earlier search guidance, not leave it stale.
-    for (const model of [{ api: "unsupported" }, undefined]) {
-      event.systemPromptOptions.sections.web_search = "stale";
-      expect(handlers.get("before_agent_start")?.(event, { model })).toBeUndefined();
+      expect(handlers.get("before_provider_request")?.(
+        { payload: { model: "test", input: [] } },
+        { model: { api: "openai-responses" } },
+      )).toEqual({
+        model: "test", input: [],
+        tools: [{ type: "web_search", search_context_size: "medium" }],
+      });
+      const event = {
+        systemPrompt: "Base instructions.",
+        systemPromptOptions: { sections: { other: "other guidance", web_search: "stale" } },
+      };
+      expect(handlers.get("before_agent_start")?.(
+        event,
+        { model: { api: "openai-responses" } },
+      )).toBeUndefined();
       expect(event.systemPrompt).toBe("Base instructions.");
-      expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
-    }
-    handlers.get("turn_start")?.({});
-    handlers.get("provider_event")?.({
-      event: {
-        payload: { type: "url_citation", url: "https://example.com/a", title: "A" },
-      },
-    });
-    const result = handlers.get("message_end")?.({
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "The answer." }],
-      },
-    }) as { message: { content: unknown[] } };
+      expect(event.systemPromptOptions.sections).toEqual({
+        other: "other guidance",
+        web_search: expect.stringContaining(
+          "Search results and snippets may lag behind origin sites.",
+        ),
+      });
+      // Changing providers must remove earlier search guidance, not leave it stale.
+      for (const model of [{ api: "unsupported" }, { api: "pi-virtual" }, undefined]) {
+        event.systemPromptOptions.sections.web_search = "stale";
+        expect(handlers.get("before_agent_start")?.(event, { model })).toBeUndefined();
+        expect(event.systemPrompt).toBe("Base instructions.");
+        expect(event.systemPromptOptions.sections).toEqual({ other: "other guidance" });
+      }
+      handlers.get("turn_start")?.({});
+      handlers.get(notificationName)?.(notification);
+      const result = handlers.get("message_end")?.({
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "The answer." }],
+        },
+      }) as { message: { content: unknown[] } };
 
-    expect(result.message.content).toEqual([
-      { type: "text", text: "The answer." },
-      { type: "text", text: "Sources:\n- A: https://example.com/a" },
-    ]);
-  });
+      expect(result.message.content).toEqual([
+        { type: "text", text: "The answer." },
+        { type: "text", text: "Sources:\n- A: https://example.com/a" },
+      ]);
+      handlers.get("turn_start")?.({});
+      expect(handlers.get("message_end")?.({
+        message: { role: "assistant", content: [{ type: "text", text: "Next answer." }] },
+      })).toBeUndefined();
+    });
+  }
 });
 
-describe("provider web search support", () => {
-  test("lists APIs with first-class provider search serialization", () => {
-    expect([...SUPPORTED_SEARCH_APIS]).toEqual([
-      "anthropic-messages",
-      "azure-openai-responses",
-      "google-generative-ai",
-      "google-vertex",
-      "openai-codex-responses",
-      "openai-responses",
-    ]);
+describe("provider web search payloads", () => {
+  const families = [
+    {
+      apis: ["anthropic-messages"],
+      google: false,
+      search: { type: "web_search_20250305", name: "web_search" },
+      local: { name: "read", input_schema: { type: "object", properties: {} } },
+    },
+    {
+      apis: ["azure-openai-responses", "openai-codex-responses", "openai-responses"],
+      google: false,
+      search: { type: "web_search", search_context_size: "medium" },
+      local: { type: "function", name: "read", parameters: { type: "object", properties: {} } },
+    },
+    {
+      apis: ["google-generative-ai", "google-vertex"],
+      google: true,
+      search: { googleSearch: {} },
+      local: { functionDeclarations: [{ name: "read", parameters: { type: "OBJECT", properties: {} } }] },
+    },
+  ];
+
+  for (const { apis, google, search, local } of families) {
+    for (const api of apis) {
+      test(`${api} adds native search without changing existing declarations or request fields`, () => {
+        const payload = google
+          ? { model: "test", contents: [], config: { temperature: 0.2, tools: [local] } }
+          : { model: "test", messages: [], temperature: 0.2, tools: [local] };
+        const original = structuredClone(payload);
+        const result = addWebSearchToPayload(payload, api);
+        expect(result).toEqual(google
+          ? { ...payload, config: { ...payload.config, tools: [local, search] } }
+          : { ...payload, tools: [local, search] });
+        expect(payload).toEqual(original);
+        expect(addWebSearchToPayload(result, api)).toBeUndefined();
+      });
+
+      test(`${api} enables native search without any local tools`, () => {
+        const payload = google ? { model: "test", contents: [] } : { model: "test", messages: [] };
+        expect(addWebSearchToPayload(payload, api)).toEqual(google
+          ? { ...payload, config: { tools: [search] } }
+          : { ...payload, tools: [search] });
+      });
+    }
+  }
+
+  test("keeps search options supplied by an earlier request handler", () => {
+    for (const type of ["web_search", "web_search_preview", "web_search_20260209"]) {
+      const payload = { tools: [{ type, filters: { allowed_domains: ["example.com"] } }] };
+      expect(addWebSearchToPayload(payload, "openai-responses")).toBeUndefined();
+      expect(payload.tools[0].filters.allowed_domains).toEqual(["example.com"]);
+    }
+    expect(addWebSearchToPayload({ config: { tools: [{ googleSearch: {} }] } }, "google-vertex"))
+      .toBeUndefined();
+  });
+
+  test("leaves unsupported APIs and unavailable model identity unchanged", () => {
+    for (const api of ["openai-completions", "bedrock-converse-stream", "pi-virtual", "unknown", "toString", undefined]) {
+      expect(addWebSearchToPayload({ model: "test", tools: [] }, api)).toBeUndefined();
+    }
+  });
+
+  test("does not replace malformed payloads or tool arrays", () => {
+    for (const payload of [null, "text", [], { tools: null }, { tools: {} }]) {
+      expect(addWebSearchToPayload(payload, "anthropic-messages")).toBeUndefined();
+    }
+    for (const config of [null, [], "text", { tools: {} }]) {
+      expect(addWebSearchToPayload({ config }, "google-generative-ai")).toBeUndefined();
+    }
   });
 });
 

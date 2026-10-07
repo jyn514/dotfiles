@@ -8,17 +8,42 @@ export interface SearchMetadata {
   searches: string[];
 }
 
-export const SUPPORTED_SEARCH_APIS = new Set([
-  "anthropic-messages",
-  "azure-openai-responses",
-  "google-generative-ai",
-  "google-vertex",
-  "openai-codex-responses",
-  "openai-responses",
+const openAISearch = () => ({ type: "web_search", search_context_size: "medium" });
+const googleSearch = () => ({ googleSearch: {} });
+const SEARCH_TOOLS = new Map<string, () => Record<string, unknown>>([
+  ["anthropic-messages", () => ({ type: "web_search_20250305", name: "web_search" })],
+  ["azure-openai-responses", openAISearch],
+  ["google-generative-ai", googleSearch],
+  ["google-vertex", googleSearch],
+  ["openai-codex-responses", openAISearch],
+  ["openai-responses", openAISearch],
 ]);
+
+export const SUPPORTED_SEARCH_APIS = new Set(SEARCH_TOOLS.keys());
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Return a replacement provider payload, or undefined to leave it unchanged. */
+export function addWebSearchToPayload(payload: unknown, api: string | undefined): unknown {
+  const createTool = api === undefined ? undefined : SEARCH_TOOLS.get(api);
+  if (!createTool || !isRecord(payload)) return;
+
+  const searchTool = createTool();
+  const google = "googleSearch" in searchTool;
+  const owner = google ? (payload.config === undefined ? {} : payload.config) : payload;
+  if (!isRecord(owner) || (owner.tools !== undefined && !Array.isArray(owner.tools))) return;
+  const tools: unknown[] = owner.tools ?? [];
+
+  // Preserve a search tool configured by an earlier payload handler rather than
+  // adding another one or replacing its filters/context settings.
+  if (tools.some((tool) => isRecord(tool) && (google
+    ? "googleSearch" in tool
+    : typeof tool.type === "string" && /^web_search(?:_|$)/.test(tool.type)))) return;
+
+  const replacement = { ...owner, tools: [...tools, searchTool] };
+  return google ? { ...payload, config: replacement } : replacement;
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

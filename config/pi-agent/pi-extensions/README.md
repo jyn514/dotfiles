@@ -29,6 +29,16 @@ later turns unless another extension forces a full-prompt replacement.
 prompt, including Pi's generated docs section, then replaces the full prompt.
 Section-only updates do not apply while that guest-routing hook is active.
 
+Web search uses stock request-payload and provider-event hooks, not the fork's
+`registerProviderTool()` API. It adds native search to Anthropic Messages,
+OpenAI/Azure/Codex Responses, and Google/Vertex requests without replacing local
+tool declarations. OpenAI search uses medium context; search options supplied by
+an earlier payload handler remain unchanged. Parsed citations are appended to the
+same assistant message, without repeating URLs already in its text. Both the
+installed SDK's `provider_event` and v0.99's `provider_stream_event` are supported.
+The selected model must identify a supported API; virtual selectors that hide the
+routed provider's API receive neither search injection nor search guidance.
+
 `task-directed-docs.ts` replaces Pi's blanket complete-file reading rules in the
 `docs` section. Read relevant sections and references that define a needed API or
 constraint; read whole files only when the task needs whole-file understanding.
