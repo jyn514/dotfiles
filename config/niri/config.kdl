@@ -73,6 +73,10 @@ binds {
     Mod+D hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
     // Modifications
     Mod+Shift+C { spawn "noctalia" "msg" "panel-toggle" "clipboard"; }
+    // Windows compat
+    // Open the home directory in the default file manager.
+    Mod+E hotkey-overlay-title="File manager" { spawn-sh "xdg-open \"$HOME\""; }
+    Mod+A hotkey-overlay-title="Wi-Fi, Bluetooth, audio and notifications" { spawn "noctalia" "msg" "panel-toggle" "control-center"; }
 
     // Session, power and accessibility
     // The screen-reader shortcut needs orca.
@@ -123,6 +127,8 @@ binds {
     // Shift moves with keyboard navigation; wheel bindings keep Ctrl because
     // Shift already selects horizontal scrolling.
     Mod+Q repeat=false { close-window; }
+    // Windows compat
+    Alt+F4 repeat=false { close-window; }
     Mod+Ctrl+WheelScrollRight { move-column-right; }
     Mod+Ctrl+WheelScrollLeft  { move-column-left; }
     Mod+Ctrl+Shift+WheelScrollDown { move-column-right; }
@@ -139,7 +145,6 @@ binds {
     // Modifications
     Mod+Left { focus-monitor-left; }
     Mod+Down { focus-monitor-down; }
-    Mod+Up { focus-monitor-up; }
     Mod+Right { focus-monitor-right; }
     Mod+Shift+Left { move-window-to-monitor-left; }
     Mod+Shift+Down { move-window-to-monitor-down; }
@@ -235,10 +240,14 @@ binds {
     // Floating and tiling
     Mod+V { toggle-window-floating; }
     Mod+Shift+V { switch-focus-between-floating-and-tiling; }
+    // Windows compat
+    Mod+Up { maximize-window-to-edges; }
+
+    // Upstream conflicts:
+    // Mod+Up { focus-monitor-up; }
 
     // KDE alternatives:
     // Mod+F { toggle-window-floating; }
-    // Mod+Up { maximize-window-to-edges; }
     // Mod+Ctrl+J { set-window-height "+10%"; }
     // Mod+Ctrl+K { set-window-height "-10%"; }
     // Mod+Alt+H { set-column-width "+10%"; }
@@ -248,8 +257,10 @@ binds {
     Print { screenshot; }
     Ctrl+Print { screenshot-screen; }
     Alt+Print { screenshot-window; }
-    // Modifications:
+    // MacOS compat
     Ctrl+Mod+Shift+4 { screenshot; }
+    // Windows compat
+    Mod+Shift+S { screenshot; }
 
     // Shortcut help and inhibition
     Mod+Shift+Slash { show-hotkey-overlay; }
