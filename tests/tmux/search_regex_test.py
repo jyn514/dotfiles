@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,14 +37,17 @@ class SearchRegexTest(unittest.TestCase):
         environment = os.environ | {"SEARCH_REGEX_INPUT": text}
 
         def tmux(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-            return subprocess.run(
+            result = subprocess.run(
                 ["tmux", "-L", socket, *arguments],
-                check=check,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=10,
                 env=environment,
             )
+            if check:
+                self.assertEqual(result.returncode, 0, f"{result.args!r}\n{result.stderr}")
+            return result
 
         try:
             tmux(
@@ -80,6 +84,12 @@ class SearchRegexTest(unittest.TestCase):
             return saved.stdout
         finally:
             tmux("kill-server", check=False)
+
+    def test_command_failure_includes_tmux_diagnostic(self) -> None:
+        result = subprocess.CompletedProcess(["tmux"], 1, "", "cannot create socket")
+        with patch("subprocess.run", return_value=result):
+            with self.assertRaisesRegex(AssertionError, "cannot create socket"):
+                self.tmux_match("src/main.rs:12")
 
     def test_selected_diagnostic_is_normalized_by_picker_and_open(self) -> None:
         selection = self.tmux_match("error: src/main.rs:12:5: mismatched types")

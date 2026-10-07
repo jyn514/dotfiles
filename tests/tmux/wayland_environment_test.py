@@ -36,11 +36,14 @@ class WaylandEnvironmentTest(unittest.TestCase):
         ).stdout.splitlines())
 
     def tmux(self, *arguments: str, check: bool = True, environment=None):
-        return subprocess.run(
+        result = subprocess.run(
             ["tmux", "-L", self.socket, *arguments],
             env=self.environment if environment is None else environment,
-            check=check, capture_output=True, text=True, timeout=10,
+            check=False, capture_output=True, text=True, timeout=10,
         )
+        if check:
+            self.assertEqual(result.returncode, 0, f"{result.args!r}\n{result.stderr}")
+        return result
 
     def attach(self, display: str | None) -> None:
         environment = self.environment.copy()
@@ -65,8 +68,8 @@ class WaylandEnvironmentTest(unittest.TestCase):
                         self.assertTrue(chunk, output)
                         output += chunk
             self.tmux("detach-client", "-s", "test")
-            client.communicate(timeout=10)
-            self.assertEqual(client.returncode, 0)
+            _, stderr = client.communicate(timeout=10)
+            self.assertEqual(client.returncode, 0, stderr.decode(errors="replace"))
         finally:
             if client.poll() is None:
                 client.kill()
@@ -86,6 +89,16 @@ class WaylandEnvironmentTest(unittest.TestCase):
                       str(script), str(result))
             self.tmux("wait-for", "environment-ready")
             self.assertEqual(expected, result.read_text())
+
+    def test_command_failure_includes_tmux_diagnostic(self) -> None:
+        arguments = ("show-environment", "-t", "test", "DOTFILES_TEST_MISSING")
+        result = self.tmux(*arguments, check=False)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("unknown variable", result.stderr)
+        with self.assertRaises(AssertionError) as failure:
+            self.tmux(*arguments)
+        self.assertIn(result.stderr.strip(), str(failure.exception))
+        self.assertIn("show-environment", str(failure.exception))
 
     def test_reattach_refreshes_display_and_ssh_preserves_latest_value(self) -> None:
         self.tmux("set-environment", "-g", "WAYLAND_DISPLAY", "wayland-0")
