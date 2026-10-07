@@ -67,6 +67,23 @@ conversation and active tool schemas. Its source labels use current base prompt
 inputs; extension additions appear in the remainder rather than as separate rows.
 These are local estimates, not provider token accounting.
 
+## Subscription usage: `/usage`
+
+`/usage` fetches your ChatGPT account limits, credit balance, and additional limits
+such as Luna Reserve. Bars show the percentage **left**, with reset times in the
+host's local time zone. Missing limits or balances are not treated as zero.
+
+Use Pi's `/login` with OpenAI Codex first. The command uses Pi's resolved provider
+credentials and token refresh; it does not read Codex CLI credentials. It requires
+the direct ChatGPT provider, not a custom authentication proxy. This is account-wide
+subscription usage, unlike the session token counts in `/session`.
+
+The command fetches only when invoked, makes no model request, and stores nothing
+in the session or on disk. It is interactive-only. It uses the same account-usage
+endpoint as Codex CLI; this is an undocumented backend API and can change.
+On the host, run `./setup dotfiles` from the repository root to link the new module.
+Then run `/reload` in Pi, followed by `/usage`.
+
 ## Skill validation: `validate_skill`
 
 Call `validate_skill({ "path": "skills/example/SKILL.md" })` to check whether
