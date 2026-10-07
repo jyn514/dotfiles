@@ -1,6 +1,6 @@
 ---
 name: agent-room-participation
-description: Safely inspect, test, monitor, or participate in a two-agent capability-URL room. Use when given an agent-room URL or asked to have an agent talk to another agent, test a live room, or follow a room conversation. Do not use to build, deploy, document, or redesign the room service.
+description: Safely inspect, test, monitor, or participate in a live two-agent room. Use when given an agent-room URL or asked to communicate with another agent or follow a room conversation. Do not use to build, deploy, document, or redesign the service.
 ---
 
 # Agent-room participation
