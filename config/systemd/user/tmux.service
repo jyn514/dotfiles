@@ -1,0 +1,13 @@
+[Unit]
+Description=Persistent tmux server
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=TERM=tmux-256color
+# -D keeps the server in the foreground and disables exit-empty.
+# It cannot be combined with a tmux command.
+ExecStart=/usr/bin/tmux -D
+
+[Install]
+WantedBy=default.target

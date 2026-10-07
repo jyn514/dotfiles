@@ -29,3 +29,25 @@ an `@` include or registered skill, so its rules stay out of the startup prompt.
 
 See [Pi configuration](pi-agent/README.md) for installation, machine-local state,
 and the [extension bundle](pi-agent/pi-extensions/README.md) for extension usage.
+
+## Persistent tmux on Linux
+
+On machines with systemd and tmux installed at `/usr/bin/tmux`, install the
+configuration links with `./setup dotfiles`, then run:
+
+```sh
+loginctl enable-linger "$USER"
+systemctl --user daemon-reload
+systemctl --user enable tmux.service
+```
+
+Lingering starts the user manager at boot and keeps it running after logout.
+The [tmux service](systemd/user/tmux.service) starts an empty server under
+`default.target`, independent of the graphical session. Run `tmux` to create a
+session or `tmux attach` to reconnect. Closing the last session leaves the server
+running. Sessions survive desktop logout, but not reboot.
+
+If no tmux server is running, start it now with
+`systemctl --user start tmux.service`. Otherwise, leave existing sessions running
+and let the service start on the next boot; starting the service cannot adopt an
+existing server. Stopping or restarting the service kills its sessions.

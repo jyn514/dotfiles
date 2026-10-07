@@ -36,6 +36,10 @@
         "glob": true,
         "path": "config/tmux/*"
       },
+      "$HOME/.config/systemd/user/": {
+        "glob": true,
+        "path": "config/systemd/user/*.service"
+      },
       "$HOME/.config/atuin/config.toml": "config/atuin.toml",
       "$HOME/.config/bacon/prefs.toml": "config/bacon.toml",
       "$HOME/.bash_aliases": "config/bash_aliases",
