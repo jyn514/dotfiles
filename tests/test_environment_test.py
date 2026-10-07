@@ -217,6 +217,53 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(before, self.snapshot(self.old_home))
                 self.assert_private_home(report)
 
+    def make_nvim_plugins(self, data: Path) -> Path:
+        plugins = data / "nvim/lazy"
+        entrypoint = plugins / "lazy.nvim/lua/lazy/init.lua"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("return {}\n")
+        return plugins
+
+    def test_nvim_plugins_are_discovered_before_data_isolation(self) -> None:
+        for use_xdg in (False, True):
+            with self.subTest(use_xdg=use_xdg):
+                if use_xdg:
+                    data = self.old_home / "xdg_data_home"
+                    self.inherited["XDG_DATA_HOME"] = str(data)
+                else:
+                    self.inherited.pop("XDG_DATA_HOME")
+                    data = self.old_home / ".local/share"
+                plugins = self.make_nvim_plugins(data)
+                before = self.snapshot(self.old_home)
+                result, report = self.run_probe("write", "0")
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(str(plugins), report["environment"].get("DOTFILES_TEST_NVIM_PLUGINS"))
+                self.assertEqual(before, self.snapshot(self.old_home))
+                self.assert_private_home(report)
+
+    def test_explicit_nvim_plugins_survive_nested_isolation(self) -> None:
+        self.make_nvim_plugins(Path(self.inherited["XDG_DATA_HOME"]))
+        plugins = self.make_nvim_plugins(self.root / "explicit data")
+        before = self.snapshot(plugins)
+        result, outer = self.run_probe(
+            "nested", str(WRAPPER),
+            values={"DOTFILES_TEST_NVIM_PLUGINS": str(plugins)},
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, outer["nested_status"], outer["nested_stderr"])
+        for report in (outer, outer["nested"]):
+            self.assertEqual(str(plugins), report["environment"]["DOTFILES_TEST_NVIM_PLUGINS"])
+            self.assert_private_home(report)
+        self.assertEqual(before, self.snapshot(plugins))
+
+    def test_nvim_discovery_requires_lazy_entrypoint(self) -> None:
+        plugins = Path(self.inherited["XDG_DATA_HOME"]) / "nvim/lazy/lazy.nvim"
+        plugins.mkdir(parents=True)
+        for values in ({}, {"DOTFILES_TEST_NVIM_PLUGINS": ""}):
+            with self.subTest(values=values):
+                environment = self.run_environment(**values)
+                self.assertNotIn("DOTFILES_TEST_NVIM_PLUGINS", environment)
+
     def test_nested_wrapper_has_independent_home_and_retains_sdk_and_tools(self) -> None:
         sdk = self.make_sdk(self.installed_sdk_path())
         before = self.snapshot(self.old_home)

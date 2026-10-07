@@ -10,12 +10,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 NVIM_CONFIG = ROOT / "config/nvim/init.lua"
-LAZY = Path.home() / ".local/share/nvim/lazy/lazy.nvim"
+DATA = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+PLUGINS = Path(os.environ.get("DOTFILES_TEST_NVIM_PLUGINS") or DATA / "nvim/lazy")
 
 
 @unittest.skipUnless(shutil.which("nvim"), "Neovim is not installed")
-@unittest.skipUnless(LAZY.exists(), "Neovim plugins are not installed")
+@unittest.skipUnless(
+    (PLUGINS / "lazy.nvim/lua/lazy/init.lua").is_file(),
+    "Neovim plugins are not installed",
+)
 class NeovimConfigTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="nvim-test-plugins-")
+        cls.addClassCleanup(temporary.cleanup)
+        cls.plugins = Path(temporary.name) / "lazy"
+        # Lazy can write plugin metadata; never point it at installed checkouts.
+        shutil.copytree(PLUGINS, cls.plugins, ignore=shutil.ignore_patterns(".git"))
+
     def run_nvim(self, lua: str) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -23,6 +35,9 @@ class NeovimConfigTests(unittest.TestCase):
             work = root / "work"
             config.mkdir(parents=True)
             work.mkdir()
+            data = root / "data/nvim"
+            data.mkdir(parents=True)
+            (data / "lazy").symlink_to(self.plugins)
             (config / "init.lua").symlink_to(NVIM_CONFIG)
             (config / "shared.lua").symlink_to(NVIM_CONFIG.parent / "shared.lua")
             script = root / "test.lua"
@@ -34,6 +49,7 @@ class NeovimConfigTests(unittest.TestCase):
 
             env = os.environ.copy()
             env["XDG_CONFIG_HOME"] = str(root / "config")
+            env["XDG_DATA_HOME"] = str(root / "data")
             result = subprocess.run(
                 ["nvim", "--headless", "-c", f"luafile {script}", "-c", "qa!"],
                 cwd=work,

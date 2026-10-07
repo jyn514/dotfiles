@@ -49,6 +49,14 @@ def main(arguments: list[str]) -> int:
         else:
             environment.pop("PI_PACKAGE_DIR", None)
 
+    if not environment.get("DOTFILES_TEST_NVIM_PLUGINS"):
+        data = Path(environment.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+        plugins = data / "nvim/lazy"
+        if (plugins / "lazy.nvim/lua/lazy/init.lua").is_file():
+            environment["DOTFILES_TEST_NVIM_PLUGINS"] = str(plugins.resolve())
+        else:
+            environment.pop("DOTFILES_TEST_NVIM_PLUGINS", None)
+
     # Prefer private binaries over sandbox wrappers, retaining nested-call values.
     for tool in ("BB", "JAVA", "JJ", "RG"):
         real = environment[f"DOTFILES_TEST_{tool}_REAL"]

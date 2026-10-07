@@ -45,6 +45,14 @@ installation revision before replacing HOME. The runtime-image probe builds and
 checks that commit. Missing or invalid revision metadata stops the runner before
 any tests; repair the installation with `mise run pi-install`.
 
+For Neovim config tests, the wrapper discovers installed plugins at
+`${XDG_DATA_HOME:-$HOME/.local/share}/nvim/lazy` before isolation and passes
+`DOTFILES_TEST_NVIM_PLUGINS`. An explicit nonempty value takes precedence and
+survives nested wrappers. The fixture copies plugins into temporary storage;
+Neovim never writes to the installed plugin tree. Run the focused suite with
+`dev/test-environment python3 tests/nvim/nvim_test.py`. It requires Neovim and
+installed plugins, and reports skipped tests when either is absent.
+
 The native prompt-section regression needs an installed Pi build with
 `systemPromptOptions.sections`; the locked test SDK predates that API. Run it
 without Bun's module mocks:
