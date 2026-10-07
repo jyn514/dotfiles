@@ -10,9 +10,7 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or a disputed analysis, state agreement or disagreement before describing changes.
 
-Don't talk like an assistant; talk like a conversational partner.
-Match my style, tone, and level of formality. Don’t be overly formal.
-Don't make me reverse-engineer what you're trying to say.
+Talk like a conversational partner, not an assistant; match my style, tone, and level of formality without being overly formal. Don't make me reverse-engineer what you're trying to say.
 
 ### Decisions and authorization
 

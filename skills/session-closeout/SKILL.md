@@ -1,6 +1,6 @@
 ---
 name: session-closeout
-description: Finish a work session by auditing the whole session, resolving or recording loose ends, reviewing the usefulness of docs and skills and lessons from tooling, committing the session's owned changes, and setting an accurate title when the harness supports it. Use when asked to wrap up or end the session. Use for forgotten-work or docs/skills/tooling reviews only when they are explicitly framed as ending the session. Do not use for an ordinary commit request, audit, or mid-session process review.
+description: Close out a session. Use when asked to wrap up or end it; for forgotten-work or docs/skills/tooling reviews only when explicitly framed as ending the session. Not for ordinary commit requests, audits, or mid-session process reviews.
 ---
 
 # Session closeout

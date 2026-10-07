@@ -1,6 +1,6 @@
 ---
 name: tighten-docs
-description: Make docs, specs, prompts, instructions, and skills clearer and shorter while preserving required meaning, examples, rationale, constraints, and trigger behavior. Use for explicit prose-tightening requests and before completion after creating a substantial document or substantially rewriting documentation, specifications, prompts, instructions, or skills. For short documents or localized edits without an explicit tightening request, review prose directly without loading this skill. Do not apply to code, generated files, or machine-owned data.
+description: Make docs, specs, prompts, instructions, and skills clearer and shorter. Use for explicit prose-tightening requests and before completion after creating a substantial document or substantially rewriting documentation, specifications, prompts, instructions, or skills. For short documents or localized edits without an explicit tightening request, review prose directly without loading this skill. Do not apply to code, generated files, or machine-owned data.
 ---
 
 # Tighten Docs
