@@ -16,7 +16,7 @@ The bundle adds the current date and Pi's host OS to the system prompt. On Linux
 the OS name comes from `/etc/os-release`, or `/usr/lib/os-release` when the former
 cannot be read. Without a display name, and on other platforms, it uses the OS
 and kernel release. This describes the host running Pi, not its guest shell tools;
-use `/system-prompt` to inspect it after `/reload`.
+send a prompt, then use `/system-prompt` to inspect the captured prompt.
 
 The bundle requires a Pi build with the mutable `systemPromptOptions.sections` API.
 
@@ -49,6 +49,23 @@ native regression checks Pi's rendered format and rule wording when Pi is update
 Tool descriptions and parameter schemas retain input and lifecycle contracts.
 Prompt guidelines add workflow rules rather than repeat those contracts. Parameter
 defaults do not replace observation sequencing or user-authorization requirements.
+
+## Prompt inspection
+
+`/system-prompt` shows the last prepared Pi system prompt, with the selected model
+and capture time. Both this viewer and `/context-breakdown` retain a shared snapshot
+from `before_provider_request`; Pi's idle getter otherwise loses per-run changes.
+The snapshot includes expanded instructions and guest path rewriting. It is not the
+final serialized request: context-message and provider-payload rewrites are excluded.
+
+Session start, resume, fork, and `/reload` clear the snapshot. Until the next provider
+request, both commands report that no prompt has been captured instead of showing
+an untransformed base prompt. Captures are in memory only and never persisted.
+
+`/context-breakdown` estimates the captured prompt alongside the current persisted
+conversation and active tool schemas. Its source labels use current base prompt
+inputs; extension additions appear in the remainder rather than as separate rows.
+These are local estimates, not provider token accounting.
 
 ## Skill validation: `validate_skill`
 

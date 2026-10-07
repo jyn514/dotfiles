@@ -276,3 +276,137 @@ test("the bundle replaces only documentation policy and guest routing preserves 
   assert.equal(inspections[2].force, prompts[2], "provider receives the guest hook's final forced prompt");
   assert.equal(prompts[1], inspections[1].prompt);
 });
+
+// Use a built-in provider, not faux: faux skips before_provider_request. Only
+// fetch and the editor surface are replaced; native hook/command dispatch stays real.
+for (const guest of [false, true]) {
+  test(`prepared-prompt viewers survive settlement and clear on reload (guest=${guest})`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "pi-native-prompt-viewers-"));
+    const keys = ["CODEX_SANDBOX_TOOL_CONTAINER", "CODEX_SANDBOX_GUEST_CWD",
+      "CODEX_SANDBOX_PI_RESOURCE_PATHS", "CODEX_SANDBOX_PREVIOUS_CWD"];
+    const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    t.after(async () => {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await rm(root, { recursive: true, force: true });
+    });
+    for (const key of keys) delete process.env[key];
+    const cwd = join(root, "project");
+    const agentDir = join(root, "agent");
+    await Promise.all([mkdir(cwd), mkdir(agentDir)]);
+    const includePath = join(cwd, "rules.md");
+    const firstMarker = "First expanded instruction marker.";
+    const secondMarker = "Second expanded instruction marker with a different size.";
+    await writeFile(includePath, firstMarker);
+    if (guest) {
+      process.env.CODEX_SANDBOX_TOOL_CONTAINER = "offline-fixture-not-contacted";
+      process.env.CODEX_SANDBOX_GUEST_CWD = "/guest/project";
+      process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
+        "/host/policy.md": "/guest/policy.md", [includePath]: "/guest/rules.md",
+      });
+    }
+    const baseUrl = "http://pi-native-prompt-viewers.invalid/v1";
+    const requests = [];
+    t.mock.method(globalThis, "fetch", async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      assert.equal(url, `${baseUrl}/chat/completions`, "no real network requests are allowed");
+      requests.push(JSON.parse(init?.body ?? await input.clone().text()));
+      const chunks = [
+        { id: "viewer_fixture", object: "chat.completion.chunk", choices: [{ index: 0,
+          delta: { role: "assistant", content: "Offline viewer answer." }, finish_reason: null }] },
+        { id: "viewer_fixture", object: "chat.completion.chunk", choices: [{ index: 0,
+          delta: {}, finish_reason: "stop" }] },
+      ];
+      return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") +
+        "data: [DONE]\n\n", { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+    const model = { id: "fixture", name: "Offline fixture", provider: "offline-prompt-viewers",
+      api: "openai-completions", baseUrl, reasoning: false, input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 256 };
+    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(), modelsPath: null,
+      modelsStorePath: join(agentDir, "models-store.json"), allowModelNetwork: false, refreshOnCreate: false,
+    });
+    await modelRuntime.setRuntimeApiKey(model.provider, "offline-not-a-credential");
+    const prepared = [];
+    const loader = new DefaultResourceLoader({
+      cwd, agentDir, settingsManager,
+      noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      additionalExtensionPaths: ["pi-instruction-includes", "system-prompt", "context-breakdown",
+        ...(guest ? ["guest-tools"] : [])].map((name) => join(extensionDir, `${name}.ts`)),
+      agentsFilesOverride: () => ({ agentsFiles: [{ path: join(cwd, "AGENTS.md"), content: "@rules.md" }] }),
+      systemPrompt: "Native viewer base instructions. Host reference: /host/policy.md",
+      extensionFactories: [(pi) => {
+        pi.registerProvider(model.provider, { baseUrl, api: model.api, apiKey: "offline-not-a-credential",
+          models: [model] });
+        pi.on("before_provider_request", (_event, ctx) => { prepared.push(ctx.getSystemPrompt()); });
+      }],
+    });
+    await loader.reload();
+    assert.deepEqual(loader.getExtensions().errors, []);
+    const { session, extensionsResult } = await createAgentSession({
+      cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+      sessionManager: SessionManager.inMemory(cwd), model, tools: [],
+    });
+    t.after(() => session.dispose());
+    assert.deepEqual(extensionsResult.errors, []);
+    const editors = [];
+    const notifications = [];
+    await session.bindExtensions({ mode: "tui", uiContext: {
+      editor: async (title, text) => { editors.push({ title, text }); return "ignored edit"; },
+      notify: (text, level) => notifications.push({ text, level }),
+    } });
+    const inspect = async () => {
+      await session.prompt("/system-prompt");
+      await session.prompt("/context-breakdown");
+    };
+    await inspect();
+    assert.equal(editors.length, 0, "startup must not display the untransformed base prompt");
+    assert.equal(notifications.length, 2);
+    assert.ok(notifications.every(({ text }) => text.includes("No system prompt captured")));
+    assert.equal(requests.length, 0, "viewer commands must not call the provider");
+
+    await session.prompt("First native request.");
+    assert.equal(requests.length, 1);
+    assert.equal(prepared.length, 1, "the native provider fires the actual capture hook");
+    assert.equal(session.messages.at(-1).stopReason, "stop", session.messages.at(-1).errorMessage);
+    assert.ok(!session.systemPrompt.includes(firstMarker), "Pi's getter reverted after settlement");
+    const firstSystem = requests[0].messages.find((message) => ["system", "developer"].includes(message.role));
+    assert.equal(firstSystem.content, prepared[0], "capture matches the built-in provider's first serialized prompt");
+    await inspect();
+    assert.ok(editors[0].text.endsWith(`\n\n${prepared[0]}`), "viewer retains the complete transformed prompt");
+    assert.ok(editors[0].text.includes(firstMarker));
+    assert.ok(editors[0].text.includes(`Selected model: ${model.provider}/${model.id}`));
+    assert.match(editors[0].text, /Captured at: \d{4}-\d{2}-\d{2}T/);
+    assert.ok(editors[1].text.includes(`Prompt subtotal: ${Math.ceil(prepared[0].length / 4).toLocaleString("en-US")}`));
+    if (guest) {
+      assert.ok(editors[0].text.includes("/guest/policy.md"));
+      assert.ok(!editors[0].text.includes("/host/policy.md"));
+    }
+    assert.equal(requests.length, 1);
+
+    await writeFile(includePath, secondMarker);
+    await session.prompt("Second native request.");
+    await inspect();
+    assert.equal(requests.length, 2);
+    assert.ok(editors[2].text.endsWith(`\n\n${prepared[1]}`));
+    assert.ok(editors[2].text.includes(secondMarker));
+    assert.ok(!editors[2].text.includes(firstMarker), "latest capture replaces previous instructions");
+    assert.ok(editors[3].text.includes(`Prompt subtotal: ${Math.ceil(prepared[1].length / 4).toLocaleString("en-US")}`));
+
+    await session.reload();
+    await inspect();
+    assert.equal(editors.length, 4, "reload must not show a stale snapshot or idle base prompt");
+    assert.equal(notifications.length, 4);
+    assert.ok(notifications.slice(2).every(({ text }) => text.includes("No system prompt captured")));
+    assert.equal(requests.length, 2);
+    await session.prompt("New request after reload.");
+    await inspect();
+    assert.equal(requests.length, 3);
+    assert.ok(editors[4].text.endsWith(`\n\n${prepared[2]}`));
+    assert.ok(editors[4].text.includes(secondMarker), "capture resumes in the reloaded runtime");
+  });
+}

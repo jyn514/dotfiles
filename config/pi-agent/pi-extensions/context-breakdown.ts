@@ -8,6 +8,11 @@ import {
   sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 
+import {
+  describeSystemPromptSnapshot, NO_PROMPT_CAPTURE, observeSystemPrompt,
+  type SystemPromptSnapshot,
+} from "./system-prompt-core.ts";
+
 type BreakdownRow = {
   label: string;
   tokens: number;
@@ -249,7 +254,8 @@ export function formatContextBreakdown(breakdown: ContextBreakdown): string {
   const lines = [
     "Context breakdown — estimated",
     "",
-    "Persisted session state and the current effective system prompt are measured locally.",
+    "Persisted session state and the last prepared Pi system prompt are measured locally.",
+    "Prompt source attribution uses current base inputs; extension additions appear in the remainder.",
     "Extension context rewrites, provider payload rewrites, and provider tool schemas are not attributed.",
     "",
     "System prompt",
@@ -289,9 +295,15 @@ export function formatContextBreakdown(breakdown: ContextBreakdown): string {
 export async function showContextBreakdown(
   ctx: ExtensionCommandContext,
   tools: ToolSchema[],
+  snapshot: SystemPromptSnapshot | undefined,
 ): Promise<void> {
   if (ctx.mode !== "tui") {
     ctx.ui.notify("The context breakdown is available only in interactive mode", "warning");
+    return;
+  }
+
+  if (!snapshot) {
+    ctx.ui.notify(NO_PROMPT_CAPTURE, "info");
     return;
   }
 
@@ -299,7 +311,7 @@ export async function showContextBreakdown(
     .buildContextEntries()
     .flatMap(sessionEntryToContextMessages);
   const breakdown = buildContextBreakdown(
-    ctx.getSystemPrompt(),
+    snapshot.prompt,
     ctx.getSystemPromptOptions(),
     messages,
     tools,
@@ -308,17 +320,18 @@ export async function showContextBreakdown(
 
   await ctx.ui.editor(
     "Context breakdown (estimates; edits are discarded)",
-    formatContextBreakdown(breakdown),
+    `${describeSystemPromptSnapshot(snapshot)}\n\n${formatContextBreakdown(breakdown)}`,
   );
 }
 
 export default function contextBreakdown(pi: ExtensionAPI): void {
+  const capture = observeSystemPrompt(pi);
   pi.registerCommand("context-breakdown", {
     description: "Estimate current context usage by source",
     handler: async (_args, ctx) => {
       const active = new Set(pi.getActiveTools());
       const tools = pi.getAllTools().filter((tool) => active.has(tool.name));
-      await showContextBreakdown(ctx, tools);
+      await showContextBreakdown(ctx, tools, capture());
     },
   });
 }

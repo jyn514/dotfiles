@@ -20,6 +20,7 @@ describe("context breakdown", () => {
   test("registers the context-breakdown command", () => {
     const commands = new Map<string, { description: string }>();
     contextBreakdown({
+      on() {},
       registerCommand(name: string, command: { description: string }) {
         commands.set(name, command);
       },
@@ -198,7 +199,7 @@ describe("context breakdown", () => {
     const editorCalls: Array<[string, string]> = [];
     await showContextBreakdown({
       mode: "tui",
-      getSystemPrompt: () => "prompt",
+      getSystemPrompt: () => { throw new Error("idle getter must not be used"); },
       getSystemPromptOptions: () => ({ cwd: "/work" }),
       getContextUsage: () => usage(20),
       sessionManager: {
@@ -218,10 +219,28 @@ describe("context breakdown", () => {
           return content;
         },
       },
-    } as never, []);
+    } as never, [], {
+      prompt: "captured prompt", model: undefined, capturedAt: "2026-10-07T12:00:00.000Z",
+    });
 
     expect(editorCalls).toHaveLength(1);
     expect(editorCalls[0][1]).toContain("Compaction summaries");
+    expect(editorCalls[0][1]).toContain("Prompt subtotal: 4");
+  });
+
+  test("reports no capture without measuring the idle base prompt", async () => {
+    const notifications: Array<[string, string]> = [];
+    await showContextBreakdown({
+      mode: "tui",
+      getSystemPrompt: () => { throw new Error("idle getter must not be used"); },
+      ui: {
+        editor: async () => { throw new Error("editor should not open"); },
+        notify: (message: string, level: string) => notifications.push([message, level]),
+      },
+    } as never, [], undefined);
+    expect(notifications).toEqual([[
+      "No system prompt captured since session start or reload. Send a prompt first.", "info",
+    ]]);
   });
 
   test("warns outside interactive mode", async () => {
@@ -231,7 +250,7 @@ describe("context breakdown", () => {
       ui: {
         notify: (message: string, level: string) => notifications.push([message, level]),
       },
-    } as never, []);
+    } as never, [], undefined);
 
     expect(notifications).toEqual([[
       "The context breakdown is available only in interactive mode",
