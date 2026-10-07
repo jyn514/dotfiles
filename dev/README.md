@@ -72,8 +72,10 @@ so bootstrap behavior stays predictable.
 
 ## Testing and probes
 
-Before running Pi tests or compaction replays, install the locked dependencies.
-This requires Node/npm; Pi tests and replays also require Bun:
+Before running Pi tests or compaction replays, ensure the locked dependencies are
+installed. This requires Node/npm; Pi tests and replays also require Bun.
+For initial setup or after dependency changes, run this before starting tests,
+not alongside them:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
