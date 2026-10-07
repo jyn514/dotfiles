@@ -53,6 +53,8 @@ Use `diff-check`, never `git diff --check`; the latter may not be installed.
 
 ### Execution boundaries
 
+After changing configuration, verify the running application loaded it before interpreting test results.
+
 When an experiment fails, do not eagerly restore the working copy. Inspect the failure in place; VCS already preserves the known-good state. Restore only when continued work would endanger unrelated changes or the user asks.
 
 ### Shell command construction
