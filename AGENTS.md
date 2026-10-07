@@ -1,72 +1,28 @@
-# Repository Guidelines
+# Repository instructions
 
-## Project Structure & Module Organization
+Before editing code, configuration, or tests, read the relevant
+[repository change guidelines](dev/README.md#repository-change-guidelines) for
+layout, language conventions, test placement, and bootstrap or PR requirements.
+For setup operations, read [Setup and configuration](README.md#setup-and-configuration)
+and the relevant setup function before using it on a new machine.
 
-This repository stores dotfiles and bootstrap scripts.
-User command links and small standalone commands live in `bin/`;
-self-contained executable subsystems, including their tests and documentation, live in `tools/<name>/`.
-Shared internal implementations remain in `libexec/`, repository-maintenance commands in `dev/`, and cross-cutting tests in `tests/<feature>/`.
-User configuration lives in `config/`, system files in `global/`, sourced support and static assets in `lib/`, vendored code in `vendor/`, and package manifests in `install/`.
-Setup entry points are `setup`, `setup.ps1`, and `track`.
-
-## Build, Test, and Development Commands
-
-- `./setup`: installs or links tools and dotfiles for the current platform.
-  Read the relevant function before using it on a new machine.
-- `./track <existing file> [name]`: moves a user file into `config/` and adds its Dotbot mapping, or copies a system file into `global/` and records it in `install/global.txt`.
-- `python3 tools/open/tests/test_open.py`: runs unit tests for the editor/open wrapper behavior.
-- `python3 tests/wezterm/wezterm_test.py`: validates selector patterns in `config/wezterm.lua`.
-- `dev/test`: runs the test suite and repository checks.
-- `shellcheck setup track bin/* dev/* libexec/**/*.sh tools/**/*.sh`: checks shell scripts where applicable;
-  some entries are not shell scripts.
-
-## Coding Style & Naming Conventions
-
-Keep scripts portable unless a file already targets one platform.
-Shell scripts use POSIX `sh` where declared, tab-indented blocks in existing files, and explicit `set -e` or `set -u` when failure handling matters.
-Python uses standard-library `unittest`, type-friendly signatures, `Path` for filesystem work, and four-space indentation.
-Match each config file's native style rather than normalizing unrelated formatting.
-
-Check that each command producing shell code, configuration, or cache data succeeds before using its output. Do not hide failures in nested command substitutions or unchecked pipelines. Source generated shell code only after the command that produces it succeeds. Write persistent caches to a temporary file and replace the old cache only after generation succeeds. Add regression tests for success and failure.
-
-When a simple implementation choice preserves a non-obvious historical constraint, add a brief comment explaining the constraint and why that choice preserves it.
-When consolidating orchestration, preserve concurrency of independent operations.
-When presenting many results, choose a review surface suited to the batch rather than repeating the single-item interaction.
-
-For Pi UI extensions, verify documented hooks against the installed implementation and reuse Pi's authoritative providers instead of duplicating resource discovery.
-
-Before changing sandbox launcher stdio or process ownership, read [`tools/codex-sandbox/README.md`](tools/codex-sandbox/README.md#startup-terminal-ownership) for terminal boundaries and regression checks.
-
-## Testing Guidelines
-
-Run tests and ad-hoc Pi probes through `dev/test-environment`; see [Testing and probes](README.md#testing-and-probes) for isolation and real-configuration exceptions.
-
-Keep subsystem-owned tests under `tools/<name>/tests/`;
-add cross-cutting tests under the matching `tests/<feature>/` directory.
-Name Python test files `*_test.py` or `test_*.py`, and name test methods after the behavior under protection.
-Prefer temporary directories and mocks over touching real home-directory state.
-For config regex changes, include positive and negative examples.
-
-For undocumented mutation APIs, test end-to-end on an owned disposable resource, verify the complete result, and restore or delete the resource before touching production.
-For recovery commands, test states left by failed recovery attempts, not only clean startup and normal shutdown.
-
-Validate configuration with its native parser or application when practical, in addition to repository tests.
-Examples include shell syntax checks, `jq empty config/agents/claude/claude.json`, headless Neovim startup, Kitty's configuration loader, and `claude doctor`;
-distinguish parser failures from unrelated runtime, authentication, or environment warnings.
-
-## Commit & Pull Request Guidelines
-
-Use Jujutsu (`jj`) by default for inspection and change management: `jj status`, `jj diff`, and `jj log`.
-Use a short imperative subject, for example `Fix PATH entry detection`.
-Add a commit body when the motivation, failure mode, design constraint, or verification would not be obvious to a future reader.
-Keep commits narrow and name the affected tool when useful.
-Pull requests should state the user-visible change, list commands run, note platform assumptions, and include screenshots only for visual terminal or desktop behavior.
-
-## Security & Configuration Tips
-
-When repairing VM configuration, also update its host-owned setup source so the repair survives recreation.
-When authentication scopes change, detect and invalidate persisted credentials that lack the required scopes.
-
-Do not commit secrets, tokens, private hostnames, or machine-local paths unless they are already intentionally tracked.
-Be careful with `global/` changes: they may be copied with elevated privileges.
-Review `install.conf.json` when adding dotfiles and `install/*.txt` when adding packages so bootstrap behavior remains predictable.
+- Use `jj` for change management.
+- Run tests and ad-hoc Pi probes through `dev/test-environment`.
+  Read [Testing and probes](dev/README.md#testing-and-probes) for dependencies,
+  isolation, and exceptions that require real configuration.
+- Check that commands generating shell code, configuration, or cache data succeed
+  before consuming their output. Do not hide failures in nested command substitutions
+  or unchecked pipelines. Source shell code only after successful generation;
+  replace persistent caches through a temporary file only after generation succeeds.
+  Add success and failure regression tests.
+- For Pi UI extensions, verify documented hooks against the installed
+  implementation and reuse Pi's authoritative providers, not duplicate discovery.
+- Before changing sandbox launcher stdio or process ownership, read
+  [Startup terminal ownership](tools/codex-sandbox/README.md#startup-terminal-ownership).
+- When repairing VM configuration, update its host-owned setup source too.
+- When authentication scopes change, invalidate persisted credentials that lack
+  the required scopes.
+- Do not commit secrets, private hostnames, or machine-local paths unless already
+  intentionally tracked. `global/` files may be copied with elevated privileges.
+- When adding dotfiles or packages, review `install.conf.json` or `install/*.txt`
+  so bootstrap behavior stays predictable.
