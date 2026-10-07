@@ -68,7 +68,8 @@ When making a user-facing change, update the relevant documentation in the same 
 
 Before adding documentation or choosing its destination, read [Documentation placement](~/.agents/skills/technical-docs/references/placement.md), including for small additions during implementation.
 
-Use `technical-docs` for new standalone documentation, substantive changes to reader structure or explanation, or explicit documentation usability/correctness reviews. Placement-only decisions, routine additions to established sections, new headings alone, and wording or link fixes do not require it. Use `reorganize-docs` when restructuring existing pages or navigation, not merely choosing where a new paragraph belongs.
+Choose documentation skills by their catalog scopes. Placement-only decisions
+and routine additions use the placement reference, not a full authoring workflow.
 
 ### AGENTS.md files
 
@@ -78,7 +79,9 @@ Do not duplicate repository documentation, procedures, command catalogs, or styl
 
 ## Writing code
 
-Apply LANGSEC (language-theoretic security): keep different languages in separate files rather than nesting them. For example, a Python script must launch a separate Bash file, not embed a multiline Bash string.
+Before designing, implementing, or reviewing code, configuration, or tests, read
+[Change with evidence](~/.agents/skills/references/change-with-evidence.md) for language separation,
+compatibility, single authority, CLI output, and API guarantees.
 
 Read surrounding context before edits, investigations, or audits; do not draw broad conclusions from search snippets.
 
@@ -99,37 +102,11 @@ Start with the relevant `jj log`; use `jj file annotate` and `jj diff -r <rev> <
 Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
-### Compatibility
-
-Do not preserve compatibility for internal interfaces whose producers and consumers change and deploy together. Preserve compatibility at external, persisted-data, protocol, and independently deployed boundaries, or when justified by a historical constraint.
-
 ### Source integrity
 
 Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
 
 Before editing outside the active repository, verify that it is an authoritative source checkout and that the user intends work there. If repository tooling cannot inspect it outside the protected workspace, ask to switch repositories or provide a writable checkout; do not mutate it directly.
-
-### Single authority
-
-When the same value appears across multiple consumers, choose one authoritative representation and derive the others from it. Consumers should refer to stable roles or interfaces rather than repeat filenames, paths, commands, identifiers, defaults, or other change-prone constants.
-
-Add a regression test showing that changing the authority updates consumers without corresponding edits.
-
-### Logging
-
-Default CLI output must be human-scannable. Show the action, material inputs,
-current phase, result, and next action; keep hashes and internal data in
-receipts or explicit machine-readable output. Report failures once, stating
-what failed, why, cleanup/publication status, and recovery action. Use stdout
-for results and stderr for progress or diagnostics. Test representative
-success and failure output as a user-facing contract.
-
-### Distinguish guarantees from details
-
-API guarantees between architecture boundaries must be explicitly documented.
-Do not depend on internal details, exact source code, or coincidentally convenient properties.
-This applies WHENEVER there is an architecture boundary, even when writing tests for code you wrote yourself.
-Consult the "Principles" section of `architecture-design` for what constitutes a boundary.
 
 ## Jujutsu and commits
 

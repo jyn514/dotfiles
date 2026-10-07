@@ -16,6 +16,15 @@ matching the group's glob without adding manifest entries. The tmux script
 sources are symlinks to their implementations in `libexec/tmux/` and `bin/`;
 edit those implementations, not copies.
 
+## Agent instructions
+
+The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
+to [Change with evidence](../skills/references/change-with-evidence.md), a plain
+reference under the existing `~/.agents/skills` directory link. The sandbox's
+live skills mount exposes it to existing workers without a new mount or restart.
+Reload the harness's instructions after changing the route. The reference is not
+an `@` include or registered skill, so its rules stay out of the startup prompt.
+
 ## Pi
 
 See [Pi configuration](pi-agent/README.md) for installation, machine-local state,

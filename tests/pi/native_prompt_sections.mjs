@@ -410,3 +410,128 @@ for (const guest of [false, true]) {
     assert.ok(editors[4].text.includes(secondMarker), "capture resumes in the reloaded runtime");
   });
 }
+
+// Exercise the actual client route and shared/reference sources, not a second
+// copy of their policy prose. Only the reference's explicit read reaches tools.
+test("native prompt expands shared instructions but reads task evidence only explicitly", async (t) => {
+  const { copyFile, cp, realpath } = await import("node:fs/promises");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { fauxToolCall } = await import(pathToFileURL(resolve(aiPackageDir, aiManifest.exports["."].import)).href);
+  const repository = resolve(extensionDir, "../../..");
+  const root = await mkdtemp(join(tmpdir(), "pi-native-evidence-route-"));
+  const keys = ["HOME", "CODEX_SANDBOX_TOOL_CONTAINER", "CODEX_SANDBOX_GUEST_CWD",
+    "CODEX_SANDBOX_PI_RESOURCE_PATHS", "CODEX_SANDBOX_PREVIOUS_CWD"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  t.after(async () => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  for (const key of keys) delete process.env[key];
+  const home = join(root, "home");
+  process.env.HOME = home;
+  const cwd = join(root, "project");
+  const agentDir = join(home, ".pi/agent");
+  await Promise.all([cwd, agentDir, join(home, ".agents"), join(root, "checkout")]
+    .map((path) => mkdir(path, { recursive: true })));
+  const manifest = JSON.parse(await readFile(join(repository, "install.conf.json"), "utf8"));
+  const destinations = ["$HOME/.agents/shared.md", "$HOME/.agents/skills"];
+  const links = {};
+  const defaults = [];
+  for (const entry of manifest) {
+    if (entry.defaults) defaults.push(entry);
+    for (const [destination, spec] of Object.entries(entry.link ?? {})) {
+      assert.notEqual(destination, "$HOME/.agents/change-with-evidence.md", "no new top-level link");
+      assert.notEqual(destination, "$HOME/.agents/skills/references/change-with-evidence.md", "no individual link");
+      if (!destinations.includes(destination)) continue;
+      assert.equal(links[destination], undefined, "one authority per installed role");
+      links[destination] = spec;
+      const source = typeof spec === "string" ? spec : spec.path;
+      await cp(join(repository, source), join(root, "checkout", source), { recursive: true });
+    }
+  }
+  assert.deepEqual(Object.keys(links).sort(), destinations.toSorted());
+  const config = join(root, "checkout/install.conf.json");
+  await writeFile(config, JSON.stringify([...defaults, { link: links }]));
+  await promisify(execFile)(join(repository, "vendor/dotbot/bin/dotbot"),
+    ["-d", join(root, "checkout"), "-c", config], { env: { ...process.env, HOME: home }, cwd: root });
+  const skillsPath = join(home, ".agents/skills");
+  const skillsSpec = links["$HOME/.agents/skills"];
+  assert.equal(await realpath(skillsPath),
+    join(root, "checkout", typeof skillsSpec === "string" ? skillsSpec : skillsSpec.path));
+  const instructionsPath = join(agentDir, "AGENTS.md");
+  await copyFile(join(repository, "config/pi-agent/AGENTS.md"), instructionsPath);
+  const client = await readFile(instructionsPath, "utf8");
+  const shared = await readFile(join(home, ".agents/shared.md"), "utf8");
+  const routes = [...shared.matchAll(/\[Change with evidence\]\(([^)]+)\)/g)];
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0][1], "~/.agents/skills/references/change-with-evidence.md");
+  const referencePath = join(home, routes[0][1].slice(2));
+  const reference = await readFile(referencePath, "utf8");
+  assert.ok(!reference.startsWith("---"), "plain Markdown reference has no skill frontmatter");
+  const referenceParagraphs = reference.trim().split(/\n\s*\n/)
+    .filter((paragraph) => !paragraph.startsWith("#"));
+  assert.ok(referenceParagraphs.length > 0, "reference must contain task rules");
+  const faux = fauxProvider({ provider: "native-evidence-route", api: "anthropic-messages" });
+  const requests = [];
+  // Native tool declarations carry executable functions; capture only their
+  // JSON projection alongside the text transcript consumed by the provider.
+  const capture = (context) => {
+    requests.push({ messages: JSON.parse(JSON.stringify(context.messages)) });
+    return fauxAssistantMessage("offline evidence route check");
+  };
+  faux.setResponses([capture, (context) => {
+    requests.push({ messages: JSON.parse(JSON.stringify(context.messages)) });
+    return fauxAssistantMessage([fauxToolCall("read", { path: referencePath })], { stopReason: "toolUse" });
+  }, capture]);
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+  const modelRuntime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(), modelsPath: null,
+    modelsStorePath: join(agentDir, "models-store.json"), allowModelNetwork: false, refreshOnCreate: false,
+  });
+  const loader = new DefaultResourceLoader({
+    cwd, agentDir, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    additionalSkillPaths: [skillsPath],
+    additionalExtensionPaths: [join(extensionDir, "pi-instruction-includes.ts")],
+    agentsFilesOverride: () => ({ agentsFiles: [{ path: instructionsPath, content: client }] }),
+    extensionFactories: [(pi) => { pi.registerProvider(faux.provider); }],
+  });
+  await loader.reload();
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const skillMetadata = loader.getSkills().skills;
+  assert.ok(skillMetadata.length > 0, "whole skills directory is actually scanned");
+  assert.ok(skillMetadata.every((skill) => !skill.filePath.includes("/references/")),
+    "references must not become startup skill metadata");
+  assert.ok(!JSON.stringify(loader.getSkills()).includes(reference.trim()), "reference body is not metadata");
+  const { session, extensionsResult } = await createAgentSession({
+    cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+    sessionManager: SessionManager.inMemory(cwd), model: faux.getModel(), tools: ["read"],
+  });
+  t.after(() => session.dispose());
+  assert.deepEqual(extensionsResult.errors, []);
+  await session.prompt("Prepare a startup prompt without opening task references.");
+  assert.equal(requests.length, 1, session.messages.at(-1)?.errorMessage);
+  const prepared = systems(requests[0]).map(getSystemMessageText).join("\n");
+  assert.ok(prepared.includes(client.trim()), "native prompt retains the actual client route");
+  assert.ok(prepared.includes(shared.trim()), "native prompt expands the authoritative shared rules");
+  assert.ok(prepared.includes(routes[0][0]), "the task reference remains a Markdown route");
+  for (const paragraph of referenceParagraphs) {
+    assert.ok(!prepared.includes(paragraph), "task reference body must not enter the startup prompt");
+  }
+  assert.equal(session.messages.some((message) => message.role === "toolResult"), false);
+  await session.prompt("Explicitly read the Change with evidence reference now.");
+  assert.equal(requests.length, 3, "the explicit read and its result reach the offline provider");
+  const readResult = requests[2].messages.find((message) => message.role === "toolResult" && message.toolName === "read");
+  assert.ok(readResult, "the real native read tool returns the installed reference");
+  assert.equal(readResult.isError, false);
+  assert.ok(readResult.content.some((block) => block.type === "text" && block.text.includes(reference.trim())));
+  for (const request of requests) {
+    for (const system of systems(request)) {
+      assert.ok(!getSystemMessageText(system).includes(reference.trim()), "explicit reading must not auto-include the body");
+    }
+  }
+});

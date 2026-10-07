@@ -36,6 +36,12 @@ Copy or symlink the desired skill directories into the client's user or project 
 
 This repository's `./setup dotfiles` command links the complete `skills/` directory to `~/.agents/skills/`.
 
+`references/` contains shared on-demand guidance, not registered skills.
+[Change with evidence](references/change-with-evidence.md) supplies code, configuration,
+and test standards when the shared agent instructions request it. Plain reference
+files add no startup skill descriptions. The sandbox's existing live skills mount
+makes reference changes readable without restarting its worker.
+
 ## Publish a release
 
 The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change. `dev/publish-skills` stages this file as the package-root `README.md` without changing the repository root README.

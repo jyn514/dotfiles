@@ -1666,8 +1666,11 @@ class CodexSandboxTest(unittest.TestCase):
         skills = self.home / ".agents" / "skills"
         skills.rmdir()
         source = self.root / "tracked-skills"
-        source.mkdir()
+        shutil.copytree(ROOT / "skills", source)
         skills.symlink_to(source, target_is_directory=True)
+        relative_reference = Path("references/change-with-evidence.md")
+        reference = source / relative_reference
+        self.assertEqual((ROOT / "skills" / relative_reference).read_bytes(), reference.read_bytes())
 
         launcher = runpy.run_path(str(LAUNCHER))
         state = SimpleNamespace(
@@ -1686,6 +1689,14 @@ class CodexSandboxTest(unittest.TestCase):
         mount = f"type=bind,src={source},dst=/home/codex/.agents/skills"
         self.assertIn(mount, self.final_run())
         self.assertNotIn(mount + ",readonly", self.final_run())
+        self.assertFalse(any("change-with-evidence.md" in argument for argument in self.final_run()),
+                         "the existing whole-directory mount carries references, not a new file mount")
+        # The fake runtime proves mount selection, not a real guest read. Inspect
+        # its live bind source directly: no staged copy or launcher rerun needed.
+        revision = reference.read_bytes() + b"\nLive reference revision.\n"
+        reference.write_bytes(revision)
+        self.assertEqual(revision, (state.skills_source / relative_reference).read_bytes())
+        self.assertEqual(revision, (skills / relative_reference).read_bytes())
 
     def test_host_pi_marks_guest_as_tool_worker(self) -> None:
         result = self.run_launcher(FAKE_WORKER_EXIT="17")

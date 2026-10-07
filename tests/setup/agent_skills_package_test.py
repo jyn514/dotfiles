@@ -95,7 +95,7 @@ Path(os.environ["CAPTURE"]).write_text(json.dumps({
     "has_skills": (package / "skills").is_dir(),
     "reference_files": {
         str(path.relative_to(package)): path.read_text(encoding="utf-8")
-        for path in (package / "skills").glob("*/references/*.md")
+        for path in (package / "skills").rglob("references/*.md")
     },
 }), encoding="utf-8")
 raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
@@ -126,9 +126,10 @@ raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
             self.assertTrue(staged["has_claude_plugin"])
             self.assertTrue(staged["has_claude_marketplace"])
             self.assertTrue(staged["has_skills"])
+            self.assertIn("skills/references/change-with-evidence.md", staged["reference_files"])
             self.assertEqual(staged["reference_files"], {
                 str(path.relative_to(ROOT)): path.read_text(encoding="utf-8")
-                for path in (ROOT / "skills").glob("*/references/*.md")
+                for path in (ROOT / "skills").rglob("references/*.md")
             })
             self.assertFalse(Path(staged["package"]).exists())
 
