@@ -31,6 +31,9 @@ its own window.
 
 ## Keybinding troubleshooting
 
+Use `tmux list-commands` to check command syntax supported by the installed
+version. tmux does not support `-h`; local man pages may be unavailable.
+
 Check the terminal's own mappings before changing a tmux binding. In
 [Kitty's configuration](../kitty/kitty.conf), Ctrl+Page Up/Down switches Kitty
 tabs and Shift+Page Up/Down scrolls Kitty's history. Kitty handles those keys
