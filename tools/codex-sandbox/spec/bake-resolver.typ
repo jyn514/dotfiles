@@ -7,15 +7,25 @@ project resolvers.
 Native, quiet `bake --print` resolves build settings; evaluate with controlled
 environment inputs rather than caching arbitrary Bake expressions by file bytes.
 
-Each context is a complete, small input directory. Capture and hash the Dockerfile
-and every local filesystem context, including named contexts. Require each
+Capture and hash the Dockerfile and selected inputs of every local filesystem
+context, including named contexts. Main contexts use `.dockerignore`, with a
+Dockerfile-specific ignore file taking precedence. Filter before copying and
+hashing, pruning excluded directories unless exceptions or required build controls
+need their contents. Retain the Dockerfile and selected ignore file in the snapshot;
+parse and capture the same ignore bytes. Named local contexts remain unfiltered.
+Require each
 Dockerfile to be inside its captured context; reject configurations that expose
 uncaptured local files to the builder. Named image dependencies use immutable
 image identities instead of filesystem snapshots.
 
 Hash paths, entry types, contents, relevant permissions, and symlink destinations.
-Initially reject escaping links, special files, and `.dockerignore`; keep developer artifacts
-outside these contexts. These restrictions belong to the bundled resolver, not
+Reject escaping links and special files among selected inputs; ignore files must
+be regular files rather than symlinks. Use docker-py 7.2.0's internal `Pattern`
+normalization and `fnmatchcase` implementation through the local adapter, with
+corrections for case sensitivity, wildcard exception traversal, and matching all
+ancestors. The pinned dependency and regression tests protect this internal SDK
+boundary; full BuildKit pattern equivalence is not guaranteed.
+These restrictions belong to the bundled resolver, not
 the common interface.
 
 Cache identity includes effective build settings, context contents, platform,

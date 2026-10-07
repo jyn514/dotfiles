@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
 import tempfile
 
@@ -17,7 +16,7 @@ from sandbox_runtime import RuntimeError
 from docker_runtime import BuildError
 from lima.docker_api import APIError
 
-CACHE_CONTRACT = 2
+CACHE_CONTRACT = 3
 
 
 def _cache_directory():
@@ -180,20 +179,41 @@ def target_graph(metadata, requested, platform):
     return sorter
 
 
-def _capture(root, source, destination, identity, include=None):
-    """Copy one complete local context while hashing its filesystem representation."""
+def _capture(root, source, destination, identity, include=None, *, dockerfile=None):
+    """Copy and hash selected inputs; main contexts use Docker ignore rules."""
     source = source.resolve(strict=True)
     if not source.is_dir() or not source.is_relative_to(root):
         raise RuntimeError('Bake contexts must stay beneath the repository root')
-    for ignored in ('.dockerignore',):
-        if (source / ignored).exists() or (source / ignored).is_symlink():
-            raise RuntimeError(f'captured Bake context cannot use {ignored}')
+    ignore = None
+    ignore_contents = None
+    matcher = None
+    required = set()
+    if dockerfile is not None:
+        required.add(dockerfile.as_posix())
+        specific = source / (dockerfile.as_posix() + '.dockerignore')
+        default = source / '.dockerignore'
+        ignore = specific if specific.exists() or specific.is_symlink() else default
+        if ignore.exists() or ignore.is_symlink():
+            if ignore.is_symlink() or not ignore.is_file():
+                raise RuntimeError(f'invalid Docker ignore file: {ignore}')
+            ignore_contents = ignore.read_bytes()
+            required.add(ignore.relative_to(source).as_posix())
+            try:
+                from dockerignore import DockerIgnore
+            except ModuleNotFoundError as error:
+                raise RuntimeError('Docker ignore support requires docker-py; run ./setup py') from error
+            try:
+                matcher = DockerIgnore(ignore_contents)
+            except (ValueError, UnicodeError) as error:
+                raise RuntimeError(f'invalid Docker ignore file {ignore}: {error}') from error
     destination.mkdir(parents=True)
     if include is None:
-        paths = list(source.rglob('*'))
+        paths = list(matcher.walk(source, required)) if matcher else list(source.rglob('*'))
     else:
         paths = []
-        for relative in include:
+        for relative in set(include) | required:
+            if matcher and relative not in required and matcher.ignored(relative):
+                continue
             path = (source / relative).resolve(strict=True)
             if not path.is_relative_to(source) or not path.is_file():
                 raise RuntimeError(f'captured Bake input is invalid: {relative}')
@@ -208,13 +228,15 @@ def _capture(root, source, destination, identity, include=None):
         identity.update(relative.as_posix().encode() + b'\0' + str(stat.S_IMODE(mode)).encode() + b'\0')
         target = destination / relative
         if stat.S_ISDIR(mode):
-            target.mkdir()
+            target.mkdir(parents=True, exist_ok=True)
             identity.update(b'd\0')
         elif stat.S_ISREG(mode):
-            data = path.read_bytes()
+            data = ignore_contents if path == ignore and ignore_contents is not None else path.read_bytes()
             identity.update(b'f\0' + hashlib.sha256(data).digest())
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, target)
+            # Build exactly the bytes hashed, including the ignore rules used
+            # to select this snapshot, even if the checkout changes meanwhile.
+            target.write_bytes(data)
             target.chmod(stat.S_IMODE(mode))
         elif stat.S_ISLNK(mode):
             link = path.readlink()
@@ -295,9 +317,6 @@ def _resolve(runtime, repo, requested, *, declaration=None, file=None, captures=
             if not context.is_dir() or not dockerfile.is_file():
                 raise RuntimeError(f'Bake target {name} has invalid build paths')
             paths[name] = context, dockerfile
-            specific_ignore = dockerfile.with_name(dockerfile.name + '.dockerignore')
-            if specific_ignore.exists() or specific_ignore.is_symlink():
-                raise RuntimeError(f'captured Bake context cannot use {specific_ignore.name}')
         images = {}
         pending_pins = {}
         while sorter.is_active():
@@ -319,7 +338,8 @@ def _resolve(runtime, repo, requested, *, declaration=None, file=None, captures=
                 captured = directory / 'contexts' / name / 'main'
                 context, dockerfile = paths[name]
                 include = captures.get(name) if captures is not None else None
-                _capture(repo, context, captured, identity, include)
+                _capture(repo, context, captured, identity, include,
+                         dockerfile=dockerfile.relative_to(context))
                 captured_contexts = {}
                 for alias, value in target.get('contexts', {}).items():
                     if value.startswith('target:'):

@@ -29,6 +29,7 @@ class Engine:
         self.images = {}
         self.builds = []
         self.built_files = []
+        self.context_files = []
         self.producer_status = 0
         self.build_status = 0
         self.before_build = None
@@ -58,6 +59,11 @@ class Engine:
         self.builds.append(targets)
         self.built_files.append({
             name: (Path(target['context']) / Path(target['dockerfile']).relative_to(target['context'])).read_bytes()
+            for name, target in targets.items()
+        })
+        self.context_files.append({
+            name: {path.relative_to(target['context']).as_posix(): path.read_bytes()
+                   for path in Path(target['context']).rglob('*') if path.is_file()}
             for name, target in targets.items()
         })
         for target in targets.values():
@@ -208,17 +214,146 @@ class BakeTest(unittest.TestCase):
         resolve(self.engine, self.repo, ['base'])
         self.assertEqual(b'FROM scratch\n', self.engine.built_files[0]['base'])
 
-    def test_ignore_files_and_escaping_links_are_rejected(self):
-        for path, setup in (
-            (self.repo / 'ci/.dockerignore', lambda path: path.write_text('ignored')),
-            (self.repo / 'ci/base.Dockerfile.dockerignore', lambda path: path.write_text('ignored')),
-            (self.repo / 'ci/escape', lambda path: path.symlink_to('../proxy.Dockerfile')),
-        ):
-            with self.subTest(path=path.name):
-                setup(path)
-                with self.assertRaises(RuntimeError):
+    def test_escaping_context_link_is_rejected(self):
+        (self.repo / 'ci/escape').symlink_to('../proxy.Dockerfile')
+        with self.assertRaises(RuntimeError):
+            resolve(self.engine, self.repo, ['base'])
+
+    def test_ignore_filters_before_capture_and_ignored_changes_preserve_cache(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        (context / '.dockerignore').write_text('target\n')
+        (context / 'target').mkdir()
+        ignored = context / 'target/large'
+        ignored.write_text('large build artifact')
+        scan = bake.os.scandir
+
+        def no_ignored_walk(path):
+            if not isinstance(path, int):
+                self.assertNotEqual(Path(path), context / 'target')
+            return scan(path)
+
+        with mock.patch.object(bake.os, 'scandir', side_effect=no_ignored_walk):
+            first = resolve(self.engine, self.repo, ['base'])
+        self.assertEqual({'base.Dockerfile', '.dockerignore'},
+                         set(self.engine.context_files[-1]['base']))
+        ignored.write_text('changed')
+        (context / 'target/new').touch()
+        self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
+        (context / 'included').write_text('one')
+        self.assertNotEqual(first, resolve(self.engine, self.repo, ['base']))
+
+    def test_known_sdk_divergences_match_buildkit_payloads(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        cases = [
+            ('README.md\n', ['README.md', 'readme.md'], {'readme.md'}),
+            ('**\n!**/a.txt\n', ['foo/a.txt', 'foo/bar/a.txt', 'target/a.txt'],
+             {'foo/a.txt', 'foo/bar/a.txt', 'target/a.txt'}),
+            ('**/cache\n!cache/keep.txt\n', ['cache/drop.txt', 'cache/keep.txt'],
+             {'cache/keep.txt'}),
+        ]
+        for rules, files, expected in cases:
+            with self.subTest(rules=rules):
+                (context / '.dockerignore').write_text(rules)
+                for name in files:
+                    path = context / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(name)
+                resolve(self.engine, self.repo, ['base'])
+                actual = set(self.engine.context_files[-1]['base'])
+                self.assertEqual(expected, actual & set(files))
+                self.assertIn('base.Dockerfile', actual)
+                self.assertIn('.dockerignore', actual)
+                for name in files:
+                    (context / name).unlink()
+
+    def test_specific_ignore_overrides_default_and_rule_changes_invalidate(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        (context / '.dockerignore').write_text('keep\n')
+        specific = context / 'base.Dockerfile.dockerignore'
+        specific.write_text('drop\n')
+        (context / 'keep').touch()
+        (context / 'drop').touch()
+        first = resolve(self.engine, self.repo, ['base'])
+        actual = self.engine.context_files[-1]['base']
+        self.assertIn('keep', actual)
+        self.assertNotIn('drop', actual)
+        specific.write_text('keep\n')
+        self.assertNotEqual(first, resolve(self.engine, self.repo, ['base']))
+        actual = self.engine.context_files[-1]['base']
+        self.assertNotIn('keep', actual)
+        self.assertIn('drop', actual)
+
+    def test_comments_bom_and_ordered_exceptions(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        (context / '.dockerignore').write_text('\ufeff# comment\n\n drop/ \n!drop/keep\ndrop/keep\n')
+        (context / 'drop').mkdir()
+        (context / 'drop/keep').touch()
+        (context / 'visible').touch()
+        resolve(self.engine, self.repo, ['base'])
+        actual = self.engine.context_files[-1]['base']
+        self.assertIn('visible', actual)
+        self.assertNotIn('drop/keep', actual)
+
+    def test_ignored_special_files_do_not_block_capture(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        bake.os.mkfifo(context / 'pipe')
+        (context / '.dockerignore').write_text('pipe\n')
+        resolve(self.engine, self.repo, ['base'])
+        self.assertNotIn('pipe', self.engine.context_files[-1]['base'])
+        (context / '.dockerignore').write_text('')
+        with self.assertRaises(RuntimeError):
+            resolve(self.engine, self.repo, ['base'])
+
+    def test_explicit_inputs_still_apply_ignore_and_keep_build_controls(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        (context / '.dockerignore').write_text('**\n!keep\n')
+        (context / 'keep').touch()
+        (context / 'drop').touch()
+        resolve(self.engine, self.repo, ['base'], captures={'base': ['keep', 'drop']})
+        self.assertEqual({'base.Dockerfile', '.dockerignore', 'keep'},
+                         set(self.engine.context_files[-1]['base']))
+
+    def test_ignore_snapshot_uses_the_rules_read_before_checkout_mutation(self):
+        self.engine.metadata['target'].pop('proxy')
+        context = self.repo / 'ci'
+        ignore = context / '.dockerignore'
+        ignore.write_text('drop\n')
+        (context / 'keep').touch()
+        (context / 'drop').touch()
+        read_bytes = Path.read_bytes
+
+        def read_and_mutate(path):
+            data = read_bytes(path)
+            if path == ignore:
+                ignore.write_text('keep\n')
+            return data
+
+        with mock.patch.object(Path, 'read_bytes', read_and_mutate):
+            resolve(self.engine, self.repo, ['base'])
+        actual = self.engine.context_files[-1]['base']
+        self.assertEqual(b'drop\n', actual['.dockerignore'])
+        self.assertIn('keep', actual)
+        self.assertNotIn('drop', actual)
+
+    def test_invalid_ignore_file_fails_before_building(self):
+        self.engine.metadata['target'].pop('proxy')
+        ignore = self.repo / 'ci/.dockerignore'
+        for contents in (b'!\n', b'\xff'):
+            with self.subTest(contents=contents):
+                ignore.write_bytes(contents)
+                with self.assertRaisesRegex(RuntimeError, 'invalid Docker ignore file'):
                     resolve(self.engine, self.repo, ['base'])
-                path.unlink()
+        ignore.unlink()
+        ignore.symlink_to('base.Dockerfile')
+        with self.assertRaisesRegex(RuntimeError, 'invalid Docker ignore file'):
+            resolve(self.engine, self.repo, ['base'])
+        self.assertEqual([], self.engine.builds)
 
     def test_external_context_symlink_is_ignored(self):
         link = self.repo / 'ci/container-python'

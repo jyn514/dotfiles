@@ -311,7 +311,7 @@ to an arbitrary Docker installation: they change inter-container filtering.
 
 Lima-Docker reads repository images from the version 2 resolver declared in
 `.agents/sandbox/proxy-commands.json`. The bundled Bake resolver evaluates its
-declared file with pinned Buildx, captures complete local inputs, and assigns
+declared file with pinned Buildx, captures selected local inputs, and assigns
 private content identities; repository tags do not control reuse.
 
 The `base` target supplies the agent base. Repository proxy manifests select

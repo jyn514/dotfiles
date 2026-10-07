@@ -108,6 +108,8 @@ Its [default-readiness record](lima/docker.md#default-readiness) distinguishes p
   The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and the Docker CLI used by the Lima-Docker VM.
   Image builds require network access on first use.
+- Run `./setup py` to install the Python dependencies, including docker-py for
+  `.dockerignore` support.
 - Put this repository's `bin/` on `PATH`;
   `pi` normally delegates agent sessions to `codex-sandbox`.
   `pi --export SESSION.jsonl [OUTPUT.html]` must put `--export` first and runs native Pi on the host,
@@ -137,7 +139,16 @@ transport failure is terminal and a possibly accepted operation is never replaye
 not yet perform this pre-connection retry; see [Flower R2 Keychain access](#flower-r2-keychain-access).
 Version 2 images declare one Bake file or project-command resolver and bind command and base image names.
 Resolver commands receive the versioned JSON contract in [the launcher interface](spec/launcher-interface.typ) and run against the admitted engine.
-The Bake resolver captures complete local contexts, assigns private content keys, and pins mutable upstream images by provider and platform.
+The Bake resolver captures local inputs, assigns private content keys, and pins mutable upstream images by provider and platform.
+Main contexts apply `.dockerignore`; a `<Dockerfile>.dockerignore` beside the
+selected Dockerfile takes precedence. Ignored trees are skipped before copying
+or hashing unless an exception requires visiting them. Changing ignored files
+does not invalidate the image. The snapshot retains the Dockerfile and selected
+ignore file so BuildKit uses the captured rules. Ignore files must be regular
+files, not symlinks. Named local contexts remain complete snapshots.
+The resolver uses docker-py's pattern implementation with local corrections for
+case sensitivity, wildcard exceptions, and ancestor matching. It does not promise
+complete equivalence with BuildKit's matcher for every pattern edge case.
 Ordinary resolution reuses saved pins, then local image digests, and queries the registry only when neither is available.
 It saves each ordinary resolution immediately so failed builds do not repeat registry lookups.
 When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resolver with base target `base`;
@@ -406,6 +417,17 @@ Run unit tests from the repository root:
 python3 -m unittest tools/codex-sandbox/tests/codex_sandbox_test.py
 python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
 ```
+
+To compare the bundled resolver's ignore filtering with BuildKit, run the
+disposable scratch-image probe against an existing Lima-Docker VM:
+
+```sh
+dev/test-environment env LIMA_HOME="$HOME/.lima" python3 tools/codex-sandbox/tests/bake_ignore_integration.py --state "$HOME/.local/state/codex-sandbox-docker"
+```
+
+The probe checks case sensitivity, wildcard exceptions, ancestor matching, and
+Dockerfile-specific ignore precedence through actual Bake builds and container
+exports. It removes its containers and tagged images after each case.
 
 Live Caddy checks in `tests/caddy_foundation_test.py` execute the pinned manifest
 for the Docker daemon's platform. Unit checks verify identity selection for both
