@@ -66,6 +66,33 @@ The selected Git metadata root has one owner: the launcher mounts it at the
 selected repository's `.git` path. Other Git metadata roots may receive
 protected or external mounts, but must not emit a second mount at that path.
 
+### Host instructions and guest-readable guidance
+
+Host Pi loads instructions from the host filesystem. `/reload` refreshes host
+resources, but does not restage configuration or replace guest mounts. An updated
+prompt can therefore point to a file that the guest cannot read.
+
+Guest visibility depends on how the resource is exposed:
+
+- **Staged configuration:** entries in the launcher's
+  [`STAGED_CONFIG`](codex-sandbox), including `~/.agents/shared.md`, are copied
+  at launch and mounted read-only. Host edits reach the guest on a fresh sandbox
+  launch, not through `/reload`. Adding a Dotbot link alone does not expose a new
+  standalone file in the guest.
+- **Live skills directory:** the resolved source of `~/.agents/skills` is bound
+  at `/home/codex/.agents/skills`. In-place edits and new files under that source
+  are readable without restarting the worker. Retargeting the installed directory
+  link requires a fresh sandbox launch to select the new source.
+
+Put on-demand guidance under the existing skills directory when it should remain
+live, such as `~/.agents/skills/references/change-with-evidence.md`. Plain reference
+files do not need skill registration or an additional mount.
+
+After changing an instruction route, reload host instructions, confirm guest
+routing is active, and use the agent's guest `read` tool on the advertised path.
+Check its contents against the authoritative source. Host-only Dotbot, packaging,
+or native Pi tests do not establish guest readability.
+
 ## Flower R2 Keychain access
 
 The [launcher interface](spec/launcher-interface.typ) makes optional services explicit.
