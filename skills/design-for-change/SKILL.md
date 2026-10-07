@@ -1,9 +1,11 @@
 ---
 name: design-for-change
-description: Apply jyn's design and testing preferences only when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, or regression-test strategy. Examples include changing a parser's accepted language or separating a CLI from its library. Do not load for routine edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice. Load once per coherent change; reload only when scope or governing constraints change.
+description: Apply jyn's design and testing preferences only when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, or regression-test strategy. Examples include changing a parser's accepted language or separating a CLI from its library. Do not load for routine edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice.
 ---
 
 # Design for Change
+
+Load once per coherent change; reload only when scope or governing constraints change.
 
 ## Model the domain
 
