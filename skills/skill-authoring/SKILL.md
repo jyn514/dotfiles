@@ -81,9 +81,9 @@ Do not prescribe tools unavailable in any target harness unless the skill includ
 Check both layers independently:
 
 - **Before loading:** does the description trigger on every intended request without claiming adjacent work?
-- **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition?
+- **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition? Check for rules that conflict, unclear precedence when rules interact, and edge cases where the next action is underspecified. State which rule takes priority or what the agent should do when it cannot resolve the conflict safely.
 
-Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
+Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. Also trace cases where two requirements interact; verify the instructions produce compatible actions or explicitly resolve the conflict. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
 ## 7. Validate and tighten
 
