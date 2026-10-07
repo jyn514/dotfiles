@@ -62,6 +62,13 @@ benefit or cost from uncertain attribution. Briefly report material benefits and
 costs, even when no change is warranted, rather than listing every file read.
 Record knowledge that another agent would otherwise have to reconstruct.
 
+For a material finding about a shared component, check known consumers outside
+the current repository. Report applicable unresolved follow-ups with the owning
+project, evidence reference, and affected version or configuration. Keep the
+explanation with its canonical owner; use pointers rather than duplicate accounts.
+These follow-ups do not authorize edits elsewhere or block completion of the
+original scope.
+
 Use that assessment to decide whether process improvements are warranted.
 
 For each suggestion, name the affected owner and the failure it would prevent. Prefer a canonical documentation owner, a reusable skill only for recurring workflows or hard constraints, and tooling when mechanical enforcement or diagnostics are possible. Route implementation to `technical-docs`, `skill-authoring`, `cleanup-triage`, or another owning skill rather than duplicating its procedure here.

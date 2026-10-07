@@ -100,6 +100,8 @@ Start with the relevant `jj log`; use `jj file annotate` and `jj diff -r <rev> <
 Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
+When unexplained behavior concerns shared tooling, search its owner, known local consumers, and prior sessions by component name—not only the current repository. Read the supporting evidence and check its version and applicability before reusing it. Stop when the question is settled.
+
 ### Source integrity
 
 Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
