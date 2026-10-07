@@ -187,6 +187,37 @@ class KeybindingTests(unittest.TestCase):
         self.press("C-k", "BSpace")
         self.wait_for(lambda: self.value("#{window_id}") == other)
 
+    def test_alt_w_cycles_active_pane_between_windows_and_wraps(self):
+        first = self.value("#{window_id}")
+        moving = self.tmux("split-window", "-P", "-F", "#{pane_id}", "sleep 90")
+        second = self.tmux("new-window", "-d", "-P", "-F", "#{window_id}", "sleep 90")
+        third = self.tmux("new-window", "-d", "-P", "-F", "#{window_id}", "sleep 90")
+        self.tmux("new-session", "-d", "-s", "other-session", "sleep 90")
+        for window in (second, third, first, second):
+            self.press("C-k", "M-w")
+            self.wait_for(lambda: self.value("#{window_id}") == window)
+            self.assertEqual(self.value("#{pane_id}"), moving)
+            self.assertEqual(self.value("#{window_panes}"), "2")
+            self.assertEqual(self.value("#{session_windows}"), "3")
+
+    def test_alt_w_joins_a_single_pane_window_and_removes_empty_source(self):
+        moving = self.value("#{pane_id}")
+        destination = self.tmux("new-window", "-d", "-P", "-F", "#{window_id}", "sleep 90")
+        self.tmux("set-option", "-g", "renumber-windows", "on")
+        self.press("C-k", "M-w")
+        self.wait_for(lambda: self.value("#{window_id}") == destination)
+        self.assertEqual(self.value("#{pane_id}"), moving)
+        self.assertEqual(self.value("#{window_panes}"), "2")
+        self.assertEqual(self.value("#{session_windows}"), "1")
+
+    def test_alt_w_preserves_layout_when_no_other_window_exists(self):
+        self.tmux("split-window", "sleep 90")
+        pane = self.value("#{pane_id}")
+        layout = self.value("#{window_layout}")
+        self.press("C-k", "M-w")
+        self.assertEqual(self.value("#{pane_id}"), pane)
+        self.assertEqual(self.value("#{window_layout}"), layout)
+
     def test_enter_matches_y_cleanup_in_both_copy_mode_tables(self):
         vi_y = self.tmux("list-keys", "-T", "copy-mode-vi", "y")
         action = vi_y[vi_y.index("send-keys"):]
