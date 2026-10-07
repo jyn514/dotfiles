@@ -1,8 +1,3 @@
----
-name: independent-plan
-description: Elaborate one design brief into a coherent repository-specific plan without exposure to sibling proposals. Use once per candidate during design deliberation when independent planning is needed to preserve meaningful alternatives.
----
-
 # independent-plan
 
 ## Purpose

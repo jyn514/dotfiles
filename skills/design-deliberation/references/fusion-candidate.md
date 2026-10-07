@@ -1,8 +1,3 @@
----
-name: fusion-candidate
-description: Construct at most one explicit synthesis from compatible, separable parts of existing design candidates, with provenance and composition risks. Use only after cross-critique identifies genuinely composable components; otherwise return no fusion.
----
-
 # fusion-candidate
 
 ## Purpose

@@ -1,8 +1,3 @@
----
-name: council-review
-description: Judge a fixed set of software-design candidates against shared criteria and evidence, returning a selection, equivalence, or abstention. Use after independent plans and cross-critique are complete; not for inventing or revising candidates.
----
-
 # council-review
 
 ## Purpose

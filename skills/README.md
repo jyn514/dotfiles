@@ -71,7 +71,14 @@ The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`
 
 ## Agent orchestration
 
-For agent-driven use, start with `design-deliberation`. It is a thin meta-skill that selects the smallest useful workflow and composes the narrower skills while preserving candidate isolation and explicit abstention.
+For agent-driven use, start with [design-deliberation](design-deliberation/SKILL.md).
+It selects the smallest useful workflow while preserving candidate isolation and
+explicit abstention. Its planning, critique, fusion, and review helpers are plain
+reference files, not registered skills: they add no descriptions to the startup
+catalog. Agents read the linked procedure when entering its phase or pass its
+text or resolved absolute path, plus the phase's inputs, to a subagent. They are
+not separate slash commands or named skills for subagent preloading. Copy the entire
+`design-deliberation/` directory when installing it individually.
 
 ### Focused new-tool workflow
 
@@ -83,10 +90,10 @@ For an uncertain design question:
 
 1. `pain-axis` — inspect repository/history evidence about where the current design has hurt.
 2. `design-space-scout` — produce three viable, materially distinct briefs.
-3. `independent-plan` — elaborate each brief independently, ideally in isolated subagents.
-4. `cross-critic` — compare the fixed candidates and identify assumptions, omissions, and incompatibilities.
-5. `fusion-candidate` — only if the critic finds cleanly composable parts, construct one explicit synthesis candidate.
-6. `council-review` — evaluate the fixed candidate set; choose, declare equivalence, or abstain.
+3. [independent-plan](design-deliberation/references/independent-plan.md) — elaborate each brief independently, ideally in isolated subagents.
+4. [cross-critic](design-deliberation/references/cross-critic.md) — compare the fixed candidates and identify assumptions, omissions, and incompatibilities.
+5. [fusion-candidate](design-deliberation/references/fusion-candidate.md) — only if the critic finds cleanly composable parts, construct one explicit synthesis candidate.
+6. [council-review](design-deliberation/references/council-review.md) — evaluate the fixed candidate set; choose, declare equivalence, or abstain.
 
 After choosing a design and before implementation:
 
@@ -114,7 +121,7 @@ You do not need the whole chain every time.
 
 - Small refactor: implement directly when ownership and invariants are clear; use `design-for-change` for unresolved design or test decisions, and `second-user` only when added machinery needs justification.
 - Simple configuration edit: inspect the diff and validate with the native parser; no design or completion-audit skill is required.
-- Architecture decision: `design-space-scout` → 3× `independent-plan` → `cross-critic` → `council-review`.
+- Architecture decision: use [design-deliberation](design-deliberation/SKILL.md) to run scouting, independent planning, critique, and fixed-set review.
 - Legacy subsystem: start with `pain-axis` before scouting.
 - Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its companion-skill links. Use `ratchet` only for established invariants or diagnosed failures.
 

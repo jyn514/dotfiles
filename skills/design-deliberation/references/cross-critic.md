@@ -1,8 +1,3 @@
----
-name: cross-critic
-description: Compare independently generated design plans without choosing, rewriting, or prematurely merging them. Use to expose strengths, assumptions, omissions, incompatibilities, missing design regions, and potentially composable parts before final review.
----
-
 # cross-critic
 
 ## Purpose

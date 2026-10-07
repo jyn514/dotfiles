@@ -55,6 +55,19 @@ class AgentSkillsPackageTest(unittest.TestCase):
         self.assertEqual(plugin["skills"], "./skills/")
         self.assertEqual(package["pi"]["skills"], ["skills"])
 
+    def test_design_phase_helpers_are_linked_references_not_skills(self) -> None:
+        skill_directory = ROOT / "skills/design-deliberation"
+        workflow = (skill_directory / "SKILL.md").read_text(encoding="utf-8")
+        for name in ("independent-plan", "cross-critic", "fusion-candidate", "council-review"):
+            with self.subTest(phase=name):
+                relative_path = f"references/{name}.md"
+                reference = skill_directory / relative_path
+                self.assertTrue(reference.is_file())
+                self.assertIn(f"]({relative_path})", workflow)
+                self.assertFalse(reference.read_text(encoding="utf-8").startswith("---"))
+                self.assertFalse((ROOT / "skills" / name).exists())
+                self.assertFalse(list(skill_directory.rglob("references/**/SKILL.md")))
+
     def test_publish_command_stages_the_skills_readme(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             temporary_path = Path(temporary)
@@ -80,6 +93,10 @@ Path(os.environ["CAPTURE"]).write_text(json.dumps({
     "has_claude_plugin": (package / ".claude-plugin/plugin.json").is_file(),
     "has_claude_marketplace": (package / ".claude-plugin/marketplace.json").is_file(),
     "has_skills": (package / "skills").is_dir(),
+    "reference_files": {
+        str(path.relative_to(package)): path.read_text(encoding="utf-8")
+        for path in (package / "skills").glob("*/references/*.md")
+    },
 }), encoding="utf-8")
 raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
 """,
@@ -109,6 +126,10 @@ raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
             self.assertTrue(staged["has_claude_plugin"])
             self.assertTrue(staged["has_claude_marketplace"])
             self.assertTrue(staged["has_skills"])
+            self.assertEqual(staged["reference_files"], {
+                str(path.relative_to(ROOT)): path.read_text(encoding="utf-8")
+                for path in (ROOT / "skills").glob("*/references/*.md")
+            })
             self.assertFalse(Path(staged["package"]).exists())
 
             failed_environment = environment | {"FAKE_NPM_EXIT": "23"}

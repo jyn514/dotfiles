@@ -5,7 +5,7 @@ description: Orchestrate the smallest useful workflow for uncertain software-des
 
 # design-deliberation
 
-Coordinate the design skills for uncertain software decisions. Select the smallest workflow that resolves the decision, preserve candidate independence, and stop before implementation unless requested. Delegate phase procedures to their owning skills; this skill owns routing and orchestration.
+Coordinate the design skills for uncertain software decisions. Select the smallest workflow that resolves the decision, preserve candidate independence, and stop before implementation unless requested. Delegate procedures to their owning skills or linked phase references; this skill owns routing and orchestration.
 
 ## Inputs
 
@@ -25,13 +25,19 @@ Do not ask `pain-axis` to select a project opportunity; it investigates a select
 
 ## Orchestrate a genuine design fork
 
-1. **Map options:** Ask `design-space-scout` for materially distinct viable briefs. Use fewer than three when fewer real options exist.
-2. **Elaborate independently:** Assign one `independent-plan` per viable brief. Each sees the shared task, constraints, evidence, and only its own brief. Give candidates stable opaque IDs outside the plans. If fewer than two viable plans survive, stop and report why.
-3. **Critique:** Ask `cross-critic` to compare the fixed plans without selecting or rewriting them. Give it rejected scout forks only after its initial comparison.
-4. **Consider fusion:** Ask `fusion-candidate` only if the critique identifies components that may compose cleanly. No fusion is a normal result; any synthesis remains an ordinary candidate with stated provenance and risks.
-5. **Review a fixed set:** Ask `council-review` to judge the candidates and critique. Do not add or rewrite candidates after review starts; hide candidate identity/provider where practical and do not treat ordering as meaningful. Accept `SELECT`, `EQUIVALENT`, or `ABSTAIN`; abstention means identify the missing evidence and cheapest useful inquiry.
+The planning, critique, fusion, and review procedures below are reference files,
+not registered skills. Read each linked file only when entering its phase. For a
+delegated phase, give the subagent the reference's full text or absolute path
+resolved from this skill directory, plus that phase's inputs. Do not pass these
+names as harness skills or preload unrelated phase references.
 
-Read each phase skill for its required inputs, constraints, and output; do not duplicate its procedure here.
+1. **Map options:** Ask `design-space-scout` for materially distinct viable briefs. Use fewer than three when fewer real options exist.
+2. **Elaborate independently:** Assign one [independent-plan](references/independent-plan.md) per viable brief. Each sees the shared task, constraints, evidence, and only its own brief. Give candidates stable opaque IDs outside the plans. If fewer than two viable plans survive, stop and report why.
+3. **Critique:** Ask [cross-critic](references/cross-critic.md) to compare the fixed plans without selecting or rewriting them. Give it rejected scout forks only after its initial comparison.
+4. **Consider fusion:** Ask [fusion-candidate](references/fusion-candidate.md) only if the critique identifies components that may compose cleanly. No fusion is a normal result; any synthesis remains an ordinary candidate with stated provenance and risks.
+5. **Review a fixed set:** Ask [council-review](references/council-review.md) to judge the candidates and critique. Do not add or rewrite candidates after review starts; hide candidate identity/provider where practical and do not treat ordering as meaningful. Accept `SELECT`, `EQUIVALENT`, or `ABSTAIN`; abstention means identify the missing evidence and cheapest useful inquiry.
+
+Use each phase reference for its required inputs, constraints, and output; do not duplicate its procedure here.
 
 ## After selection
 
