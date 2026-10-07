@@ -91,6 +91,8 @@ printf 'refs/heads/jj-publish %s refs/heads/jj-publish %040d\n' "$local_sha" 0 |
   jj push
 ''']
 new-branch = ["bookmark", "create", "-r=@-"]
+# Like git lg: commit metadata and the full commit message.
+lg = ["log", "--template", "builtin_log_detailed"]
 branch-log = ["log", "--revisions", "trunk()..@"]
 recent = ["log", "--no-graph", "--reversed", "--revisions", "working", "--template", "recent"]
 conflicts = ["log", "--no-graph", "-T", "show_conflicts", "-r", "with_conflicts"]
