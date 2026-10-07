@@ -29,7 +29,8 @@ The wrapper requires Python 3 and creates a private HOME and Pi/XDG state
 directories. It removes them after the child exits normally, nonzero, or by
 forwarded signal, preserving stdin, stdout, stderr, and exit status. This is
 environment isolation, not a filesystem sandbox: commands can still write
-explicit paths outside HOME.
+explicit paths outside HOME. The wrapper clears inherited `JJ_CONFIG` so Jujutsu
+loads user configuration from the private HOME/XDG directories instead.
 
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides
 or resolves mise shims before changing HOME. Failed resolution stops the run before
