@@ -109,6 +109,30 @@ and `y` flags are stripped (they break match-position tracking).
 /find-sessions /^assistant says/m       # multiline mode preserved
 ```
 
+### Automatic filtering
+
+Both search entrypoints always exclude text-only user messages whose whole text
+is a `<pi_goal_continuation goal_id="…">…</pi_goal_continuation>` envelope.
+Mentions, quoted examples, partial envelopes, surrounding prose, and messages
+with images remain searchable. This recognizes a format, not authorship: a
+human-pasted whole envelope is excluded too. Custom messages are already outside
+the user/assistant search scope.
+
+Search also collapses matching copied records across session files when their
+nonempty entry ID and timestamp, complete message value, and hit kind agree.
+Independent repetitions, incomplete identities, changed message values, and
+repeated records within one file remain distinct. Scope filters apply first;
+the retained hit points to the first encountered eligible file, not necessarily
+the original session. Assistant text and tool-call hits remain separate.
+
+Results report `excludedGoalContinuations` and `duplicateHitsSuppressed`; the
+command shows these counts when nonzero. Counts cover only scanned records:
+search still stops at `maxResults` retained hits, not after scanning the archive.
+Neither filter marks coverage incomplete. Identity tracking stores at most
+`maxResults` fingerprints of complete bounded messages, not transcript contents.
+`read_session` remains unfiltered so you can inspect the actual surrounding
+messages.
+
 ## Configuration
 
 Environment variables:

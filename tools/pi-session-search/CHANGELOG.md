@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Always exclude whole text-only user goal-continuation envelopes from search
+  and collapse copied message hits across files by recorded identity. Report
+  `excludedGoalContinuations` and `duplicateHitsSuppressed`; `read_session`
+  remains unfiltered.
 - Reduce standing tool guidance by keeping query syntax and timestamp centering
   in parameter descriptions. Preserve focused searches, tool-call search advice,
   contextual reads, and deduplication; parameters, defaults, and runtime behavior

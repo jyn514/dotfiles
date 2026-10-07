@@ -24,9 +24,9 @@ const MAX_RECORD_BYTES = 5 * 1024 * 1024;
 const CHUNK_BYTES = 64 * 1024;
 const BASE_TIME = Date.parse("2026-04-23T06:00:00.000Z");
 
-function message(text: string, index = 0, role = "user"): string {
+function message(text: string, index = 0, role = "user", id?: string): string {
 	return JSON.stringify({
-		type: "message",
+		type: "message", id,
 		timestamp: new Date(BASE_TIME + index * 1000).toISOString(),
 		message: { role, content: text },
 	});
@@ -95,7 +95,7 @@ describe("streaming JSONL records", () => {
 		const fd = openSync(sessionFile, "w");
 		try {
 			writeFileSync(fd, header + "\n");
-			for (let i = 0; i < count; i++) writeFileSync(fd, message("x".repeat(60 * 1024), i) + "\n");
+			for (let i = 0; i < count; i++) writeFileSync(fd, message("heap-copy-needle" + "x".repeat(60 * 1024), i, "user", `heap-${i}`) + "\n");
 			writeFileSync(fd, message("bounded-heap-near-end-needle", count) + "\n");
 		} finally {
 			closeSync(fd);
@@ -119,6 +119,10 @@ const window = await readSessionWindow({
 });
 assert.match(window, /Showing messages 1101–1101 of 1101/);
 assert.match(window, /bounded-heap-near-end-needle/);
+// Isolate identity tracking from existing sliced-string snippet retention.
+const matching = await searchSessions({ query: "heap-copy-needle", maxResults: 1000, snippetBefore: 0, snippetAfter: 0 });
+assert.equal(matching.hits.length, 1000);
+assert.equal(matching.duplicateHitsSuppressed, 0);
 console.log("bounded-heap-success");
 `);
 		const child = spawnSync(process.execPath, [
@@ -360,23 +364,33 @@ console.log("bounded-heap-success");
 			}>;
 		};
 		const tools = new Map<string, CapturedTool>();
-		// This mock implements only the registration surface used by the extension.
+		let command: Parameters<ExtensionAPI["registerCommand"]>[1] | undefined;
+		let commandMessage: Parameters<ExtensionAPI["sendMessage"]>[0] | undefined;
+		// This mock captures only the registration and delivery surfaces used here.
 		const api = {
 			registerTool(tool: CapturedTool) { tools.set(tool.name, tool); },
-			registerCommand() {},
+			registerCommand(_name: string, config: Parameters<ExtensionAPI["registerCommand"]>[1]) { command = config; },
+			sendMessage(message: Parameters<ExtensionAPI["sendMessage"]>[0]) { commandMessage = message; },
 		} as unknown as ExtensionAPI;
 		registerExtension(api);
 		const search = tools.get("search_sessions");
 		const read = tools.get("read_session");
 		assert.ok(search);
 		assert.ok(read);
-		writeRecords(["x".repeat(MAX_RECORD_BYTES + 1), message("projection-needle")]);
+		const copied = message("projection-needle", 0, "user", "copied-record");
+		writeRecords([
+			"x".repeat(MAX_RECORD_BYTES + 1),
+			message('<pi_goal_continuation goal_id="goal-1">projection-needle</pi_goal_continuation>'),
+			copied,
+		]);
+		writeFileSync(join(root, "--streaming--", "2026-04-24T06-00-00-000Z_copy.jsonl"), [header, copied].join("\n") + "\n");
 		const ctx = { sessionManager: { getHeader: () => ({ id: "other-session" }) } };
 		const result = await search.execute("search-id", { query: "projection-needle" }, undefined, undefined, ctx);
 		assert.notEqual(result.isError, true);
 		assert.equal(result.content[0].type, "text");
 		const payload = JSON.parse(result.content[0].text ?? "") as {
 			count: number; skippedRecords: number; incompleteCoverage: boolean; hits: unknown[];
+			excludedGoalContinuations: number; duplicateHitsSuppressed: number;
 		};
 		assert.equal(payload.count, 1);
 		assert.equal(payload.hits.length, 1);
@@ -384,6 +398,20 @@ console.log("bounded-heap-success");
 		assert.equal(payload.incompleteCoverage, true);
 		assert.equal(result.details.skippedRecords, 1);
 		assert.equal(result.details.incompleteCoverage, true);
+		assert.equal(payload.excludedGoalContinuations, 1);
+		assert.equal(payload.duplicateHitsSuppressed, 1);
+		assert.equal(result.details.excludedGoalContinuations, 1);
+		assert.equal(result.details.duplicateHitsSuppressed, 1);
+		for (const [key, value] of Object.entries(result.details)) {
+			assert.deepEqual((payload as Record<string, unknown>)[key], value);
+		}
+		assert.ok(command);
+		// The command uses only the header ID and notification methods of its context.
+		const commandCtx = { ...ctx, ui: { notify() {} } } as unknown as Parameters<typeof command.handler>[1];
+		await command.handler("projection-needle", commandCtx);
+		assert.ok(commandMessage);
+		assert.match(String(commandMessage.content), /Excluded 1 goal continuations; suppressed 1 copied hits/);
+		assert.match(String(commandMessage.content), /Incomplete coverage: skipped 1 oversized records?\b/);
 		const window = await read.execute("read-id", { sessionFile }, undefined, undefined, ctx);
 		assert.notEqual(window.isError, true);
 		assert.match(window.content[0].text ?? "", /Incomplete coverage: skipped 1 oversized records?\b/);
@@ -398,8 +426,24 @@ console.log("bounded-heap-success");
 		assert.equal(abortedSearch.details.count, 0);
 	});
 
+	it("compares complete messages beyond the search prefix without retaining their contents", async () => {
+		const first = message("prefix-needle " + "x".repeat(300 * 1024) + "first", 0, "user", "same-id");
+		const changed = message("prefix-needle " + "x".repeat(300 * 1024) + "changed", 0, "user", "same-id");
+		writeRecords([first]);
+		writeFileSync(join(root, "--streaming--", "2026-04-24T06-00-00-000Z_copy.jsonl"), [header, changed, first].join("\n") + "\n");
+		const result = await searchSessions({ query: "prefix-needle" });
+		assert.equal(result.hits.length, 2, "different full messages must not collapse just because their snippets agree");
+		assert.equal(result.hits[0].snippet, result.hits[1].snippet);
+		assert.equal(result.duplicateHitsSuppressed, 1);
+		assert.equal(result.incompleteCoverage, false);
+	});
+
 	it("keeps earlier search hits when aborted during record processing", async () => {
-		writeRecords([message("partial-hit-first"), message("abort-processing-marker", 1), message("partial-hit-unvisited", 2)]);
+		writeRecords([
+			message("partial-hit-first"),
+			message('<pi_goal_continuation goal_id="goal-1">partial-hit</pi_goal_continuation>', 1),
+			message("abort-processing-marker", 2), message("partial-hit-unvisited", 3),
+		]);
 		const controller = new AbortController();
 		const originalParse = JSON.parse;
 		JSON.parse = function (text: string, reviver?: Parameters<typeof JSON.parse>[1]) {
@@ -412,6 +456,8 @@ console.log("bounded-heap-success");
 			assert.equal(controller.signal.aborted, true);
 			assert.equal(result.hits.length, 1);
 			assert.match(result.hits[0].snippet, /partial-hit-first/);
+			assert.equal(result.excludedGoalContinuations, 1);
+			assert.equal(result.duplicateHitsSuppressed, 0);
 			assert.equal(result.skippedRecords, 0);
 			assert.equal(result.incompleteCoverage, true);
 		} finally {

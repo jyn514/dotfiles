@@ -11,12 +11,13 @@ governing permissions and limitations under the License.
 */
 
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
+	formatHitsForCommand,
 	readSessionWindow,
 	searchSessions,
 } from "../index.ts";
@@ -276,5 +277,163 @@ describe("readSessionWindow (integration)", () => {
 			() => readSessionWindow({ sessionFile: symlinkPath }),
 			/Refusing to read outside/,
 		);
+	});
+});
+
+
+describe("automatic search filtering", () => {
+	let fixture: ReturnType<typeof buildFixtureSessions>;
+	let original: string | undefined;
+	const timestamp = "2026-04-23T06:48:10.000Z";
+	const envelope = '<pi_goal_continuation goal_id="goal-1">\nneedle update_goal\n</pi_goal_continuation>';
+	const record = (content: unknown, id: string | undefined = "record-1", role = "user") => ({
+		type: "message", id, timestamp, message: { role, content },
+	});
+	function writeSession(records: unknown[], name = "session-1", day = "23", dir = "--home-tester-project--"): string {
+		mkdirSync(join(fixture.root, dir), { recursive: true });
+		const file = join(fixture.root, dir, `2026-04-${day}T06-48-02-781Z_${name}.jsonl`);
+		writeFileSync(file, [
+			{ type: "session", id: name, cwd: "/home/tester/project" }, ...records,
+		].map((r) => JSON.stringify(r)).join("\n") + "\n");
+		return file;
+	}
+	beforeEach(() => {
+		original = process.env.PI_SESSION_SEARCH_ROOT;
+		fixture = buildFixtureSessions();
+		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+	});
+	afterEach(() => {
+		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
+		else process.env.PI_SESSION_SEARCH_ROOT = original;
+		rmSync(fixture.root, { recursive: true, force: true });
+	});
+
+	it("excludes whole text-only user envelopes, not mentions, quotations or mixed content", async () => {
+		const retained = [
+			"needle: use /goal and update_goal", `needle before ${envelope}`, `${envelope} needle after`,
+			`\`\`\`xml\n${envelope}\n\`\`\``, `> ${envelope}`,
+			envelope.replace('</pi_goal_continuation>', ''), envelope.replace('goal_id="goal-1"', 'goal_id=""'),
+			[{ type: "text", text: envelope }, { type: "image", data: "image" }],
+			[{ type: "text", text: envelope }, { type: "thinking", thinking: "extra content" }],
+			`${envelope}\nneedle discussion between envelopes\n${envelope}`,
+			[{ type: "text", text: envelope }, { type: "text", text: "needle discussion" }, { type: "text", text: envelope }],
+		];
+		writeSession([
+			record(envelope), record([{ type: "text", text: envelope }], "record-2"),
+			...retained.map((content, i) => record(content, `retained-${i}`)),
+			record(envelope, "assistant-envelope", "assistant"),
+		]);
+		const result = await searchSessions({ query: "needle" });
+		assert.equal(result.hits.length, retained.length + 1);
+		assert.equal(result.excludedGoalContinuations, 2);
+		assert.equal(result.duplicateHitsSuppressed, 0);
+		assert.equal(result.skippedRecords, 0);
+		assert.equal(result.incompleteCoverage, false);
+		assert.equal(result.hits.filter((hit) => hit.role === "assistant").length, 1);
+		// Reading still shows the actual transcript, not the search-filtered view.
+		const window = await readSessionWindow({ sessionFile: fixture.sessionFile });
+		assert.match(window, /Showing messages 1–14 of 14/);
+		assert.ok(window.includes(envelope));
+	});
+
+	it("filters before matching and maxResults, with counters even when nothing matches", async () => {
+		writeSession([record(envelope), record("ordinary needle", "ordinary")]);
+		const result = await searchSessions({ query: "needle", maxResults: 1 });
+		assert.equal(result.hits.length, 1);
+		assert.equal(result.hits[0].snippet, "ordinary needle");
+		assert.equal(result.excludedGoalContinuations, 1);
+		assert.equal(result.incompleteCoverage, false);
+		assert.match(formatHitsForCommand(result), /Excluded 1 goal continuations; suppressed 0 copied hits in scanned records/);
+		const unmatched = await searchSessions({ query: "absent" });
+		assert.equal(unmatched.excludedGoalContinuations, 1);
+		assert.match(formatHitsForCommand(unmatched), /No matches/);
+		assert.match(formatHitsForCommand(unmatched), /Excluded 1 goal continuations/);
+		assert.doesNotMatch(formatHitsForCommand(unmatched), /Incomplete coverage/);
+	});
+
+	it("collapses cross-file copies while preserving independent or incomplete identities", async () => {
+		const copied = record("copied needle");
+		const variants = [
+			record("copied needle", "different-id"),
+			{ ...copied, timestamp: "2026-04-23T06:48:11.000Z" },
+			{ ...copied, message: { ...copied.message, metadata: "different" } },
+			record("changed needle"),
+			{ ...record("idless needle"), id: undefined },
+			record("empty-id needle", ""),
+			{ ...record("no-timestamp needle"), timestamp: undefined },
+		];
+		writeSession([copied, ...variants]);
+		writeSession([copied, ...variants.slice(4)], "session-2", "24");
+		const result = await searchSessions({ query: "needle" });
+		assert.equal(result.hits.length, 11);
+		assert.equal(result.duplicateHitsSuppressed, 1);
+		assert.equal(result.incompleteCoverage, false);
+		assert.equal(result.hits.filter((hit) => hit.snippet === "copied needle").length, 4);
+		const hit = result.hits.find((hit) => hit.snippet === "changed needle");
+		assert.ok(hit);
+		assert.match(await readSessionWindow({ sessionFile: hit.sessionFile, aroundTimestamp: hit.timestamp }), /changed needle/);
+	});
+
+	it("does not collapse overflowing numeric values into null", async () => {
+		const ordinary = { ...record("numeric needle"), message: { role: "user", content: "numeric needle", metadata: null } };
+		const source = writeSession([ordinary]);
+		writeSession([ordinary], "session-2", "24");
+		// Write the numeric literal directly: JSON.stringify(Infinity) would
+		// already replace it with null before the reader sees it.
+		writeFileSync(source, JSON.stringify({ type: "session", id: "session-1" }) + "\n" +
+			JSON.stringify(ordinary).replace('"metadata":null', '"metadata":1e400') + "\n");
+		const result = await searchSessions({ query: "numeric needle" });
+		assert.equal(result.hits.length, 2);
+		assert.equal(result.duplicateHitsSuppressed, 0);
+		assert.equal(result.incompleteCoverage, false);
+	});
+
+	it("compares complete JSON values regardless of object-key order and keeps hit kinds separate", async () => {
+		const content = [
+			{ type: "text", text: "needle explanation" },
+			{ type: "toolCall", name: "needle_tool", arguments: { first: 1, second: 2 } },
+		];
+		writeSession([record(content, "assistant-record", "assistant")]);
+		writeSession([{
+			type: "message", timestamp, id: "assistant-record", message: {
+				content: [content[0], { arguments: { second: 2, first: 1 }, name: "needle_tool", type: "toolCall" }],
+				role: "assistant",
+			},
+		}], "session-2", "24");
+		writeSession([record([...content].reverse(), "assistant-record", "assistant")], "session-3", "25");
+		const result = await searchSessions({ query: "needle", includeToolCalls: true });
+		assert.deepEqual(result.hits.map((hit) => hit.role).sort(), ["assistant", "assistant", "toolCall", "toolCall"]);
+		assert.equal(result.duplicateHitsSuppressed, 2);
+	});
+
+	it("does not collapse repeated records within one file or consume the limit for copied hits", async () => {
+		const copied = record("copied needle");
+		writeSession([copied]);
+		writeSession([copied, copied, record("later needle", "later")], "session-2", "24");
+		const result = await searchSessions({ query: "needle", maxResults: 2 });
+		assert.equal(result.hits.length, 2);
+		assert.deepEqual(result.hits.map((hit) => hit.snippet), ["copied needle", "later needle"]);
+		assert.equal(result.duplicateHitsSuppressed, 2);
+		writeSession([copied, copied]);
+		const sameFile = await searchSessions({ query: "needle", until: "2026-04-23T23:59:59Z" });
+		assert.equal(sameFile.hits.length, 2);
+		assert.equal(sameFile.duplicateHitsSuppressed, 0);
+	});
+
+	it("applies cwd, session-date and current-session scope before deduplication", async () => {
+		const copied = record("scoped needle");
+		writeSession([copied]);
+		writeSession([copied], "session-2", "24", "--other-project--");
+		for (const scope of [
+			{ cwd: "other" }, { since: "2026-04-24T00:00:00Z" }, { excludeSessionId: "session-1" },
+			{ until: "2026-04-23T23:59:59Z" },
+		]) {
+			const result = await searchSessions({ query: "needle", ...scope });
+			assert.equal(result.hits.length, 1);
+			assert.equal(result.duplicateHitsSuppressed, 0);
+		}
+		const assistantOnly = await searchSessions({ query: "needle", role: "assistant" });
+		assert.equal(assistantOnly.hits.length, 0);
+		assert.equal(assistantOnly.duplicateHitsSuppressed, 0);
 	});
 });

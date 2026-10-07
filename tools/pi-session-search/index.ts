@@ -12,6 +12,7 @@ governing permissions and limitations under the License.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -194,6 +195,43 @@ export function extractText(content: unknown): string {
 	return parts.join("\n");
 }
 
+function isGoalContinuation(content: unknown): boolean {
+	if (typeof content !== "string") {
+		if (!Array.isArray(content) || content.length === 0) return false;
+		if (!content.every((block: unknown) => {
+			if (!block || typeof block !== "object") return false;
+			const part = block as { type?: unknown; text?: unknown };
+			return part.type === "text" && typeof part.text === "string";
+		})) return false;
+	}
+	// This recognizes a historical prompt format, not its author. A pasted
+	// whole envelope is excluded too; mixed content and quoted examples stay.
+	const text = extractText(content).trim();
+	const closing = "</pi_goal_continuation>";
+	return /^<pi_goal_continuation goal_id="[^"\r\n]+">/.test(text) &&
+		text.endsWith(closing) && text.indexOf(closing) === text.length - closing.length;
+}
+
+function copiedHitFingerprint(id: unknown, timestamp: unknown, message: object, kind: string): string | undefined {
+	if (typeof id !== "string" || !id || typeof timestamp !== "string" || !timestamp) return;
+	try {
+		// Compare complete JSON values, including fields outside the searchable
+		// text. Object-key order is not part of message identity; array order is.
+		const value = JSON.stringify([id, timestamp, message, kind], (_key, value: unknown) => {
+			// Parsed overflowing JSON numbers must not serialize as null and
+			// accidentally suppress a different message.
+			if (typeof value === "number" && !Number.isFinite(value)) throw new Error("Non-finite identity value");
+			return value && typeof value === "object" && !Array.isArray(value)
+				? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+				: value;
+		});
+		return createHash("sha256").update(value).digest("hex");
+	} catch {
+		// An identity we cannot serialize must not hide a valid search hit.
+		return undefined;
+	}
+}
+
 export function extractToolCallText(content: unknown): string {
 	if (!Array.isArray(content)) return "";
 	const parts: string[] = [];
@@ -246,6 +284,8 @@ export interface SearchResult {
 	truncated: boolean;
 	skippedRecords: number;
 	incompleteCoverage: boolean;
+	excludedGoalContinuations: number;
+	duplicateHitsSuppressed: number;
 }
 
 export async function searchSessions(opts: SearchOptions): Promise<SearchResult> {
@@ -264,6 +304,10 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	let skippedFiles = 0;
 	let truncated = false;
 	let skippedRecords = 0;
+	let excludedGoalContinuations = 0;
+	let duplicateHitsSuppressed = 0;
+	// Only retained hits claim identity, so memory is bounded by maxResults.
+	const retainedCopies = new Map<string, string>();
 
 	// Resolve the configured root once so we can apply the same symlink-
 	// containment check we already do in read_session to every subdirectory we
@@ -280,7 +324,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	try {
 		dirs = await readdir(root, { withFileTypes: true });
 	} catch {
-		return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
+		return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 	}
 
 	outer: for (const d of dirs) {
@@ -387,6 +431,10 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 					const role = msg.role;
 					if (roleFilter !== "any" && role !== roleFilter) continue;
 					if (role !== "user" && role !== "assistant") continue;
+					if (role === "user" && isGoalContinuation(msg.content)) {
+						excludedGoalContinuations += 1;
+						continue;
+					}
 
 					const haystacks: Array<{ kind: string; text: string }> = [];
 					const text = extractText(msg.content);
@@ -401,6 +449,15 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 						const haystack = h.text.length > MAX_HAYSTACK_BYTES ? h.text.slice(0, MAX_HAYSTACK_BYTES) : h.text;
 						const m = haystack.match(re);
 						if (!m) continue;
+						const fingerprint = copiedHitFingerprint(obj.id, obj.timestamp, msg, h.kind);
+						if (fingerprint) {
+							const retainedFile = retainedCopies.get(fingerprint);
+							if (retainedFile !== undefined && retainedFile !== full) {
+								duplicateHitsSuppressed += 1;
+								continue;
+							}
+							retainedCopies.set(fingerprint, full);
+						}
 						const idx = m.index ?? 0;
 						const snippet = haystack.slice(Math.max(0, idx - before), idx + after).trim();
 						hits.push({
@@ -437,7 +494,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 		const tb = Date.parse(b.timestamp);
 		return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
 	});
-	return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
+	return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 }
 
 interface WindowEntry {
@@ -573,12 +630,16 @@ export async function readSessionWindow(opts: {
 }
 
 export function formatHitsForCommand(result: SearchResult): string {
+	const filtering = result.excludedGoalContinuations || result.duplicateHitsSuppressed
+		? `Excluded ${result.excludedGoalContinuations} goal continuations; suppressed ${result.duplicateHitsSuppressed} copied hits in scanned records.`
+		: "";
 	const warning = !result.incompleteCoverage ? "" : result.skippedRecords || result.skippedFiles
 		? `Incomplete coverage: skipped ${result.skippedRecords} oversized record${result.skippedRecords === 1 ? "" : "s"}, ${result.skippedFiles} files.`
 		: "Incomplete coverage: search cancelled.";
 	if (result.hits.length === 0) {
 		return [
 			`No matches. (scanned ${result.scannedFiles} files, skipped ${result.skippedFiles})`,
+			filtering,
 			warning,
 		].filter(Boolean).join("\n");
 	}
@@ -586,6 +647,7 @@ export function formatHitsForCommand(result: SearchResult): string {
 	lines.push(
 		`${result.hits.length} hit${result.hits.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}, scanned ${result.scannedFiles} files:`,
 	);
+	if (filtering) lines.push(filtering);
 	if (warning) lines.push(warning);
 	for (const h of result.hits) {
 		lines.push("");
@@ -648,7 +710,7 @@ export default function (pi: ExtensionAPI) {
 		name: "search_sessions",
 		label: "Search prior pi sessions",
 		description:
-			"Search prior Pi session transcripts (~/.pi/agent/sessions) without resuming them. Use for prior discussions or decisions. Read-only.",
+			"Search prior Pi session transcripts (~/.pi/agent/sessions) without resuming them. Use for prior discussions or decisions. Excludes whole user goal-continuation envelopes and collapses recorded message copies across files. Read-only.",
 		promptSnippet: "Find prior pi sessions matching a query.",
 		promptGuidelines: [
 			"Use search_sessions with a focused query; narrow by cwd when the project is known.",
@@ -711,26 +773,23 @@ export default function (pi: ExtensionAPI) {
 					excludeSessionId,
 					signal,
 				});
+				const details = {
+					count: result.hits.length,
+					truncated: result.truncated,
+					skippedRecords: result.skippedRecords,
+					excludedGoalContinuations: result.excludedGoalContinuations,
+					duplicateHitsSuppressed: result.duplicateHitsSuppressed,
+					incompleteCoverage: result.incompleteCoverage,
+				};
+				const payload = {
+					...details,
+					scannedFiles: result.scannedFiles,
+					skippedFiles: result.skippedFiles,
+					hits: result.hits,
+				};
 				return {
-					content: [
-						{
-							type: "text",
-							text: JSON.stringify(
-								{
-									count: result.hits.length,
-									truncated: result.truncated,
-									scannedFiles: result.scannedFiles,
-									skippedFiles: result.skippedFiles,
-									skippedRecords: result.skippedRecords,
-									incompleteCoverage: result.incompleteCoverage,
-									hits: result.hits,
-								},
-								null,
-								2,
-							),
-						},
-					],
-					details: { count: result.hits.length, truncated: result.truncated, skippedRecords: result.skippedRecords, incompleteCoverage: result.incompleteCoverage },
+					content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+					details,
 				};
 			} catch (e) {
 				return {

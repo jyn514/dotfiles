@@ -16,8 +16,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
-import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
+import { discoverAndLoadExtensions, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { readSessionWindow, searchSessions } from "../index.ts";
 
 function parameterDescription(parameter: object): string {
 	assert.ok("description" in parameter);
@@ -63,5 +64,32 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 		assert.ok(guidelines.join("\n").length <= 400, "Keep standing guidance compact; document syntax in parameters");
 	} finally {
 		rmSync(sandbox, { recursive: true, force: true });
+	}
+});
+
+it("collapses native fork history but keeps a later independent repetition", async () => {
+	const root = mkdtempSync(join(tmpdir(), "pi-session-native-fork-"));
+	const original = process.env.PI_SESSION_SEARCH_ROOT;
+	process.env.PI_SESSION_SEARCH_ROOT = root;
+	try {
+		const dir = join(root, "--native-project--");
+		const source = SessionManager.create("/native/project", dir);
+		const message = { role: "user" as const, content: "native-copy-needle", timestamp: 1 };
+		source.appendMessage(message);
+		const file = source.getSessionFile();
+		assert.ok(file);
+		const fork = SessionManager.forkFrom(file, "/native/project", dir);
+		fork.appendMessage(message);
+		const result = await searchSessions({ query: "native-copy-needle" });
+		assert.equal(result.hits.length, 2, "the forked copy collapses; the newly recorded occurrence stays");
+		assert.equal(result.duplicateHitsSuppressed, 1);
+		assert.equal(result.incompleteCoverage, false);
+		for (const hit of result.hits) {
+			assert.match(await readSessionWindow({ sessionFile: hit.sessionFile, aroundTimestamp: hit.timestamp }), /native-copy-needle/);
+		}
+	} finally {
+		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
+		else process.env.PI_SESSION_SEARCH_ROOT = original;
+		rmSync(root, { recursive: true, force: true });
 	}
 });
