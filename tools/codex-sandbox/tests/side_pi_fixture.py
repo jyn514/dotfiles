@@ -139,20 +139,41 @@ if __name__ == "__main__":
     # it through the actual image connector and worker. No shared model state here.
     if len(sys.argv) != 1:
         raise SystemExit("expected owner, consumer, jj-real, route, or connector stdin")
-    request = sys.stdin.buffer.readline(8 * 1024 * 1024 + 1)
+    limit = 8 * 1024 * 1024 + 1
+    incoming = bytearray()
+    while b"\n" not in incoming and len(incoming) < limit:
+        chunk = os.read(sys.stdin.fileno(), min(65536, limit - len(incoming)))
+        if not chunk:
+            break
+        incoming.extend(chunk)
+    request, separator, _remainder = incoming.partition(b"\n")
     runtime = Path(os.environ["SIDE_PI_RUNTIME"])
     calls = runtime / "calls"
     calls.mkdir(exist_ok=True)
-    (calls / f"{uuid.uuid4()}.json").write_bytes(request)
+    (calls / f"{uuid.uuid4()}.json").write_bytes(request + separator)
     child = subprocess.Popen(["node", str(ROOT / "image/tool-connect.mjs")], stdin=subprocess.PIPE)
+
+    def forward_stdin():
+        try:
+            while chunk := os.read(sys.stdin.fileno(), 65536):
+                child.stdin.write(chunk)
+                child.stdin.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                child.stdin.close()
+            except BrokenPipeError:
+                pass
+
     try:
-        child.stdin.write(request)
+        # Keep EOF/cancellation forwarding separate from waiting for the connector:
+        # Pi leaves stdin open until a result arrives, including on socket failure.
+        # Raw reads avoid buffered-stdin locks during daemon-thread shutdown.
+        child.stdin.write(incoming)
         child.stdin.flush()
-        remainder = sys.stdin.buffer.read()
-        if remainder:
-            child.stdin.write(remainder)
-        child.stdin.close()
-        raise SystemExit(child.wait(timeout=10))
+        threading.Thread(target=forward_stdin, daemon=True).start()
+        raise SystemExit(child.wait())
     finally:
         if child.poll() is None:
             child.terminate()
