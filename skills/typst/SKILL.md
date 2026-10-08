@@ -2,7 +2,7 @@
 name: typst
 effort: low
 model: claude-haiku-4-5-20251001
-description: Write Typst (.typ) markup files. Use when creating or editing Typst documents — covers core syntax for markup, scripting, and common functions. Does not cover compilation or preview.
+description: Write Typst (.typ) markup, expressions, and layout. Use when creating Typst documents, changing markup or scripting, or working with unfamiliar Typst syntax. Do not use for prose-only edits that preserve existing markup, such as wording changes or renaming a command inside an existing raw span. Does not cover compilation or preview.
 ---
 
 # Writing Typst files
