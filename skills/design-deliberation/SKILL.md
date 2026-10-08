@@ -23,6 +23,8 @@ Coordinate the design skills for uncertain software decisions. Select the smalle
 
 Do not ask `pain-axis` to select a project opportunity; it investigates a selected area. Do not use `council-review` instead of available mechanical checks.
 
+Once a problem area is selected, name the user-visible outcome, the current baseline, and the difference that would justify changing it. Work through one complete affected case before expanding planning or review; keep the baseline in the comparison. Internal completeness or consistency is supporting evidence unless it is the governing goal. If the effect on that case remains unresolved, choose the next step for the evidence it adds about that case, not another abstract review. A worked case need not be a finished implementation or benchmark.
+
 ## Orchestrate a genuine design fork
 
 The planning, critique, fusion, and review procedures below are reference files,
