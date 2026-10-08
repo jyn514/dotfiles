@@ -98,13 +98,15 @@ If the command is not on `PATH`, invoke the linked file from this checkout. It s
 
 ## 7. Report and stop
 
-Report:
+Report only new information not already apparent from tool output or earlier messages:
 
-- completion or blockers;
-- verification evidence and its limits;
-- commits created or owned changes left uncommitted;
+- blockers or required work left unfinished;
 - required or recommended follow-ups;
 - material benefits and costs of the docs and skills used, with process improvements or the reason none is necessary;
 - anything else that would be hard for another agent to recover without reading the session log.
+
+Do not report commits or successful verification unless the user explicitly asks.
+Report failed or unavailable verification only when it leaves unresolved work or
+changes what the user can rely on.
 
 Completion requires every explicit requirement to be implemented or clearly recorded as blocked/deferred, every owned session change to be committed and verified, and unrelated work to remain protected. When title tooling is supported, the title must also be applied. A commit blocker leaves closeout incomplete.
