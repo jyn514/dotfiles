@@ -40,9 +40,16 @@ Web search uses stock request-payload and provider-event hooks, not the fork's
 `registerProviderTool()` API. It adds native search to Anthropic Messages,
 OpenAI/Azure/Codex Responses, and Google/Vertex requests without replacing local
 tool declarations. OpenAI search uses medium context; search options supplied by
-an earlier payload handler remain unchanged. Parsed citations are appended to the
-same assistant message, without repeating URLs already in its text. Both the
-installed SDK's `provider_event` and v0.99's `provider_stream_event` are supported.
+an earlier payload handler remain unchanged. On OpenAI/Azure/Codex Responses,
+finalized URL annotations convert provider citation markers into ordinary Markdown
+links on the same stored assistant message. Conversion requires an unambiguous
+match between the final provider text, its annotation positions, and Pi's text
+block; missing, invalid, or ambiguous annotations leave the text unchanged.
+Other sources are appended in a `Sources:` list without repeating URLs already
+in the answer. Streaming text can still show raw markers until the message ends.
+Run `/reload` to activate this in existing Pi processes; saved old messages are
+not rewritten. Both the installed SDK's `provider_event` and v0.99's
+`provider_stream_event` are supported.
 The selected model must identify a supported API; virtual selectors that hide the
 routed provider's API receive neither search injection nor search guidance.
 

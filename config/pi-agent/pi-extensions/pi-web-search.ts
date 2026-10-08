@@ -3,6 +3,7 @@ import {
   addWebSearchToPayload,
   appendWebSearchSources,
   createMetadataCollector,
+  linkWebSearchCitations,
   SUPPORTED_SEARCH_APIS,
 } from "./pi-web-search-core";
 
@@ -45,12 +46,12 @@ export default function webSearch(pi: ExtensionAPI) {
 
   pi.on("message_end", (event) => {
     if (event.message.role !== "assistant") return;
-    const sources = collector.metadata.sources;
+    const { sources, annotatedTexts } = collector.metadata;
     if (sources.length === 0) return;
     return {
       message: {
         ...event.message,
-        content: appendWebSearchSources(event.message.content, sources),
+        content: appendWebSearchSources(linkWebSearchCitations(event.message.content, annotatedTexts), sources),
       },
     };
   });

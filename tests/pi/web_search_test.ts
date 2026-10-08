@@ -5,6 +5,7 @@ import {
   addWebSearchToPayload,
   appendWebSearchSources,
   createMetadataCollector,
+  linkWebSearchCitations,
 } from "../../config/pi-agent/pi-extensions/pi-web-search-core";
 
 describe("provider web search extension", () => {
@@ -187,6 +188,7 @@ describe("native web search metadata", () => {
         { url: "https://example.com/c", title: "C" },
       ],
       searches: ["first query", "second query", "third query"],
+      annotatedTexts: [],
     });
   });
 
@@ -198,7 +200,7 @@ describe("native web search metadata", () => {
     payload.self = payload;
     const collector = createMetadataCollector();
     collector.observe(payload);
-    expect(collector.metadata).toEqual({ sources: [], searches: [] });
+    expect(collector.metadata).toEqual({ sources: [], searches: [], annotatedTexts: [] });
   });
 });
 
@@ -222,5 +224,157 @@ describe("web search citations", () => {
   test("does not duplicate citations already present in text", () => {
     const content = [{ type: "text", text: "See https://example.com/a." }];
     expect(appendWebSearchSources(content, [{ url: "https://example.com/a", title: "A" }])).toBe(content);
+  });
+});
+
+describe("position-bound inline citations", () => {
+  const marker = "\uE200cite\uE202turn1search0\uE201";
+  const otherMarker = "\uE200cite\uE202turn2search9\uE201";
+  const source = { type: "url_citation", url: "https://example.com/a", title: "A" };
+  const citation = (text: string, currentMarker = marker, resource = source) => ({
+    ...resource, start_index: text.indexOf(currentMarker), end_index: text.indexOf(currentMarker) + currentMarker.length,
+  });
+  const item = (id: string, text: string, annotations: unknown[]) => ({
+    type: "message", role: "assistant", id,
+    content: [{ type: "output_text", text, annotations }],
+  });
+  const collect = (...items: ReturnType<typeof item>[]) => {
+    const collector = createMetadataCollector();
+    for (const current of items) collector.observe({ type: "response.output_item.done", item: current });
+    collector.observe({ type: "response.completed", response: { output: structuredClone(items) } });
+    return collector.metadata;
+  };
+  const render = (text: string, metadata: ReturnType<typeof collect>) => appendWebSearchSources(
+    linkWebSearchCitations([{ type: "text", text }], metadata.annotatedTexts), metadata.sources,
+  );
+
+  test("links by position, not source discovery order or the turn search number", () => {
+    const text = `First ${marker}; second ${otherMarker}.`;
+    const b = { ...source, url: "https://example.com/b", title: "B" };
+    const metadata = collect(item("answer", text, [citation(text, otherMarker, b), citation(text)]));
+    expect(metadata.sources[0].url).toBe(b.url);
+    expect(render(text, metadata)).toEqual([
+      { type: "text", text: "First [A](<https://example.com/a>); second [B](<https://example.com/b>)." },
+    ]);
+    expect(metadata.annotatedTexts).toHaveLength(1); // Both final notifications describe the same item.
+  });
+
+  test("binds annotations to separate final output texts, preserving block fields", () => {
+    const first = `First ${marker}`;
+    const second = `Second ${marker}`;
+    const b = { ...source, url: "https://example.com/b", title: "B" };
+    const metadata = collect(item("second", second, [citation(second, marker, b)]), item("first", first, [citation(first)]));
+    expect(linkWebSearchCitations([
+      { type: "thinking", text: "untouched" },
+      { type: "text", text: first, textSignature: "opaque signature" },
+      { type: "text", text: second },
+    ], metadata.annotatedTexts)).toEqual([
+      { type: "thinking", text: "untouched" },
+      { type: "text", text: "First [A](<https://example.com/a>)", textSignature: "opaque signature" },
+      { type: "text", text: "Second [B](<https://example.com/b>)" },
+    ]);
+  });
+
+  test("keeps all URLs on a grouped marker, deduplicating repeated annotations", () => {
+    const grouped = "\uE200cite\uE202turn1search0\uE202turn1search1\uE201";
+    const text = `Claim ${grouped}`;
+    const a = citation(text, grouped);
+    const b = citation(text, grouped, { ...source, url: "https://example.com/b", title: "B" });
+    expect(render(text, collect(item("answer", text, [a, b, a])))).toEqual([
+      { type: "text", text: "Claim [A](<https://example.com/a>) [B](<https://example.com/b>)" },
+    ]);
+  });
+
+  for (const units of ["characters", "UTF-16"] as const) {
+    for (const inclusive of [false, true]) {
+      test(`supports ${units} offsets with ${inclusive ? "inclusive" : "exclusive"} ends after emoji`, () => {
+        const text = `😀 Claim ${marker}`;
+        const start = units === "characters" ? [..."😀 Claim "].length : "😀 Claim ".length;
+        const annotation = { ...source, start_index: start, end_index: start + marker.length - Number(inclusive) };
+        expect(render(text, collect(item("answer", text, [annotation])))).toEqual([
+          { type: "text", text: "😀 Claim [A](<https://example.com/a>)" },
+        ]);
+      });
+    }
+  }
+
+  test("offsets are local to each provider content part", () => {
+    const text = `Claim ${marker}`;
+    const current = item("answer", text, [citation(text)]);
+    current.content.unshift({ type: "output_text", text: "😀 Preface. ", annotations: [] });
+    expect(render(`😀 Preface. ${text}`, collect(current))).toEqual([
+      { type: "text", text: "😀 Preface. Claim [A](<https://example.com/a>)" },
+    ]);
+  });
+
+  test("unusable annotations keep the source list without changing prose or guessing links", () => {
+    const text = `Claim ${marker}`;
+    for (const invalid of [
+      { start_index: -1, end_index: marker.length },
+      { start_index: 6.5, end_index: 6 + marker.length },
+      { start_index: 6, end_index: NaN },
+      { start_index: 7, end_index: 6 + marker.length },
+      { start_index: 6, end_index: 500 },
+      { start_index: 6, end_index: 5 },
+      {},
+      { start_index: 0, end_index: 5 }, // Cited prose is not a provider marker.
+    ]) {
+      expect(render(text, collect(item("answer", text, [{ ...source, ...invalid }])))).toEqual([
+        { type: "text", text }, { type: "text", text: "Sources:\n- A: https://example.com/a" },
+      ]);
+    }
+    const unsafe = { ...citation(text), url: "javascript:alert(1)" };
+    expect(render(text, collect(item("answer", text, [unsafe])))).toEqual([{ type: "text", text }]);
+  });
+
+  test("does not attach citations to stale or ambiguous output text", () => {
+    const text = `Claim ${marker}`;
+    const a = item("a", text, [citation(text)]);
+    const b = item("b", text, [citation(text, marker, { ...source, url: "https://example.com/b", title: "B" })]);
+    const content = [{ type: "text", text }];
+    expect(linkWebSearchCitations(content, collect(a, b).annotatedTexts)).toEqual(content);
+    expect(linkWebSearchCitations([...content, ...content], collect(a).annotatedTexts)).toEqual([...content, ...content]);
+    const changed = [{ type: "text", text: `Changed ${marker}` }];
+    expect(linkWebSearchCitations(changed, collect(a).annotatedTexts)).toEqual(changed);
+  });
+
+  test("refuses offsets that identify different markers under different Unicode counting conventions", () => {
+    const text = `${"😀".repeat(marker.length)}${marker}${marker}`;
+    const annotation = { ...source, start_index: 2 * marker.length, end_index: 3 * marker.length };
+    expect(render(text, collect(item("answer", text, [annotation])))).toEqual([
+      { type: "text", text }, { type: "text", text: "Sources:\n- A: https://example.com/a" },
+    ]);
+  });
+
+  test("does not use a streamed URL without its final positioned annotation", () => {
+    const text = `Claim ${marker}`;
+    const collector = createMetadataCollector();
+    collector.observe({ type: "response.output_text.annotation.added", annotation: citation(text) });
+    collector.observe({ type: "response.output_item.done", item: item("answer", text, []) });
+    expect(render(text, collector.metadata)).toEqual([
+      { type: "text", text }, { type: "text", text: "Sources:\n- A: https://example.com/a" },
+    ]);
+  });
+
+  test("escaped URL destinations do not acquire duplicate source footers", () => {
+    const text = `Claim ${marker}`;
+    for (const [url, destination] of [
+      ["https://example.com/a>z", "https://example.com/a%3Ez"],
+      ["https://example.com/a<z", "https://example.com/a%3Cz"],
+      ["https://example.com/a z", "https://example.com/a%20z"],
+      ["https://example.com/a\\z", "https://example.com/a%5Cz"],
+    ]) {
+      expect(render(text, collect(item("answer", text, [citation(text, marker, { ...source, url })])))).toEqual([
+        { type: "text", text: `Claim [A](<${destination}>)` },
+      ]);
+    }
+  });
+
+  test("escapes source titles so they cannot create extra Markdown links", () => {
+    const text = `Claim ${marker}`;
+    const hostile = { ...source, title: "[A](https://wrong.invalid) *bold*\n<unsafe>" };
+    expect(render(text, collect(item("answer", text, [citation(text, marker, hostile)])))).toEqual([
+      { type: "text", text: "Claim [\\[A\\](https://wrong.invalid) \\*bold\\* \\<unsafe\\>](<https://example.com/a>)" },
+    ]);
   });
 });

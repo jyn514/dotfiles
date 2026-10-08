@@ -33,8 +33,14 @@ const { InMemoryCredentialStore, getSystemMessageText } =
 const extensionPath = resolve(dirname(fileURLToPath(import.meta.url)),
   "../../config/pi-agent/pi-extensions/pi-web-search.ts");
 const baseUrl = "http://pi-native-web-search.invalid/v1";
-const source = { type: "url_citation", url: "https://example.invalid/native-source", title: "Offline source",
-  start_index: 0, end_index: 14 };
+const marker = "\uE200cite\uE202turn1search0\uE201";
+const source = { type: "url_citation", url: "https://example.invalid/native-(source)", title: "Offline [source]",
+  start_index: 18, end_index: 18 + marker.length };
+const { Markdown } = await import(pathToFileURL(installedRequire.resolve("@earendil-works/pi-tui")).href);
+const markdownTheme = Object.fromEntries([
+  "heading", "link", "linkUrl", "code", "codeBlock", "codeBlockBorder", "quote", "quoteBorder",
+  "hr", "listBullet", "bold", "italic", "strikethrough", "underline",
+].map((name) => [name, (text) => text]));
 
 function responseEvents(answer, withSource) {
   const item = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
@@ -84,7 +90,7 @@ test("native request injects web search and streamed citations stay on the store
     requests.push({ url, body });
     if (url.endsWith("/responses")) {
       responsesCount++;
-      return sse(responseEvents(`Offline answer ${responsesCount}.`, responsesCount === 1));
+      return sse(responseEvents(`Offline answer ${responsesCount}. ${marker}`, responsesCount === 1));
     }
     return sse([
       { id: "chat_fixture", object: "chat.completion.chunk", choices: [{ index: 0,
@@ -167,7 +173,16 @@ test("native request injects web search and streamed citations stay on the store
   const text = (message) => message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
   assert.match(text(assistants[0]), /^Offline answer 1\./);
   assert.equal(text(assistants[0]).split(source.url).length - 1, 1, "source appears once on the answer itself");
-  assert.match(text(assistants[0]), /Sources:\n- Offline source:/);
+  assert.equal(text(assistants[0]), "Offline answer 1. [Offline \\[source\\]](<https://example.invalid/native-(source)>)");
+  const labels = [];
+  const rendered = new Markdown(text(assistants[0]), 0, 0, {
+    ...markdownTheme, link: (label) => { labels.push(label); return label; },
+  }).render(120).join("\n");
+  assert.deepEqual(labels, [source.title], "the escaped title renders as exactly one link label");
+  assert.ok(rendered.includes(source.url), "the real Markdown renderer recognizes the citation URL");
+  assert.ok(!rendered.includes(marker), "provider citation markup must not reach the rendered answer");
+  assert.equal(text(assistants[1]), `Offline answer 2. ${marker}`,
+    "without annotations, never guess an inline URL from an earlier turn");
   assert.deepEqual(endedMessages, assistants, "message_end replacement survives in the real session transcript");
   assert.equal(text(assistants[1]).includes(source.url), false, "collector resets between turns");
   assert.equal(text(assistants[2]).includes(source.url), false, "unsupported turn inherits no stale citations");
