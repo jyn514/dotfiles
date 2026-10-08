@@ -77,8 +77,17 @@ The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`
 
 ## Agent orchestration
 
-For agent-driven use, start with [design-deliberation](design-deliberation/SKILL.md).
-It selects the smallest useful workflow while preserving candidate isolation and
+When the problem's framing or approach is uncertain, use
+[creative-inquiry](creative-inquiry/SKILL.md) to question assumptions and discover
+possibilities. For comparing concrete software-design candidates, use
+[design-deliberation](design-deliberation/SKILL.md); inquiry does not automatically
+start its workflow.
+
+`creative-inquiry` is imported from
+[`nia-e/rustc-project-skills`](https://github.com/nia-e/rustc-project-skills/tree/0fe6e4d11a99b8c62776048d13f59a4e5e4ff6ca/creative-inquiry),
+with a locally adapted trigger and a boundary with `design-deliberation`.
+
+`design-deliberation` selects the smallest useful workflow while preserving candidate isolation and
 explicit abstention. Its planning, critique, fusion, and review helpers are plain
 reference files, not registered skills: they add no descriptions to the startup
 catalog. Agents read the linked procedure when entering its phase or pass its

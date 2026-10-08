@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creative Inquiry"
+  short_description: "Explore the purpose and possibilities, then make the thing"
+  default_prompt: "Use $creative-inquiry to explore the purpose, assumptions, and unexpected possibilities in this task, then carry it through."
