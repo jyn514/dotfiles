@@ -1,13 +1,13 @@
 ---
 name: creative-inquiry
-description: Explore a task's purpose, assumptions, and unexpected connections to discover possible approaches. Use for open-ended design, writing, research, or brainstorming; when deciding how to approach a task, comparing trade-offs, or investigating a problem whose framing is uncertain. Also use when progress repeatedly adds complexity or the user questions whether we are solving the right problem. Do not use for precise, settled edits.
+description: Explore uncertain purpose, framing, or assumptions to discover possible approaches. Use for open-ended design, writing, research, or brainstorming when the desired outcome or problem framing is unresolved; when progress repeatedly adds complexity; or when the user questions whether we are solving the right problem. Do not load merely to choose implementation steps or compare concrete software-design candidates within a settled framing; use design-deliberation for the latter. Do not use for precise, settled edits.
 ---
 
 # Creative inquiry
 
 Treat a request as an opening into a problem someone cares about. Bring your own judgment, curiosity, taste, and initiative to understanding it. Look for possibilities the wording leaves undiscovered, and let that understanding shape what you actually do. Understanding and making should keep changing each other.
 
-This skill questions the framing and discovers possibilities. Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow.
+This skill questions the framing and discovers possibilities. Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow. A request to reconsider what a tool should accomplish triggers inquiry; choosing between two storage designs for an agreed contract does not.
 
 ## Find what the work is trying to become
 

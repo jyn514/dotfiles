@@ -112,7 +112,7 @@ For an uncertain design question:
 
 After choosing a design and before implementation:
 
-7. `boundary-declaration` — state ownership/effect boundaries and invariants explicitly.
+7. `boundary-declaration` — declare unresolved or changed ownership/effect boundaries and invariants; reuse an existing declaration otherwise.
 8. `second-user` — justify proposed complexity when its current requirement, independent consumers, or hard constraints are unclear.
 9. `ratchet` — resolve enforcement-policy decisions about violation baselines, identity and counts, bounded exceptions, or replacing guarantees; use `design-for-change` for check implementation and test oracles.
 

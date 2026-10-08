@@ -1,9 +1,11 @@
 ---
 name: performance-investigation
-description: Diagnose performance regressions, hangs, unexpectedly slow commands, and quota-bound external operations. Use for profiling or benchmarking commands, tests, builds, CI, startup, configuration reload, APIs, cloud queries, or remote acquisition when execution is slow, silent, rate-limited, concurrency-sensitive, or requires defensible performance evidence. Do not use merely because edited code is performance-sensitive.
+description: Diagnose unexpected delay, hangs, observed contention, and quota-constrained operations, or perform explicitly requested profiling and benchmarking. Use for commands, tests, builds, CI, startup, configuration reload, APIs, cloud queries, or remote acquisition when one of those conditions requires investigation. Do not load merely because a command is silent, runs concurrently, or edits performance-sensitive code; expected execution and ordinary correctness debugging do not trigger this skill.
 ---
 
 # Performance Investigation
+
+Establish the unexpected delay, observed contention, quota constraint, or requested measurement before starting. An unexpectedly stalled build triggers this skill; a quiet build progressing within its expected duration does not.
 
 Before editing, record the baseline command, environment, metric, narrowest representative workload, elapsed time, and whether the run is cold or warm. Reproduce the user's actual command resolution; the agent's inherited shell may differ. Prior baselines are useful when environment differences are named, but precise comparisons require same-machine before/after measurements.
 

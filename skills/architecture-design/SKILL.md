@@ -17,7 +17,7 @@ Discover and follow the target repository's guidance for architecture, ownership
 - No selected subsystem: use `opportunity-scan`
 - Recurring historical pain may matter: use `pain-axis`
 - Several materially different architectures: use `design-deliberation`
-- Selected design entering implementation: use `boundary-declaration`, then `implementation-plan` when requested
+- Selected design entering implementation: use `boundary-declaration` for unresolved or changed boundaries; reuse an existing declaration otherwise. Use `implementation-plan` when requested.
 - Proposed framework, reusable layer, plugin hook, or configurable dimension: use `second-user`
 - Current patch: use the repository's current-change review process
 
@@ -108,7 +108,7 @@ For a greenfield tool, stop once the architecture satisfies approved requirement
 
 Order small slices with one owner, focused verification, stable intermediate states, and explicit stopping points. For a staged new-tool workflow, trace each slice to approved requirements and record it in the implementation specification: preserve approved behavior where behavior exists; for a greenfield tool, establish requirements incrementally rather than preserve nonexistent behavior.
 Keep extraction separate from behavior changes, schema redesign, message rewrites, new frameworks, and public API expansion.
-Route selected work through `boundary-declaration` before implementation and `implementation-plan` when a repository plan is requested.
+Before implementation, use `boundary-declaration` for unresolved or changed boundaries; reuse an existing declaration otherwise. Use `implementation-plan` when a repository plan is requested.
 
 ### 6. Write and challenge the design
 
