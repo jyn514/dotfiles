@@ -9,7 +9,7 @@ Confirm the explicit autonomous-run request before starting. Reassess activation
 
 This skill owns run authority, milestone order, dependency readiness, commits, resumable state, and stopping. Use these companion skills for their procedures:
 
-- Before implementation, load [design-for-change](../design-for-change/SKILL.md#design-for-testing) for test and fixture construction.
+- Load [design-for-change](../design-for-change/SKILL.md#design-for-testing) when implementation requires unresolved choices about data modeling, interfaces, ownership, invariants, or test strategy. For an established implementation and test pattern, follow the existing code and tests without loading it.
 - Before deciding whether a milestone can advance, read [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status). Run its full audit only after the owned edits are complete, at final completion or a completed milestone checkpoint in the governing scope.
 
 ## 1. Establish authority and the open acceptance condition
@@ -43,11 +43,13 @@ Record unspecified choices as assumptions or unresolved decisions, using only de
 
 ## 3. Integrate handoffs before advancing
 
-Use [design-for-change's testing procedure](../design-for-change/SKILL.md#design-for-testing). Connect each handoff to the intended consumer or remove the temporary path before starting another fixture-only capability. If blocked, apply §2's scoped-blocker rule rather than silently deferring it. An explicitly scoped feasibility probe may stop at its declared acceptance, with downstream integration still unmet.
+For unresolved test or fixture decisions, use [design-for-change's testing procedure](../design-for-change/SKILL.md#design-for-testing); otherwise follow the established test pattern. Connect each handoff to the intended consumer or remove the temporary path before starting another fixture-only capability. If blocked, apply §2's scoped-blocker rule rather than silently deferring it. An explicitly scoped feasibility probe may stop at its declared acceptance, with downstream integration still unmet.
 
 ## 4. Delegate, but retain integration ownership
 
-Delegate only tasks permitted by §2. Include the open acceptance condition, remaining integration obligation, declared ownership/contracts, owned files, protected work, and local checks in each worker packet; repository delegation rules still apply.
+Delegate only tasks permitted by §2, with clear inputs and expected outputs whose integration can be checked without repeating the worker's task. Use independent review for consequential judgment. Perform small inspections directly.
+
+Include the open acceptance condition, remaining integration obligation, declared ownership/contracts, owned files, protected work, and local checks in each worker packet; repository delegation rules still apply.
 
 Record progress in existing task state as **integrated**, **local-only**, or **blocked**, with the exact acceptance check and evidence. Apply [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status) to determine which scope the result establishes.
 

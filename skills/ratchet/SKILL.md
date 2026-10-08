@@ -1,13 +1,13 @@
 ---
 name: ratchet
-description: Turn established invariants and known failure modes into monotonic mechanical checks such as types, lint rules, regression tests, assertions, or benchmarks. Use after a reproduced or diagnosed bug, flaky or order-dependent failure, request to prevent recurrence, or decision to mechanize an established requirement. Do not use for ordinary test additions, speculative design, or prose-only review without a stated invariant.
+description: Turn established invariants and known failure modes into monotonic mechanical checks such as types, lint rules, regression tests, assertions, or benchmarks. Use when protecting a named invariant or preventing a demonstrated failure requires choosing or strengthening a mechanical check—for example, choosing type enforcement versus runtime validation, designing a reliable test oracle, or managing a baseline of existing violations. Do not load for straightforward regression tests using an established harness, ordinary test additions, speculative design, or prose-only review without a stated invariant.
 ---
 
 # ratchet
 
 ## Purpose
 
-Convert established invariants and known failure modes into mechanical checks so later autonomous work cannot silently regress them. Ordinary implementation-test strategy remains owned by `design-for-change`; use this skill when the check must preserve a named invariant or demonstrated bad state.
+Convert established invariants and known failure modes into mechanical checks so later autonomous work cannot silently regress them. Use this skill when choosing or strengthening the check requires unresolved decisions about its enforcement mechanism, test oracle, or baseline. Ordinary implementation-test strategy remains owned by `design-for-change`. A straightforward regression test using an established harness does not require loading this skill.
 
 ## Inputs
 

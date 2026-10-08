@@ -114,7 +114,7 @@ After choosing a design and before implementation:
 
 7. `boundary-declaration` — state ownership/effect boundaries and invariants explicitly.
 8. `second-user` — justify proposed complexity when its current requirement, independent consumers, or hard constraints are unclear.
-9. `ratchet` — turn verified invariants and discovered failure modes into mechanical checks where possible.
+9. `ratchet` — choose or strengthen mechanical checks for verified invariants or demonstrated failures when the enforcement mechanism, test oracle, or baseline needs a decision; skip straightforward regression tests using an established harness.
 
 ## Focused workflows
 
@@ -138,7 +138,7 @@ You do not need the whole chain every time.
 - Simple configuration edit: inspect the diff and validate with the native parser; no design or completion-audit skill is required.
 - Architecture decision: use [design-deliberation](design-deliberation/SKILL.md) to run scouting, independent planning, critique, and fixed-set review.
 - Legacy subsystem: start with `pain-axis` before scouting.
-- Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its companion-skill links. Use `ratchet` only for established invariants or diagnosed failures.
+- Explicitly requested autonomous run: start with [autonomous-implementation](autonomous-implementation/SKILL.md) and follow its conditional companion-skill routes. Use `ratchet` only when protecting an established invariant or preventing a demonstrated failure requires choosing or strengthening a mechanical check.
 
 ## Important rule
 

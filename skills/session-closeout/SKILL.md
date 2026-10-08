@@ -17,7 +17,9 @@ A request such as “anything we forgot?” or “do you suggest changes to docs
 
 ## 2. Audit the whole session
 
-Use the `double-check` skill for completed implementation or refactoring. Build a compact ledger covering:
+Reuse an existing completion audit when its requirements, implementation, and validation conditions remain unchanged. If corrections followed the audit, check only the affected requirements and checks; do not restart the full audit.
+
+For work not covered by an existing audit, use `double-check` for substantial completed implementation or refactoring across components, a specification, migration, or consequential boundary, or for an explicitly requested completion audit. Otherwise, for routine localized edits or simple configuration changes, inspect the diff and run the appropriate native check without loading it. Build a compact ledger covering:
 
 - each explicit requirement and later correction;
 - the final implementation or document state;
@@ -78,7 +80,7 @@ Do not make up an improvement simply to satisfy this skill; "things are in good 
 
 ## 5. Commit the session's changes
 
-Inspect the complete owned diff. Use `commit-quality` for atomic commits, messages, and inseparable tests/docs; use `jj-workflow` for path-limited Jujutsu commits. Commit every session-owned change and leave unrelated work untouched.
+Inspect the complete owned diff. Use `commit-quality` for atomic commits, messages, and inseparable tests/docs. Use `jj-workflow` only when preparing the commit requires history, provenance, or ownership judgment; path-limited commits alone do not require it. Commit every session-owned change and leave unrelated work untouched.
 
 Verify each commit's identity and message, then recheck status. Keep closeout incomplete while owned work remains; if committing is blocked, name the exact blocker. A commit does not replace the whole-session audit.
 
