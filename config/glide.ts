@@ -93,7 +93,9 @@ glide.autocmds.create("UrlEnter", {hostname: "discord.com",}, async () => {
 		glide.keys.send('a:');
 	});
 });
-glide.autocmds.create("UrlEnter", /.*\.zulipchat.com/, async () => {
+glide.autocmds.create("UrlEnter", {}, async ({ url }) => {
+	// Match only the hostname: scanning long URLs with .* can exhaust the regex stack.
+	if (!new URL(url).hostname.endsWith(".zulipchat.com")) return;
 	glide.buf.keymaps.del("normal", "d");
 	glide.buf.keymaps.del("normal", "e");
 	glide.buf.keymaps.del("normal", "r");

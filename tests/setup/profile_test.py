@@ -1205,6 +1205,21 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(["rejected"] * len(malformed), result.stdout.splitlines())
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
+    def test_glide_zulip_autocmd_matches_hosts_without_scanning_long_urls(self) -> None:
+        result = subprocess.run(
+            [
+                "node",
+                str(ROOT / "tests/setup/fixtures/glide-url-autocmd.mjs"),
+                str(ROOT / "config/glide.ts"),
+            ],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_disabled_sites_restore_normal_mode_on_exit(self) -> None:
         glide = (ROOT / "config/glide.ts").read_text()
         start = glide.index("async function disable_shortcuts")
