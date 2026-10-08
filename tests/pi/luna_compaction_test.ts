@@ -112,11 +112,54 @@ describe("Luna compaction", () => {
     expect(result.firstKeptEntryId).toBe("retained-entry");
   });
 
-  test("preserves full status output rather than the tool-result serialization limit", async () => {
+  test("bounds status in resumed context while retaining the complete capture in metadata", async () => {
     const h = harness();
-    const stdout = "M file.py\n".repeat(1000) + "Parent commit: complete tail\n";
-    h.pi.exec = async () => ({ stdout, stderr: "status diagnostic", code: 0, killed: false });
-    expect(snapshot((await h.run()).compaction.summary)).toMatchObject({ stdout, stderr: "status diagnostic" });
+    const stdout = "Working copy changes:\n" + "A dependency/file.py\n".repeat(70000) + "Parent commit: complete tail\n";
+    const status = { stdout, stderr: "status diagnostic", code: 0, killed: false };
+    h.pi.exec = async () => status;
+    const result = (await h.run()).compaction;
+    const captured = snapshot(result.summary);
+    expect(result.summary.slice(result.summary.lastIndexOf("\n\n{") + 2).length).toBeLessThanOrEqual(8192);
+    expect(captured).toMatchObject({ state: "observed", stderr: "status diagnostic", code: 0, killed: false, truncated: true });
+    expect(captured.stdout).toStartWith("Working copy changes:\n");
+    expect(captured.stdout).toEndWith("Parent commit: complete tail\n");
+    expect(captured.stdout).toContain("characters omitted");
+    expect(captured.fullCapture).toBe("Saved compaction entry details.repositoryState");
+    expect(result.details.repositoryState).toMatchObject(status);
+  });
+
+  test("bounds serialized stdout and stderr even when JSON escaping expands them", async () => {
+    const h = harness();
+    const status = { stdout: "\u0000".repeat(10000), stderr: "\u0001".repeat(10000), code: 1, killed: false };
+    h.pi.exec = async () => status;
+    const result = (await h.run()).compaction;
+    expect(result.summary.slice(result.summary.lastIndexOf("\n\n{") + 2).length).toBeLessThanOrEqual(8192);
+    expect(snapshot(result.summary)).toMatchObject({ state: "unknown", code: 1, truncated: true });
+    expect(result.details.repositoryState).toMatchObject(status);
+  });
+
+  test("repeated compaction never reinjects an oversized status into model input or resumed context", async () => {
+    const h = harness();
+    const stdout = "Working copy changes:\n" + "A dependency/file.py\n".repeat(70000) + "Parent commit: complete tail\n";
+    h.pi.exec = async () => ({ stdout, stderr: "", code: 0, killed: false });
+    for (let index = 0; index < 7; index++) {
+      const result = (await h.run()).compaction;
+      expect(result.summary.length).toBeLessThan(10000);
+      expect(result.details.repositoryState.stdout).toBe(stdout);
+      const prompt = h.requests[index].context.messages[0].content[0].text;
+      expect(prompt.length).toBeLessThan(1000);
+      expect(prompt).not.toContain("Parent commit:");
+      expect(prompt).not.toContain("dependency/file.py");
+      h.event.preparation.previousSummary = result.summary;
+      h.event.branchEntries = [{ type: "compaction", summary: result.summary, details: result.details }];
+    }
+  });
+
+  test("small status captures remain complete without an omission notice", async () => {
+    const h = harness();
+    const result = (await h.run()).compaction;
+    expect(snapshot(result.summary)).toEqual(result.details.repositoryState);
+    expect(snapshot(result.summary)).not.toHaveProperty("truncated");
   });
 
   test.each([
@@ -161,8 +204,42 @@ describe("Luna compaction", () => {
     expect(h.notifications[0][0]).toContain("using the active model");
   });
 
+  test("a missing required header uses the existing active-model fallback", async () => {
+    const h = harness();
+    h.ctx.modelRegistry.complete = async (model: any, context: any, options: any) => {
+      h.requests.push({ model, context, options });
+      return response(model.id === COMPACTION_MODEL.id
+        ? "I’ll narrow only the skill’s trigger wording; no workflow changes."
+        : "## Objective and authority\nContinue the approved task");
+    };
+    const result = (await h.run()).compaction;
+    expect(h.requests.map(request => request.model.id)).toEqual([COMPACTION_MODEL.id, "active"]);
+    expect(h.requests[0].context.systemPrompt).toBe(h.requests[1].context.systemPrompt);
+    expect(h.requests[0].context.messages[0].content).toEqual(h.requests[1].context.messages[0].content);
+    expect(h.executions[0].afterRequests).toBe(2);
+    expect(result.summary).toStartWith("## Objective and authority");
+    expect(h.notifications[0][0]).toContain("missing the Objective and authority header");
+  });
+
+  test("checks only the header, not the meaning or style of checkpoint prose", async () => {
+    const h = harness();
+    const text = "Preface\n## Objective and authority\t\r\nI’ll narrow only the skill’s trigger wording; no workflow changes.";
+    h.ctx.modelRegistry.complete = async () => response(text);
+    expect((await h.run()).compaction.summary).toStartWith(text);
+    expect(h.notifications).toHaveLength(0);
+  });
+
+  test.each(["#", "##", "###", "####", "#####", "######"])("accepts the required heading at Markdown level %s", async (heading) => {
+    const h = harness();
+    const text = `${heading} Objective and authority\nContinue the approved task`;
+    h.ctx.modelRegistry.complete = async () => response(text);
+    expect((await h.run()).compaction.summary).toStartWith(text);
+  });
+
   test.each([
     { ...response(), content: [] },
+    response("I’ll narrow only the skill’s trigger wording; no workflow changes."),
+    response("The required heading is ## Objective and authority, but this is not a heading."),
     { ...response(), stopReason: "length" },
     { ...response(), content: [{ type: "toolCall", name: "bash", arguments: {} }] },
   ])("invalid summaries preserve history and never launch status: %j", async (invalid) => {
@@ -202,7 +279,7 @@ describe("Luna compaction", () => {
       const h = harness();
       h.ctx.cwd = project;
       const complete = h.ctx.modelRegistry.complete;
-      const stdout = "M pending.py\n".repeat(1000) + "Complete final status row\n";
+      const stdout = "Working copy changes:\n" + "M pending.py\n".repeat(100000) + "Complete final status row\n";
       h.ctx.modelRegistry = new ModelRegistry({
         getModel: () => ({ ...COMPACTION_MODEL, api: "openai-codex-responses", maxTokens: 8192 }),
         async complete(...args: any[]) {
@@ -221,10 +298,16 @@ describe("Luna compaction", () => {
       const captured = snapshot(result.summary);
       expect(captured.state).toBe("observed");
       expect(captured.cwd).toBe(project);
-      expect(captured.stdout === stdout).toBe(true);
+      expect(captured.truncated).toBe(true);
+      expect(captured.stdout).toStartWith("Working copy changes:\n");
+      expect(captured.stdout).toEndWith("Complete final status row\n");
+      expect(result.summary.length).toBeLessThan(10000);
       sessions.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true, result.usage);
+      const saved = sessions.getEntries().find(entry => entry.type === "compaction");
+      expect((saved?.details as any).repositoryState.stdout === stdout).toBe(true);
       const parent = sessions.buildSessionContext().messages.find((message) => message.role === "compactionSummary");
       expect(parent).toMatchObject({ summary: result.summary });
+      expect(JSON.stringify(parent).length).toBeLessThan(11000);
       expect(sessions.buildSessionContext().messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "Retained user message" }] });
 
       writeFileSync(policy, "Changed authoritative compaction instructions.\n");

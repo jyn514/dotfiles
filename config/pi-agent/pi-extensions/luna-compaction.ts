@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   convertToLlm,
   serializeConversation,
+  type ExecResult,
   type ExtensionAPI,
   type SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
@@ -26,6 +27,41 @@ export function checkpointText(entry: { summary: string; details?: unknown }): s
   return typeof length === "number" && Number.isSafeInteger(length) && length > 0 && length <= entry.summary.length
     ? entry.summary.slice(0, length)
     : entry.summary;
+}
+
+export function requireCheckpointHeader(text: string): void {
+  if (!text.trim()) throw new Error("Compaction summary was empty");
+  if (!/^#{1,6}[ \t]+Objective and authority[ \t]*\r?$/m.test(text)) {
+    throw new Error("Compaction summary is missing the Objective and authority header");
+  }
+}
+
+const REPOSITORY_STATE_LIMIT = 8192;
+type RepositoryState = {
+  cwd: string;
+  capturedAt: string;
+  state: "observed" | "unknown";
+} & (ExecResult | { error: string });
+
+function repositoryStateText(state: RepositoryState): string {
+  const full = JSON.stringify(state, null, 2);
+  if (full.length <= REPOSITORY_STATE_LIMIT) return full;
+
+  // Keep both ends (jj puts revision IDs last), without interpreting status lines.
+  // Bound the serialized text too: JSON escaping can multiply output length.
+  for (let limit = 1024; ; limit = Math.floor(limit / 2)) {
+    const visible = Object.fromEntries(Object.entries(state).map(([key, value]) => {
+      if (typeof value !== "string" || value.length <= limit) return [key, value];
+      const half = Math.floor(limit / 2);
+      return [key, `${value.slice(0, half)}\n[${value.length - 2 * half} characters omitted]\n${half ? value.slice(-half) : ""}`];
+    }));
+    const text = JSON.stringify({
+      ...visible,
+      truncated: true,
+      fullCapture: "Saved compaction entry details.repositoryState",
+    }, null, 2);
+    if (text.length <= REPOSITORY_STATE_LIMIT) return text;
+  }
 }
 
 function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
@@ -78,7 +114,7 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
             throw new Error("Compaction attempted to call a tool");
           }
           const text = response.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
-          if (!text.trim()) throw new Error("Compaction summary was empty");
+          requireCheckpointHeader(text);
           checkpoint = text;
           usage = response.usage;
           break;
@@ -89,7 +125,7 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       }
       if (checkpoint === undefined) throw new Error("No compaction model is available");
 
-      let repositoryState;
+      let repositoryState: RepositoryState;
       try {
         // Keep the subcommand first for the sandbox's jj wrapper.
         const result = await pi.exec("jj", ["status", "--no-pager", "--color=never"], {
@@ -117,11 +153,11 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       const readFiles = [...preparation.fileOps.read].filter((file) => !modified.has(file)).sort();
       return {
         compaction: {
-          summary: `${checkpoint}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${JSON.stringify(repositoryState, null, 2)}`,
+          summary: `${checkpoint}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${repositoryStateText(repositoryState)}`,
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,
-          details: { readFiles, modifiedFiles, checkpointLength: checkpoint.length },
+          details: { readFiles, modifiedFiles, checkpointLength: checkpoint.length, repositoryState },
         },
       };
     } catch (error) {

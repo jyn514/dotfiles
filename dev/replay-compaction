@@ -9,7 +9,7 @@ import {
   ModelRuntime, parseSessionEntries, serializeConversation, sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import codexSidecar from "../config/pi-agent/pi-extensions/codex-sidecar.ts";
-import { checkpointText, COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
+import { checkpointText, COMPACTION_INSTRUCTIONS, COMPACTION_MODEL, requireCheckpointHeader } from "../config/pi-agent/pi-extensions/luna-compaction.ts";
 
 export function replayInput(text, entryId) {
   // Parse without SessionManager.open, which can migrate and rewrite the source.
@@ -62,7 +62,7 @@ async function main() {
       throw new Error(response.errorMessage || `Invalid summary: ${response.stopReason}`);
     }
     const summary = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
-    if (!summary.trim()) throw new Error("Luna returned an empty summary");
+    requireCheckpointHeader(summary);
     writeFileSync(join(output, "new.md"), summary);
     writeFileSync(join(output, "usage.json"), JSON.stringify({ compaction: original.id, model: model.id, original: original.usage, replay: response.usage }, null, 2) + "\n");
     console.error(`Luna completed: ${response.usage.input} input tokens, ${response.usage.output} output tokens.`);

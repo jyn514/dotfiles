@@ -108,7 +108,7 @@ and start a new sandbox to deploy the host extension and worker together;
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
 covering history and any split-turn prefix. Generated checkpoints must include
-the `## Objective and authority` header; the extension does not evaluate the
+an `Objective and authority` Markdown heading; the extension does not evaluate the
 meaning of their prose. If Luna fails, omits that header, or is unavailable, the
 active model uses the same instructions. If generation fails, session history is
 kept.
