@@ -27,6 +27,8 @@ Concurrent workers commit only their work and return its change ID. The coordina
 
 ## Compare and inspect history
 
+Before comparing revisions, state the comparison question and establish the exact revision pair from history. For fork-only reviews, establish the fork's starting revision and head; neither upstream HEAD nor a merge base with today's upstream establishes that starting revision. A common-ancestor query answers only for its selected ref; confirm that ref belongs to the requested lineage. Support each fork-only attribution with the diff or history in that range. If the base is unresolved, report the evidence needed to resolve it and defer fork-only attributions and keep/drop priorities. Do not rank inherited code from broader tree diffs or commit titles, even provisionally.
+
 Use `jj interdiff --from A --to B` to compare two revisions' patches, especially when their parents differ. `jj diff --from A --to B` compares resulting trees and may include inherited differences.
 `jj show` does not accept filesets; for a path-limited revision patch, use `jj diff -r REV <paths>`.
 

@@ -85,6 +85,10 @@ Check both layers independently:
 
 Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. Also trace cases where two requirements interact; verify the instructions produce compatible actions or explicitly resolve the conflict. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
+For paired behavioral trials, fix the comparison question, historical cut, model, and task inputs before generation; vary only the skill under test. Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them. Judge actual decisions and actions afterward, not just formatting or workflow compliance.
+
+For summarization trials, distinguish incremental replay (previous checkpoint plus subsequent history) from blind reconstruction (preceding raw history without reference summaries or later critique). Blind reconstruction must restore the underlying raw history, not merely delete the previous checkpoint. These are different tasks; do not treat their outputs as a same-input comparison.
+
 ## 7. Validate and tighten
 
 - Confirm every linked path exists and every command matches the repository and installed CLI.
