@@ -1,3 +1,7 @@
 {
+  "tui.altScreen.search": "ctrl+f",
+  "tui.editor.cursorUp": ["Up", "ctrl+p"],
+  "tui.editor.cursorDown": ["Down", "ctrl+n"],
+  "app.model.cycleForward": [],
   "app.session.rename": "ctrl+shift+r"
 }

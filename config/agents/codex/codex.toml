@@ -31,6 +31,13 @@ resume_cwd = "current"
 terminal_title = ["run-state", "context-used", "model", "thread-name"]
 screen_reader_detection_done = true
 
+[tui.keymap.composer]
+queue = ["tab", "alt-enter"]
+
+[tui.keymap.global]
+copy = "ctrl-x"
+open_transcript = ["ctrl-t", "ctrl-o"]
+
 [mcp_servers.cclsp]
 enabled = false
 command = "npx"
