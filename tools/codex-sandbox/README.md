@@ -62,9 +62,11 @@ Before launch, it rejects duplicate mount destinations in the assembled containe
 When this staging is needed, new entries in staged parent directories appear on the next launch;
 the contents of bound subtrees remain live.
 
-The selected Git metadata root has one owner: the launcher mounts it at the
-selected repository's `.git` path. Other Git metadata roots may receive
-protected or external mounts, but must not emit a second mount at that path.
+The launcher owns the selected repository's `.git` overlay. Linked worktrees
+retain their pointer file as a read-only file mount, with backing metadata
+mounted read-only at both host and guest paths so absolute and relative pointers
+resolve. Directory overlays use the selected Git metadata root. Other metadata
+mounts must not emit a second mount at the workspace's `.git` path.
 
 ### Host instructions and guest-readable guidance
 
@@ -441,9 +443,24 @@ a join cannot rewrite shared metadata.
 Run unit tests from the repository root:
 
 ```sh
-python3 -m unittest tools/codex-sandbox/tests/codex_sandbox_test.py
-python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
+dev/test-environment python3 -m unittest tools/codex-sandbox/tests/codex_sandbox_test.py
+dev/test-environment python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
 ```
+
+To check ordinary and linked-worktree mounts on an existing Docker VM, use an
+already built sandbox image containing Python and Git. Replace
+`codex-sandbox:TAG` with its image reference:
+
+```sh
+dev/test-environment env LIMA_HOME="$HOME/.lima" \
+  python3 tools/codex-sandbox/tests/repository_mounts_integration.py \
+  --state "$HOME/.local/state/codex-sandbox-docker" --image codex-sandbox:TAG
+```
+
+This runs the launcher's mount builder with both worktree and shared Git backend
+paths. Networkless fixture containers check relative and absolute pointer files,
+Git discovery, writable worktree files, and read-only metadata. Fixtures and
+containers are removed after each case.
 
 To compare the bundled resolver's ignore filtering with BuildKit, run the
 disposable scratch-image probe against an existing Lima-Docker VM:

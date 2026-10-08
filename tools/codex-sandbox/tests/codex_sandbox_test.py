@@ -2235,7 +2235,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         run = self.final_run()
         repository = self.repo.resolve()
-        git_mount = f"type=bind,src={git_dir.resolve()},dst=/src/repository/.git,readonly"
+        git_mount = f"type=bind,src={self.repo / '.git'},dst=/src/repository/.git,readonly"
         self.assertIn(git_mount, run)
         self.assertEqual(1, run.count(git_mount))
         self.assertIn(

@@ -1816,15 +1816,104 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
     return paths
 
 
+def agent_repository_mounts(state: State) -> list[str]:
+    """Build the writable workspace and read-only metadata mounts together."""
+    repository_path = state.container_repository
+    git_layout = run([
+        "git", "-C", str(state.git_repository), "rev-parse", "--path-format=absolute",
+        "--git-dir", "--git-common-dir",
+    ], capture=True).stdout.splitlines()
+    # Linked worktrees have a gitfile, not a directory mountpoint. Preserve
+    # that indirection and expose all backing roots at their referenced paths.
+    git_entry = state.repository / ".git"
+    gitfile = git_entry.is_file()
+    git_mount_source = git_entry if gitfile else state.git_mount_source
+    protected = [state.repository / ".jj"]
+    git_roots: list[Path] = []
+    for line in git_layout:
+        path = Path(line).resolve(strict=True)
+        if any(character in str(path) for character in (",", "\n", "\r")):
+            raise LauncherError("Git metadata path contains a container-mount delimiter")
+        if path not in git_roots:
+            git_roots.append(path)
+    external_git_roots: list[tuple[Path, Path]] = []
+    for path in git_roots if gitfile else git_roots[1:]:
+        try:
+            path.relative_to(state.repository)
+        except ValueError:
+            relative = Path(os.path.relpath(path, state.repository))
+            target = Path(os.path.normpath(state.container_repository / relative))
+            try:
+                target.relative_to("/src")
+            except ValueError as error:
+                raise LauncherError("Git metadata path escapes the container workspace") from error
+            if not any(path.is_relative_to(root) for root, _ in external_git_roots):
+                external_git_roots = [
+                    (root, root_target)
+                    for root, root_target in external_git_roots
+                    if not root.is_relative_to(path)
+                ]
+                external_git_roots.append((path, target))
+            continue
+        if path not in protected:
+            protected.append(path)
+    repository_aliases: list[Path] = []
+    for source, relative_target in external_git_roots:
+        for metadata_target in (source, relative_target):
+            alias = Path(os.path.normpath(
+                metadata_target / os.path.relpath(state.repository, source)
+            ))
+            if metadata_target == source:
+                if alias != state.repository:
+                    raise LauncherError("Git metadata produced an invalid host worktree alias")
+            else:
+                try:
+                    alias.relative_to("/src")
+                except ValueError as error:
+                    raise LauncherError("Git metadata produced an unsafe worktree alias") from error
+                if alias == Path("/src"):
+                    raise LauncherError("Git metadata worktree alias is too broad")
+            if alias != state.container_repository and alias not in repository_aliases:
+                repository_aliases.append(alias)
+    return [
+        *source_mounts(state.home / 'src', [repository_path, *repository_aliases,
+                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
+        "--mount", f"type=bind,src={state.repository},dst={repository_path},{OUTER_RUNTIME.nonrecursive_bind}",
+        "--mount", f"type=bind,src={git_mount_source},dst={repository_path / '.git'},readonly",
+        *[
+            item
+            for target in repository_aliases
+            for item in (
+                "--mount",
+                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
+            )
+        ],
+        *[
+            item
+            for path in protected
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={repository_path / path.relative_to(state.repository)},readonly",
+            )
+        ],
+        *[
+            item
+            for path, relative_target in external_git_roots
+            for target in (path, relative_target)
+            for item in (
+                "--mount",
+                f"type=bind,src={path},dst={target},readonly",
+            )
+        ],
+    ]
+
+
 def build_agent_command(
     state: State, arguments: list[str], *, timing: bool,
     resource_paths: dict[str, str], guest_working_directory: Path,
-    protected: list[Path], repository_aliases: list[Path],
-    external_git_roots: list[tuple[Path, Path]],
     pi_extensions: Path,
 ) -> list[str]:
     """Construct and validate the agent container command without starting it."""
-    repository_path = Path(resource_paths[str(state.repository)])
     command = [
         "docker", "run", "--name", state.codex_container,
         "--cap-drop=NET_RAW",
@@ -1873,36 +1962,8 @@ def build_agent_command(
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/developer-instructions.md')},dst=/home/codex/.codex/developer-instructions.md,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/breq.md')},dst=/home/codex/.codex/breq.md,readonly",
-        *source_mounts(state.home / 'src', [repository_path, *repository_aliases,
-                       *[target for _, target in external_git_roots]], state.skills_tmp / 'source-view'),
-        "--mount", f"type=bind,src={state.repository},dst={repository_path},{OUTER_RUNTIME.nonrecursive_bind}",
-        "--mount", f"type=bind,src={state.git_mount_source},dst={repository_path / '.git'},readonly",
+        *agent_repository_mounts(state),
         "--workdir", str(guest_working_directory),
-        *[
-            item
-            for target in repository_aliases
-            for item in (
-                "--mount",
-                f"type=bind,src={state.repository},dst={target},readonly,{OUTER_RUNTIME.nonrecursive_bind}",
-            )
-        ],
-        *[
-            item
-            for path in protected
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={repository_path / path.relative_to(state.repository)},readonly",
-            )
-        ],
-        *[
-            item
-            for path, relative_target in external_git_roots
-            for target in (path, relative_target)
-            for item in (
-                "--mount",
-                f"type=bind,src={path},dst={target},readonly",
-            )
-        ],
         *arguments,
     ]
     try:
@@ -1916,59 +1977,6 @@ def run_agent(state: State, arguments: list[str]) -> int:
     setup_started = time.monotonic()
     timing = bool(os.environ.get("CODEX_SANDBOX_TIMING"))
     state.codex_container_created = True
-    git_layout = run([
-        "git", "-C", str(state.git_repository), "rev-parse", "--path-format=absolute",
-        "--git-dir", "--git-common-dir",
-    ], capture=True).stdout.splitlines()
-    # A non-colocated workspace has no .git entry of its own. Mount the
-    # backing Git metadata at the conventional workspace path in the guest.
-    protected = [state.repository / ".jj"]
-    git_roots: list[Path] = []
-    for line in git_layout:
-        path = Path(line).resolve(strict=True)
-        if any(character in str(path) for character in (",", "\n", "\r")):
-            raise LauncherError("Git metadata path contains a container-mount delimiter")
-        if path not in git_roots:
-            git_roots.append(path)
-    external_git_roots: list[tuple[Path, Path]] = []
-    for path in git_roots[1:]:
-        try:
-            path.relative_to(state.repository)
-        except ValueError:
-            relative = Path(os.path.relpath(path, state.repository))
-            target = Path(os.path.normpath(state.container_repository / relative))
-            try:
-                target.relative_to("/src")
-            except ValueError as error:
-                raise LauncherError("Git metadata path escapes the container workspace") from error
-            if not any(path.is_relative_to(root) for root, _ in external_git_roots):
-                external_git_roots = [
-                    (root, root_target)
-                    for root, root_target in external_git_roots
-                    if not root.is_relative_to(path)
-                ]
-                external_git_roots.append((path, target))
-            continue
-        if path not in protected:
-            protected.append(path)
-    repository_aliases: list[Path] = []
-    for source, relative_target in external_git_roots:
-        for metadata_target in (source, relative_target):
-            alias = Path(os.path.normpath(
-                metadata_target / os.path.relpath(state.repository, source)
-            ))
-            if metadata_target == source:
-                if alias != state.repository:
-                    raise LauncherError("Git metadata produced an invalid host worktree alias")
-            else:
-                try:
-                    alias.relative_to("/src")
-                except ValueError as error:
-                    raise LauncherError("Git metadata produced an unsafe worktree alias") from error
-                if alias == Path("/src"):
-                    raise LauncherError("Git metadata worktree alias is too broad")
-            if alias != state.container_repository and alias not in repository_aliases:
-                repository_aliases.append(alias)
     pi_agent = state.home / ".pi/agent"
     if pi_agent.exists() and (pi_agent.is_symlink() or not pi_agent.is_dir()):
         raise LauncherError(f"Pi agent directory is invalid: {pi_agent}")
@@ -2005,8 +2013,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     command = build_agent_command(
         state, arguments, timing=timing, resource_paths=pi_resource_paths,
         guest_working_directory=container_working_directory,
-        protected=protected, repository_aliases=repository_aliases,
-        external_git_roots=external_git_roots, pi_extensions=pi_extensions,
+        pi_extensions=pi_extensions,
     )
     reserved = {
         "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",

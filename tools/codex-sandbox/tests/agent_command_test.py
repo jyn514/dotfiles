@@ -68,6 +68,7 @@ class AgentCommandTest(unittest.TestCase):
                 container_repository=Path("/src/repository"),
                 repository=root / "repository",
                 host_working_directory=root / "repository",
+                git_repository=root / "repository/.git",
                 git_mount_source=root / "repository/.git",
             )
             state.pi_agent_tmp.mkdir()
@@ -90,6 +91,9 @@ class AgentCommandTest(unittest.TestCase):
                 "proxy_flags": lambda: [],
                 "staged_config_path": lambda _state, _role: root / "config",
                 "installed_config_source": lambda _path: root / "installed-config",
+                "run": lambda *_args, **_kwargs: SimpleNamespace(
+                    stdout=f"{state.git_mount_source}\n{state.git_mount_source}\n",
+                ),
                 "source_mounts": lambda *_args: [],
                 "check_mount_destinations": mock.Mock(),
             }):
@@ -97,8 +101,7 @@ class AgentCommandTest(unittest.TestCase):
                     state, ["image", "pi"], timing=False,
                     resource_paths=resource_paths,
                     guest_working_directory=Path("/src/repository"),
-                    protected=[state.repository / ".jj"], repository_aliases=[],
-                    external_git_roots=[], pi_extensions=extensions,
+                    pi_extensions=extensions,
                 )
 
             self.assertIn("PI_MODEL_FILE=/home/codex/.pi/agent/runtime-model.json", command)
