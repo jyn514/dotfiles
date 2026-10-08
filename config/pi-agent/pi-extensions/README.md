@@ -12,6 +12,13 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+The footer adapts Pi's `custom-footer.ts` example. Its second line shows context
+percentage/capacity and cumulative price, with model and thinking level on the
+right. It omits `(auto)`, `(sub)`, and token/cache statistics. Context turns yellow
+above 70% and red above 90%; unknown usage shows `?`. The provider appears when
+multiple providers are available and space permits. Directory, branch, session
+title, and extension statuses remain visible. Run `/reload` to activate it.
+
 The bundle adds the current date and Pi's host OS to the system prompt. On Linux,
 the OS name comes from `/etc/os-release`, or `/usr/lib/os-release` when the former
 cannot be read. Without a display name, and on other platforms, it uses the OS

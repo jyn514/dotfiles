@@ -3,6 +3,7 @@ import agentRoom from "./agent-room.ts";
 import askUser from "./ask-user.ts";
 import contextBreakdown from "./context-breakdown.ts";
 import currentDate from "./current-date.ts";
+import footer from "./footer.ts";
 import hostOS from "./host-os.ts";
 import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
 import instructionIncludes from "./pi-instruction-includes.ts";
@@ -25,6 +26,7 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   askUser(pi);
   contextBreakdown(pi);
   currentDate(pi);
+  footer(pi);
   hostOS(pi);
   skillReferenceAutocomplete(pi);
   lunaCompaction(pi);
