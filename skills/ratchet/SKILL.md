@@ -26,7 +26,7 @@ Convert established invariants and known failure modes into mechanical checks so
    - static query/grep assertion
    - runtime assertion
    - benchmark threshold when performance is the invariant
-3. Require a demonstrated failure before accepting a new check when practical: show that the check would fail on the bad state and pass on the intended state.
+3. Require a demonstrated failure before accepting a new check when practical: show that the check would fail on the bad state and pass on the intended state. Distinguish reproducing the reported error from demonstrating a related failure. State what the experiment proves; a related failure alone does not establish the reported error's cause.
 4. Test the oracle itself against equivalence and cardinality hazards. Distinct occurrences, objects, refs, paths, or generated owners must not collapse merely because their normalized text or fingerprint is equal.
 5. Treat baselines as bounded debt, not approved exceptions:
    - preserve multiplicity or explicit occurrence identity
