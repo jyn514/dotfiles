@@ -16,7 +16,7 @@ Coordinate the design skills for uncertain software decisions. Select the smalle
 ## Select a workflow
 
 - **Broad project-improvement goal:** Start with `opportunity-scan`; select an area before investigating its history or design. After selection, use `pain-axis` if history could test recurring pain, then scout only if a genuine design fork remains. Recent activity is not evidence of importance by itself.
-- **Small or mostly-local change:** Use `boundary-declaration`; add `second-user` for a proposed abstraction and `ratchet` when an established invariant can be checked mechanically. Do not create multiple plans without a genuine design fork.
+- **Small or mostly-local change:** Use `boundary-declaration`; add `second-user` for a proposed abstraction. Use `design-for-change` for unresolved implementation or test decisions and `ratchet` for enforcement-policy decisions about baselines, violation identity or counts, bounded exceptions, or replacing guarantees. Do not create multiple plans without a genuine design fork.
 - **Genuine design fork:** Use the sequence below. Add `pain-axis` first when repository history can provide useful evidence.
 - **Legacy or failure-prone subsystem:** Start with `pain-axis` unless history is unavailable or irrelevant.
 - **Long autonomous implementation:** After design selection, follow [After selection](#after-selection).
@@ -43,7 +43,7 @@ Use each phase reference for its required inputs, constraints, and output; do no
 
 ## After selection
 
-A selected plan is a design hypothesis, not verification. Before implementation, use `boundary-declaration`; during implementation, use `second-user` for new reusable abstractions and `ratchet` for mechanically checkable invariants or failures. Prefer tests, type checks, static analysis, benchmarks, and repository evidence over additional model votes.
+A selected plan is a design hypothesis, not verification. Before implementation, use `boundary-declaration`; during implementation, use `second-user` for new reusable abstractions, `design-for-change` for unresolved implementation or test decisions, and `ratchet` for unresolved enforcement-policy decisions. Prefer tests, type checks, static analysis, benchmarks, and repository evidence over additional model votes.
 
 If the user already supplied serious candidates, skip `design-space-scout` unless a material region is missing. Elaborate them independently when needed, then begin critique. If the user supplied one design for evaluation, do not manufacture alternatives unless a genuine unresolved fork remains.
 

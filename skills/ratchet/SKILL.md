@@ -1,52 +1,62 @@
 ---
 name: ratchet
-description: Turn established invariants and known failure modes into monotonic mechanical checks such as types, lint rules, regression tests, assertions, or benchmarks. Use when protecting a named invariant or preventing a demonstrated failure requires choosing or strengthening a mechanical check—for example, choosing type enforcement versus runtime validation, designing a reliable test oracle, or managing a baseline of existing violations. Do not load for straightforward regression tests using an established harness, ordinary test additions, speculative design, or prose-only review without a stated invariant.
+description: Define enforcement policy for an established invariant or check. Use when deciding how to block new violations while reducing an existing baseline, preserve violation identity or counts, bound exceptions and their expiry, or change an existing rule's enforced scope or guarantees. Do not load merely to choose types versus tests, design a test oracle, add regression coverage, or protect a newly implemented behavior; those decisions belong to design-for-change.
 ---
 
 # ratchet
 
 ## Purpose
 
-Convert established invariants and known failure modes into mechanical checks so later autonomous work cannot silently regress them. Use this skill when choosing or strengthening the check requires unresolved decisions about its enforcement mechanism, test oracle, or baseline. Ordinary implementation-test strategy remains owned by `design-for-change`. A straightforward regression test using an established harness does not require loading this skill.
+Own the policy for which violations a check rejects, which existing violations
+it temporarily permits, and how that permitted set shrinks. Use
+[design-for-change](../design-for-change/SKILL.md) for implementing checks,
+choosing regression cases, and validating test oracles. Load both only when the
+task contains separate policy and implementation decisions.
+
+For example, introducing a lint rule with existing violations needs a baseline
+and exception policy. Reproducing a Docker mount failure with a real container
+needs test design, so use `design-for-change` alone.
 
 ## Inputs
 
-- boundary declaration
-- current tests/checks
-- newly discovered bugs or invariants
-- implementation environment
+- The established invariant and the check's scope
+- Current enforcement rules, violations, and exceptions
+- The requested policy change and authority to change it
 
 ## Procedure
 
-1. For each important invariant, ask whether it can be checked mechanically.
-2. Prefer the strongest cheap mechanism available:
-   - type/system invariant
-   - compiler/linter rule
-   - unit/property/regression test
-   - static query/grep assertion
-   - runtime assertion
-   - benchmark threshold when performance is the invariant
-3. Require a demonstrated failure before accepting a new check when practical: show that the check would fail on the bad state and pass on the intended state. Distinguish reproducing the reported error from demonstrating a related failure. State what the experiment proves; a related failure alone does not establish the reported error's cause.
-4. Test the oracle itself against equivalence and cardinality hazards. Distinct occurrences, objects, refs, paths, or generated owners must not collapse merely because their normalized text or fingerprint is equal.
-5. Treat baselines as bounded debt, not approved exceptions:
+1. Inspect the owning check, its scope, and current violations. Name the
+   unresolved enforcement-policy decision. If only implementation or oracle
+   design remains, stop this workflow and use `design-for-change`.
+2. Define violation identity and multiplicity before comparing results.
+   Distinct occurrences, paths, or owners must not collapse because their
+   normalized text or fingerprint is equal. Set membership is insufficient
+   when the invariant constrains counts, ownership, or one-to-one correspondence.
+3. Treat baselines as bounded debt:
    - preserve multiplicity or explicit occurrence identity
    - fail on additions and report removals as stale
    - keep regeneration deterministic and show semantic deltas
    - never let regeneration silently bless new debt
-6. Add checks monotonically during a long run; do not remove or weaken an existing check merely to make progress.
-7. If an invariant has no reliable oracle, record it explicitly rather than pretending the ratchet covers it.
+4. Give each exception a scope, owner, and expiry or removal condition. Record
+   which violations it permits; a baseline entry must not authorize unrelated
+   future violations.
+5. When changing a rule's enforced scope or guarantees, compare the old and new policy.
+   Preserve existing guarantees unless explicit human approval or stronger
+   replacement evidence justifies the change. Do not remove or weaken a check
+   merely to make progress.
+6. Verify the policy on a new violation, a resolved baseline entry, and distinct
+   violations with equal normalized text. Include exception expiry when used.
+   Follow `design-for-change` for oracle validation; record any policy outcome
+   that cannot yet be verified rather than claiming it is enforced.
 
 ## Output
 
-- invariant
-- proposed check
-- evidence the check detects the bad state
-- command used to run it
-- limitations / false-negative risk
+- Invariant and enforced scope
+- Violation identity, baseline update rules, and bounded exceptions
+- Preserved guarantees or the authority/evidence for replacing them
+- Policy checks run, observed outcomes, and unverified cases
 
 ## Constraints
 
-- Do not equate “tests pass” with “design is correct.”
-- Checks must target a stated invariant or observed failure mode, not arbitrary coverage growth.
-- Weakening a ratchet requires explicit human approval or stronger replacement evidence.
-- Set membership is insufficient when the invariant constrains counts, ownership, ordering, or one-to-one correspondence.
+- Do not certify paths outside the inspected and verified scope.
+- Do not expand permitted violations through automatic baseline regeneration.
