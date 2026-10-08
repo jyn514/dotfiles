@@ -12,6 +12,11 @@ installation. Conflicting regular files move to `~/.local/config/`; setup does
 not back up or replace the whole agent directory. Adding a configuration file
 needs no new manifest entry.
 
+The `luna` and `parent` agent templates instruct children to read
+`~/.agents/coordination-dialect.md` once before their first task. Use a named
+template for each child (`parent` for generic delegation); task prompts do not
+need to repeat the instruction or copy the dialect.
+
 See the [extension bundle](pi-extensions/README.md) for loading, reloading,
 compaction, side conversations, and asynchronous questions. Follow the
 [development guide](../../dev/README.md#testing-and-probes) before running tests

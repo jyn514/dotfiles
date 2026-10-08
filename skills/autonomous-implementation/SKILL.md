@@ -47,6 +47,8 @@ For unresolved test or fixture decisions, use [design-for-change's testing proce
 
 ## 4. Delegate, but retain integration ownership
 
+Before delegating coupled implementation, apply [boundary-declaration's delegation readiness check](../boundary-declaration/SKILL.md#delegation-readiness) to settle shared contracts. Reuse an existing contract when it settles the shared choices.
+
 Delegate only tasks permitted by §2, with clear inputs and expected outputs whose integration can be checked without repeating the worker's task. Use independent review for consequential judgment. Perform small inspections directly.
 
 Include the open acceptance condition, remaining integration obligation, declared ownership/contracts, owned files, protected work, and local checks in each worker packet; repository delegation rules still apply.

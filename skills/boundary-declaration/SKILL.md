@@ -1,11 +1,13 @@
 ---
 name: boundary-declaration
-description: Declare ownership, side-effect, representation, lifecycle, and API boundaries at the transition from a selected design to specification finalization, delegation, planning, or implementation. Use once when unclear boundaries could permit invalid states, duplicated authority, or leaking assumptions. Do not reactivate for routine continuation unless a later decision changes those boundaries.
+description: Declare ownership, side-effect, representation, lifecycle, and API boundaries. Use before delegating coupled implementation with unsettled shared contracts, and at the transition from a selected design to specification finalization, delegation, planning, or implementation when unclear boundaries could permit invalid states, duplicated authority, or leaking assumptions. Not for independent investigation or review unless it requires defining or changing a boundary. Reuse settled contracts; do not repeat a full boundary declaration during routine continuation unless a boundary changes.
 ---
 
 # boundary-declaration
 
 ## Purpose
+
+Before delegating coupled implementation, apply the delegation readiness check. Independent investigation or review does not require this skill unless it requires defining or changing a boundary.
 
 At the first transition from a chosen design into specification finalization, delegation, planning, or implementation, state its important ownership, effect, and representation boundaries in a form that can constrain later work. Reuse that declaration during routine continuation; revise it only when a later decision changes a boundary.
 
@@ -15,6 +17,15 @@ For a staged new-tool workflow only, the declaration becomes or revises the boun
 
 - selected design
 - relevant repository context
+
+## Delegation readiness
+
+1. Identify decisions one worker could make that would change another worker's inputs, outputs, or invariants. Separate file ownership does not establish independence.
+2. For coupled implementation, state the shared representation, producer and consumer responsibilities, and failure behavior. Confirm both assignments use that contract. Reuse existing code or a short declaration; do not require a new document or exhaustive API specification.
+
+Resolve shared contract choices before dependent implementation. If unresolved, delegate investigation or contract design instead of dependent implementation; continue independent work. Recheck affected assignments when the contract changes.
+
+For example, workers preparing pronunciation analyses and executable rule data may own separate files but both depend on sound-unit identity and matching semantics. Settle those representations before implementing their producers and consumers in parallel. Collecting pronunciation provenance and specification examples can proceed independently while that contract remains unresolved.
 
 ## Procedure
 
