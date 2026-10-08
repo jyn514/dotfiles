@@ -94,17 +94,35 @@ when accepted, and Pi's `diagnostics`. Warnings do not necessarily prevent loadi
 This checks only the supplied path, not whether the current session discovers or
 uses the skill. It does not reload or change the session.
 
+In a sandbox, validation runs through the attached guest worker's Pi loader.
+Absolute paths, `~/` paths, symlinks, and diagnostics use the guest filesystem;
+relative paths use the worker's working directory. Outside a sandbox, validation
+uses the local Pi loader and session working directory. Guest attachment or
+transport failures return tool errors, never host validation results.
+
+Updating guest validation requires a new worker. Close existing sandbox panes
+and start a new sandbox to deploy the host extension and worker together;
+`/reload` alone cannot replace the worker.
+
 ## Compaction
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
-covering history and any split-turn prefix. If Luna fails or is unavailable, the
+covering history and any split-turn prefix. Generated checkpoints must include
+the `## Objective and authority` header; the extension does not evaluate the
+meaning of their prose. If Luna fails, omits that header, or is unavailable, the
 active model uses the same instructions. If generation fails, session history is
 kept.
 
 The extension appends a repository-state snapshot with `jj status`, the working
-directory, and a capture timestamp. Failed captures report unknown state. The
-snapshot can become stale and is not evidence of task completion. It is excluded
-from later compaction requests rather than summarized again.
+directory, and a capture timestamp. Its serialized JSON is limited to 8,192
+characters. Oversized captures retain the beginning and end of text fields,
+mark omissions, and set `truncated: true`; omitted paths are not evidence of a
+clean working copy. The complete capture is saved in the compaction entry's
+`details.repositoryState`, outside model-visible context.
+
+Failed captures report unknown state. The snapshot can become stale and is not
+evidence of task completion. It is excluded from later compaction requests
+rather than summarized again.
 
 Instructions are read afresh for each compaction; instruction-only edits need no
 reload. After changing extension code, use `/reload` as described above. Follow

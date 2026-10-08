@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, realpath, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -94,6 +94,30 @@ test("a guest read returns its result", async () => {
   assert.deepEqual(await frames(socket), [
     { kind: "result", result: { content: [{ type: "text", text: "guest:file.txt" }] } },
   ]);
+});
+
+test("native skill validation accepts only a path and ignores default skills", async () => {
+  const path = join(directory, "SKILL.md");
+  await writeFile(path, "---\nname: worker-skill\ndescription: A worker fixture.\n---\n");
+  for (const input of [path, "@SKILL.md"]) {
+    const socket = await connect({ tool: "validate_skill", params: { path: input } }, nativeSocket);
+    assert.deepEqual(await frames(socket), [{ kind: "result", result: {
+      loaded: true, name: "worker-skill", diagnostics: [],
+    } }]);
+  }
+  const defaults = join(directory, ".pi/skills/unrelated");
+  await mkdir(defaults, { recursive: true });
+  await writeFile(join(defaults, "SKILL.md"), "---\nname: unrelated\ndescription: A default skill.\n---\n");
+  // A valid default must not turn a missing requested skill into success.
+  const socket = await connect({ tool: "validate_skill", params: { path: "missing.md" } }, nativeSocket);
+  assert.deepEqual(await frames(socket), [{ kind: "result", result: {
+    loaded: false, diagnostics: [{ type: "warning", message: "skill path does not exist",
+      path: join(directory, "missing.md") }],
+  } }]);
+  for (const params of [{}, { path: "" }, { path: 123 }, { path, includeDefaults: true }]) {
+    const invalid = await connect({ tool: "validate_skill", params }, nativeSocket);
+    assert.deepEqual(await frames(invalid), [{ kind: "error", message: "invalid skill path request" }]);
+  }
 });
 
 test("unknown tools do not execute", async () => {

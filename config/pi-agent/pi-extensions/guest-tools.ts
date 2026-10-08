@@ -8,7 +8,7 @@ import { rewritePiResourcePaths } from "./guest-tools-core.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
 
-function callModel(ctx: ExtensionContext): CallModel {
+export function callModel(ctx: ExtensionContext): CallModel {
   const model = ctx.model;
   return model ? { provider: model.provider, modelId: model.id } : null;
 }
@@ -19,7 +19,7 @@ type GuestFrame =
   | { kind: "result"; result: any }
   | { kind: "error"; message: string };
 
-function callGuest(
+export function callGuest(
   tool: string,
   params: Record<string, unknown>,
   model: CallModel,

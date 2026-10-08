@@ -98,7 +98,7 @@ node tools/extract-chat-share/tests/extract_chat_share_test.js
 node tools/codex-archive-old/tests/codex_archive_old_test.js
 node --test tools/codex-sandbox/tests/tool_worker_test.mjs
 node --test tools/codex-sandbox/tests/guest_skill_context_test.mjs
-node --test tests/pi/native_prompt_sections.mjs tests/pi/native_web_search.mjs tests/pi/native_subscription_usage.mjs
+node --test tests/pi/native_prompt_sections.mjs tests/pi/native_web_search.mjs tests/pi/native_subscription_usage.mjs tests/pi/native_validate_skill.mjs
 bun test tests/pi
 bun test tools/codex-sandbox/tests/guest_tools_test.ts
 bun test tools/codex-sandbox/tests/session_handoff_test.ts

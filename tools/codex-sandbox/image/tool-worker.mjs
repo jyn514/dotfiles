@@ -5,6 +5,7 @@ const toolModule = process.env.CODEX_SANDBOX_PI_TOOL_MODULE ??
 const {
   createReadTool, createBashTool, createPowerShellTool, createEditTool,
   createWriteTool, createGrepTool, createFindTool, createLsTool, createLocalBashOperations,
+  getAgentDir, loadSkills,
 } = await import(toolModule);
 const toolFactories = {
   read: createReadTool, bash: createBashTool, powershell: createPowerShellTool,
@@ -74,7 +75,19 @@ const server = createServer((socket) => {
         const model = parseCallModel(request.model);
         const callEnv = { PI_CALL_MODEL: model?.modelId ?? "" };
         let result;
-        if (request.tool === "user_bash") {
+        if (request.tool === "validate_skill") {
+          if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
+              Object.keys(request.params).some(key => key !== "path")) {
+            throw new Error("invalid skill path request");
+          }
+          const { skills, diagnostics } = loadSkills({
+            cwd: process.cwd(),
+            agentDir: getAgentDir(),
+            skillPaths: [request.params.path.replace(/^@/, "")],
+            includeDefaults: false,
+          });
+          result = { loaded: skills.length > 0, name: skills[0]?.name, diagnostics };
+        } else if (request.tool === "user_bash") {
           if (typeof request.params.command !== "string") throw new Error("invalid bash command");
           result = await createLocalBashOperations().exec(
             request.params.command, process.cwd(), {

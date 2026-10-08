@@ -8,7 +8,6 @@
 - `/home/codex/.agents/skills` is writable and host-backed, you may edit it. Other shared instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
 - Most `/home/codex/.pi/agent` state is private and disposable. Host sessions are mounted read-only at `/home/codex/.pi/agent/sessions` for searching past conversations. Staged configuration is read-only; edit its tracked source and start a new sandbox session to refresh startup-loaded state.
 - If you see `/home/jyn` in a path, that's a bug in the sandbox. Establish the proper path, and report the bug at the end of your turn.
-- `validate_skill` runs on the host, not the guest. Pass it a relative path, not an absolute path.
 
 ## Permissions
 
