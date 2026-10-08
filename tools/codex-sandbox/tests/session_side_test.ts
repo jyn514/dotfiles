@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import type { SessionManager as PiSessionManager } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -155,6 +155,88 @@ test("canceled historical tool batches are removed whole, preserving resumed tur
     expect(JSON.stringify(source.getEntries())).toBe(before);
     expect(readFileSync(source.getSessionFile()!, "utf8")).toBe(fileBefore);
     expect(source.getLeafId()).toBe(leafBefore);
+  } finally { f.cleanup(); }
+});
+
+test("compaction boundaries advance past omitted state and failed or incomplete responses", () => {
+  const f = fixture();
+  try {
+    for (const omitted of ["custom", "session_info", "error", "aborted", "deferred", "incomplete"]) {
+      const source = SessionManager.create(f.dir, f.dir);
+      source.appendMessage({ role: "user", content: "already summarized", timestamp: 1 });
+      source.appendMessage(assistant());
+      let boundary: string;
+      if (omitted === "custom") boundary = source.appendCustomEntry("live-worker", { secret: "not context" });
+      else if (omitted === "session_info") boundary = source.appendSessionInfo("source title");
+      else if (omitted === "incomplete") {
+        boundary = source.appendMessage(assistant(["missing", "partial"]));
+        source.appendMessage(result("partial"));
+      } else boundary = source.appendMessage(assistant([], omitted));
+      source.appendCustomEntry("another-worker", { pid: 123 });
+      const retained = { role: "user", content: "retained turn", timestamp: 2 } as const;
+      source.appendMessage(retained);
+      source.appendMessage(assistant());
+      source.appendCompaction("first summary", boundary, 1000, { files: ["x"] }, true, usage);
+      // Repeated compaction must preserve the same retained range, not older turns.
+      source.appendCompaction("latest summary", boundary, 2000, { files: ["y"] }, true, usage);
+      const after = { role: "user", content: "after compaction", timestamp: 3 } as const;
+      source.appendMessage(after);
+      source.appendMessage(assistant());
+      const before = readFileSync(source.getSessionFile()!, "utf8");
+      const copy = SessionManager.open(snapshotSession(source));
+      const context = copy.buildSessionContext().messages;
+      expect(context[0]).toMatchObject({ role: "compactionSummary", summary: "latest summary", tokensBefore: 2000 });
+      // Pi includes an earlier summary when it lies inside the latest retained range.
+      expect(context.slice(1, 3)).toEqual([retained, assistant()]);
+      expect(context[3]).toMatchObject({ role: "compactionSummary", summary: "first summary", tokensBefore: 1000 });
+      expect(context.slice(4)).toEqual([after, assistant()]);
+      expect(copy.getEntries().filter((e: any) => e.type === "compaction").map((e: any) =>
+        ({ summary: e.summary, details: e.details, fromHook: e.fromHook, usage: e.usage }))).toEqual([
+        { summary: "first summary", details: { files: ["x"] }, fromHook: true, usage },
+        { summary: "latest summary", details: { files: ["y"] }, fromHook: true, usage },
+      ]);
+      expect(copy.getEntries().some((e: any) => e.type === "custom")).toBe(false);
+      expect(readFileSync(source.getSessionFile()!, "utf8")).toBe(before);
+    }
+  } finally { f.cleanup(); }
+});
+
+test("an entirely omitted retained range does not resurrect summarized messages", () => {
+  const f = fixture();
+  try {
+    const source = f.source;
+    source.appendMessage({ role: "user", content: "already summarized", timestamp: 1 });
+    source.appendMessage(assistant());
+    const boundary = source.appendCustomEntry("live-worker", { secret: "not context" });
+    source.appendMessage(assistant([], "error"));
+    source.appendCompaction("only summary remains", boundary, 1000);
+    const summaryOnly = SessionManager.open(snapshotSession(source)).buildSessionContext().messages;
+    expect(summaryOnly).toHaveLength(1);
+    expect(summaryOnly[0]).toMatchObject({ role: "compactionSummary", summary: "only summary remains" });
+    const after = { role: "user", content: "after compaction", timestamp: 2 } as const;
+    source.appendMessage(after);
+    source.appendMessage(assistant());
+    const copy = SessionManager.open(snapshotSession(source));
+    const messages = copy.buildSessionContext().messages;
+    expect(messages[0]).toMatchObject({ role: "compactionSummary", summary: "only summary remains" });
+    expect(messages.slice(1)).toEqual([after, assistant()]);
+    const compaction = copy.getEntries().find((e: any) => e.type === "compaction");
+    expect(copy.getEntry(compaction.firstKeptEntryId)).toBeDefined();
+    expect(JSON.stringify(copy.getEntries())).not.toContain("not context");
+  } finally { f.cleanup(); }
+});
+
+test("a missing source compaction boundary fails without publishing a snapshot", () => {
+  const f = fixture();
+  try {
+    f.source.appendMessage({ role: "user", content: "source", timestamp: 1 });
+    f.source.appendMessage(assistant());
+    f.source.appendCompaction("invalid boundary", "missing-entry", 1000);
+    const filesBefore = readdirSync(f.dir);
+    const sourceBefore = readFileSync(f.source.getSessionFile()!, "utf8");
+    expect(() => snapshotSession(f.source)).toThrow("retained entry is outside its source range");
+    expect(readdirSync(f.dir)).toEqual(filesBefore);
+    expect(readFileSync(f.source.getSessionFile()!, "utf8")).toBe(sourceBefore);
   } finally { f.cleanup(); }
 });
 

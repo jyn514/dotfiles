@@ -151,7 +151,10 @@ to compare instruction changes against saved sessions.
 Under tmux, `/split` opens another host Pi pane on the same guest worker and
 copies the active branch's completed context into a fresh saved session. It does
 not stop the source; pending tool batches and live
-extension/child state are not transferred. Panes share files, not later messages.
+extension/child state are not transferred. Compaction summaries remain intact;
+if a retained range starts at an omitted entry, its boundary advances to the
+first surviving entry. An empty range retains only its summary, not older
+messages. Panes share files, not later messages.
 
 The worker remains until its last Pi attachment closes; ordinary subagents remain
 parent-owned. `/split [prompt]` focuses the new pane and automatically sends the

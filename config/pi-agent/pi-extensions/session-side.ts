@@ -43,7 +43,9 @@ function completedPath(entries: SessionEntry[]): SessionEntry[] {
 }
 
 export function snapshotSession(source: ExtensionContext["sessionManager"]): string {
-  const entries = structuredClone(completedPath(source.getBranch()));
+  const path = structuredClone(source.getBranch());
+  const positions = new Map(path.map((entry, index) => [entry.id, index]));
+  const entries = completedPath(path);
   const fresh = SessionManager.create(source.getCwd(), source.getSessionDir() || undefined, {
     parentSession: source.getSessionFile(),
   });
@@ -71,8 +73,19 @@ export function snapshotSession(source: ExtensionContext["sessionManager"]): str
         case "model_change": id = target.appendModelChange(entry.provider, entry.modelId); break;
         case "thinking_level_change": id = target.appendThinkingLevelChange(entry.thinkingLevel); break;
         case "compaction": {
-          const firstKept = ids.get(entry.firstKeptEntryId);
-          if (!firstKept) throw new Error("Cannot preserve compaction: retained entry is missing");
+          const start = positions.get(entry.firstKeptEntryId);
+          const end = positions.get(entry.id)!;
+          if (start === undefined || start > end) {
+            throw new Error("Cannot preserve compaction: retained entry is outside its source range");
+          }
+          // The cut point can be extension state or a failed/incomplete response.
+          // Advance only within this compaction's retained range, never backwards
+          // into summarized history or forwards into post-compaction turns.
+          let firstKept: string | undefined;
+          for (let i = start; i < end && !firstKept; i++) firstKept = ids.get(path[i].id);
+          // With no surviving retained entries, an inert marker keeps the cut
+          // point valid without transferring live state or resurrecting history.
+          firstKept ??= target.appendCustomEntry("split-compaction-boundary", {});
           id = target.appendCompaction(entry.summary, firstKept, entry.tokensBefore, entry.details, entry.fromHook, entry.usage);
           break;
         }
