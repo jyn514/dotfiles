@@ -33,6 +33,7 @@ describe("task-directed Pi documentation", () => {
     const updated = event.systemPromptOptions.sections.docs;
     expect(updated).toStartWith(`${before}\n- Before implementing Pi-specific behavior,`);
     expect(updated).toContain("read the relevant documentation sections");
+    expect(updated).toContain("Check relevant shipped examples for a reusable starting point");
     expect(updated).toContain("Follow references when they define an API or constraint needed for the task");
     expect(updated).toContain("Read whole files only when the task requires understanding them as a whole");
     expect(updated).toEndWith(after);

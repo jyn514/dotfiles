@@ -259,6 +259,7 @@ test("the bundle replaces only documentation policy and guest routing preserves 
     const policy = body.split("\n").filter(newRule);
     assert.equal(policy.length, 1, "replacement policy occurs exactly once");
     assert.match(policy[0], /read the relevant documentation sections/);
+    assert.match(policy[0], /Check relevant shipped examples for a reusable starting point/);
     assert.match(policy[0], /Follow references when they define an API or constraint needed for the task/);
     assert.match(policy[0], /Read whole files only when the task requires understanding them as a whole/);
   }
