@@ -85,6 +85,8 @@ This makes tests and replays use the locked Pi SDK instead of Bun's
 auto-installed or cached version.
 
 Run `dev/test` for the suite, including `tests/pi`, with the prerequisites above.
+It checks for Bun on PATH before running any suite and stops with installation
+guidance if Bun is missing.
 It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.
 For focused tests and ad-hoc Pi probes, including `--help` checks, use
 `dev/test-environment COMMAND [ARGS...]`. For example:

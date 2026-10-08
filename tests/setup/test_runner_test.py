@@ -23,6 +23,7 @@ class TestRunnerTests(unittest.TestCase):
             bin_directory.mkdir()
             for command in ("dirname", "mktemp", "date", "grep", "rm"):
                 (bin_directory / command).symlink_to(shutil.which(command))
+            (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "uvx.args"
             if missing_plugin:
                 pytest = bin_directory / "pytest"
@@ -86,6 +87,7 @@ class TestRunnerTests(unittest.TestCase):
                 (root / f"dev/{name}").chmod(0o755)
             bin_directory = root / "bin"
             bin_directory.mkdir()
+            (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "pytest.args"
             pytest = bin_directory / "pytest"
             pytest.write_text(
@@ -115,6 +117,30 @@ class TestRunnerTests(unittest.TestCase):
             arguments = log.read_text().splitlines()
             self.assertEqual("3", arguments[arguments.index("-n") + 1])
             self.assertIn("--instafail", arguments)
+
+    def test_missing_bun_stops_before_any_test_suite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "dev").mkdir()
+            runner = root / "dev/test"
+            subprocess.run(["cp", ROOT / "dev/test", runner], check=True)
+            subprocess.run(["cmp", ROOT / "dev/test", runner], check=True)
+            binaries = root / "bin"
+            binaries.mkdir()
+            (binaries / "dirname").symlink_to(shutil.which("dirname"))
+            (binaries / "pytest").symlink_to(ROOT / "tests/fixtures/test_runner_command.sh")
+            log = root / "commands.log"
+            result = subprocess.run(
+                ["/bin/sh", runner, "--test-environment-ready"], cwd=root,
+                env=os.environ | {"PATH": str(binaries), "TEST_LOG": str(log)},
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(1, result.returncode)
+            self.assertEqual("", result.stdout)
+            self.assertIn("Bun is required for Pi tests", result.stderr)
+            self.assertIn("install Bun and add it to PATH", result.stderr)
+            self.assertIn("dev/README.md#testing-and-probes", result.stderr)
+            self.assertFalse(log.exists(), "a test suite ran before the prerequisite check")
 
     def test_pi_suite_is_dispatched_and_its_failure_stops_the_runner(self) -> None:
         for status in (0, 29):
