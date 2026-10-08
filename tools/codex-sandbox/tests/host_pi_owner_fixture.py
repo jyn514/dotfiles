@@ -37,6 +37,7 @@ def child():
                                                         "attachment": os.environ["CODEX_SANDBOX_PI_ATTACHMENT"],
                                                         "pid": os.getpid(), "argv": sys.argv[2:],
                                                         "sentinel": os.environ.get("HOST_OWNER_SECRET"),
+                                                        "prompt": os.environ.get("CODEX_SANDBOX_PI_SPLIT_PROMPT"),
                                                         "pane": os.environ.get("TMUX_PANE"),
                                                         "cwd": os.getcwd()}))
     while not session.with_suffix(".exit").exists():

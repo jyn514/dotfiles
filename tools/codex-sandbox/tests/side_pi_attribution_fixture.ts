@@ -7,6 +7,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 export default function attributionProvider(pi: ExtensionAPI) {
   const runtime = process.env.SIDE_PI_RUNTIME!;
+  pi.on("input", (event) => {
+    if (event.text !== "--split-prompt @file 'quoted'") return { action: "continue" };
+    writeFileSync(join(runtime, "split-prompt.json"), JSON.stringify({
+      text: event.text, source: event.source, pane: process.env.TMUX_PANE,
+    }));
+    return { action: "handled" };
+  });
   pi.registerProvider("side-attribution", {
     name: "Offline integration attribution",
     baseUrl: "http://127.0.0.1:9/no-inference",

@@ -230,8 +230,9 @@ tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images wi
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
 ```
 
-Under tmux, `/side` opens a Pi pane with completed context, a fresh session ID,
-and an empty editor, using the same guest container. It leaves the source and its
+Under tmux, `/split` opens a Pi pane with completed context, a fresh session ID,
+and focuses it, using the same guest container. `/split PROMPT` automatically
+sends PROMPT in the new pane; `/split` alone starts it idle. It leaves the source and its
 running work alone; unfinished tool batches and live subagents are not copied.
 Panes share working-tree files, not later messages. Native `/clone`, `/fork`, and
 `/resume` are unchanged.
@@ -241,7 +242,7 @@ until the final Pi attachment exits. Ordinary subagents remain owned by their Pi
 See [startup terminal ownership](#startup-terminal-ownership) before changing
 launcher stdio or process ownership.
 Failed startup leaves existing panes running; worker loss affects all attached
-panes. `/side` is a human command, accepts no arguments, and is unavailable outside
+panes. `/split` is a human command and is unavailable outside
 an interactive sandbox.
 
 `/cd DIRECTORY` validates an existing Jujutsu workspace, releases only this pane's
@@ -332,7 +333,7 @@ Preserve these boundaries when changing launcher output or process ownership:
 - Non-TTY startup retains the existing file-log relay. Startup failures remain
   visible without duplicate diagnostics; interactive output preserves carriage
   returns rather than passing through the text-file relay.
-- Terminal handling must not change `/side` lifetime: either pane may close
+- Terminal handling must not change `/split` lifetime: either pane may close
   first, and shared resources remain until the final Pi attachment exits.
 
 Run the regressions from the repository root:

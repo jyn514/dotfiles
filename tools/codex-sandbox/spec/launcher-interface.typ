@@ -6,7 +6,7 @@ accepted-authority joins are implemented. Version 1 declaration adapters and
 pre-schema-4 recovery remain for migration; active legacy sessions cannot join.
 Host Pi with guest tool execution is the launcher execution path; the host
 extension authority requirements below are not yet fully verified.
-Interactive `/side` panes use shared guest-workload lifetime. Native Pi/tmux
+Interactive `/split` panes use shared guest-workload lifetime. Native Pi/tmux
 checks use a real local tool worker; VM-backed acceptance remains unverified.
 This is the canonical execution-attachment, capability-selection, and image-resolution contract for
 #link("proxy-design.typ")[the sandbox launcher specification]. It supersedes
@@ -48,7 +48,7 @@ Installation alone does not authorize a host handler. Host code and executable
 configuration must remain inaccessible to guest writes through every mount alias.
 
 An execution attachment binds one interactive host Pi and its ordinary children
-to a guest worker and directory. Human-created `/side` panes have separate
+to a guest worker and directory. Human-created `/split` panes have separate
 attachments to that worker, not separate containers. Pi conversation files remain
 on the host. The launcher selects the repository and guest mount; repository tool
 arguments use guest paths. Host-discovered shared skills are mounted at the guest
@@ -121,22 +121,23 @@ unreviewed host handlers.
 Use the existing `PI_SUBAGENT_PI_BIN` entrypoint override. The wrapper launches
 host Pi with the guest-tool extension; it does not own a second guest Pi process.
 
-=== Interactive `/side` panes <interactive-side>
+=== Interactive `/split` panes <interactive-side>
 
-Human `/side` opens a host Pi tmux pane with copied context, using the same guest
+Human `/split` opens a host Pi tmux pane with copied context, using the same guest
 worker, working tree, and accepted authority. It creates no container or policy
 reload; Pi and saved conversations stay on the host. Use a normal extension command
 and leave native `/clone`, `/fork`, and `/resume` unchanged. Without tmux or a live
 sandbox attachment, report an error and leave the invoking session alone.
 
-A continues while `/side` opens B. Closing A ends its ordinary subagents, but B
+A continues while `/split` opens B. Closing A ends its ordinary subagents, but B
 and the container remain; closing B then removes the container. Panes share files,
 not subsequent conversation messages.
 
 Pi copies the invoking session's active branch through its supported session APIs
 into a fresh session ID with an empty editor. Use completed context; do not copy
 or replay an unfinished response or tool batch, live children, or executable
-extension state. Do not interrupt the source or automatically submit a prompt.
+extension state. Do not interrupt the source. Focus the new pane and automatically
+submit the optional `/split` argument there; without an argument, start idle.
 
 The launcher owns the guest workload and its Pi attachments; cleanup is not tied
 to the first Pi's exit. Reserve an attachment before pane startup and release it
@@ -156,7 +157,7 @@ from the invoking session. This is a bounded human operation, not a model-facing
 host shell or a way to select another container, environment, or capability set.
 
 A detached launcher owns workload lifetime. Each interactive `sandbox-host-pi`
-wrapper holds one private lifetime connection; short readiness and `/side` requests
+wrapper holds one private lifetime connection; short readiness and `/split` requests
 are not leases. Final release acknowledges after existing cleanup. Captured host
 environment travels over the private socket, not tmux arguments. The extension
 copies context and starts the fixed wrapper with the existing worker connector;

@@ -121,7 +121,7 @@ def run_case(root, pi, package, subagent_core):
         assert b"PI_SUBAGENT_OWNER_TOKEN" in child_env, "not a manager-owned native child"
         forbidden = (b"CODEX_SANDBOX_PI_OWNER", b"CODEX_SANDBOX_PI_ATTACHMENT", b"CODEX_SANDBOX_CD_REQUEST")
         assert not any(key in child_env for key in forbidden), "ordinary child inherited pane control"
-        input_line(source_pane, "/side")
+        input_line(source_pane, "/split")
         peers = wait_for("real side peer", lambda: ready(2))
         side = next(peer for peer in peers if peer["pane"] != source_pane)
         side_pane, side_session = side["pane"], Path(side["session"])
@@ -213,7 +213,7 @@ def main():
             parser.error(f"missing prerequisite: {program}")
     with tempfile.TemporaryDirectory(prefix="side-ordinary-integration-") as temporary:
         run_case(Path(temporary), pi, package, core)
-    print("PASS: real AgentManager/RPC child model attribution, EOF shutdown, guest cancellation and surviving /side peer; NOT Docker/VM/inference acceptance")
+    print("PASS: real AgentManager/RPC child model attribution, EOF shutdown, guest cancellation and surviving /split peer; NOT Docker/VM/inference acceptance")
 
 
 if __name__ == "__main__":

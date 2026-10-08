@@ -1,5 +1,5 @@
 // Real AgentManager producer, real native RPC consumer; no provider/model call.
-// Loaded explicitly only by the source pane: /side must not replay this extension.
+// Loaded explicitly only by the source pane: /split must not replay this extension.
 import { writeFileSync } from "node:fs";
 
 export default function ordinaryParent(pi: any) {

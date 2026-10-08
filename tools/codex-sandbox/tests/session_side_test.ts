@@ -103,7 +103,7 @@ test("historical failed assistants do not erase later completed turns", () => {
       source.appendMessage(later);
       source.appendMessage(finished);
       // Native context retains terminal failures and the resumed conversation;
-      // /side excludes the failed response, not the subsequent completed turns.
+      // /split excludes the failed response, not the subsequent completed turns.
       expect(source.buildSessionContext().messages).toEqual([first, failed, later, finished]);
       const entriesBefore = JSON.stringify(source.getEntries());
       const fileBefore = readFileSync(source.getSessionFile()!, "utf8");
@@ -213,7 +213,7 @@ async function controller(dir: string, respond: (request: any, socket: Socket) =
   } };
 }
 
-test("ordinary /side command and readiness use host socket; no source control/editor/prompt methods touched", async () => {
+test("ordinary /split command and readiness use host socket; no source control/editor/prompt methods touched", async () => {
   const f = fixture();
   const oldOwner = process.env.CODEX_SANDBOX_PI_OWNER;
   const oldAttachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
@@ -234,7 +234,7 @@ test("ordinary /side command and readiness use host socket; no source control/ed
     const events = new Map<string, any>();
     sessionSide({ registerCommand: (name: string, options: any) => commands.set(name, options.handler),
       on: (name: string, handler: any) => events.set(name, handler) } as any);
-    expect([...commands.keys()]).toEqual(["side"]);
+    expect([...commands.keys()]).toEqual(["split"]);
     expect([...events.keys()]).toEqual(["session_start"]);
     const notifications: string[] = [];
     const forbidden = () => { throw Error("must not touch source runtime/editor"); };
@@ -243,24 +243,36 @@ test("ordinary /side command and readiness use host socket; no source control/ed
       newSession: forbidden, fork: forbidden, switchSession: forbidden, isIdle: forbidden };
     await events.get("session_start")({}, ctx);
     expect(host.requests[0]).toEqual({ op: "ready", attachment: "token", session: f.source.getSessionFile() });
-    for (const args of ["other-session", "--worker x", "--executable sh", "--env A=B"]) await commands.get("side")(args, ctx);
-    await commands.get("side")("", { ...ctx, mode: "rpc" });
+    await commands.get("split")("", { ...ctx, mode: "rpc" });
     expect(host.requests.length).toBe(1);
-    await commands.get("side")("", ctx);
+    await commands.get("split")("", ctx);
     const snapshot = host.requests[1].session;
     expect(host.requests[1]).toEqual({ op: "side", attachment: "token", session: snapshot });
     expect(existsSync(snapshot)).toBe(true);
     launchMode = "failure";
-    await commands.get("side")("", ctx);
+    await commands.get("split")("", ctx);
     expect(existsSync(host.requests[2].session)).toBe(false);
     expect(existsSync(snapshot)).toBe(true);
     expect(notifications.at(-1)).toContain("pane failed");
     launchMode = "lost-ack";
-    await commands.get("side")("", ctx);
+    await commands.get("split")("", ctx);
     expect(existsSync(host.requests[3].session)).toBe(true);
     expect(notifications.at(-1)).toContain("launch outcome unknown");
     expect(host.requests.length).toBe(4);
     launchMode = "success";
+    const prompt = "--env A=B @file 'quoted'\nsecond line";
+    await commands.get("split")(prompt, ctx);
+    expect(host.requests.at(-1)).toEqual({ op: "side", attachment: "token",
+      session: host.requests.at(-1).session, prompt });
+    const sent: string[] = [];
+    process.env.CODEX_SANDBOX_PI_SPLIT_PROMPT = prompt;
+    sessionSide({ registerCommand: () => {},
+      on: (name: string, handler: any) => events.set(name, handler),
+      sendUserMessage: (message: string) => sent.push(message) } as any);
+    expect(process.env.CODEX_SANDBOX_PI_SPLIT_PROMPT).toBeUndefined();
+    await events.get("session_start")({}, ctx);
+    await events.get("session_start")({ reason: "reload" }, ctx);
+    expect(sent).toEqual([prompt]);
     for (const reason of ["fork", "resume", "new", "reload"]) {
       const source = SessionManager.create(f.dir, join(f.dir, reason));
       await events.get("session_start")({ reason }, { ...ctx, sessionManager: source });
@@ -274,7 +286,7 @@ test("ordinary /side command and readiness use host socket; no source control/ed
     ephemeralDir = SessionManager.create(f.dir).getSessionDir();
     await events.get("session_start")({ reason: "new" }, { ...ctx, sessionManager: ephemeral });
     expect(host.requests.at(-1)).toEqual({ op: "ready", attachment: "token", session: null, sessionDir: ephemeralDir });
-    await commands.get("side")("", { ...ctx, sessionManager: ephemeral });
+    await commands.get("split")("", { ...ctx, sessionManager: ephemeral });
     const ephemeralCopy = host.requests.at(-1).session;
     expect(dirname(ephemeralCopy)).toBe(ephemeralDir);
     expect(SessionManager.open(ephemeralCopy).buildSessionContext().messages).toEqual(ephemeral.buildSessionContext().messages);

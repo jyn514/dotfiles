@@ -131,21 +131,23 @@ dependencies and run the offline compaction tests, including native extension
 loading and resumed-context reconstruction. See [compaction replay](../../../dev/README.md#replay-a-compaction)
 to compare instruction changes against saved sessions.
 
-## Side conversations: `/side`
+## Side conversations: `/split`
 
-Under tmux, `/side` opens another host Pi pane on the same guest worker and
+Under tmux, `/split` opens another host Pi pane on the same guest worker and
 copies the active branch's completed context into a fresh saved session. It does
-not stop the source or submit a prompt; pending tool batches and live
+not stop the source; pending tool batches and live
 extension/child state are not transferred. Panes share files, not later messages.
 
 The worker remains until its last Pi attachment closes; ordinary subagents remain
-parent-owned. `/side` takes no arguments and is unavailable to ordinary subagents
+parent-owned. `/split [prompt]` focuses the new pane and automatically sends the
+optional prompt there. Without a prompt, the new pane starts idle.
+It is unavailable to ordinary subagents
 or outside an interactive sandbox. Native `/clone`, `/fork`, and `/resume` are
 unchanged.
 
 Refused startup removes only its unpublished snapshot. If the host connection
 fails after submission, the outcome is unknown: retain the snapshot and do not
-retry. Check tmux before invoking `/side` again.
+retry. Check tmux before invoking `/split` again.
 
 ## Asynchronous questions: `ask_user`
 

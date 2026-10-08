@@ -100,7 +100,7 @@ export function snapshotSession(source: ExtensionContext["sessionManager"]): str
 }
 
 type Request =
-  | { op: "side"; attachment: string; session: string }
+  | { op: "side"; attachment: string; session: string; prompt?: string }
   | { op: "ready"; attachment: string; session: string }
   | { op: "ready"; attachment: string; session: null; sessionDir: string };
 
@@ -149,6 +149,9 @@ export function requestOwner(socketPath: string, request: Request, timeoutMs = 1
 export default function sessionSide(pi: ExtensionAPI) {
   const socket = process.env.CODEX_SANDBOX_PI_OWNER;
   const attachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
+  const prompt = process.env.CODEX_SANDBOX_PI_SPLIT_PROMPT;
+  delete process.env.CODEX_SANDBOX_PI_SPLIT_PROMPT;
+  let initialPrompt = prompt;
   if (!socket || !isAbsolute(socket) || !attachment) return;
   pi.on("session_start", async (_event, ctx) => {
     if (ctx.mode !== "tui") return;
@@ -159,23 +162,28 @@ export default function sessionSide(pi: ExtensionAPI) {
         ? { op: "ready", attachment, session }
         : { op: "ready", attachment, session: null,
           sessionDir: source.getSessionDir() || SessionManager.create(source.getCwd()).getSessionDir() });
+      if (initialPrompt) {
+        const message = initialPrompt;
+        initialPrompt = undefined;
+        pi.sendUserMessage(message);
+      }
     } catch (error) {
       ctx.ui.notify(`Host Pi readiness: ${String(error)}`, "error");
     }
   });
-  pi.registerCommand("side", {
+  pi.registerCommand("split", {
     description: "Open completed context in a new host Pi pane",
     handler: async (args, ctx) => {
-      if (args.trim()) return ctx.ui.notify("Usage: /side (no arguments)", "error");
-      if (ctx.mode !== "tui") return ctx.ui.notify("/side requires an interactive sandbox attachment", "error");
+      if (ctx.mode !== "tui") return ctx.ui.notify("/split requires an interactive sandbox attachment", "error");
       let snapshot: string | undefined;
       try {
         snapshot = snapshotSession(ctx.sessionManager);
-        await requestOwner(socket, { op: "side", attachment, session: snapshot });
+        await requestOwner(socket, { op: "side", attachment, session: snapshot,
+          ...(args.trim() ? { prompt: args } : {}) });
       } catch (error) {
         const uncertain = (error as { snapshotMayBePublished?: boolean })?.snapshotMayBePublished;
         if (snapshot && !uncertain) unlinkSync(snapshot);
-        ctx.ui.notify(`/side: ${String(error)}${uncertain ? "; launch outcome unknown, snapshot retained (no retry)" : ""}`, "error");
+        ctx.ui.notify(`/split: ${String(error)}${uncertain ? "; launch outcome unknown, snapshot retained (no retry)" : ""}`, "error");
       }
     },
   });

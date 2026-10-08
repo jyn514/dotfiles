@@ -110,7 +110,7 @@ It may contain authenticated-egress session tokens, which are passed only to the
 All agents attached to the accepted shared session receive the same route authority, so per-attachment token issuance and revocation add no useful isolation.
 Final-holder cleanup removes the record after stopping the shared services; each token is useless upstream and expires when its service stops.
 Per-launch services are not shared state and cannot be inherited by another
-launcher. Under the #link("launcher-interface.typ")[`/side` plan], peer Pi panes
+launcher. Under the #link("launcher-interface.typ")[`/split` plan], peer Pi panes
 share one existing agent-launch resource owner, not a new launcher or relay
 authorization.
 
@@ -121,7 +121,7 @@ Command proxies and Caddy authenticated-egress instances normally use this scope
 The first launcher owns publication; the final attached launcher owns cleanup.
 
 `agent-launch` services belong to one launcher-owned guest workload, initially
-used by one Pi attachment and its ordinary children. `/side` keeps these services
+used by one Pi attachment and its ordinary children. `/split` keeps these services
 until final attachment release; they do not become shared-session services.
 Directory changes release only the invoking attachment, and a new workload gets
 its own per-launch authorization.
@@ -249,7 +249,7 @@ Each service adapter gets at most one bounded graceful-shutdown hook appropriate
 After the deadline, the runtime terminates the complete owned process or container and reaps descendants according to #link("process-ownership.typ")[process ownership].
 
 Per-launch services stop on startup failure or final attachment release. Host Pi
-release follows the launcher contract; `/side` keeps the workload owner and
+release follows the launcher contract; `/split` keeps the workload owner and
 shared-session lock alive while peers remain.
 Shared services stop only after the final launcher proves final ownership through the host session lock.
 Cleanup runs in reverse dependency order derived from the declared resource attachments: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.

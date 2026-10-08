@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Opt-in real Pi /side UI + disposable tmux + real LOCAL tool-worker acceptance.
+"""Opt-in real Pi /split UI + disposable tmux + real LOCAL tool-worker acceptance.
 
 Run: python3 tools/codex-sandbox/tests/side_pi_integration.py --pi /path/to/cli.js
 No Docker/VM/network/model acceptance: the guest is a distinct local directory.
-Likely regressions covered: /side loses completed context, replays user prompts,
+Likely regressions covered: /split loses completed context, replays user prompts,
 launches host tools, or source exit incorrectly destroys the sibling's worker.
 Also overlaps native /model-selected user_bash calls through the actual JJ shim:
 A waits, B publishes stale legacy metadata, then A must retain its call identity.
@@ -124,7 +124,7 @@ def run_case(root, pi, package, close_source_first):
                    "HOME": str(home), "PI_CODING_AGENT_DIR": str(agent),
                    "PI_CODING_AGENT_SESSION_DIR": str(sessions), "PI_PACKAGE_DIR": str(package),
                    "PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0"}
-    # Both native panes discover the same test provider from owned HOME; /side
+    # Both native panes discover the same test provider from owned HOME; /split
     # intentionally drops original extra CLI flags. No auth or project resources.
     arguments = ["--session", str(source), "--session-dir", str(sessions), "--offline",
                  "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve"]
@@ -293,10 +293,16 @@ def run_case(root, pi, package, close_source_first):
         switch_model(source_pane, "fixture-model-A-raw")
         first_output = tool_probe(source_pane, "SOURCE_GUEST_OK", source)
         before_side = entries(source)
-        input_line(source_pane, "/side")
-        peers = wait_for("actual /side command opens ready real sibling", lambda: ready(2))
+        prompt = "--split-prompt @file 'quoted'"
+        input_line(source_pane, "/split " + prompt)
+        peers = wait_for("actual /split command opens ready real sibling", lambda: ready(2))
         side_info = next(peer for peer in peers if peer["pane"] != source_pane)
         side_pane = side_info["pane"]
+        sent = wait_for("split auto-submits prompt", lambda: load(runtime / "split-prompt.json"))
+        assert sent == {"text": prompt, "source": "extension", "pane": side_pane}, sent
+        active = subprocess.check_output(["tmux", "-L", server, "display-message", "-p", "-t",
+                                          side_pane, "#{pane_active}"], env=environment, text=True).strip()
+        assert active == "1", active
         side_session = Path(side_info["session"])
         assert side_session != source and side_session.parent == sessions, side_info
         side_data = entries(side_session)
@@ -394,7 +400,7 @@ def main():
         run_case(root, pi, package, True)
         if not args.source_first_only:
             run_case(root, pi, package, False)
-    print("PASS: real Pi /side UI, saved completed-context clone, local guest routing, shared worker lifetime, native ctx.model per-call JJ attribution; NOT container/VM/inference acceptance")
+    print("PASS: real Pi /split UI, saved completed-context clone, local guest routing, shared worker lifetime, native ctx.model per-call JJ attribution; NOT container/VM/inference acceptance")
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ class Attachment:
     session_directory: Path | None = None
     pane: str | None = None
     ready: bool = False
+    prompt: str | None = None
 
 
 class HostPiOwner:
@@ -105,6 +106,9 @@ class HostPiOwner:
         environment.update(CODEX_SANDBOX_PI_OWNER=self.path,
                            CODEX_SANDBOX_PI_ATTACHMENT=item.token,
                            CODEX_SANDBOX_CD_REQUEST=item.cd_request)
+        environment.pop("CODEX_SANDBOX_PI_SPLIT_PROMPT", None)
+        if item.prompt:
+            environment["CODEX_SANDBOX_PI_SPLIT_PROMPT"] = item.prompt
         return {"argv": [self.wrapper, "--sandbox-interactive", *(self.arguments if arguments is None else arguments)],
                 "cwd": self.cwd, "env": environment}
 
@@ -228,7 +232,7 @@ class HostPiOwner:
                     self.lock.notify_all()
                 send(connection, {"ok": True})
             elif operation == "side":
-                pane = self.side(item, request.get("session"))
+                pane = self.side(item, request.get("session"), request.get("prompt"))
                 send(connection, {"ok": True, "pane": pane})
             else:
                 raise ValueError("unknown operation")
@@ -244,9 +248,11 @@ class HostPiOwner:
             if not keep:
                 connection.close()
 
-    def side(self, source, snapshot):
+    def side(self, source, snapshot, prompt=None):
+        if prompt is not None and not isinstance(prompt, str):
+            raise ValueError("prompt must be a string")
         if not self.environment.get("TMUX") or not self.environment.get("TMUX_PANE"):
-            raise ValueError("/side requires tmux")
+            raise ValueError("/split requires tmux")
         path = Path(snapshot).resolve(strict=True)
         with self.lock:
             if source.token not in self.attachments or source.connection is None:
@@ -254,9 +260,10 @@ class HostPiOwner:
             if source.session_directory is None or path.parent != source.session_directory or not path.is_file():
                 raise ValueError("snapshot must belong to the invoking Pi session directory")
             item = self.reserve()
+            item.prompt = prompt
         pane = None
         try:
-            # A clone starts idle: never replay prompts, output modes, or original
+            # Never replay the source's prompts, output modes, or original
             # CLI model overrides. The snapshot carries model/thinking metadata.
             spec = self.launch_spec(item, ["--session-dir", str(path.parent), "--session", str(path)])
             # Captured host secrets travel only over the private attach socket,
@@ -266,7 +273,7 @@ class HostPiOwner:
             if "HOME" in self.environment:
                 launch_environment["HOME"] = self.environment["HOME"]
             command = shlex.join(["env", *(f"{k}={v}" for k, v in launch_environment.items()), *spec["argv"]])
-            result = subprocess.run(["tmux", "split-window", "-d", "-P", "-F", "#{pane_id}",
+            result = subprocess.run(["tmux", "split-window", "-P", "-F", "#{pane_id}",
                                      "-t", source.pane or self.environment["TMUX_PANE"], "-c", self.cwd, command],
                                     env=self.environment, text=True, capture_output=True, check=True,
                                     timeout=self.timeout)

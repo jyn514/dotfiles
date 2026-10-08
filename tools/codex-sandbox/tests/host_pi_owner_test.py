@@ -310,10 +310,10 @@ class ProcessAndTmuxTest(unittest.TestCase):
         info = json.loads(original.with_suffix(".ready").read_text())
         return process, info, original, marker, pidfile
 
-    def side(self, info):
+    def side(self, info, prompt=None):
         snapshot = self.root / "copied.jsonl"
         snapshot.write_text('{}\n')
-        answer = request(info["owner"], {"op": "side", "attachment": info["attachment"], "session": str(snapshot)})
+        answer = request(info["owner"], {"op": "side", "attachment": info["attachment"], "session": str(snapshot), "prompt": prompt})
         self.assertTrue(answer["ok"], answer)
         until(snapshot.with_suffix(".ready").exists)
         clone = json.loads(snapshot.with_suffix(".ready").read_text())
@@ -328,7 +328,17 @@ class ProcessAndTmuxTest(unittest.TestCase):
         pane_command = subprocess.check_output(["tmux", "-L", self.server, "display-message", "-p", "-t",
                                                 answer["pane"], "#{pane_start_command}"], text=True)
         self.assertNotIn(self.environment["HOST_OWNER_SECRET"], pane_command)
+        self.assertEqual(clone["prompt"], prompt)
+        active = subprocess.check_output(["tmux", "-L", self.server, "display-message", "-p", "-t",
+                                          answer["pane"], "#{pane_active}"], text=True).strip()
+        self.assertEqual(active, "1")
         return snapshot, clone, answer["pane"]
+
+    def test_split_prompt_is_delivered_verbatim_over_private_attachment(self):
+        process, info, original, marker, pidfile = self.launch()
+        prompt = "--env A=B @file 'quoted'\nsecond line"
+        snapshot, clone, pane = self.side(info, prompt)
+        self.assertNotIn(prompt, clone["argv"])
 
     def test_detached_owner_survives_original_sigkill_and_hup(self):
         for signum in (signal.SIGKILL, signal.SIGHUP):

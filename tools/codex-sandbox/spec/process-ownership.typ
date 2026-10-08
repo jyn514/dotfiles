@@ -114,7 +114,7 @@ remote identities, and credential handling with their current owners.
 The #link("launcher-interface.typ")[host-Pi path] keeps parent and subagent Pi
 processes on the host; the existing subagent manager owns child processes and RPC
 pipes. The implemented launcher owns one guest workload per Pi launch. Under the
-#link("launcher-interface.typ")[interactive `/side` plan], peer panes attach
+#link("launcher-interface.typ")[interactive `/split` plan], peer panes attach
 independently; the workload owner survives the first pane's exit and cleans up at
 final release. Ordinary subagents remain owned by their invoking Pi. The trusted-
 service supervisor retains only services in #link("trusted-service-lifecycle.typ")[its lifecycle contract].
