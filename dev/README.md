@@ -100,6 +100,13 @@ environment isolation, not a filesystem sandbox: commands can still write
 explicit paths outside HOME. The wrapper clears inherited `JJ_CONFIG` so Jujutsu
 loads user configuration from the private HOME/XDG directories instead.
 
+The sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
+permission to create local TCP and Unix sockets. If an execution sandbox denies
+socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun
+the affected command outside that sandbox using the harness's approval mechanism.
+Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket
+permissions.
+
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides
 or resolves mise shims before changing HOME. Failed resolution stops the run before
 a child starts. Repository-local exclusions keep dependencies, notes, test caches,
