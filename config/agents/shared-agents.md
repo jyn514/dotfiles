@@ -88,9 +88,13 @@ When creating or modifying a test, run it and iterate until it passes.
 
 ### Minimize complexity
 
-Start with the smallest direct action that satisfies the request.
+Before presenting a design, identify the smallest change that preserves existing interfaces and meets the requested outcome.
+Recommend it unless concrete evidence shows it is insufficient.
+When evidence is missing, propose a small experiment instead of a larger architecture.
+Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
+Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
+
 Existing tools, reviewer suggestions, and possible future failures do not expand scope.
-Prefer a limited solution that can be extended later over a comprehensive solution that was not requested.
 Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
 Establish scope before routing to specialized skills.
 
