@@ -38,6 +38,12 @@ existing image lifecycle retain ownership of it.
 
 == Host Pi and guest execution <host-pi-execution>
 
+The proposed #link("remote-frontend.typ")[remote frontend contract] separates
+the frontend host from the sandbox host for `pi --ssh HOST:/absolute/project/path`.
+It owns SSH startup, compatibility, remote context loading, and transport loss;
+the attachment and sandbox policy rules here remain authoritative. Remote mode
+is not implemented.
+
 The parent Pi and its Pi subagents run on the host. Pi owns conversation
 persistence, model requests, and UI; the launcher owns execution attachments,
 and the tool backend executes arbitrary model-selected filesystem and process

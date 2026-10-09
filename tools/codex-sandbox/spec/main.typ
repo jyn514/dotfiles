@@ -21,6 +21,8 @@ owns their presentation and order.
 
 #include "launcher-interface.typ"
 
+#include "remote-frontend.typ"
+
 #include "bake-resolver.typ"
 
 #include "process-ownership.typ"
