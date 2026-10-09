@@ -32,27 +32,21 @@ def main():
         for _ in range(2):
             state = launcher['new_state'](['--help'])
             states.append(state)
-            state.capabilities = frozenset({'host-editor', 'nested-containers'})
+            state.capabilities = frozenset({'nested-containers'})
             launcher['load_agent_docker'](state)
             assert state.agent_docker is not None, 'Agent Docker access must be configured'
             state.sidecar_image = auth
             flags = launcher['prepare_gateway'](state)
-            state.host_editor._edit = lambda content: content + ' edited'
             launcher['start_gateway'](state)
         other, state = states
         other_ip = runtime.network_address(other.gateway_container, other.gateway_link_network)
         flags = ['--network', 'codex-public-only', *flags]
-        with runtime.environment_file({'CODEX_SANDBOX_EDITOR_TOKEN': state.host_editor.token,
-                'OTHER_GATEWAY_IP': other_ip, 'HOST_EDITOR_PORT': str(state.host_editor.port)}) as env:
-            for probe in ([], ['--refused-editor']):
-                if probe:
-                    state.host_editor.stop()
-                with runtime.workload(image, 'gateway-client-' + uuid.uuid4().hex[:12], [
-                        *flags, *env, '--cap-drop=ALL',
-                        '--mount', f'type=bind,src={ROOT / "tests"},dst=/probe,readonly',
-                        '--entrypoint', 'python3'], ['/probe/gateway_guest.py', *probe]) as process:
-                    assert process.wait(timeout=180) == 0
-        print('Editor upstream refusal left SSH available.')
+        with runtime.environment_file({'OTHER_GATEWAY_IP': other_ip}) as env:
+            with runtime.workload(image, 'gateway-client-' + uuid.uuid4().hex[:12], [
+                    *flags, *env, '--cap-drop=ALL',
+                    '--mount', f'type=bind,src={ROOT / "tests"},dst=/probe,readonly',
+                    '--entrypoint', 'python3'], ['/probe/gateway_guest.py']) as process:
+                assert process.wait(timeout=180) == 0
         # SIGTERM must end the PID1 supervisor and all of its listener children.
         runtime.run(['kill', '--signal', 'TERM', state.gateway_container], stdout=subprocess.DEVNULL)
         deadline = time.monotonic() + 5

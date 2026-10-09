@@ -99,7 +99,7 @@ gates. `dev/test --lima` runs that gate after repository checks; it leaves the
 unrelated `--containers` suites on their existing runtime.
 
 The [launcher fixture](launch.md#exercise-an-owned-host) covers PTY startup,
-shared proxies, dummy boot credentials, and host editing. Ctrl-C, launcher build
+shared proxies and dummy boot credentials. Ctrl-C, launcher build
 interruption, VM loss during a session, and configured integrations remain
 full-session gates.
 

@@ -72,7 +72,7 @@ The integration fixture needs dotfiles readable and an existing writable
 test directory. It creates a disposable home/repository, supplies only a dummy
 GitHub credential, checks the non-root entrypoint and protected mounts, and runs
 two real PTY launches. It exercises host and agent Jujutsu routing, router SIGTERM,
-authenticated host editing, and a Codex sidecar with dummy credentials and no
+and a Codex sidecar with dummy credentials and no
 upstream requests, then resets shared proxies. The caller owns VM teardown.
 
 ```sh

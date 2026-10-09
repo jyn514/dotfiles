@@ -217,21 +217,6 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
                                    check=True, text=True, stdout=subprocess.PIPE).stdout.strip())
             state = launcher["new_state"](["--help"])
             agent = launcher["resolve_agent"](runtime, state.uid, state.gid, base)
-            editor = launcher["new_state"](["--help"])
-            try:
-                editor_flags = launcher["prepare_gateway"](editor)
-                editor.host_editor._edit = lambda content: content + " edited"
-                editor.sidecar_image = subprocess.run([str(ROOT / "auth-proxy/image")],
-                    env=environment, check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
-                launcher["start_gateway"](editor)
-                with runtime.environment_file({"CODEX_SANDBOX_EDITOR_TOKEN": editor.host_editor.token}) as secret:
-                    with runtime.workload(runtime.inspect_image(agent), "editor-probe-" + secrets.token_hex(6), [
-                            *editor_flags, *secret,
-                            "--mount", f"type=bind,src={ROOT / 'tests/lima_editor_probe.py'},dst=/probe.py,readonly",
-                            "--entrypoint", "python3"], ["/probe.py"]) as process:
-                        assert process.wait(timeout=30) == 0
-            finally:
-                launcher["cleanup"](editor)
             probe_name = "credential-probe-" + secrets.token_hex(6)
             with runtime.workload(runtime.inspect_image(agent), probe_name, [
                     "--network", "codex-public-only", "--dns", "10.0.2.3",

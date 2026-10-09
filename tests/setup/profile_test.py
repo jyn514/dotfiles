@@ -42,29 +42,6 @@ class ProfileContractTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(f"yes:{zsh_config}\n", result.stdout)
 
-    def test_sandbox_host_editor_uses_the_plugin_free_nvim_profile(self) -> None:
-        command = (
-            'export CODEX_SANDBOX_HOST_EDITOR="nvim --clean --noplugin -u '
-            "'$HOME/.config/nvim/host-editor.lua'\""
-        )
-        self.assertIn(command, (ROOT / "config/profile").read_text())
-        self.assertIn(command, (ROOT / "config/config.fish").read_text())
-
-        host_editor = (ROOT / "config/nvim/host-editor.lua").read_text()
-        shared = (ROOT / "config/nvim/shared.lua").read_text()
-        normal = (ROOT / "config/nvim/init.lua").read_text()
-        self.assertIn("vim.opt.loadplugins = false", host_editor)
-        self.assertIn("vim.opt.modeline = false", host_editor)
-        self.assertIn("vim.opt.exrc = false", host_editor)
-        self.assertIn("dofile(config .. '/shared.lua')", host_editor)
-        self.assertIn("dofile(vim.fn.stdpath('config') .. '/shared.lua')", normal)
-        self.assertIn("vim.keymap.set('n', 'U', '<C-r>'", shared)
-        self.assertNotIn("vim.keymap.set('n', 'U', '<C-r>'", host_editor)
-        self.assertNotIn("vim.keymap.set('n', 'U', '<C-r>'", normal)
-        self.assertNotIn("require(", host_editor)
-        self.assertNotIn("require(", shared)
-        self.assertNotIn("nvim_create_autocmd", host_editor)
-        self.assertNotIn("nvim_create_autocmd", shared)
 
     def test_makeflags_has_an_explicit_parallelism_value(self) -> None:
         env = (ROOT / "lib/shell/env.sh").read_text()

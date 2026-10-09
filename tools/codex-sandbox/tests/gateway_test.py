@@ -147,27 +147,6 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertTrue(any(call.args[0][:2] == ["network", "rm"]
                             for call in run.call_args_list))
 
-    def test_editor_only_ignores_available_build_credentials(self):
-        state = self.state()
-        state.capabilities = frozenset({"host-editor"})
-        commands = []
-
-        def run(command, **_kwargs):
-            commands.append(command)
-            if command[1:2] == ["inspect"]:
-                return SimpleNamespace(returncode=0, stdout="10.0.0.2\n")
-            return SimpleNamespace(returncode=0, stdout="")
-
-        prepare = self.launcher["prepare_gateway"]
-        start = self.launcher["start_gateway"]
-        bridge = Mock(port=1234)
-        with patch.dict(start.__globals__, run=run, create_relay_network=Mock(),
-                        HostEditorBridge=Mock(return_value=bridge)):
-            prepare(state)
-            start(state)
-        gateway_run = commands[0]
-        self.assertIn("--editor-port", gateway_run)
-        self.assertNotIn("--build-port", gateway_run)
 
     def test_agent_room_uses_fixed_gateway_port_and_loopback_target(self):
         state = self.state()
@@ -234,7 +213,7 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_recovery_retains_foreign_resources_then_retries_in_dependency_order(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state, False, True)
+            handle = self.launcher["GatewayHandle"](state, nested=True)
             state.gateway_handle = handle
             remaining = ("container:gateway", "network:gateway-link", "network:gateway-egress")
             path = self.launcher["persist_relay_recovery"](
@@ -284,7 +263,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             state.proxy_lock = None; state.proxy_state = None; state.proxy_args = None
             state.manifest = None; state.prepared_images = None
             state.tmux_registration = None
-            handle = self.launcher["GatewayHandle"](state, False, True)
+            handle = self.launcher["GatewayHandle"](state, nested=True)
             state.gateway_handle = handle
             resource_type = self.launcher["OwnedResource"]
             presence = self.launcher["ResourcePresence"]
@@ -356,7 +335,7 @@ class GatewayLifecycleTest(unittest.TestCase):
     def test_recovery_retains_record_when_runtime_listing_is_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(); state.home = Path(directory)
-            handle = self.launcher["GatewayHandle"](state, False, True)
+            handle = self.launcher["GatewayHandle"](state, nested=True)
             state.gateway_handle = handle
             path = self.launcher["persist_relay_recovery"](
                 state, handle.resources, handle.owner, ("network:gateway-link",),
@@ -384,12 +363,12 @@ class GatewayTest(unittest.TestCase):
 
         with patch.object(gateway.subprocess, 'Popen', side_effect=spawn):
             with self.assertRaisesRegex(OSError, 'second listener failed'):
-                gateway.serve('host.lima.internal', 1234, 5678)
+                gateway.serve('host.lima.internal', build_port=1234, agent_room_port=5678)
         self.assertIsNotNone(children[0].poll())
         with self.assertRaises(ProcessLookupError):
             os.killpg(children[0].pid, 0)
 
-    def test_nested_listener_does_not_require_editor(self):
+    def test_nested_listener_runs_without_other_capabilities(self):
         child = Mock(pid=12, returncode=None)
         with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
                 patch.object(gateway.os, 'wait', return_value=(12, 0)), \

@@ -47,7 +47,7 @@ class HostKeychainBridge:
     def start(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            # Like HostEditorBridge, the host bind must work across VM runtimes.
+            # The host bind must work across VM runtimes.
             # Peers and a separate capability authenticate this wildcard bind.
             listener.bind(('0.0.0.0', 0))
             listener.listen(1)

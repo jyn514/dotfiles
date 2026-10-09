@@ -294,8 +294,8 @@ container-initiated connections to namespace services remain blocked. This lets
 Docker's userland proxy receive replies from published container services.
 Loopback publications bind to VM loopback; host access also requires Lima forwarding.
 Use `docker_host.py upgrade` above to install this policy in an existing VM.
-Each sandbox gateway has one private egress network and fixed editor and optional
-Podman SSH listeners.
+Each selected sandbox gateway has one private egress network and fixed
+Agent Docker SSH or agent-room listeners.
 Neither listener accepts a client-selected destination.
 Docker restarts stop workloads and reinstall filtering;
 live restore and workload restart policies are disabled.
@@ -399,7 +399,7 @@ against the selected revision. `dev/test --lima` exercises nerdctl, not Docker.
 
 Zulip's Docker fixture passed dummy-credential TLS and upstream-401 cases;
 this does not establish configured end-to-end parity. The gateway has its own
-editor/SSH fixture below. Long-running interactive work, configured Zulip smoke
+SSH fixture below. Long-running interactive work, configured Zulip smoke
 tests, and rollback remain follow-up validation. Nested build validation is
 owned by the [Agent Docker acceptance checks](../development.md#nested-docker-acceptance).
 
@@ -421,6 +421,7 @@ python3 tools/codex-sandbox/tests/gateway_integration.py \
   --agent-image AGENT_IMAGE --gateway-image GATEWAY_IMAGE
 ```
 
+This creates two owned gateways and checks SSH authentication.
 See [Nested Docker acceptance](../development.md#nested-docker-acceptance) for
 the probe's build, staging, isolation, cancellation, and cleanup checks.
 

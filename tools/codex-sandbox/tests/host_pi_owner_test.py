@@ -239,24 +239,6 @@ class ControllerTest(unittest.TestCase):
                                                  "session": None, "sessionDir": str(self.root)})["ok"])
         self.assertEqual(self.owner.original.session_directory, self.root)
 
-    def test_editor_target_falls_back_only_to_live_admitted_pane(self):
-        targets = []
-        self.owner.pane_changed = targets.append
-        self.owner.original.pane = "%1"
-        first, stream = self.attach(self.owner.original)
-        self.ready(self.owner.original)
-        peer = self.owner.reserve()
-        peer.pane = "%2"
-        second, peer_stream = self.attach(peer)
-        self.ready(peer)
-        reserved = self.owner.reserve()
-        reserved.pane = "%3"
-        send(first, {"op": "release"})
-        self.assertFalse(receive(stream)["final"])
-        self.assertEqual(targets[-1], "%2")
-        send(second, {"op": "release"})
-        self.assertFalse(receive(peer_stream)["final"])
-        self.assertIsNone(targets[-1])
 
     def test_worker_loss_notifies_all_lifetime_connections(self):
         _, first = self.attach(self.owner.original)

@@ -1,4 +1,4 @@
--- Plugin-free behavior shared by normal Neovim and the hardened host editor.
+-- Shared Neovim behavior.
 vim.g.mapleader = ' '
 vim.g.maplocalleader = 'f'
 

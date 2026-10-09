@@ -22,7 +22,6 @@ import secrets
 import signal
 import socket
 import stat
-import struct
 import subprocess
 import sys
 import tempfile
@@ -69,7 +68,6 @@ sys.path.insert(0, str(DOTFILES / "libexec"))
 from dotfile_links import configured_links
 
 PROXY_HELPER = Path(__file__).resolve().with_name("sandbox-proxies.py")
-HOST_EDITOR_PANE = Path(__file__).resolve().with_name("host-editor-pane")
 SANDBOX_NETWORK = "codex-public-only"
 GUEST_PI_PACKAGE = Path("/opt/agent-pi/src/packages/coding-agent")
 GUEST_AGENT_SKILLS = Path("/home/codex/.agents/skills")
@@ -165,10 +163,6 @@ class State:
     capabilities: frozenset[str] = frozenset()
     policy_source_present: bool = False
 
-    @property
-    def host_editor(self) -> HostEditorBridge | None:
-        """Protocol view only; the gateway handle retains lifecycle ownership."""
-        return self.gateway_handle.bridge if self.gateway_handle is not None else None
 
 
 def run(
@@ -674,9 +668,8 @@ def attach_proxies(state: State) -> list[str]:
 class GatewayHandle:
     """Sole owner of one launch's staged, best-effort gateway resources."""
 
-    def __init__(self, state: State, editor: bool, nested: bool, agent_room: bool = False) -> None:
+    def __init__(self, state: State, nested: bool, agent_room: bool = False) -> None:
         self.state = state
-        self.editor = editor
         self.nested = nested
         self.agent_room = agent_room
         self.owner = uuid.uuid4().hex
@@ -685,7 +678,6 @@ class GatewayHandle:
             state.gateway_link_network, state.gateway_egress_network, state.gateway_container,
         )
         self.cancelled = threading.Event()
-        self.bridge: HostEditorBridge | None = None
         self.agent_room_bridge: FixedTcpBridge | None = None
         self.build_bridge: FixedTcpBridge | None = None
         self._logical: set[str] = set()
@@ -867,13 +859,12 @@ def recover_relays(state: State) -> None:
 
 
 def prepare_gateway(state: State) -> list[str]:
-    capabilities = getattr(state, "capabilities", frozenset({"host-editor", "nested-containers"}))
-    editor = "host-editor" in capabilities
+    capabilities = getattr(state, "capabilities", frozenset({"nested-containers"}))
     nested = "nested-containers" in capabilities and state.agent_docker is not None
     agent_room = "agent-room" in capabilities
-    if not editor and not nested and not agent_room:
+    if not nested and not agent_room:
         return []
-    handle = GatewayHandle(state, editor, nested, agent_room)
+    handle = GatewayHandle(state, nested, agent_room)
     state.gateway_handle = handle
     if nested:
         handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
@@ -889,7 +880,7 @@ def prepare_gateway(state: State) -> list[str]:
             handle.nested = nested = False
             state.agent_docker = None
             handle._logical.discard("bridge:build")
-        if not editor and not nested and not agent_room:
+        if not nested and not agent_room:
             handle.cleanup()
             state.gateway_handle = None
             return []
@@ -904,7 +895,7 @@ def prepare_gateway(state: State) -> list[str]:
             handle.agent_room = False
             agent_room = False
             handle._logical.discard("bridge:agent-room")
-        if not editor and not nested and not agent_room:
+        if not nested and not agent_room:
             handle.cleanup()
             state.gateway_handle = None
             return []
@@ -923,17 +914,10 @@ def prepare_gateway(state: State) -> list[str]:
             raise LauncherError("gateway startup cancelled")
         create_relay_network(state, name, internal=internal, owner=handle.owner)
         handle.created.add(identity)
-    if editor:
-        handle.bridge = HostEditorBridge()
-        handle._register_logical("bridge:host-editor", remove=handle.bridge.stop)
-        handle.bridge.start()
     arguments = [
         "--network", state.gateway_link_network,
-        *(["--env", f"CODEX_SANDBOX_EDITOR_ADDRESS={state.gateway_container}:2223"] if editor else []),
         *(["--env", f"CODEX_SANDBOX_AGENT_ROOM_ADDRESS={state.gateway_container}:2225"]
           if agent_room else []),
-        *([] if isinstance(OUTER_RUNTIME, VMRuntime) or not editor else
-          ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
     if nested:
         values = state.agent_docker
@@ -951,11 +935,10 @@ def start_gateway(state: State) -> None:
     handle = state.gateway_handle
     if handle is None:
         raise LauncherError("gateway was not prepared")
-    editor_port = handle.bridge.port if handle.bridge is not None else None
     build_port = (str(handle.build_bridge.port) if handle.build_bridge is not None else None)
     agent_room_port = (handle.agent_room_bridge.port
                        if handle.agent_room_bridge is not None else None)
-    if editor_port is None and build_port is None and agent_room_port is None:
+    if build_port is None and agent_room_port is None:
         raise LauncherError("gateway requires at least one selected listener")
     container_resource = f"container:{state.gateway_container}"
     handle.registry.register(OwnedResource(
@@ -974,13 +957,12 @@ def start_gateway(state: State) -> None:
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
-        # Preserve the editor-only limits without throttling Docker build traffic.
+        # Keep small relays bounded without throttling Docker build traffic.
         *([] if build_port is not None else
           ["--pids-limit", "32", "--memory", "64m", "--cpus", "0.25"]),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
         "--host", OUTER_RUNTIME.host_address,
-        *(["--editor-port", str(editor_port)] if editor_port is not None else []),
         *(["--build-port", build_port] if build_port is not None else []),
         *(["--agent-room-port", str(agent_room_port)] if agent_room_port is not None else []),
     ], discard_stdout=True)
@@ -1002,11 +984,6 @@ def start_gateway(state: State) -> None:
         address_resources.append(identity)
     if handle.cancelled.is_set():
         raise LauncherError("gateway startup cancelled")
-    if handle.bridge is not None:
-        allowlist = "allowlist:host-editor"
-        handle._register_logical(allowlist,
-            depends_on=("bridge:host-editor", *address_resources))
-        handle.bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     if handle.agent_room_bridge is not None:
         allowlist = "allowlist:agent-room"
         handle._register_logical(allowlist,
@@ -1514,10 +1491,6 @@ def stage_skills(state: State) -> None:
     config.mkdir()
     for role, (target, _) in STAGED_CONFIG.items():
         stage_config_source(installed_config_source(target), staged_config_path(state, role))
-    settings_path = staged_config_path(state, "settings")
-    settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    settings["externalEditor"] = "/opt/agent-tools/bin/host-editor"
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     instruction_includes = []
     repository_instructions = state.repository / ".agents/sandbox/AGENTS.md"
     if repository_instructions.is_file():
@@ -1553,195 +1526,6 @@ def finalize_proxy_session(state: State) -> list[str]:
     for line in state.proxy_args.read_text(encoding="utf-8").splitlines():
         arguments.insert(0, line)
     return arguments
-
-
-with (Path(__file__).resolve().parent / "image/host-editor-protocol.json").open(
-    encoding="utf-8",
-) as stream:
-    HOST_EDITOR_PROTOCOL = json.load(stream)
-HOST_EDITOR_PROTOCOL_VERSION = HOST_EDITOR_PROTOCOL["version"]
-MAX_EDITOR_DOCUMENT_BYTES = HOST_EDITOR_PROTOCOL["max_document_bytes"]
-MAX_EDITOR_MESSAGE_BYTES = HOST_EDITOR_PROTOCOL["max_message_bytes"]
-EDITOR_REQUEST_TIMEOUT_SECONDS = 5
-
-
-class HostEditorBridge:
-    """Own the narrow guest-to-host text editor boundary for one sandbox."""
-
-    def __init__(self) -> None:
-        self.token = secrets.token_hex(32)
-        self.stop_event = threading.Event()
-        self.listener: socket.socket | None = None
-        self.thread: threading.Thread | None = None
-        self.port: int | None = None
-        self.panes: set[str] = set()
-        self.panes_lock = threading.Lock()
-        self.allowed_peers: set[str] = set()
-        self.allowed_peers_lock = threading.Lock()
-        self.target_pane = os.environ.get("TMUX_PANE")
-        self.editor = (
-            os.environ.get("CODEX_SANDBOX_HOST_EDITOR")
-            or os.environ.get("VISUAL")
-            or os.environ.get("EDITOR")
-            or "vi"
-        )
-
-    def start(self) -> None:
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # Docker Desktop and rootless Podman do not expose one portable host-only
-        # bind address. Use an ephemeral port and authenticate every request with
-        # the session token; the guest receives only the private relay address.
-        listener.bind(("0.0.0.0", 0))
-        listener.listen(1)
-        listener.settimeout(0.2)
-        self.listener = listener
-        self.port = listener.getsockname()[1]
-        self.thread = threading.Thread(target=self._serve, name="host-editor-bridge", daemon=True)
-        self.thread.start()
-
-    def allow_peers(self, peers: set[str]) -> None:
-        with self.allowed_peers_lock:
-            self.allowed_peers = set(peers)
-
-    def stop(self) -> None:
-        self.stop_event.set()
-        if self.listener is not None:
-            self.listener.close()
-        if self.thread is not None:
-            self.thread.join(timeout=2)
-        with self.panes_lock:
-            panes = list(self.panes)
-        for pane in panes:
-            run(["tmux", "kill-pane", "-t", pane], check=False, quiet=True)
-
-    @staticmethod
-    def _receive_exact(connection: socket.socket, length: int) -> bytes:
-        chunks: list[bytes] = []
-        remaining = length
-        while remaining:
-            chunk = connection.recv(remaining)
-            if not chunk:
-                raise LauncherError("host editor request ended prematurely")
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        return b"".join(chunks)
-
-    @staticmethod
-    def _send(connection: socket.socket, value: dict[str, object]) -> None:
-        payload = json.dumps(value, separators=(",", ":")).encode("utf-8")
-        if len(payload) > MAX_EDITOR_MESSAGE_BYTES:
-            raise LauncherError("host editor response is too large")
-        connection.sendall(struct.pack(">I", len(payload)) + payload)
-
-    def _serve(self) -> None:
-        assert self.listener is not None
-        while not self.stop_event.is_set():
-            try:
-                connection, address = self.listener.accept()
-            except TimeoutError:
-                continue
-            except OSError:
-                return
-            with self.allowed_peers_lock:
-                allowed = address[0] in self.allowed_peers
-            if not allowed:
-                connection.close()
-                continue
-            with connection:
-                connection.settimeout(EDITOR_REQUEST_TIMEOUT_SECONDS)
-                self._serve_connection(connection)
-
-    def _serve_connection(self, connection: socket.socket) -> None:
-        try:
-            length = struct.unpack(">I", self._receive_exact(connection, 4))[0]
-            if length > MAX_EDITOR_MESSAGE_BYTES:
-                raise LauncherError("host editor request is too large")
-            request = json.loads(self._receive_exact(connection, length).decode("utf-8"))
-            if not isinstance(request, dict) or set(request) != {"version", "token", "content"} \
-                    or type(request["version"]) is not int \
-                    or request["version"] != HOST_EDITOR_PROTOCOL_VERSION \
-                    or not isinstance(request["token"], str) \
-                    or not secrets.compare_digest(request["token"], self.token) \
-                    or not isinstance(request["content"], str):
-                raise LauncherError("invalid host editor request")
-            if len(request["content"].encode("utf-8")) > MAX_EDITOR_DOCUMENT_BYTES:
-                raise LauncherError("host editor document is too large")
-            self._send(connection, {
-                "version": HOST_EDITOR_PROTOCOL_VERSION, "status": "editing",
-            })
-            connection.settimeout(None)
-            content = self._edit(request["content"])
-            response = {
-                "version": HOST_EDITOR_PROTOCOL_VERSION,
-                "status": "complete", "content": content,
-            }
-        except (LauncherError, OSError, UnicodeError, json.JSONDecodeError) as error:
-            response = {
-                "version": HOST_EDITOR_PROTOCOL_VERSION,
-                "status": "failed", "error": str(error),
-            }
-        try:
-            self._send(connection, response)
-        except (LauncherError, OSError):
-            pass
-
-    def _edit(self, content: str) -> str:
-        if "TMUX" not in os.environ or self.target_pane is None:
-            raise LauncherError("host editor bridge requires a tmux pane")
-        try:
-            editor = shlex.split(self.editor)
-        except ValueError as error:
-            raise LauncherError("host editor command is malformed") from error
-        if not editor:
-            raise LauncherError("host editor command is empty")
-        with tempfile.TemporaryDirectory(prefix="codex-host-editor-document-") as directory:
-            document = Path(directory) / "prompt.md"
-            status = Path(directory) / "status"
-            document.write_text(content, encoding="utf-8")
-            pane_command = shlex.join([
-                str(HOST_EDITOR_PANE), str(status), "--", *editor, str(document),
-            ])
-            result = run([
-                "tmux", "split-window", "-h", "-t", self.target_pane,
-                "-P", "-F", "#{pane_id}", pane_command,
-            ], check=False, capture=True, quiet=True)
-            if result.returncode or not result.stdout.strip():
-                raise LauncherError("could not open host editor pane")
-            pane = result.stdout.strip()
-            with self.panes_lock:
-                self.panes.add(pane)
-            try:
-                while not status.exists():
-                    if self.stop_event.wait(0.1):
-                        raise LauncherError("host editor bridge stopped")
-                    alive = run([
-                        "tmux", "display-message", "-p", "-t", pane, "#{pane_id}",
-                    ], check=False, quiet=True)
-                    if alive.returncode:
-                        raise LauncherError("host editor pane exited without a result")
-                try:
-                    exit_status = int(status.read_text(encoding="utf-8").strip())
-                except (OSError, ValueError) as error:
-                    raise LauncherError("host editor returned an invalid status") from error
-                if exit_status:
-                    raise LauncherError(f"host editor exited with status {exit_status}")
-                result_content = document.read_text(encoding="utf-8")
-                if len(result_content.encode("utf-8")) > MAX_EDITOR_DOCUMENT_BYTES:
-                    raise LauncherError("host editor result is too large")
-                return result_content
-            finally:
-                if self.stop_event.is_set():
-                    run(["tmux", "kill-pane", "-t", pane], check=False, quiet=True)
-                    with self.panes_lock:
-                        self.panes.discard(pane)
-                else:
-                    alive = run([
-                        "tmux", "display-message", "-p", "-t", pane, "#{pane_id}",
-                    ], check=False, quiet=True)
-                    if alive.returncode:
-                        with self.panes_lock:
-                            self.panes.discard(pane)
 
 
 def report_container_timing(state: State) -> None:
@@ -2065,14 +1849,11 @@ def run_agent(state: State, arguments: list[str]) -> int:
         pi_extensions=pi_extensions,
     )
     reserved = {
-        "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",
         "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
         "DOCKER_HOST", "AGENT_DOCKER_SSHKEY", "AGENT_DOCKER_KNOWN_HOSTS",
     }
     agent_environment = {key: value for key, value in os.environ.items() if key not in reserved}
     bridge_environment: dict[str, str] = {}
-    if state.host_editor is not None:
-        bridge_environment["CODEX_SANDBOX_EDITOR_TOKEN"] = state.host_editor.token
     bridge_environment.update(keychain_environment(state))
     agent_environment.update(bridge_environment)
     image_index = command.index(state.image)
@@ -2101,9 +1882,6 @@ def run_agent(state: State, arguments: list[str]) -> int:
         HOST_PI_OWNER = HostPiOwner(host_pi_bin, state.codex_arguments,
                                     state.host_working_directory, host_environment)
         HOST_PI_OWNER.original.pane = os.environ.get("TMUX_PANE")
-        bridge = state.host_editor
-        if bridge is not None:
-            HOST_PI_OWNER.pane_changed = lambda pane: setattr(bridge, "target_pane", pane)
     worker_io = {}
     if HOST_PI_BOOTSTRAP is not None:
         from host_pi_owner import OWNER_LOG_FD
@@ -2252,7 +2030,7 @@ def execute(state: State) -> int:
         state.github_credential = phase("GitHub boot credential", lambda: boot_credential(OUTER_RUNTIME))
     register_tmux_pane(state)
     sidecar_selected = bool(
-        getattr(state, "capabilities", {"host-editor", "nested-containers"})
+        getattr(state, "capabilities", {"nested-containers"})
         or _secure_codex_auth_directory(state)
     )
     def model_image() -> str:

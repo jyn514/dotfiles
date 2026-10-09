@@ -80,7 +80,6 @@ class HostPiOwner:
         self.final_connections = []
         self.stopping = False
         self.failure = None
-        self.pane_changed = None
         self.log_offset = 0
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(self.path)
@@ -154,10 +153,6 @@ class HostPiOwner:
     def drop(self, item, connection=None):
         with self.lock:
             self.attachments.pop(item.token, None)
-            if self.pane_changed is not None:
-                pane = next((peer.pane for peer in self.attachments.values()
-                             if peer.pane is not None and peer.connection is not None and peer.ready), None)
-                self.pane_changed(pane)
             self.lock.notify_all()
             if not self.attachments:
                 self.stopping = True
@@ -227,8 +222,6 @@ class HostPiOwner:
                     item.session = session
                     item.session_directory = parent
                     item.ready = True
-                    if self.pane_changed is not None and self.original.token not in self.attachments:
-                        self.pane_changed(item.pane)
                     self.lock.notify_all()
                 send(connection, {"ok": True})
             elif operation == "side":
@@ -282,8 +275,6 @@ class HostPiOwner:
                 raise ValueError("tmux returned an invalid pane ID")
             with self.lock:
                 item.pane = pane
-                if self.pane_changed is not None and source.token not in self.attachments and item.ready:
-                    self.pane_changed(pane)
             deadline = time.monotonic() + self.timeout
             with self.lock:
                 while not item.ready and item.token in self.attachments and not self.stopping:

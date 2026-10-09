@@ -22,7 +22,7 @@ The lifecycle supports three families:
 
 / Command proxy: Performs a bounded local operation with authority unavailable to the agent. Examples are Jujutsu and `bug`. It normally owns a session socket and protected repository mounts, and has no network unless its fixed command policy requires one.
 / Caddy authenticated egress: Uses an unmodified, digest-pinned Docker Official Image Caddy container for fixed reverse proxying and a separate private profile-helper container for session admission and credential headers. Each Codex and Zulip trust domain has its own pair and private socket volume; credentials mount only into its helper.
-/ Host capability relay: Connects an agent to an explicitly selected host capability whose protocol and authority remain outside the repository-command and authenticated-HTTP models. Examples are host editing, Agent Podman, and the current Flower R2 Keychain relay.
+/ Host capability relay: Connects an agent to an explicitly selected host capability whose protocol and authority remain outside the repository-command and authenticated-HTTP models. Examples are Agent Podman, and the current Flower R2 Keychain relay.
 
 A service belongs to exactly one family for one lifetime.
 Sharing process machinery, images, or lifecycle code does not permit sharing authority between families.
@@ -134,7 +134,7 @@ used by one Pi attachment and its ordinary children. `/split` keeps these servic
 until final attachment release; they do not become shared-session services.
 Directory changes release only the invoking attachment, and a new workload gets
 its own per-launch authorization.
-Host editor and Agent Podman gateway listeners and Flower R2 consent relays use this scope.
+Agent Podman and agent-room gateway listeners and Flower R2 consent relays use this scope.
 They receive fresh tokens, networks, and host authorization on every launch and are cleaned independently of shared services.
 
 Every selected shared service is required: the agent must not start or join without it ready.
@@ -146,7 +146,7 @@ For per-launch services, `required` has the same meaning.
 The endpoint is projected into the agent, and its client performs bounded retries only for connection establishment or an explicit not-ready result.
 If startup later fails, the launcher warns and cleans the service after its startup worker terminates; client retries end with an unavailable error.
 A client never retries a request after the service may have accepted it.
-Host editing may use this policy; installed policy may instead make an explicitly selected capability required.
+Agent-room forwarding may use this policy; installed policy may instead make an explicitly selected capability required.
 Repository configuration cannot weaken installed availability policy.
 
 == State machine
@@ -319,7 +319,7 @@ It accepts no destination supplied by the agent and never relays the agent-room 
 
 == Rejected generalizations
 
-/ One universal request protocol: Rejected because Jujutsu arguments, Zulip typed reads, HTTP streaming, editor bytes, Podman SSH, and Keychain consent have different validation and outcome semantics.
+/ One universal request protocol: Rejected because Jujutsu arguments, Zulip typed reads, HTTP streaming, Podman SSH, and Keychain consent have different validation and outcome semantics.
 / One container for all trusted services: Rejected because compromise would combine metadata, model, communication, container, and publication authority.
 / Repository-declared credentials or host paths: Rejected because trusted project policy is not authority to select a human credential source.
 / Generic service dependency graph: Rejected because it would duplicate image-resolver graphs and hide the few security-relevant startup prerequisites inside data.

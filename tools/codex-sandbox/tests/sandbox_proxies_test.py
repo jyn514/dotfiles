@@ -217,7 +217,7 @@ class ManifestTest(unittest.TestCase):
             self.assertEqual(0, sandbox_proxies.main(arguments))
             self.assertEqual(
                 {"version": 1, "capabilities": {
-                    "host-editor": True, "zulip": True,
+                    "zulip": True,
                     "nested-containers": False, "flower-r2": False, "agent-room": False,
                 }, "commands": {}},
                 json.loads(output.read_text()),
@@ -315,15 +315,15 @@ class ManifestTest(unittest.TestCase):
                 self.write(version=2, capabilities=capabilities)
                 selected = sandbox_proxies.load_manifest(self.repo)["capabilities"]
                 self.assertEqual({
-                    "host-editor": True, "zulip": True,
+                    "zulip": True,
                     "nested-containers": False, "flower-r2": False, "agent-room": False,
-                    **capabilities,
+                    **{key: value for key, value in capabilities.items() if key != "host-editor"},
                 }, selected)
 
     def test_missing_sandbox_uses_default_services(self) -> None:
         self.sandbox.rmdir()
         selected = sandbox_proxies.load_optional_manifest(self.repo)["capabilities"]
-        self.assertTrue(selected["host-editor"])
+        self.assertNotIn("host-editor", selected)
         self.assertTrue(selected["zulip"])
 
     def test_version_two_selects_capabilities_and_binds_bake_images(self) -> None:
@@ -344,7 +344,7 @@ class ManifestTest(unittest.TestCase):
 
         manifest = sandbox_proxies.load_manifest(self.repo)
 
-        self.assertTrue(manifest["capabilities"]["host-editor"])
+        self.assertNotIn("host-editor", manifest["capabilities"])
         self.assertFalse(manifest["capabilities"]["nested-containers"])
         self.assertEqual("example", manifest["commands"]["example"]["image-target"])
         snapshot = self.repo / "snapshot.json"

@@ -102,8 +102,6 @@ RUN if [ -e /etc/alpine-release ]; then \
         node /opt/agent-pi/check-runtime.mjs \
         && bun test /opt/agent-pi/check-bun.test.ts; \
     fi
-COPY --chmod=755 ./tools/codex-sandbox/image/host-editor /opt/agent-tools/bin/host-editor
-COPY ./tools/codex-sandbox/image/host-editor-protocol.json /opt/agent-tools/bin/host-editor-protocol.json
 COPY --chmod=755 ./tools/codex-sandbox/image/with-github-token /opt/agent-tools/bin/with-github-token
 
 FROM pi-runtime

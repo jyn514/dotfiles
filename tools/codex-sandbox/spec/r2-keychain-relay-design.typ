@@ -27,7 +27,7 @@ Each retrieval must therefore be an explicit host-mediated operation that shows 
 
 - Prevent approved sandbox code from observing credentials after the host returns them. Woodpecker runs in the sandbox, so this cannot be guaranteed without moving Woodpecker or the upload itself to the host.
 - Provide arbitrary Keychain lookup, generic host command execution, secret enumeration, secret creation, or secret mutation.
-- Share runtime capabilities with the Codex authentication sidecar, editor relay, Agent Podman relay, or repository metadata proxies.
+- Share runtime capabilities with the Codex authentication sidecar, Agent Podman relay, or repository metadata proxies.
 - Change hosted Woodpecker secret handling.
 
 == Threat and trust model
@@ -40,13 +40,13 @@ The design protects against silent background retrieval, cross-session socket re
 
 == Selected architecture
 
-Add a `HostKeychainBridge` beside the existing `HostEditorBridge` in `tools/codex-sandbox`.
-Use a host TCP listener, isolated per-launch link and egress networks, a restricted `socat` relay container, an allowed-peer set installed after relay startup, and a 256-bit session token.
-Keep each bridge's listener, token, relay container, networks, limits, and environment variables separate.
-Reuse `create_relay_network` and the launcher's resource cleanup paths, registering Keychain resources separately.
-The current `prepare_gateway` and `start_gateway` combine editor and Podman transport; they are not a standalone editor-relay lifecycle to reuse.
-Reuse the editor's framing convention, but keep Keychain authentication, admission, deadlines, and cancellable reads in its own request handler.
-`HostEditorBridge` handles requests synchronously, allows an unbounded editing phase, and tears down editor panes; extracting a shared bridge framework is not required for this change.
+`HostKeychainBridge` owns a host TCP listener, isolated per-launch link and egress
+networks, a restricted `socat` relay container, an allowed-peer set installed after
+relay startup, and a 256-bit session token. Keychain resources stay separate from
+the optional Agent Podman and agent-room gateway.
+Reuse `create_relay_network` and the launcher's resource cleanup paths.
+Keep Keychain authentication, admission, deadlines, and cancellable reads in its
+own request handler. Its framed protocol is defined below.
 
 The guest sends a fixed operation, `flower-r2/read`. It supplies no Keychain service, account, executable, command, or destination parameters. The host maps the operation to:
 
@@ -134,7 +134,7 @@ Successful credentials pass through `WOODPECKER_SECRETS` only in the Woodpecker 
 
 == Protocol <relay-protocol>
 
-Reuse the editor bridge's framing convention: a four-byte unsigned big-endian length followed by one UTF-8 JSON object.
+Each frame is a four-byte unsigned big-endian length followed by one UTF-8 JSON object.
 Each admitted connection accepts one request and attempts one terminal response; admission rejection and transport failure may close the connection without a response.
 
 The request is complete when its declared frame length has arrived; the host does not wait for EOF before authenticating and reading Keychain.
@@ -253,7 +253,7 @@ Forbidden everywhere:
 - macOS startup publishes the relay; unsupported hosts omit it without weakening other proxies.
 - Joined and restarted sessions cannot reuse stale endpoints or capabilities.
 - Relay readiness and teardown follow existing launcher ownership and fail-closed conventions.
-- Cleanup registration preserves Keychain resource ownership checks and recovery records; stopping the Keychain bridge leaves the editor/Podman gateway running, and stopping that gateway leaves the Keychain bridge running.
+- Cleanup registration preserves Keychain resource ownership checks and recovery records; stopping the Keychain bridge leaves the Podman gateway running, and stopping that gateway leaves the Keychain bridge running.
 - Generated container arguments expose endpoint metadata but no credentials.
 
 === Flower tests
@@ -275,7 +275,7 @@ In an owned test sandbox, run `bb test ci` with environment credentials absent. 
 
 The consent evidence and maintainer waiver above govern these slices.
 
-+ Define the two-outcome protocol and Keychain request handler with mocked `security`, using the editor's framing convention; no launcher or Flower change.
++ Define the two-outcome protocol and Keychain request handler with mocked `security`; no launcher or Flower change.
 + Wire the separate Keychain bridge through existing network-creation and resource-cleanup primitives, adding endpoint publication, capability generation, readiness, and unsupported-host behavior.
 + Add the guest client and protocol conformance tests, still unused by Flower.
 + Update Flower credential discovery to prefer the relay inside the sandbox while retaining direct macOS lookup outside it.

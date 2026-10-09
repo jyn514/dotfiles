@@ -48,7 +48,7 @@ projection also advertises the guest working directory; stored messages retain
 their host paths. Reload existing host Pi sessions with `/reload` to apply this
 extension change. `/system-prompt` shows the prepared host prompt before this
 request-time projection.
-Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Docker.
+Launcher-owned sibling services provide narrowly scoped access to protected repository operations, optional Zulip, and optional Agent Docker.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 Host `~/.pi/agent/sessions` is mounted read-only at
 `/home/codex/.pi/agent/sessions` so guest tools can search past conversations.
@@ -175,21 +175,21 @@ Restart the sandbox after provisioning so the launcher installs the SSH relay an
   exporting a host `GH_TOKEN` does not provision it.
   guest caching lasts one VM boot.
 - Run inside tmux to use tmux session restart support.
-  Repositories select host editing separately.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`.
   The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
 - Optional: configure Agent Docker separately under `~/.agent-docker-access` or set `AGENT_DOCKER_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
-A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `zulip`, `nested-containers`, `flower-r2`, and `agent-room` independently.
-Host editing and Zulip default on;
-`{"version": 2, "capabilities": {"host-editor": false, "zulip": false}}` disables both.
+A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `zulip`, `nested-containers`, `flower-r2`, and `agent-room` independently.
+Zulip defaults on;
+`{"version": 2, "capabilities": {"zulip": false}}` disables it.
+The retired boolean `host-editor` declaration is accepted and ignored for existing manifests.
 Zulip requires host credentials;
 disabling it skips credential validation and proxy startup.
 Nested containers, Flower R2, and agent-room default off. Selecting agent-room adds a fixed TCP relay
 from the host's loopback-only `127.0.0.1:3000` to the same `127.0.0.1:3000` inside the agent container.
 It accepts no agent-supplied destination and never relays the admin port 3001.
-Host-editor and nested-container clients tolerate delayed best-effort listener startup for a
+Nested-container clients tolerate delayed best-effort listener startup for a
 bounded readiness interval. Retries stop before the first request byte; after transmission starts,
 transport failure is terminal and a possibly accepted operation is never replayed. Flower R2 does
 not yet perform this pre-connection retry; see [Flower R2 Keychain access](#flower-r2-keychain-access).
@@ -338,17 +338,14 @@ Stdout contains the version 1 resolver result (`version` and `images`), with imm
 diagnostics go to stderr.
 The command does not reload repository policy, so a version 2 command resolver can call it without recursion or writing a generated declaration into the checkout.
 
-Set `CODEX_SANDBOX_HOST_EDITOR` to override the host editor;
-otherwise `VISUAL`, `EDITOR`, then `vi` is used.
-The dotfiles profile selects `config/nvim/host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim/shared.lua`;
-normal Neovim loads the same shared behavior before its IDE configuration.
+Pi runs on the host and uses its native external editor selection for prompt editing.
+Guest tools have no host editor bridge. The launcher does not override Pi's
+`externalEditor` setting or expose an editor listener to the guest.
 
-Each sandbox has one gateway for the host editor and, when configured, Agent Docker and agent-room.
+A sandbox creates a gateway only when Agent Docker or agent-room is selected.
 It starts in the background after its private link and egress networks are created.
-The in-container Python relay binds loopback and verifies its fixed gateway target before Pi starts.
-Pi does not start if either step fails; its exit closes the listener and active connections.
-Pi reaches its fixed editor and SSH ports by container DNS name. Their clients retry only
-connection establishment within a bounded interval and never replay a possibly accepted request.
+Clients retry only connection establishment within a bounded interval and never
+replay a possibly accepted request.
 The separately supervised Zulip and Codex Caddy/helper services and repository-command proxies must be ready
 before publication.
 
@@ -367,8 +364,8 @@ Gateway startup failures are reported to stderr and leave Pi running.
 On exit, the launcher joins gateway startup before removing its container and networks.
 An upstream refusal affects that connection;
 a listener process failure stops the whole gateway.
-Editor-only gateways retain the editor's CPU, memory, and process limits.
-Agent-Docker-enabled gateways have no such limits, preserving build throughput but sharing the Agent Docker resource and failure domain with the editor.
+Gateways without Agent Docker have CPU, memory, and process limits.
+Agent-Docker-enabled gateways omit those limits to preserve build throughput.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals.
 It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports.

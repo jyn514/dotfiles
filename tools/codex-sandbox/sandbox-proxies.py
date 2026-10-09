@@ -60,10 +60,11 @@ MODES = {"read-only", "read-write", "hidden"}
 COMMAND_FIELDS = {"image-command", "argv", "workdir", "network", "mounts"}
 V2_COMMAND_FIELDS = {"image", "argv", "workdir", "network", "mounts"}
 CAPABILITY_DEFAULTS = {
-    "host-editor": True, "zulip": True,
+    "zulip": True,
     "nested-containers": False, "flower-r2": False, "agent-room": False,
 }
-CAPABILITIES = set(CAPABILITY_DEFAULTS)
+# Accept the retired declaration for existing project manifests; never publish it.
+CAPABILITIES = set(CAPABILITY_DEFAULTS) | {"host-editor"}
 RECOVERY_COMMAND = (
     "run `python3 tools/codex-sandbox/sandbox-proxies.py reset --repo <repository>` "
     "after all sandbox sessions exit; reset removes stopped matching agent containers"
@@ -312,6 +313,7 @@ def load_manifest_file(path: Path | None, *, default_bake: bool = False,
             normalized["image-target"] = normalized.pop("image")
         commands[name] = normalized
     result = {"version": version, "commands": commands}
+    capabilities.pop("host-editor", None)
     if version == 2 or capabilities:
         result["capabilities"] = capabilities
     if images is not None:

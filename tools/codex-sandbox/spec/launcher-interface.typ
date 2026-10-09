@@ -149,8 +149,8 @@ invoking Pi and do not independently retain the workload.
 
 On pane exit, existing Pi/child shutdown and tool cancellation precede attachment
 release. `/cd` releases only the invoking attachment; peers keep the old worker.
-Final release uses existing workload and trusted-service cleanup. Keep editor
- targets valid for survivors. Failed startup cleans only that attempt; worker loss
+Final release uses existing workload and trusted-service cleanup.
+Failed startup cleans only that attempt; worker loss
 affects all panes. Reuse existing owner-loss recovery and unknown-write-outcome
 handling; add no cancellation protocol, tmux-restart feature, or worker replacement.
 
@@ -171,8 +171,8 @@ Verify on disposable resources:
   A's running work unchanged. No container creation or pending-call replay occurs.
 - Closing either pane first preserves its peer; final release cleans the workload.
   Include source exit during pane startup and parent-bounded ordinary subagents.
-- Failed startup leaves A usable. Worker loss has no host-local fallback; editor
-  use and `/cd` from surviving panes preserve their peers and existing cleanup rules.
+- Failed startup leaves A usable. Worker loss has no host-local fallback;
+  `/cd` from surviving panes preserves peers and existing cleanup rules.
 
 === Model-requested session forks <sandbox-session-forks>
 
@@ -250,7 +250,6 @@ Bake HCL. A repository using the bundled resolver declares:
 {
   "version": 2,
   "capabilities": {
-    "host-editor": true,
     "nested-containers": true,
     "flower-r2": false,
     "agent-room": false
@@ -284,15 +283,18 @@ Version 2 requires `version`; omitted `images` uses the conventional Bake file w
 present and otherwise retains installed default image policy. Omitted `capabilities`
 and `commands` mean empty objects. A repository with only the conventional Bake file
 needs no manifest.
-For example, disabling the two default services needs no image declaration:
+For example, disabling the default Zulip service needs no image declaration:
 
 ```json
-{"version": 2, "capabilities": {"host-editor": false, "zulip": false}}
+{"version": 2, "capabilities": {"zulip": false}}
 ```
 
-Capability values are booleans. `host-editor` and `zulip` default on;
-explicit `false` disables either. `nested-containers`, `flower-r2`, and `agent-room` default off.
-These five keys select separate services, subject to their existing
+The retired boolean `host-editor` declaration is accepted and discarded during
+normalization; it selects no service. Prompt editing uses host Pi's native editor.
+
+Capability values are booleans. `zulip` defaults on;
+explicit `false` disables it. `nested-containers`, `flower-r2`, and `agent-room` default off.
+These four keys select separate services, subject to their existing
 host-authorization rules. Zulip requires available host credentials;
 when disabled, it does not validate or mount those credentials. These keys cannot
 disable required services or authorize an undeclared service through host
@@ -316,7 +318,7 @@ Reject duplicate keys, unknown fields or optional capability names, wrong types,
 mixed resolver forms, unsupported versions, and invalid protected paths before
 any resolver runs. The loader applies the existing configuration trust and
 path-protection rules; normalized output does not weaken those rules. A missing
-configuration uses installed default image policy, host editing, and Zulip when configured;
+configuration uses installed default image policy and Zulip when configured;
 an explicit malformed configuration never falls back to defaults.
 
 Version 2 is accepted for Bake-backed and project-command repositories. Installed
@@ -333,10 +335,10 @@ contains required agent/provider services, built-in repository operations, and
 optional services selected by defaults or explicit policy. Resolvers supply images; they cannot
 select capabilities or expand container authority.
 
-Flower R2 access, host editing, Zulip, nested container access, and agent-room are separate optional
+Flower R2 access, Zulip, nested container access, and agent-room are separate optional
 capabilities with the defaults above. Host availability is a prerequisite,
 not a selection rule. Dotfiles can omit R2 access while paracress enables it.
-Host editing, nested containers, and agent-room may share their existing gateway when any
+Nested containers and agent-room may share their existing gateway when any
 is selected; none selected means no gateway. Selected capabilities retain
 their existing host-authorization and failure rules.
 
@@ -591,7 +593,7 @@ shared sessions; it does not change the accepted images of an active session.
 #table(
   columns: (1.2fr, 1.8fr, 2.5fr),
   [Input or backend], [During migration], [Required final state],
-  [No project configuration], [Installed base and helpers; host editing and configured Zulip; no project commands.], [Unchanged. Source absence is recorded in shared-session metadata.],
+  [No project configuration], [Installed base and helpers; configured Zulip; no project commands.], [Unchanged. Source absence is recorded in shared-session metadata.],
   [Version 1 `image-command`], [Adapt each command as a single-name legacy resolver; apply defaults to new sessions.], [Migrate to one version 2 command resolver and `image` bindings.],
   [Version 1 `image-target` and producer-style `bake`], [Adapt targets behind the bundled resolver on Lima-Docker only.], [Migrate to version 2 `images.resolver` and remove `.agents/sandbox/bake`.],
   [Executable `base-image`], [Retain only on providers already supporting it; reject combinations with version 2 `images`.], [Bind `images.base` through the version 2 resolver.],
