@@ -40,7 +40,8 @@ existing image lifecycle retain ownership of it.
 
 The proposed #link("remote-frontend.typ")[remote frontend contract] separates
 the frontend host from the sandbox host for `pi --ssh HOST:/absolute/project/path`.
-It owns SSH startup, compatibility, remote context loading, and transport loss;
+It specifies a Pi resource-provider API and local SSH extension for startup,
+compatibility, guest resource loading, and transport loss;
 the attachment and sandbox policy rules here remain authoritative. Remote mode
 is not implemented.
 
