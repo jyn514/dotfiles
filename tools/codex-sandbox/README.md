@@ -264,6 +264,9 @@ same path. No matching sessions is an error, not a fallback to restarting all.
 Both restart commands wait up to 60 seconds for sandbox ownership locks after
 panes stop: detached owners can still be cleaning up after their UI exits.
 A timeout retains recovery metadata and does not forcibly stop remaining owners.
+Failed restarted UIs stay visible in their panes; successful exits still close
+panes unless they already had `remain-on-exit on`. Use tmux copy mode to read the
+error, or `tmux capture-pane -p -S - -t PANE` to include scrollback.
 
 Neither `restart` nor `restart-all` manages side panes or sessions outside tmux.
 Close side panes attached to the selected repositories first; they keep the

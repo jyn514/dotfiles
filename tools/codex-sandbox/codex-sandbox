@@ -2517,9 +2517,12 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
             "tmux", "show-options", "-A", "-p", "-v", "-t", registration["pane"],
             "remain-on-exit",
         ], capture=True).stdout.strip()
-        if remain_on_exit not in {"0", "1", "off", "on"}:
+        if remain_on_exit not in {"0", "1", "off", "on", "failed"}:
             raise LauncherError("tmux returned an invalid remain-on-exit setting")
-        registration["remain_on_exit"] = remain_on_exit
+        # Preserve startup errors without keeping panes after successful UI exit.
+        registration["remain_on_exit"] = (
+            "failed" if remain_on_exit in {"0", "off"} else remain_on_exit
+        )
         run([
             "tmux", "set-option", "-p", "-t", registration["pane"],
             "remain-on-exit", "on",
@@ -2548,11 +2551,11 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
             + " && "
             + shlex.join(["pi", "--session", registration["session"]])
         )
-        run(["tmux", "respawn-pane", "-k", "-t", registration["pane"], command])
         run([
             "tmux", "set-option", "-p", "-t", registration["pane"],
             "remain-on-exit", registration["remain_on_exit"],
         ])
+        run(["tmux", "respawn-pane", "-k", "-t", registration["pane"], command])
     scope = f" for {repository}" if repository is not None else ""
     message = f"Restarted {len(registrations)} sandbox session(s){scope}."
     run(["tmux", "display-message", "-d", "5000", message], check=False, quiet=True)

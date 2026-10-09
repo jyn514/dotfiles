@@ -1937,10 +1937,6 @@ class CodexSandboxTest(unittest.TestCase):
             f"cd {shlex.quote(str(self.repo))} && pi --session session-id",
             respawn[-1],
         )
-        self.assertIn(
-            ["tmux", "set-option", "-p", "-t", "%3", "remain-on-exit", "off"],
-            calls,
-        )
         self.assertFalse(any(call[-1:] in (["C-c"], ["Enter"]) for call in calls))
         self.assertTrue(any(call[:2] == ["tmux", "display-message"] for call in calls))
 
@@ -2005,6 +2001,76 @@ class CodexSandboxTest(unittest.TestCase):
             [call[-1] for call in respawns],
         )
         self.assertFalse(any("%5" in call for call in calls))
+
+    @unittest.skipUnless(shutil.which("tmux") and shutil.which("node"), "tmux and Node are required")
+    def test_restart_keeps_native_failed_pane_and_its_error_visible(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        socket_path = self.root / "restart-tmux.sock"
+        prefix = ["tmux", "-S", str(socket_path)]
+        # A native executable rejects the generated Pi arguments with a real error.
+        # This tests tmux's failure preservation, not Pi's session lookup.
+        (self.fake_bin / "pi").symlink_to(sys.executable)
+        environment = {"HOME": str(self.home), "FAKE_HOST_PI_READY": "", "FAKE_AGENT_EXIT": "0",
+                       "PATH": str(self.fake_bin) + os.pathsep + os.environ["PATH"]}
+        with mock.patch.dict(os.environ, environment):
+            try:
+                pane = subprocess.run(
+                    [*prefix, "-f", "/dev/null", "new-session", "-d", "-P", "-F", "#{pane_id}",
+                     "-s", "restart-test", "-c", str(self.repo), "sleep 30"],
+                    check=True, capture_output=True, text=True,
+                ).stdout.strip()
+                subprocess.run([*prefix, "new-session", "-d", "-s", "keepalive", "sleep 30"],
+                               check=True)
+                state = SimpleNamespace(repository=self.repo,
+                                        codex_arguments=["--session", "missing-session"])
+                with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0", "TMUX_PANE": pane}), \
+                        mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
+                            "helper": mock.Mock(),
+                        }):
+                    launcher["register_tmux_pane"](state)
+                    launcher["restart_tmux_sessions"](self.repo)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    result = subprocess.run(
+                        [*prefix, "list-panes", "-a", "-F",
+                         "#{pane_id}:#{pane_dead}:#{pane_dead_status}"],
+                        check=True, capture_output=True, text=True,
+                    )
+                    status = next((line.split(":")[1:] for line in result.stdout.splitlines()
+                                   if line.startswith(pane + ":")), None)
+                    self.assertIsNotNone(status, f"failed restart destroyed pane {pane!r}: {result.stdout!r}")
+                    if status == ["1", "2"]:
+                        break
+                    time.sleep(0.01)
+                else:
+                    self.fail("native restarted pane did not fail")
+                result = subprocess.run([*prefix, "capture-pane", "-p", "-S", "-", "-t", pane],
+                                        check=True, capture_output=True, text=True)
+                self.assertIn("unknown option --session", result.stdout)
+                # A retry must accept "failed", and successful exit must still close the pane.
+                (self.fake_bin / "pi").unlink()
+                (self.fake_bin / "pi").symlink_to(self.pi_package / "dist/bundle/cli.js")
+                with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0"}), \
+                        mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
+                            "helper": mock.Mock(),
+                        }):
+                    launcher["restart_tmux_sessions"](self.repo)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    panes = subprocess.run([*prefix, "list-panes", "-a", "-F", "#{pane_id}"],
+                                           check=True, capture_output=True, text=True).stdout.splitlines()
+                    if pane not in panes:
+                        break
+                    time.sleep(0.01)
+                else:
+                    status = subprocess.run([*prefix, "display-message", "-p", "-t", pane,
+                                             "#{pane_dead}:#{pane_dead_status}:#{remain-on-exit}"],
+                                            capture_output=True, text=True)
+                    output = subprocess.run([*prefix, "capture-pane", "-p", "-S", "-", "-t", pane],
+                                            capture_output=True, text=True)
+                    self.fail(f"successful restarted UI exit kept its pane: {status.stdout}\n{output.stdout}")
+            finally:
+                subprocess.run([*prefix, "kill-server"], capture_output=True)
 
     def test_restart_repo_waits_for_real_session_lock_after_pane_dies(self) -> None:
         self.assert_restart_waits_for_real_session_lock(["restart", "--repo", str(self.repo)])
