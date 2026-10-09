@@ -123,12 +123,15 @@ Do not remove unrelated sessions to manufacture a cold run.
 
 ## Tests
 
-Run unit tests from the repository root:
+Run the Python unit tests together in one process from the repository root:
 
 ```sh
-dev/test-environment python3 -m unittest tools/codex-sandbox/tests/codex_sandbox_test.py
-dev/test-environment python3 -m unittest tools/codex-sandbox/tests/sandbox_proxies_test.py
+dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p '*_test.py'
 ```
+
+Socket tests require permission to create local TCP and Unix sockets.
+Fixtures register cleanup before fallible setup so a setup failure cannot leave mocks or environment changes active for later tests.
+To check those failure paths without opening sockets, add `-k SetupCleanupTest` to the command above.
 
 To check ordinary and linked-worktree mounts on an existing Docker VM, use an
 already built sandbox image containing Python and Git. Replace

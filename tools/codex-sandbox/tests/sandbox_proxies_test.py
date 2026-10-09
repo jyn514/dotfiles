@@ -190,18 +190,16 @@ class ManifestTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
         self.repo = Path(self.temporary.name)
         self.home_patch = mock.patch.dict(os.environ, {"HOME": str(self.repo)})
         self.home_patch.start()
+        self.addCleanup(self.home_patch.stop)
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
         (self.repo / ".jj" / "repo").mkdir(parents=True)
         self.sandbox = self.repo / ".agents" / "sandbox"
         self.sandbox.mkdir(parents=True)
         self.container_repo = Path("/src/example")
-
-    def tearDown(self) -> None:
-        self.home_patch.stop()
-        self.temporary.cleanup()
 
     def test_runtime_directory_uses_shared_home_when_xdg_runtime_is_elsewhere(self) -> None:
         with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.repo / "unshared-run")}):
@@ -2138,6 +2136,23 @@ class ManifestTest(unittest.TestCase):
             run.call_args.args[0],
         )
         self.assertEqual(sandbox_proxies.subprocess.STDOUT, run.call_args.kwargs["stderr"])
+
+
+class SetupCleanupTest(unittest.TestCase):
+    def test_failed_repository_setup_restores_home_for_later_tests(self):
+        original_home = os.environ.get('HOME')
+        case = ManifestTest('test_runtime_directory_uses_shared_home_when_xdg_runtime_is_elsewhere')
+        result = unittest.TestResult()
+        try:
+            with mock.patch.object(subprocess, 'run', side_effect=OSError('git unavailable')):
+                case.run(result)
+            self.assertEqual(len(result.errors), 1)
+            self.assertIn('git unavailable', result.errors[0][1])
+            self.assertEqual(os.environ.get('HOME'), original_home)
+            self.assertFalse(case.repo.exists())
+        finally:
+            case.home_patch.stop()
+            case.temporary.cleanup()
 
 
 if __name__ == "__main__":

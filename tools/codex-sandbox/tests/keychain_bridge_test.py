@@ -50,11 +50,11 @@ class BridgeTest(unittest.TestCase):
 
         self.patch = mock.patch.object(relay.subprocess, 'Popen', side_effect=spawn)
         self.patch.start()
+        self.addCleanup(self.patch.stop)
         self.bridge = relay.HostKeychainBridge()
+        self.addCleanup(self.bridge.stop)
         self.bridge.start()
         self.bridge.allow_peers({'127.0.0.1'})
-        self.addCleanup(self.patch.stop)
-        self.addCleanup(self.bridge.stop)
 
     def connect(self):
         connection = socket.create_connection(('127.0.0.1', self.bridge.port), timeout=3)
@@ -163,6 +163,25 @@ class BridgeTest(unittest.TestCase):
         connection = self.connect()
         self.assertEqual(connection.recv(1), b'')
         self.assertEqual(self.children, [])
+
+
+class SetupCleanupTest(unittest.TestCase):
+    def test_failed_bridge_start_restores_subprocess_for_later_tests(self):
+        original = subprocess.Popen
+        case = BridgeTest('test_success_returns_pair_in_order_and_closes')
+        result = unittest.TestResult()
+        try:
+            with mock.patch.object(relay.HostKeychainBridge, 'start',
+                                   side_effect=PermissionError('socket denied')):
+                case.run(result)
+            self.assertEqual(len(result.errors), 1)
+            self.assertIn('socket denied', result.errors[0][1])
+            self.assertIs(subprocess.Popen, original)
+            self.assertTrue(case.bridge.stopping.is_set())
+        finally:
+            # Keep this regression test isolated even when the fixture regresses.
+            case.patch.stop()
+            case.bridge.stop()
 
 
 if __name__ == '__main__':

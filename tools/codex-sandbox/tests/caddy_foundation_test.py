@@ -118,13 +118,15 @@ class UnixConnection(http.client.HTTPConnection):
  def connect(self): self.sock=socket.socket(socket.AF_UNIX); self.sock.connect(self.path)
 class HelperTest(unittest.TestCase):
  def setUp(self):
-  self.old=helper.operation_deadline
   @contextlib.contextmanager
   def deadline(): yield time.monotonic()+30
-  helper.operation_deadline=deadline; self.tmp=tempfile.TemporaryDirectory(); self.path=str(Path(self.tmp.name)/"s")
+  deadline_patch=patch.object(helper,"operation_deadline",deadline)
+  deadline_patch.start(); self.addCleanup(deadline_patch.stop)
+  self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup); self.path=str(Path(self.tmp.name)/"s")
   self.log=io.StringIO(); self.server=helper.UnixHTTPServer(self.path,"secret",lambda d:(("Authorization","Basic abc"),),lambda d:(("Authorization","Basic ready"),),self.log)
+  self.addCleanup(self.server.server_close)
   self.thread=threading.Thread(target=self.server.serve_forever); self.thread.start()
- def tearDown(self): self.server.shutdown(); self.server.server_close(); self.thread.join(); self.tmp.cleanup(); helper.operation_deadline=self.old
+  self.addCleanup(self.thread.join); self.addCleanup(self.server.shutdown)
  def request(self,path="/admit",token="secret",original_uri=None):
   headers={"Authorization":"Bearer "+token}
   if original_uri is not None: headers["X-Original-Uri"]=original_uri
@@ -146,4 +148,17 @@ class HelperTest(unittest.TestCase):
  def test_profile_schema_is_exact(self):
   self.server.credentials=lambda d:(("Authorization","bearer wrong"),)
   self.assertEqual(self.request(),(503,{"Content-Length":"0"},b""))
+class SetupCleanupTest(unittest.TestCase):
+ def test_failed_server_setup_restores_deadline_for_later_tests(self):
+  original=helper.operation_deadline
+  case=HelperTest("test_profile_schema_is_exact"); result=unittest.TestResult()
+  try:
+   with patch.object(helper,"UnixHTTPServer",side_effect=PermissionError("socket denied")):
+    case.run(result)
+   self.assertEqual(len(result.errors),1)
+   self.assertIn("socket denied",result.errors[0][1])
+   self.assertIs(helper.operation_deadline,original)
+   self.assertFalse(Path(case.tmp.name).exists())
+  finally:
+   helper.operation_deadline=original; case.tmp.cleanup()
 if __name__=="__main__": unittest.main()
