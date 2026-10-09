@@ -26,7 +26,7 @@ jj log -r @ --no-graph \
 Use the second command when the working-copy commit is known to be conflicted; otherwise use `jj status`. Identify the exact conflicted revision and target change before creating the resolution commit.
 
 Inspect the whole conflict and surrounding destination code for each file. See
-the [`jj-conflict` command reference](../libexec/agent-wrappers/README.md) for
+the [`jj-conflict` command reference](../../libexec/agent-wrappers/README.md) for
 selection semantics. If the repository provides the wrapper, use:
 
 ```bash
@@ -42,12 +42,12 @@ libexec/agent-wrappers/jj-conflict inspect path/to/file --json
 Preview a composition, write it, then check the file:
 
 ```bash
-jj-conflict apply path/to/file --edit 1,3:2 --stdout
+jj-conflict apply path/to/file --edit 1,3:2 --preview
 jj-conflict apply path/to/file --edit 1,3:2
 jj-conflict check path/to/file
 ```
 
-Unselected conflicts use their snapshot alternative. Inspect the alternatives before selecting one; the helper rejects conflict shapes it cannot compose safely rather than adding another heuristic.
+Unselected conflicts remain unresolved. Inspect again after a partial resolution before selecting more edits; the numbers refer to the remaining conflicts. The helper rejects conflict shapes it cannot compose safely rather than adding another heuristic.
 
 Marker order may vary. Parse both forms:
 
@@ -72,7 +72,7 @@ For a diff side, inspect its base file:
 jj file show --revision BASE -- path/to/file
 ```
 
-Apply the diff to the base region, then place the result into the destination snapshot. Preserve destination refactors and unrelated lines. If both sides change the same behavior, reconcile it explicitly; do not keep both blocks merely because both appeared in the conflict.
+Use the base to verify the diff, then apply its changes to the current destination snapshot. Preserve destination refactors and unrelated lines. If the destination changed the diff's context, resolve that region manually rather than restoring historical context. If both sides change the same behavior, reconcile it explicitly; do not keep both blocks merely because both appeared in the conflict.
 
 Do not use `:ours`, `:theirs`, equivalent whole-side selection, union merge tools, text concatenation, blind search-and-replace across all conflicts, or `jj undo` as recovery machinery.
 
