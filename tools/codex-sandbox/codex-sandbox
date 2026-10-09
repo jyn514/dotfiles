@@ -499,6 +499,14 @@ def container_working_directory_path(
     return container_repository / relative
 
 
+def existing_git_root() -> Path:
+    try:
+        result = run(["git", "rev-parse", "--show-toplevel"], capture=True, quiet=True)
+    except subprocess.CalledProcessError as error:
+        raise LauncherError("Pi requires an existing Git repository; run it inside a repository") from error
+    return Path(result.stdout.strip()).resolve(strict=True)
+
+
 def validate_repository(state: State, *, initialize_missing: bool = True) -> None:
     try:
         # Finding the mount root needs metadata, not a working-tree snapshot.
@@ -506,8 +514,9 @@ def validate_repository(state: State, *, initialize_missing: bool = True) -> Non
     except subprocess.CalledProcessError:
         if not initialize_missing:
             raise LauncherError("The destination is not an existing Jujutsu workspace")
+        repository = existing_git_root()
         try:
-            run(["jj", "git", "init"])
+            run(["jj", "git", "init", "--colocate", str(repository)])
             result = run(["jj", "workspace", "root", "--ignore-working-copy"], capture=True)
         except subprocess.CalledProcessError as error:
             raise LauncherError("The current directory could not be initialized as a Jujutsu workspace") from error
@@ -2538,6 +2547,9 @@ def launch(arguments: list[str]) -> int:
         raise SignalExit(signum)
 
     try:
+        # Lima's status lookup may delete PID files invisible in a caller's
+        # sandbox. Reject non-repository launches before consulting the runtime.
+        existing_git_root()
         OUTER_RUNTIME = image_runtime()
         proxy_module.cache_clear()
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):

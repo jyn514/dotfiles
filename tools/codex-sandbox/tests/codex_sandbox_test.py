@@ -653,6 +653,36 @@ class HostPiWrapperTest(unittest.TestCase):
             )
 
 
+class RepositoryPreflightTest(unittest.TestCase):
+    def test_non_repository_rejects_before_runtime_or_initialization(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        runtime = mock.Mock(side_effect=AssertionError("runtime accessed before repository check"))
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory), \
+                mock.patch.dict(launcher["launch"].__globals__, image_runtime=runtime), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as diagnostics:
+            self.assertEqual(1, launcher["launch"](["--help"]))
+            self.assertIn("existing Git repository", diagnostics.getvalue())
+            self.assertEqual([], list(Path(directory).iterdir()))
+        runtime.assert_not_called()
+
+    def test_real_git_subdirectory_adds_jj_without_creating_nested_git(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            repository = home / "src" / "project"
+            repository.mkdir(parents=True)
+            subprocess.run(["git", "init", str(repository)], check=True, capture_output=True)
+            nested = repository / "nested"
+            nested.mkdir()
+            state = SimpleNamespace(home=home)
+            with contextlib.chdir(nested):
+                launcher["validate_repository"](state)
+            self.assertEqual(repository, state.repository)
+            self.assertEqual(repository / ".git", state.git_mount_source)
+            self.assertTrue((repository / ".jj").is_dir())
+            self.assertEqual([], list(nested.iterdir()))
+
+
 class DirectoryHandoffTest(unittest.TestCase):
     def test_cross_directory_session_id_forks_before_pi_starts(self) -> None:
         prepare = runpy.run_path(str(LAUNCHER))["prepare_host_session"]
@@ -1023,6 +1053,7 @@ class BackgroundRelayTest(unittest.TestCase):
                 resolve_agent=resolve_agent,
                 resolve_sidecar_image=mock.Mock(return_value="sidecar"),
                 attach_proxies=attach_proxies,
+                existing_git_root=mock.Mock(return_value=ROOT),
                 run=mock.Mock(return_value=SimpleNamespace(stdout="Darwin")),
                 start_gateway=mock.Mock(),
                 run_agent=mock.Mock(side_effect=AssertionError("agent must not start")),
@@ -1334,6 +1365,10 @@ class CodexSandboxTest(unittest.TestCase):
         write_executable(self.fake_bin / "git", """
             #!/bin/sh
             case " $* " in
+                *" rev-parse --show-toplevel "*)
+                    [ -e "$FAKE_REPOSITORY/.git" ] || exit 1
+                    printf '%s\n' "$FAKE_REPOSITORY"
+                    ;;
                 *" rev-parse "*)
                     printf '%s\n%s\n' "${FAKE_GIT_DIR:-$FAKE_REPOSITORY/.git}" \
                         "${FAKE_GIT_COMMON_DIR:-$FAKE_REPOSITORY/.git}"
@@ -1791,7 +1826,6 @@ class CodexSandboxTest(unittest.TestCase):
 
     def test_launch_initializes_a_missing_jj_repository(self) -> None:
         shutil.rmtree(self.repo / ".jj")
-        shutil.rmtree(self.repo / ".git")
 
         result = self.run_launcher()
 
@@ -1799,6 +1833,15 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertTrue((self.repo / ".jj" / "repo").is_dir())
         self.assertTrue((self.repo / ".git").is_dir())
         self.final_run()
+
+    def test_git_subdirectory_initializes_jj_at_repository_root(self) -> None:
+        shutil.rmtree(self.repo / ".jj")
+        subdirectory = self.repo / "nested"
+        subdirectory.mkdir()
+        result = self.run_launcher(cwd=subdirectory)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(["git", "init", "--colocate", str(self.repo)], read_calls(self.jj_log))
+        self.assertFalse((subdirectory / ".jj").exists())
 
     def test_bare_launch_gets_a_resumable_session_id(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))

@@ -13,6 +13,9 @@ Choose the section for your task:
 
 `codex-sandbox` runs Pi on the host with its normal credentials by default,
 while its built-in tools and human `!` shell commands run in the guest container.
+`pi` requires an existing Git working tree and rejects other directories before
+accessing Lima or Docker. In a Git repository without Jujutsu, it runs
+`jj git init --colocate` at the Git root, including when launched from a subdirectory.
 Host mode requires the Pi installation at
 `~/.local/share/pi/node/node_modules/.bin/pi` and the guest tool worker in the
 current sandbox image. `./setup local` builds `jyn514/pi` from upstream main
