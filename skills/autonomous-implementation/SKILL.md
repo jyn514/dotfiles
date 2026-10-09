@@ -49,7 +49,7 @@ Record unspecified choices as assumptions or unresolved decisions, using only de
 
 For unresolved test or fixture decisions, use [design-for-change's testing procedure](../design-for-change/SKILL.md#design-for-testing); otherwise follow the established test pattern. Connect each handoff to the intended consumer or remove the temporary path before starting another fixture-only capability. If blocked, apply [Choose work that closes the path](#choose-work-that-closes-the-path) rather than silently deferring it. An explicitly scoped feasibility probe may stop at its declared acceptance, with downstream integration still unmet.
 
-When a downstream consumer fails, reuse valid retained producer outputs and repair the failing boundary. Repeat production only if its outputs are invalid.
+When a downstream consumer fails, reuse producer outputs that remain valid for the required consumer and repair the failing boundary. Regenerate only what is missing or invalidated.
 
 ## Document decisions and constraints
 
