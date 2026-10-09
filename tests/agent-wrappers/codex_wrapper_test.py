@@ -157,7 +157,15 @@ class CodexWrapperTests(unittest.TestCase):
             environment["HOME"] = str(root)
             environment.pop("CODEX_HOME", None)
             environment.pop("CODEX_DEVELOPER_INSTRUCTIONS_FILE", None)
-            environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+            inherited_sandbox = root / "sandbox-wrappers"
+            inherited_sandbox.mkdir()
+            # Own-directory removal is covered by shim tests. Here, check only
+            # additions and preserve inherited sandbox paths rather than banning them.
+            caller_path = [str(fake_bin), str(inherited_sandbox)] + [
+                entry for entry in environment["PATH"].split(os.pathsep)
+                if Path(entry or ".").resolve() != WRAPPER.parent.resolve()
+            ]
+            environment["PATH"] = os.pathsep.join(caller_path)
 
             output = subprocess.run(
                 [str(WRAPPER), "prompt"],
@@ -182,8 +190,10 @@ class CodexWrapperTests(unittest.TestCase):
             json.loads(encoded),
         )
         self.assertEqual("prompt", output[4])
-        self.assertIn(str(ROOT / "libexec/agent-wrappers"), output[5])
-        self.assertNotIn("sandbox-wrappers", output[5])
+        self.assertEqual(
+            "PATH=" + os.pathsep.join([str(ROOT / "libexec/agent-wrappers"), *caller_path]),
+            output[5],
+        )
         self.assertIn('deny(["sed"]', rendered_rules)
         self.assertIn('allow(["jj", ["status", "diff"', rendered_rules)
         self.assertEqual(0o600, rules_mode)
