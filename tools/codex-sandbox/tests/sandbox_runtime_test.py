@@ -41,6 +41,28 @@ def lima():
     return backend
 
 
+class LimaPidNamespaceTests(unittest.TestCase):
+    def test_runtime_argv_rejects_before_machine_lookup(self):
+        backend = lima()
+        with patch.object(runtime.sys, "platform", "linux"), \
+                patch.object(runtime.Path, "read_text", return_value="NSpid:\t4123\t2\n"):
+            with self.assertRaisesRegex(ValueError, "nested PID namespace"):
+                backend.argv(["info"])
+        backend.host.machine.assert_not_called()
+
+    def test_proxy_forward_rejects_before_process_or_signal_setup(self):
+        backend = lima()
+        backend.run = Mock(return_value=SimpleNamespace(stdout=json.dumps([{"ID": "a" * 64}])))
+        with patch.object(runtime.sys, "platform", "linux"), \
+                patch.object(runtime.Path, "read_text", return_value="NSpid:\t4123\t2\n"), \
+                patch.object(runtime.subprocess, "Popen") as popen, \
+                patch.object(runtime.signal, "signal") as signal:
+            with self.assertRaisesRegex(ValueError, "nested PID namespace"):
+                backend.forward_proxy("proxy")
+        popen.assert_not_called()
+        signal.assert_not_called()
+
+
 class ResourceOperationsTest(unittest.TestCase):
     def test_removes_only_stopped_codex_sandbox_containers_holding_recorded_volumes(self):
         backend = object.__new__(runtime.ContainerRuntime)

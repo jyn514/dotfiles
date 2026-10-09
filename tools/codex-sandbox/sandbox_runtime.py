@@ -17,7 +17,7 @@ import tempfile
 import time
 import uuid
 
-from lima.host import Host, verification_scope
+from lima.host import Host, require_lima_pid_namespace, verification_scope
 from network_policy import PROHIBITED_ROUTES, policy_bytes
 from trusted_services import ResourcePresence
 
@@ -533,6 +533,7 @@ class Lima(VMRuntime):
         exec_id = "codex-forward-" + uuid.uuid4().hex
         ctr = ["containerd-rootless-setuptool.sh", "nsenter", "--", "ctr",
                "--namespace", self.record["namespace"], "tasks"]
+        require_lima_pid_namespace()
         command = ["limactl", "shell", "--workdir", "/tmp", self.record["instance"],
                    *ctr, "exec", "--exec-id", exec_id, container_id,
                    "/trusted/bin/sandbox-proxy-forward"]
@@ -610,6 +611,7 @@ class Lima(VMRuntime):
                                  f"buildkit-{self.record['namespace']}/buildkitd.sock")
 
     def argv(self, arguments, *, cwd=None):
+        require_lima_pid_namespace()
         self.host.machine(self.record)
         directory = "/tmp" if cwd is None else str(self.host.check_bind(cwd)["source"])
         return ["limactl", "shell", "--workdir", directory, self.record["instance"],

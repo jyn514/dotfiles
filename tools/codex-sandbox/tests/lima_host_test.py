@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import hashlib
+import os
 from contextlib import nullcontext
 from pathlib import Path
 import subprocess
@@ -30,6 +31,71 @@ network_spec.loader.exec_module(network)
 bind_spec = importlib.util.spec_from_file_location("check_binds", SOURCE.with_name("check-binds.py"))
 binds = importlib.util.module_from_spec(bind_spec)
 bind_spec.loader.exec_module(binds)
+
+
+class LimaPidNamespaceTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "Linux PID namespaces required")
+    def test_live_parent_hidden_in_child_namespace_rejects_before_lima(self):
+        if host.shutil.which("unshare") is None:
+            self.skipTest("unshare is not installed")
+        fixture = Path(__file__).parent / "fixtures/lima-pid-namespace.py"
+        result = subprocess.run([
+            "unshare", "--user", "--map-root-user", "--pid", "--fork",
+            sys.executable, str(fixture), str(os.getpid()),
+        ], capture_output=True, text=True, timeout=10)
+        if "unshare failed: Operation not permitted" in result.stderr:
+            self.skipTest("unprivileged PID namespaces are unavailable")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("live parent hidden; Lima rejected before execution", result.stdout)
+
+    def test_nested_namespace_rejects_every_lima_command_before_execution(self):
+        with patch.object(host.sys, "platform", "linux"), \
+                patch.object(host.Path, "read_text", return_value="NSpid:\t4123\t2\n"), \
+                patch.object(host.subprocess, "run") as run:
+            for operation in ("list", "shell", "create", "start", "stop", "validate"):
+                with self.subTest(operation=operation), \
+                        self.assertRaisesRegex(ValueError, "PID namespace.*host terminal"):
+                    host.command("limactl", operation)
+            run.assert_not_called()
+
+    def test_guest_argv_cannot_bypass_namespace_check(self):
+        instance = object.__new__(host.Host)
+        with patch.object(host.sys, "platform", "linux"), \
+                patch.object(host.Path, "read_text", return_value="NSpid:\t4123\t2\n"):
+            with self.assertRaisesRegex(ValueError, "PID namespace"):
+                instance.guest_argv({"instance": "sandbox-host"}, "true")
+
+    def test_single_namespace_allows_lima_and_non_linux_needs_no_procfs(self):
+        with patch.object(host.sys, "platform", "linux"), \
+                patch.object(host.Path, "read_text", return_value="Name:\tpython\nNSpid:\t4123\n"), \
+                patch.object(host.subprocess, "run") as run:
+            host.command("limactl", "list", "--json")
+            run.assert_called_once()
+        with patch.object(host.sys, "platform", "darwin"), \
+                patch.object(host.Path, "read_text", side_effect=AssertionError("read Linux procfs")), \
+                patch.object(host.subprocess, "run") as run:
+            host.command("limactl", "list", "--json")
+            run.assert_called_once()
+
+    def test_missing_unreadable_or_invalid_namespace_evidence_rejects(self):
+        with patch.object(host.sys, "platform", "linux"), \
+                patch.object(host.subprocess, "run") as run:
+            for status in ("", "NSpid:\n", "NSpid:\tzero\n", "NSpid:\t0\n",
+                           "NSpid:\t4123\nNSpid:\t4123\n"):
+                with self.subTest(status=status), \
+                        patch.object(host.Path, "read_text", return_value=status), \
+                        self.assertRaisesRegex(ValueError, "cannot verify.*PID namespace"):
+                    host.command("limactl", "list")
+            with patch.object(host.Path, "read_text", side_effect=PermissionError("denied")), \
+                    self.assertRaisesRegex(ValueError, "cannot verify.*PID namespace"):
+                host.command("limactl", "list")
+            run.assert_not_called()
+
+    def test_non_lima_command_does_not_require_namespace_evidence(self):
+        with patch.object(host.Path, "read_text", side_effect=AssertionError("read procfs")), \
+                patch.object(host.subprocess, "run") as run:
+            host.command("ssh", "--help")
+            run.assert_called_once()
 
 
 class HostTests(unittest.TestCase):

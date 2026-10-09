@@ -37,7 +37,28 @@ def verification_scope():
             os.environ[VERIFIED_ENV] = previous
 
 
+def require_lima_pid_namespace():
+    if sys.platform != "linux":
+        return
+    # NSpid starts in the namespace of this procfs mount (also /proc/1),
+    # followed by inner namespaces. Unlike /proc/1/ns/pid, this is readable
+    # without ptrace access to root's init. A container with its own procfs
+    # remains indistinguishable from the host; this is not a host attestation.
+    try:
+        entries = [line.split()[1:] for line in Path("/proc/self/status").read_text().splitlines()
+                   if line.startswith("NSpid:")]
+    except OSError as error:
+        raise ValueError("cannot verify Lima PID namespace; run from a host terminal") from error
+    if (len(entries) != 1 or not entries[0] or
+            any(not re.fullmatch(r"[1-9][0-9]*", pid) for pid in entries[0])):
+        raise ValueError("cannot verify Lima PID namespace; run from a host terminal")
+    if len(entries[0]) != 1:
+        raise ValueError("Lima cannot run in a nested PID namespace; run from a host terminal")
+
+
 def command(*args, **kwargs):
+    if args and Path(args[0]).name == "limactl":
+        require_lima_pid_namespace()
     if not kwargs.get("capture_output"):
         kwargs.setdefault("stdout", sys.stderr)
     kwargs.setdefault("timeout", 900)
@@ -119,6 +140,7 @@ class Host:
         return record
 
     def guest_argv(self, record, *args):
+        require_lima_pid_namespace()
         return ["limactl", "shell", "--workdir", "/tmp", record["instance"], *args]
 
     def guest(self, record, *args, **kwargs):

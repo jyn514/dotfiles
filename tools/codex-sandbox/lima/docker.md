@@ -14,7 +14,9 @@ pi
 ```
 
 On `x86_64` Linux, install Lima, QEMU, a real Docker CLI, and Buildx through
-the host distribution's trusted package sources. The host must expose
+the host distribution's trusted package sources. Run from a host terminal;
+the [PID namespace check](host-setup.md#set-up-and-inspect) rejects callers in
+nested namespaces that can hide Lima's live host processes. The host must expose
 readable and writable `/dev/kvm`; setup selects QEMU with KVM acceleration and
 uses virtiofs for host shares. It rejects Linux hosts without KVM instead
 of silently running software-emulated CPU instructions:

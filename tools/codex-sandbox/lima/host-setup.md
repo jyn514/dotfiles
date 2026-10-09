@@ -7,6 +7,15 @@ the [launch guide](launch.md).
 
 ## Set up and inspect
 
+On Linux, launcher and host-management calls reject a PID namespace nested beneath
+the namespace exposed by `/proc`. Lima can delete host PID files when their live
+processes are hidden from its caller. The check reads `NSpid` in
+`/proc/self/status`, avoiding the permissions needed to read `/proc/1/ns/pid`.
+Missing or unreadable namespace evidence also rejects the call; run it from a
+host terminal. A fully isolated container with its own `/proc` is not detected,
+so this check does not establish that the caller is on the host. The check applies
+to both the Docker and nerdctl backends; macOS does not use Linux PID namespaces.
+
 Run setup from a trusted checkout. It shares your home directory writable at the
 same absolute path in the VM, so new repositories and configuration beneath home
 need no separate share list or restart:
