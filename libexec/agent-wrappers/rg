@@ -1,7 +1,21 @@
 #!/bin/sh
 set -eu
 
+# Track option values without changing argv. In particular, a glob whose value
+# is -e must not disguise a following executable option as a literal pattern.
+value_pending=false
+literal_arguments=false
+known_options=true
 for argument in "$@"; do
+	if [ "$known_options" = true ]; then
+		if [ "$value_pending" = true ]; then
+			value_pending=false
+			continue
+		fi
+		if [ "$literal_arguments" = true ]; then
+			break
+		fi
+	fi
 	case $argument in
 		--pre|--pre=*|--pre-glob|--pre-glob=*)
 			echo "rg wrapper: --pre is not permitted" >&2
@@ -11,6 +25,52 @@ for argument in "$@"; do
 			echo "rg wrapper: --hostname-bin is not permitted" >&2
 			exit 2
 			;;
+	esac
+	# Unknown options may take a value in a newer rg. Fail closed for protected
+	# strings after them rather than guessing whether -e or -- is syntax or data.
+	if [ "$known_options" = false ]; then
+		continue
+	fi
+	case $argument in
+		--) literal_arguments=true ;;
+		--*=*) ;;
+		--regexp|--file|--dfa-size-limit|--encoding|--engine|--max-count|\
+		--regex-size-limit|--threads|--glob|--iglob|--ignore-file|--max-depth|\
+		--max-filesize|--type|--type-not|--type-add|--type-clear|--after-context|\
+		--before-context|--color|--colors|--context|--context-separator|\
+		--field-context-separator|--field-match-separator|--hyperlink-format|\
+		--max-columns|--path-separator|--replace|--sort|--sortr|--generate)
+			value_pending=true ;;
+		--search-zip|--case-sensitive|--crlf|--fixed-strings|--ignore-case|\
+		--invert-match|--line-regexp|--mmap|--multiline|--multiline-dotall|\
+		--no-unicode|--null-data|--pcre2|--smart-case|--stop-on-nonmatch|\
+		--text|--word-regexp|--auto-hybrid-regex|--no-pcre2-unicode|--binary|\
+		--follow|--glob-case-insensitive|--hidden|--ignore-file-case-insensitive|\
+		--no-ignore|--no-ignore-dot|--no-ignore-exclude|--no-ignore-files|\
+		--no-ignore-global|--no-ignore-parent|--no-ignore-vcs|--no-require-git|\
+		--one-file-system|--unrestricted|--block-buffered|--byte-offset|--column|\
+		--heading|--help|--include-zero|--line-buffered|--line-number|\
+		--no-line-number|--max-columns-preview|--null|--only-matching|\
+		--passthru|--pretty|--quiet|--trim|--vimgrep|--with-filename|\
+		--no-filename|--sort-files|--count|--count-matches|--files-with-matches|\
+		--files-without-match|--json|--debug|--no-ignore-messages|--no-messages|\
+		--stats|--trace|--files|--no-config|--pcre2-version|--type-list|--version)
+			;;
+		--*) known_options=false ;;
+		-?*)
+			short_options=${argument#-}
+			while [ -n "$short_options" ]; do
+				rest=${short_options#?}
+				option=${short_options%"$rest"}
+				case $option in
+					A|B|C|E|M|T|d|e|f|g|j|m|r|t)
+						if [ -z "$rest" ]; then value_pending=true; fi
+						break ;;
+					z|s|i|v|x|F|U|P|S|a|w|L|.|u|b|h|n|N|0|o|p|q|H|I|c|l|V) ;;
+					*) known_options=false; break ;;
+				esac
+				short_options=$rest
+			done ;;
 	esac
 done
 
