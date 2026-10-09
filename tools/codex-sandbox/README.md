@@ -261,6 +261,16 @@ unsaved messages block handoff.
 `restart --repo DIRECTORY` stops, resets, and resumes registered tmux sessions for
 that repository only. Pass the repository root; symlink aliases resolve to the
 same path. No matching sessions is an error, not a fallback to restarting all.
+Pi reports its selected session file and working directory at startup, `/reload`,
+and session switches; restart resumes that file, including custom session storage.
+It checks every selected saved file before stopping any pane. Missing, unsaved,
+ephemeral, or mismatched-directory sessions fail without stopping sessions.
+
+Run `/reload` once in existing Pi panes to replace old launch-time ID registrations.
+If a previous failed restart left a dead pane, start `π --resume` from the original
+working directory and select the saved conversation. Do not use `--session-id`
+with the missing ID: that can create an empty conversation.
+
 Both restart commands wait up to 60 seconds for sandbox ownership locks after
 panes stop: detached owners can still be cleaning up after their UI exits.
 A timeout retains recovery metadata and does not forcibly stop remaining owners.
@@ -359,6 +369,7 @@ Run the regressions from the repository root:
 ```sh
 dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p host_pi_owner_test.py
 dev/test-environment python3 -m unittest discover -s tools/codex-sandbox/tests -p codex_sandbox_test.py
+dev/test-environment python3 tools/codex-sandbox/tests/restart_hook_test.py
 ```
 
 `StartupTerminalTest` checks real PTY descriptors during build startup,

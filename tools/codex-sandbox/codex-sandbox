@@ -415,16 +415,26 @@ def load_agent_podman(state: State) -> None:
     state.agent_podman = values
 
 
+def decode_tmux_registration(encoded: str) -> dict[str, object]:
+    # Base64url padding is optional; Node's SDK publisher omits it.
+    payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)).decode())
+    if not isinstance(payload, dict):
+        raise ValueError("restart registration is not an object")
+    return payload
+
+
 def register_tmux_pane(state: State) -> None:
     pane = os.environ.get("TMUX_PANE")
-    _, session_id = resumable_arguments(state.codex_arguments)
-    if pane is None or session_id is None:
+    if pane is None:
         return
+    # The SDK publishes the selected file after startup and on session switches.
+    # CLI arguments (including --resume) cannot identify the current session.
     registration = base64.urlsafe_b64encode(json.dumps({
-        "version": 1,
+        "version": 2,
         "pane": pane,
         "repository": str(state.repository),
-        "session": session_id,
+        "session": None,
+        "cwd": str(state.host_working_directory),
         "token": secrets.token_hex(16),
     }, separators=(",", ":"), sort_keys=True).encode()).decode()
     run([
@@ -446,7 +456,14 @@ def unregister_tmux_pane(state: State) -> None:
         "tmux", "show-option", "-p", "-v", "-t", state.tmux_pane,
         "@codex_sandbox_restart",
     ], check=False, capture=True, quiet=True)
-    if current.returncode == 0 and current.stdout.strip() == state.tmux_registration:
+    try:
+        published = decode_tmux_registration(current.stdout.strip())
+        original = decode_tmux_registration(state.tmux_registration)
+    except (ValueError, UnicodeError):
+        return
+    # The SDK updates the selected session within this launch generation.
+    if current.returncode == 0 and isinstance(published, dict) \
+            and published.get("token") == original["token"]:
         run([
             "tmux", "set-option", "-p", "-u", "-t", state.tmux_pane,
             "@codex_sandbox_restart",
@@ -2485,18 +2502,30 @@ def tmux_registrations() -> list[dict[str, object]]:
             continue
         dead_text, pid_text, encoded = fields
         try:
-            payload = json.loads(base64.urlsafe_b64decode(encoded).decode())
+            payload = decode_tmux_registration(encoded)
             pid = int(pid_text) if pid_text else None
         except (ValueError, UnicodeError, json.JSONDecodeError) as error:
             raise LauncherError("tmux contains an invalid sandbox restart registration") from error
         dead = dead_text == "1"
-        if dead_text not in {"0", "1"} or (not dead and (pid is None or pid <= 1)) \
-                or not isinstance(payload, dict) or set(payload) != {
-            "version", "pane", "repository", "session", "token",
-        } or payload["version"] != 1 or not all(
-            isinstance(payload[field], str) and payload[field]
-            for field in ("pane", "repository", "session", "token")
-        ):
+        valid_payload = isinstance(payload, dict) and type(payload.get("version")) is int
+        if valid_payload:
+            version = payload["version"]
+            fields = {"version", "pane", "repository", "session", "token"}
+            if version == 2:
+                fields.add("cwd")
+            valid_payload = version in {1, 2} and set(payload) == fields and all(
+                isinstance(payload[field], str) and payload[field]
+                for field in ("pane", "repository", "token")
+            )
+            if valid_payload:
+                valid_payload = Path(payload["repository"]).is_absolute() and (
+                    isinstance(payload["session"], str) and bool(payload["session"])
+                    if version == 1 else
+                    (payload["session"] is None or (isinstance(payload["session"], str)
+                     and Path(payload["session"]).is_absolute()))
+                    and isinstance(payload["cwd"], str) and Path(payload["cwd"]).is_absolute()
+                )
+        if dead_text not in {"0", "1"} or (not dead and (pid is None or pid <= 1)) or not valid_payload:
             raise LauncherError("tmux contains an invalid sandbox restart registration")
         registrations.append({**payload, "dead": dead, "pid": pid})
     return registrations
@@ -2512,6 +2541,34 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
     if not registrations:
         scope = f" for {repository}" if repository is not None else ""
         raise LauncherError(f"tmux has no registered sandbox sessions{scope}")
+    # Check every selected session before changing panes or stopping any owner.
+    # A launch-time ID cannot identify the session selected later in the UI.
+    for registration in registrations:
+        pane = registration["pane"]
+        if registration.get("version") != 2:
+            raise LauncherError(
+                f"pane {pane} has a launch-time session registration; run /reload in that Pi pane "
+                "before restarting. No sessions were stopped"
+            )
+        if registration["session"] is None:
+            raise LauncherError(f"pane {pane} has no saved Pi session. No sessions were stopped")
+        session = Path(registration["session"])
+        cwd = Path(registration["cwd"])
+        if not session.is_file():
+            raise LauncherError(
+                f"pane {pane}: Pi session file is missing: {session}; wait for the first assistant "
+                "reply or resume a saved session. No sessions were stopped"
+            )
+        try:
+            _, session_cwd = session_header(session)
+        except LauncherError as error:
+            raise LauncherError(f"pane {pane}: {error}. No sessions were stopped") from error
+        if not cwd.is_dir() or not cwd.resolve().is_relative_to(Path(registration["repository"]).resolve()) \
+                or session_cwd != cwd.resolve():
+            raise LauncherError(
+                f"pane {pane}: session and sandbox working directories differ; "
+                "resume the session from its original directory. No sessions were stopped"
+            )
     for registration in registrations:
         remain_on_exit = run([
             "tmux", "show-options", "-A", "-p", "-v", "-t", registration["pane"],
@@ -2547,7 +2604,7 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
         helper("reset", "--repo", reset_repository, "--wait")
     for registration in registrations:
         command = (
-            shlex.join(["cd", registration["repository"]])
+            shlex.join(["cd", registration["cwd"]])
             + " && "
             + shlex.join(["pi", "--session", registration["session"]])
         )

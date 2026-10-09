@@ -159,6 +159,53 @@ export function requestOwner(socketPath: string, request: Request, timeoutMs = 1
   });
 }
 
+// This is host execution: guest-tools replaces builtins/user_bash, not pi.exec.
+export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
+  source: ExtensionContext["sessionManager"]): Promise<void> {
+  const pane = process.env.TMUX_PANE;
+  if (!process.env.TMUX || !pane) return;
+  const option = "@codex_sandbox_restart";
+  const read = async () => {
+    const result = await pi.exec("tmux", ["show-option", "-p", "-q", "-v", "-t", pane, option]);
+    if (result.code !== 0) throw new Error("Could not read sandbox restart registration");
+    return result.stdout.trim();
+  };
+  const encoded = await read();
+  if (!encoded) return; // Side panes are deliberately unmanaged.
+  let registration: any;
+  try {
+    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)
+      || Buffer.from(encoded, "base64url").toString("base64url") !== encoded.replace(/=+$/, "")) throw Error();
+    registration = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    const keys = registration?.version === 1
+      ? ["pane", "repository", "session", "token", "version"]
+      : ["cwd", "pane", "repository", "session", "token", "version"];
+    if (!registration || ![1, 2].includes(registration.version)
+      || Object.keys(registration).sort().join() !== keys.join()
+      || ["pane", "repository", "token"].some(key => typeof registration[key] !== "string" || !registration[key])
+      || registration.pane !== pane || !isAbsolute(registration.repository)
+      || (registration.version === 1
+        ? typeof registration.session !== "string" || !registration.session
+        : (registration.session !== null && (typeof registration.session !== "string" || !isAbsolute(registration.session)))
+          || typeof registration.cwd !== "string" || !isAbsolute(registration.cwd))) throw Error();
+  } catch {
+    throw new Error("Invalid sandbox restart registration");
+  }
+  const session = source.getSessionFile() ?? null;
+  const cwd = source.getCwd();
+  if ((session !== null && !isAbsolute(session)) || !isAbsolute(cwd)) {
+    throw new Error("SDK sandbox restart session/cwd must be absolute");
+  }
+  const payload = { version: 2, pane: registration.pane, repository: registration.repository,
+    session, cwd, token: registration.token };
+  // Expand and assign in one tmux server command so a replacement generation
+  // wins even if it appeared after our read. Base64url excludes format delimiters.
+  const updated = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const conditional = `#{?#{==:#{${option}},${encoded}},${updated},#{${option}}}`;
+  const result = await pi.exec("tmux", ["set-option", "-p", "-F", "-t", pane, option, conditional]);
+  if (result.code !== 0) throw new Error("Could not publish sandbox restart registration");
+}
+
 export default function sessionSide(pi: ExtensionAPI) {
   const socket = process.env.CODEX_SANDBOX_PI_OWNER;
   const attachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
@@ -175,6 +222,7 @@ export default function sessionSide(pi: ExtensionAPI) {
         ? { op: "ready", attachment, session }
         : { op: "ready", attachment, session: null,
           sessionDir: source.getSessionDir() || SessionManager.create(source.getCwd()).getSessionDir() });
+      await publishRestartSession(pi, source);
       if (initialPrompt) {
         const message = initialPrompt;
         initialPrompt = undefined;

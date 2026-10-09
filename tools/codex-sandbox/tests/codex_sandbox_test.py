@@ -1901,12 +1901,47 @@ class CodexSandboxTest(unittest.TestCase):
             launcher["resumable_arguments"](["--resume"]),
         )
 
+    def restart_registration(self, pane="%3", session_id="session-id", *, dead=False, cwd=None):
+        cwd = cwd or self.repo
+        directory = self.home / "custom sessions"
+        directory.mkdir(exist_ok=True)
+        session = directory / f"{session_id}.jsonl"
+        session.write_text(json.dumps({"type": "session", "version": 3, "id": session_id,
+                                       "timestamp": "2026-10-09T11:00:00.000Z", "cwd": str(cwd)}) + "\n")
+        return {"version": 2, "pane": pane, "dead": dead, "pid": None if dead else 12345,
+                "repository": str(self.repo), "session": str(session), "token": "token", "cwd": str(cwd)}
+
+    def test_restart_checks_all_selected_artifacts_before_stopping_any_pane(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        first = self.restart_registration()
+        valid = self.restart_registration("%4", "other-session")
+        corrupt = self.root / "corrupt-session.jsonl"
+        corrupt.write_text("not a Pi session\n")
+        invalid = [
+            ({**valid, "version": 1, "session": "launch-id"}, "run /reload"),
+            ({**valid, "session": None}, "no saved Pi session"),
+            ({**valid, "session": str(self.root / "missing.jsonl")}, "session file is missing"),
+            ({**valid, "session": str(corrupt)}, "Cannot inspect Pi session.*No sessions were stopped"),
+            ({**valid, "cwd": str(self.home)}, "working directories differ"),
+        ]
+        for registration, message in invalid:
+            with self.subTest(message=message):
+                run = mock.Mock()
+                helper = mock.Mock()
+                with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+                    launcher["restart_tmux_sessions"].__globals__, {
+                        "tmux_registrations": lambda: [first, registration], "run": run, "helper": helper,
+                    },
+                ), mock.patch.object(os, "kill") as kill:
+                    with self.assertRaisesRegex(launcher["LauncherError"], message):
+                        launcher["restart_tmux_sessions"](self.repo)
+                run.assert_not_called()
+                helper.assert_not_called()
+                kill.assert_not_called()
+
     def test_restart_all_stops_resets_and_relaunches_registered_panes(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        registrations = [{
-            "version": 1, "pane": "%3", "dead": False, "pid": 12345,
-            "repository": str(self.repo), "session": "session-id", "token": "token",
-        }]
+        registrations = [self.restart_registration()]
         calls = []
         resets = []
 
@@ -1934,7 +1969,7 @@ class CodexSandboxTest(unittest.TestCase):
         )
         respawn = next(call for call in calls if call[:2] == ["tmux", "respawn-pane"])
         self.assertEqual(
-            f"cd {shlex.quote(str(self.repo))} && pi --session session-id",
+            shlex.join(["cd", str(self.repo)]) + " && " + shlex.join(["pi", "--session", registrations[0]["session"]]),
             respawn[-1],
         )
         self.assertFalse(any(call[-1:] in (["C-c"], ["Enter"]) for call in calls))
@@ -1942,10 +1977,7 @@ class CodexSandboxTest(unittest.TestCase):
 
     def test_restart_all_respawns_an_already_dead_registered_pane(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        registrations = [{
-            "version": 1, "pane": "%3", "dead": True, "pid": None,
-            "repository": str(self.repo), "session": "session-id", "token": "token",
-        }]
+        registrations = [self.restart_registration(dead=True)]
         calls = []
 
         def fake_run(arguments, **_kwargs):
@@ -1966,12 +1998,10 @@ class CodexSandboxTest(unittest.TestCase):
 
     def test_restart_repo_leaves_other_repositories_running(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
-        selected = [
-            {"pane": "%3", "dead": False, "pid": 12345,
-             "repository": str(self.repo), "session": "live-session"},
-            {"pane": "%4", "dead": True, "pid": None,
-             "repository": str(self.repo), "session": "dead-session"},
-        ]
+        subdirectory = self.repo / "playground"
+        subdirectory.mkdir()
+        selected = [self.restart_registration("%3", "live-session", cwd=subdirectory),
+                    self.restart_registration("%4", "dead-session", dead=True)]
         unrelated = {"pane": "%5", "dead": False, "pid": 54321,
                      "repository": str(self.root / "other-repo"), "session": "other-session"}
         calls = []
@@ -1996,19 +2026,20 @@ class CodexSandboxTest(unittest.TestCase):
         respawns = [call for call in calls if call[:2] == ["tmux", "respawn-pane"]]
         self.assertEqual(["%3", "%4"], [call[4] for call in respawns])
         self.assertEqual(
-            [f"cd {shlex.quote(str(self.repo))} && pi --session {session}"
-             for session in ("live-session", "dead-session")],
+            [shlex.join(["cd", item["cwd"]]) + " && " + shlex.join(["pi", "--session", item["session"]])
+             for item in selected],
             [call[-1] for call in respawns],
         )
         self.assertFalse(any("%5" in call for call in calls))
 
-    @unittest.skipUnless(shutil.which("tmux") and shutil.which("node"), "tmux and Node are required")
-    def test_restart_keeps_native_failed_pane_and_its_error_visible(self) -> None:
+    @unittest.skipUnless(shutil.which("tmux") and shutil.which("node") and shutil.which("bun"),
+                         "tmux, Node and Bun are required")
+    def test_restart_uses_sdk_selected_file_with_real_tmux_and_pi_cli(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         socket_path = self.root / "restart-tmux.sock"
         prefix = ["tmux", "-S", str(socket_path)]
-        # A native executable rejects the generated Pi arguments with a real error.
-        # This tests tmux's failure preservation, not Pi's session lookup.
+        # First check error retention with a failing native child, then forward the
+        # exact resumed arguments to the installed Pi CLI to verify session identity.
         (self.fake_bin / "pi").symlink_to(sys.executable)
         environment = {"HOME": str(self.home), "FAKE_HOST_PI_READY": "", "FAKE_AGENT_EXIT": "0",
                        "PATH": str(self.fake_bin) + os.pathsep + os.environ["PATH"]}
@@ -2021,13 +2052,28 @@ class CodexSandboxTest(unittest.TestCase):
                 ).stdout.strip()
                 subprocess.run([*prefix, "new-session", "-d", "-s", "keepalive", "sleep 30"],
                                check=True)
-                state = SimpleNamespace(repository=self.repo,
-                                        codex_arguments=["--session", "missing-session"])
+                state = SimpleNamespace(repository=self.repo, host_working_directory=self.repo,
+                                        codex_arguments=["--resume"])
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0", "TMUX_PANE": pane}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
                             "helper": mock.Mock(),
                         }):
                     launcher["register_tmux_pane"](state)
+                    selected = self.restart_registration(session_id="persisted-session")
+                    publication = subprocess.run(
+                        ["bun", str(TOOL / "tests/publish_restart_fixture.ts"), selected["session"]],
+                        check=True, capture_output=True, text=True,
+                    )
+                    cli = json.loads(publication.stdout)["cli"]
+                    # A replaced generation must survive an old SDK publication.
+                    current = launcher["tmux_registrations"]()[0]
+                    replacement = {key: value for key, value in current.items() if key not in {"dead", "pid"}}
+                    replacement["token"] = "replacement-generation"
+                    encoded = base64.urlsafe_b64encode(json.dumps(replacement).encode()).decode()
+                    subprocess.run(["bun", str(TOOL / "tests/publish_restart_fixture.ts"),
+                                    selected["session"], encoded],
+                                   check=True, capture_output=True, text=True)
+                    self.assertEqual("replacement-generation", launcher["tmux_registrations"]()[0]["token"])
                     launcher["restart_tmux_sessions"](self.repo)
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
@@ -2049,7 +2095,11 @@ class CodexSandboxTest(unittest.TestCase):
                 self.assertIn("unknown option --session", result.stdout)
                 # A retry must accept "failed", and successful exit must still close the pane.
                 (self.fake_bin / "pi").unlink()
-                (self.fake_bin / "pi").symlink_to(self.pi_package / "dist/bundle/cli.js")
+                fixture = TOOL / "tests/restart_pi_cli_fixture.mjs"
+                (self.fake_bin / "pi").symlink_to(fixture)
+                receipt = self.root / "resume-receipt.jsonl"
+                subprocess.run([*prefix, "set-environment", "-g", "RESTART_PI_CLI", cli], check=True)
+                subprocess.run([*prefix, "set-environment", "-g", "RESTART_PI_RECEIPT", str(receipt)], check=True)
                 with mock.patch.dict(os.environ, {"TMUX": f"{socket_path},0,0"}), \
                         mock.patch.dict(launcher["restart_tmux_sessions"].__globals__, {
                             "helper": mock.Mock(),
@@ -2069,6 +2119,10 @@ class CodexSandboxTest(unittest.TestCase):
                     output = subprocess.run([*prefix, "capture-pane", "-p", "-S", "-", "-t", pane],
                                             capture_output=True, text=True)
                     self.fail(f"successful restarted UI exit kept its pane: {status.stdout}\n{output.stdout}")
+                response = json.loads(receipt.read_text())
+                self.assertTrue(response["success"])
+                self.assertEqual(selected["session"], response["data"]["sessionFile"])
+                self.assertEqual("persisted-session", response["data"]["sessionId"])
             finally:
                 subprocess.run([*prefix, "kill-server"], capture_output=True)
 
@@ -2091,8 +2145,7 @@ class CodexSandboxTest(unittest.TestCase):
             )
             try:
                 self.assertEqual("ready\n", holder.stdout.readline())
-                registration = {"pane": "%3", "dead": False, "pid": 12345,
-                                "repository": str(self.repo), "session": "session-id"}
+                registration = self.restart_registration()
                 real_flock = fcntl.flock
                 contentions = []
 
@@ -2205,11 +2258,26 @@ class CodexSandboxTest(unittest.TestCase):
                 launcher["tmux_registrations"](),
             )
 
+    def test_restart_registration_parser_rejects_invalid_sdk_locations(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        valid = self.restart_registration()
+        valid = {key: value for key, value in valid.items() if key not in {"dead", "pid"}}
+        for registration in ({**valid, "session": "relative.jsonl"}, {**valid, "cwd": "relative"},
+                             {**valid, "repository": "relative"}, {**valid, "session": 42},
+                             {**valid, "version": True}, {**valid, "extra": "not admitted"}):
+            with self.subTest(registration=registration):
+                encoded = base64.urlsafe_b64encode(json.dumps(registration).encode()).decode().rstrip("=")
+                with mock.patch.dict(launcher["tmux_registrations"].__globals__,
+                                     run=mock.Mock(return_value=SimpleNamespace(stdout=f"0\t12345\t{encoded}\n"))):
+                    with self.assertRaisesRegex(launcher["LauncherError"], "invalid sandbox restart registration"):
+                        launcher["tmux_registrations"]()
+
     def test_tmux_registration_declares_and_clears_pi_command(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         state = SimpleNamespace(
             codex_arguments=["--session", "session-id"],
             repository=self.repo,
+            host_working_directory=self.repo,
             tmux_pane=None,
             tmux_registration=None,
         )
@@ -2235,6 +2303,35 @@ class CodexSandboxTest(unittest.TestCase):
             ["tmux", "set-option", "-p", "-u", "-t", "%3", "@codex_sandbox_command"],
             calls,
         )
+
+    def test_sdk_registration_updates_preserve_generation_cleanup_ownership(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        for replaced in (False, True):
+            with self.subTest(replaced=replaced):
+                state = SimpleNamespace(codex_arguments=["--session", "launch-id"], repository=self.repo,
+                                        host_working_directory=self.repo,
+                                        tmux_pane=None, tmux_registration=None)
+                current = ""
+                calls = []
+
+                def fake_run(arguments, **_kwargs):
+                    calls.append(arguments)
+                    return subprocess.CompletedProcess(arguments, 0, stdout=current)
+
+                with mock.patch.dict(os.environ, {"TMUX_PANE": "%3"}), mock.patch.dict(
+                    launcher["register_tmux_pane"].__globals__, run=fake_run,
+                ):
+                    launcher["register_tmux_pane"](state)
+                    original = launcher["decode_tmux_registration"](state.tmux_registration)
+                    updated = {**original, "version": 2, "cwd": str(self.repo),
+                               "session": str(self.root / "actual-session.jsonl")}
+                    if replaced:
+                        updated["token"] = "another-generation"
+                    current = base64.urlsafe_b64encode(json.dumps(updated).encode()).decode().rstrip("=")
+                    calls.clear()
+                    launcher["unregister_tmux_pane"](state)
+                removals = [call for call in calls if call[:4] == ["tmux", "set-option", "-p", "-u"]]
+                self.assertEqual(0 if replaced else 2, len(removals))
 
     def test_browser_oauth_login_uses_dedicated_codex_home(self) -> None:
         path = os.pathsep.join((str(ROOT / "bin"), str(self.fake_bin), os.environ["PATH"]))

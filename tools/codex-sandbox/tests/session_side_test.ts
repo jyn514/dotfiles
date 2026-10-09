@@ -23,7 +23,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
 const { SessionManager } = sdk;
-const { default: sessionSide, requestOwner, snapshotSession } = await import("../../../config/pi-agent/pi-extensions/session-side.ts");
+const { default: sessionSide, publishRestartSession, requestOwner, snapshotSession } = await import("../../../config/pi-agent/pi-extensions/session-side.ts");
 
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -401,4 +401,106 @@ test("socket EOF, malformed response, timeout and connection error terminate wit
   const error = await requestOwner("/nonexistent/pi-side-owner.sock", { op: "side", attachment: "t", session: "snapshot" }, 30).catch(e => e);
   expect(error).toBeInstanceOf(Error);
   expect(error.snapshotMayBePublished).toBe(false);
+});
+
+function restartExec(initial: any, fail = false) {
+  let encoded = initial === undefined ? "" : Buffer.from(JSON.stringify(initial)).toString("base64url");
+  const writes: any[] = [];
+  return { writes, exec: async (_command: string, args: string[]) => {
+    if (args[0] === "show-option") return { code: 0, stdout: encoded + "\n", stderr: "" };
+    expect(args).toContain("-F");
+    const format = args.at(-1)!;
+    const match = /^#\{\?#\{==:#\{@codex_sandbox_restart\},([^,]+)\},([^,]+),#\{@codex_sandbox_restart\}\}$/.exec(format)!;
+    expect(match).not.toBeNull();
+    const updated = encoded === match[1] ? match[2] : encoded;
+    writes.push(JSON.parse(Buffer.from(updated, "base64url").toString()));
+    if (!fail) encoded = updated;
+    return { code: fail ? 1 : 0, stdout: "", stderr: "" };
+  } };
+}
+
+test("restart publication follows native SDK switching and custom storage without writing sessions", async () => {
+  const f = fixture();
+  const env = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE };
+  try {
+    process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%7";
+    const pi = restartExec({ version: 1, pane: "%7", repository: "/launcher/repo", session: "launch-id", token: "generation" });
+    const source = SessionManager.create(f.dir, join(f.dir, "custom-storage"));
+    const files = readdirSync(source.getSessionDir());
+    await publishRestartSession(pi as any, source);
+    expect(pi.writes[0]).toEqual({ version: 2, pane: "%7", repository: "/launcher/repo",
+      session: source.getSessionFile(), cwd: f.dir, token: "generation" });
+    expect(readdirSync(source.getSessionDir())).toEqual(files);
+    const switched = SessionManager.create(f.dir, join(f.dir, "other-storage"));
+    switched.appendMessage(assistant());
+    source.setSessionFile(switched.getSessionFile());
+    const before = readFileSync(switched.getSessionFile(), "utf8");
+    await publishRestartSession(pi as any, source);
+    expect(pi.writes[1].session).toBe(switched.getSessionFile());
+    expect(readFileSync(switched.getSessionFile(), "utf8")).toBe(before);
+    await publishRestartSession(pi as any, SessionManager.inMemory(f.dir));
+    expect(pi.writes[2].session).toBeNull();
+    expect(pi.writes[2].token).toBe("generation");
+  } finally {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    f.cleanup();
+  }
+});
+
+test("missing/invalid restart metadata never writes and publication errors use readiness notification", async () => {
+  const f = fixture();
+  const keys = ["TMUX", "TMUX_PANE", "CODEX_SANDBOX_PI_OWNER", "CODEX_SANDBOX_PI_ATTACHMENT"];
+  const env = keys.map(key => process.env[key]);
+  const host = await controller(f.dir, (_request, socket) => socket.end('{"ok":true}\n'));
+  try {
+    process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%7";
+    const absent = restartExec(undefined);
+    await publishRestartSession(absent as any, f.source);
+    expect(absent.writes).toEqual([]);
+    for (const invalid of [{ version: 3 }, { version: 1, pane: "%8", repository: "/repo", session: "id", token: "t" },
+      { version: 2, pane: "%7", repository: "/repo", session: null, cwd: "relative", token: "t" }]) {
+      const pi = restartExec(invalid);
+      await expect(publishRestartSession(pi as any, f.source)).rejects.toThrow("Invalid");
+      expect(pi.writes).toEqual([]);
+    }
+    const generation = { version: 1, pane: "%7", repository: "/repo", session: "id", token: "old" };
+    let encoded = Buffer.from(JSON.stringify(generation)).toString("base64url");
+    const replacement = Buffer.from(JSON.stringify({ ...generation, token: "replacement" })).toString("base64url");
+    let writes = 0;
+    await publishRestartSession({ exec: async (_command: string, args: string[]) => {
+      if (args[0] === "show-option") return { code: 0, stdout: encoded };
+      // Replacement lands at the publication command, not at a second read.
+      encoded = replacement;
+      const match = /^#\{\?#\{==:#\{@codex_sandbox_restart\},([^,]+)\},([^,]+),#\{@codex_sandbox_restart\}\}$/.exec(args.at(-1)!)!;
+      expect(args).toContain("-F");
+      expect(match).not.toBeNull();
+      encoded = encoded === match[1] ? match[2] : encoded;
+      writes++;
+      return { code: 0, stdout: "" };
+    } } as any, f.source);
+    expect(writes).toBe(1);
+    expect(encoded).toBe(replacement);
+    await expect(publishRestartSession({ exec: async () => ({ code: 0, stdout: "not-json!" }) } as any,
+      f.source)).rejects.toThrow("Invalid");
+    delete process.env.TMUX;
+    await publishRestartSession({ exec: () => { throw Error("unexpected exec"); } } as any, f.source);
+    process.env.TMUX = "fixture"; delete process.env.TMUX_PANE;
+    await publishRestartSession({ exec: () => { throw Error("unexpected exec"); } } as any, f.source);
+    process.env.TMUX_PANE = "%7";
+    process.env.CODEX_SANDBOX_PI_OWNER = host.path; process.env.CODEX_SANDBOX_PI_ATTACHMENT = "attachment";
+    for (const pi of [restartExec({ version: 3 }), restartExec({ version: 1, pane: "%7", repository: "/repo", session: "id", token: "t" }, true)]) {
+      let start: any;
+      const errors: any[] = [];
+      sessionSide({ ...pi, on: (_name: string, handler: any) => { start = handler; }, registerCommand: () => {} } as any);
+      await start({}, { mode: "tui", sessionManager: f.source, ui: { notify: (...args: any[]) => errors.push(args) } });
+      expect(errors).toHaveLength(1);
+      expect(errors[0][0]).toContain("Host Pi readiness:");
+      expect(errors[0][1]).toBe("error");
+    }
+  } finally {
+    keys.forEach((key, i) => { if (env[i] === undefined) delete process.env[key]; else process.env[key] = env[i]; });
+    await host.close(); f.cleanup();
+  }
 });
