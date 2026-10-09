@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Model daemon stop and startup backfill for codex-import failure tests."""
+
+import os
+from pathlib import Path
+import sqlite3
+import sys
+
+
+if sys.argv[1:] == ["app-server", "daemon", "stop"]:
+    sys.exit(0)
+if sys.argv[1:] == ["app-server", "--stdio"]:
+    if os.environ.get("CODEX_IMPORT_TEST_STARTUP") == "fail":
+        sys.exit(7)
+    if os.environ.get("CODEX_IMPORT_TEST_STARTUP") != "incomplete":
+        with sqlite3.connect(Path(os.environ["CODEX_HOME"]) / "state_5.sqlite") as db:
+            db.execute("UPDATE backfill_state SET status='complete' WHERE id=1")
+    sys.exit(0)
+sys.exit("unexpected Codex arguments")

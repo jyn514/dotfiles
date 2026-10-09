@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+
+case ${1:-} in
+	-h|--help)
+		printf '%s\n' 'usage: codex-import' \
+			'Refuses while local sessions hold writer locks. Stops the daemon, backs up the local' \
+			'state database, and imports sessions before returning.' \
+			'Uses CODEX_HOME (default: ~/.codex). Requires codex, sqlite3, and python3.'
+		exit 0
+		;;
+esac
+[ "$#" -eq 0 ] || { printf '%s\n' 'usage: codex-import' >&2; exit 2; }
+
+codex_home=${CODEX_HOME:-"$HOME/.codex"}
+database=$codex_home/state_5.sqlite
+[ -f "$database" ] || {
+	printf 'codex-import: no state database at %s\n' "$database" >&2
+	exit 1
+}
+command_path=$(realpath "$0")
+root=$(dirname -- "$command_path")/..
+printf 'Checking running sessions in %s...\n' "$codex_home" >&2
+python3 "$root/libexec/codex-import-check" "$codex_home"
+printf 'Stopping Codex daemon for %s...\n' "$codex_home" >&2
+codex app-server daemon stop
+cd "$codex_home"
+backup=$(mktemp state_5.before-reimport.XXXXXX)
+printf 'Backing up %s to %s...\n' "$database" "$backup" >&2
+# SQLite backup includes committed WAL data; copying the main file can omit it.
+sqlite3 state_5.sqlite ".backup '$backup'"
+printf 'Resetting session import marker...\n' >&2
+# Clear the watermark too, so older sessions received by sync are scanned.
+sqlite3 state_5.sqlite "
+	UPDATE backfill_state
+	SET status='pending', last_watermark=NULL, updated_at=0
+	WHERE id=1;
+"
+printf 'Importing sessions...\n' >&2
+# Startup waits for backfill. EOF then exits without opening a session or daemon.
+if ! codex app-server --stdio < /dev/null; then
+	printf 'codex-import: import failed; backup kept at %s/%s; retry codex-import.\n' \
+		"$codex_home" "$backup" >&2
+	exit 1
+fi
+status=$(sqlite3 state_5.sqlite 'SELECT status FROM backfill_state WHERE id=1;')
+if [ "$status" != complete ]; then
+	printf 'codex-import: import did not complete; backup kept at %s/%s; retry codex-import.\n' \
+		"$codex_home" "$backup" >&2
+	exit 1
+fi
+printf 'Session import complete. Backup: %s/%s\n' "$codex_home" "$backup"

@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Check the local writer-lock protocol used by Codex 0.159.2."""
+
+import fcntl
+from pathlib import Path
+import sys
+
+
+def main() -> int:
+    directory = Path(sys.argv[1]) / "thread-writer-locks"
+    try:
+        paths = list(directory.iterdir())
+    except FileNotFoundError:
+        return 0
+    active = []
+    for path in paths:
+        if path.suffix != ".lock" or path.name == ".coordination.lock":
+            continue
+        try:
+            with path.open("rb") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    active.append(path.stem)
+        except FileNotFoundError:
+            # A session can close and remove its lock while this check runs.
+            continue
+    if active:
+        print(
+            "codex-import: local sessions are running: " + ", ".join(sorted(active))
+            + ". Close them and retry; daemon and database were left unchanged.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except OSError as error:
+        print(
+            f"codex-import: cannot check running sessions: {error}. "
+            "Daemon and database were left unchanged; fix the error and retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
