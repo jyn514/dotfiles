@@ -261,6 +261,9 @@ unsaved messages block handoff.
 `restart --repo DIRECTORY` stops, resets, and resumes registered tmux sessions for
 that repository only. Pass the repository root; symlink aliases resolve to the
 same path. No matching sessions is an error, not a fallback to restarting all.
+Both restart commands wait up to 60 seconds for sandbox ownership locks after
+panes stop: detached owners can still be cleaning up after their UI exits.
+A timeout retains recovery metadata and does not forcibly stop remaining owners.
 
 Neither `restart` nor `restart-all` manages side panes or sessions outside tmux.
 Close side panes attached to the selected repositories first; they keep the

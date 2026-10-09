@@ -2540,7 +2540,8 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
     else:
         raise LauncherError("sandbox panes did not stop within 15 seconds")
     for reset_repository in sorted({str(item["repository"]) for item in registrations}):
-        helper("reset", "--repo", reset_repository)
+        # Pane death is not owner cleanup: detached owners may still hold lifetime locks.
+        helper("reset", "--repo", reset_repository, "--wait")
     for registration in registrations:
         command = (
             shlex.join(["cd", registration["repository"]])

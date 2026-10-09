@@ -1213,6 +1213,42 @@ class ManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_proxies.ConfigError, "legacy"):
             sandbox_proxies.session_state({"version": 1, "state": {"runtime": {"provider": "lima"}}})
 
+    def test_waiting_reset_times_out_without_deleting_metadata_or_forcing_owners(self) -> None:
+        runtime = sandbox_proxies.runtime_directory(self.repo)
+        metadata = runtime / "session.json"
+        contents = '{"recovery": "preserve"}'
+        for lock_name in ("coordination.lock", "session.lock"):
+            with self.subTest(lock=lock_name):
+                metadata.write_text(contents)
+                holder = subprocess.Popen(
+                    [sys.executable, str(MODULE_PATH.parent / "tests/session_lock_holder.py"),
+                     str(runtime / lock_name)],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                )
+                try:
+                    self.assertEqual("ready\n", holder.stdout.readline())
+                    if lock_name == "session.lock":
+                        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "sessions are still active"):
+                            sandbox_proxies.reset_main(SimpleNamespace(repo=str(self.repo)))
+                    with mock.patch.object(time, "monotonic", side_effect=[0, 1_000_000]), \
+                            mock.patch.object(sandbox_proxies, "stop_state") as stop:
+                        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "still active after waiting"):
+                            sandbox_proxies.reset_main(SimpleNamespace(repo=str(self.repo)), wait=True)
+                    stop.assert_not_called()
+                    self.assertEqual(contents, metadata.read_text())
+                    self.assertIsNone(holder.poll())
+                finally:
+                    holder.stdin.close()
+                    try:
+                        holder.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        holder.kill()
+                        holder.wait(timeout=5)
+                    holder.stdout.close()
+                # Failed waiting must release its own locks so recovery remains possible.
+                with (runtime / "coordination.lock").open("a+b") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
     def test_reset_retains_recovery_metadata_when_recorded_vm_is_unavailable(self) -> None:
         self.write()
         metadata = sandbox_proxies.runtime_directory(self.repo) / "session.json"

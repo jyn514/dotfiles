@@ -516,16 +516,33 @@ def recorded_proxy_volumes(state: dict[str, Any]) -> set[str]:
     return volumes
 
 
-def reset_main(args: argparse.Namespace) -> int:
+def reset_main(args: argparse.Namespace, *, wait: bool = False) -> int:
     runtime = runtime_directory(Path(args.repo))
     coordination_path = runtime / "coordination.lock"
     session_path = runtime / "session.lock"
     with coordination_path.open("a+b") as coordination, session_path.open("a+b") as session:
-        fcntl.flock(coordination, fcntl.LOCK_EX)
-        try:
-            fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise ConfigError("sandbox sessions are still active") from error
+        deadline = time.monotonic() + 60
+        announced = False
+        for lock in (coordination, session):
+            if not wait and lock is coordination:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                continue
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError as error:
+                    if not wait:
+                        raise ConfigError("sandbox sessions are still active") from error
+                    if time.monotonic() >= deadline:
+                        raise ConfigError(
+                            "sandbox sessions are still active after waiting 60 seconds for cleanup; "
+                            "close any attached side panes or non-tmux sessions"
+                        ) from error
+                    if not announced:
+                        print(f"Waiting for sandbox cleanup: {args.repo}", file=sys.stderr, flush=True)
+                        announced = True
+                    time.sleep(0.1)
         metadata_path = runtime / "session.json"
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -2649,7 +2666,9 @@ def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
     attach.set_defaults(function=attach_main)
     reset = sub.add_parser("reset")
     reset.add_argument("--repo", required=True)
-    reset.set_defaults(function=reset_main)
+    reset.add_argument("--wait", action="store_true",
+                       help="Wait up to 60 seconds for existing sandbox owners to finish cleanup")
+    reset.set_defaults(function=lambda args: reset_main(args, wait=args.wait))
 
     publish = sub.add_parser("publish")
     publish.add_argument("--repo", required=True)

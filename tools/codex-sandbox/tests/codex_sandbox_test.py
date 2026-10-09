@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import fcntl
 import io
 import json
 import os
@@ -1926,7 +1927,7 @@ class CodexSandboxTest(unittest.TestCase):
         ), mock.patch.object(os, "kill") as kill:
             self.assertEqual(0, launcher["restart_tmux_sessions"]())
         kill.assert_called_once_with(12345, signal.SIGTERM)
-        self.assertEqual([("reset", "--repo", str(self.repo))], resets)
+        self.assertEqual([("reset", "--repo", str(self.repo), "--wait")], resets)
         self.assertIn(
             ["tmux", "set-option", "-p", "-t", "%3", "remain-on-exit", "on"],
             calls,
@@ -1995,7 +1996,7 @@ class CodexSandboxTest(unittest.TestCase):
                 mock.patch.object(time, "sleep"):
             self.assertEqual(0, launcher["main"](["restart", "--repo", str(self.repo)]))
         kill.assert_called_once_with(12345, signal.SIGTERM)
-        self.assertEqual([("reset", "--repo", str(self.repo))], resets)
+        self.assertEqual([("reset", "--repo", str(self.repo), "--wait")], resets)
         respawns = [call for call in calls if call[:2] == ["tmux", "respawn-pane"]]
         self.assertEqual(["%3", "%4"], [call[4] for call in respawns])
         self.assertEqual(
@@ -2004,6 +2005,64 @@ class CodexSandboxTest(unittest.TestCase):
             [call[-1] for call in respawns],
         )
         self.assertFalse(any("%5" in call for call in calls))
+
+    def test_restart_repo_waits_for_real_session_lock_after_pane_dies(self) -> None:
+        self.assert_restart_waits_for_real_session_lock(["restart", "--repo", str(self.repo)])
+
+    def test_restart_all_waits_for_real_session_lock_after_pane_dies(self) -> None:
+        self.assert_restart_waits_for_real_session_lock(["restart-all"])
+
+    def assert_restart_waits_for_real_session_lock(self, arguments: list[str]) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        environment = {"TMUX": "/tmp/tmux", "HOME": str(self.home)}
+        with mock.patch.dict(os.environ, environment):
+            proxies = launcher["proxy_module"]()
+            proxies.use_repository_metadata(self.repo, (self.repo / ".git", self.repo / ".git"))
+            runtime = proxies.runtime_directory(self.repo)
+            holder = subprocess.Popen(
+                [sys.executable, str(TOOL / "tests/session_lock_holder.py"), str(runtime / "session.lock")],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+            )
+            try:
+                self.assertEqual("ready\n", holder.stdout.readline())
+                registration = {"pane": "%3", "dead": False, "pid": 12345,
+                                "repository": str(self.repo), "session": "session-id"}
+                real_flock = fcntl.flock
+                contentions = []
+
+                def observe_lock(file, operation):
+                    try:
+                        return real_flock(file, operation)
+                    except BlockingIOError:
+                        # The UI pane is already dead, but the detached owner still
+                        # holds the real lifetime lock. Release only after observing it.
+                        if not contentions:
+                            holder.stdin.write("cleanup complete\n")
+                            holder.stdin.flush()
+                        contentions.append(operation)
+                        raise
+
+                with mock.patch.dict(launcher["main"].__globals__, {
+                    "tmux_registrations": mock.Mock(side_effect=[
+                        [registration], [{**registration, "dead": True}],
+                    ]),
+                    "run": mock.Mock(return_value=SimpleNamespace(stdout="off\n")),
+                }), mock.patch.object(os, "kill"), mock.patch.object(fcntl, "flock", observe_lock), \
+                        contextlib.redirect_stderr(io.StringIO()) as diagnostics:
+                    result = launcher["main"](arguments)
+                self.assertEqual(0, result, diagnostics.getvalue())
+                self.assertIn("Waiting for sandbox cleanup:", diagnostics.getvalue())
+                self.assertTrue(contentions)
+                self.assertEqual("released\n", holder.stdout.readline())
+                self.assertEqual(0, holder.wait(timeout=5))
+            finally:
+                holder.stdin.close()
+                try:
+                    holder.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    holder.kill()
+                    holder.wait(timeout=5)
+                holder.stdout.close()
 
     def test_restart_repo_without_matches_has_no_side_effects(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
