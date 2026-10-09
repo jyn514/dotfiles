@@ -2502,12 +2502,16 @@ def tmux_registrations() -> list[dict[str, object]]:
     return registrations
 
 
-def restart_all_tmux_sessions() -> int:
+def restart_tmux_sessions(repository: Path | None = None) -> int:
     if "TMUX" not in os.environ:
-        raise LauncherError("restart-all must run inside tmux")
+        raise LauncherError("sandbox restart must run inside tmux")
     registrations = tmux_registrations()
+    if repository is not None:
+        registrations = [registration for registration in registrations
+                         if Path(str(registration["repository"])).resolve() == repository]
     if not registrations:
-        raise LauncherError("tmux has no registered sandbox sessions")
+        scope = f" for {repository}" if repository is not None else ""
+        raise LauncherError(f"tmux has no registered sandbox sessions{scope}")
     for registration in registrations:
         remain_on_exit = run([
             "tmux", "show-options", "-A", "-p", "-v", "-t", registration["pane"],
@@ -2535,8 +2539,8 @@ def restart_all_tmux_sessions() -> int:
         time.sleep(0.1)
     else:
         raise LauncherError("sandbox panes did not stop within 15 seconds")
-    for repository in sorted({str(item["repository"]) for item in registrations}):
-        helper("reset", "--repo", repository)
+    for reset_repository in sorted({str(item["repository"]) for item in registrations}):
+        helper("reset", "--repo", reset_repository)
     for registration in registrations:
         command = (
             shlex.join(["cd", registration["repository"]])
@@ -2548,7 +2552,8 @@ def restart_all_tmux_sessions() -> int:
             "tmux", "set-option", "-p", "-t", registration["pane"],
             "remain-on-exit", registration["remain_on_exit"],
         ])
-    message = f"Restarted {len(registrations)} sandbox session(s)."
+    scope = f" for {repository}" if repository is not None else ""
+    message = f"Restarted {len(registrations)} sandbox session(s){scope}."
     run(["tmux", "display-message", "-d", "5000", message], check=False, quiet=True)
     print(message)
     return 0
@@ -2558,7 +2563,7 @@ def main(arguments: list[str]) -> int:
     """Public CLI/import entry; interactive callers must have no live threads."""
     # Administrative and noninteractive interfaces retain their existing process
     # ownership. Interactive UI is separated before execute creates any resources.
-    administrative = arguments[:1] in (["validate-cd"], ["restart-all"], ["auth"])
+    administrative = arguments[:1] in (["validate-cd"], ["restart"], ["restart-all"], ["auth"])
     options = arguments[:arguments.index("--")] if "--" in arguments else arguments
     noninteractive = any(argument in ("--print", "-p", "--export") for argument in options)
     for index, argument in enumerate(options):
@@ -2606,9 +2611,18 @@ def launch(arguments: list[str]) -> int:
         except (LauncherError, OSError, ValueError, subprocess.CalledProcessError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
-    if arguments == ["restart-all"]:
+    if arguments[:1] in (["restart"], ["restart-all"]):
         try:
-            return restart_all_tmux_sessions()
+            repository = None
+            if arguments[:1] == ["restart"]:
+                if len(arguments) != 3 or arguments[1] != "--repo":
+                    raise LauncherError("usage: codex-sandbox restart --repo DIRECTORY")
+                repository = Path(arguments[2]).expanduser().resolve(strict=True)
+                if not repository.is_dir():
+                    raise LauncherError("The repository is not a directory")
+            elif arguments != ["restart-all"]:
+                raise LauncherError("usage: codex-sandbox restart-all")
+            return restart_tmux_sessions(repository)
         except (LauncherError, OSError, subprocess.CalledProcessError) as error:
             message = f"Sandbox restart failed: {error}"
             if "TMUX" in os.environ:

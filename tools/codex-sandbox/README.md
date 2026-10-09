@@ -230,7 +230,8 @@ pi                              # start a new resumable sandbox session
 pi --session SESSION_ID         # resume a Pi session
 pi --export session.jsonl out.html  # export HTML locally without sandbox startup
 codex-sandbox auth login        # authenticate the Codex sidecar used by guest tools
-codex-sandbox restart-all       # restart registered sessions; run inside tmux
+codex-sandbox restart --repo "$PWD"  # restart this repo's registered sessions; run inside tmux
+codex-sandbox restart-all       # restart all registered sessions; run inside tmux
 tools/codex-sandbox/sandbox-image refresh --repo .  # update upstream pins and affected images
 tools/codex-sandbox/sandbox-image clean --repo .    # rebuild declared images without build cache
 CODEX_SANDBOX_TIMING=1 pi       # report preparation, launch, runtime, and cleanup timings
@@ -257,8 +258,13 @@ cleaned up before handoff only after its final attachment releases. Cross-direct
 resume also forks and preserves the saved session. An empty session starts fresh;
 unsaved messages block handoff.
 
-`restart-all` does not manage side panes. Close them before restarting registered
-sessions; there is no tmux-restart or automatic worker-replacement feature.
+`restart --repo DIRECTORY` stops, resets, and resumes registered tmux sessions for
+that repository only. Pass the repository root; symlink aliases resolve to the
+same path. No matching sessions is an error, not a fallback to restarting all.
+
+Neither `restart` nor `restart-all` manages side panes or sessions outside tmux.
+Close side panes attached to the selected repositories first; they keep the
+shared sandbox alive and prevent reset. There is no automatic worker replacement.
 
 `refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
 it retains BuildKit caches.

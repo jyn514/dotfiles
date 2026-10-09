@@ -1916,7 +1916,7 @@ class CodexSandboxTest(unittest.TestCase):
                 return SimpleNamespace(stdout="")
             return SimpleNamespace(stdout="off\n")
 
-        function_globals = launcher["restart_all_tmux_sessions"].__globals__
+        function_globals = launcher["restart_tmux_sessions"].__globals__
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
             function_globals, {
                 "tmux_registrations": mock.Mock(side_effect=[registrations, []]),
@@ -1924,7 +1924,7 @@ class CodexSandboxTest(unittest.TestCase):
                 "helper": lambda *arguments: resets.append(arguments),
             },
         ), mock.patch.object(os, "kill") as kill:
-            self.assertEqual(0, launcher["restart_all_tmux_sessions"]())
+            self.assertEqual(0, launcher["restart_tmux_sessions"]())
         kill.assert_called_once_with(12345, signal.SIGTERM)
         self.assertEqual([("reset", "--repo", str(self.repo))], resets)
         self.assertIn(
@@ -1956,16 +1956,104 @@ class CodexSandboxTest(unittest.TestCase):
             return SimpleNamespace(stdout="off\n")
 
         with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
-            launcher["restart_all_tmux_sessions"].__globals__, {
+            launcher["restart_tmux_sessions"].__globals__, {
                 "tmux_registrations": mock.Mock(side_effect=[registrations, registrations]),
                 "run": fake_run,
                 "helper": mock.Mock(),
             },
         ), mock.patch.object(os, "kill") as kill:
-            self.assertEqual(0, launcher["restart_all_tmux_sessions"]())
+            self.assertEqual(0, launcher["restart_tmux_sessions"]())
 
         kill.assert_not_called()
         self.assertTrue(any(call[:2] == ["tmux", "respawn-pane"] for call in calls))
+
+    def test_restart_repo_leaves_other_repositories_running(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        selected = [
+            {"pane": "%3", "dead": False, "pid": 12345,
+             "repository": str(self.repo), "session": "live-session"},
+            {"pane": "%4", "dead": True, "pid": None,
+             "repository": str(self.repo), "session": "dead-session"},
+        ]
+        unrelated = {"pane": "%5", "dead": False, "pid": 54321,
+                     "repository": str(self.root / "other-repo"), "session": "other-session"}
+        calls = []
+        resets = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            return SimpleNamespace(stdout="off\n")
+
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(side_effect=[[*selected, unrelated], [unrelated]]),
+                "run": fake_run,
+                "helper": lambda *arguments: resets.append(arguments),
+            },
+        ), mock.patch.object(os, "kill") as kill, \
+                mock.patch.object(time, "monotonic", side_effect=[0, 0.1, 30]), \
+                mock.patch.object(time, "sleep"):
+            self.assertEqual(0, launcher["main"](["restart", "--repo", str(self.repo)]))
+        kill.assert_called_once_with(12345, signal.SIGTERM)
+        self.assertEqual([("reset", "--repo", str(self.repo))], resets)
+        respawns = [call for call in calls if call[:2] == ["tmux", "respawn-pane"]]
+        self.assertEqual(["%3", "%4"], [call[4] for call in respawns])
+        self.assertEqual(
+            [f"cd {shlex.quote(str(self.repo))} && pi --session {session}"
+             for session in ("live-session", "dead-session")],
+            [call[-1] for call in respawns],
+        )
+        self.assertFalse(any("%5" in call for call in calls))
+
+    def test_restart_repo_without_matches_has_no_side_effects(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        run = mock.Mock()
+        helper = mock.Mock()
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/tmux"}), mock.patch.dict(
+            launcher["restart_tmux_sessions"].__globals__, {
+                "tmux_registrations": mock.Mock(return_value=[{
+                    "repository": str(self.root / "other-repo"),
+                }]),
+                "run": run, "helper": helper,
+            },
+        ), mock.patch.object(os, "kill") as kill:
+            with self.assertRaisesRegex(launcher["LauncherError"], "no registered sandbox sessions for"):
+                launcher["restart_tmux_sessions"](self.repo)
+        run.assert_not_called()
+        helper.assert_not_called()
+        kill.assert_not_called()
+
+    def test_restart_cli_is_administrative_and_resolves_repository_alias(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        alias = self.root / "repo alias"
+        alias.symlink_to(self.repo, target_is_directory=True)
+        restart = mock.Mock(return_value=0)
+        with mock.patch("host_pi_owner.detached_frontend", side_effect=AssertionError("restart detached")), \
+                mock.patch.dict(launcher["main"].__globals__, {"restart_tmux_sessions": restart}):
+            self.assertEqual(0, launcher["main"](["restart", "--repo", str(alias)]))
+            restart.assert_called_once_with(self.repo)
+            restart.reset_mock()
+            self.assertEqual(0, launcher["main"](["restart-all"]))
+            restart.assert_called_once_with(None)
+
+    def test_restart_cli_rejects_invalid_arguments_before_stopping_sessions(self) -> None:
+        launcher = runpy.run_path(str(LAUNCHER))
+        restart = mock.Mock()
+        invalid = [
+            ["restart"], ["restart", "--repo"],
+            ["restart", "--repo", str(self.repo), "extra"],
+            ["restart", "--repo", str(self.root / "missing")],
+            ["restart", "--repo", str(self.pi_marker)],
+            ["restart-all", "--repo", str(self.repo)],
+        ]
+        with mock.patch("host_pi_owner.detached_frontend", side_effect=AssertionError("restart detached")), \
+                mock.patch.dict(launcher["main"].__globals__, {
+                    "restart_tmux_sessions": restart, "run": mock.Mock(),
+                }), contextlib.redirect_stderr(io.StringIO()):
+            for arguments in invalid:
+                with self.subTest(arguments=arguments):
+                    self.assertEqual(1, launcher["main"](arguments))
+        restart.assert_not_called()
 
     def test_restart_registration_includes_the_launcher_process(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
