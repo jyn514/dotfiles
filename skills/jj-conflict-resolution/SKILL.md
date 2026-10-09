@@ -80,6 +80,10 @@ For a multi-sided conflict, inspect every diff alternative and choose the requir
 
 ## Preserve Jujutsu history
 
+Before switching away, record the original working-copy change ID, its parent
+change IDs, and whether it is empty and undescribed. Jujutsu may automatically
+abandon an empty, undescribed working-copy change when you leave it.
+
 Resolve in a fresh working-copy commit on top of the first conflicted change. Squash it into the exact introducing change only if that change is mutable and rewriting it is authorized; otherwise stop and use `jj-workflow` to choose an allowed history strategy:
 
 ```bash
@@ -90,6 +94,13 @@ jj squash --from @ --into CONFLICTED_CHANGE
 ```
 
 Use the stable change ID, not a nearby `@-`, as the squash target. Let descendants restack; then repeat inspection and resolution for each conflicted descendant. Do not abandon a change until its patch and resulting tree are understood.
+
+When returning, inspect `jj status` and `jj log` before using the recorded
+working-copy ID. If it still exists, return with `jj edit ORIGINAL_CHANGE`.
+If the recorded empty, undescribed change disappeared, verify its parents after
+restacking and create a new working copy with `jj new ORIGINAL_PARENT...`.
+Do not assume a missing nonempty or described change was safely abandoned;
+inspect operation history before proceeding.
 
 If a mutating command fails or is interrupted, inspect `jj status`, `jj log`, and operation state before retrying. Do not restore files or undo operations on assumption.
 
