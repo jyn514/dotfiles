@@ -82,7 +82,11 @@ While a goal is active, the extension:
 - Recovers from provider assistant errors without immediate hidden continuation loops. Context-window overflow triggers automatic compaction and then resumes the active goal; transient errors use bounded backoff retries; recognized provider usage-limit pauses schedule a conservative auto-resume retry. Use `/goal resume cancel` to stop the scheduled retry.
 - Prompts on session resume before reactivating a paused goal when a UI is available, and supports explicit `/goal resume`.
 - Pauses a hidden continuation that only inspects goal status with `get_goal` without doing actionable work.
-- Rejects `/goal pause` unless the goal is active and rejects `/goal resume` unless the goal is paused or blocked. An exception is an active goal waiting for a user-start recovery turn after host overflow recovery: `/goal resume` sends the required user follow-up without changing goal status.
+- Rejects `/goal pause` unless the goal is active and rejects `/goal resume` unless the goal is paused or blocked.
+  After host overflow recovery, an active goal can receive another continuation without changing status.
+- Sends all goal start and continuation prompts as hidden custom messages, including manual, session, and provider-limit resumes.
+  These do not reset Pi's exhausted overflow recovery allowance.
+  If `/goal resume` encounters another overflow after a failed compact-and-retry attempt, send a normal user message to reset that allowance, reduce context, or switch to a larger-context model.
 - Treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` and explicit `create_goal` replacement to replace goals.
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.

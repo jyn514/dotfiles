@@ -24,9 +24,8 @@ import {
   type RecoveryAttention,
 } from "./recovery.ts";
 
-export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.ts";
+export type { RecoveryPhase } from "./recovery-phase.ts";
 export {
-  goalStartTurnStrategy,
   recoveryPhaseBlocksContinuation,
   recoveryPhaseNeedsUserStartTurn,
 } from "./recovery-phase.ts";
@@ -124,7 +123,7 @@ export function syncHostOverflowUserResetFromSession(
   state.phase = applyPersistedHostOverflowUserReset(state.phase, needsUserReset);
 }
 
-/** Session-level overflow: require a user-started goal turn even without an active goal. */
+/** Track session-level overflow recovery even without an active goal. */
 export function requireHostOverflowUserReset(state: GoalRecoveryMachineState): boolean {
   const persistHostOverflowCapReset = !recoveryPhaseNeedsUserStartTurn(state.phase);
   state.phase = applyPersistedHostOverflowUserReset(state.phase, true);

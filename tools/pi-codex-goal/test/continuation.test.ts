@@ -137,14 +137,16 @@ test("session resume prompt can reactivate a paused goal", async () => {
   await harness.emit("session_start", { type: "session_start", reason: "resume" });
 
   assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.sentUserMessages.length, 1);
-  const sentUserMessage = harness.sentUserMessages[0];
-  assert.ok(sentUserMessage);
-  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
-  const content = sentUserMessage.content;
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
+  const sentMessage = harness.sentMessages[0];
+  assert.ok(sentMessage);
+  assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
+  assert.equal(sentMessage.message.customType, CUSTOM_ENTRY_TYPE);
+  assert.deepEqual(sentMessage.message.details, { kind: "command_resume", goalId: harness.snapshot().goal?.goalId });
+  const content = sentMessage.message.content;
   if (typeof content !== "string") {
-    assert.fail("Expected session resume to send a user continuation prompt.");
+    assert.fail("Expected session resume to send a custom continuation prompt.");
   }
   assert.doesNotMatch(content, /<untrusted_objective>/);
   assert.match(content, /<pi_goal_continuation goal_id="/);
@@ -911,8 +913,14 @@ test("provider-limit pauses schedule auto-resume", async () => {
     const resumed = harness.snapshot().goal;
     assert.equal(resumed?.goalId, paused?.goalId);
     assert.equal(resumed?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
-    const content = harness.sentUserMessages[0]?.content;
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
+    const sent = harness.sentMessages[0];
+    assert.ok(sent);
+    assert.equal(sent.message.customType, CUSTOM_ENTRY_TYPE);
+    assert.deepEqual(sent.message.details, { kind: "command_resume", goalId: resumed?.goalId });
+    assert.deepEqual(sent.options, { triggerTurn: true, deliverAs: "followUp" });
+    const content = sent.message.content;
     assert.equal(typeof content, "string");
     assert.match(String(content), /<pi_goal_continuation goal_id="/);
     assert.doesNotMatch(String(content), /<untrusted_objective>/);
@@ -933,6 +941,7 @@ test("provider-limit auto-resume retries instead of resuming while busy", async 
     fireProviderLimitAutoResume();
 
     assert.equal(harness.snapshot().goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
     assert.equal(harness.sentUserMessages.length, 0);
     assert.match(harness.footerStatuses.at(-1) ?? "", /Auto-resume will retry/);
 
@@ -941,7 +950,8 @@ test("provider-limit auto-resume retries instead of resuming while busy", async 
     flushContinuationScheduler();
 
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }
@@ -958,6 +968,7 @@ test("non-limit non-retryable pauses do not schedule auto-resume", async () => {
     fireProviderLimitAutoResume();
 
     assert.equal(harness.snapshot().goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
     assert.equal(harness.sentUserMessages.length, 0);
     assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Auto-resume/);
   } finally {
@@ -976,10 +987,12 @@ test("manual resume clears provider-limit auto-resume", async () => {
     await emitPersistentAssistantError(harness, 0, "insufficient_quota 429");
     await harness.runCommand("resume");
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
 
     fireProviderLimitAutoResume();
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }
@@ -999,6 +1012,7 @@ test("/goal resume cancel clears provider-limit auto-resume and leaves the goal 
     assert.equal(harness.footerStatuses.at(-1), "Goal needs attention (non-retryable provider error (Monthly usage limit reached)). Use /goal resume to continue.");
     assert.equal(harness.sentUserMessages.length, 0);
     fireProviderLimitAutoResume();
+    assert.equal(harness.sentMessages.length, 0);
     assert.equal(harness.sentUserMessages.length, 0);
   } finally {
     mock.timers.reset();
@@ -1020,6 +1034,7 @@ test("user input and session shutdown clear provider-limit auto-resume", async (
     });
     fireProviderLimitAutoResume();
     assert.equal(userInputHarness.snapshot().goal?.status, "paused");
+    assert.equal(userInputHarness.sentMessages.length, 0);
     assert.equal(userInputHarness.sentUserMessages.length, 0);
 
     const shutdownHarness = createRuntimeHarness();
@@ -1028,6 +1043,7 @@ test("user input and session shutdown clear provider-limit auto-resume", async (
     await emitPersistentAssistantError(shutdownHarness, 0, "quota exceeded");
     await shutdownHarness.emit("session_shutdown", sessionShutdownEvent());
     fireProviderLimitAutoResume();
+    assert.equal(shutdownHarness.sentMessages.length, 0);
     assert.equal(shutdownHarness.sentUserMessages.length, 0);
   } finally {
     mock.timers.reset();
@@ -1045,16 +1061,19 @@ test("a second provider-limit failure after auto-resume schedules one new retry"
     await emitPersistentAssistantError(harness, 0, "FreeUsageLimitError");
     fireProviderLimitAutoResume();
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
 
-    harness.sentUserMessages.length = 0;
+    harness.sentMessages.length = 0;
     await emitPersistentAssistantError(harness, 1, "FreeUsageLimitError");
     assert.equal(harness.snapshot().goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
     assert.equal(harness.sentUserMessages.length, 0);
     fireProviderLimitAutoResume();
 
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentUserMessages.length, 0);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }

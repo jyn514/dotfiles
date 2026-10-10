@@ -127,8 +127,12 @@ async function waitForGoalCompletion(h: Awaited<ReturnType<typeof fixture>>): Pr
 }
 
 async function resumeAndComplete(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  const userMessages = () => h.session.sessionManager.getEntries().filter((entry) => entry.type === "message" && entry.message.role === "user");
+  const before = userMessages().length;
   await h.session.prompt("/goal resume");
   await waitForGoalCompletion(h);
+  assert.equal(userMessages().length, before, "resume must not manufacture user input in the saved transcript");
+  assert.ok(h.session.sessionManager.getEntries().some((entry) => entry.type === "custom_message" && entry.customType === CUSTOM_ENTRY_TYPE && (entry.details as { kind?: string })?.kind === "command_resume"));
 }
 
 test("native blocked goal stays blocked across input, compaction, reload and fork until explicit resume", async (t) => {
@@ -184,6 +188,35 @@ test("real compact-and-retry settles only after the active goal continuation com
   const entries = h.session.sessionManager.getEntries();
   assert.equal(entries.filter((entry) => entry.type === "compaction").length, 1);
   assert.equal(entries.filter((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "update_goal").length, 1);
+});
+
+test("custom /goal resume preserves exhausted native overflow recovery until real user input", async (t) => {
+  const h = await fixture(t, true);
+  const overflow = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long: 300000 tokens > 100000 maximum" });
+  const compactions = () => h.session.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length;
+  h.faux.setResponses([overflow(), overflow(), overflow()]);
+  await h.session.prompt("Perform the goal work.");
+  await h.session.waitForIdle();
+  assert.equal(h.faux.state.callCount, 2, "the host makes one compact-and-retry attempt");
+  assert.equal(compactions(), 1);
+  assert.equal(h.goal()?.status, "paused", "repeated overflow stops unattended goal work");
+
+  await h.session.prompt("/goal resume");
+  const deadline = Date.now() + 5_000;
+  while (h.faux.state.callCount < 3) {
+    assert.ok(Date.now() < deadline, "the custom resume must reach the provider");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await h.session.waitForIdle();
+  assert.equal(h.faux.state.callCount, 3, "another overflow gets no automatic retry after custom resume");
+  assert.equal(compactions(), 1, "custom resume leaves the host allowance exhausted");
+  assert.equal(h.session.sessionManager.getEntries().filter((entry) => entry.type === "message" && entry.message.role === "user").length, 1);
+
+  h.faux.setResponses([overflow(), complete(), fauxAssistantMessage("Goal complete.")]);
+  await h.session.prompt("Continue after my manual recovery.");
+  await waitForGoalCompletion(h);
+  assert.equal(compactions(), 2, "real user input restores native compact-and-retry recovery");
+  assert.equal(h.faux.state.callCount, 6);
 });
 
 test("successful stop overflow compaction without a host retry automatically continues exactly once", async (t) => {

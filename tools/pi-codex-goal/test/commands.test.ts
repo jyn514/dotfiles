@@ -4,12 +4,12 @@ import test from "node:test";
 import {
   handleGoalCommand,
   registerGoalCommand,
+  queueGoalTurn,
   type CommandHost,
   type GoalCommandContext,
   type GoalCommandPi,
 } from "../src/commands.ts";
-import type { GoalStartTurnStrategy } from "../src/recovery-machine.ts";
-import { compactContinuationPrompt } from "../src/prompts.ts";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { applyUsage, updateGoalStatus } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "../src/types.ts";
 
@@ -24,12 +24,12 @@ function createHarness() {
   let goal: ThreadGoal | null = null;
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: Array<{
-    content: Parameters<GoalCommandPi["sendUserMessage"]>[0];
-    options: Parameters<GoalCommandPi["sendUserMessage"]>[1];
+    content: Parameters<ExtensionAPI["sendUserMessage"]>[0];
+    options: Parameters<ExtensionAPI["sendUserMessage"]>[1];
   }> = [];
   const notifications: string[] = [];
 
-  const pi: GoalCommandPi = {
+  const pi: GoalCommandPi & Pick<ExtensionAPI, "sendUserMessage"> = {
     registerCommand() {},
     sendMessage(message: SentMessage["message"], options: SentMessage["options"]) {
       sentMessages.push({ message, options });
@@ -48,12 +48,12 @@ function createHarness() {
       goal = null;
     },
     cancelProviderLimitAutoResume() {},
-    getGoalStartTurnStrategy: () => "hiddenFollowUp",
+    needsHostOverflowUserReset: () => false,
     resumeGoalWithContinuation(goalId: string) {
       const result = updateGoalStatus(goal, "active");
       if (result.ok && result.goal?.goalId === goalId) {
         goal = result.goal;
-        pi.sendUserMessage(compactContinuationPrompt(result.goal), { deliverAs: "followUp" });
+        queueGoalTurn(pi, result.goal, "command_resume");
       }
       return result;
     },
@@ -176,7 +176,7 @@ test("/goal copy reports missing clipboard support", async () => {
   assert.match(harness.notifications.at(-1) ?? "", /Could not copy goal objective: clipboard unavailable/);
 });
 
-test("/goal resume sends a user continuation turn", async () => {
+test("/goal resume sends a custom continuation turn", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
@@ -188,12 +188,12 @@ test("/goal resume sends a user continuation turn", async () => {
   await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
 
   assert.equal(harness.goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.sentUserMessages.length, 1);
-  const sentUserMessage = harness.sentUserMessages[0];
-  assert.ok(sentUserMessage);
-  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
-  const content = sentUserMessage.content;
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
+  const sentMessage = harness.sentMessages[0];
+  assert.ok(sentMessage);
+  assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
+  const content = sentMessage.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected queued goal resume content to be a string.");
   }
@@ -201,9 +201,9 @@ test("/goal resume sends a user continuation turn", async () => {
   assert.match(content, /<pi_goal_continuation goal_id="/);
 });
 
-test("/goal objective after overflow recovery sends a user start turn", async () => {
+test("/goal objective after overflow recovery sends a custom start turn", async () => {
   const harness = createHarness();
-  let startTurnStrategy: GoalStartTurnStrategy = "userFollowUp";
+  let needsUserReset = true;
   const host: CommandHost = {
     getGoal: () => harness.goal,
     setGoal(nextGoal: ThreadGoal) {
@@ -213,12 +213,12 @@ test("/goal objective after overflow recovery sends a user start turn", async ()
       harness.setGoal(null);
     },
     cancelProviderLimitAutoResume() {},
-    getGoalStartTurnStrategy: () => startTurnStrategy,
+    needsHostOverflowUserReset: () => needsUserReset,
     resumeGoalWithContinuation(goalId: string) {
       const result = updateGoalStatus(harness.goal, "active");
       if (result.ok && result.goal?.goalId === goalId) {
         harness.setGoal(result.goal);
-        harness.pi.sendUserMessage(compactContinuationPrompt(result.goal), { deliverAs: "followUp" });
+        queueGoalTurn(harness.pi, result.goal, "command_resume");
       }
       return result;
     },
@@ -227,20 +227,20 @@ test("/goal objective after overflow recovery sends a user start turn", async ()
   await handleGoalCommand(harness.pi, host, "ship the feature", harness.ctx);
 
   assert.equal(harness.goal?.objective, "ship the feature");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.sentUserMessages.length, 1);
-  const sentUserMessage = harness.sentUserMessages[0];
-  assert.ok(sentUserMessage);
-  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
-  const content = sentUserMessage.content;
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
+  const sentMessage = harness.sentMessages[0];
+  assert.ok(sentMessage);
+  assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
+  const content = sentMessage.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected queued goal start content to be a string.");
   }
   assert.match(content, /<pi_goal_continuation goal_id="/);
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
 
-  startTurnStrategy = "hiddenFollowUp";
-  harness.sentUserMessages.length = 0;
+  needsUserReset = false;
+  harness.sentMessages.length = 0;
   await handleGoalCommand(harness.pi, host, "another objective", harness.ctx);
   assert.equal(harness.sentMessages.length, 1);
   assert.equal(harness.sentUserMessages.length, 0);
@@ -283,7 +283,7 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
   assert.match(harness.notifications.at(-1) ?? "", /Only paused or blocked goals can be resumed/);
 });
 
-test("/goal resume restarts an active goal waiting for user-start overflow recovery", async () => {
+test("/goal resume restarts an active goal after host overflow recovery", async () => {
   const harness = createHarness();
   const host: CommandHost = {
     getGoal: () => harness.goal,
@@ -294,28 +294,28 @@ test("/goal resume restarts an active goal waiting for user-start overflow recov
       harness.setGoal(null);
     },
     cancelProviderLimitAutoResume() {},
-    getGoalStartTurnStrategy: () => "userFollowUp",
+    needsHostOverflowUserReset: () => true,
     resumeGoalWithContinuation(goalId: string) {
       const result = updateGoalStatus(harness.goal, "active");
       if (result.ok && result.goal?.goalId === goalId) {
         harness.setGoal(result.goal);
-        harness.pi.sendUserMessage(compactContinuationPrompt(result.goal), { deliverAs: "followUp" });
+        queueGoalTurn(harness.pi, result.goal, "command_resume");
       }
       return result;
     },
   };
 
   await handleGoalCommand(harness.pi, host, "ship the feature", harness.ctx);
-  harness.sentUserMessages.length = 0;
+  harness.sentMessages.length = 0;
   assert.equal(harness.goal?.status, "active");
 
   await handleGoalCommand(harness.pi, host, "resume", harness.ctx);
 
   assert.equal(harness.goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.sentUserMessages.length, 1);
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
   assert.match(harness.notifications.at(-1) ?? "", /queued a continuation/);
-  const content = harness.sentUserMessages[0]?.content;
+  const content = harness.sentMessages[0]?.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected queued active resume content to be a string.");
   }

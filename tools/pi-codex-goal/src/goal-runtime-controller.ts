@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { registerGoalCommand } from "./commands.ts";
+import { queueGoalTurn, registerGoalCommand } from "./commands.ts";
 import { createContinuationScheduler } from "./continuation-scheduler.ts";
 import { assistantTurnTokensForToolCall, createGoalAccounting } from "./goal-accounting.ts";
 import { createGoalPersistence } from "./goal-persistence.ts";
@@ -13,14 +13,12 @@ import { createGoalRuntimeState } from "./goal-runtime-state.ts";
 import { createGoalRuntimeStatus, type StatusContext } from "./goal-runtime-status.ts";
 import { createGoalStateController } from "./goal-state-controller.ts";
 import { createProviderLimitAutoResumeScheduler } from "./provider-limit-auto-resume.ts";
-import { compactContinuationPrompt } from "./prompts.ts";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.ts";
 import {
   clearActiveHostOverflowRecovery,
-  goalStartTurnStrategy,
+  recoveryPhaseNeedsUserStartTurn,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
-  type GoalStartTurnStrategy,
 } from "./recovery-machine.ts";
 import { goalWithLiveUsage, updateGoalStatus } from "./state.ts";
 import { registerGoalTools } from "./tools.ts";
@@ -28,7 +26,7 @@ import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalForDisplay(): ThreadGoal | null;
-  getGoalStartTurnStrategy(): GoalStartTurnStrategy;
+  needsHostOverflowUserReset(): boolean;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
   updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
@@ -153,7 +151,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     }
     const resumedGoal = stateController.getGoal();
     if (resumedGoal?.status === "active" && resumedGoal.goalId === goalId) {
-      pi.sendUserMessage(compactContinuationPrompt(resumedGoal), { deliverAs: "followUp" });
+      queueGoalTurn(pi, resumedGoal, "command_resume");
     }
     return result;
   };
@@ -204,7 +202,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
 
   return {
     getGoalForDisplay: goalForDisplay,
-    getGoalStartTurnStrategy: () => goalStartTurnStrategy(runtimeState.recoveryState.phase),
+    needsHostOverflowUserReset: () => recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase),
     setGoal(nextGoal, source, ctx) {
       providerLimitAutoResume.clear();
       stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
@@ -236,7 +234,7 @@ export function registerGoalRuntimeController(pi: ExtensionAPI): void {
   });
   registerGoalCommand(pi, {
     getGoal: () => controller.getGoalForDisplay(),
-    getGoalStartTurnStrategy: controller.getGoalStartTurnStrategy.bind(controller),
+    needsHostOverflowUserReset: controller.needsHostOverflowUserReset.bind(controller),
     setGoal: controller.setGoal.bind(controller),
     clearGoal: controller.clearGoal.bind(controller),
     cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume.bind(controller),

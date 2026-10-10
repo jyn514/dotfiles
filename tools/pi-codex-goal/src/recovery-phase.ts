@@ -4,8 +4,6 @@ export type RecoveryPhase =
   | { kind: "hostOverflowRecovering" }
   | { kind: "hostOverflowNeedsUserStart" };
 
-export type GoalStartTurnStrategy = "hiddenFollowUp" | "userFollowUp";
-
 export const idleRecoveryPhase: RecoveryPhase = { kind: "idle" };
 
 function assertNever(value: never): never {
@@ -23,10 +21,6 @@ export function recoveryPhaseNeedsUserStartTurn(phase: RecoveryPhase): boolean {
     default:
       return assertNever(phase);
   }
-}
-
-export function goalStartTurnStrategy(phase: RecoveryPhase): GoalStartTurnStrategy {
-  return recoveryPhaseNeedsUserStartTurn(phase) ? "userFollowUp" : "hiddenFollowUp";
 }
 
 export function recoveryPhaseBlocksContinuation(phase: RecoveryPhase): boolean {

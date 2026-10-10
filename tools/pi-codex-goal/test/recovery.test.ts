@@ -24,7 +24,6 @@ import {
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
   requireHostOverflowUserReset,
-  goalStartTurnStrategy,
   isRepeatOverflowCompactionDue,
   onRecoverySessionCompact,
   planRecoveryForAssistantError,
@@ -290,7 +289,6 @@ test("beginHostOverflowRecovery surfaces pending attention without pausing", () 
   assert.equal(state.phase.kind, "hostOverflowRecoveringNeedsUserStart");
   assert.equal(recoveryPhaseBlocksContinuation(state.phase), true);
   assert.equal(recoveryPhaseNeedsUserStartTurn(state.phase), true);
-  assert.equal(goalStartTurnStrategy(state.phase), "userFollowUp");
 });
 
 test("resetRecoveryMachine clears active host overflow recovery but preserves user reset", () => {
@@ -307,7 +305,6 @@ test("applyHostOverflowUserResetPersistence(false) keeps active host overflow re
   beginHostOverflowRecovery(state);
   assert.equal(applyHostOverflowUserResetPersistence(state, false), true);
   assert.equal(state.phase.kind, "hostOverflowRecovering");
-  assert.equal(goalStartTurnStrategy(state.phase), "hiddenFollowUp");
 });
 
 test("beginHostOverflowRecovery skips cap-reset persistence when user reset already required", () => {
@@ -325,7 +322,6 @@ test("requireHostOverflowUserReset records session-level user start without acti
   assert.equal(state.attention, null);
   assert.equal(recoveryPhaseBlocksContinuation(state.phase), false);
   assert.equal(recoveryPhaseNeedsUserStartTurn(state.phase), true);
-  assert.equal(goalStartTurnStrategy(state.phase), "userFollowUp");
   assert.equal(requireHostOverflowUserReset(state), false);
   assert.equal(state.phase.kind, "hostOverflowNeedsUserStart");
 });
