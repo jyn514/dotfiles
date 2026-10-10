@@ -98,7 +98,7 @@ For summarization trials, distinguish incremental replay (previous checkpoint pl
 - Confirm every linked path exists and every command matches the repository and installed CLI.
 - Run repository checks for bundled scripts or code.
 - Load the skill through every target harness and inspect discovery or validation warnings.
-- For Pi, first confirm the installed CLI options, then use `pi --offline --no-extensions --no-tools --no-session --skill <path> --list-models` as the non-mutating load check.
+- For Pi loader checks, prefer `validate_skill` when available. Confirm the expected name loaded and inspect all diagnostics. This checks the explicit file, not normal discovery precedence or interactive startup. Otherwise, check the installed CLI options and load the skill from a discoverable location in a normal Pi session; inspect startup diagnostics and `/skill:<name>`. Run `/reload` after edits in an active session. If that session is unavailable, report the missing check.
 - Confirm no name collision or precedence rule causes another skill to win discovery in any target harness.
 - Invoke `tighten-docs` after creating or substantially rewriting the skill. Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
 
