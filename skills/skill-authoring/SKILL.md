@@ -1,6 +1,6 @@
 ---
 name: skill-authoring
-description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use spec-review; for prose-only tightening use tighten-docs.
+description: Create new portable agent skills or make substantive changes to a skill’s discovery triggers, scope, workflow, or supporting package structure. Use also when replacing instructions with a skill route or changing when another prompt, instruction, or skill invokes it—even if the target skill is unchanged. Do not use for localized additions, wording edits, paragraph moves, or link fixes that preserve discovery and behavior. For review-only work use spec-review; for prose-only tightening use tighten-docs.
 ---
 
 # Skill authoring
@@ -82,6 +82,8 @@ Check both layers independently:
 
 - **Before loading:** does the description trigger on every intended request without claiming adjacent work?
 - **After loading:** can the agent identify the first action, boundaries, failure behavior, evidence, and completion condition? Check for rules that conflict, unclear precedence when rules interact, and edge cases where the next action is underspecified. State which rule takes priority or what the agent should do when it cannot resolve the conflict safely.
+
+Read each changed caller and the target skill’s description together. Confirm the caller’s intended tasks satisfy the target’s trigger conditions and do not fall under its exclusions. Trace further delegation when it replaces removed policy.
 
 Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. Also trace cases where two requirements interact; verify the instructions produce compatible actions or explicitly resolve the conflict. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
