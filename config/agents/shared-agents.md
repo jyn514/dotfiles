@@ -94,6 +94,10 @@ When evidence is missing, propose a small experiment instead of a larger archite
 Treat user-suggested mechanisms as candidates unless the user makes them explicit requirements.
 Prefer fewer interfaces, representations, and ownership boundaries, not weaker correctness checks or fewer tests.
 
+Before implementing parsing or validation, check whether an existing consumer can produce the authoritative result.
+Prefer inspecting that result over reproducing its rules.
+If you propose a custom implementation, explain why reuse is insufficient.
+
 Existing tools, reviewer suggestions, and possible future failures do not expand scope.
 Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
 Establish scope before routing to specialized skills.
