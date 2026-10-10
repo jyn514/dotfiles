@@ -217,6 +217,26 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(before, self.snapshot(self.old_home))
                 self.assert_private_home(report)
 
+    def test_sdk_symlinks_resolve_before_nested_home_isolation(self) -> None:
+        sdk = self.make_sdk(self.root / "source/packages/coding-agent")
+        installed = self.installed_sdk_path()
+        installed.parent.mkdir(parents=True)
+        installed.symlink_to(sdk, target_is_directory=True)
+        alias = self.root / "explicit SDK link"
+        alias.symlink_to(installed, target_is_directory=True)
+        before_sdk = self.snapshot(sdk)
+        before_home = self.snapshot(self.old_home)
+        for values in ({}, {"PI_PACKAGE_DIR": str(alias)}):
+            with self.subTest(values=values):
+                result, outer = self.run_probe("nested", str(WRAPPER), values=values)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(0, outer["nested_status"], outer["nested_stderr"])
+                for report in (outer, outer["nested"]):
+                    self.assertEqual(str(sdk), report["environment"]["PI_PACKAGE_DIR"])
+                    self.assert_private_home(report)
+        self.assertEqual(before_sdk, self.snapshot(sdk))
+        self.assertEqual(before_home, self.snapshot(self.old_home))
+
     def make_nvim_plugins(self, data: Path) -> Path:
         plugins = data / "nvim/lazy"
         entrypoint = plugins / "lazy.nvim/lua/lazy/init.lua"

@@ -120,9 +120,11 @@ or resolves mise shims before changing HOME. Failed resolution stops the run bef
 a child starts. Repository-local exclusions keep dependencies, notes, test caches,
 and editor sessions untracked even when private HOME hides global ignore rules.
 
-An explicit `PI_PACKAGE_DIR` is preserved. Otherwise, the wrapper discovers the
+An explicit `PI_PACKAGE_DIR` takes precedence. Otherwise, the wrapper discovers the
 installed Pi SDK under the original HOME before replacing HOME, so tests can
 read the installed SDK without loading personal settings or using its caches.
+The wrapper resolves SDK directory symlinks before isolation, including explicit
+overrides, so Node can discover dependencies beside the source checkout.
 For `dev/test --containers`, the runner also captures the validated host Pi
 installation revision before replacing HOME. The runtime-image probe builds and
 checks that commit. Missing or invalid revision metadata stops the runner before

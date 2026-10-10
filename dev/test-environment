@@ -48,6 +48,10 @@ def main(arguments: list[str]) -> int:
             environment["PI_PACKAGE_DIR"] = str(package)
         else:
             environment.pop("PI_PACKAGE_DIR", None)
+    if environment.get("PI_PACKAGE_DIR"):
+        # Node resolves dependencies relative to this entrypoint. Installation
+        # symlinks can hide the source checkout's node_modules from createRequire.
+        environment["PI_PACKAGE_DIR"] = str(Path(environment["PI_PACKAGE_DIR"]).resolve())
 
     if not environment.get("DOTFILES_TEST_NVIM_PLUGINS"):
         data = Path(environment.get("XDG_DATA_HOME") or Path.home() / ".local/share")
