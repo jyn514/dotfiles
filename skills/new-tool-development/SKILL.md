@@ -55,7 +55,7 @@ What open questions remain?
 
 ### Requirements document
 
-Draft only requirements when `requirements` is explicitly requested and the approved brief is current. Route authorship to **`requirements-definition`**. The review packet is a skim packet: a concise summary of scope, observable behaviors, acceptance conditions, constraints, changed assumptions, and unresolved questions, with a link/reference to the canonical requirements artifact.
+Draft only requirements when `requirements` is explicitly requested and the approved brief is current. Route authorship to **`requirements-definition`**. Use **`human-review-packets`** to frame the human approval request. The review packet is a skim packet: a concise summary of scope, observable behaviors, acceptance conditions, constraints, changed assumptions, and unresolved questions, with a link/reference to the canonical requirements artifact.
 
 Require explicit human approval after the skim packet. Do not treat agent review, a comment, or approval of the brief as requirements approval. While approval is pending, keep requirements `draft`; use `blocked` only when review cannot proceed. Without approval, do not start the implementation specification.
 

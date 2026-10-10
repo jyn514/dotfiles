@@ -126,6 +126,7 @@ Use these independently when their target is already selected:
 - `design-for-change` — resolve modeling, invariant, interface, ownership, enforcement-mechanism, regression-test, or oracle decisions; skip routine edits with an established shape.
 - `double-check` — audit substantial completed work across components, specifications, migrations, or consequential boundaries; use a diff review and native check for localized edits.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
+- [human-review-packets](human-review-packets/SKILL.md) — prepare human decisions with concrete examples, recommendations, and simple questions; keep technical evidence optional and deferred approvals out of the active queue.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
 
 `opportunity-scan` may hand a selected cleanup or architectural opportunity to the corresponding focused skill. Use [Documentation placement](technical-docs/references/placement.md) for new-content destinations and routine additions to established sections, without loading an authoring skill. `technical-docs` owns new standalone documentation, substantive changes to reader structure or explanation, and explicit usability/correctness reviews; `reorganize-docs` owns restructuring existing documentation and navigation.

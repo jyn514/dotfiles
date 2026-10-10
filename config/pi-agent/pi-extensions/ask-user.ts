@@ -258,7 +258,10 @@ export default function askUser(pi: ExtensionAPI): void {
     label: "Ask user asynchronously",
     description: "Queue questions and return IDs immediately. Answers arrive later as user steering messages with question IDs. Continue only independent work; silence is not an answer or permission.",
     promptSnippet: "Ask questions asynchronously; returns IDs, not answers",
-    promptGuidelines: ["Use cancel_ask_user to remove questions made obsolete by later work."],
+    promptGuidelines: [
+      "When asking for human judgment or approval, use the human-review-packets skill to frame the question. Routine requests for missing facts do not need it.",
+      "Use cancel_ask_user to remove questions made obsolete by later work.",
+    ],
     parameters: Parameters,
     async execute(_callId, params, signal, _onUpdate, ctx) {
       if (ctx.mode !== "tui") throw new Error("ask_user requires interactive TUI mode; no questions were queued.");

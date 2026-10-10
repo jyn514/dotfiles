@@ -103,13 +103,14 @@ function host() {
 const question = (title: string, options?: string[]) => ({ title, question: `Decide ${title}?`, ...(options ? { options } : {}) });
 
 describe("asynchronous ask_user", () => {
-  test("registers asynchronous steering and unique cancellation guidance", () => {
+  test("registers asynchronous steering, conditional review routing and cancellation guidance", () => {
     const h = host();
     const askTool = h.tools.get("ask_user");
     expect(askTool.description).toContain("user steering messages with question IDs");
     expect(askTool.description).toContain("Continue only independent work");
     expect(askTool.description).toContain("silence is not an answer or permission");
     expect(askTool.promptGuidelines).toEqual([
+      "When asking for human judgment or approval, use the human-review-packets skill to frame the question. Routine requests for missing facts do not need it.",
       "Use cancel_ask_user to remove questions made obsolete by later work.",
     ]);
     expect(h.tools.get("cancel_ask_user").description).toContain("does not recall dispatched answers or grant permission");

@@ -21,6 +21,7 @@ for the rationale. Keep the procedure here; do not reproduce that guide locally.
 Route narrower work when its owning skill is available:
 
 - `new-tool-development` owns the lifecycle workflow for a new independently invoked tool, CLI, service, or reusable executable subsystem. Product briefs are human-authored: agents may review them and add only the TODO comments permitted by that skill, not write or rewrite brief prose. This skill still owns routed implementation-spec writing; do not reproduce the lifecycle procedure here.
+- `human-review-packets` owns selection and framing of human decision questions and approval handoffs; this skill still owns document authoring, placement, and reader usability.
 - `requirements-definition` alone owns requirements authoring from an approved product brief.
 - `tighten-docs` owns prose-only requests to make existing documentation shorter or clearer without changing its structure or technical content.
 - `spec-review` owns review-only consistency and completeness analysis of a design or specification.
