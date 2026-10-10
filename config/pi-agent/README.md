@@ -38,3 +38,31 @@ being changed; a test dependency update does not update the running application.
 For package-update options, use the installed Pi's `pi update --help`.
 The sandbox [runtime documentation](../../tools/codex-sandbox/README.md#prerequisites-and-setup)
 explains how packaged extensions affect the guest image cache.
+
+## Inspect the installed Pi
+
+For provider errors or undocumented hooks, inspect the installed implementation
+before changing a dotfiles extension or sandbox proxy. The installer owns
+`~/.local/share/pi/source`; `~/.local/share/pi/node/node_modules/@earendil-works/pi-coding-agent`
+is a symlink into its `packages/coding-agent` directory. Search the source checkout
+directly: `rg` does not follow that package symlink by default.
+
+```sh
+cat ~/.local/share/pi/node/.source-revision
+rg --files ~/.local/share/pi/source/packages | rg 'codex|retry|agent-session'
+rg -n 'exceeded request buffer limit|isRetryableErrorMessage' ~/.local/share/pi/source/packages
+```
+
+The revision marker identifies the successfully installed build. The source
+checkout can differ after a failed update; check its revision before attributing
+behavior to that build. Do not edit this checkout or installed build outputs:
+the installer force-checks out the selected revision. Make Pi changes in a
+separate source checkout and land them in the fork before reinstalling.
+
+Model-request retries belong to Pi. Inspect `packages/ai/src/utils/retry.ts` for
+the shared error classifier, `packages/ai/src/api/openai-codex-responses.ts` for
+Codex transport retries, and `packages/coding-agent/src/core/agent-session.ts`
+for session retry policy and context-overflow recovery. The installed classifier
+recognizes `exceeded request buffer limit while retrying upstream`; this is an
+implementation detail to recheck after updates, not a reason to add proxy retries.
+The sandbox proxy forwards application requests without retrying them.

@@ -18,7 +18,7 @@ and the relevant setup function before using it on a new machine.
 - For Pi UI extensions, verify documented hooks against the installed
   implementation and reuse Pi's authoritative providers, not duplicate discovery.
 - Before changing sandbox launcher stdio or process ownership, read
-  [Startup terminal ownership](tools/codex-sandbox/README.md#startup-terminal-ownership).
+  [Startup terminal ownership](tools/codex-sandbox/development.md#startup-terminal-ownership).
 - When repairing VM configuration, update its host-owned setup source too.
 - When authentication scopes change, invalidate persisted credentials that lack
   the required scopes.

@@ -144,7 +144,7 @@ without Bun's module mocks:
 dev/test-environment node --test tests/pi/native_prompt_sections.mjs
 ```
 
-Do not wrap the [configured startup benchmark](../tools/codex-sandbox/README.md#measure-interactive-startup)
+Do not wrap the [configured startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup)
 or live `dev/replay-compaction` requests: those intentionally use installed
 configuration, caches, or authentication. Isolated runs do not measure that setup.
 
