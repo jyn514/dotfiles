@@ -1,7 +1,9 @@
 import importlib.util
+import itertools
 from importlib.machinery import SourceFileLoader
 import json
 import os
+import random
 from pathlib import Path
 import tempfile
 import unittest
@@ -29,6 +31,58 @@ class LatestCompatibleTest(unittest.TestCase):
         )
         patch.start()
         self.addCleanup(patch.stop)
+
+    def test_generated_selection_is_numeric_maximum_in_every_index_order(self):
+        # Known winners are constructed, not calculated with the production parser.
+        seed = 731921
+        rng = random.Random(seed)
+        seen = set()
+        for case in range(40):
+            major, minor, patch = (rng.randrange(1, 100) for _ in range(3))
+            compiler = f"{major}.{minor}.{patch}"
+            winner = f"{major}.10.{patch}"
+            entries = [
+                {"name": "example", "version": f"{major}.2.{patch}"},
+                {"name": "example", "version": winner, "compiler": compiler},
+                {"name": "example", "version": f"{major + 1}.0.0",
+                 "compiler": f"{major}.{minor}.{patch + 1}"},
+                {"name": "other", "version": "999.0.0"},
+            ]
+            for mode in ("compatible", "no-match"):
+                candidates = entries if mode == "compatible" else entries[2:]
+                for shuffled in itertools.permutations(candidates):
+                    with self.subTest(seed=seed, case=case, mode=mode,
+                                      compiler=compiler, entries=shuffled):
+                        with mock.patch.object(supports_typst_version,
+                                               "package_index", return_value=shuffled):
+                            if mode == "compatible":
+                                self.assertEqual(winner, supports_typst_version.latest_compatible(
+                                    "example", compiler))
+                                matching = [entry for entry in shuffled
+                                            if entry["name"] == "example"]
+                                if any(entry.get("compiler") == compiler for entry in matching):
+                                    seen.add("exact-boundary")
+                                if any("compiler" not in entry for entry in matching):
+                                    seen.add("missing-minimum")
+                                if any(entry["version"] == f"{major + 1}.0.0"
+                                       and entry.get("compiler") == f"{major}.{minor}.{patch + 1}"
+                                       for entry in matching):
+                                    seen.add("future-excluded")
+                                versions = {entry["version"] for entry in matching}
+                                lower = f"{major}.2.{patch}"
+                                if (lower in versions and winner in versions
+                                        and winner < lower
+                                        and tuple(map(int, winner.split(".")))
+                                        > tuple(map(int, lower.split(".")))):
+                                    seen.add("numeric-order")
+                            else:
+                                with self.assertRaises(LookupError):
+                                    supports_typst_version.latest_compatible("example", compiler)
+                                seen.add("no-match")
+                            if any(entry["name"] != "example" for entry in shuffled):
+                                seen.add("other-package")
+        self.assertEqual(seen, {"exact-boundary", "missing-minimum", "numeric-order",
+                                "future-excluded", "no-match", "other-package"})
 
     def test_reuses_fresh_index_and_selects_latest_compatible_version(self):
         index = [
