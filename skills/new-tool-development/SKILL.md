@@ -17,7 +17,9 @@ Keep three logically separate canonical artifacts:
 - **Requirements document — observable what:** user-visible behavior, constraints, acceptance conditions, and quality requirements.
 - **Implementation specification — how:** design, interfaces, execution details, operational treatment, and verification plan.
 
-Do not duplicate normative content across artifacts. Link to the upstream owner instead. Compact artifacts are allowed for tiny tools, but compaction must not waive review, approval, invalidation, or implementation-authority gates.
+Logical separation does not require separate files. Requirements and implementation may occupy named sections in one document or co-located **Requirements** and **Implementation** sections in per-topic files, regardless of tool size. Requirements must state observable contracts directly, without relying on implementation sections to supply missing behavior; implementation sections may reference requirements. Keep canonical ownership, status, approval, and invalidation scope identifiable for each artifact.
+
+Do not duplicate normative content across artifacts. Link to the upstream owner instead. Co-location and compaction do not waive review, approval, invalidation, or separate implementation authority.
 
 Do not begin implementation without both a **ready implementation specification** and a **separate explicit implementation authority**. Approval of one artifact never grants authority to implement.
 
