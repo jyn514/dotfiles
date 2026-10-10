@@ -126,6 +126,7 @@ COPY ./tools/codex-sandbox/image/agent-wrappers-path.sh /etc/profile.d/agent-wra
 COPY ./tools/codex-sandbox/image/dotfiles-profile.sh /etc/profile.d/dotfiles-profile.sh
 
 ENV HOME=/home/codex
+ENV DOTFILES_SANDBOX=1
 ENV EDITOR=vi VISUAL=vi
 RUN mkdir -p ${HOME}/.pi/agent ${HOME}/.codex /src /workspace
 
