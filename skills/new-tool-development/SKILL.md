@@ -1,6 +1,6 @@
 ---
 name: new-tool-development
-description: Orchestrate lifecycle and stage gates for a newly introduced independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or governing product brief, requirements, implementation-spec, or implementation handoff work; do not use for substantive requirements, architecture, design, or implementation procedures.
+description: Orchestrate lifecycle and stage gates for a newly introduced independently invoked tool, CLI, service, or reusable executable subsystem. Use when initiating or governing product brief, requirements, implementation-spec, or implementation handoff work; do not use for substantive requirements, architecture, design, or implementation procedures. Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
 ---
 
 # New tool development
@@ -8,6 +8,8 @@ description: Orchestrate lifecycle and stage gates for a newly introduced indepe
 ## Scope and authority
 
 Use this skill as the lifecycle orchestrator for a new independently invoked tool, CLI, service, or reusable executable subsystem. It owns stage entry, status, approval, invalidation, routing, and implementation readiness—not the substantive contents of the brief, requirements, or specification.
+
+Exclude private build or deployment hooks that only extend an existing workflow without introducing a standalone tool or subsystem.
 
 Keep three logically separate canonical artifacts:
 
