@@ -524,8 +524,62 @@ function parseRecord(line: string): unknown {
 	}
 }
 
+// Resolve IDs from bounded headers, not filenames or copied message content.
+// SDK discovery does not enforce this tool's containment and record-size limits.
+async function sessionFileById(
+	id: string, root: string, resolvedRoot: string, maxRecordBytes: number, signal?: AbortSignal,
+): Promise<string> {
+	let match: string | undefined;
+	for (const dir of await readdir(root, { withFileTypes: true })) {
+		signal?.throwIfAborted();
+		if (!dir.isDirectory()) continue;
+		let subdir: string;
+		try {
+			subdir = await realpath(path.join(root, dir.name));
+		} catch {
+			continue;
+		}
+		if (!subdir.startsWith(resolvedRoot + path.sep) && subdir !== resolvedRoot) continue;
+		let files: string[];
+		try {
+			files = await readdir(subdir);
+		} catch {
+			continue;
+		}
+		for (const file of files) {
+			signal?.throwIfAborted();
+			if (!file.endsWith(".jsonl")) continue;
+			let resolvedFile: string;
+			let size: number;
+			try {
+				resolvedFile = await realpath(path.join(subdir, file));
+				if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) continue;
+				const info = await stat(resolvedFile);
+				if (!info.isFile()) continue;
+				size = info.size;
+			} catch {
+				continue;
+			}
+			let matches = false;
+			for await (const line of sessionRecords(resolvedFile, size, maxRecordBytes, signal)) {
+				const header = line === null ? undefined : parseRecord(line);
+				matches = !!header && typeof header === "object" && "type" in header
+					&& header.type === "session" && "id" in header && header.id === id;
+				break; // Only the first record is a session header.
+			}
+			if (!matches || resolvedFile === match) continue;
+			if (match) throw new Error(`Multiple session files have ID "${id}"; use sessionFile instead.`);
+			match = resolvedFile;
+		}
+	}
+	signal?.throwIfAborted();
+	if (!match) throw new Error(`No readable session with ID "${id}" under the configured sessions root.`);
+	return match;
+}
+
 export async function readSessionWindow(opts: {
-	sessionFile: string;
+	sessionFile?: string;
+	sessionId?: string;
 	aroundTimestamp?: string;
 	contextMessages?: number;
 	maxMessages?: number;
@@ -541,9 +595,14 @@ export async function readSessionWindow(opts: {
 		throw new Error("maxMessages must be a non-negative safe integer.");
 	}
 	opts.signal?.throwIfAborted();
-	const input = opts.sessionFile;
+	if ((opts.sessionFile !== undefined) === (opts.sessionId !== undefined)) {
+		throw new Error("Provide exactly one of sessionFile or sessionId.");
+	}
+	const selector = opts.sessionFile ?? opts.sessionId;
+	if (typeof selector !== "string" || !selector.trim()) {
+		throw new Error("sessionFile or sessionId must be a non-empty string.");
+	}
 	const root = getRoot();
-	const candidate = path.isAbsolute(input) ? input : path.join(root, input);
 	let resolvedRoot: string;
 	let resolvedFile: string;
 	try {
@@ -551,6 +610,8 @@ export async function readSessionWindow(opts: {
 	} catch {
 		resolvedRoot = path.resolve(root);
 	}
+	const input = opts.sessionFile ?? await sessionFileById(selector, root, resolvedRoot, maxRecordBytes, opts.signal);
+	const candidate = path.isAbsolute(input) ? input : path.join(root, input);
 	try {
 		resolvedFile = await realpath(candidate);
 	} catch {
@@ -806,14 +867,17 @@ export default function (pi: ExtensionAPI) {
 		label: "Read a window of a prior pi session",
 		description:
 			"Read a window of a prior Pi session transcript. Read-only.",
-		promptSnippet: "Read a window from a prior pi session JSONL file.",
+		promptSnippet: "Read a window from a prior pi session by file or session ID.",
 		promptGuidelines: [
 			"Use read_session with the returned sessionFile unchanged and a modest maxMessages.",
 		],
 		parameters: Type.Object({
-			sessionFile: Type.String({
-				description: "Path to a session .jsonl file. Either absolute, or relative to the configured sessions root (as returned by search_sessions).",
-			}),
+			sessionFile: Type.Optional(Type.String({
+				description: "Path to a session .jsonl file. Either absolute, or relative to the configured sessions root (as returned by search_sessions). Provide exactly one of sessionFile or sessionId.",
+			})),
+			sessionId: Type.Optional(Type.String({
+				description: "Exact session header ID, resolved only within the configured sessions root. Use when a parent session path comes from a different machine or sandbox. Provide exactly one of sessionFile or sessionId.",
+			})),
 			aroundTimestamp: Type.Optional(
 				Type.String({ description: "Center the window on a search hit's timestamp (ISO date/time)." }),
 			),
@@ -827,7 +891,8 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal) {
 			try {
 				const text = await readSessionWindow({
-					sessionFile: String(params.sessionFile),
+					sessionFile: params.sessionFile,
+					sessionId: params.sessionId,
 					aroundTimestamp: params.aroundTimestamp as string | undefined,
 					contextMessages: params.contextMessages as number | undefined,
 					maxMessages: params.maxMessages as number | undefined,

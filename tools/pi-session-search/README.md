@@ -19,7 +19,10 @@ resuming them**.
   `sessionCwd`, `timestamp`, `role`, and a snippet.
 - **Tool `read_session`** — read a window around a specific hit (or the start
   of a session). Use after a promising `search_sessions` result to pull more
-  context without resuming the session.
+  context without resuming the session. Provide exactly one of `sessionFile`
+  (absolute or relative to the configured root) or `sessionId` (the exact header
+  ID). ID reads work when a parent path names a different machine or sandbox;
+  the session must still exist under the configured local root.
 - **Command `/find-sessions [flags] <query>`** — manual search from the TUI.
   Flags: `--cwd=substr`, `--role=user|assistant`, `--since=ISO`, `--max=N`.
   Results are printed into the current session as a custom message.
@@ -162,6 +165,14 @@ tool args), and matches against your query. It retains only hits and stops at
 skipped, or the search was cancelled; `truncated` separately marks the hit limit.
 Skipped-record counts cover only the portion actually scanned.
 
+For `sessionId`, `read_session` scans the same encoded-cwd directories as search
+and reads only each file's first record to find its header ID. Filenames do not
+establish identity. Only valid headers within the configured record limit
+participate; malformed or oversized headers cannot resolve an ID. If distinct
+files have the same ID, the read fails and asks for `sessionFile`. Symlink aliases
+of the same resolved file do not create ambiguity. ID lookup adds a header scan
+on each call; there is no persistent index or cache.
+
 `read_session` makes two streaming passes: one counts eligible messages and
 finds the nearest timestamp; the other collects only the requested window.
 Equal-distance timestamps select the first message in file order. Both passes
@@ -192,7 +203,9 @@ exfiltration primitive if the active LLM is operating on untrusted input.
 - **Read-only.** No tool here writes, deletes, or transmits anything.
 - **Path containment in `read_session`.** Resolves symlinks on both the file
   and the configured root, rejects any path that doesn't end up under the
-  resolved root.
+  resolved root. ID lookup checks containment on every directory and file
+  before reading its header, then applies the same path check to the selected
+  file. It never rewrites a foreign absolute path to a local path.
 - **Path containment in `search_sessions`.** Per-subdirectory and per-file
   symlink containment: a `.jsonl` symlinked outside the root is detected at
   `realpath` time and skipped (counted as `skippedFiles` in the result).

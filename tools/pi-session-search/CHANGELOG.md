@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Read a session by its exact header `sessionId`, without depending on a host-
+  or sandbox-specific path. Provide exactly one of `sessionId` or `sessionFile`.
+  Lookup stays within the configured root, uses bounded first-record headers,
+  and rejects duplicate IDs across distinct files.
+
 ### Changed
 
 - Always exclude whole text-only user goal-continuation envelopes from search

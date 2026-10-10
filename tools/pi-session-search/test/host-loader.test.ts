@@ -53,6 +53,21 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 		assert.match(readGuidance, /sessionFile unchanged.*modest maxMessages/);
 		assert.ok(Type.IsObject(search.parameters));
 		assert.ok(Type.IsObject(read.parameters));
+		assert.match(parameterDescription(read.parameters.properties.sessionId), /Exact session header ID/);
+		const originalRoot = process.env.PI_SESSION_SEARCH_ROOT;
+		process.env.PI_SESSION_SEARCH_ROOT = join(sandbox, "sessions");
+		try {
+			const source = SessionManager.create(sandbox, join(sandbox, "sessions", "--native--"));
+			source.appendMessage({ role: "user", content: "native ID reader needle", timestamp: 1 });
+			// The reader does not consume ctx; exercise the real loaded handler.
+			const result = await read.execute("native-read-id", { sessionId: source.getSessionId() },
+				undefined, undefined, {} as Parameters<typeof read.execute>[4]);
+			assert.notEqual(result.isError, true, JSON.stringify(result.content));
+			assert.match(JSON.stringify(result.content), /native ID reader needle/);
+		} finally {
+			if (originalRoot === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
+			else process.env.PI_SESSION_SEARCH_ROOT = originalRoot;
+		}
 		assert.match(parameterDescription(search.parameters.properties.query), /substring.*\/regex\/flags/);
 		assert.match(parameterDescription(search.parameters.properties.includeToolCalls), /exact tool name or distinctive argument/);
 		assert.match(parameterDescription(read.parameters.properties.aroundTimestamp), /search hit's timestamp.*ISO/);
@@ -85,7 +100,9 @@ it("collapses native fork history but keeps a later independent repetition", asy
 		assert.equal(result.duplicateHitsSuppressed, 1);
 		assert.equal(result.incompleteCoverage, false);
 		for (const hit of result.hits) {
-			assert.match(await readSessionWindow({ sessionFile: hit.sessionFile, aroundTimestamp: hit.timestamp }), /native-copy-needle/);
+			const byFile = await readSessionWindow({ sessionFile: hit.sessionFile, aroundTimestamp: hit.timestamp });
+			assert.match(byFile, /native-copy-needle/);
+			assert.equal(await readSessionWindow({ sessionId: hit.sessionId, aroundTimestamp: hit.timestamp }), byFile);
 		}
 	} finally {
 		if (original === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;

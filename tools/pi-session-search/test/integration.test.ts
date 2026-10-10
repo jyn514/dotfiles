@@ -437,3 +437,79 @@ describe("automatic search filtering", () => {
 		assert.equal(assistantOnly.duplicateHitsSuppressed, 0);
 	});
 });
+describe("session ID reads", () => {
+	const originalRoot = process.env.PI_SESSION_SEARCH_ROOT;
+	const originalBytes = process.env.PI_SESSION_SEARCH_MAX_BYTES;
+	let fixture: ReturnType<typeof buildFixtureSessions>;
+	beforeEach(() => {
+		fixture = buildFixtureSessions();
+		process.env.PI_SESSION_SEARCH_ROOT = fixture.root;
+	});
+	afterEach(() => {
+		if (originalRoot === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
+		else process.env.PI_SESSION_SEARCH_ROOT = originalRoot;
+		if (originalBytes === undefined) delete process.env.PI_SESSION_SEARCH_MAX_BYTES;
+		else process.env.PI_SESSION_SEARCH_MAX_BYTES = originalBytes;
+		rmSync(fixture.root, { recursive: true, force: true });
+	});
+
+	it("uses the header ID despite a filename mismatch and preserves window options", async () => {
+		const options = { aroundTimestamp: "2026-04-23T06:48:15.000Z", contextMessages: 0, maxMessages: 1 };
+		assert.equal(
+			await readSessionWindow({ sessionId: fixture.sessionId, ...options }),
+			await readSessionWindow({ sessionFile: fixture.sessionFile, ...options }),
+		);
+		await assert.rejects(() => readSessionWindow({ sessionId: "session-1" }), /No readable session/);
+	});
+
+	it("requires exactly one nonempty selector and does not reinterpret foreign paths", async () => {
+		for (const options of [{}, { sessionFile: fixture.sessionFile, sessionId: fixture.sessionId }]) {
+			await assert.rejects(() => readSessionWindow(options), /exactly one/);
+		}
+		for (const options of [{ sessionId: " " }, { sessionFile: "" }]) {
+			await assert.rejects(() => readSessionWindow(options), /non-empty string/);
+		}
+		await assert.rejects(() => readSessionWindow({ sessionId: "../../../secret" }), /No readable session/);
+		await assert.rejects(() => readSessionWindow({ sessionFile: "/foreign/home/sessions/parent.jsonl" }), /outside session root/);
+	});
+
+	it("rejects duplicate IDs across files but tolerates aliases of the same real file", async () => {
+		const dir = join(fixture.root, "--another-project--");
+		mkdirSync(dir);
+		symlinkSync(fixture.sessionFile, join(dir, "alias.jsonl"));
+		assert.match(await readSessionWindow({ sessionId: fixture.sessionId }), /vault-overseer/);
+		writeFileSync(join(dir, "duplicate.jsonl"), JSON.stringify({ type: "session", id: fixture.sessionId }) + "\n");
+		await assert.rejects(() => readSessionWindow({ sessionId: fixture.sessionId }), /Multiple session files/);
+	});
+
+	it("never resolves IDs through escaping file or directory symlinks", async () => {
+		const outside = mkdtempSync(join(tmpdir(), "pi-id-outside-"));
+		try {
+			const external = join(outside, "external.jsonl");
+			writeFileSync(external, JSON.stringify({ type: "session", id: "outside-id" }) + "\n");
+			symlinkSync(outside, join(fixture.root, "--outside-directory--"), "dir");
+			symlinkSync(external, join(fixture.root, "--home-tester-project--", "escape.jsonl"));
+			await assert.rejects(() => readSessionWindow({ sessionId: "outside-id" }), /No readable session/);
+			assert.match(await readSessionWindow({ sessionId: fixture.sessionId }), /vault-overseer/);
+		} finally {
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	it("does not take IDs from message content, later headers or oversized first records", async () => {
+		process.env.PI_SESSION_SEARCH_MAX_BYTES = "256";
+		const dir = join(fixture.root, "--home-tester-project--");
+		const wanted = JSON.stringify({ type: "session", id: "hidden-id" });
+		writeFileSync(join(dir, "oversized.jsonl"), "x".repeat(257) + "\n" + wanted + "\n");
+		writeFileSync(join(dir, "message.jsonl"), JSON.stringify({ type: "message", id: "hidden-id" }) + "\n" + wanted + "\n");
+		writeFileSync(join(dir, "broken.jsonl"), "{invalid\n" + wanted + "\n");
+		await assert.rejects(() => readSessionWindow({ sessionId: "hidden-id" }), /No readable session/);
+		assert.match(await readSessionWindow({ sessionId: fixture.sessionId }), /vault-overseer/);
+	});
+
+	it("forwards cancellation to ID lookup", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		await assert.rejects(() => readSessionWindow({ sessionId: fixture.sessionId, signal: controller.signal }), { name: "AbortError" });
+	});
+});
