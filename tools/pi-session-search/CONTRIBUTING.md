@@ -29,6 +29,17 @@ npm test
 The pinned development dependencies provide the local TypeScript compiler and
 Node.js type declarations. No global `tsc` installation is required.
 
+For automated probes that parse Node test output, select TAP explicitly. Do not
+assume the default reporter emits `ok`/`not ok`; a human-readable default caused
+a false probe failure during regression testing.
+
+```bash
+node --test --test-reporter=tap --experimental-strip-types 'test/**/*.test.ts'
+```
+
+Check the process exit status and assertion diagnostics, not just reporter text,
+to distinguish an expected regression failure from a setup or import failure.
+
 ## Contributor License Agreement
 
 All third-party contributions to this project must be accompanied by a signed contributor
