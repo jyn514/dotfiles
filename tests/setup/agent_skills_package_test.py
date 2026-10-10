@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -75,33 +76,7 @@ class AgentSkillsPackageTest(unittest.TestCase):
             bin_directory.mkdir()
             capture = temporary_path / "capture.json"
             fake_npm = bin_directory / "npm"
-            fake_npm.write_text(
-                """#!/usr/bin/env python3
-import json
-import os
-import sys
-from pathlib import Path
-
-package = Path(sys.argv[2])
-Path(os.environ["CAPTURE"]).write_text(json.dumps({
-    "arguments": sys.argv[1:2] + sys.argv[3:],
-    "package": str(package),
-    "readme": (package / "README.md").read_text(),
-    "has_manifest": (package / "package.json").is_file(),
-    "has_license": (package / "LICENSE").is_file(),
-    "has_codex_plugin": (package / ".codex-plugin/plugin.json").is_file(),
-    "has_claude_plugin": (package / ".claude-plugin/plugin.json").is_file(),
-    "has_claude_marketplace": (package / ".claude-plugin/marketplace.json").is_file(),
-    "has_skills": (package / "skills").is_dir(),
-    "reference_files": {
-        str(path.relative_to(package)): path.read_text(encoding="utf-8")
-        for path in (package / "skills").rglob("references/*.md")
-    },
-}), encoding="utf-8")
-raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
-""",
-                encoding="utf-8",
-            )
+            shutil.copy2(Path(__file__).with_name("fixtures") / "skills_npm.py", fake_npm)
             fake_npm.chmod(0o755)
             environment = os.environ | {
                 "CAPTURE": str(capture),
@@ -140,6 +115,69 @@ raise SystemExit(int(os.environ.get("FAKE_NPM_EXIT", "0")))
                 env=failed_environment,
             )
             self.assertEqual(failed.returncode, 23)
+
+    @unittest.skipUnless(shutil.which("npm"), "native npm is required")
+    def test_archive_check_packs_with_native_npm(self) -> None:
+        result = subprocess.run(
+            [ROOT / "dev/publish-skills", "--check"],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        package = load_json("package.json")
+        self.assertIn(f"Validated {package['name']}@{package['version']}", result.stdout)
+        self.assertIn("no publication.", result.stdout)
+
+    def test_archive_check_never_publishes_and_rejects_missing_resources(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            fake_npm = directory / "npm"
+            shutil.copy2(Path(__file__).with_name("fixtures") / "skills_npm.py", fake_npm)
+            fake_npm.chmod(0o755)
+            capture = directory / "capture.json"
+            environment = os.environ | {
+                "CAPTURE": str(capture),
+                "PATH": f"{directory}{os.pathsep}{os.environ['PATH']}",
+            }
+            cases = [
+                ({}, 0, "no publication."),
+                ({"FAKE_NPM_EXIT": "23"}, 23, "npm pack exited 23"),
+                ({"FAKE_NPM_BAD_JSON": "1"}, 1, "Archive check failed:"),
+                ({"FAKE_NPM_OMIT": "README.md"}, 1, "package/README.md"),
+                ({"FAKE_NPM_OMIT": ".codex-plugin/plugin.json"}, 1,
+                 "package/.codex-plugin/plugin.json"),
+                ({"FAKE_NPM_OMIT": "skills/property-based-testing/LICENSE.hegel"}, 1,
+                 "package/skills/property-based-testing/LICENSE.hegel"),
+            ]
+            for overrides, status, diagnostic in cases:
+                with self.subTest(overrides=overrides):
+                    capture.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [ROOT / "dev/publish-skills", "--check"],
+                        env=environment | overrides, capture_output=True, text=True,
+                        check=False,
+                    )
+                    self.assertEqual(status, result.returncode, result.stderr)
+                    self.assertIn(diagnostic, result.stdout if status == 0 else result.stderr)
+                    staged = json.loads(capture.read_text())
+                    self.assertEqual(["pack"], staged["commands"])
+                    self.assertEqual("pack", staged["arguments"][0])
+                    self.assertCountEqual(
+                        ["--json", "--ignore-scripts", "--offline"], staged["arguments"][1:])
+                    self.assertFalse(Path(staged["package"]).exists())
+                    if status:
+                        self.assertEqual("", result.stdout)
+                    else:
+                        package = load_json("package.json")
+                        self.assertIn(f"{package['name']}@{package['version']}", result.stdout)
+
+            capture.unlink()
+            mixed = subprocess.run(
+                [ROOT / "dev/publish-skills", "--check", "--access", "public"],
+                env=environment, capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(2, mixed.returncode)
+            self.assertIn("does not accept npm publish arguments", mixed.stderr)
+            self.assertFalse(capture.exists())
 
 
 if __name__ == "__main__":

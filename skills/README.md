@@ -51,12 +51,19 @@ remain under Unlicense. Keep the bundled license files when copying this skill.
 
 The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change. `dev/publish-skills` stages this file as the package-root `README.md` without changing the repository root README.
 
+For packaging-only validation, run `dev/test-environment dev/publish-skills --check`.
+It packs offline with lifecycle scripts disabled, then checks the actual archive
+for the staged skills, license files, README, and generated plugin manifests.
+The temporary package and archive are removed afterward. This does not publish,
+check registry permissions, or require an unpublished version. `--check` accepts
+no publication arguments; `--dry-run` still means npm's publication dry-run.
+
 1. Set the same new semantic version in `package.json`, `.codex-plugin/plugin.json`, and `.agents/plugins/marketplace.json` (`source.version`).
 2. Validate the metadata and npm archive:
 
    ```sh
-   tests/setup/agent_skills_package_test.py
-   dev/publish-skills --dry-run
+   dev/test-environment python3 tests/setup/agent_skills_package_test.py
+   dev/test-environment dev/publish-skills --check
    ```
 
 3. Review and commit the release, then authenticate and publish:

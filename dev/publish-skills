@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import json
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -26,10 +28,57 @@ def stage_package(destination: Path) -> None:
     )
 
 
+def check_package(package: Path) -> int:
+    result = subprocess.run(
+        ["npm", "pack", str(package), "--json", "--ignore-scripts", "--offline"],
+        cwd=package,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        print(f"Archive check failed: npm pack exited {result.returncode}.", file=sys.stderr)
+        if result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr)
+        return result.returncode
+
+    try:
+        [packed] = json.loads(result.stdout)
+        with tarfile.open(package / packed["filename"]) as archive:
+            actual = {member.name for member in archive.getmembers() if member.isfile()}
+        required = {
+            f"package/{relative}"
+            for relative in (
+                "package.json", "LICENSE", "README.md",
+                ".codex-plugin/plugin.json", ".claude-plugin/plugin.json",
+                ".claude-plugin/marketplace.json",
+            )
+        }
+        required.update(
+            f"package/{path.relative_to(package).as_posix()}"
+            for path in (package / "skills").rglob("*") if path.is_file()
+        )
+        missing = sorted(required - actual)
+        if missing:
+            print("Archive check failed: missing files: " + ", ".join(missing), file=sys.stderr)
+            return 1
+        print(f"Validated {packed['name']}@{packed['version']}: "
+              f"{len(actual)} archive files; no publication.")
+    except (ValueError, KeyError, TypeError, OSError, tarfile.TarError) as error:
+        print(f"Archive check failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(arguments: list[str]) -> int:
+    check = "--check" in arguments
+    if check and arguments != ["--check"]:
+        print("--check does not accept npm publish arguments.", file=sys.stderr)
+        return 2
     with tempfile.TemporaryDirectory(prefix="judgement-yields-navigation-") as temporary:
         package = Path(temporary)
         stage_package(package)
+        if check:
+            return check_package(package)
         return subprocess.run(["npm", "publish", str(package), *arguments]).returncode
 
 
