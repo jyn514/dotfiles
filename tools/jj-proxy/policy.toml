@@ -17,6 +17,7 @@ file = { subcmds = ["annotate", "list", "search", "show"] }
 workspace = { subcmds = ["list"] }
 op = { subcmds = ["log", "show"] }
 git = { subcmds = ["root"] }
+config = { subcmds = ["get"] }
 
 # Mutation mode also permits every inspection rule.
 [mutate]
