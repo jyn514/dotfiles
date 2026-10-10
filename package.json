@@ -6,7 +6,7 @@
     "name": "jyn514",
     "url": "https://github.com/jyn514"
   },
-  "license": "Unlicense",
+  "license": "Unlicense AND CC-BY-SA-4.0 AND MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jyn514/dotfiles.git"

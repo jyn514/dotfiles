@@ -42,6 +42,11 @@ and test standards when the shared agent instructions request it. Plain referenc
 files add no startup skill descriptions. The sandbox's existing live skills mount
 makes reference changes readable without restarting its worker.
 
+`property-based-testing` is adapted from Trail of Bits with additional Hegel review
+checks. Its [attribution and license notice](property-based-testing/README.md)
+identifies the CC-BY-SA-4.0 material and MIT contribution; repository-owned skills
+remain under Unlicense. Keep the bundled license files when copying this skill.
+
 ## Publish a release
 
 The Codex marketplace pins the npm version in `.agents/plugins/marketplace.json`. Publish that version before pushing the marketplace change. `dev/publish-skills` stages this file as the package-root `README.md` without changing the repository root README.
@@ -125,6 +130,7 @@ Use these independently when their target is already selected:
 - `cleanup-triage` — prioritize and slice cleanup after cleanup has been selected as the opportunity.
 - `design-for-change` — resolve modeling, invariant, interface, ownership, enforcement-mechanism, regression-test, or oracle decisions; skip routine edits with an established shape.
 - `double-check` — audit substantial completed work across components, specifications, migrations, or consequential boundaries; use a diff review and native check for localized edits.
+- [property-based-testing](property-based-testing/SKILL.md) — design generators and independent properties, review weak oracles, and diagnose counterexamples using the project's existing test framework.
 - `jj-conflict-resolution` — semantically compose Jujutsu conflict snapshots and diffs without ours/theirs or union heuristics.
 - [human-review-packets](human-review-packets/SKILL.md) — prepare human decisions with concrete examples, recommendations, and simple questions; keep technical evidence optional and deferred approvals out of the active queue.
 - `reorganize-docs` — change documentation information architecture, navigation, splits, consolidation, or archives.
