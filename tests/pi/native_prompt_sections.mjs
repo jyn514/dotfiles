@@ -274,7 +274,8 @@ test("the bundle replaces only documentation policy and guest routing preserves 
     assert.equal(bodies[2].includes(host), false, "host documentation paths do not leak");
   }
   assert.equal(bodies[2], expectedGuest, "guest routing changes paths, not policy or topic routes");
-  assert.equal(inspections[2].force, prompts[2], "provider receives the guest hook's final forced prompt");
+  assert.equal(inspections[2].force, undefined, "guest projection must preserve structured prompt sections");
+  assert.equal(systems(requests[2])[0].sections.docs, `<docs>\n${expectedGuest}\n</docs>`);
   assert.equal(prompts[1], inspections[1].prompt);
 });
 
@@ -376,16 +377,23 @@ for (const guest of [false, true]) {
     assert.equal(session.messages.at(-1).stopReason, "stop", session.messages.at(-1).errorMessage);
     assert.ok(!session.systemPrompt.includes(firstMarker), "Pi's getter reverted after settlement");
     const firstSystem = requests[0].messages.find((message) => ["system", "developer"].includes(message.role));
-    assert.equal(firstSystem.content, prepared[0], "capture matches the built-in provider's first serialized prompt");
+    if (guest) {
+      assert.ok(firstSystem.content.includes("/guest/policy.md"));
+      assert.ok(!firstSystem.content.includes("/host/policy.md"));
+      assert.ok(firstSystem.content.includes("<cwd>\n/guest/project\n</cwd>"));
+      assert.ok(prepared[0].includes("/host/policy.md"), "capture excludes context-message projection");
+    } else {
+      assert.equal(firstSystem.content, prepared[0], "capture matches the provider without context rewrites");
+    }
     await inspect();
-    assert.ok(editors[0].text.endsWith(`\n\n${prepared[0]}`), "viewer retains the complete transformed prompt");
+    assert.ok(editors[0].text.endsWith(`\n\n${prepared[0]}`), "viewer retains the prepared prompt snapshot");
     assert.ok(editors[0].text.includes(firstMarker));
     assert.ok(editors[0].text.includes(`Selected model: ${model.provider}/${model.id}`));
     assert.match(editors[0].text, /Captured at: \d{4}-\d{2}-\d{2}T/);
     assert.ok(editors[1].text.includes(`Prompt subtotal: ${Math.ceil(prepared[0].length / 4).toLocaleString("en-US")}`));
     if (guest) {
-      assert.ok(editors[0].text.includes("/guest/policy.md"));
-      assert.ok(!editors[0].text.includes("/host/policy.md"));
+      assert.ok(editors[0].text.includes("/host/policy.md"));
+      assert.ok(editors[0].text.includes("excludes context-message and provider-payload rewrites"));
     }
     assert.equal(requests.length, 1);
 

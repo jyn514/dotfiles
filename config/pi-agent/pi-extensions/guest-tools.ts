@@ -116,15 +116,37 @@ export default function guestTools(pi: ExtensionAPI) {
       },
     };
   });
-  pi.on("context", (event) => {
-    // Pi expands /skill commands on the host into user messages, separately
-    // from the system prompt. Rewrite the model's copy, including resumed history.
+  pi.on("context_with_system", (event) => {
+    // Goal-triggered runs skip before_agent_start. Project the guest view at
+    // request time, including structured system patches and resumed history.
+    const rewriteSystem = (text: string) => rewritePiResourcePaths(text, resourcePaths)
+      .replace(/^Current working directory: .*$/m, () => `Current working directory: ${cwd}`)
+      .replace(/<cwd>\n[^\n]*\n<\/cwd>/g, () => `<cwd>\n${cwd}\n</cwd>`);
     const rewriteSkill = (text: string) =>
       /^<skill name="[^"]+" location="[^"]+">\n/.test(text)
         ? rewritePiResourcePaths(text, resourcePaths)
         : text;
+    let firstSystem = true;
     return {
       messages: event.messages.map((message) => {
+        if (message.role === "system") {
+          const sections = message.sections && Object.fromEntries(
+            Object.entries(message.sections).map(([name, text]) =>
+              [name, text === null ? null : rewriteSystem(text)]),
+          );
+          const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
+          const handoff = firstSystem && previousCwd ? {
+            sandbox_handoff: `This conversation moved from ${rewritePiResourcePaths(previousCwd, resourcePaths)} to ${cwd}; older paths remain historical context.`,
+          } : {};
+          firstSystem = false;
+          return {
+            ...message,
+            content: typeof message.content === "string"
+              ? rewriteSystem(message.content)
+              : message.content.map((block) => ({ ...block, text: rewriteSystem(block.text) })),
+            ...(sections || previousCwd ? { sections: { ...sections, ...handoff } } : {}),
+          };
+        }
         if (message.role !== "user") return message;
         return {
           ...message,
@@ -136,15 +158,5 @@ export default function guestTools(pi: ExtensionAPI) {
         };
       }),
     };
-  });
-  pi.on("before_agent_start", (event) => {
-    const rewrittenPrompt = rewritePiResourcePaths(event.systemPrompt, resourcePaths);
-    const systemPrompt = rewrittenPrompt.replace(
-      `Current working directory: ${event.systemPromptOptions.cwd}`,
-      `Current working directory: ${cwd}`,
-    ) + (process.env.CODEX_SANDBOX_PREVIOUS_CWD
-      ? `\nThis conversation moved from ${rewritePiResourcePaths(process.env.CODEX_SANDBOX_PREVIOUS_CWD, resourcePaths)} to ${cwd}; older paths remain historical context.\n`
-      : "");
-    return { systemPrompt };
   });
 }

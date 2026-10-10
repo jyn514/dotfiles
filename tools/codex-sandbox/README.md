@@ -42,8 +42,12 @@ admitted host handlers and brokered model requests; conformance remains unverifi
 Proxy and credential failures still fail closed.
 [Model-requested session forks](spec/launcher-interface.typ) are selected but not
 implemented; they must inherit the parent's guest backend and authority.
-Expanded `/skill:name` messages use guest resource paths when sent to the model,
-including messages from resumed sessions. Stored messages retain their host paths.
+System prompts and expanded `/skill:name` messages use guest resource paths when
+sent to the model, including goal-triggered turns and resumed sessions. Request-time
+projection also advertises the guest working directory; stored messages retain
+their host paths. Reload existing host Pi sessions with `/reload` to apply this
+extension change. `/system-prompt` shows the prepared host prompt before this
+request-time projection.
 Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 Host `~/.pi/agent/sessions` is mounted read-only at

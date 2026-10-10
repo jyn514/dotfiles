@@ -54,7 +54,9 @@ on the host. The launcher selects the repository and guest mount; repository too
 arguments use guest paths. Host-discovered shared skills are mounted at the guest
 skills path. Recursive project instruction includes and resource reads
 resolve in the guest view under the extension authority contract. Rewrite mapped
-host resource paths to guest paths before Pi sends the system prompt; path
+host resource paths to guest paths in `context_with_system` before each model request,
+including goal-triggered turns, structured system-section updates, and resumed sessions;
+advertise the guest working directory in the same projection. Stored messages retain host paths. Path
 rewriting alone does not constrain the preceding resource reads. Host Pi's README,
 docs, and examples are mounted read-only at guest Pi package paths; their
 advertised host paths map to those guest paths. Project-relative resources, including project skills, map
