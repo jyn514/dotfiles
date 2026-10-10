@@ -159,6 +159,15 @@ messages. Panes share files, not later messages.
 The worker remains until its last Pi attachment closes; ordinary subagents remain
 parent-owned. `/split [prompt]` focuses the new pane and automatically sends the
 optional prompt there. Without a prompt, the new pane starts idle.
+
+New splits record the immediate parent's session ID and, when available,
+saved session file. On every turn, model guidance distinguishes copied history
+from a new assignment and asks the agent to check the parent's current work
+before writing or delegating. This guidance survives compaction and resume;
+it is not a filesystem lock or an automatic work-ownership check. A nested
+`/split` names its immediate source, and native forks do not inherit this guidance.
+Older snapshots without this metadata are unchanged.
+
 It is unavailable to ordinary subagents
 or outside an interactive sandbox. Native `/clone`, `/fork`, and `/resume` are
 unchanged.

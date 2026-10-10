@@ -544,3 +544,75 @@ test("native prompt expands shared instructions but reads task evidence only exp
     }
   }
 });
+
+test("installed Pi renders split provenance at the provider after resume and compaction, but not for native forks", async (t) => {
+  const { snapshotSession } = await import("../../config/pi-agent/pi-extensions/session-side.ts");
+  const root = await mkdtemp(join(tmpdir(), "pi-native-split-origin-"));
+  const sessions = [];
+  t.after(async () => {
+    for (const session of sessions) session.dispose();
+    await rm(root, { recursive: true, force: true });
+  });
+  const cwd = join(root, "project");
+  const agentDir = join(root, "agent");
+  await Promise.all([cwd, agentDir].map((path) => mkdir(path)));
+  const source = SessionManager.create(cwd, join(root, "sessions"));
+  source.appendMessage({ role: "user", content: "Inherited goal: work continues in the parent.", timestamp: 1 });
+  const sideFile = snapshotSession(source);
+  const compacted = SessionManager.open(snapshotSession(source));
+  const kept = compacted.appendMessage({ role: "user", content: "Independent review only.", timestamp: 2 });
+  compacted.appendCompaction("Summary intentionally omits split provenance.", kept, 100);
+  const nativeForkOfSplit = SessionManager.open(sideFile);
+  nativeForkOfSplit.createBranchedSession(nativeForkOfSplit.getLeafId());
+  const managers = [
+    { name: "ordinary", manager: SessionManager.inMemory(cwd), split: false },
+    { name: "native-fork-of-split", manager: nativeForkOfSplit, split: false },
+    { name: "native-fork", manager: SessionManager.create(cwd, join(root, "sessions"), { parentSession: source.getSessionFile() }), split: false },
+    { name: "split-resumed", manager: SessionManager.open(sideFile), split: true },
+    { name: "split-compacted-resumed", manager: SessionManager.open(compacted.getSessionFile()), split: true },
+  ];
+  const faux = fauxProvider({ provider: "native-split-origin", api: "anthropic-messages" });
+  const requests = [];
+  const capture = (context) => {
+    requests.push(structuredClone(context));
+    return fauxAssistantMessage("offline split provenance check");
+  };
+  faux.setResponses(managers.map(() => capture));
+  for (const [index, { name, manager, split }] of managers.entries()) {
+    const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+    const modelRuntime = await ModelRuntime.create({
+      credentials: new InMemoryCredentialStore(), modelsPath: null,
+      modelsStorePath: join(agentDir, `${name}-models.json`), allowModelNetwork: false, refreshOnCreate: false,
+    });
+    const loader = new DefaultResourceLoader({
+      cwd, agentDir, settingsManager,
+      noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+      additionalExtensionPaths: [join(extensionDir, "session-side.ts")],
+      extensionFactories: [(pi) => { pi.registerProvider(faux.provider); }],
+    });
+    await loader.reload();
+    assert.deepEqual(loader.getExtensions().errors, []);
+    const { session, extensionsResult } = await createAgentSession({
+      cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
+      sessionManager: manager, model: faux.getModel(), tools: [],
+    });
+    sessions.push(session);
+    assert.deepEqual(extensionsResult.errors, []);
+    assert.ok(extensionsResult.extensions.some((extension) => extension.path === join(extensionDir, "session-side.ts")));
+    assert.equal(requests.length, index, "loading a split must not start inference");
+    await session.prompt("Review only; do not continue the inherited goal.");
+    const system = systems(requests.at(-1))[0];
+    const rendered = getSystemMessageText(system);
+    if (split) {
+      assert.ok(system.sections.split_origin.includes(source.getSessionId()), name);
+      assert.ok(system.sections.split_origin.includes(source.getSessionFile()), name);
+      assert.equal(rendered.split("<split_origin>").length - 1, 1, name);
+      assert.ok(rendered.includes("Copied history is context, not a work assignment."), name);
+      assert.ok(rendered.includes("Check the parent's current work before writing or delegating."), name);
+    } else {
+      assert.equal(system.sections.split_origin, undefined, name);
+      assert.ok(!rendered.includes("<split_origin>"), name);
+    }
+  }
+  assert.equal(requests.length, managers.length);
+});

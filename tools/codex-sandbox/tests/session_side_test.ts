@@ -67,7 +67,7 @@ test("snapshot keeps only the active completed branch, compaction, settings and 
     expect(copy.getSessionId()).not.toBe(sm.getSessionId());
     expect(copy.getHeader()?.parentSession).toBe(sm.getSessionFile());
     expect(copy.getEntries().some(e => e.id === abandoned)).toBe(false);
-    expect(copy.getEntries().some(e => e.type === "custom")).toBe(false);
+    expect(copy.getEntries().some(e => e.type === "custom" && e.customType === "live-worker")).toBe(false);
     expect(copy.getEntries().filter(e => e.type === "message" && e.message.role === "toolResult").length).toBe(2);
     const expected = SessionManager.open(sm.getSessionFile()!);
     expected.branch(finishedLeaf!);
@@ -186,16 +186,20 @@ test("compaction boundaries advance past omitted state and failed or incomplete 
       const copy = SessionManager.open(snapshotSession(source));
       const context = copy.buildSessionContext().messages;
       expect(context[0]).toMatchObject({ role: "compactionSummary", summary: "latest summary", tokensBefore: 2000 });
-      // Pi includes an earlier summary when it lies inside the latest retained range.
+      // Follow Pi's projection of older checkpoints instead of duplicating it.
+      // The omitted boundary can contain failed/tool messages before this turn.
+      const sourceContext = source.buildSessionContext().messages;
+      const retainedIndex = sourceContext.findIndex((message: any) => message.role === "user" && message.content === retained.content);
+      expect(retainedIndex).toBeGreaterThan(0);
+      expect(context.slice(1)).toEqual(sourceContext.slice(retainedIndex));
       expect(context.slice(1, 3)).toEqual([retained, assistant()]);
-      expect(context[3]).toMatchObject({ role: "compactionSummary", summary: "first summary", tokensBefore: 1000 });
-      expect(context.slice(4)).toEqual([after, assistant()]);
+      expect(context.slice(-2)).toEqual([after, assistant()]);
       expect(copy.getEntries().filter((e: any) => e.type === "compaction").map((e: any) =>
         ({ summary: e.summary, details: e.details, fromHook: e.fromHook, usage: e.usage }))).toEqual([
         { summary: "first summary", details: { files: ["x"] }, fromHook: true, usage },
         { summary: "latest summary", details: { files: ["y"] }, fromHook: true, usage },
       ]);
-      expect(copy.getEntries().some((e: any) => e.type === "custom")).toBe(false);
+      expect(copy.getEntries().some((e: any) => e.type === "custom" && e.customType === "live-worker")).toBe(false);
       expect(readFileSync(source.getSessionFile()!, "utf8")).toBe(before);
     }
   } finally { f.cleanup(); }
@@ -267,7 +271,78 @@ test("empty, pending, failed and deferred snapshots are saved without an unfinis
       expect(SessionManager.open(file).buildSessionContext().messages.map(m => m.role)).toEqual(["user"]);
     }
     const empty = snapshotSession(SessionManager.create(f.dir, f.dir) as any);
-    expect(SessionManager.open(empty).getEntries()).toEqual([]);
+    expect(SessionManager.open(empty).buildSessionContext().messages).toEqual([]);
+  } finally { f.cleanup(); }
+});
+
+test("split provenance survives compaction and resume, identifies immediate parents, and is not model history", () => {
+  const f = fixture();
+  try {
+    const events = new Map<string, any>();
+    sessionSide({ on: (name: string, handler: any) => events.set(name, handler), registerCommand: () => {} } as any);
+    const guide = (manager: PiSessionManager) => {
+      const event = { systemPromptOptions: { sections: { unrelated: "keep me" } } };
+      events.get("before_agent_start")(event, { sessionManager: manager });
+      expect(event.systemPromptOptions.sections.unrelated).toBe("keep me");
+      return (event.systemPromptOptions.sections as any).split_origin;
+    };
+    for (const populated of [false, true]) {
+      const source = SessionManager.create(f.dir, f.dir);
+      if (populated) {
+        source.appendMessage({ role: "user", content: "source goal is not a new assignment", timestamp: 1 });
+        source.appendMessage(assistant());
+      }
+      // A nested split must not retain this earlier parent's identity.
+      source.appendCustomEntry("split-origin", { version: 1, sessionId: source.getSessionId(), parentSessionId: "earlier-parent" });
+      const copy = SessionManager.open(snapshotSession(source));
+      const origins = copy.getEntries().filter((entry: any) => entry.type === "custom" && entry.customType === "split-origin");
+      expect(origins).toHaveLength(1);
+      expect(origins[0].data).toEqual({ version: 1, sessionId: copy.getSessionId(), parentSessionId: source.getSessionId() });
+      expect(copy.buildSessionContext().messages).toEqual(source.buildSessionContext().messages);
+      const guidance = guide(copy);
+      expect(guidance).toContain(source.getSessionId());
+      expect(guidance).toContain(source.getSessionFile());
+      expect(guidance).not.toContain("earlier-parent");
+      expect(guidance).toContain("Copied history is context, not a work assignment.");
+      const turn = copy.appendMessage({ role: "user", content: "a distinct review request", timestamp: 2 });
+      copy.appendMessage(assistant());
+      copy.appendCompaction("summary need not preserve origin", turn, 100);
+      const resumed = SessionManager.open(copy.getSessionFile());
+      expect(guide(resumed)).toBe(guidance);
+      const nested = SessionManager.open(snapshotSession(resumed));
+      expect(guide(nested)).toContain(resumed.getSessionId());
+      expect(guide(nested)).not.toContain(source.getSessionId());
+      expect(nested.getHeader()?.parentSession).toBe(resumed.getSessionFile());
+      expect(nested.getEntries().filter((entry: any) => entry.type === "custom" && entry.customType === "split-origin")).toHaveLength(1);
+    }
+    const memorySource = SessionManager.inMemory(f.dir);
+    const memoryCopy = SessionManager.open(snapshotSession(memorySource));
+    expect(guide(memoryCopy)).toContain(memorySource.getSessionId());
+    expect(guide(memoryCopy)).toContain("no saved session file");
+  } finally { f.cleanup(); }
+});
+
+test("ordinary sessions, native forks and unsupported origin metadata receive no split guidance", () => {
+  const f = fixture();
+  try {
+    const events = new Map<string, any>();
+    sessionSide({ on: (name: string, handler: any) => events.set(name, handler), registerCommand: () => {} } as any);
+    const nativeFork = SessionManager.create(f.dir, f.dir, { parentSession: f.source.getSessionFile() });
+    f.source.appendMessage({ role: "user", content: "original", timestamp: 1 });
+    const nativeForkOfSplit = SessionManager.open(snapshotSession(f.source));
+    nativeForkOfSplit.createBranchedSession(nativeForkOfSplit.getLeafId()!);
+    for (const manager of [f.source, nativeFork, nativeForkOfSplit]) {
+      const event = { systemPromptOptions: { sections: { split_origin: "previous session", unrelated: "keep me" } } };
+      events.get("before_agent_start")(event, { sessionManager: manager });
+      expect(event.systemPromptOptions.sections).toEqual({ unrelated: "keep me" });
+    }
+    for (const data of [null, {}, { version: 2, parentSessionId: "parent" }, { version: 1, parentSessionId: 42 }, { version: 1, parentSessionId: "" }]) {
+      const manager = SessionManager.inMemory(f.dir);
+      manager.appendCustomEntry("split-origin", data === null ? null : { sessionId: manager.getSessionId(), ...data });
+      const event = { systemPromptOptions: { sections: {} } };
+      events.get("before_agent_start")(event, { sessionManager: manager });
+      expect(event.systemPromptOptions.sections).toEqual({});
+    }
   } finally { f.cleanup(); }
 });
 
@@ -309,7 +384,10 @@ test("ordinary /split command and readiness use host socket; no source control/e
   try {
     delete process.env.CODEX_SANDBOX_PI_OWNER;
     delete process.env.CODEX_SANDBOX_PI_ATTACHMENT;
-    sessionSide({ registerCommand: () => { throw Error("disabled"); }, on: () => { throw Error("disabled"); } } as any);
+    const detachedEvents = new Map<string, any>();
+    sessionSide({ registerCommand: () => { throw Error("disabled"); },
+      on: (name: string, handler: any) => detachedEvents.set(name, handler) } as any);
+    expect([...detachedEvents.keys()]).toEqual(["before_agent_start"]);
     process.env.CODEX_SANDBOX_PI_OWNER = host.path;
     process.env.CODEX_SANDBOX_PI_ATTACHMENT = "token";
     const commands = new Map<string, any>();
@@ -317,7 +395,7 @@ test("ordinary /split command and readiness use host socket; no source control/e
     sessionSide({ registerCommand: (name: string, options: any) => commands.set(name, options.handler),
       on: (name: string, handler: any) => events.set(name, handler) } as any);
     expect([...commands.keys()]).toEqual(["split"]);
-    expect([...events.keys()]).toEqual(["session_start"]);
+    expect([...events.keys()]).toEqual(["before_agent_start", "session_start"]);
     const notifications: string[] = [];
     const forbidden = () => { throw Error("must not touch source runtime/editor"); };
     const ctx = { mode: "tui", sessionManager: f.source, ui: { notify: (s: string) => notifications.push(s),

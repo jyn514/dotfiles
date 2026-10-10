@@ -3,6 +3,8 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { createConnection } from "node:net";
 import { isAbsolute } from "node:path";
 
+const splitOriginType = "split-origin";
+
 // A whole assistant/tool batch is indivisible. Streaming assistants are not normally
 // persisted, but terminal failures/deferred responses also cannot be resumed here.
 function completedPath(entries: SessionEntry[]): SessionEntry[] {
@@ -50,7 +52,7 @@ export function snapshotSession(source: ExtensionContext["sessionManager"]): str
     parentSession: source.getSessionFile(),
   });
   const file = fresh.getSessionFile()!;
-  // Pi delays persistence until an assistant exists. Publish the API-generated
+  // Pi can delay persistence until a conversation exists. Publish the API-generated
   // header exclusively so even an empty snapshot is a real --session FILE.
   writeFileSync(file, `${JSON.stringify(fresh.getHeader())}\n`, { flag: "wx", mode: 0o600 });
   try {
@@ -105,6 +107,11 @@ export function snapshotSession(source: ExtensionContext["sessionManager"]): str
       }
       if (id) ids.set(entry.id, id);
     }
+    // This is durable provenance, not copied live extension state. Each split
+    // records its immediate source, including sources without a saved file.
+    target.appendCustomEntry(splitOriginType, {
+      version: 1, sessionId: target.getSessionId(), parentSessionId: source.getSessionId(),
+    });
     return file;
   } catch (error) {
     unlinkSync(file);
@@ -207,6 +214,30 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
 }
 
 export default function sessionSide(pi: ExtensionAPI) {
+  // Register independently of the sandbox attachment: resumed split sessions
+  // still need their provenance even outside the original worker.
+  pi.on("before_agent_start", (event, ctx) => {
+    const origin = ctx.sessionManager.getEntries().find(entry =>
+      entry.type === "custom" && entry.customType === splitOriginType);
+    const data = origin?.type === "custom"
+      ? origin.data as { version?: unknown; sessionId?: unknown; parentSessionId?: unknown } | undefined : undefined;
+    // Native forks can copy custom entries. Only the snapshot that created this
+    // marker receives split guidance; resumes retain the same session identity.
+    if (data?.version !== 1 || data.sessionId !== ctx.sessionManager.getSessionId()
+      || typeof data.parentSessionId !== "string" || !data.parentSessionId) {
+      delete event.systemPromptOptions.sections.split_origin;
+      return;
+    }
+    const parentFile = ctx.sessionManager.getHeader()?.parentSession;
+    event.systemPromptOptions.sections.split_origin = [
+      `This is a side conversation split from session ${data.parentSessionId}.`,
+      ...(parentFile ? [`Parent session file: ${parentFile}`] : ["The parent has no saved session file."]),
+      "The source session may still be working. Files are shared; subsequent messages are not.",
+      "Copied history is context, not a work assignment.",
+      "Follow the current user request; do not resume an inherited goal merely because it appears in the copied conversation.",
+      "Check the parent's current work before writing or delegating. If it is unavailable, establish a distinct assignment with the user first.",
+    ].join("\n");
+  });
   const socket = process.env.CODEX_SANDBOX_PI_OWNER;
   const attachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
   const prompt = process.env.CODEX_SANDBOX_PI_SPLIT_PROMPT;
