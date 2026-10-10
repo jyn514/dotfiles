@@ -3,7 +3,7 @@ import {
   mergeGoalTransitionEffects,
   type GoalTransitionEffect,
 } from "./goal-transition-effects.ts";
-import { cloneGoal, goalsEquivalent, statusAfterBudgetLimit, unixSeconds } from "./state.ts";
+import { cloneGoal, goalsEquivalent, statusAfterBudgetLimit, unixSeconds, validateObjective } from "./state.ts";
 import type { GoalEntrySource, GoalStatus, ThreadGoal } from "./types.ts";
 
 export {
@@ -18,6 +18,7 @@ export type GoalTransitionRequest =
       nextGoal: ThreadGoal;
       source: GoalEntrySource;
     }
+  | { kind: "edit_objective"; objective: string }
   | { kind: "clear"; source: GoalEntrySource }
   | { kind: "abort_pause" }
   | { kind: "resume_active" }
@@ -302,6 +303,26 @@ export function planGoalTransition(
   request: GoalTransitionRequest,
 ): GoalTransitionPlan {
   switch (request.kind) {
+    case "edit_objective": {
+      requireCurrentGoal(current, request.kind);
+      const error = validateObjective(request.objective);
+      if (error) throw transitionInvariantError(request.kind, error);
+      const objective = request.objective.trim();
+      const changed = current.objective !== objective;
+      const nextGoal = cloneGoal(current);
+      if (changed) {
+        nextGoal.objective = objective;
+        nextGoal.updatedAt = unixSeconds();
+      }
+      return {
+        persist: changed ? "set" : "skip",
+        nextGoal,
+        source: "command",
+        beforePersist: [],
+        afterPersist: [],
+      };
+    }
+
     case "clear":
       return {
         persist: "clear",

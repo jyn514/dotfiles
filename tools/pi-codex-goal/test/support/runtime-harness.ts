@@ -96,6 +96,8 @@ export function sessionShutdownEvent(
 }
 
 export function createRuntimeHarness(options: {
+  editor?: ExtensionCommandContext["ui"]["editor"];
+  hasUI?: boolean;
   idle?: boolean;
   pendingMessages?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
@@ -118,6 +120,7 @@ export function createRuntimeHarness(options: {
     onError?: (error: Error) => void;
   }> = [];
   const footerStatuses: Array<string | undefined> = [];
+  const notifications: string[] = [];
   const runtime = {
     abortCount: 0,
     idle: options.idle ?? true,
@@ -264,14 +267,14 @@ export function createRuntimeHarness(options: {
     custom: async () => {
       throw new Error("custom UI is not implemented in this test harness.");
     },
-    editor: async () => undefined,
+    editor: options.editor ?? (async () => undefined),
     getAllThemes: () => [],
     getEditorComponent: () => undefined,
     getEditorText: () => "",
     getTheme: () => undefined,
     getToolsExpanded: () => false,
     input: async () => undefined,
-    notify() {},
+    notify(message) { notifications.push(message); },
     onTerminalInput: () => () => {},
     pasteToEditor() {},
     select: async () => undefined,
@@ -321,7 +324,7 @@ export function createRuntimeHarness(options: {
     getContextUsage: () => runtime.contextUsage,
     getSystemPrompt: () => "",
     getSystemPromptOptions: () => ({ cwd: ctx.cwd }),
-    hasUI: true,
+    hasUI: options.hasUI ?? true,
     compact(options) {
       const call: (typeof compactCalls)[number] = {};
       if (options?.customInstructions !== undefined) {
@@ -420,6 +423,7 @@ export function createRuntimeHarness(options: {
     appendMessage,
     compactCalls,
     footerStatuses,
+    notifications,
     emit,
     entries,
     runCommand,

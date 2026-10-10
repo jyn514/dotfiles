@@ -47,6 +47,9 @@ function createHarness() {
     clearGoal() {
       goal = null;
     },
+    editGoalObjective() {
+      throw new Error("Use the runtime harness for objective edit tests.");
+    },
     cancelProviderLimitAutoResume() {},
     needsHostOverflowUserReset: () => false,
     resumeGoalWithContinuation(goalId: string) {
@@ -66,6 +69,7 @@ function createHarness() {
         notifications.push(message);
       },
       confirm: async () => true,
+      editor: async () => undefined,
       setStatus: () => {},
     },
   };
@@ -110,7 +114,7 @@ test("/goal objective creates the goal and starts a hidden follow-up turn", asyn
   assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
 });
 
-test("/goal completions include resume cancel", () => {
+test("/goal completions include edit and resume cancel", () => {
   const harness = createHarness();
   let getArgumentCompletions: ((argumentPrefix: string) => unknown) | undefined;
   const pi: GoalCommandPi = {
@@ -122,6 +126,9 @@ test("/goal completions include resume cancel", () => {
 
   registerGoalCommand(pi, harness.host);
 
+  assert.deepEqual(getArgumentCompletions?.("ed"), [
+    { value: "edit", label: "edit", description: "goal edit" },
+  ]);
   assert.deepEqual(getArgumentCompletions?.("resume c"), [
     {
       value: "resume cancel",
@@ -205,6 +212,7 @@ test("/goal objective after overflow recovery sends a custom start turn", async 
   const harness = createHarness();
   let needsUserReset = true;
   const host: CommandHost = {
+    ...harness.host,
     getGoal: () => harness.goal,
     setGoal(nextGoal: ThreadGoal) {
       harness.setGoal(nextGoal);
@@ -286,6 +294,7 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
 test("/goal resume restarts an active goal after host overflow recovery", async () => {
   const harness = createHarness();
   const host: CommandHost = {
+    ...harness.host,
     getGoal: () => harness.goal,
     setGoal(nextGoal: ThreadGoal) {
       harness.setGoal(nextGoal);

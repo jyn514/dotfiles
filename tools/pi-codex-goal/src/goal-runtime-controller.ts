@@ -20,7 +20,7 @@ import {
   resetRecoveryMachine,
   setRecoveryPausedAttention,
 } from "./recovery-machine.ts";
-import { goalWithLiveUsage, updateGoalStatus } from "./state.ts";
+import { goalWithLiveUsage, updateGoalStatus, validateObjective } from "./state.ts";
 import { registerGoalTools } from "./tools.ts";
 import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
@@ -29,6 +29,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   needsHostOverflowUserReset(): boolean;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
+  editGoalObjective(goalId: string, objective: string, ctx: StatusContext): GoalResult;
   updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
@@ -211,6 +212,21 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
         runtimeState.completionGoalId = nextGoal.goalId;
       }
     },
+    editGoalObjective(goalId, objective, ctx) {
+      const current = stateController.getGoal();
+      if (current?.goalId !== goalId) {
+        return { ok: false, message: "Goal changed while editing; edit the current goal instead.", goal: current };
+      }
+      const error = validateObjective(objective);
+      if (error) return { ok: false, message: error, goal: current };
+      const changed = current.objective !== objective.trim();
+      stateController.applyGoalTransition({ kind: "edit_objective", objective }, ctx);
+      return {
+        ok: true,
+        message: changed ? "Goal objective updated." : "Goal unchanged.",
+        goal: stateController.getGoal(),
+      };
+    },
     clearGoal(source, ctx) {
       providerLimitAutoResume.clear();
       stateController.applyGoalTransition({ kind: "clear", source }, ctx);
@@ -237,6 +253,7 @@ export function registerGoalRuntimeController(pi: ExtensionAPI): void {
     needsHostOverflowUserReset: controller.needsHostOverflowUserReset.bind(controller),
     setGoal: controller.setGoal.bind(controller),
     clearGoal: controller.clearGoal.bind(controller),
+    editGoalObjective: controller.editGoalObjective.bind(controller),
     cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume.bind(controller),
     resumeGoalWithContinuation: controller.resumeGoalWithContinuation.bind(controller),
   });

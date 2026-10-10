@@ -31,6 +31,13 @@ The template follows the goal-writing practices in OpenAI's [Codex follow-goals 
 
 `/goal` with no arguments reports the current objective, status, token budget, token usage, and elapsed active time. A plain `/goal <objective>` starts a new unlimited goal or replaces the current one after confirmation. `/goal copy` copies the objective for active, paused, blocked, budget-limited, and completed goals.
 
+`/goal edit` opens a multiline editor prefilled with the current objective in interactive and supported RPC clients.
+Saving changes only the objective and its update timestamp; it preserves the goal ID, usage, budget, status, and any blocked reason.
+The revised objective reaches subsequent model turns without interrupting a running turn or starting or resuming work.
+Completed goals remain completed.
+Canceling or saving unchanged text leaves the goal untouched; saving after the goal was cleared or replaced discards the edit.
+To start different work rather than refine the existing objective, use `/goal <objective>`.
+
 Objectives are limited to 8000 Unicode characters. Token budgets are set through the model tool; `/goal --tokens` is not a budget option.
 
 ## Model tools

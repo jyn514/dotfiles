@@ -31,6 +31,7 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 | `/goal resume` | Continue a paused or blocked goal. |
 | `/goal resume cancel` | Cancel a scheduled provider-limit retry. |
 | `/goal copy` | Copy the objective to the system clipboard. |
+| `/goal edit` | Edit the objective without resetting or resuming the goal. |
 | `/goal clear` | Remove the current goal. |
 
 Press Esc to stop the current assistant turn and pause its active goal.

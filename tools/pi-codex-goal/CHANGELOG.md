@@ -9,6 +9,7 @@
 
 ## 0.6.0 - 2026-10-01
 
+- Add `/goal edit` with a prefilled multiline editor; preserve goal identity, usage, budget, and status, and deliver revisions to later model turns without starting work.
 - Raise the documented supported floor and exact development Pi cohort to 1.0.0 with host TypeBox 1.3.27; preserve optional host-owned runtime peers.
 - Refresh shared qualification to immutable helper f2a480f00d45cdbd8595090b79aee107c4d88098; qualify ordinary standalone source and native SDK/Git/packed CLI lifecycle locally without model credentials.
 - Always qualify official Pi 1.0.0 in CI; record older maintained forks as unattempted rather than requiring obsolete fork-only APIs. Remove dropped-fork test stubs.

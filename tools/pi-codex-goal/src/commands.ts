@@ -2,14 +2,15 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { copyTextToClipboard, type ClipboardCopyResult } from "./clipboard.ts";
 import { formatGoalSummary } from "./format.ts";
-import { compactContinuationPrompt, continuationPrompt } from "./prompts.ts";
+import { compactContinuationPrompt, continuationPrompt, objectiveEditPrompt } from "./prompts.ts";
 import { replaceGoal, updateGoalStatus } from "./state.ts";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
 
 export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
+  editGoalObjective(goalId: string, objective: string, ctx: GoalCommandContext): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: GoalCommandContext): void;
   needsHostOverflowUserReset(): boolean;
   resumeGoalWithContinuation(
@@ -19,7 +20,7 @@ export interface CommandHost {
   ): { ok: boolean; message: string; goal: ThreadGoal | null };
 }
 
-const COMMANDS = ["pause", "resume", "resume cancel", "clear", "copy"] as const;
+const COMMANDS = ["pause", "resume", "resume cancel", "clear", "copy", "edit"] as const;
 
 type CopyText = (text: string) => Promise<ClipboardCopyResult>;
 
@@ -27,7 +28,7 @@ export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage"
 
 export interface GoalCommandContext {
   hasUI: boolean;
-  ui: Pick<ExtensionCommandContext["ui"], "confirm" | "notify" | "setStatus">;
+  ui: Pick<ExtensionCommandContext["ui"], "confirm" | "notify" | "setStatus" | "editor">;
 }
 
 function completions(prefix: string) {
@@ -75,6 +76,36 @@ export async function handleGoalCommand(
     }
     host.clearGoal("command", ctx);
     ctx.ui.notify("Goal cleared.");
+    return;
+  }
+
+  if (trimmed === "edit") {
+    const current = host.getGoal();
+    if (!current) {
+      ctx.ui.notify("No goal is set.", "warning");
+      return;
+    }
+    if (!ctx.hasUI) {
+      ctx.ui.notify("Editing a goal requires an interactive UI.", "error");
+      return;
+    }
+    const objective = await ctx.ui.editor("Edit goal objective", current.objective);
+    if (objective === undefined) {
+      ctx.ui.notify("Goal unchanged.");
+      return;
+    }
+    const latest = host.getGoal();
+    const result = host.editGoalObjective(current.goalId, objective, ctx);
+    if (result.ok && result.goal && result.goal.objective !== latest?.objective) {
+      // Record the revision for subsequent turns without starting or resuming work.
+      pi.sendMessage({
+        customType: CUSTOM_ENTRY_TYPE,
+        content: objectiveEditPrompt(result.goal),
+        display: false,
+        details: { kind: "objective_edit", goalId: result.goal.goalId },
+      }, { triggerTurn: false });
+    }
+    ctx.ui.notify(result.message, result.ok ? undefined : "warning");
     return;
   }
 

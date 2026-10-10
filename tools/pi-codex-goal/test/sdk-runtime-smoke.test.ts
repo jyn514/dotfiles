@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test, type TestContext } from "node:test";
 
 import {
   createAssistantMessageEventStream,
@@ -307,3 +310,249 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
     session.dispose();
   }
 });
+
+const SDK_EDIT_TIMEOUT_MS = 5_000;
+
+async function withinSdkEditTest<T>(operation: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out: ${label}`)), SDK_EDIT_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+async function createSdkEditSession(t: TestContext, edit: (prefill: string | undefined) => string | undefined) {
+  const root = mkdtempSync(join(tmpdir(), "goal-edit-sdk-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const modelRuntime = await ModelRuntime.create({
+    allowModelNetwork: false,
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+  });
+  const loader = new DefaultResourceLoader({
+    cwd: root,
+    agentDir: root,
+    settingsManager,
+    noContextFiles: true,
+    noExtensions: true,
+    extensionFactories: [goalExtension],
+  });
+  await loader.reload();
+  modelRuntime.registerProvider("sdk-smoke", { apiKey: "test" });
+  const { session } = await createAgentSession({
+    cwd: root,
+    agentDir: root,
+    model: {
+      provider: "sdk-smoke", id: "edit", name: "SDK Edit Smoke",
+      api: "openai-completions", baseUrl: "http://localhost", reasoning: false,
+      input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_000_000, maxTokens: 1_000,
+    },
+    modelRuntime,
+    noTools: "builtin",
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(root),
+    settingsManager,
+  });
+  t.after(() => session.dispose());
+  const runner = session.extensionRunner;
+  runner.setUIContext({
+    ...runner.createCommandContext().ui,
+    confirm: async () => true,
+    editor: async (_title, prefill) => edit(prefill),
+  }, "tui");
+  const createGoal = runner.getToolDefinition("create_goal");
+  assert.ok(createGoal);
+  await createGoal.execute("create", { objective: "original objective", token_budget: 500_000 },
+    undefined, undefined, runner.createToolContext("create", undefined));
+  const command = runner.getCommand("goal");
+  assert.ok(command);
+  const runCommand = (args: string) => withinSdkEditTest(Promise.resolve(command.handler(args, runner.createCommandContext())), `/goal ${args}`);
+  await runCommand("pause");
+  return {
+    session,
+    runCommand,
+    goal: () => reconstructGoal(session.sessionManager.getBranch()).goal,
+  };
+}
+
+function heldSdkEditResponse(model: Parameters<StreamFunction>[0], signal: AbortSignal | undefined) {
+  assert.ok(signal, "native provider requests must expose their abort signal");
+  const stream = createAssistantMessageEventStream();
+  let finished: Promise<void> | undefined;
+  const finish = () => finished ??= (async () => {
+    for await (const event of assistantResponse(model, 7, "Inspected")) stream.push(event);
+    stream.end();
+  })();
+  return { stream, signal, finish };
+}
+
+function sdkEditText(messages: Parameters<StreamFunction>[1]["messages"]): string[] {
+  return messages.flatMap((message) => typeof message.content === "string" ? [message.content] :
+    message.content.map((part) => "text" in part ? part.text : ""));
+}
+
+test("SDK objective edit while idle preserves status and reaches the next explicit request", { timeout: 10_000 }, async (t) => {
+  const harness = await createSdkEditSession(t, (prefill) => {
+    assert.equal(prefill, "original objective");
+    return "refined idle objective";
+  });
+  const { session } = harness;
+  try {
+    const before = harness.goal();
+    assert.ok(before);
+    const requests: string[] = [];
+    session.agent.streamFunction = (model, context) => {
+      requests.push(JSON.stringify(context.messages));
+      if (requests.length > 1) {
+        void harness.runCommand("clear");
+        session.agent.abort();
+      }
+      return assistantResponse(model, 7, "Inspected");
+    };
+    await harness.runCommand("edit");
+    assert.equal(requests.length, 0, "idle edits must not start a turn");
+    const edited = harness.goal();
+    assert.deepEqual(edited, { ...before, objective: "refined idle objective", updatedAt: edited?.updatedAt });
+    await withinSdkEditTest(session.prompt("Inspect without resuming"), "inspection after idle edit");
+    await withinSdkEditTest(session.waitForIdle(), "settlement after idle edit");
+    assert.equal(requests.length, 1);
+    assert.match(requests[0]!, /refined idle objective/);
+    assert.equal(harness.goal()?.status, "paused");
+  } finally {
+    session.dispose();
+  }
+});
+
+test("SDK objective edit during a request does not abort it or queue another request", { timeout: 10_000 }, async (t) => {
+  const objective = "refined streaming objective";
+  const harness = await createSdkEditSession(t, () => objective);
+  const { session } = harness;
+  const started = Promise.withResolvers<ReturnType<typeof heldSdkEditResponse>>();
+  let held: ReturnType<typeof heldSdkEditResponse> | undefined;
+  const requests: string[] = [];
+  let phase: "hold" | "inspect-revision" = "hold";
+  session.agent.streamFunction = (model, context, options) => {
+    requests.push(JSON.stringify(context.messages));
+    if (phase === "hold" && !held) {
+      held = heldSdkEditResponse(model, options?.signal);
+      started.resolve(held);
+      return held.stream;
+    }
+    if (phase === "hold" || requests.length > 2) {
+      void harness.runCommand("clear");
+      session.agent.abort();
+    }
+    return assistantResponse(model, 7, "Inspected");
+  };
+  try {
+    const before = harness.goal();
+    assert.ok(before);
+    const prompt = session.prompt("Inspect without resuming");
+    const request = await withinSdkEditTest(Promise.race([
+      started.promise,
+      prompt.then(() => { throw new Error("Inspection ended before the provider request started"); }),
+    ]), "held provider request");
+    assert.equal(request.signal.aborted, false);
+    await harness.runCommand("edit");
+    assert.equal(request.signal.aborted, false, "editing must not abort the in-flight request");
+    assert.equal(requests.length, 1);
+    await request.finish();
+    await withinSdkEditTest(prompt, "held request completion");
+    await withinSdkEditTest(session.waitForIdle(), "settlement after streaming edit");
+    assert.equal(request.signal.aborted, false, "editing must not defer an abort until settlement");
+    assert.equal(requests.length, 1, "editing must not queue another request");
+    phase = "inspect-revision";
+    await withinSdkEditTest(session.prompt("Inspect the revision without resuming"), "inspection after streaming edit");
+    assert.equal(requests.length, 2);
+    assert.doesNotMatch(requests[0]!, /refined streaming objective/);
+    assert.match(requests.at(-1)!, /refined streaming objective/);
+    const edited = harness.goal();
+    assert.deepEqual(edited, { ...before, objective, updatedAt: edited?.updatedAt });
+  } finally {
+    // Release the fake provider even when an assertion fails before normal completion.
+    await held?.finish();
+    session.dispose();
+  }
+});
+
+for (const [label, text, expectedObjective] of [
+  ["saved", "refined queued objective", "refined queued objective"],
+  ["canceled", undefined, "queued original objective"],
+  ["unchanged", "  queued original objective  ", "queued original objective"],
+  ["empty", " \n ", "queued original objective"],
+  ["too long", "😀".repeat(8001), "queued original objective"],
+] as const) {
+  test(`SDK objective edit ${label} preserves and delivers the pending command start`, { timeout: 10_000 }, async (t) => {
+    const harness = await createSdkEditSession(t, (prefill) => {
+      assert.equal(prefill, "queued original objective");
+      return text;
+    });
+    const { session } = harness;
+    const started = Promise.withResolvers<ReturnType<typeof heldSdkEditResponse>>();
+    let held: ReturnType<typeof heldSdkEditResponse> | undefined;
+    let phase: "hold-inspection" | "start-goal" | "report-completion" = "hold-inspection";
+    let requests = 0;
+    const starts: string[] = [];
+    session.agent.streamFunction = (model, context, options) => {
+      requests += 1;
+      if (requests > 3) {
+        // Clear disposable goal work synchronously: this fake provider does not
+        // honor aborts, and immediate continuations can starve timeout timers.
+        void harness.runCommand("clear");
+        session.agent.abort();
+        return assistantResponse(model, 7, "Unexpected extra request");
+      }
+      if (phase === "hold-inspection" && !held) {
+        held = heldSdkEditResponse(model, options?.signal);
+        started.resolve(held);
+        return held.stream;
+      }
+      if (phase === "start-goal") {
+        const start = sdkEditText(context.messages).find((part) =>
+          part.startsWith("<pi_goal_continuation") && part.includes("<untrusted_objective>"));
+        if (start) starts.push(start);
+        phase = "report-completion";
+        return assistantResponse(model, 7, [{ type: "toolCall", id: "finish-edited", name: "update_goal",
+          arguments: { status: "complete" } }]);
+      }
+      if (phase === "hold-inspection") {
+        void harness.runCommand("clear");
+        session.agent.abort();
+      }
+      return assistantResponse(model, 7, "Done");
+    };
+    try {
+      const prompt = session.prompt("Inspect without resuming");
+      const request = await withinSdkEditTest(Promise.race([
+        started.promise,
+        prompt.then(() => { throw new Error("Inspection ended before the provider request started"); }),
+      ]), "provider request before queuing goal");
+      await harness.runCommand("queued original objective");
+      const queued = harness.goal();
+      assert.ok(queued);
+      await harness.runCommand("edit");
+      assert.equal(request.signal.aborted, false, "editing must not abort the request ahead of the queued start");
+      assert.equal(requests, 1, "editing must not start work before the held request finishes");
+      const edited = harness.goal();
+      assert.deepEqual(edited, { ...queued, objective: expectedObjective, updatedAt: edited?.updatedAt });
+      phase = "start-goal";
+      await request.finish();
+      await withinSdkEditTest(prompt, "completion of request ahead of queued start");
+      await withinSdkEditTest(session.waitForIdle(), "queued goal completion");
+      assert.equal(requests, 3, "only the held inspection, queued start, and completion report may run");
+      assert.equal(starts.length, 1, "the original pending start must reach the provider exactly once");
+      assert.ok(starts[0]?.includes(`<untrusted_objective>\n${expectedObjective}\n</untrusted_objective>`));
+      assert.equal(harness.goal()?.goalId, queued.goalId);
+      assert.equal(harness.goal()?.status, "complete");
+    } finally {
+      await held?.finish();
+      session.dispose();
+    }
+  });
+}

@@ -7,6 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { continuationGoalIdFromPrompt } from "./prompts.ts";
+import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { applyQueuedGoalProviderContextRewrites, extensionQueuedGoalWorkMessageId } from "./queued-goal-work.ts";
 import {
   isActiveGoalQueuedDetails,
@@ -108,6 +109,13 @@ export function createInputContextEventHandlers(
     }) satisfies ExtensionHandler<BeforeAgentStartEvent, undefined>,
 
     onMessageStart: (async (event, _ctx) => {
+      if (event.message.role === "custom" && event.message.customType === CUSTOM_ENTRY_TYPE) {
+        const details = event.message.details;
+        if (details && typeof details === "object" && "kind" in details && details.kind === "objective_edit") {
+          // A non-triggering revision is context, not runnable work. Keep any pending continuation.
+          return;
+        }
+      }
       if (event.message.role === "user") {
         stateController.persistHostOverflowUserReset(false);
       }
