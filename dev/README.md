@@ -88,6 +88,10 @@ Run `dev/test` for the suite, including `tests/pi`, with the prerequisites above
 It checks for Bun on PATH before running any suite and stops with installation
 guidance if Bun is missing.
 It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.
+Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/`
+and `tools/`. Other suites need an existing discovery route or explicit dispatch
+in `dev/test`, by default or through a documented opt-in mode. Check that the
+intended cases execute through that route, not only through a focused command.
 For focused tests and ad-hoc Pi probes, including `--help` checks, use
 `dev/test-environment COMMAND [ARGS...]`. For example:
 
@@ -99,8 +103,10 @@ The wrapper requires Python 3 and creates a private HOME and Pi/XDG state
 directories. It removes them after the child exits normally, nonzero, or by
 forwarded signal, preserving stdin, stdout, stderr, and exit status. This is
 environment isolation, not a filesystem sandbox: commands can still write
-explicit paths outside HOME. The wrapper clears inherited `JJ_CONFIG` so Jujutsu
-loads user configuration from the private HOME/XDG directories instead.
+explicit paths outside HOME. Check generated-source freshness with check-only
+commands or a disposable checkout, not an updater targeting the working copy.
+The wrapper clears inherited `JJ_CONFIG` so Jujutsu loads user configuration from
+the private HOME/XDG directories instead.
 
 The sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
 permission to create local TCP and Unix sockets. If an execution sandbox denies
