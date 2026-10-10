@@ -153,6 +153,16 @@ describe("searchSessions (integration)", () => {
 	it("accepts maxResults=undefined (uses default)", async () => {
 		const r = await searchSessions({ query: "vault-overseer" });
 		assert.ok(r.hits.length >= 1);
+		assert.equal(r.sessionsAtLimit, 0);
+	});
+
+	it("rejects invalid per-session limits instead of coercing them", async () => {
+		for (const value of [0, -1, 0.5, NaN, Infinity, 1001, "2", null]) {
+			await assert.rejects(
+				() => searchSessions({ query: "vault-overseer", maxResultsPerSession: value as number }),
+				/maxResultsPerSession must be an integer in \[1, 1000\]/,
+			);
+		}
 	});
 
 	it("skips a symlinked subdirectory that escapes the sessions root", async () => {
@@ -418,6 +428,78 @@ describe("automatic search filtering", () => {
 		const sameFile = await searchSessions({ query: "needle", until: "2026-04-23T23:59:59Z" });
 		assert.equal(sameFile.hits.length, 2);
 		assert.equal(sameFile.duplicateHitsSuppressed, 0);
+	});
+
+	it("spreads retained hits across files while preserving the total limit and uncapped behavior", async () => {
+		writeSession(["first", "second", "third", "fourth"].map((name) => record(`${name} needle`, name)));
+		writeSession(["fifth", "sixth", "seventh"].map((name) => record(`${name} needle`, name)), "session-2", "24");
+		for (const [maxResults, maxResultsPerSession, count, sessionsAtLimit, truncated] of [
+			[10, 2, 4, 2, false],
+			[10, undefined, 7, 0, false],
+			[10, 1000, 7, 0, false],
+			[10, 1, 2, 2, false],
+			[3, 2, 3, 1, true],
+			[2, 2, 2, 1, true],
+			[1, 2, 1, 0, true],
+		] as const) {
+			const result = await searchSessions({ query: "needle", maxResults, maxResultsPerSession });
+			assert.equal(result.hits.length, count);
+			assert.equal(result.sessionsAtLimit, sessionsAtLimit);
+			assert.equal(result.truncated, truncated);
+			assert.equal(result.incompleteCoverage, false, "intentional limits are separate from skipped or cancelled work");
+			if (maxResultsPerSession === 2 && maxResults === 10) {
+				assert.deepEqual(result.hits.map((hit) => hit.snippet).sort(),
+					["first needle", "second needle", "fifth needle", "sixth needle"].sort());
+				assert.equal(result.scannedFiles, 2);
+				assert.match(formatHitsForCommand(result), /Per-session limit reached in 2 files/);
+			}
+		}
+	});
+
+	it("counts only retained hits toward each file's limit after scope and copied-record filtering", async () => {
+		const copied = record("copied needle");
+		const otherCopy = record("another copied needle", "other-copy");
+		writeSession([
+			record(envelope, "envelope"), record("assistant needle", "assistant", "assistant"),
+			record("not a match", "irrelevant"), copied, otherCopy,
+		]);
+		writeSession([copied, otherCopy, record("later needle", "later"), record("last needle", "last")], "session-2", "24");
+		const result = await searchSessions({ query: "needle", role: "user", maxResultsPerSession: 2 });
+		assert.deepEqual(result.hits.map((hit) => hit.snippet).sort(),
+			["copied needle", "another copied needle", "later needle", "last needle"].sort());
+		assert.equal(result.sessionsAtLimit, 2);
+		assert.equal(result.duplicateHitsSuppressed, 2);
+		assert.equal(result.excludedGoalContinuations, 1);
+		assert.equal(result.truncated, false);
+	});
+
+	it("shares the per-file cap between assistant text and tool-call hits", async () => {
+		writeSession([
+			record([
+				{ type: "text", text: "first needle" },
+				{ type: "toolCall", name: "needle_tool", arguments: {} },
+			], "combined", "assistant"),
+			record("second needle", "second"),
+		]);
+		writeSession([record("third needle", "third")], "session-2", "24");
+		const result = await searchSessions({ query: "needle", includeToolCalls: true, maxResultsPerSession: 1 });
+		assert.deepEqual(result.hits.map((hit) => hit.snippet).sort(), ["first needle", "third needle"]);
+		assert.equal(result.sessionsAtLimit, 2);
+		assert.equal(result.truncated, false);
+	});
+
+	it("limits each file independently even when session headers have the same ID", async () => {
+		const first = record("first needle", "first");
+		const second = record("second needle", "second");
+		writeSession([first]);
+		const otherFile = writeSession([], "session-2", "24");
+		writeFileSync(otherFile, [
+			{ type: "session", id: "session-1", cwd: "/home/tester/project" }, second,
+		].map((r) => JSON.stringify(r)).join("\n") + "\n");
+		const result = await searchSessions({ query: "needle", maxResultsPerSession: 1 });
+		assert.equal(result.hits.length, 2);
+		assert.equal(new Set(result.hits.map((hit) => hit.sessionFile)).size, 2);
+		assert.equal(result.sessionsAtLimit, 2, "reaching the cap does not assert that additional matches exist");
 	});
 
 	it("applies cwd, session-date and current-session scope before deduplication", async () => {

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional `maxResultsPerSession` for `search_sessions`, limiting retained hits per session file before moving to the next file.
+  Omitted means no per-session limit; the existing total `maxResults` cap remains unchanged.
+  Results report `sessionsAtLimit` separately from total-limit truncation and incomplete coverage.
 - Read a session by its exact header `sessionId`, without depending on a host-
   or sandbox-specific path. Provide exactly one of `sessionId` or `sessionFile`.
   Lookup stays within the configured root, uses bounded first-record headers,

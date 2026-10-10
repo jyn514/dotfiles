@@ -53,6 +53,13 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 		assert.match(readGuidance, /sessionFile unchanged.*modest maxMessages/);
 		assert.ok(Type.IsObject(search.parameters));
 		assert.ok(Type.IsObject(read.parameters));
+		const perSessionLimit = search.parameters.properties.maxResultsPerSession;
+		assert.ok(Type.IsInteger(perSessionLimit));
+		assert.ok("minimum" in perSessionLimit && "maximum" in perSessionLimit);
+		assert.equal(perSessionLimit.minimum, 1);
+		assert.equal(perSessionLimit.maximum, 1000);
+		assert.match(parameterDescription(perSessionLimit), /Omit for no per-session limit/);
+		assert.match(parameterDescription(perSessionLimit), /first-encountered matches/);
 		assert.match(parameterDescription(read.parameters.properties.sessionId), /Exact session header ID/);
 		const originalRoot = process.env.PI_SESSION_SEARCH_ROOT;
 		process.env.PI_SESSION_SEARCH_ROOT = join(sandbox, "sessions");
@@ -64,6 +71,29 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 				undefined, undefined, {} as Parameters<typeof read.execute>[4]);
 			assert.notEqual(result.isError, true, JSON.stringify(result.content));
 			assert.match(JSON.stringify(result.content), /native ID reader needle/);
+			source.appendMessage({ role: "user", content: "native ID reader needle again", timestamp: 2 });
+			const other = SessionManager.create(sandbox, join(sandbox, "sessions", "--native--"));
+			other.appendMessage({ role: "user", content: "native ID reader needle elsewhere", timestamp: 3 });
+			const capped = await search.execute("native-capped-search", {
+				query: "native ID reader needle", maxResultsPerSession: 1,
+			}, undefined, undefined, {} as Parameters<typeof search.execute>[4]);
+			assert.notEqual(capped.isError, true, JSON.stringify(capped.content));
+			const payload = JSON.parse(capped.content[0].type === "text" ? capped.content[0].text : "") as {
+				count: number; sessionsAtLimit: number; truncated: boolean; incompleteCoverage: boolean;
+				hits: Array<{ sessionFile: string; timestamp: string }>;
+			};
+			assert.equal(payload.count, 2, "the loaded tool forwards the cap and still searches the next session");
+			assert.equal(payload.sessionsAtLimit, 2);
+			assert.equal(payload.truncated, false);
+			assert.equal(payload.incompleteCoverage, false);
+			assert.equal(new Set(payload.hits.map((hit) => hit.sessionFile)).size, 2);
+			assert.ok(capped.details && typeof capped.details === "object" && "sessionsAtLimit" in capped.details);
+			assert.equal(capped.details.sessionsAtLimit, payload.sessionsAtLimit);
+			for (const hit of payload.hits) {
+				const window = await read.execute("native-capped-read", { sessionFile: hit.sessionFile, aroundTimestamp: hit.timestamp },
+					undefined, undefined, {} as Parameters<typeof read.execute>[4]);
+				assert.match(JSON.stringify(window.content), /native ID reader needle/);
+			}
 		} finally {
 			if (originalRoot === undefined) delete process.env.PI_SESSION_SEARCH_ROOT;
 			else process.env.PI_SESSION_SEARCH_ROOT = originalRoot;

@@ -94,6 +94,27 @@ Just mention prior sessions in plain English:
 The model picks up the cue, calls `search_sessions`, and (optionally) follows
 up with `read_session` for the most promising hit.
 
+To compare several sessions without letting one long conversation fill the response, set `maxResultsPerSession`:
+
+```json
+{"query": "diff-check", "role": "assistant", "maxResults": 20, "maxResultsPerSession": 2}
+```
+
+The option accepts integers in `[1, 1000]` and has no per-session limit when omitted.
+It counts retained hits per session file, after scope filtering and copied-record suppression.
+Once a file reaches the cap, search stops reading that file and moves to the next; `maxResults` still limits the total.
+Matches are retained in encounter order and only the retained hits are sorted newest-first.
+This is not a selection of the newest or most relevant matches in each session.
+Use `read_session` to inspect promising hits in context.
+
+Results distinguish three kinds of limits:
+
+- `sessionsAtLimit` counts session files that reached the per-session cap, including when both caps coincide or the last record reaches it.
+  Remaining records in those files were not searched; the count does not imply that additional matches exist.
+- `truncated` means the total hit limit stopped the search.
+- `incompleteCoverage` means records or files were skipped, or the search was cancelled.
+  Intentional hit limits do not set it.
+
 ### Drive it yourself
 
 ```
@@ -131,6 +152,7 @@ the original session. Assistant text and tool-call hits remain separate.
 Results report `excludedGoalContinuations` and `duplicateHitsSuppressed`; the
 command shows these counts when nonzero. Counts cover only scanned records:
 search still stops at `maxResults` retained hits, not after scanning the archive.
+With `maxResultsPerSession`, counters exclude the unsearched remainder of capped files.
 Neither filter marks coverage incomplete. Identity tracking stores at most
 `maxResults` fingerprints of complete bounded messages, not transcript contents.
 `read_session` remains unfiltered so you can inspect the actual surrounding
@@ -161,8 +183,9 @@ are `message` entries (and a few other types).
 `search_sessions` walks that directory, streams each JSONL file, parses
 `message` entries, extracts text content (skipping images and, by default, raw
 tool args), and matches against your query. It retains only hits and stops at
-`maxResults` or cancellation. `incompleteCoverage` means records or files were
-skipped, or the search was cancelled; `truncated` separately marks the hit limit.
+`maxResults` or cancellation.
+The optional `maxResultsPerSession` skips each file's remaining records once its retained-hit cap is reached.
+See [Let the LLM drive](#let-the-llm-drive) for result-limit and coverage fields.
 Skipped-record counts cover only the portion actually scanned.
 
 For `sessionId`, `read_session` scans the same encoded-cwd directories as search
@@ -218,6 +241,7 @@ exfiltration primitive if the active LLM is operating on untrusted input.
 - **`maxResults` is bounded.** The schema enforces `[1, 1000]`; the runtime
   rejects explicit invalid values (including `0`, negative, NaN, Infinity).
   The default is 20.
+  The optional `maxResultsPerSession` uses the same range and runtime validation without raising the total cap.
 - **Regex flag stripping.** The `/.../flags` form respects user flags
   (including case-sensitivity) **except** `g` and `y`, which are stripped
   because they break match-position bookkeeping (`g` removes `.index`, `y`

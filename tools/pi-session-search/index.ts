@@ -113,6 +113,10 @@ async function* sessionRecords(
  */
 export function validateMaxResults(raw: unknown): number {
 	if (raw === undefined || raw === null) return DEFAULT_MAX_RESULTS;
+	return validateResultLimit(raw, "maxResults");
+}
+
+function validateResultLimit(raw: unknown, label: string): number {
 	if (
 		typeof raw !== "number" ||
 		!Number.isFinite(raw) ||
@@ -121,7 +125,7 @@ export function validateMaxResults(raw: unknown): number {
 		raw > MAX_RESULTS_HARD_CAP
 	) {
 		throw new Error(
-			`maxResults must be an integer in [1, ${MAX_RESULTS_HARD_CAP}]; got ${String(raw)}`,
+			`${label} must be an integer in [1, ${MAX_RESULTS_HARD_CAP}]; got ${String(raw)}`,
 		);
 	}
 	return raw;
@@ -271,6 +275,7 @@ export interface SearchOptions {
 	role?: "user" | "assistant" | "any";
 	includeToolCalls?: boolean;
 	maxResults?: number;
+	maxResultsPerSession?: number;
 	excludeSessionId?: string;
 	snippetBefore?: number;
 	snippetAfter?: number;
@@ -282,6 +287,7 @@ export interface SearchResult {
 	scannedFiles: number;
 	skippedFiles: number;
 	truncated: boolean;
+	sessionsAtLimit: number;
 	skippedRecords: number;
 	incompleteCoverage: boolean;
 	excludedGoalContinuations: number;
@@ -296,6 +302,8 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	const untilMs = parseDateOrThrow(opts.until, "until");
 	const roleFilter = opts.role ?? "any";
 	const max = validateMaxResults(opts.maxResults);
+	const perSessionMax = opts.maxResultsPerSession === undefined
+		? undefined : validateResultLimit(opts.maxResultsPerSession, "maxResultsPerSession");
 	const before = opts.snippetBefore ?? DEFAULT_SNIPPET_BEFORE;
 	const after = opts.snippetAfter ?? DEFAULT_SNIPPET_AFTER;
 
@@ -303,6 +311,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	let scannedFiles = 0;
 	let skippedFiles = 0;
 	let truncated = false;
+	let sessionsAtLimit = 0;
 	let skippedRecords = 0;
 	let excludedGoalContinuations = 0;
 	let duplicateHitsSuppressed = 0;
@@ -324,7 +333,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	try {
 		dirs = await readdir(root, { withFileTypes: true });
 	} catch {
-		return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
+		return { hits, scannedFiles, skippedFiles, truncated, sessionsAtLimit, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 	}
 
 	outer: for (const d of dirs) {
@@ -398,7 +407,8 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 			let headerCwd = sessionCwd;
 			try {
 				let counted = false;
-				for await (const line of sessionRecords(resolvedFile, st.size, maxRecordBytes, opts.signal)) {
+				let fileHits = 0;
+				records: for await (const line of sessionRecords(resolvedFile, st.size, maxRecordBytes, opts.signal)) {
 					if (!counted) {
 						scannedFiles += 1;
 						counted = true;
@@ -471,10 +481,16 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 							role: h.kind,
 							snippet,
 						});
+						fileHits += 1;
+						const atSessionLimit = fileHits === perSessionMax;
+						// Count reached limits even when both limits coincide or this
+						// is the final record. No further matches are implied.
+						if (atSessionLimit) sessionsAtLimit += 1;
 						if (hits.length >= max) {
 							truncated = true;
 							break outer;
 						}
+						if (atSessionLimit) break records;
 					}
 				}
 				if (!counted) scannedFiles += 1;
@@ -494,7 +510,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 		const tb = Date.parse(b.timestamp);
 		return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
 	});
-	return { hits, scannedFiles, skippedFiles, truncated, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
+	return { hits, scannedFiles, skippedFiles, truncated, sessionsAtLimit, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 }
 
 interface WindowEntry {
@@ -709,6 +725,9 @@ export function formatHitsForCommand(result: SearchResult): string {
 		`${result.hits.length} hit${result.hits.length === 1 ? "" : "s"}${result.truncated ? " (truncated)" : ""}, scanned ${result.scannedFiles} files:`,
 	);
 	if (filtering) lines.push(filtering);
+	if (result.sessionsAtLimit) {
+		lines.push(`Per-session limit reached in ${result.sessionsAtLimit} file${result.sessionsAtLimit === 1 ? "" : "s"}; remaining records were not searched.`);
+	}
 	if (warning) lines.push(warning);
 	for (const h of result.hits) {
 		lines.push("");
@@ -808,6 +827,13 @@ export default function (pi: ExtensionAPI) {
 					description: `Maximum number of hits to return. Default ${DEFAULT_MAX_RESULTS}, hard cap ${MAX_RESULTS_HARD_CAP}.`,
 				}),
 			),
+			maxResultsPerSession: Type.Optional(
+				Type.Integer({
+					minimum: 1,
+					maximum: MAX_RESULTS_HARD_CAP,
+					description: "Maximum retained hits per session file. Omit for no per-session limit; use 2–3 to compare sessions. Retains first-encountered matches, then moves to the next file. sessionsAtLimit counts files reaching this cap; truncated marks the total hit limit, and incompleteCoverage marks skipped records/files or cancellation.",
+				}),
+			),
 			includeCurrentSession: Type.Optional(
 				Type.Boolean({ description: "Include the current session in results. Default false." }),
 			),
@@ -831,12 +857,14 @@ export default function (pi: ExtensionAPI) {
 					role: params.role as "user" | "assistant" | "any" | undefined,
 					includeToolCalls: params.includeToolCalls as boolean | undefined,
 					maxResults: params.maxResults as number | undefined,
+					maxResultsPerSession: params.maxResultsPerSession as number | undefined,
 					excludeSessionId,
 					signal,
 				});
 				const details = {
 					count: result.hits.length,
 					truncated: result.truncated,
+					sessionsAtLimit: result.sessionsAtLimit,
 					skippedRecords: result.skippedRecords,
 					excludedGoalContinuations: result.excludedGoalContinuations,
 					duplicateHitsSuppressed: result.duplicateHitsSuppressed,

@@ -340,6 +340,24 @@ console.log("bounded-heap-success");
 		}
 	});
 
+	it("stops processing capped files without counting their unsearched records", async () => {
+		process.env.PI_SESSION_SEARCH_MAX_BYTES = "256";
+		writeRecords([message("first capped-needle"), "x".repeat(257), message("later capped-needle", 1)]);
+		writeFileSync(join(root, "--streaming--", "2026-04-24T06-00-00-000Z_next.jsonl"),
+			[header, message("other capped-needle", 2), "x".repeat(257)].join("\n") + "\n");
+		const capped = await searchSessions({ query: "capped-needle", maxResultsPerSession: 1 });
+		assert.deepEqual(capped.hits.map((hit) => hit.snippet).sort(), ["first capped-needle", "other capped-needle"]);
+		assert.equal(capped.scannedFiles, 2);
+		assert.equal(capped.sessionsAtLimit, 2);
+		assert.equal(capped.skippedRecords, 0, "records after each cap were not processed");
+		assert.equal(capped.incompleteCoverage, false);
+		const uncapped = await searchSessions({ query: "capped-needle" });
+		assert.equal(uncapped.hits.length, 3);
+		assert.equal(uncapped.sessionsAtLimit, 0);
+		assert.equal(uncapped.skippedRecords, 2);
+		assert.equal(uncapped.incompleteCoverage, true);
+	});
+
 	it("includes incomplete-coverage command warnings with and without hits", async () => {
 		writeRecords(["x".repeat(MAX_RECORD_BYTES + 1), message("command-warning-needle")]);
 		const matched = formatHitsForCommand(await searchSessions({ query: "command-warning-needle" }));
