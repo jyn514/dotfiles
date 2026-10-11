@@ -19,6 +19,10 @@ Before writing, identify:
 
 Require a concrete repeated use, second consumer, or hard constraint. Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable routing and constraints in the relevant `AGENTS.md` instead.
 
+Before placing a rule in the skill body, ask whether it must act before this skill loads or on tasks the description excludes.
+Keep such entry conditions and constraints in the relevant always-loaded instructions, and link to their owner from the skill.
+For example, ownership checks also apply to routine commits excluded by `jj-workflow`, and test isolation applies when running existing tests without `design-for-change`.
+
 Use the smallest workflow justified by uncertainty and risk. Give every costly stage an entry condition and stop when simpler evidence settles the task.
 
 ## 2. Declare scope and authority
@@ -87,19 +91,31 @@ Read each changed caller and the target skill’s description together. Confirm 
 
 Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. For a skill claiming general-purpose use, include a positive task outside its originating domain. Check that the procedure works without that domain's unstated vocabulary, data model, or workflow; explain domain-specific examples rather than treating them as prerequisites. The existing positive task can meet this check; add another only when needed. Also trace cases where two requirements interact; verify the instructions produce compatible actions or explicitly resolve the conflict. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
-For paired behavioral trials, fix the comparison question, outcome criteria, historical cut, model, and task inputs before generation; vary only the skill under test. Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them. Judge actual decisions and actions afterward, not just formatting or workflow compliance.
-
-For each variant, report task outcomes alongside token use and elapsed time where available. Include tool and review overhead when they are part of the compared workflow; separate shared experiment setup from execution cost. Assess the added skill against the existing workflow. If costs are unmeasured, report quality observations without claiming efficiency or net benefit; one task does not establish general reliability.
-
-For summarization trials, distinguish incremental replay (previous checkpoint plus subsequent history) from blind reconstruction (preceding raw history without reference summaries or later critique). Blind reconstruction must restore the underlying raw history, not merely delete the previous checkpoint. These are different tasks; do not treat their outputs as a same-input comparison.
+When conducting paired behavioral or summarization trials, read [Behavioral trials](references/behavioral-trials.md) before preparing inputs.
+A textual review does not require a trial and does not establish measured compliance.
 
 ## 7. Validate and tighten
 
-- Confirm every linked path exists and every command matches the repository and installed CLI.
-- Run repository checks for bundled scripts or code.
-- Load the skill through every target harness and inspect discovery or validation warnings.
-- For Pi loader checks, prefer `validate_skill` when available. Confirm the expected name loaded and inspect all diagnostics. This checks the explicit file, not normal discovery precedence or interactive startup. Otherwise, check the installed CLI options and load the skill from a discoverable location in a normal Pi session; inspect startup diagnostics and `/skill:<name>`. Run `/reload` after edits in an active session. If that session is unavailable, report the missing check.
-- Confirm no name collision or precedence rule causes another skill to win discovery in any target harness.
-- Invoke `tighten-docs` after creating or substantially rewriting the skill. Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
+Choose checks according to what changed:
+Apply every relevant category when a change spans several kinds.
 
-Report the created files, validation performed, and any environment-specific limitation. Do not claim the skill loaded successfully from syntax inspection alone.
+- **Body or reference only:** review the changed procedure, constraints, and references.
+  Reuse discovery evidence when the name, frontmatter, installed location, and discovery configuration are unchanged.
+  A body-only edit does not require loading every harness again.
+- **Caller route only:** read the caller and target description together, and trace one task that must route and one nearby task that must not.
+  Check linked paths; a changed route alone does not require reloading an unchanged skill.
+- **Discovery change:** for a new skill or changes to name, frontmatter, installed location, or discovery configuration,
+  load it through every target harness and inspect discovery or validation warnings.
+  Confirm no collision or precedence rule causes another skill to win discovery.
+  When Pi is a target, read [Pi loader checks](references/pi-loader-checks.md) before checking it.
+
+For every change, confirm affected linked paths exist and affected commands match the repository and installed CLI.
+Run repository checks for bundled scripts or code that changed.
+Apply §6's positive, negative, and interaction checks to changed behavior and routes.
+Reload an active session before using its behavior as evidence for edited instructions.
+Invoke `tighten-docs` after creating or substantially rewriting the skill.
+Reject cuts that remove triggers, boundaries, failure modes, rationale, or examples that change decisions.
+
+Report changed files, checks performed, reused evidence, and any environment-specific limitation.
+Distinguish textual review, loader validation, discovery, and observed behavior.
+Do not claim the skill loaded successfully from syntax inspection alone.
