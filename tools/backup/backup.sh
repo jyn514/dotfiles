@@ -76,7 +76,7 @@ backup)
 	fi
 	# Explicit roots (Mica) include notes; the historical exclusion is Documents-only.
 	if [ -z "${BACKUP_ROOT:-}" ]; then
-		set -- --exclude notes/ "$@"
+		set -- --exclude notes/ --exclude .session.vim "$@"
 	fi
 	cd "${BACKUP_ROOT:-$documents}"
 	restic backup --skip-if-unchanged \
