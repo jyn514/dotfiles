@@ -50,6 +50,22 @@ describe("compaction replay", () => {
       ],
     },
     {
+      name: "accepted-evidence-newer-experiment", target: "28049f46",
+      required: [
+        "PASS INTEGRATED PROVISIONAL RESEARCH; NOT ADOPTION",
+        '"bindings": 100775',
+        "target/research/ordinary-gap-parent-acceptance-v1/results.json",
+        "Batch complete, local-only",
+        "target/research/ordinary-gap-followup-v2-complete/",
+        "138 branch/phase/key proofs",
+        "Global namespace and native/public checks remain the next required integration step.",
+        "OwnNEWbatchnamespaceproducer+freshoutputs conditionalnotparentacceptance",
+        "Spawned /ordinary-gap-batch-namespace.",
+        "suggest concrete improvements to /owned/dotfiles/config/pi-agent/pi-extensions/compaction.md",
+      ],
+      excluded: ["ordinary-gap-v2-owning-full-closure-v1-fresh3", "STAT: done", "more characters truncated"],
+    },
+    {
       name: "investigation-only", target: "bc29caa4",
       required: [
         "look at the code, how would you design this?",
@@ -59,10 +75,11 @@ describe("compaction replay", () => {
         "could it be as simple as running on docker-compose or does codex-sandbox still provide value?",
       ],
     },
-  ])("reconstructs source corrections and authority for $name without a model request", ({ name, target, required }) => {
+  ])("reconstructs source corrections and authority for $name without a model request", ({ name, target, required, excluded = [] }) => {
     const { original, prompt } = replayInput(historicalFixture(name));
     expect(original.id).toBe(target);
     for (const text of required) expect(prompt).toContain(text);
+    for (const text of excluded) expect(prompt).not.toContain(text);
     expect(prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
     expect(prompt).not.toContain("<previous-checkpoint>");
     expect(prompt).not.toContain(checkpointText(original));

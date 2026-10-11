@@ -1,8 +1,8 @@
 # Manual compaction replay fixtures
 
-Four cases cover persistent corrections, conditional permission,
-investigation-only authority, paused work, and repeated compaction. Offline tests
-check **input reconstruction only**, never generated replies or semantic scores.
+Five cases cover persistent corrections, conditional permission,
+investigation-only authority, paused work, repeated compaction, and accepted evidence versus newer experiments.
+Offline tests check **input reconstruction only**, never generated replies or semantic scores.
 Passing them does not prove model retention.
 
 ## Use and reconstruction limits
@@ -29,7 +29,8 @@ exports or complete original model inputs:
   and caller status are absent. Synthetic `fixture-retained-suffix` boundaries
   are excluded from replay input and never historical evidence.
 - Header cwd becomes `/owned`; selected `/src/dotfiles` references become
-  `/owned/dotfiles`. No private hostnames, credentials, original home paths,
+  `/owned/dotfiles`, and selected Cocoa receipt roots become `/owned/cocoa`.
+  No private hostnames, credentials, original home paths,
   tool signatures, caller snapshots, or unrelated inventories are retained.
 - Provenance lists session basenames and **entry dates**, which can differ from
   filenames after inheritance. Checklists below are for humans, not reply oracles.
@@ -125,3 +126,48 @@ explicit user quote saying “paused.”
   “implement” authorizes JJ only, not paused replay.
 - [ ] Preserve inherited boundaries when older raw turns are absent; offline
   reconstruction cannot prove a model will do so.
+
+## Accepted evidence versus newer experiments
+
+`accepted-evidence-newer-experiment.jsonl`; target `28049f46`.
+Sources:
+
+- `2026-10-08T12-16-19-448Z_ed87440e-3ee5-4ccc-b4ed-6ea7e8711a8e.jsonl`:
+  October 11, 2026 verification call/result `7d6df789` / `ba80c489`, accepted-baseline notification `8cd7ccab` / `eff1d5ec`,
+  local-batch wait/return `31aabd25` / `88d50317`, and namespace assignment/launch `7302c45d` / `9e9d6a59`.
+  The later worker return `4a89ef6a` is dated **12:30:49 UTC**, after the selected cut.
+- `2026-10-11T12-11-23-772Z_01a12adf-f8fb-7595-88d4-851266184a21.jsonl`:
+  raw user `f61255c5`, **12:13:22 UTC**, requests compaction-instruction suggestions.
+- `2026-10-11T12-15-42-187Z_263638f2-5f5f-4cec-9200-04f94f8e2984.jsonl`:
+  checkpoint `28049f46`, **12:21:20 UTC**, supplies historical objective and accepted/newer-evidence excerpts.
+
+The verification command's machine-local interpreter is replaced with `[interpreter omitted]`.
+The local worker's recorded `finalResponse` is extracted from its callback envelope; its candidate-outline table is omitted.
+The namespace assignment retains the batch, baseline, and ownership excerpts, omitting intervening word-specific holds.
+These reductions keep the pending integration checks visible within SDK tool-result serialization limits.
+Original callback signatures, thinking blocks, caller status, unrelated records, and checkpoint sections are excluded.
+The terminal boundary is synthetic, and the parent chain is rebuilt across the selected source records.
+The real later worker return remains after the checkpoint so reconstruction must exclude it, not reinterpret it as boundary evidence.
+This is not a faithful session export or a test of the omitted dictionary decisions.
+
+Replay with:
+
+```sh
+dev/replay-compaction tests/pi/fixtures/compaction-replay/accepted-evidence-newer-experiment.jsonl 28049f46
+```
+
+Compare the generated checkpoint with `input.txt`, not just the saved checkpoint excerpt:
+
+- [ ] The resume map identifies `target/research/ordinary-gap-parent-acceptance-v1/results.json` as accepted provisional evidence,
+      not merely an older experiment, and states what to recover from it.
+- [ ] The accepted stack remains **100,775 bindings**, adding only freeway/riddle at this stage.
+      “Accepted” means provisional integration, not adoption, installation, publication, licensing, or curriculum approval.
+- [ ] `target/research/ordinary-gap-followup-v2-complete/` is newer **local-only** research.
+      Its 138 source proofs and 13 proposed keys do not establish namespace, native/public, or parent acceptance.
+      The map retains a recoverable batch pointer with this status, rather than promoting it to the accepted stack.
+- [ ] `/ordinary-gap-batch-namespace` is pending at the cut and owns a **new** namespace producer and fresh conditional outputs.
+      Check its outcome before retrying; do not claim completion from the later return excluded from `input.txt`.
+- [ ] The latest user request authorizes **suggestions**, not prompt edits or resumed dictionary implementation.
+      Dictionary work is background to that request, without erasing the pending worker or integration obligations.
+- [ ] The checkpoint distinguishes verified parent results from worker reports and retains the approval limits.
+      Offline assertions protect the supplied input and cut, not these generated-output judgments.

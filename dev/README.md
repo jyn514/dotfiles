@@ -188,8 +188,8 @@ The replay applies the extension's required-header check to generated output;
 it does not judge semantic retention. Use the source-backed
 [retention cases](../tests/pi/fixtures/compaction-replay/README.md) to compare
 persistent corrections, conditional permissions, paused work, investigation-only
-authority, and repeated compaction. Their checklists require human comparison
-against recorded source turns, not a score for prose quality.
+authority, repeated compaction, and accepted evidence versus newer experiments.
+Their checklists require human comparison against recorded source turns, not a score for prose quality.
 
 The offline [replay tests](../tests/pi/replay_compaction_test.ts) run with the
 focused test command above. They verify input reconstruction, not model retention.
