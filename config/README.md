@@ -19,11 +19,12 @@ edit those implementations, not copies.
 ## Agent instructions
 
 The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
-to [Change with evidence](../skills/references/change-with-evidence.md), a plain
-reference under the existing `~/.agents/skills` directory link. The sandbox's
-live skills mount exposes it to existing workers without a new mount or restart.
-Reload the harness's instructions after changing the route. The reference is not
-an `@` include or registered skill, so its rules stay out of the startup prompt.
+to [Change with evidence](../skills/references/change-with-evidence.md) and note writing
+to [Note records](../skills/references/note-records.md).
+Both are plain references under the existing `~/.agents/skills` directory link.
+The sandbox's live skills mount exposes them to existing workers without a new mount or restart.
+Reload the harness's instructions after changing a route.
+These references are not `@` includes or registered skills, so their rules stay out of the startup prompt.
 
 ## Pi
 
