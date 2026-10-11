@@ -109,6 +109,13 @@ Existing tools, reviewer suggestions, and possible future failures do not expand
 Skill triggers govern how to implement an already-justified mechanism; they do not justify choosing that mechanism.
 Establish scope before routing to specialized skills.
 
+### Constructing experiments
+
+Before creating an experiment, name the decision it can change and which possible outcomes would change your next action.
+Reuse existing evidence when it settles that decision.
+Before optimizing or caching an operation, check whether the operation or
+intermediate representation can be eliminated.
+
 ### Historical constraints
 
 Inspect history when an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix.
@@ -147,13 +154,17 @@ Libraries and tools can be forked, modules can be modified, tests can be changed
 What matters is *user-facing behavior*, not its implementation.
 
 Be creative.
-Notice when you get stuck.
-Use `creative-inquiry` when repeated fixes, research, or local artifacts do not
-advance the required end-to-end outcome—even when individual tasks succeed.
+When progress slows, work keeps adding prerequisites or machinery, or local improvements do not advance the required outcome, use `creative-inquiry` to compare continuing the current approach with the smallest structural alternative.
+This applies even if individual local tasks succeed.
+Distinguish user requirements from restrictions introduced by reviewers, your experimental setup, or delegation.
+Revisit those self-imposed restrictions before treating them as blockers.
 
 ### Records and provenance
 
 When reconstructing uncertain records, separate observed facts from inference, preserve provenance, and do not manufacture precision unsupported by the evidence.
+
+Before collecting logs or packets, narrow the filter to the endpoints or component under investigation.
+If broader capture is needed to find an unknown source, bound it by time or count, then narrow it.
 
 ### Working with jyn
 
