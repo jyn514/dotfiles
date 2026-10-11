@@ -87,6 +87,9 @@ One completed pass meets the post-rewrite requirement for the reviewed files, in
 
 5. Validate:
    - Re-read original and revised side by side, as prose. If the old version has better force, rhythm, scanability, or framing, restore it.
+   - Before reporting missing or removed guidance, read the complete relevant section in both versions and check any route that replaced it.
+     Cite the exact source location supporting the finding.
+     A truncated output or incomplete excerpt does not establish absence; reread the bounded section before making that claim.
    - Account for removed requirements, exceptions, commands, paths, and example-only behavior. Preserve those needed by this artifact's readers or route them to their owner; preserve the reasons for unusual rules, tradeoffs, compatibility boundaries, and rejected alternatives that still govern the task.
    - For each removal, name the reason: duplicated by a named owner, implementation detail owned by code and not needed by this reader, or content serving no reader decision, action, or necessary understanding. Do not restore text solely because it existed before the edit. Do not use relocation to hide safety constraints needed at the point of action.
    - Read each revised section standalone. If it says what to do but no longer gives enough context to choose correctly next time, restore the smallest framing example or analogy.
