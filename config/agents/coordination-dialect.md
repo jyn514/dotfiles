@@ -2,6 +2,12 @@
 
 Shared shorthand for human-agent and inter-agent coordination. Use these fields when structure improves a request, handoff, or status report; otherwise use English.
 
+## Before selecting a subagent
+
+Exact allowlisted skills may route a subagent through the `luna` template.
+Absent, unknown, or mixed skill sets inherit the parent model.
+Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
+
 ## Fields
 
 | Field | Meaning |

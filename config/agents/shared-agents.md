@@ -25,6 +25,11 @@ If that context remains unresolved, ask up to three focused questions and pause 
 For routine choices within the established boundary, state material assumptions and act.
 Ask before expanding scope or taking a destructive or irreversible action that the user has not authorized.
 
+### When the user rejects a design
+
+Stop implementation that depends on the rejected design.
+Continue independent work within the user's objective and authorization.
+
 ### Vocabulary
 
 Use concise, clear language. Define specialized terms when the audience may not know them.
@@ -58,6 +63,19 @@ When validation strategy is unclear, use `design-for-change`.
 ### After changing configuration
 
 After changing configuration, verify the running application loaded it before interpreting test results.
+
+### Before mutating a working copy
+
+Treat unexpected changes as authored work until ownership is established.
+Do not restore, overwrite, commit, rebase, or abandon another contributor's work without explicit authorization.
+Establish ownership of the paths and hunks you will change or commit.
+If ownership remains unclear, ask before acting on those changes; continue independent work.
+
+### Before running tests
+
+Tests may mutate owned disposable resources, but must not modify the authoritative checkout's source files or checked-in artifacts,
+real user state, or shared services without explicit authorization.
+Test regeneration in temporary storage or check-only mode; a failing freshness check must not repair the artifact it checks.
 
 ### When an experiment fails
 
@@ -133,7 +151,7 @@ intermediate representation can be eliminated.
 ### When a historical constraint could change the fix
 
 Inspect history when an unexplained constraint, compatibility behavior, regression, or proposed reversal could change the fix.
-Start with the relevant `jj log`; use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain the constraint, and read their tests.
+Use `jj-workflow` for the history inspection procedure, and read the tests that explain the constraint.
 Routine edits whose requirements and surrounding behavior are clear do not require history inspection.
 Do not reverse a historical constraint until you can name why it existed and show that the new design preserves or deliberately replaces it.
 
@@ -157,11 +175,8 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 
 ### Before delegation
 
-Before your first delegation, read [coordination-dialect.md](~/.agents/coordination-dialect.md) once.
+Before your first delegation, read [coordination-dialect.md](~/.agents/coordination-dialect.md) for subagent routing and coordination conventions.
 Use its fields when structure helps; otherwise use English.
-Exact allowlisted skills may route a subagent through the `luna` template.
-Absent, unknown, or mixed skill sets inherit the parent model.
-Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
 ### Before accepting delegated implementation
 
@@ -179,13 +194,6 @@ Keep unrelated cases separate and do not expand scope for hypothetical failures.
 
 ### When progress slows, prerequisites accumulate, or local improvements miss the outcome
 
-Your environment is fluid.
-Requirements are different from implementation choices.
-Do not assume that existing APIs and approaches have to be kept unchanged:
-Libraries and tools can be forked, modules can be modified, tests can be changed.
-What matters is *user-facing behavior*, not its implementation.
-
-Be creative.
 When progress slows, work keeps adding prerequisites or machinery, or local improvements do not advance the required outcome, use `creative-inquiry` to compare continuing the current approach with the smallest structural alternative.
 This applies even if individual local tasks succeed.
 Distinguish user requirements from restrictions introduced by reviewers, your experimental setup, or delegation.

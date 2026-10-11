@@ -19,8 +19,9 @@ Do not run both by default. Narrow with path-limited commands such as `jj diff -
 Treat unexpected deltas as authored work until ownership is established. Before mutating a dirty working copy:
 
 - identify each contributor's paths and hunks;
-- do not restore, overwrite, commit, rebase, or abandon another contributor's work;
-- stop and ask if a needed file contains edits you do not own;
+- follow the [shared work ownership constraints](~/.agents/shared.md#before-mutating-a-working-copy)
+  before restoring, overwriting, committing, rebasing, or abandoning another contributor's work;
+- stop dependent mutations and ask if ownership or authorization remains unclear;
 - use provenance and a three-way comparison—not similarity—to distinguish independent, stale, and duplicate changes.
 
 Concurrent workers commit only their work and return its change ID. The coordinator owns integration and restacking.
@@ -37,6 +38,9 @@ For ordinary path history, pass the path directly:
 ```bash
 jj log -n 20 doc/spec/flower --no-graph
 ```
+
+When investigating a constraint, start with the relevant `jj log`.
+Use `jj file annotate` and `jj diff -r <rev> <files...>` for the lines or revisions that explain it, and read their tests.
 
 To combine path history with a revset, use `files()` with a quoted path expression:
 

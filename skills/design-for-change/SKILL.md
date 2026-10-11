@@ -21,7 +21,7 @@ Load once per coherent change; reload only when scope or governing constraints c
 
 Split meaningful business logic and likely bugs where they can be tested. Prefer running most of the system in memory so generated tests can cover many cases cheaply. If database behavior or subtle invariants belong to the trusted computing base, run the real database in memory when practical instead of mocking it. The plan-execute pattern often helps.
 
-- Tests may mutate owned disposable resources, but must not modify the authoritative checkout's source files or checked-in artifacts, real user state, or shared services. Test regeneration in temporary storage or check-only mode; a failing freshness check must not repair the artifact it checks. Require explicit authorization for exceptions that affect live state.
+- Follow the [shared test isolation constraints](~/.agents/shared.md#before-running-tests) when running tests or checking regeneration.
 - Register automated suites with the repository's top-level test command, either by default or through a documented opt-in mode. Verify that the command discovers and executes them; a focused invocation alone does not prove reachability. Report missing prerequisites and skips distinctly from passing checks.
 - Use property tests when generators express the input space better than enumerated examples. When combinations or action sequences exceed a practical hand-written matrix, use bounded generated tests with requirement-derived or consumer-validated oracles. Record failing inputs for replay and reduce them to small regressions when practical. Use [property-based-testing](../property-based-testing/SKILL.md) for property-specific generator design and review.
 - Verify that executed generated cases contain the declared input classes and selected interactions, including after filtering or deduplication. Do not infer this from generator code alone. Include required cases explicitly when random generation cannot reliably exercise them; this check does not require an exhaustive cross-product.
@@ -39,7 +39,7 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Test both failure directions: accepting invalid results and losing required valid results. Include representative non-special-cased inputs where general behavior is required. For bounded algorithms, test forced work separately from branching work; small fixtures must not conceal the required input-population constraint. Preserve validation and publication constraints rather than relaxing them for a passing test.
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
 - For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
-- When a user rejects the current design, stop implementation, restate the revised ownership boundary, and continue only from that boundary.
+- After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-the-user-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
 
 When reviewing a system and its tests, check both directions: required behavior without a test, and tested behavior without a corresponding requirement. Apply this to code, APIs, policies, prompts, workflows, and specifications.
 
