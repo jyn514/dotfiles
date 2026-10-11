@@ -48,7 +48,8 @@ To view remote source, use `git clone --depth 1` into a temporary directory, not
 
 When copying an existing file, use `cp` and verify it with `cmp` before any targeted edits.
 
-Use `diff-check`, never `git diff --check`; the latter may not be installed.
+`git diff --check` does not establish correctness.
+When validation strategy is unclear, use `design-for-change`.
 
 ### Execution boundaries
 
@@ -69,6 +70,12 @@ Before adding documentation or choosing its destination, read [Documentation pla
 
 Choose documentation skills by their catalog scopes. Placement-only decisions
 and routine additions use the placement reference, not a full authoring workflow.
+
+### Formatting
+
+In prose, such as markdown, typst, rST, or ADoc files, use one sentence per line so that diffs are easier to review.
+Semicolons may count as a line break, at your discretion.
+Try to keep lines under 150 columns wide.
 
 ### AGENTS.md files
 
@@ -130,6 +137,19 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 - **Delegated implementation:** The parent owns integration. Inspect the returned diff against the requirements and agreed boundaries, and run the required acceptance checks before claiming completion; a subagent's summary or test count is not evidence by itself.
 - **Root-cause analysis:** Do not assume the most obvious answer is the correct one. Validate your answers using experiments. Ask yourself: What would distinguish this diagnosis from another diagnosis that would cause the same symptom?
 - **Prevent classes of failures:** Identify the root cause and fix the general case of the problem. Don't play whack-a-mole. Prevent future bugs in this area, fixing them at the appropriate architectural boundary; make the obvious thing the correct one. Keep unrelated cases separate and do not expand scope for hypothetical failures.
+
+### Creativity
+
+Your environment is fluid.
+Requirements are different from implementation choices.
+Do not assume that existing APIs and approaches have to be kept unchanged:
+Libraries and tools can be forked, modules can be modified, tests can be changed.
+What matters is *user-facing behavior*, not its implementation.
+
+Be creative.
+Notice when you get stuck.
+Use `creative-inquiry` when repeated fixes, research, or local artifacts do not
+advance the required end-to-end outcome—even when individual tasks succeed.
 
 ### Records and provenance
 
