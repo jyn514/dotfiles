@@ -48,7 +48,7 @@ projection also advertises the guest working directory; stored messages retain
 their host paths. Reload existing host Pi sessions with `/reload` to apply this
 extension change. `/system-prompt` shows the prepared host prompt before this
 request-time projection.
-Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Podman.
+Launcher-owned sibling services provide narrowly scoped access to protected repository operations, the host editor, optional Zulip, and optional Agent Docker.
 Guest tools can write the working tree, but Git, Jujutsu, and sandbox policy remain outside their direct authority. Host Pi retains its own credentials.
 Host `~/.pi/agent/sessions` is mounted read-only at
 `/home/codex/.pi/agent/sessions` so guest tools can search past conversations.
@@ -146,9 +146,9 @@ The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) p
 The [rootless Docker backend](lima/docker.md) uses Docker's forwarded API socket and has its own setup and validation commands.
 Its [default-readiness record](lima/docker.md#default-readiness) distinguishes passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
 
-Repositories enabling `nested-containers` also need [Agent Podman setup](../agent-podman/README.md#setup) on the macOS host.
-The launcher reads its access files from `~/.agent-podman-access`, or `AGENT_PODMAN_ACCESS_DIR` when set.
-If those files are absent, startup warns and continues without Docker/Podman access.
+Repositories enabling `nested-containers` also need [Agent Docker setup](../agent-docker/README.md#setup) on the Linux or macOS host.
+The launcher reads its access files from `~/.agent-docker-access`, or `AGENT_DOCKER_ACCESS_DIR` when set.
+If those files are absent, startup warns and continues without nested Docker access.
 Restart the sandbox after provisioning so the launcher installs the SSH relay and client connection.
 
 - Run from a Git checkout.
@@ -169,7 +169,7 @@ Restart the sandbox after provisioning so the launcher installs the SSH relay an
   Repositories select host editing separately.
 - Optional: create dedicated model credentials with `codex-sandbox auth login`.
   The directory defaults to `~/.codex-sandbox-auth` and may be changed with `CODEX_SANDBOX_AUTH_DIR`.
-- Optional: configure Agent Podman separately under `~/.agent-podman-access` or set `AGENT_PODMAN_ACCESS_DIR`.
+- Optional: configure Agent Docker separately under `~/.agent-docker-access` or set `AGENT_DOCKER_ACCESS_DIR`.
 - Optional: configure [read-only Zulip access](../zulip-proxy/README.md).
 
 A repository may use a version 2 `.agents/sandbox/proxy-commands.json` to select `host-editor`, `zulip`, `nested-containers`, `flower-r2`, and `agent-room` independently.
@@ -324,7 +324,7 @@ otherwise `VISUAL`, `EDITOR`, then `vi` is used.
 The dotfiles profile selects `config/nvim/host-editor.lua`, which applies hardening before loading plugin-free behavior from `config/nvim/shared.lua`;
 normal Neovim loads the same shared behavior before its IDE configuration.
 
-Each sandbox has one gateway for the host editor and, when configured, Agent Podman and agent-room.
+Each sandbox has one gateway for the host editor and, when configured, Agent Docker and agent-room.
 It starts in the background after its private link and egress networks are created.
 The in-container Python relay binds loopback and verifies its fixed gateway target before Pi starts.
 Pi does not start if either step fails; its exit closes the listener and active connections.
@@ -349,7 +349,7 @@ On exit, the launcher joins gateway startup before removing its container and ne
 An upstream refusal affects that connection;
 a listener process failure stops the whole gateway.
 Editor-only gateways retain the editor's CPU, memory, and process limits.
-Agent-Podman-enabled gateways have no such limits, preserving build throughput but sharing the Agent Podman resource and failure domain with the editor.
+Agent-Docker-enabled gateways have no such limits, preserving build throughput but sharing the Agent Docker resource and failure domain with the editor.
 
 Timing separates launch setup from `docker run`, then uses daemon timestamps to report container creation-to-start and start-to-exit intervals.
 It also enables Pi's `PI_TIMING=1` startup breakdown, which excludes initial module imports.
@@ -376,7 +376,7 @@ For interactive startup profiling, use
   A manifest must explicitly enable network access for a proxy.
 - The Codex sidecar keeps reusable OAuth tokens outside the agent, but the agent can submit model requests, disclose their contents, consume quota, and incur charges.
 - Codex and Zulip credentials are mounted only into their respective profile-helper containers; Caddy and the agent receive no credential mount.
-  Agent Podman, when configured, is exposed through a separate SSH relay rather than the outer daemon.
+  Agent Docker, when configured, is exposed through a separate SSH relay rather than the outer daemon.
 - The supported outer runtimes are Lima-Docker and opt-in nerdctl/Lima; both run the
   sandbox workload in a VM.
 - Proxy and authentication failures fail closed and surface as request failures.
@@ -401,10 +401,10 @@ a join cannot rewrite shared metadata.
 - If startup reports invalid repository metadata or sandbox policy, repair the named path;
   do not bypass the validation.
 - If authentication is disabled, run `codex-sandbox auth login`, then start a new sandbox.
-- If Agent Podman reports an SSH handshake `EOF`, inspect the relay log before restarting the sandbox.
-  A relay that accepts the sandbox connection but reports `host.docker.internal:<port>: Connection refused` means the Agent Podman machine is stopped;
-  run `tools/agent-podman/start.sh` on the host.
-  See [Agent Podman recovery](../agent-podman/README.md#recovery).
+- If startup warns that the nested Docker relay is unavailable, or an existing
+  relay reports a refused SSH connection, run `python3 tools/agent-docker/vm.py start`
+  on the host, then restart the sandbox to load its current SSH port.
+  See [Agent Docker recovery](../agent-docker/README.md#recovery-and-lifecycle).
 - If cached proxy/auth state changed or belongs to another network, run `codex-sandbox restart-all` from tmux.
   It terminates registered launcher processes, resets shared session metadata after cleanup, then resumes their sessions.
   Inherited `remain-on-exit` settings need no pane-local override.

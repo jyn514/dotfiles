@@ -13,7 +13,7 @@ WRAPPERS = ROOT / "libexec" / "sandbox-wrappers"
 
 class ContainerWrapperTests(unittest.TestCase):
     def test_container_wrappers_are_guest_only(self) -> None:
-        for name in ("docker", "podman"):
+        for name in ("docker",):
             with self.subTest(name=name):
                 result = subprocess.run(
                     [str(WRAPPERS / name), "--version"],

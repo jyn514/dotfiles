@@ -2,10 +2,10 @@
          '[babashka.process :as process]
          '[clojure.string :as str])
 
-(def wrapped-commands ["bb" "docker" "java" "jj" "podman" "rg"])
+(def wrapped-commands ["bb" "docker" "java" "jj" "rg"])
 
 (doseq [command wrapped-commands]
-  (let [wrapper-directory (if (#{"docker" "podman"} command)
+  (let [wrapper-directory (if (= "docker" command)
                            "/libexec/sandbox-wrappers"
                            "/libexec/agent-wrappers")
         wrapper (fs/canonicalize (fs/path wrapper-directory command))
@@ -34,8 +34,7 @@
         [["bb" {"BB_REAL" "/bin/false"}]
          ["java" {"JAVA_REAL" "/bin/false"}]
          ["jj" {"JJ_REAL" "/bin/false"}]
-         ["docker" {"CONTAINER_CLI_REAL_DIR" "/nonexistent"}]
-         ["podman" {"CONTAINER_CLI_REAL_DIR" "/nonexistent"}]]]
+         ["docker" {"CONTAINER_CLI_REAL_DIR" "/nonexistent"}]]]
   (when (zero? (:exit (run environment command "--version")))
     (throw (ex-info "nested process bypassed its wrapper" {:command command}))))
 

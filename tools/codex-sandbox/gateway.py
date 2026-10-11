@@ -14,12 +14,12 @@ def port(value):
     return number
 
 
-def serve(host, editor_port=None, podman_port=None, agent_room_port=None):
+def serve(host, editor_port=None, build_port=None, agent_room_port=None):
     listeners = []
     if editor_port is not None:
         listeners.append((2223, editor_port))
-    if podman_port is not None:
-        listeners.append((2222, podman_port))
+    if build_port is not None:
+        listeners.append((2222, build_port))
     if agent_room_port is not None:
         listeners.append((2225, agent_room_port))
     if not listeners:
@@ -66,12 +66,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', required=True, choices=('host.lima.internal', 'host.docker.internal'))
     parser.add_argument('--editor-port', type=port)
-    parser.add_argument('--podman-port', type=port)
+    parser.add_argument('--build-port', type=port)
     parser.add_argument('--agent-room-port', type=port)
     args = parser.parse_args()
-    if args.editor_port is None and args.podman_port is None and args.agent_room_port is None:
+    if args.editor_port is None and args.build_port is None and args.agent_room_port is None:
         parser.error('at least one listener is required')
-    return serve(args.host, args.editor_port, args.podman_port, args.agent_room_port)
+    return serve(args.host, args.editor_port, args.build_port, args.agent_room_port)
 
 
 if __name__ == '__main__':

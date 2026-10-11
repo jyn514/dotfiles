@@ -16,7 +16,8 @@ COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-t
 ARG BB_VERSION=1.13.219
 ARG GH_VERSION=2.76.1
 ARG JJ_VERSION=0.42.0
-ARG PODMAN_VERSION=6.0.1
+ARG DOCKER_VERSION=29.8.0
+ARG BUILDX_VERSION=0.37.0
 ARG TYPST_VERSION=0.15.1
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -25,7 +26,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     BB_VERSION=${BB_VERSION} \
     GH_VERSION=${GH_VERSION} \
     JJ_VERSION=${JJ_VERSION} \
-    PODMAN_VERSION=${PODMAN_VERSION} \
+    DOCKER_VERSION=${DOCKER_VERSION} \
+    BUILDX_VERSION=${BUILDX_VERSION} \
     TYPST_VERSION=${TYPST_VERSION} \
     install-agent-tools \
     && mkdir -p /opt/agent-tools/bin /opt/agent-tools/libexec \
@@ -33,9 +35,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         /usr/local/bin/gh \
         /usr/local/bin/typst \
         /opt/agent-tools/bin/ \
-    && cp -a /usr/local/bin/bb /usr/local/bin/podman /opt/agent-tools/libexec/ \
-    && cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj \
-    && ln -s podman /opt/agent-tools/libexec/docker
+    && cp -a /usr/local/bin/bb /usr/local/bin/docker /opt/agent-tools/libexec/ \
+    && cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj
 
 FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
@@ -140,8 +141,8 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client ./tools/jj-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/zulip-proxy/client ./tools/zulip-proxy/protocol.json /tools/zulip-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /tools/agent-podman/woodpecker-cli
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-podman/woodpecker-cli /opt/agent-tools/bin/woodpecker-cli
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-docker/woodpecker-cli /tools/agent-docker/woodpecker-cli
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-docker/woodpecker-cli /opt/agent-tools/bin/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/bb /tools/agent-split/bb
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/src /tools/agent-split/src
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./lib/shell/lib.sh /lib/shell/lib.sh
@@ -150,10 +151,11 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/gitignore ${HOME}/.config/git/ig
 
 # Package runtime entrypoints only; developer bytecode must not invalidate images.
 COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/codex-sandbox/image/codex ./libexec/agent-wrappers/diff-check ./libexec/agent-wrappers/java ./libexec/agent-wrappers/jj ./libexec/agent-wrappers/jj-conflict ./libexec/agent-wrappers/paste ./libexec/agent-wrappers/rg /libexec/agent-wrappers/
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/sandbox-wrappers/docker ./libexec/sandbox-wrappers/gateway-transport ./libexec/sandbox-wrappers/podman /libexec/sandbox-wrappers/
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./libexec/sandbox-wrappers/docker ./libexec/sandbox-wrappers/gateway-transport ./libexec/sandbox-wrappers/docker-ssh /libexec/sandbox-wrappers/
+COPY --from=tools /usr/local/lib/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx
 RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && ln -s ../../tools/jj-proxy/client /libexec/agent-wrappers/jj-proxy-client \
-    && ln -s ../../tools/agent-podman/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli \
+    && ln -s ../../tools/agent-docker/woodpecker-cli /libexec/agent-wrappers/woodpecker-cli \
     && if real_java=$(command -v java); then \
         ln -s "$real_java" /opt/agent-tools/libexec/java; \
     fi \
@@ -163,7 +165,7 @@ RUN ln -s ../../tools/agent-split/bb /libexec/agent-wrappers/bb \
     && for command in bb java jj rg; do \
         ln -sf "../../../libexec/agent-wrappers/$command" "/opt/agent-tools/bin/$command"; \
     done \
-    && for command in docker podman; do \
+    && for command in docker; do \
         ln -sf "../../../libexec/sandbox-wrappers/$command" "/opt/agent-tools/bin/$command"; \
     done
 ENV BB_REAL=/opt/agent-tools/libexec/bb

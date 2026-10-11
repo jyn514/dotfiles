@@ -1,5 +1,10 @@
 # Disposable agent Podman machine
 
+This deployment is retired from new sandbox launches. Use
+[Agent Docker](../agent-docker/README.md) for Linux or macOS nested builds.
+The scripts and instructions here remain available to inspect and tear down
+existing macOS Podman state; its access files are not Docker access files.
+
 `setup.sh` creates a rootless Podman Machine under the fixed hidden, locked, non-login macOS role account `_agentpodman`.
 It dynamically assigns an unused role-account UID in macOS's 450–499 range, gives the account a dedicated primary group, and verifies that it is not a member of `staff`, `admin`, `wheel`, or `_developer`.
 It disables Podman's default `$HOME:$HOME` mount and rejects `/Users`, `/Volumes`, 9p, and virtiofs mounts found in the guest.

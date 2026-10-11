@@ -5,11 +5,12 @@
 
 = Running local CI through the sandbox Podman machine
 
-*Status:* Podman adapter baseline. The selected replacement uses a separate
+*Status:* Historical Podman adapter baseline. The implementation uses a separate
 rootless Docker build VM, as specified in
 #link("../codex-sandbox/spec/launcher-interface.typ")[Nested container engine].
-The Docker transition is not implemented. The Podman-specific details below
-describe the existing path, not requirements for the replacement engine.
+See #link("../agent-docker/README.md")[Agent Docker] for setup and recovery.
+The Podman-specific details below describe the retired path, not requirements
+for the Docker engine.
 
 The replacement preserves repository staging, path rewriting, command status,
 supervision, and per-run cleanup. It changes provisioning, client transport,

@@ -176,7 +176,7 @@ def exercise(state, work, provider='lima', interactive_runs=1, concurrent_sessio
             "CODEX_SANDBOX_RUNTIME": provider, "CODEX_SANDBOX_LIMA_STATE": str(state),
             "CODEX_SANDBOX_DOCKER_STATE": str(state),
             "CODEX_SANDBOX_AUTH_DIR": str(auth),
-            "AGENT_PODMAN_ACCESS_DIR": str(home / "no-worker"), "CODEX_SANDBOX_TIMING": "1"}
+            "AGENT_DOCKER_ACCESS_DIR": str(home / "no-worker"), "CODEX_SANDBOX_TIMING": "1"}
         for name in ("TMUX", "TMUX_PANE", "GH_TOKEN", "GITHUB_TOKEN"):
             environment.pop(name, None)
         subprocess.run(["jj", "git", "init", str(repo)], cwd=repo, check=True)

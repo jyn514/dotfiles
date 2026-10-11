@@ -348,9 +348,9 @@ disabled as performance options.
 
 === Nested container engine <nested-container-engine>
 
-*Selected design; not implemented:* Standardize sandbox infrastructure and
-agent build workloads on rootless Docker. The current nested-container path
-uses Agent Podman, whose provisioning supports macOS only.
+*Implemented; full CI and macOS acceptance incomplete:* Sandbox infrastructure and agent build
+workloads use rootless Docker. The build role is owned by
+`tools/agent-docker/vm.py`; persisted Agent Podman state remains separate.
 
 Use two separate Lima VMs on Linux and macOS. The infrastructure VM owns the
 agent container, trusted proxies, and credential helpers. The build VM owns

@@ -51,25 +51,25 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
-    def test_missing_agent_podman_access_warns_without_blocking_startup(self):
-        load = runpy.run_path(str(LAUNCHER))["load_agent_podman"]
+    def test_missing_agent_docker_access_warns_without_blocking_startup(self):
+        load = runpy.run_path(str(LAUNCHER))["load_agent_docker"]
         with tempfile.TemporaryDirectory() as directory:
-            access = Path(directory) / "agent-podman"
+            access = Path(directory) / "agent-docker"
             state = SimpleNamespace(
-                agent_podman_access=access,
-                agent_podman_connection=access / "connection.env",
-                agent_podman_key=access / "id_ed25519",
-                agent_podman_known_hosts=access / "known_hosts.sandbox",
-                agent_podman=None,
+                agent_docker_access=access,
+                agent_docker_connection=access / "connection.env",
+                agent_docker_key=access / "id_ed25519",
+                agent_docker_known_hosts=access / "known_hosts.sandbox",
+                agent_docker=None,
             )
             stderr = io.StringIO()
             with contextlib.redirect_stderr(stderr):
                 load(state)
-            self.assertIsNone(state.agent_podman)
+            self.assertIsNone(state.agent_docker)
             self.assertIn("warning: nested-containers requested", stderr.getvalue())
             self.assertIn(str(access), stderr.getvalue())
-            self.assertIn("tools/agent-podman/README.md", stderr.getvalue())
-            self.assertIn("docker/podman unavailable", stderr.getvalue())
+            self.assertIn("tools/agent-docker/README.md", stderr.getvalue())
+            self.assertIn("docker unavailable", stderr.getvalue())
 
     def test_detached_owner_worker_uses_log_and_null_stdin_before_bootstrap(self):
         launcher = runpy.run_path(str(LAUNCHER))
@@ -307,7 +307,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             alias = home / "skills-alias"
             alias.symlink_to(home, target_is_directory=True)
             state = SimpleNamespace(home=home, repository=repository, skills_source=alias,
-                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_podman=None)
+                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_docker=None)
             backend = mock.Mock()
             with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
                                  _secure_codex_auth_directory=lambda _: None):
@@ -325,7 +325,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             (home / ".codex").mkdir()
             (home / ".codex/config.toml").touch()
             state = SimpleNamespace(home=home, repository=repository, skills_source=repository,
-                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_podman=None)
+                metadata_roots=(), skills_tmp=repository, zuliprc=None, agent_docker=None)
             backend = mock.Mock()
             with mock.patch.dict(launcher["preflight_lima"].__globals__, OUTER_RUNTIME=backend,
                                  _secure_codex_auth_directory=lambda _: None):
@@ -745,7 +745,7 @@ class BackgroundRelayTest(unittest.TestCase):
         execute = runpy.run_path(str(LAUNCHER))["execute"]
         calls = []
         with tempfile.TemporaryDirectory() as directory:
-            state = SimpleNamespace(repository=Path(directory), agent_podman={}, uid=501, gid=20,
+            state = SimpleNamespace(repository=Path(directory), agent_docker={}, uid=501, gid=20,
                                     codex_arguments=["--session-id", "test-session"],
                                     deferred_signal=None)
             replacements = {
@@ -857,7 +857,7 @@ class BackgroundRelayTest(unittest.TestCase):
             builder.touch(mode=0o755)
             manifest = repository / 'manifest.json'
             manifest.write_text('{"commands": {"bug": {"image-target": "bb-bug"}}}')
-            state = SimpleNamespace(repository=repository, agent_podman=None, uid=501, gid=20,
+            state = SimpleNamespace(repository=repository, agent_docker=None, uid=501, gid=20,
                                     codex_arguments=[], deferred_signal=None, manifest=manifest)
             replacements = {name: mock.Mock(return_value=[]) for name in (
                 'validate_repository', 'stage_skills', 'register_tmux_pane', 'ensure_network',
@@ -923,7 +923,7 @@ class BackgroundRelayTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             state = SimpleNamespace(
-                repository=Path(directory), agent_podman=None, uid=501, gid=20, codex_arguments=[],
+                repository=Path(directory), agent_docker=None, uid=501, gid=20, codex_arguments=[],
                 joining_workers=False, deferred_signal=None,
             )
 
@@ -1038,7 +1038,7 @@ class BackgroundRelayTest(unittest.TestCase):
             return 19
 
         with tempfile.TemporaryDirectory() as directory:
-            state = SimpleNamespace(repository=Path(directory), agent_podman={}, uid=501, gid=20, codex_arguments=[],
+            state = SimpleNamespace(repository=Path(directory), agent_docker={}, uid=501, gid=20, codex_arguments=[],
                                     deferred_signal=None)
             replacements = {
                 name: mock.Mock(return_value=[])
@@ -1119,7 +1119,7 @@ class AgentSandboxImageTest(unittest.TestCase):
 
         self.assertIn(
             "COPY --chown=${AGENT_UID}:${AGENT_GID} "
-            "./tools/agent-podman/woodpecker-cli "
+            "./tools/agent-docker/woodpecker-cli "
             "/opt/agent-tools/bin/woodpecker-cli",
             dockerfile,
         )
@@ -1138,7 +1138,7 @@ class AgentSandboxImageTest(unittest.TestCase):
             "for command in bb java jj rg",
             dockerfile,
         )
-        self.assertIn("for command in docker podman", dockerfile)
+        self.assertIn("for command in docker;", dockerfile)
         self.assertIn(
             "ENV PATH=/libexec/sandbox-wrappers:/libexec/agent-wrappers:",
             dockerfile,
@@ -1660,7 +1660,7 @@ class CodexSandboxTest(unittest.TestCase):
             "FAKE_PYTHON_LOG": str(self.python_log),
             "FAKE_CODEX_LOG": str(self.codex_log),
             "FAKE_JJ_LOG": str(self.jj_log),
-            "AGENT_PODMAN_ACCESS_DIR": str(self.root / "no-agent-podman"),
+            "AGENT_DOCKER_ACCESS_DIR": str(self.root / "no-agent-docker"),
             "FAKE_NETWORK_EXISTS": "1",
             "FAKE_UNAME": "Linux",
             "FAKE_IMAGE_PI_REVISION": self.pi_revision,
@@ -2818,7 +2818,7 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn("--cpus", relay)
         self.assertIn("--http-proxy=false", relay)
         self.assertIn("/trusted/bin/sandbox-gateway", relay)
-        self.assertNotIn('--podman-port', relay)
+        self.assertNotIn('--build-port', relay)
         editor_networks = [
             call for call in calls if call[:2] == ["network", "create"]
             and any("codex-gateway-" in item for item in call)
@@ -2836,20 +2836,25 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn('gateway startup failed', result.stderr)
         self.assertIn("CODEX_SANDBOX_EDITOR_TOKEN", self.final_run())
 
-    def test_agent_podman_relay_is_isolated_and_injected(self) -> None:
-        access = self.root / "agent-podman"
+    def test_agent_docker_relay_is_isolated_and_injected(self) -> None:
+        listener = socket.socket()
+        self.addCleanup(listener.close)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(16)
+        port = listener.getsockname()[1]
+        access = self.root / "agent-docker"
         access.mkdir()
         (access / "connection.env").write_text(
-            "AGENT_PODMAN_SSH_USER=worker\n"
-            "AGENT_PODMAN_SSH_PORT=2223\n"
-            "CONTAINER_HOST=ssh://worker@host.docker.internal:2223/run/user/501/podman.sock\n"
-            "CONTAINER_SSHKEY=/run/secrets/agent-podman-key\n",
+            "AGENT_DOCKER_SSH_USER=worker\n"
+            f"AGENT_DOCKER_SSH_PORT={port}\n"
+            f"DOCKER_HOST=ssh://worker@host.docker.internal:{port}\n"
+            "AGENT_DOCKER_SSHKEY=/run/secrets/agent-docker-key\n",
             encoding="utf-8",
         )
         (access / "id_ed25519").write_text("key", encoding="utf-8")
         (access / "known_hosts.sandbox").write_text("host", encoding="utf-8")
         result = self.run_launcher(
-            AGENT_PODMAN_ACCESS_DIR=str(access), FAKE_RELAY_IP="10.0.0.8",
+            AGENT_DOCKER_ACCESS_DIR=str(access), FAKE_RELAY_IP="10.0.0.8",
         )
         self.assertEqual(0, result.returncode, result.stderr)
         calls = read_calls(self.docker_log)
@@ -2861,11 +2866,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(1, len(relay_runs))
         networks = [call for call in calls if call[:2] == ['network', 'create']
                     and any('codex-gateway-' in item for item in call)]
-        self.assertEqual(len(networks), 2, 'editor and Podman must share one private network pair')
-        self.assertNotIn('--cpus', relay_runs[0], 'editor limits must not throttle Podman')
+        self.assertEqual(len(networks), 2, 'editor and Docker must share one private network pair')
+        self.assertNotIn('--cpus', relay_runs[0], 'editor limits must not throttle Docker')
         self.assertIn('--editor-port', relay_runs[0])
-        self.assertIn('--podman-port', relay_runs[0])
-        self.assertFalse(any('agent-podman-key' in item or 'EDITOR_TOKEN' in item for item in relay_runs[0]))
+        self.assertIn('--build-port', relay_runs[0])
+        self.assertFalse(any('agent-docker-key' in item or 'EDITOR_TOKEN' in item for item in relay_runs[0]))
         self.assertIn("--cap-drop=ALL", relay_runs[0])
         self.assertIn("--read-only", relay_runs[0])
         self.assertEqual(
@@ -2874,20 +2879,20 @@ class CodexSandboxTest(unittest.TestCase):
         )
         run = self.final_run()
         relay_name = relay_runs[0][relay_runs[0].index("--name") + 1]
-        self.assertIn(f"CONTAINER_HOST=ssh://worker@{relay_name}:2222/run/user/501/podman.sock", run)
+        self.assertIn(f"DOCKER_HOST=ssh://worker@{relay_name}:2222", run)
         self.assertIn(f'CODEX_SANDBOX_EDITOR_ADDRESS={relay_name}:2223', run)
         self.assertIn(
-            f"type=bind,src={access / 'id_ed25519'},dst=/run/secrets/agent-podman-key,readonly",
+            f"type=bind,src={access / 'id_ed25519'},dst=/run/secrets/agent-docker-key,readonly",
             run,
         )
 
-    def test_rejects_incomplete_agent_podman_configuration(self) -> None:
-        access = self.root / "agent-podman"
+    def test_rejects_incomplete_agent_docker_configuration(self) -> None:
+        access = self.root / "agent-docker"
         access.mkdir()
-        (access / "connection.env").write_text("CONTAINER_HOST=x\n", encoding="utf-8")
-        result = self.run_launcher(AGENT_PODMAN_ACCESS_DIR=str(access))
+        (access / "connection.env").write_text("DOCKER_HOST=x\n", encoding="utf-8")
+        result = self.run_launcher(AGENT_DOCKER_ACCESS_DIR=str(access))
         self.assertEqual(1, result.returncode)
-        self.assertIn("Agent Podman access state is incomplete", result.stderr)
+        self.assertIn("Agent Docker access state is incomplete", result.stderr)
         self.assertEqual([], read_calls(self.docker_log))
 
 

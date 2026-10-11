@@ -61,7 +61,7 @@ class ImageInputsTest(unittest.TestCase):
                        'libexec/agent-wrappers/jj',
                        'libexec/sandbox-wrappers/docker',
                        'libexec/sandbox-wrappers/gateway-transport',
-                       'libexec/sandbox-wrappers/podman']
+                       'libexec/sandbox-wrappers/docker-ssh']
             noise = ['tools/agent-split/tests/test.clj', 'tools/agent-split/README.md',
                      'libexec/agent-wrappers/__pycache__/jj.pyc',
                      'libexec/sandbox-wrappers/__pycache__/docker.pyc']

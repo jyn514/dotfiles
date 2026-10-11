@@ -21,6 +21,53 @@ TRANSPORT = runpy.run_path(str(Path(__file__).resolve().parents[3] / "libexec/sa
 
 
 class GatewayTransportTest(unittest.TestCase):
+    def test_absent_build_service_never_executes_a_local_client(self):
+        with patch.dict(os.environ, {"DOCKER_HOST": ""}), patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(125, TRANSPORT["main"](["/nonexistent/docker", "info"]))
+
+    def test_docker_can_open_multiple_verified_ssh_connections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            client = home / "docker"
+            client.write_text(
+                f"#!{sys.executable}\n"
+                "import os, subprocess\n"
+                "for _ in range(2):\n"
+                "    value = subprocess.check_output(['ssh', '-G', 'agentbuilder@relay'], text=True)\n"
+                "    assert 'hostkeyalias agent-docker' in value\n"
+                "    assert 'stricthostkeychecking true' in value\n"
+                "    assert 'proxycommand ' in value and '--connect %h %p' in value\n"
+                "assert os.environ['HOME'] == os.environ['EXPECTED_HOME']\n"
+                "assert 'DOCKER_CONTEXT' not in os.environ\n"
+            )
+            client.chmod(0o700)
+            environment = {"DOCKER_HOST": "ssh://agentbuilder@relay:2222",
+                           "AGENT_DOCKER_SSHKEY": str(home / "key"),
+                           "AGENT_DOCKER_KNOWN_HOSTS": str(home / "known"),
+                           "EXPECTED_HOME": os.environ["HOME"], "DOCKER_CONTEXT": "infrastructure"}
+            with patch.dict(os.environ, environment):
+                self.assertEqual(0, TRANSPORT["main"]([str(client)]))
+
+    def test_proxy_command_preserves_half_close_and_response(self):
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0)); server.listen(1)
+            def respond():
+                connection, _ = server.accept()
+                with connection:
+                    request = bytearray()
+                    while data := connection.recv(65536):
+                        request.extend(data)
+                    connection.sendall(bytes(request) + b"reply")
+            worker = threading.Thread(target=respond)
+            worker.start()
+            result = subprocess.run([sys.executable,
+                str(Path(__file__).resolve().parents[3] / "libexec/sandbox-wrappers/gateway-transport"),
+                "--connect", "127.0.0.1", str(server.getsockname()[1])],
+                input=b"request", capture_output=True, timeout=5)
+            worker.join(timeout=5)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(b"requestreply", result.stdout)
+
     def test_delayed_listener_succeeds_before_one_deadline(self):
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
@@ -39,42 +86,6 @@ class GatewayTransportTest(unittest.TestCase):
         connection = TRANSPORT["connect_until"](address, time.monotonic() + 1)
         connection.close(); worker.join()
 
-    def test_connected_relay_outlives_connection_attempt_timeout(self):
-        with socket.socket() as server:
-            server.bind(("127.0.0.1", 0)); server.listen(1)
-            local, client = socket.socketpair()
-            failures = []
-
-            def delayed_server():
-                connection, _ = server.accept()
-                with connection:
-                    self.assertEqual(b"request", connection.recv(7))
-                    # Longer than the connect attempt's remaining timeout.
-                    time.sleep(0.3)
-                    connection.sendall(b"response")
-                    connection.shutdown(socket.SHUT_WR)
-
-            responder = threading.Thread(target=delayed_server)
-            responder.start()
-            upstream = TRANSPORT["connect_until"](
-                server.getsockname(), time.monotonic() + 0.1,
-            )
-            self.assertIsNone(upstream.gettimeout())
-
-            def run_relay():
-                try:
-                    TRANSPORT["relay"](local, upstream)
-                except BaseException as error:
-                    failures.append(error)
-
-            worker = threading.Thread(target=run_relay)
-            worker.start()
-            client.sendall(b"request"); client.shutdown(socket.SHUT_WR)
-            self.assertEqual(b"response", client.recv(8))
-            client.close(); worker.join(); responder.join()
-            local.close(); upstream.close()
-            self.assertEqual([], failures)
-
     def test_permanent_failure_stops_at_deadline(self):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0)); address = probe.getsockname()
@@ -88,57 +99,6 @@ class GatewayTransportTest(unittest.TestCase):
             with self.assertRaises(InterruptedError):
                 TRANSPORT["connect_until"](("127.0.0.1", 1), time.monotonic() + 1)
 
-    def test_accept_returns_child_exit_status_without_waiting_for_connection(self):
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0)); listener.listen(1)
-            child = subprocess.Popen([sys.executable, "-c", "raise SystemExit(7)"])
-            self.assertIsNone(TRANSPORT["accept_before_deadline"](
-                listener, child, time.monotonic() + 2,
-            ))
-            self.assertEqual(7, child.wait())
-
-    def test_accept_uses_invocation_deadline(self):
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0)); listener.listen(1)
-            child = Mock(); child.poll.return_value = None
-            started = time.monotonic()
-            with self.assertRaises(TimeoutError):
-                TRANSPORT["accept_before_deadline"](listener, child, started + 0.15)
-            self.assertLess(time.monotonic() - started, 0.5)
-
-    def test_accept_interruption_is_terminal(self):
-        listener = Mock(); child = Mock(); child.poll.return_value = None
-        selector = Mock()
-        selector.__enter__ = Mock(return_value=selector)
-        selector.__exit__ = Mock(return_value=False)
-        selector.select.side_effect = InterruptedError
-        with patch.object(TRANSPORT["selectors"], "DefaultSelector", return_value=selector):
-            with self.assertRaises(InterruptedError):
-                TRANSPORT["accept_before_deadline"](listener, child, time.monotonic() + 1)
-        selector.select.assert_called_once()
-
-    def test_native_ssh_configuration_forces_host_key_verification(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory); (home / ".ssh").mkdir()
-            command = TRANSPORT["force_verified_native_ssh"](
-                home, 4321, ["/usr/local/bin/podman", "info"],
-            )
-            config = (home / ".ssh/config").read_text(encoding="utf-8")
-        self.assertEqual(["/usr/local/bin/podman", "--ssh=native", "info"], command)
-        self.assertIn("StrictHostKeyChecking yes", config)
-        self.assertIn("UserKnownHostsFile ", config)
-        self.assertIn("Port 4321", config)
-
-    def test_relay_send_failure_does_not_call_connection_retry(self):
-        left = Mock(); right = Mock()
-        left.recv.side_effect = [b"request"]
-        right.sendall.side_effect = OSError("ambiguous send")
-        fake_selector = Mock()
-        fake_selector.select.return_value = [(Mock(fileobj=left, data=right), None)]
-        with patch.object(TRANSPORT["selectors"], "DefaultSelector", return_value=fake_selector):
-            with self.assertRaisesRegex(OSError, "ambiguous send"):
-                TRANSPORT["relay"](left, right)
-        right.sendall.assert_called_once_with(b"request")
 
 
 class GatewayLifecycleTest(unittest.TestCase):
@@ -146,15 +106,21 @@ class GatewayLifecycleTest(unittest.TestCase):
     def setUpClass(cls):
         cls.launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / "codex-sandbox"))
 
+    def setUp(self):
+        patcher = patch.dict(self.launcher["prepare_gateway"].__globals__,
+                            FixedTcpBridge=Mock(return_value=Mock(port=4321)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def state(self):
         return SimpleNamespace(
             capabilities=frozenset({"nested-containers"}),
-            agent_podman={"AGENT_PODMAN_SSH_USER": "worker", "SOCKET_PATH": "/podman.sock",
-                          "CONTAINER_SSHKEY": "/key", "AGENT_PODMAN_SSH_PORT": "2222"},
+            agent_docker={"AGENT_DOCKER_SSH_USER": "worker",
+                          "AGENT_DOCKER_SSHKEY": "/key", "AGENT_DOCKER_SSH_PORT": "2222"},
             gateway_link_network="gateway-link", gateway_egress_network="gateway-egress",
             gateway_container="gateway", sidecar_image="helper@sha256:" + "0" * 64,
-            agent_podman_key=Path("/key"),
-            agent_podman_known_hosts=Path("/known"), container_known_hosts="/container-known",
+            agent_docker_key=Path("/key"),
+            agent_docker_known_hosts=Path("/known"), container_known_hosts="/container-known",
             gateway_handle=None, resource_owner="legacy-owner",
         )
 
@@ -181,7 +147,7 @@ class GatewayLifecycleTest(unittest.TestCase):
         self.assertTrue(any(call.args[0][:2] == ["network", "rm"]
                             for call in run.call_args_list))
 
-    def test_editor_only_ignores_available_podman_credentials(self):
+    def test_editor_only_ignores_available_build_credentials(self):
         state = self.state()
         state.capabilities = frozenset({"host-editor"})
         commands = []
@@ -201,7 +167,7 @@ class GatewayLifecycleTest(unittest.TestCase):
             start(state)
         gateway_run = commands[0]
         self.assertIn("--editor-port", gateway_run)
-        self.assertNotIn("--podman-port", gateway_run)
+        self.assertNotIn("--build-port", gateway_run)
 
     def test_agent_room_uses_fixed_gateway_port_and_loopback_target(self):
         state = self.state()
@@ -240,6 +206,21 @@ class GatewayLifecycleTest(unittest.TestCase):
             self.assertEqual([], prepare(state))
         self.assertIsNone(state.gateway_handle)
         self.assertIn("warning: agent-room relay unavailable: [Errno 111] refused", stderr.getvalue())
+
+    def test_stopped_build_service_warns_and_creates_no_gateway(self):
+        state = self.state()
+        prepare = self.launcher["prepare_gateway"]
+        bridge = Mock()
+        bridge.start.side_effect = ConnectionRefusedError(111, "refused")
+        create = Mock()
+        with patch.dict(prepare.__globals__, FixedTcpBridge=Mock(return_value=bridge),
+                        create_relay_network=create), \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual([], prepare(state))
+        self.assertIsNone(state.gateway_handle)
+        self.assertIsNone(state.agent_docker)
+        create.assert_not_called()
+        self.assertIn("tools/agent-docker/vm.py start", stderr.getvalue())
 
     def test_cleanup_closes_registry_before_background_start_can_create(self):
         state = self.state()
@@ -413,7 +394,7 @@ class GatewayTest(unittest.TestCase):
         with patch.object(gateway.subprocess, 'Popen', return_value=child) as spawn, \
                 patch.object(gateway.os, 'wait', return_value=(12, 0)), \
                 patch.object(gateway.os, 'killpg'):
-            self.assertEqual(1, gateway.serve('host.lima.internal', podman_port=22))
+            self.assertEqual(1, gateway.serve('host.lima.internal', build_port=22))
         self.assertIn('TCP4-LISTEN:2222,fork,reuseaddr', spawn.call_args.args[0])
 
     def test_agent_room_listener_has_fixed_local_port(self):

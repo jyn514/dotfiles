@@ -5,7 +5,8 @@ set -eux
 JJ_VERSION=${JJ_VERSION:-0.42.0}
 BB_VERSION=${BB_VERSION:-1.13.219}
 GH_VERSION=${GH_VERSION:-2.76.1}
-PODMAN_VERSION=${PODMAN_VERSION:-6.0.1}
+DOCKER_VERSION=${DOCKER_VERSION:-29.8.0}
+BUILDX_VERSION=${BUILDX_VERSION:-0.37.0}
 TYPST_VERSION=${TYPST_VERSION:-0.15.1}
 
 if command -v apt-get >/dev/null; then
@@ -27,7 +28,10 @@ case "$(uname -m)" in
         bb_sha256=9ac1fe988d7001625b30ef3e3307e67f8545505a7cb49a4aa179f578115a3e09
         gh_arch=amd64
         jj_arch=x86_64
-        podman_arch=amd64
+        docker_arch=x86_64
+        docker_sha256=cc21815cf1e2efed867dc9c8b96b46ffed8ea176ffab32b0aacb54726ded8f25
+        buildx_arch=amd64
+        buildx_sha256=ae43fa08c796b44efc86d7a63c55f73f7c35f3101188dea7bf93bcd6f99577ba
         typst_arch=x86_64
         ;;
     aarch64|arm64)
@@ -35,7 +39,10 @@ case "$(uname -m)" in
         bb_sha256=e8d7a9c66c364b80627a43cb6ba5c14fb6ac7e4af114e8e5d80f97551ccdfe11
         gh_arch=arm64
         jj_arch=aarch64
-        podman_arch=arm64
+        docker_arch=aarch64
+        docker_sha256=1462a696be6029bd478d7d60d7f3c31cdd15affd1178a4a278aaf4a1d1b7f8b5
+        buildx_arch=arm64
+        buildx_sha256=d263ce31bd2c9e9210aaa2c7537c67802bccabcd342e4c9fe4907085ddb41aa5
         typst_arch=aarch64
         ;;
     *)
@@ -68,32 +75,23 @@ curl -fsSL \
     | tar -xJ --strip-components=1 -C /usr/local/bin \
         "typst-${typst_target}/typst"
 
-podman_archive="podman-remote-static-linux_${podman_arch}.tar.gz"
-podman_download_dir=$(mktemp -d)
-trap 'rm -rf "$podman_download_dir"' EXIT HUP INT TERM
-curl -fsSL -o "$podman_download_dir/$podman_archive" \
-    "https://github.com/podman-container-tools/podman/releases/download/v${PODMAN_VERSION}/$podman_archive"
-curl -fsSL -o "$podman_download_dir/shasums" \
-    "https://github.com/podman-container-tools/podman/releases/download/v${PODMAN_VERSION}/shasums"
-(
-    cd "$podman_download_dir"
-    grep "  $podman_archive\$" shasums > podman.sha256
-    test -s podman.sha256
-    sha256sum -c podman.sha256
-)
-tar -xzf "$podman_download_dir/$podman_archive" \
-    --strip-components=1 \
-    -C /usr/local/bin \
-    "bin/podman-remote-static-linux_${podman_arch}"
-mv "/usr/local/bin/podman-remote-static-linux_${podman_arch}" \
-    /usr/local/bin/podman
-rm -rf "$podman_download_dir"
+docker_download_dir=$(mktemp -d)
+trap 'rm -rf "$docker_download_dir"' EXIT HUP INT TERM
+curl -fsSL -o "$docker_download_dir/docker.tgz" \
+    "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${DOCKER_VERSION}.tgz"
+printf '%s  %s\n' "$docker_sha256" "$docker_download_dir/docker.tgz" | sha256sum -c -
+tar -xzf "$docker_download_dir/docker.tgz" --strip-components=1 -C /usr/local/bin docker/docker
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL -o "$docker_download_dir/docker-buildx" \
+    "https://github.com/docker/buildx/releases/download/v${BUILDX_VERSION}/buildx-v${BUILDX_VERSION}.linux-${buildx_arch}"
+printf '%s  %s\n' "$buildx_sha256" "$docker_download_dir/docker-buildx" | sha256sum -c -
+install -m 755 "$docker_download_dir/docker-buildx" /usr/local/lib/docker/cli-plugins/docker-buildx
+rm -rf "$docker_download_dir"
 trap - EXIT HUP INT TERM
 
-ln -s /usr/local/bin/podman /usr/local/bin/docker
 docker --version
+docker buildx version
 bb --version
 gh --version
 jj --version
-podman --version
 typst --version

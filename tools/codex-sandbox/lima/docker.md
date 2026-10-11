@@ -399,8 +399,9 @@ against the selected revision. `dev/test --lima` exercises nerdctl, not Docker.
 
 Zulip's Docker fixture passed dummy-credential TLS and upstream-401 cases;
 this does not establish configured end-to-end parity. The gateway has its own
-editor/SSH fixture below. Long-running interactive work, configured Agent
-Podman/Zulip smoke tests, and rollback remain follow-up validation.
+editor/SSH fixture below. Long-running interactive work, configured Zulip smoke
+tests, and rollback remain follow-up validation. Nested build validation is
+owned by the [Agent Docker acceptance checks](../development.md#nested-docker-acceptance).
 
 The [backend review](docker-review.md) records compatibility gaps and
 maintenance findings at revision `b4930191`.
@@ -412,16 +413,16 @@ measurements, transport-status difference, adoption rationale, and validation li
 
 ## Gateway validation
 
-With Agent Podman running and its SSH access configured, test the gateway using
-an existing sandbox agent image (with Python and SSH):
+With [Agent Docker](../../agent-docker/README.md) running and its SSH access
+configured, test the gateway using current agent and gateway images:
 
 ```sh
-python3 tools/codex-sandbox/tests/gateway_integration.py --agent-image IMAGE_REFERENCE
+python3 tools/codex-sandbox/tests/gateway_integration.py \
+  --agent-image AGENT_IMAGE --gateway-image GATEWAY_IMAGE
 ```
 
-This creates two owned gateways, checks editor and SSH authentication,
-cross-session isolation, upstream refusal, listener failure, and cancellation,
-then removes its resources without resetting the VM or existing sessions.
+See [Nested Docker acceptance](../development.md#nested-docker-acceptance) for
+the probe's build, staging, isolation, cancellation, and cleanup checks.
 
 ## Disposable validation
 

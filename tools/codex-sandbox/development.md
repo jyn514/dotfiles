@@ -5,6 +5,43 @@ Before running tests or probes, follow the repository
 [testing and isolation rules](../../dev/README.md#testing-and-probes).
 The startup benchmark below uses the host's real configuration.
 
+## Nested Docker acceptance
+
+Provision the [build VM](../agent-docker/README.md#setup), then build the current
+agent image and gateway image with their installed image owners. Run this probe
+against the admitted infrastructure VM using its real configuration:
+
+```sh
+python3 tools/codex-sandbox/tests/gateway_integration.py \
+  --agent-image AGENT_IMAGE --gateway-image GATEWAY_IMAGE
+```
+
+This probe deliberately uses host VM state rather than an isolated HOME. It
+creates two owned gateways and disposable workloads, checks pinned SSH access,
+rootless `docker info`, an agent-originated build consumed by staged Woodpecker,
+secret forwarding, pipeline cancellation and workspace/container cleanup,
+cross-session network isolation, listener failure, and gateway cancellation.
+It removes its containers, networks, and build image. It does not reset shared
+services. Follow with Flower's full `bb test ci` in the restarted sandbox to
+verify its actual pipeline and locally built CI images.
+
+Challenge the build account from the host through guest-root authority:
+
+```sh
+limactl copy tools/agent-docker/tests/guest_role_probe.py \
+  agent-build-docker:/tmp/agent-docker-role-probe.py
+limactl shell --workdir=/ agent-build-docker sudo python3 /tmp/agent-docker-role-probe.py
+limactl shell --workdir=/ agent-build-docker rm /tmp/agent-docker-role-probe.py
+```
+
+The probe first proves that a guest-root loopback listener is live and a
+privileged rootless container starts. It then verifies that the build account
+cannot connect to that listener, read guest-root data through a privileged
+container, or redirect setup writes into guest-root files with a symlink.
+The guest doctor also checks the loaded network policy, no host shares, no
+administrative groups, and no passwordless sudo. The probe uses temporary
+canaries and removes them; run it only in the owned build guest.
+
 ## Startup terminal ownership
 
 Redirecting the detached owner's stdio at fork made BuildKit lose its TUI:

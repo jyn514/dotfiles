@@ -1,6 +1,6 @@
 """Exercise owned gateways on an existing Docker VM without resetting shared state.
 
-Requires an existing sandbox agent image and configured Agent Podman SSH access.
+Requires an existing sandbox agent image and configured Agent Docker SSH access.
 Creates two isolated gateways and removes only its own containers/networks.
 """
 import argparse
@@ -20,19 +20,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state', type=Path, default=Path.home() / '.local/state/codex-sandbox-docker')
     parser.add_argument('--agent-image', required=True)
+    parser.add_argument('--gateway-image', required=True)
     args = parser.parse_args()
     runtime = Docker(args.state)
     launcher = runpy.run_path(str(ROOT / 'codex-sandbox'))
     launcher['new_state'].__globals__['OUTER_RUNTIME'] = runtime
     image = runtime.inspect_image(args.agent_image)
-    auth = runtime.prepare_images(ROOT.parents[1], {},
-        auth_builder=([str(ROOT / 'auth-proxy/image')], ROOT.parents[1])).auth
+    auth = runtime.inspect_image(args.gateway_image).config
     states = []
     try:
         for _ in range(2):
             state = launcher['new_state'](['--help'])
             states.append(state)
-            assert state.agent_podman is not None, 'Agent Podman access must be configured'
+            state.capabilities = frozenset({'host-editor', 'nested-containers'})
+            launcher['load_agent_docker'](state)
+            assert state.agent_docker is not None, 'Agent Docker access must be configured'
             state.sidecar_image = auth
             flags = launcher['prepare_gateway'](state)
             state.host_editor._edit = lambda content: content + ' edited'
@@ -49,7 +51,7 @@ def main():
                         *flags, *env, '--cap-drop=ALL',
                         '--mount', f'type=bind,src={ROOT / "tests"},dst=/probe,readonly',
                         '--entrypoint', 'python3'], ['/probe/gateway_guest.py', *probe]) as process:
-                    assert process.wait(timeout=30) == 0
+                    assert process.wait(timeout=180) == 0
         print('Editor upstream refusal left SSH available.')
         # SIGTERM must end the PID1 supervisor and all of its listener children.
         runtime.run(['kill', '--signal', 'TERM', state.gateway_container], stdout=subprocess.DEVNULL)

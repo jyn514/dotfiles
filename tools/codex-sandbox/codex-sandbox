@@ -121,13 +121,13 @@ class State:
     proxy_prefix: str
     codex_sidecar_container: str
     codex_auth_directory: Path
-    agent_podman_access: Path
-    agent_podman_connection: Path
-    agent_podman_key: Path
-    agent_podman_known_hosts: Path
+    agent_docker_access: Path
+    agent_docker_connection: Path
+    agent_docker_key: Path
+    agent_docker_known_hosts: Path
     host_working_directory: Path
-    container_known_hosts: str = "/run/secrets/agent-podman-known-hosts"
-    agent_podman: dict[str, str] | None = None
+    container_known_hosts: str = "/run/secrets/agent-docker-known-hosts"
+    agent_docker: dict[str, str] | None = None
     repository: Path | None = None
     git_repository: Path | None = None
     git_mount_source: Path | None = None
@@ -259,14 +259,14 @@ def parse_connection(path: Path) -> dict[str, str]:
             continue
         key, separator, value = line.partition("=")
         if not separator or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
-            raise LauncherError(f"invalid Agent Podman connection setting: {line!r}")
+            raise LauncherError(f"invalid Agent Docker connection setting: {line!r}")
         values[key] = value
     required = {
-        "AGENT_PODMAN_SSH_USER", "AGENT_PODMAN_SSH_PORT",
-        "CONTAINER_HOST", "CONTAINER_SSHKEY",
+        "AGENT_DOCKER_SSH_USER", "AGENT_DOCKER_SSH_PORT",
+        "DOCKER_HOST", "AGENT_DOCKER_SSHKEY",
     }
     if not required <= values.keys():
-        raise LauncherError("Agent Podman connection settings are incomplete")
+        raise LauncherError("Agent Docker connection settings are incomplete")
     return values
 
 
@@ -368,7 +368,7 @@ def new_state(codex_arguments: list[str]) -> State:
     home = Path(os.environ["HOME"])
     uid = os.getuid()
     suffix = f"{uid}-{secrets.token_hex(6)}"
-    access = Path(os.environ.get("AGENT_PODMAN_ACCESS_DIR", home / ".agent-podman-access"))
+    access = Path(os.environ.get("AGENT_DOCKER_ACCESS_DIR", home / ".agent-docker-access"))
     state = State(
         codex_arguments=codex_arguments,
         home=home,
@@ -385,40 +385,44 @@ def new_state(codex_arguments: list[str]) -> State:
         codex_auth_directory=Path(os.environ.get(
             "CODEX_SANDBOX_AUTH_DIR", home / ".codex-sandbox-auth",
         )),
-        agent_podman_access=access,
-        agent_podman_connection=access / "connection.env",
-        agent_podman_key=access / "id_ed25519",
-        agent_podman_known_hosts=access / "known_hosts.sandbox",
+        agent_docker_access=access,
+        agent_docker_connection=access / "connection.env",
+        agent_docker_key=access / "id_ed25519",
+        agent_docker_known_hosts=access / "known_hosts.sandbox",
         host_working_directory=Path.cwd().resolve(strict=True),
     )
     return state
 
 
-def load_agent_podman(state: State) -> None:
+def load_agent_docker(state: State) -> None:
     paths = (
-        state.agent_podman_connection, state.agent_podman_key,
-        state.agent_podman_known_hosts,
+        state.agent_docker_connection, state.agent_docker_key,
+        state.agent_docker_known_hosts,
     )
     if not any(path.exists() for path in paths):
         print(
-            f"warning: nested-containers requested but Agent Podman access is missing at "
-            f"{state.agent_podman_access}; docker/podman unavailable. "
-            "Follow tools/agent-podman/README.md setup on the host, then restart the sandbox.",
+            f"warning: nested-containers requested but Agent Docker access is missing at "
+            f"{state.agent_docker_access}; docker unavailable. "
+            "Follow tools/agent-docker/README.md setup on the host, then restart the sandbox.",
             file=sys.stderr,
         )
         return
     if not all(path.is_file() for path in paths):
-        raise LauncherError(f"Agent Podman access state is incomplete: {state.agent_podman_access}")
-    values = parse_connection(state.agent_podman_connection)
+        raise LauncherError(f"Agent Docker access state is incomplete: {state.agent_docker_access}")
+    values = parse_connection(state.agent_docker_connection)
+    if (not re.fullmatch(r"[a-z_][a-z0-9_-]*", values["AGENT_DOCKER_SSH_USER"])
+            or not values["AGENT_DOCKER_SSH_PORT"].isdigit()
+            or not 0 < int(values["AGENT_DOCKER_SSH_PORT"]) < 65536
+            or values["AGENT_DOCKER_SSHKEY"] != "/run/secrets/agent-docker-key"):
+        raise LauncherError("invalid Agent Docker SSH identity, port, or key destination")
     prefix = (
-        f"ssh://{values['AGENT_PODMAN_SSH_USER']}@host.docker.internal:"
-        f"{values['AGENT_PODMAN_SSH_PORT']}/"
+        f"ssh://{values['AGENT_DOCKER_SSH_USER']}@host.docker.internal:"
+        f"{values['AGENT_DOCKER_SSH_PORT']}"
     )
-    host = values["CONTAINER_HOST"]
-    if not host.startswith(prefix):
-        raise LauncherError("Agent Podman connection does not use the expected host endpoint")
-    values["SOCKET_PATH"] = host.removeprefix(prefix)
-    state.agent_podman = values
+    host = values["DOCKER_HOST"]
+    if host != prefix:
+        raise LauncherError("Agent Docker connection does not use the expected host endpoint")
+    state.agent_docker = values
 
 
 def decode_tmux_registration(encoded: str) -> dict[str, object]:
@@ -586,7 +590,7 @@ def load_repository_policy(state: State) -> None:
         name for name, selected in snapshot.get("capabilities", {}).items() if selected
     )
     if "nested-containers" in state.capabilities:
-        load_agent_podman(state)
+        load_agent_docker(state)
 
 
 def resolve_sidecar_image() -> str:
@@ -638,7 +642,7 @@ def load_accepted_session(state: State) -> None:
     check_agent_pi_revision(OUTER_RUNTIME, state.image)
     state.sidecar_image = values["helper-image"] or ""
     if "nested-containers" in state.capabilities:
-        load_agent_podman(state)
+        load_agent_docker(state)
 
 
 def attach_proxies(state: State) -> list[str]:
@@ -683,6 +687,7 @@ class GatewayHandle:
         self.cancelled = threading.Event()
         self.bridge: HostEditorBridge | None = None
         self.agent_room_bridge: FixedTcpBridge | None = None
+        self.build_bridge: FixedTcpBridge | None = None
         self._logical: set[str] = set()
         self.created: set[str] = set()
 
@@ -864,12 +869,30 @@ def recover_relays(state: State) -> None:
 def prepare_gateway(state: State) -> list[str]:
     capabilities = getattr(state, "capabilities", frozenset({"host-editor", "nested-containers"}))
     editor = "host-editor" in capabilities
-    nested = "nested-containers" in capabilities and state.agent_podman is not None
+    nested = "nested-containers" in capabilities and state.agent_docker is not None
     agent_room = "agent-room" in capabilities
     if not editor and not nested and not agent_room:
         return []
     handle = GatewayHandle(state, editor, nested, agent_room)
     state.gateway_handle = handle
+    if nested:
+        handle.build_bridge = FixedTcpBridge(("127.0.0.1", int(state.agent_docker["AGENT_DOCKER_SSH_PORT"])))
+        handle._register_logical("bridge:build", remove=handle.build_bridge.stop)
+        try:
+            handle.build_bridge.start()
+        except OSError as error:
+            handle.build_bridge.stop()
+            print(f"warning: nested Docker relay unavailable: {error}; "
+                  "run python3 tools/agent-docker/vm.py start on the host, then restart the sandbox",
+                  file=sys.stderr)
+            handle.build_bridge = None
+            handle.nested = nested = False
+            state.agent_docker = None
+            handle._logical.discard("bridge:build")
+        if not editor and not nested and not agent_room:
+            handle.cleanup()
+            state.gateway_handle = None
+            return []
     if agent_room:
         handle.agent_room_bridge = FixedTcpBridge(("127.0.0.1", 3000))
         handle._register_logical("bridge:agent-room", remove=handle.agent_room_bridge.stop)
@@ -913,13 +936,13 @@ def prepare_gateway(state: State) -> list[str]:
           ["--env", "CODEX_SANDBOX_EDITOR_TOKEN"]),
     ]
     if nested:
-        values = state.agent_podman
+        values = state.agent_docker
         arguments += [
-            "--env", f"CONTAINER_HOST=ssh://{values['AGENT_PODMAN_SSH_USER']}@{state.gateway_container}:2222/{values['SOCKET_PATH']}",
-            "--env", f"CONTAINER_SSHKEY={values['CONTAINER_SSHKEY']}",
-            "--env", f"AGENT_PODMAN_KNOWN_HOSTS={state.container_known_hosts}",
-            "--mount", f"type=bind,src={state.agent_podman_key},dst={values['CONTAINER_SSHKEY']},readonly",
-            "--mount", f"type=bind,src={state.agent_podman_known_hosts},dst={state.container_known_hosts},readonly",
+            "--env", f"DOCKER_HOST=ssh://{values['AGENT_DOCKER_SSH_USER']}@{state.gateway_container}:2222",
+            "--env", f"AGENT_DOCKER_SSHKEY={values['AGENT_DOCKER_SSHKEY']}",
+            "--env", f"AGENT_DOCKER_KNOWN_HOSTS={state.container_known_hosts}",
+            "--mount", f"type=bind,src={state.agent_docker_key},dst={values['AGENT_DOCKER_SSHKEY']},readonly",
+            "--mount", f"type=bind,src={state.agent_docker_known_hosts},dst={state.container_known_hosts},readonly",
         ]
     return arguments
 
@@ -929,11 +952,10 @@ def start_gateway(state: State) -> None:
     if handle is None:
         raise LauncherError("gateway was not prepared")
     editor_port = handle.bridge.port if handle.bridge is not None else None
-    podman_port = ((state.agent_podman or {}).get("AGENT_PODMAN_SSH_PORT")
-                   if handle.nested else None)
+    build_port = (str(handle.build_bridge.port) if handle.build_bridge is not None else None)
     agent_room_port = (handle.agent_room_bridge.port
                        if handle.agent_room_bridge is not None else None)
-    if editor_port is None and podman_port is None and agent_room_port is None:
+    if editor_port is None and build_port is None and agent_room_port is None:
         raise LauncherError("gateway requires at least one selected listener")
     container_resource = f"container:{state.gateway_container}"
     handle.registry.register(OwnedResource(
@@ -952,14 +974,14 @@ def start_gateway(state: State) -> None:
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--network", state.gateway_egress_network,
         "--network", state.gateway_link_network, *proxy_flags(),
-        # Preserve the editor-only limits without throttling Podman build traffic.
-        *([] if podman_port is not None else
+        # Preserve the editor-only limits without throttling Docker build traffic.
+        *([] if build_port is not None else
           ["--pids-limit", "32", "--memory", "64m", "--cpus", "0.25"]),
         *([] if isinstance(OUTER_RUNTIME, VMRuntime) else ["--add-host", "host.docker.internal:host-gateway"]),
         "--entrypoint", "/trusted/bin/sandbox-gateway", state.sidecar_image,
         "--host", OUTER_RUNTIME.host_address,
         *(["--editor-port", str(editor_port)] if editor_port is not None else []),
-        *(["--podman-port", podman_port] if podman_port is not None else []),
+        *(["--build-port", build_port] if build_port is not None else []),
         *(["--agent-room-port", str(agent_room_port)] if agent_room_port is not None else []),
     ], discard_stdout=True)
     handle.created.add(container_resource)
@@ -990,6 +1012,10 @@ def start_gateway(state: State) -> None:
         handle._register_logical(allowlist,
             depends_on=("bridge:agent-room", *address_resources))
         handle.agent_room_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
+    if handle.build_bridge is not None:
+        handle._register_logical("allowlist:build",
+            depends_on=("bridge:build", *address_resources))
+        handle.build_bridge.allow_peers({relay_ip, egress_ip, "127.0.0.1"})
     # Until this allowlist is installed, the listener rejects every connection.
 
 
@@ -2041,7 +2067,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
     reserved = {
         "CODEX_SANDBOX_EDITOR_ADDRESS", "CODEX_SANDBOX_EDITOR_TOKEN",
         "CODEX_SANDBOX_KEYCHAIN_ADDRESS", "CODEX_SANDBOX_KEYCHAIN_TOKEN",
-        "CONTAINER_HOST", "CONTAINER_SSHKEY", "AGENT_PODMAN_KNOWN_HOSTS",
+        "DOCKER_HOST", "AGENT_DOCKER_SSHKEY", "AGENT_DOCKER_KNOWN_HOSTS",
     }
     agent_environment = {key: value for key, value in os.environ.items() if key not in reserved}
     bridge_environment: dict[str, str] = {}
@@ -2324,8 +2350,8 @@ def preflight_lima(state: State) -> None:
         readable.append(state.zuliprc)
     if _secure_codex_auth_directory(state) is not None:
         writable.append(state.codex_auth_directory)
-    if state.agent_podman is not None:
-        readable += [state.agent_podman_key, state.agent_podman_known_hosts]
+    if state.agent_docker is not None:
+        readable += [state.agent_docker_key, state.agent_docker_known_hosts]
     home = state.home.resolve(strict=True)
     for path in [*writable, *readable]:
         if home.is_relative_to(path.resolve(strict=True)):
