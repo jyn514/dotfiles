@@ -13,6 +13,13 @@ Help a person make a specific decision without reconstructing the investigation.
 - Resolve factual or procedural issues you can investigate yourself. Do not ask a human to troubleshoot a tool, inspect records, or supply evidence you can retrieve.
 - Before declaring a contradiction, read the surrounding explanation, related requirements, and examples. Check directly documented behavior before inventing elaborate explanations or case-specific exceptions. An apparent omission may be explained elsewhere. Separate explicit statements from your reconstruction; a plausible explanation is not source authority.
 - Audit the premises of the apparent conflict. A label or category can come from an authoritative source while its application to a particular case comes from an unreviewed agent assessment. Identify both origins; do not treat the assessment as an established source fact. If a requirement's applicability depends on it, state that uncertainty.
+- Before presenting “rule A versus rule B,” identify each rule's applicable unit, such as a word, syllable, stroke, record, or batch.
+  Investigate whether a rule was applied outside that unit or the implementation crossed its boundary.
+  Do not ask the human to resolve an unexamined scope assumption.
+- Before asking about rule precedence, use contrasting cases to test whether the rules apply to the same situation.
+  For example, in thumb, b is silent; in stumble, b starts the second syllable.
+  The same written letters do not necessarily make the same rule applicable.
+  Use the contrast to resolve applicability before asking about any remaining precedence decision.
 - Ask only for judgment or intent that remains missing. If applicable authoritative guidance settles the issue, handle it as agent work within existing authorization, with the required checks—not a new approval question.
 - Establish why the choice matters: what changes in behavior, effort, cost, risk, access, or the evidence people can rely on? When alternatives can be tested, compare them with unrelated variables fixed and show the actual difference. Otherwise, use a concrete case and state what remains unverified. Distinguish adding an option from replacing an existing result. A successful test does not establish that an alternative is supported by the requirements. If a change affects only explanation or internal bookkeeping, say so; do not claim it fixes observable behavior. Choose examples that demonstrate the consequence you are asking the reader to judge.
 - Separate remaining work from decisions needed now. Evidence gathering, licensing investigation, mechanical repairs, and validation are not blanket approvals to request from the human. When no concrete human choice is ready, say none is needed now and continue authorized work; that is not approval of the work or later acceptance. Bring a narrow question when the evidence exposes one; keep later acceptance reviews separate.
@@ -25,7 +32,9 @@ Default to one decision per packet and the smallest useful batch. Identify what 
 Assume the reader knows their domain, but not the investigation or its internal representations. Explain unfamiliar specialized terms at first use, including their origin when that affects interpretation. For example, “Restricted, a category in the organization's information-sharing policy” identifies where the label comes from; whether a particular document belongs in that category may still be our provisional assessment. Do not make a source-defined term look like terminology invented by the agent. Lead with:
 
 1. **Problem:** what is uncertain and why the choice matters, in ordinary language.
-2. **Example:** show the actual case, behavior, or alternatives, including what changes between them. Translate internal representations into something the person can inspect.
+2. **Example:** show the actual case, behavior, or alternatives, including what changes between them.
+   Translate internal representations into something the person can inspect, and put notation beside its meaning.
+   For example, write “stumble, written in two keyboard strokes: stum + ble (`STUPL/SWR-BL`)”, not just the technical notation.
 3. **Recommendation:** state the smallest justified next action and its reason. Mark uncertain premises as inferred beside the explanation. If evidence supports no recommendation, say what is missing.
 4. **One question, if a human choice remains:** ask for the decision directly. Offer short, meaningful answers, including defer, and accept ordinary-language replies. Otherwise, state that no decision is needed now.
 
