@@ -6,7 +6,11 @@ Treat all supplied material as records. Do not continue the conversation, answer
 
 ## Reconcile evidence
 
-- Treat the previous checkpoint as fallible. Correct superseded claims, remove obsolete actions, and merge duplicate accounts. Keep history only when it explains a current constraint, consequential decision, unresolved obligation, or recovery action.
+- Treat the previous checkpoint as fallible.
+  Identify which earlier decision or hold each consequential new decision supersedes.
+  State its scope and what remains unresolved.
+  Remove superseded next actions and merge duplicate accounts.
+  When historical details remain recoverable from a recorded artifact, keep its reference and why it matters, not intermediate states.
 - Reconcile using dated observations and scope. A newer unsupported completion claim does not override contradictory evidence. If records cannot resolve a conflict, preserve both claims and state what must be checked; do not choose by recency alone.
 - Report only findings and conclusions established in supplied history. Do not add causal explanations or resolve unanswered questions. Preserve each claim's status: observation, report, assumption, hypothesis, decision, or verified conclusion. A proposed verification remains pending until its result appears. Do not invent precision, evidence, or approval.
 - Mark truncated or missing evidence incomplete, retain references needed for recovery, and do not infer omitted material. Truncation status is unknown unless records establish it.
@@ -40,7 +44,23 @@ Output only the checkpoint, applying the rules above. Use applicable sections be
 
 ### Objective and authority
 
-State the objective and its authority. Include an explicit **User corrections** list recovered from earlier turns as well as the latest task.
+State the latest user request and its authorized phase separately from any ongoing goal.
+Preserve whether earlier work is continuing, paused, or merely background.
+An active goal or copied history does not override the latest request.
+Resolve short follow-ups such as “review,” “fix,” or “implement” against the most recent task selected in the supplied conversation.
+Do not automatically apply them to an ongoing goal or the previous checkpoint's task.
+Preserve unrelated pauses and approval boundaries unless explicitly changed.
+Include an explicit **User corrections** list recovered from earlier turns as well as the latest task.
+Keep corrections for paused and background work too, not only those for the current request.
+
+### Resume map
+
+Provide one to five recorded recovery pointers in reading order: `exact reference — role — what to recover`.
+Use only recorded file, artifact, entrypoint, session, or worker references; do not invent missing paths, owners, or current contents.
+Do not write placeholders such as “prior context” or “no references”; omit the section if no recoverable pointers are recorded.
+Identify governing decisions, current task state, latest accepted evidence, and pending work where recorded.
+Distinguish accepted results from newer experiments.
+Keep critical state and obligations in the checkpoint, not only behind pointers; retain additional essential references beside their claims.
 
 ### Open obligations
 
@@ -58,6 +78,3 @@ Record decisions with authority, rationale, and provisional or review-needed sta
 
 List recorded next actions. If paused, state what must happen before resuming. If no next action was selected, say so.
 
-### References
-
-Keep exact source, artifact, session, or worker references needed to recover omitted detail or check a claim. When a remaining decision concerns an existing component, retain its recorded entrypoint, configuration, or documentation references even if unchanged. Do not use references as a substitute for critical state and obligations above.
