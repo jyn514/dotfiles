@@ -57,8 +57,12 @@ The build service uses a persistent guest-root-owned SSH host key; Lima's
 per-boot administrator host-key rotation does not change this pin.
 
 A failed setup retains its state and VM for inspection. Inspect the failure
-before rerunning setup with the same arguments. Creation recovery refuses a
-VM with a different recorded generation. Configuration or installation changes
+before rerunning setup with the same arguments. If enabling linger fails,
+setup prints guest logind and D-Bus status, logind CPU usage, and recent service
+logs. Each diagnostic has a five-second limit; setup still fails if they are
+unavailable. Repair the guest service before retrying the same host command.
+Creation recovery refuses a VM with a different recorded generation.
+Configuration or installation changes
 require a fresh provision. To keep an existing VM while trying another:
 
 ```sh

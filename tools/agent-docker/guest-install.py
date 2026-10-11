@@ -28,6 +28,37 @@ def run(*args, **kwargs):
     return subprocess.run(args, check=True, timeout=240, **kwargs)
 
 
+def enable_linger():
+    try:
+        run("loginctl", "enable-linger", USER, capture_output=True, text=True)
+        return
+    except subprocess.CalledProcessError as error:
+        reason = (error.stderr or error.stdout or str(error)).strip()
+    except subprocess.TimeoutExpired as error:
+        reason = str(error)
+    print(f"agent Docker setup: loginctl enable-linger {USER} failed: {reason}", file=sys.stderr)
+    # A service can report active while spinning. Include CPU and journal evidence,
+    # and bound each probe so an unresponsive D-Bus cannot hide the original failure.
+    diagnostics = (
+        ("systemctl", "status", "systemd-logind.service", "dbus.service", "--no-pager", "--full"),
+        ("ps", "-C", "systemd-logind", "-o", "pid,pcpu,time,stat,args"),
+        ("journalctl", "-u", "systemd-logind", "-u", "dbus", "--no-pager", "-n", "30"),
+    )
+    for command in diagnostics:
+        print(f"guest diagnostic: {' '.join(command)}", file=sys.stderr)
+        try:
+            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, timeout=5)
+            print(result.stdout, end="", file=sys.stderr)
+            if result.returncode:
+                print(f"guest diagnostic exited {result.returncode}", file=sys.stderr)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print(f"guest diagnostic unavailable: {error}", file=sys.stderr)
+    raise SystemExit("agent Docker setup: could not enable linger; inspect the guest logind/D-Bus "
+                     "diagnostics, repair the guest service, then rerun the same host setup command. "
+                     "VM state retained.")
+
+
 def as_builder(*args, **kwargs):
     return run("sudo", "-u", USER, "env", "-i", f"HOME={HOME}", f"USER={USER}",
                f"LOGNAME={USER}", "PATH=/usr/local/bin:/usr/bin:/bin",
@@ -157,7 +188,7 @@ def install(staging, config):
     run("systemctl", "restart", "agent-build-policy.service")
     actual = run("nft", "-j", "list", "table", "inet", "agent_build", capture_output=True, text=True).stdout
     (ROOT / "firewall.json").write_text(actual)
-    run("loginctl", "enable-linger", USER)
+    enable_linger()
     run("systemctl", "start", f"user@{UID}.service")
     as_builder("dockerd-rootless-setuptool.sh", "install")
     as_builder("systemctl", "--user", "enable", "--now", "docker")
