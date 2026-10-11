@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Capture connection source for tmux clients without changing tmux arguments."""
+
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "libexec/tmux"))
+from attachment import launch, native_tmux
+
+try:
+    raise SystemExit(launch(native_tmux(), sys.argv[1:]))
+except (OSError, RuntimeError) as error:
+    print(f"tmux launcher: {error}", file=sys.stderr)
+    raise SystemExit(1)

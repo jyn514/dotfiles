@@ -484,36 +484,6 @@ class ProfileContractTests(unittest.TestCase):
         self.assertIsNotNone(command)
         self.assertIn('os.date("%Y-%m-%d")', command.group(1))
 
-    def test_tmux_session_hook_propagates_attach_failure_through_logger(self) -> None:
-        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
-        [command] = re.findall(
-            r"bash -o pipefail -c '([^']*attach-session\.sh[^']*)'",
-            tmux_config,
-        )
-
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory) / "home"
-            hook = home / ".config/tmux/attach-session.sh"
-            hook.parent.mkdir(parents=True)
-            hook.write_text("#!/bin/sh\nexit 37\n")
-            hook.chmod(0o755)
-            binaries = Path(directory) / "bin"
-            binaries.mkdir()
-            logger = binaries / "logger"
-            logger.write_text("#!/bin/sh\ncat >/dev/null\n")
-            logger.chmod(0o755)
-
-            result = subprocess.run(
-                ["/bin/bash", "-o", "pipefail", "-c", command],
-                env=os.environ
-                | {"HOME": str(home), "PATH": f"{binaries}:{os.environ['PATH']}"},
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-        self.assertEqual(37, result.returncode)
-
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory) / "home"

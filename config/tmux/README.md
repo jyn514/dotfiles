@@ -1,5 +1,34 @@
 # tmux
 
+## Session attachment
+
+The startup hook selects sessions by the source of their live clients.
+See the [implementation plan](attachment-implementation-plan.md) for design and verification details.
+
+All local clients share one source; each normalized SSH source IP is distinct, regardless of source port.
+A session is eligible when it is detached or every attached client has a known, different source.
+Detached sessions take priority, with tmux listing order preserved within each group.
+The new session is excluded; if no candidate qualifies, it remains available.
+Explicit session creation inside tmux, detached scripted creation, and named attachments retain their behavior.
+Sources identify the connection seen by the server, so NAT or jump hosts can make machines share an IP.
+
+Tailscale names are optional display labels; IP addresses define identity and remain the fallback label.
+The approved capture path is `bin/tmux`, which records source identity before starting the real tmux with the same arguments.
+It preserves the environment, terminal streams, and process group, forwards signals, and returns tmux's exit status.
+Its private source record stays locked while the client process runs and is removed when the launcher exits.
+An unlocked record left by a killed launcher is unknown and ignored.
+One process-held lock per server serializes selection and switching; Tailscale lookup runs after release.
+
+Direct binary invocations, clients started outside the launcher, and malformed SSH data have unknown sources.
+An unknown incoming source can reuse only detached sessions; an unknown attached source disqualifies its session.
+Unknown clients can still attach explicitly to any session.
+
+Reload with `tmux source-file ~/.config/tmux/tmux.conf` and ensure `command -v tmux` resolves to this repository's `bin/tmux`.
+If the shell cached another executable, clear its command cache or open a new shell.
+Detach and reattach existing clients through the launcher to establish their source identities.
+The launcher and locks use POSIX interfaces, but runtime verification currently covers Linux only.
+Run the attachment regressions with `dev/test-environment python3 tests/tmux/attach_session_test.py`.
+
 ## Clipboard environment
 
 The [configuration](tmux.conf) refreshes `WAYLAND_DISPLAY` when creating or
