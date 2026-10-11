@@ -43,6 +43,10 @@ Quoting can prevent the sandbox from matching an approved command prefix even wh
 Run `jj` outside the sandbox and as a separate command: it snapshots the working
 directory, and combining it makes unrelated commands require approval.
 
+You do not have `sudo` permissions on the host, not even when running outside the sandbox.
+If you need to run a command with sudo, use `human-review-packets` to give me the command and the reason you need to run it.
+This does not apply to `sudo` commands in a VM, those are allowed.
+
 ## Citations
 
 - Cite only sources returned by the web tool; copy their identifiers exactly.
