@@ -346,6 +346,55 @@ an image shared with a selected service may still be required. Required metadata
 protection, provider credential isolation, and runtime admission cannot be
 disabled as performance options.
 
+=== Nested container engine <nested-container-engine>
+
+*Selected design; not implemented:* Standardize sandbox infrastructure and
+agent build workloads on rootless Docker. The current nested-container path
+uses Agent Podman, whose provisioning supports macOS only.
+
+Use two separate Lima VMs on Linux and macOS. The infrastructure VM owns the
+agent container, trusted proxies, and credential helpers. The build VM owns
+the rootless Docker daemon exposed through `nested-containers`.
+Reusing the infrastructure daemon would let an agent inspect or replace its
+own sandbox and trusted services; rootless operation does not remove that authority.
+
+Reuse the Docker VM provisioning source for engine installation and lifecycle,
+with an explicit build role. The build role must disable host filesystem shares,
+SSH-agent forwarding, and host credential injection. Give it a dedicated
+non-sudo build account. Agent access must not include the VM administrator's
+SSH identity or VM lifecycle controls. Preserve restrictions on host and private
+network access while allowing public image and dependency downloads.
+
+Keep the authenticated SSH gateway, but connect it to the build account's
+Docker socket. Package a real Docker CLI in the agent image and replace the
+Podman client and transport assumptions. Never mount or forward the
+infrastructure daemon socket into the agent. Each role owns separate engine
+state, images, volumes, and service readiness; shared provisioning code does
+not imply shared daemon authority.
+
+The Woodpecker adapter must stage the caller's repository in the build VM and
+run the real CLI beside that Docker daemon, where bind sources exist.
+Preserve its repository-independent path handling, exit status, cancellation,
+and per-run cleanup. Replace Podman socket/service assumptions and its SELinux
+relabel helper with the selected Docker backend's workspace-sharing behavior.
+The existing adapter contract is described in
+#link("../../agent-podman/ci-design.typ")[the local CI design].
+
+If `nested-containers` is selected but build-service access is absent, warn
+with the missing prerequisite and host setup action. Continue without that
+optional service; do not select a local socket or another engine as a fallback.
+
+Acceptance requires Linux and macOS provisioning and restart checks, successful
+`docker info` from the agent, a complete Flower `bb test ci` run through the
+staged Woodpecker adapter, and cancellation/cleanup checks. Verify that the
+agent cannot access the infrastructure daemon, administrator credentials, host
+shares, or restricted network destinations through the build VM.
+The backend transition must update repository callers, wrappers, setup and
+recovery documentation, and tests together. Do not silently reinterpret
+persisted Podman access state as Docker state.
+
+=== Shared-session capability authority
+
 A shared session begins with the first sandbox for a checkout and ends when its
 last execution attachment closes. The host-Pi mode uses the handoff rules above. Starting
 another sandbox for that checkout is a join.
