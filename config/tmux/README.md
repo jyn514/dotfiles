@@ -23,6 +23,12 @@ Direct binary invocations, clients started outside the launcher, and malformed S
 An unknown incoming source can reuse only detached sessions; an unknown attached source disqualifies its session.
 Unknown clients can still attach explicitly to any session.
 
+Read attachment decisions with `journalctl -t tmux-session` on Linux.
+Each selection logs the incoming client, PID, source IP (or `local`/`unknown`), and new session ID.
+Rejected sessions name clients with the same or unknown source; unknown incoming sources explain their detached-only restriction.
+If no session qualifies, the log states that the new session is kept.
+These diagnostics use the selection snapshot and are emitted after the server lock is released.
+
 Reload with `tmux source-file ~/.config/tmux/tmux.conf` and ensure `command -v tmux` resolves to this repository's `bin/tmux`.
 If the shell cached another executable, clear its command cache or open a new shell.
 Detach and reattach existing clients through the launcher to establish their source identities.

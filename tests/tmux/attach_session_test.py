@@ -198,9 +198,47 @@ class AttachmentTests(unittest.TestCase):
 
     def test_unknown_source_is_conservative(self):
         _, direct = self.start(command="attach-session", name="seed", wrapped=False)
-        _, known = self.start("100.64.0.1", name="known")
+        process, known = self.start("100.64.0.1", name="known")
         self.assertEqual(self.session(known), "known")
         self.assertEqual(self.session(direct), "seed")
+        output = process.received.decode()
+        self.assertIn("source 100.64.0.1", output)
+        self.assertIn("rejected session", output)
+        self.assertIn(f"pid {direct} has unknown source", output)
+        self.assertIn("no eligible existing session", output)
+
+    def test_same_source_diagnostic_identifies_blocker_and_retained_session(self):
+        _, first = self.start(name="first")
+        process, second = self.start(name="second")
+        self.assertEqual(self.session(first), "seed")
+        self.assertEqual(self.session(second), "second")
+        output = process.received.decode()
+        self.assertIn(f"pid {second} source local", output)
+        self.assertIn(f"pid {first} has same source local", output)
+        self.assertIn("keeping session", output)
+        self.assertIn("no eligible existing session", output)
+
+    def test_syslog_reports_rejection_after_releasing_selection_lock(self):
+        _, blocker = self.start(command="attach-session", name="seed", wrapped=False)
+        name, created, server, pid = self.retained_client()
+        name = next(line.split("\t")[0] for line in self.tmux(
+            "list-clients", "-F", "#{client_name}\t#{client_pid}").splitlines()
+                    if line.split("\t")[1] == pid)
+        messages = []
+        def receive(_priority, message):
+            # Logging must not extend the selection lock's lifetime.
+            with attachment.open_private(Path(self.socket).parent / f".attachment-{server}.lock") as lock:
+                attachment.fcntl.flock(lock, attachment.fcntl.LOCK_EX | attachment.fcntl.LOCK_NB)
+                messages.append(message)
+        with mock.patch.object(attachment.syslog, "openlog"), \
+             mock.patch.object(attachment.syslog, "syslog", side_effect=receive):
+            status = attachment.main(["--tmux", NATIVE, "--socket", self.socket,
+                                      "--client", name, "--session", created,
+                                      "--server-pid", server, "--log"])
+        self.assertEqual(status, 0)
+        self.assertEqual(self.session(pid), "retained")
+        self.assertTrue(any(f"pid {blocker} has unknown source" in line for line in messages), messages)
+        self.assertTrue(any("no eligible existing session" in line for line in messages), messages)
 
     def test_detach_removes_live_source_and_record(self):
         first, pid = self.start(name="first")
@@ -269,8 +307,10 @@ class AttachmentTests(unittest.TestCase):
 
     def test_unknown_incoming_client_reuses_only_detached_sessions(self):
         _, local = self.start(name="first")
-        _, unknown = self.start(name="unknown", wrapped=False)
+        process, unknown = self.start(name="unknown", wrapped=False)
         self.assertEqual(self.session(unknown), "unknown")
+        self.assertIn(f"pid {unknown} source unknown".encode(), process.received)
+        self.assertIn(b"incoming source unknown; detached sessions only", process.received)
         self.tmux("new-session", "-d", "-s", "detached", "sleep", "300")
         _, other = self.start(name="unknown2", wrapped=False)
         self.assertEqual(self.session(other), "detached")

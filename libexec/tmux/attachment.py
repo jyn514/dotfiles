@@ -197,21 +197,35 @@ class Tmux:
         return [tuple(line.split("\t")) for line in self.run(
             "list-clients", "-F", "#{client_name}\t#{client_pid}\t#{session_id}").splitlines()]
 
-    def candidates(self, created: str, identity: str | None) -> list[str]:
+    def candidates(self, created: str, identity: str | None,
+                   diagnostics: list[str] | None = None) -> list[str]:
         clients = self.clients()
         detached, attached = [], []
         for session in self.run("list-sessions", "-F", "#{session_id}").splitlines():
             if session == created:
                 continue
-            occupants = [client_source(pid) for _, pid, current in clients if current == session]
+            occupants = [(name, pid, client_source(pid))
+                         for name, pid, current in clients if current == session]
             if not occupants:
                 detached.append(session)
-            elif identity is not None and all(item is not None and item != identity for item in occupants):
+            elif identity is not None and all(item is not None and item != identity
+                                              for _, _, item in occupants):
                 attached.append(session)
+            elif diagnostics is not None:
+                if identity is None:
+                    diagnostics.append(f"rejected session {session}: incoming source unknown; detached sessions only")
+                else:
+                    for name, pid, item in occupants:
+                        if item is None or item == identity:
+                            reason = "unknown source" if item is None else f"same source {item}"
+                            diagnostics.append(f"rejected session {session}: client {name} pid {pid} has {reason}")
         return detached + attached
 
 
-def attach(tmux: Tmux, socket: str, client: str, created: str, server_pid: str) -> tuple[str | None, str] | None:
+def attach(tmux: Tmux, socket: str, client: str, created: str, server_pid: str,
+           diagnostics: list[str] | None = None) -> tuple[str | None, str] | None:
+    if diagnostics is None:
+        diagnostics = []
     if tmux.run("show-option", "-sqv", DISABLE_OPTION):
         return
     # The hook supplies stable targets before numeric session renaming.
@@ -223,9 +237,11 @@ def attach(tmux: Tmux, socket: str, client: str, created: str, server_pid: str) 
         if incoming is None:
             return
         identity = client_source(incoming[1])
+        diagnostics.append(f"incoming client {client} pid {incoming[1]} source {identity or 'unknown'}; new session {created}")
         for _ in range(3):
-            candidates = tmux.candidates(created, identity)
+            candidates = tmux.candidates(created, identity, diagnostics)
             if not candidates:
+                diagnostics.append(f"keeping session {created}: no eligible existing session")
                 return
             target = candidates[0]
             # Re-read native membership immediately before the mutation.
@@ -243,6 +259,7 @@ def attach(tmux: Tmux, socket: str, client: str, created: str, server_pid: str) 
                 tmux.run("kill-session", "-t", created)
             break
         else:
+            diagnostics.append(f"keeping session {created}: candidates changed during three selection attempts")
             return
     return identity, target
 
@@ -270,7 +287,14 @@ def main(arguments: list[str]) -> int:
         elif options.mode == "enable":
             tmux.run("set-option", "-su", DISABLE_OPTION)
         else:
-            selected = attach(tmux, options.socket, options.client, options.session, options.server_pid)
+            diagnostics: list[str] = []
+            try:
+                selected = attach(tmux, options.socket, options.client, options.session,
+                                  options.server_pid, diagnostics)
+            finally:
+                # Emit only after selection releases its lock, including failures.
+                for message in diagnostics:
+                    report(message)
             if selected is not None:
                 identity, target = selected
                 # Name lookup cannot hold up another client's selection.
