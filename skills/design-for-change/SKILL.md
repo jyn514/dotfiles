@@ -1,6 +1,6 @@
 ---
 name: design-for-change
-description: Apply jyn's design and testing preferences when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, enforcement mechanisms, regression-test strategy, or test oracles. Examples include changing a parser's accepted language, separating a CLI from its library, or replacing a mock that misses consumer failures. Baselines of existing violations, exception expiry, and rules for weakening enforcement belong to ratchet. Do not load for routine edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice.
+description: Apply jyn's design and testing preferences when adding or materially changing tests, or when a change requires unresolved decisions about data modeling, parsing, invariants, interfaces, ownership, enforcement mechanisms, regression-test strategy, or test oracles. Examples include changing a parser's accepted language, separating a CLI from its library, or replacing a mock that misses consumer failures. Baselines of existing violations, exception expiry, and rules for weakening enforcement belong to ratchet. Do not load for routine non-test edits, simple configuration changes with an established shape (such as changing a documented keybinding and validating the config), read-only diagnosis, or general project advice.
 ---
 
 # Design for Change
