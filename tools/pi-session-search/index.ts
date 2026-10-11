@@ -14,7 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { open, readdir, realpath, stat, type FileHandle } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -54,47 +54,73 @@ export function getMaxBytes(): number {
  * readline would). Buffer decoding after assembly preserves split UTF-8.
  * The generator owns the stream and closes it on EOF, early return or abort.
  */
+interface PositionedRecord {
+	line: string | null;
+	start: number;
+	end: number;
+	terminated: boolean;
+}
+
 async function* sessionRecords(
 	file: string, size: number, maxRecordBytes: number, signal?: AbortSignal,
 ): AsyncGenerator<string | null> {
+	for await (const record of positionedRecords(file, size, maxRecordBytes, signal)) yield record.line;
+}
+
+// Offsets count raw bytes including LF, never decoded characters. A supplied
+// descriptor keeps all passes on the same opened file and initial snapshot.
+async function* snapshotChunks(handle: FileHandle, size: number, signal?: AbortSignal): AsyncGenerator<Buffer> {
+	let offset = 0;
+	while (offset < size) {
+		signal?.throwIfAborted();
+		const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, size - offset));
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
+		signal?.throwIfAborted();
+		if (!bytesRead) throw new Error("Stale read_session cursor: file was truncated during reading.");
+		offset += bytesRead;
+		yield buffer.subarray(0, bytesRead);
+	}
+}
+
+async function* positionedRecords(
+	file: string, size: number, maxRecordBytes: number, signal?: AbortSignal, handle?: FileHandle,
+): AsyncGenerator<PositionedRecord> {
 	signal?.throwIfAborted();
 	if (size === 0) return;
-	const stream = createReadStream(file, { highWaterMark: 64 * 1024, end: size - 1, signal });
+	const stream = handle ? undefined : createReadStream(file, { highWaterMark: 64 * 1024, start: 0, end: size - 1, signal });
 	let parts: Buffer[] = [];
 	let bytes = 0;
 	let oversized = false;
+	let offset = 0;
+	let recordStart = 0;
 	try {
-		for await (const chunk of stream) {
+		for await (const chunk of handle ? snapshotChunks(handle, size, signal) : stream!) {
 			signal?.throwIfAborted();
-			// No encoding is configured: Node's file stream emits Buffer chunks.
 			const buffer = chunk as Buffer;
 			let start = 0;
 			while (start < buffer.length) {
 				const newline = buffer.indexOf(10, start);
 				const end = newline < 0 ? buffer.length : newline;
 				const length = end - start;
+				offset += length;
 				if (!oversized) {
 					bytes += length;
-					if (bytes > maxRecordBytes) {
-						oversized = true;
-						parts = [];
-					} else if (length) {
-						parts.push(buffer.subarray(start, end));
-					}
+					if (bytes > maxRecordBytes) { oversized = true; parts = []; }
+					else if (length) parts.push(buffer.subarray(start, end));
 				}
 				if (newline < 0) break;
-				yield oversized ? null : Buffer.concat(parts, bytes).toString("utf8");
+				offset += 1;
+				yield { line: oversized ? null : Buffer.concat(parts, bytes).toString("utf8"),
+					start: recordStart, end: offset, terminated: true };
 				signal?.throwIfAborted();
-				parts = [];
-				bytes = 0;
-				oversized = false;
+				parts = []; bytes = 0; oversized = false; recordStart = offset;
 				start = newline + 1;
 			}
 		}
-		if (oversized) yield null;
-		else if (bytes) yield Buffer.concat(parts, bytes).toString("utf8");
+		if (oversized || bytes) yield { line: oversized ? null : Buffer.concat(parts, bytes).toString("utf8"),
+			start: recordStart, end: offset, terminated: false };
 	} finally {
-		stream.destroy();
+		stream?.destroy();
 	}
 }
 
@@ -261,6 +287,7 @@ export interface Hit {
 	// read_session — it accepts either this relative path or an absolute one.
 	sessionFile: string;
 	sessionId: string;
+	entryId?: string;
 	sessionCwd: string;
 	timestamp: string;
 	role: string; // "user" | "assistant" | "toolCall"
@@ -476,6 +503,7 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 							// user sees in their sessions directory.
 							sessionFile: path.relative(root, full) || full,
 							sessionId,
+							...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
 							sessionCwd: headerCwd,
 							timestamp: String(obj.timestamp ?? ""),
 							role: h.kind,
@@ -515,13 +543,15 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 
 interface WindowEntry {
 	ts: number;
+	timestamp: string;
+	entryId?: string;
 	role: "user" | "assistant";
 	text: string;
 }
 
 function windowEntry(record: unknown): WindowEntry | undefined {
 	if (!record || typeof record !== "object") return;
-	const obj = record as { type?: unknown; timestamp?: unknown; message?: unknown };
+	const obj = record as { type?: unknown; id?: unknown; timestamp?: unknown; message?: unknown };
 	if (obj.type !== "message" || !obj.message || typeof obj.message !== "object") return;
 	const msg = obj.message as { role?: unknown; content?: unknown };
 	if (msg.role !== "user" && msg.role !== "assistant") return;
@@ -529,7 +559,10 @@ function windowEntry(record: unknown): WindowEntry | undefined {
 	const tools = msg.role === "assistant" ? extractToolCallText(msg.content) : "";
 	const combined = [text, tools].filter(Boolean).join("\n");
 	if (!combined) return;
-	return { ts: Date.parse(String(obj.timestamp ?? "")) || 0, role: msg.role, text: combined };
+	return { ts: Date.parse(String(obj.timestamp ?? "")) || 0,
+		timestamp: String(obj.timestamp ?? ""),
+		...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
+		role: msg.role, text: combined };
 }
 
 function parseRecord(line: string): unknown {
@@ -593,14 +626,79 @@ async function sessionFileById(
 	return match;
 }
 
-export async function readSessionWindow(opts: {
+export interface ReadSessionOptions {
 	sessionFile?: string;
 	sessionId?: string;
+	tail?: boolean;
+	after?: string;
+	aroundEntryId?: string;
 	aroundTimestamp?: string;
 	contextMessages?: number;
 	maxMessages?: number;
 	signal?: AbortSignal;
-}): Promise<string> {
+}
+
+export interface ReadSessionMessage {
+	/** 1-based eligible position in file order, not timestamp order. */
+	index: number;
+	entryId?: string;
+	role: "user" | "assistant";
+	timestamp: string;
+}
+
+export interface ReadSessionResult {
+	text: string;
+	messages: ReadSessionMessage[];
+	nextCursor: string;
+	hasMore: boolean;
+	skippedRecords: number;
+}
+
+interface ReadCursor {
+	v: 1;
+	file: string;
+	dev: string;
+	ino: string;
+	birth: number;
+	offset: number;
+	index: number;
+	hash: string;
+	cap: number;
+}
+
+function decodeCursor(raw: string): ReadCursor {
+	// Bound before decoding/JSON parsing; opaque cursors never supply read paths.
+	if (raw.length > 32768 || !/^[A-Za-z0-9_-]+$/.test(raw)) throw new Error("Invalid read_session cursor.");
+	let value: unknown;
+	try { value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")); }
+	catch { throw new Error("Invalid read_session cursor."); }
+	if (!value || typeof value !== "object") throw new Error("Invalid read_session cursor.");
+	const c = value as ReadCursor;
+	if (c.v !== 1 || typeof c.file !== "string" || c.file.length > 8192 || !c.file ||
+		path.isAbsolute(c.file) || c.file.split(path.sep).some(p => !p || p === "." || p === "..") ||
+		typeof c.dev !== "string" || typeof c.ino !== "string" ||
+		!Number.isFinite(c.birth) || !Number.isSafeInteger(c.offset) || c.offset < 0 ||
+		!Number.isSafeInteger(c.index) || c.index < 0 || !Number.isSafeInteger(c.cap) || c.cap < 1 ||
+		typeof c.hash !== "string" || !/^[a-f0-9]{64}$/.test(c.hash)) {
+		throw new Error("Invalid read_session cursor.");
+	}
+	return c;
+}
+
+async function prefixHash(handle: FileHandle, size: number, signal?: AbortSignal): Promise<string> {
+	const hash = createHash("sha256");
+	signal?.throwIfAborted();
+	for await (const bytes of snapshotChunks(handle, size, signal)) hash.update(bytes);
+	return hash.digest("hex");
+}
+
+/**
+ * Read an initial, bounded file snapshot. Cursors commit a raw-byte prefix and
+ * its eligible position. Appends are allowed; replacement or changes before
+ * that boundary are stale. Incomplete non-newline JSON is replayed next time.
+ * maxMessages=0 does not advance, except tail=true selects the safe EOF.
+ */
+export async function readSession(opts: ReadSessionOptions): Promise<ReadSessionResult> {
 	const maxRecordBytes = getMaxBytes();
 	const ctx = opts.contextMessages ?? 6;
 	const max = opts.maxMessages ?? 30;
@@ -618,6 +716,17 @@ export async function readSessionWindow(opts: {
 	if (typeof selector !== "string" || !selector.trim()) {
 		throw new Error("sessionFile or sessionId must be a non-empty string.");
 	}
+	if (opts.tail !== undefined && typeof opts.tail !== "boolean") throw new Error("tail must be a boolean.");
+	const modes = [opts.tail === true, opts.after !== undefined, opts.aroundEntryId !== undefined,
+		opts.aroundTimestamp !== undefined].filter(Boolean).length;
+	if (modes > 1) throw new Error("tail, after, aroundEntryId and aroundTimestamp are mutually exclusive.");
+	for (const key of ["after", "aroundEntryId", "aroundTimestamp"] as const) {
+		if (opts[key] !== undefined && (typeof opts[key] !== "string" || !opts[key]!.trim())) {
+			throw new Error(`${key === "after" ? "after cursor" : key} must be a non-empty string.`);
+		}
+	}
+	const target = opts.aroundTimestamp === undefined ? NaN : parseDateOrThrow(opts.aroundTimestamp, "aroundTimestamp");
+	const previous = opts.after === undefined ? undefined : decodeCursor(opts.after);
 	const root = getRoot();
 	let resolvedRoot: string;
 	let resolvedFile: string;
@@ -637,73 +746,132 @@ export async function readSessionWindow(opts: {
 		throw new Error(`Refusing to read outside session root: ${resolvedRoot}`);
 	}
 
-	let st;
+	const relativeFile = path.relative(resolvedRoot, resolvedFile);
+	// Reject FIFOs/devices before open("r"), which can block without observing
+	// cancellation. Keep descriptor validation below; the same-user TOCTOU
+	// boundary remains unchanged.
+	const preflight = await stat(resolvedFile);
+	if (!preflight.isFile()) throw new Error("Session path is not a regular file.");
+	opts.signal?.throwIfAborted();
+	const handle = await open(resolvedFile, "r");
 	try {
-		st = await stat(resolvedFile);
-	} catch (e) {
-		throw new Error(`Could not stat session file: ${(e as Error).message}`);
-	}
+		const st = await handle.stat();
+		if (!st.isFile()) throw new Error("Session path is not a regular file.");
+		if (previous && (previous.file !== relativeFile || previous.dev !== String(st.dev) ||
+			previous.ino !== String(st.ino) || previous.birth !== st.birthtimeMs ||
+			previous.offset > st.size || previous.cap !== maxRecordBytes ||
+			previous.hash !== await prefixHash(handle, previous.offset, opts.signal))) {
+			throw new Error("Stale read_session cursor: file identity or committed prefix changed.");
+		}
 
-	// Pass one counts eligible messages and finds the nearest timestamp. Do not
-	// assume chronological ordering; ties still select the first occurrence.
-	let header: { id?: unknown; cwd?: unknown; timestamp?: unknown } | undefined;
-	let total = 0;
-	let skippedRecords = 0;
-	let nearest = 0;
-	let bestDiff = Infinity;
-	const target = opts.aroundTimestamp ? Date.parse(opts.aroundTimestamp) : NaN;
-	for await (const line of sessionRecords(resolvedFile, st.size, maxRecordBytes, opts.signal)) {
-		if (line === null) {
-			skippedRecords += 1;
-			continue;
+		let header: { id?: unknown; cwd?: unknown; timestamp?: unknown } | undefined;
+		let total = 0;
+		let skippedRecords = 0;
+		let nearest = 0;
+		let anchorFound = false;
+		let bestDiff = Infinity;
+		let safeEnd = 0;
+		let previousBoundaryFound = !previous || previous.offset === 0;
+		for await (const item of positionedRecords(resolvedFile, st.size, maxRecordBytes, opts.signal, handle)) {
+			const record = item.line === null ? undefined : parseRecord(item.line);
+			// Do not commit incomplete trailing JSON (including an oversized tail).
+			// Complete final JSON without LF remains compatible with older sessions.
+			if (item.line === null) skippedRecords += 1;
+			if (!item.terminated && (item.line === null || record === undefined)) break;
+			safeEnd = item.end;
+			if (record && typeof record === "object" && "type" in record && record.type === "session") {
+				const h = record as { id?: unknown; cwd?: unknown; timestamp?: unknown };
+				header = { id: h.id, cwd: h.cwd, timestamp: h.timestamp };
+			}
+			const entry = windowEntry(record);
+			if (entry) {
+				const diff = Math.abs(entry.ts - target);
+				if (diff < bestDiff) { bestDiff = diff; nearest = total; }
+				if (opts.aroundEntryId !== undefined && entry.entryId === opts.aroundEntryId && !anchorFound) {
+					nearest = total; anchorFound = true;
+				}
+				total += 1;
+			}
+			if (previous && item.end === previous.offset) {
+				previousBoundaryFound = total === previous.index;
+			} else if (previous && item.start < previous.offset && previous.offset < item.end &&
+				item.line !== null && record !== undefined && total === previous.index) {
+				// A complete final JSON record may have been committed without LF.
+				// Later appending its delimiter/whitespace moves the record end, not
+				// its identity. Recheck the bounded old prefix as complete JSON.
+				const prefix = Buffer.from(item.line).subarray(0, previous.offset - item.start).toString("utf8");
+				previousBoundaryFound = parseRecord(prefix) !== undefined;
+			}
 		}
-		const record = parseRecord(line);
-		if (record && typeof record === "object" && "type" in record && record.type === "session") {
-			// Retain only display fields, not arbitrary data from the header.
-			const h = record as { id?: unknown; cwd?: unknown; timestamp?: unknown };
-			header = { id: h.id, cwd: h.cwd, timestamp: h.timestamp };
+		if (previous && (!previousBoundaryFound || (previous.offset === 0 && previous.index !== 0))) {
+			throw new Error("Stale read_session cursor: committed record boundary changed.");
 		}
-		const entry = windowEntry(record);
-		if (!entry) continue;
-		const diff = Math.abs(entry.ts - target);
-		if (diff < bestDiff) {
-			bestDiff = diff;
-			nearest = total;
+		if (opts.aroundEntryId !== undefined && !anchorFound) {
+			throw new Error(`No eligible message with entry ID "${opts.aroundEntryId}".`);
 		}
-		total += 1;
-	}
 
-	const startIdx = Number.isFinite(target) ? Math.max(0, nearest - ctx) : 0;
-	const endIdx = Math.min(total, Number.isFinite(target) ? nearest + ctx + 1 : total, startIdx + max);
-	const entries: WindowEntry[] = [];
-	// Pass two retains only the selected window, not the rest of the transcript.
-	if (endIdx > startIdx) {
-		let index = 0;
-		for await (const line of sessionRecords(resolvedFile, st.size, maxRecordBytes, opts.signal)) {
-			if (line === null) continue;
-			const entry = windowEntry(parseRecord(line));
-			if (!entry) continue;
-			if (index >= startIdx) entries.push(entry);
-			index += 1;
-			if (index >= endIdx) break;
+		let startIdx = previous?.index ?? 0;
+		let endIdx = Math.min(total, startIdx + max);
+		if (opts.tail) { startIdx = Math.max(0, total - max); endIdx = total; }
+		else if ((Number.isFinite(target) || opts.aroundEntryId !== undefined) && total) {
+			const lower = Math.max(0, nearest - ctx);
+			const upper = Math.min(total, nearest + Math.min(ctx, total - nearest - 1) + 1);
+			const count = Math.min(max, upper - lower);
+			// Odd extra context goes before the anchor. At boundaries, redistribute
+			// only within the requested radius; never enlarge context to fill max.
+			startIdx = Math.max(lower, nearest - Math.ceil(Math.max(0, count - 1) / 2));
+			endIdx = Math.min(upper, startIdx + count);
+			startIdx = Math.max(lower, endIdx - count);
+			if (endIdx - startIdx < count) endIdx = Math.min(upper, startIdx + count);
 		}
-	}
 
-	const out: string[] = [];
-	if (header) {
-		out.push(`# Session ${header.id} — cwd: ${header.cwd} — started: ${header.timestamp}`);
-	}
-	out.push(`# Showing messages ${startIdx + 1}–${endIdx} of ${total}`);
-	if (skippedRecords) {
-		out.push(`# Incomplete coverage: skipped ${skippedRecords} oversized record${skippedRecords === 1 ? "" : "s"}.`);
-	}
-	out.push("");
-	for (const entry of entries) {
-		out.push(`## ${entry.role} @ ${new Date(entry.ts).toISOString()}`);
-		out.push(entry.text);
+		const entries: Array<{ entry: WindowEntry; index: number }> = [];
+		let cursorOffset = previous?.offset ?? 0;
+		let cursorIndex = previous?.index ?? 0;
+		if (endIdx > startIdx) {
+			let index = 0;
+			for await (const item of positionedRecords(resolvedFile, safeEnd, maxRecordBytes, opts.signal, handle)) {
+				const entry = item.line === null ? undefined : windowEntry(parseRecord(item.line));
+				if (!entry) continue;
+				if (index >= startIdx) {
+					entries.push({ entry, index: index + 1 });
+					cursorOffset = item.end; cursorIndex = index + 1;
+				}
+				index += 1;
+				if (index >= endIdx) break;
+			}
+		}
+		if (opts.tail || (max > 0 && cursorIndex === total)) {
+			cursorOffset = safeEnd; cursorIndex = total;
+		}
+		const nextCursor = Buffer.from(JSON.stringify({ v: 1, file: relativeFile,
+			dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs,
+			offset: cursorOffset, index: cursorIndex,
+			hash: await prefixHash(handle, cursorOffset, opts.signal), cap: maxRecordBytes,
+		} satisfies ReadCursor)).toString("base64url");
+		const messages: ReadSessionMessage[] = entries.map(({ entry, index }) => ({ index,
+			...(entry.entryId === undefined ? {} : { entryId: entry.entryId }),
+			role: entry.role, timestamp: entry.timestamp }));
+		const hasMore = cursorIndex < total;
+		const out: string[] = [];
+		if (header) out.push(`# Session ${header.id} — cwd: ${header.cwd} — started: ${header.timestamp}`);
+		out.push(`# Showing messages ${startIdx + 1}–${endIdx} of ${total}`);
+		if (skippedRecords) out.push(`# Incomplete coverage: skipped ${skippedRecords} oversized record${skippedRecords === 1 ? "" : "s"}.`);
 		out.push("");
+		for (const { entry, index } of entries) {
+			out.push(`## ${entry.role} @ ${new Date(entry.ts).toISOString()} — message ${index}${entry.entryId === undefined ? "" : ` — entryId: ${JSON.stringify(entry.entryId)}`}`);
+			out.push(entry.text, "");
+		}
+		out.push(`# Navigation ${JSON.stringify({ nextCursor, hasMore, skippedRecords })}`);
+		return { text: out.join("\n"), messages, nextCursor, hasMore, skippedRecords };
+	} finally {
+		await handle.close();
 	}
-	return out.join("\n");
+}
+
+/** Compatibility renderer for existing programmatic callers. */
+export async function readSessionWindow(opts: ReadSessionOptions): Promise<string> {
+	return (await readSession(opts)).text;
 }
 
 export function formatHitsForCommand(result: SearchResult): string {
@@ -894,7 +1062,7 @@ export default function (pi: ExtensionAPI) {
 		name: "read_session",
 		label: "Read a window of a prior pi session",
 		description:
-			"Read a window of a prior Pi session transcript. Read-only.",
+			"Read prior Pi session messages in file order: start, tail, continuation, or centered context. Read-only.",
 		promptSnippet: "Read a window from a prior pi session by file or session ID.",
 		promptGuidelines: [
 			"Use read_session with the returned sessionFile unchanged and a modest maxMessages.",
@@ -906,27 +1074,40 @@ export default function (pi: ExtensionAPI) {
 			sessionId: Type.Optional(Type.String({
 				description: "Exact session header ID, resolved only within the configured sessions root. Use when a parent session path comes from a different machine or sandbox. Provide exactly one of sessionFile or sessionId.",
 			})),
+			tail: Type.Optional(Type.Boolean({
+				description: "Return the last maxMessages eligible messages in file order. With maxMessages=0, select the safe EOF cursor. Default false.",
+			})),
+			after: Type.Optional(Type.String({
+				description: "Opaque nextCursor from an earlier read of this file. Page or poll messages after its committed boundary; safe across appends, errors if its prefix changed or file was replaced. Cursors are returned even for empty reads; hasMore covers only the initial snapshot, not future appends. Mutually exclusive with tail=true and centered modes.",
+			})),
+			aroundEntryId: Type.Optional(Type.String({
+				description: "Exact entryId from a search hit; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
+			})),
 			aroundTimestamp: Type.Optional(
-				Type.String({ description: "Center the window on a search hit's timestamp (ISO date/time)." }),
+				Type.String({ description: "Center on the nearest message to a search hit's timestamp (ISO date/time; invalid dates rejected). Ties prefer the first message in file order. Mutually exclusive with other selection modes." }),
 			),
 			contextMessages: Type.Optional(
-				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Messages of context on each side of the target. Default 6." }),
+				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum context radius on each side of a centered target. Default 6. maxMessages shrinks symmetrically, always retaining the anchor when positive; extra context prefers preceding messages." }),
 			),
 			maxMessages: Type.Optional(
-				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum number of returned messages. Default 30." }),
+				Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Maximum returned eligible messages. Default 30. Zero returns none and does not advance the cursor, except tail=true selects safe EOF." }),
 			),
 		}),
 		async execute(_toolCallId, params, signal) {
 			try {
-				const text = await readSessionWindow({
+				const result = await readSession({
 					sessionFile: params.sessionFile,
 					sessionId: params.sessionId,
+					tail: params.tail as boolean | undefined,
+					after: params.after as string | undefined,
+					aroundEntryId: params.aroundEntryId as string | undefined,
 					aroundTimestamp: params.aroundTimestamp as string | undefined,
 					contextMessages: params.contextMessages as number | undefined,
 					maxMessages: params.maxMessages as number | undefined,
 					signal,
 				});
-				return { content: [{ type: "text", text }], details: {} };
+				const { text, ...details } = result;
+				return { content: [{ type: "text", text }], details };
 			} catch (e) {
 				return {
 					content: [{ type: "text", text: `read_session failed: ${(e as Error).message}` }],

@@ -16,9 +16,9 @@ resuming them**.
   references a prior conversation. Substring or `/regex/flags`, optional
   filters by `cwd`, time range, role, and tool calls. Returns a JSON list of
   hits with `sessionFile` (relative to the sessions root), `sessionId`,
-  `sessionCwd`, `timestamp`, `role`, and a snippet.
-- **Tool `read_session`** — read a window around a specific hit (or the start
-  of a session). Use after a promising `search_sessions` result to pull more
+  `sessionCwd`, `timestamp`, `role`, a snippet, and `entryId` when the record has one.
+- **Tool `read_session`** — read around a specific hit, from the start or end,
+  or after a previous read. Use after a promising `search_sessions` result to pull more
   context without resuming the session. Provide exactly one of `sessionFile`
   (absolute or relative to the configured root) or `sessionId` (the exact header
   ID). ID reads work when a parent path names a different machine or sandbox;
@@ -107,6 +107,8 @@ Matches are retained in encounter order and only the retained hits are sorted ne
 This is not a selection of the newest or most relevant matches in each session.
 Use `read_session` to inspect promising hits in context.
 
+### Search coverage
+
 Results distinguish three kinds of limits:
 
 - `sessionsAtLimit` counts session files that reached the per-session cap, including when both caps coincide or the last record reaches it.
@@ -114,6 +116,59 @@ Results distinguish three kinds of limits:
 - `truncated` means the total hit limit stopped the search.
 - `incompleteCoverage` means records or files were skipped, or the search was cancelled.
   Intentional hit limits do not set it.
+
+### Read and follow a session
+
+Use a search hit's `sessionFile` and `entryId` to read the exact matching entry:
+
+```json
+{"sessionFile": "<hit.sessionFile>", "aroundEntryId": "<hit.entryId>", "maxMessages": 3}
+```
+
+These placeholders represent values from the search result.
+For older records without entry IDs, use `aroundTimestamp` with the hit's timestamp instead.
+Timestamp reads select the nearest eligible message and break ties in file order; invalid timestamps fail.
+
+Centered reads keep the target whenever `maxMessages` is positive, then fit surrounding context within the limit.
+`contextMessages` defaults to six on each side.
+With an interior target at message 100, a limit of one returns message 100; a limit of three returns messages 99–101.
+An even-sized window favors preceding context when both sides have enough messages.
+
+To read recent activity without searching first:
+
+```json
+{"sessionId": "<session ID>", "tail": true, "maxMessages": 10}
+```
+
+The result contains the last ten eligible messages in file order, not timestamp order.
+Without a positioning option, reads still start at the beginning.
+
+Each read returns `nextCursor`, including when no new messages exist.
+Pass it back unchanged to continue after that read:
+
+```json
+{"sessionId": "<same session ID>", "after": "<nextCursor>", "maxMessages": 10}
+```
+
+`hasMore` means more eligible messages remain in that call's file snapshot.
+A false value does not mean the session has ended: call again with the cursor to check later appends.
+Cursors refer to file positions, not timestamps, so equal or out-of-order timestamps do not lose messages.
+A cursor fails explicitly if its consumed file prefix changes, the file shrinks past its position, or another file replaces it.
+Start a new read without `after` to recover.
+Cursors are opaque and local to the selected session file; they are not portable bookmarks between machines or copied sessions.
+Changing `PI_SESSION_SEARCH_MAX_BYTES` also invalidates a cursor because it can change which records count as messages.
+Incomplete trailing JSON waits for a later call rather than advancing the cursor past it.
+
+Use at most one of `tail: true`, `after`, `aroundEntryId`, and `aroundTimestamp`.
+`maxMessages: 0` returns no messages and preserves the starting cursor position.
+With `tail: true`, it instead selects the safe end of the file so you can follow only future messages.
+Each message shows its actual eligible-message position, role, timestamp, and entry ID when present.
+Structured details return the message metadata, cursor, `hasMore`, and skipped-record counts, without echoing the requested selector or limits.
+
+Reads include nonempty user/assistant text and assistant tool-call summaries, not the entire raw transcript.
+They omit tool results, thinking-only messages, and custom entries.
+Tool-call summaries mark truncated arguments with an ellipsis.
+Positions count only eligible messages and exclude oversized records.
 
 ### Drive it yourself
 
@@ -196,13 +251,11 @@ files have the same ID, the read fails and asks for `sessionFile`. Symlink alias
 of the same resolved file do not create ambiguity. ID lookup adds a header scan
 on each call; there is no persistent index or cache.
 
-`read_session` makes two streaming passes: one counts eligible messages and
-finds the nearest timestamp; the other collects only the requested window.
-Equal-distance timestamps select the first message in file order. Both passes
-use the file's initial byte length, so later appends wait until the next call.
-`contextMessages` and `maxMessages` accept non-negative safe integers,
-including `0` (defaults 6 and 30). Memory use depends on one bounded record
-plus retained hits or the requested window, not the transcript's total size.
+`read_session` streams a snapshot bounded by the file's initial byte length, so later appends wait until the next call.
+It counts eligible messages, selects the requested window, and retains only that window.
+Cursor validation checks the consumed prefix without retaining the transcript in memory.
+`contextMessages` and `maxMessages` accept non-negative safe integers, including `0` (defaults 6 and 30).
+Memory use depends on one bounded record plus retained hits or the requested window, not the transcript's total size.
 
 No model is called. No external network. No session is mutated.
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `read_session` accepts `tail: true` for recent messages and `after` with a returned opaque cursor for paging and following appends.
+  Cursors reject stale consumed prefixes and replaced files rather than silently restarting.
+- Search hits include `entryId` when available, and `read_session` accepts `aroundEntryId` to select that exact entry.
+- Reads expose actual message positions and entry IDs, a continuation cursor, remaining-message status, and skipped-record counts.
 - Optional `maxResultsPerSession` for `search_sessions`, limiting retained hits per session file before moving to the next file.
   Omitted means no per-session limit; the existing total `maxResults` cap remains unchanged.
   Results report `sessionsAtLimit` separately from total-limit truncation and incomplete coverage.
@@ -19,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Centered reads retain the target when `maxMessages` reduces the context window, instead of clipping from the window's start.
+  Invalid `aroundTimestamp` values now fail instead of reading from the beginning.
 - Always exclude whole text-only user goal-continuation envelopes from search
   and collapse copied message hits across files by recorded identity. Report
   `excludedGoalContinuations` and `duplicateHitsSuppressed`; `read_session`

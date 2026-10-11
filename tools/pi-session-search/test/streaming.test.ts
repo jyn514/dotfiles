@@ -283,14 +283,19 @@ console.log("bounded-heap-success");
 		assert.ok(!tied.includes("second-tie"));
 	});
 
-	it("preserves context window indexes and clips maxMessages from the window start", async () => {
+	it("preserves the target when maxMessages reduces a centered context window", async () => {
 		writeRecords(Array.from({ length: 8 }, (_, i) => message(`indexed-${i}`, i)));
 		const window = await readSessionWindow({
 			sessionFile, aroundTimestamp: timestamp(4), contextMessages: 2, maxMessages: 3,
 		});
-		assert.match(window, /Showing messages 3–5 of 8/);
-		for (const i of [2, 3, 4]) assert.ok(window.includes(`indexed-${i}`));
-		for (const i of [0, 1, 5, 6, 7]) assert.ok(!window.includes(`indexed-${i}`));
+		assert.match(window, /Showing messages 4–6 of 8/);
+		for (const i of [3, 4, 5]) assert.ok(window.includes(`indexed-${i}`));
+		for (const i of [0, 1, 2, 6, 7]) assert.ok(!window.includes(`indexed-${i}`));
+		const targetOnly = await readSessionWindow({
+			sessionFile, aroundTimestamp: timestamp(4), maxMessages: 1,
+		});
+		assert.match(targetOnly, /Showing messages 5–5 of 8/);
+		assert.ok(targetOnly.includes("indexed-4"));
 		const end = await readSessionWindow({
 			sessionFile, aroundTimestamp: timestamp(7), contextMessages: 2, maxMessages: 10,
 		});
