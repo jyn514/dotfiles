@@ -51,6 +51,26 @@ def read_calls(path: Path) -> list[list[str]]:
 
 
 class ContainerRepositoryPathTest(unittest.TestCase):
+    def test_missing_agent_podman_access_warns_without_blocking_startup(self):
+        load = runpy.run_path(str(LAUNCHER))["load_agent_podman"]
+        with tempfile.TemporaryDirectory() as directory:
+            access = Path(directory) / "agent-podman"
+            state = SimpleNamespace(
+                agent_podman_access=access,
+                agent_podman_connection=access / "connection.env",
+                agent_podman_key=access / "id_ed25519",
+                agent_podman_known_hosts=access / "known_hosts.sandbox",
+                agent_podman=None,
+            )
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                load(state)
+            self.assertIsNone(state.agent_podman)
+            self.assertIn("warning: nested-containers requested", stderr.getvalue())
+            self.assertIn(str(access), stderr.getvalue())
+            self.assertIn("tools/agent-podman/README.md", stderr.getvalue())
+            self.assertIn("docker/podman unavailable", stderr.getvalue())
+
     def test_detached_owner_worker_uses_log_and_null_stdin_before_bootstrap(self):
         launcher = runpy.run_path(str(LAUNCHER))
         run_agent = launcher["run_agent"]

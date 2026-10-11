@@ -400,6 +400,12 @@ def load_agent_podman(state: State) -> None:
         state.agent_podman_known_hosts,
     )
     if not any(path.exists() for path in paths):
+        print(
+            f"warning: nested-containers requested but Agent Podman access is missing at "
+            f"{state.agent_podman_access}; docker/podman unavailable. "
+            "Follow tools/agent-podman/README.md setup on the host, then restart the sandbox.",
+            file=sys.stderr,
+        )
         return
     if not all(path.is_file() for path in paths):
         raise LauncherError(f"Agent Podman access state is incomplete: {state.agent_podman_access}")

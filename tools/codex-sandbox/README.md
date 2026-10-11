@@ -146,6 +146,11 @@ The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) p
 The [rootless Docker backend](lima/docker.md) uses Docker's forwarded API socket and has its own setup and validation commands.
 Its [default-readiness record](lima/docker.md#default-readiness) distinguishes passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
 
+Repositories enabling `nested-containers` also need [Agent Podman setup](../agent-podman/README.md#setup) on the macOS host.
+The launcher reads its access files from `~/.agent-podman-access`, or `AGENT_PODMAN_ACCESS_DIR` when set.
+If those files are absent, startup warns and continues without Docker/Podman access.
+Restart the sandbox after provisioning so the launcher installs the SSH relay and client connection.
+
 - Run from a Git checkout.
   The launcher uses the current Jujutsu workspace root and initializes a colocated Jujutsu workspace if needed.
 - Install Python 3, Git, Jujutsu, tmux, and the Docker CLI used by the Lima-Docker VM.
