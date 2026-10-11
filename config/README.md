@@ -30,6 +30,38 @@ an `@` include or registered skill, so its rules stay out of the startup prompt.
 See [Pi configuration](pi-agent/README.md) for installation, machine-local state,
 and the [extension bundle](pi-agent/pi-extensions/README.md) for extension usage.
 
+## AccountsService logging on Linux
+
+[The service drop-in](../global/accounts-daemon-log-filter.conf) filters warnings for an absent `/etc/tcb` directory and homed service.
+Other backend failures remain visible.
+Its installation path is recorded in `install/global.txt` for global setup.
+To install only this drop-in from the repository root:
+
+```sh
+sudo install -D -m 644 global/accounts-daemon-log-filter.conf /etc/systemd/system/accounts-daemon.service.d/log-filter.conf
+sudo systemctl daemon-reload
+systemctl show accounts-daemon -p LogFilterPatterns
+```
+
+The filter takes effect after `daemon-reload`; restarting accounts-daemon is unnecessary.
+This filters journal recording; accounts-daemon still probes the optional backends.
+
+## Tailscale logging on Linux
+
+[The Tailscale drop-in](../global/tailscaled-log-filter.conf) filters repeated `magicsock: new contact` telemetry.
+Path changes, connection failures, and other messages remain visible.
+Its installation path is recorded in `install/global.txt` for global setup.
+To install only this drop-in from the repository root:
+
+```sh
+sudo install -D -m 644 global/tailscaled-log-filter.conf /etc/systemd/system/tailscaled.service.d/log-filter.conf
+sudo systemctl daemon-reload
+systemctl show tailscaled -p LogFilterPatterns
+```
+
+The filter takes effect after `daemon-reload`; restarting tailscaled is unnecessary.
+This filters journal recording; Tailscale still emits the messages.
+
 ## Persistent tmux on Linux
 
 On machines with systemd and tmux installed at `/usr/bin/tmux`, install the

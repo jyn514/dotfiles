@@ -5,3 +5,5 @@ kscreenlockerrc=/etc/xdg/kscreenlockerrc
 autologin.conf=/etc/sddm.conf.d/autologin.conf
 system-auth=/etc/pam.d/system-auth
 keyd.conf=/etc/keyd/default.conf
+accounts-daemon-log-filter.conf=/etc/systemd/system/accounts-daemon.service.d/log-filter.conf
+tailscaled-log-filter.conf=/etc/systemd/system/tailscaled.service.d/log-filter.conf
