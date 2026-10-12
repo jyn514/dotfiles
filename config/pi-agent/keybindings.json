@@ -2,6 +2,7 @@
   "tui.altScreen.search": "ctrl+f",
   "tui.editor.cursorUp": ["Up", "ctrl+p"],
   "tui.editor.cursorDown": ["Down", "ctrl+n"],
+  "_comment": "Application actions take precedence over editor cursor bindings. Disable model cycling so Ctrl+P reaches cursorUp.",
   "app.model.cycleForward": [],
   "app.session.rename": "ctrl+shift+r"
 }
