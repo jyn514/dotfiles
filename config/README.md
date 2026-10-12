@@ -68,6 +68,14 @@ This filters journal recording; Tailscale still emits the messages.
 
 ## Persistent tmux on Linux
 
+Interactive Bash, Zsh, and Fish query tmux's default foreground and background before starting the prompt.
+If a query has no reply within 250 ms (for example, over mosh), the shell supplies that color from [Kitty's Campbell theme](kitty/campbell.conf).
+Detected colors and other pane style attributes remain unchanged.
+The fallback applies to the current pane, including programs such as Vim and Codex, and remains after reattachment.
+Existing shells pick it up when you run `python3 "$DOTFILES/libexec/tmux/default-colors.py"`; restart programs that cache terminal colors.
+Remove pane overrides with `tmux set-option -pu window-style` and `tmux set-option -pu window-active-style` to query a newly attached terminal again.
+These commands also remove any other pane-specific style overrides.
+
 On machines with systemd and tmux installed at `/usr/bin/tmux`, install the
 configuration links with `./setup dotfiles`, then run:
 

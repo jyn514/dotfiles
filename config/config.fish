@@ -149,6 +149,10 @@ if not status --is-interactive
 	return
 end
 
+if set -q TMUX TMUX_PANE; and test -n "$TMUX"; and test -n "$TMUX_PANE"
+	python3 "$DOTFILES/libexec/tmux/default-colors.py"
+end
+
 if set -q KITTY_INSTALLATION_DIR
 	set --global KITTY_SHELL_INTEGRATION enabled
 	source "$KITTY_INSTALLATION_DIR/shell-integration/fish/vendor_conf.d/kitty-shell-integration.fish"

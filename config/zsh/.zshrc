@@ -38,6 +38,10 @@ case "$-" in
   *)	return 0;;
 esac
 
+if [[ -n ${TMUX:-} && -n ${TMUX_PANE:-} ]]; then
+	python3 "$DOTFILES/libexec/tmux/default-colors.py"
+fi
+
 if [[ -n ${KITTY_INSTALLATION_DIR:-} ]]; then
 	export KITTY_SHELL_INTEGRATION=enabled
 	autoload -Uz -- "$KITTY_INSTALLATION_DIR"/shell-integration/zsh/kitty-integration || return
