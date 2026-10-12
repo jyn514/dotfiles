@@ -10,6 +10,7 @@ import shlex
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -89,6 +90,10 @@ class RestartHookTest(unittest.TestCase):
                 encoded = tmux("show-option", "-pqv", "-t", pane, "@codex_sandbox_restart").stdout.strip()
                 return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
 
+            def resurrect_registration(pane):
+                encoded = tmux("show-option", "-pqv", "-t", pane, "@resurrect_pi_session").stdout.strip()
+                return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))) if encoded else None
+
             def wait_for(predicate, label, pane):
                 deadline = time.monotonic() + 20
                 while time.monotonic() < deadline:
@@ -120,6 +125,11 @@ class RestartHookTest(unittest.TestCase):
                     "--session", str(saved)])
                 tmux("respawn-pane", "-k", "-t", pane, "-c", str(project), command)
                 wait_for(lambda: registration(pane) == expected, "startup publication", pane)
+                wait_for(lambda: resurrect_registration(pane) is not None, "resurrect publication", pane)
+                resume = resurrect_registration(pane)
+                self.assertEqual({key: resume[key] for key in ("version", "session", "cwd")},
+                    {"version": 1, "session": str(saved), "cwd": str(project)})
+                self.assertGreater(resume["pid"], 1)
                 self.assertEqual(requests, [{"op": "ready", "attachment": "hook-attachment", "session": str(saved)}])
                 encoded = base64.urlsafe_b64encode(json.dumps(pending).encode()).decode()
                 tmux("set-option", "-p", "-t", pane, "@codex_sandbox_restart", encoded)
@@ -127,6 +137,27 @@ class RestartHookTest(unittest.TestCase):
                 tmux("send-keys", "-t", pane, "Enter")
                 wait_for(lambda: len(requests) >= 2 and registration(pane) == expected, "reload publication", pane)
                 self.assertEqual(requests, [requests[0], requests[0]])
+                # Split attachments deliberately have no restart-all registration.
+                # The real TUI must still publish the file that resurrect will resume.
+                tmux("set-option", "-pu", "-t", pane, "@codex_sandbox_restart")
+                tmux("set-option", "-pu", "-t", pane, "@resurrect_pi_session")
+                tmux("send-keys", "-t", pane, "-l", "/reload")
+                tmux("send-keys", "-t", pane, "Enter")
+                wait_for(lambda: len(requests) >= 3 and resurrect_registration(pane) is not None,
+                    "split resurrect publication", pane)
+                self.assertEqual(resurrect_registration(pane), resume)
+                self.assertEqual(tmux("show-option", "-pqv", "-t", pane, "@codex_sandbox_restart").stdout.strip(), "")
+                # Join the real SDK publisher to the actual save hook, including
+                # the reporting child's ancestry within the live tmux pane.
+                snapshot = root / "resurrect.txt"
+                snapshot.write_text(tmux("display-message", "-p", "-t", pane,
+                    "pane\t#{session_name}\t#{window_index}\t1\t:*\t#{pane_index}\tPi\t:/bad-cwd\t1\tpython3\t:old-wrapper").stdout)
+                subprocess.run([sys.executable, str(ROOT / "config/tmux/resurrect-pi.py"), str(snapshot)],
+                    env={**environment, "TMUX": tmux_env}, check=True, capture_output=True, text=True, timeout=10)
+                fields = snapshot.read_text().strip().split("\t")
+                self.assertEqual(fields[7], ":" + str(project))
+                self.assertEqual(shlex.split(fields[10][1:]),
+                    ["pi", "--session", str(saved), "--session-dir", str(saved.parent)])
                 # The real SDK may persist startup settings (e.g. thinking level).
                 # Assert session identity/header, not a no-write guarantee for Pi itself.
                 self.assertEqual(saved.read_bytes().splitlines()[0], original.splitlines()[0])

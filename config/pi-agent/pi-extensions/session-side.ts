@@ -167,6 +167,22 @@ export function requestOwner(socketPath: string, request: Request, timeoutMs = 1
 }
 
 // This is host execution: guest-tools replaces builtins/user_bash, not pi.exec.
+export async function publishResurrectSession(pi: Pick<ExtensionAPI, "exec">,
+  source: ExtensionContext["sessionManager"]): Promise<void> {
+  const pane = process.env.TMUX_PANE;
+  if (!process.env.TMUX || !pane) return;
+  const session = source.getSessionFile() ?? null;
+  const cwd = source.getCwd();
+  if ((session !== null && !isAbsolute(session)) || !isAbsolute(cwd)) {
+    throw new Error("SDK resurrect session/cwd must be absolute");
+  }
+  // A split has no restart registration, but resurrect must still resume its
+  // selected conversation. The save hook checks PID ancestry before using it.
+  const encoded = Buffer.from(JSON.stringify({ version: 1, pid: process.pid, session, cwd })).toString("base64url");
+  const result = await pi.exec("tmux", ["set-option", "-p", "-t", pane, "@resurrect_pi_session", encoded]);
+  if (result.code !== 0) throw new Error("Could not publish Pi resurrect session");
+}
+
 export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
   source: ExtensionContext["sessionManager"]): Promise<void> {
   const pane = process.env.TMUX_PANE;
@@ -254,6 +270,7 @@ export default function sessionSide(pi: ExtensionAPI) {
         : { op: "ready", attachment, session: null,
           sessionDir: source.getSessionDir() || SessionManager.create(source.getCwd()).getSessionDir() });
       await publishRestartSession(pi, source);
+      await publishResurrectSession(pi, source);
       if (initialPrompt) {
         const message = initialPrompt;
         initialPrompt = undefined;

@@ -1,5 +1,35 @@
 # tmux
 
+## Pi session restoration
+
+tmux-resurrect saves sandboxed Pi conversations as `pi --session FILE --session-dir DIRECTORY`.
+The Pi extension reports its current selected file and working directory at startup, session switches, and `/reload`.
+The post-save hook checks that the reporting Pi process still belongs to that pane and that the file exists.
+It records the SDK-selected conversation rather than the launch-time ID, fork source, prompt, or owner socket.
+Ephemeral, not-yet-saved, and exited attachments retain their original snapshot commands and are not automatically restarted.
+Native Codex and standalone Pi are outside this integration.
+
+Restore with Ctrl+K, then Ctrl+R, as usual.
+Main and `/split` panes each start a new sandbox owner and resume their saved conversation without sending an initial prompt.
+This restores conversations and layout, not running tool processes or the original shared guest worker.
+Existing panes are left running by resurrect's normal restore behavior.
+Custom session directories and quoted file paths are preserved.
+
+After installing this change, reload tmux with Ctrl+K, then `r`, and run `/reload` in each existing Pi pane.
+Take a new resurrect save with Ctrl+K, then Ctrl+S; older snapshots do not contain the normalized resume commands.
+The existing Dotbot `config/tmux/*` mapping installs `resurrect-pi.py` alongside the tmux configuration.
+
+Run the save-hook tests with `dev/test-environment python3 tests/tmux/resurrect_pi_test.py`.
+To include the installed plugin's actual save/restore scripts, set `TMUX_RESURRECT_PLUGIN`:
+
+```sh
+TMUX_RESURRECT_PLUGIN="$HOME/.config/tmux/plugins/tmux-resurrect" \
+  dev/test-environment python3 tests/tmux/resurrect_pi_test.py
+```
+
+The native test uses a private HOME, a disposable tmux server, and a fixture `pi` command without model requests.
+The installed Pi TUI publisher is exercised offline by `tools/codex-sandbox/tests/restart_hook_test.py`.
+
 ## Session attachment
 
 The startup hook selects sessions by the source of their live clients.

@@ -300,6 +300,9 @@ Neither `restart` nor `restart-all` manages side panes or sessions outside tmux.
 Close side panes attached to the selected repositories first; they keep the
 shared sandbox alive and prevent reset. There is no automatic worker replacement.
 
+[tmux-resurrect integration](../../config/tmux/README.md#pi-session-restoration) saves the selected conversation in main and split panes.
+After a tmux restart, it resumes each saved pane through `pi --session` with a new sandbox owner.
+
 `refresh` queries mutable `FROM` and named image-context references, then rebuilds identities affected by changed pins;
 it retains BuildKit caches.
 Refreshed pins replace the previous pins only after the affected builds succeed.

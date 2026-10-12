@@ -23,7 +23,7 @@ if (manifest.name !== "@earendil-works/pi-coding-agent" || typeof publicEntry !=
 const sdk = await import(pathToFileURL(resolve(packageDir, publicEntry)).href);
 mock.module("@earendil-works/pi-coding-agent", () => sdk);
 const { SessionManager } = sdk;
-const { default: sessionSide, publishRestartSession, requestOwner, snapshotSession } = await import("../../../config/pi-agent/pi-extensions/session-side.ts");
+const { default: sessionSide, publishResurrectSession, publishRestartSession, requestOwner, snapshotSession } = await import("../../../config/pi-agent/pi-extensions/session-side.ts");
 
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -496,6 +496,43 @@ function restartExec(initial: any, fail = false) {
     return { code: fail ? 1 : 0, stdout: "", stderr: "" };
   } };
 }
+
+test("resurrect publication follows SDK switching, custom storage and ephemeral sessions in split panes", async () => {
+  const f = fixture();
+  const env = { TMUX: process.env.TMUX, TMUX_PANE: process.env.TMUX_PANE };
+  try {
+    process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%7";
+    const writes: any[] = [];
+    const pi = { exec: async (_command: string, args: string[]) => {
+      expect(args.slice(0, -1)).toEqual(["set-option", "-p", "-t", "%7", "@resurrect_pi_session"]);
+      writes.push(JSON.parse(Buffer.from(args.at(-1)!, "base64url").toString()));
+      return { code: 0, stdout: "", stderr: "" };
+    } };
+    const source = SessionManager.create(f.dir, join(f.dir, "custom-storage"));
+    const files = readdirSync(source.getSessionDir());
+    await publishResurrectSession(pi as any, source);
+    expect(writes[0]).toEqual({ version: 1, pid: process.pid, session: source.getSessionFile(), cwd: f.dir });
+    expect(readdirSync(source.getSessionDir())).toEqual(files);
+    const switched = SessionManager.create(f.dir, join(f.dir, "other-storage"));
+    switched.appendMessage(assistant());
+    source.setSessionFile(switched.getSessionFile());
+    const before = readFileSync(switched.getSessionFile(), "utf8");
+    await publishResurrectSession(pi as any, source);
+    expect(writes[1].session).toBe(switched.getSessionFile());
+    expect(readFileSync(switched.getSessionFile(), "utf8")).toBe(before);
+    await publishResurrectSession(pi as any, SessionManager.inMemory(f.dir));
+    expect(writes[2].session).toBeNull();
+    await expect(publishResurrectSession({ exec: async () => ({ code: 1 }) } as any, source))
+      .rejects.toThrow("Could not publish");
+    delete process.env.TMUX;
+    await publishResurrectSession({ exec: () => { throw Error("unexpected exec"); } } as any, source);
+  } finally {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    f.cleanup();
+  }
+});
 
 test("restart publication follows native SDK switching and custom storage without writing sessions", async () => {
   const f = fixture();
