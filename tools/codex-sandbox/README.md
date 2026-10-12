@@ -284,6 +284,11 @@ attachment, and forks into a new sandbox. Peers retain the old guest, which is
 cleaned up before handoff only after its final attachment releases. Cross-directory
 resume also forks and preserves the saved session. An empty session starts fresh;
 unsaved messages block handoff.
+The model receives a recorded directory-switch notice appended to the destination session, including before goal-triggered turns.
+Reloading that session does not duplicate the notice or insert it into the historical leading prompt.
+The notice authorizes work in the destination within the user's existing objective.
+It prompts the agent to read local instructions and check working-copy state and change ownership before editing.
+The switch does not authorize unrelated work or taking ownership of existing changes.
 
 `restart --repo DIRECTORY` stops, resets, and resumes registered tmux sessions for
 that repository only. Pass the repository root; symlink aliases resolve to the

@@ -107,6 +107,30 @@ export default function guestTools(pi: ExtensionAPI) {
     !hostPath.startsWith("/") || !guestPath.startsWith("/"))) {
     throw new Error("Pi resource path mapping is invalid");
   }
+  const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
+  const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
+  pi.on("session_start", (event, ctx) => {
+    if (event.reason !== "startup" && event.reason !== "reload") return;
+    if (!previousGuestCwd || previousGuestCwd === cwd) return;
+    // A cross-directory resume first restarts in the selected session's directory.
+    // Do not append to that source session while its handoff is still pending.
+    if (ctx.sessionManager.getCwd() !== ctx.cwd) return;
+    const sessionId = ctx.sessionManager.getSessionId();
+    if (ctx.sessionManager.getBranch().some((entry) =>
+      entry.type === "custom_message" && entry.customType === "sandbox-handoff"
+      && (entry.details as { sessionId?: string } | undefined)?.sessionId === sessionId)) return;
+    pi.sendMessage({
+      customType: "sandbox-handoff", display: false,
+      details: { sessionId, previousDirectory: previousGuestCwd, currentDirectory: cwd },
+      content: [
+        `Working directory switched from ${previousGuestCwd} to ${cwd}.`,
+        "Continue the user's objective.",
+        "This switch authorizes work in the destination within that objective.",
+        "Before making changes, read the destination's repository instructions and inspect working-copy state and change ownership.",
+        "Older paths remain historical context.",
+      ].join("\n"),
+    }, { triggerTurn: false });
+  });
   const tools = [
     createReadTool(cwd), createBashTool(cwd), createEditTool(cwd),
     createWriteTool(cwd), createGrepTool(cwd), createFindTool(cwd), createLsTool(cwd),
@@ -148,17 +172,13 @@ export default function guestTools(pi: ExtensionAPI) {
           if (firstSystem || message.sections?.sandbox_context !== undefined) {
             sections.sandbox_context = sandboxContext;
           }
-          const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
-          const handoff = firstSystem && previousCwd ? {
-            sandbox_handoff: `This conversation moved from ${rewritePiResourcePaths(previousCwd, resourcePaths)} to ${cwd}; older paths remain historical context.`,
-          } : {};
           firstSystem = false;
           return {
             ...message,
             content: typeof message.content === "string"
               ? rewriteSystem(message.content)
               : message.content.map((block) => ({ ...block, text: rewriteSystem(block.text) })),
-            ...(sections || previousCwd ? { sections: { ...sections, ...handoff } } : {}),
+            ...(sections ? { sections } : {}),
           };
         }
         if (message.role !== "user") return message;

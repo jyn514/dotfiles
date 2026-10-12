@@ -25,6 +25,7 @@ test("guest context rewrites expanded skills in history without changing stored 
     process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture";
     process.env.CODEX_SANDBOX_GUEST_CWD = "/src/repository";
     process.env.CODEX_SANDBOX_GUEST_REPO = "/src/repository";
+    delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
       "/home/jyn/.agents/skills": "/home/codex/.agents/skills",
     });
@@ -123,8 +124,10 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
     CODEX_SANDBOX_GUEST_CWD: guestCwd,
     CODEX_SANDBOX_GUEST_REPO: guestRepository,
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [cwd]: guestCwd }),
-    CODEX_SANDBOX_PREVIOUS_CWD: "/src/previous-project",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
+      [cwd]: guestCwd, "/host/previous-project": "/src/previous-project",
+    }),
+    CODEX_SANDBOX_PREVIOUS_CWD: "/host/previous-project",
   });
   const faux = fauxProvider({ provider: "guest-goal-context", api: "anthropic-messages" });
   const requests = [];
@@ -175,6 +178,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   const { session, extensionsResult } = await createAgentSession(options);
   assert.deepEqual(extensionsResult.errors, []);
   t.after(() => session.dispose());
+  await session.bindExtensions({});
   const goal = { customType: "pi-codex-goal", content: "/skill:ready-workqueue", display: false };
   await session.sendCustomMessage(goal, { triggerTurn: true });
   assert.equal(beforeStarts, 0, "goal-first request skips before_agent_start");
@@ -183,6 +187,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   session.dispose();
   const { session: resumed } = await createAgentSession(options);
   t.after(() => resumed.dispose());
+  await resumed.bindExtensions({});
   await resumed.sendCustomMessage(goal, { triggerTurn: true });
   assert.equal(beforeStarts, 1, "resumed goal also skips before_agent_start");
   assert.equal(requests.length, 3);
@@ -199,12 +204,27 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     assert.ok(!system.includes(incorrectSandbox), "nested cwd is not the writable root");
     assert.ok(!system.includes("{{repository}}"), "provider never receives the placeholder");
     assert.ok(!system.includes(cwd), "host repository paths never reach the provider");
-    assert.equal(system.split("This conversation moved from").length - 1, 1);
+    assert.ok(!system.includes("Working directory switched from"), "handoff preserves the historical system prompt");
+    const userText = messages.filter((message) => message.role === "user")
+      .map((message) => typeof message.content === "string" ? message.content
+        : message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n"))
+      .join("\n");
+    assert.equal(userText.split("Working directory switched from").length - 1, 1);
+    assert.ok(userText.includes(`from /src/previous-project to ${guestCwd}.`));
+    assert.ok(!userText.includes("/host/previous-project"), "previous directory uses the guest view too");
+    assert.match(userText, /Continue the user's objective/);
+    assert.match(userText, /authorizes work in the destination within that objective/);
+    assert.match(userText, /Before making changes, read .*repository instructions/);
+    assert.match(userText, /inspect working-copy state and change ownership/);
+    assert.match(userText, /Older paths remain historical context/);
   }
   const storedSystem = sessionManager.buildSessionContext().messages
     .filter((message) => message.role === "system").map(getSystemMessageText).join("\n");
   assert.ok(storedSystem.includes(join(skillDir, "SKILL.md")), "stored catalog retains host paths");
-  assert.ok(!storedSystem.includes("This conversation moved from"));
+  assert.ok(!storedSystem.includes("Working directory switched from"));
+  assert.equal(sessionManager.getBranch().filter((entry) =>
+    entry.type === "custom_message" && entry.customType === "sandbox-handoff").length, 1,
+    "the handoff is recorded once, including after resume");
   assert.ok(!sessionManager.buildSessionContext().messages
     .some((message) => message.role === "system" && "sandbox_context" in (message.sections ?? {})),
     "sandbox facts are request-local");
@@ -283,3 +303,161 @@ test("editable sandbox prose follows the launch repository and replaces stale se
   }
 });
 
+test("handoff notice survives real Codex request conversion with later directory updates", {
+  skip: !sdkEntry && "requires the host Pi installation",
+}, async (t) => {
+  const { convertToLlm, discoverAndLoadExtensions, ExtensionRunner, SessionManager } = await import(sdkEntry);
+  const require = createRequire(sdkEntry);
+  const aiDir = require.resolve.paths("@earendil-works/pi-ai")
+    .map((path) => join(path, "@earendil-works/pi-ai"))
+    .find((path) => existsSync(join(path, "package.json")));
+  assert.ok(aiDir);
+  const manifest = JSON.parse(readFileSync(join(aiDir, "package.json"), "utf8"));
+  const apiPath = manifest.exports["./api/*"].import.replace("*", "openai-codex-responses");
+  const { stream } = await import(pathToFileURL(resolve(aiDir, apiPath)).href);
+  const directory = mkdtempSync(join(tmpdir(), "codex-handoff-context-"));
+  const savedEnvironment = { ...process.env };
+  t.after(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnvironment)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnvironment);
+    rmSync(directory, { recursive: true, force: true });
+  });
+  Object.assign(process.env, {
+    CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+    CODEX_SANDBOX_GUEST_CWD: "/src/destination/nested",
+    CODEX_SANDBOX_GUEST_REPO: "/src/destination",
+    CODEX_SANDBOX_PREVIOUS_CWD: "/host/origin",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/origin": "/src/origin" }),
+  });
+  const loaded = await discoverAndLoadExtensions([
+    join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
+  ], directory, directory);
+  assert.deepEqual(loaded.errors, []);
+  const manager = SessionManager.inMemory(directory);
+  const runner = new ExtensionRunner(loaded.extensions, loaded.runtime, directory, manager, {});
+  loaded.runtime.sendMessage = (message) => manager.appendCustomMessageEntry(
+    message.customType, message.content, message.display, message.details);
+  const transcript = [
+    { role: "system", content: "Existing conversation.", timestamp: 1,
+      sections: { cwd: "<cwd>\n/src/origin\n</cwd>" } },
+    { role: "user", content: "Continue the task.", timestamp: 2 },
+    { role: "system", content: "", timestamp: 3,
+      sections: { cwd: "<cwd>\n/src/destination/nested\n</cwd>", project_context: "Destination instructions." } },
+    { role: "user", content: "Did you see the notice?", timestamp: 4 },
+  ];
+  const original = structuredClone(transcript);
+  for (const message of transcript) manager.appendMessage(message);
+  const prefix = structuredClone(manager.getBranch());
+  await runner.emit({ type: "session_start", reason: "startup" });
+  await runner.emit({ type: "session_start", reason: "reload" });
+  assert.deepEqual(manager.getBranch().slice(0, prefix.length), prefix, "startup and reload preserve the saved prefix");
+  assert.equal(manager.getBranch().length, prefix.length + 1, "reload does not duplicate the recorded note");
+  const messages = await runner.emitContext(convertToLlm(manager.buildSessionContext().messages));
+  const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "offline-fixture" } })).toString("base64");
+  for (const supportsMidConvoSystemMessages of [true, false]) {
+    let payload;
+    let networkCalls = 0;
+    const model = {
+      id: "offline-codex", name: "Offline Codex", api: "openai-codex-responses", provider: "openai-codex",
+      baseUrl: "https://codex.invalid", reasoning: false, input: ["text"], contextWindow: 200000, maxTokens: 1000,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      compat: { supportsMidConvoSystemMessages },
+    };
+    // Stop at the public payload hook: exercise the real serializer, but never
+    // send fixture credentials or conversation text to a service.
+    const result = await stream(model, { messages }, {
+      apiKey: `unused.${claims}.unused`, transport: "sse",
+      onPayload: (body) => { payload = structuredClone(body); throw new Error("offline payload captured"); },
+      fetch: async () => { networkCalls++; throw new Error("network is forbidden"); },
+    }).result();
+    assert.equal(result.errorMessage, "offline payload captured");
+    assert.equal(networkCalls, 0);
+    assert.ok(!payload.instructions.includes("Working directory switched from"), "handoff leaves Codex instructions unchanged");
+    const userMessages = payload.input.filter((message) => message.role === "user");
+    const userText = userMessages.map((message) => JSON.stringify(message.content)).join("\n");
+    assert.equal(userText.split("Working directory switched from").length - 1, 1);
+    assert.ok(JSON.stringify(userMessages.at(-1).content).includes("Working directory switched from"),
+      "Codex receives the handoff at the end, not in its historical prompt");
+    const rendered = [payload.instructions, ...payload.input.map((message) => JSON.stringify(message.content))].join("\n");
+    assert.equal(rendered.split("Working directory switched from").length - 1, 1);
+    assert.match(rendered, /from \/src\/origin to \/src\/destination\/nested\./);
+    assert.match(rendered, /authorizes work in the destination within that objective/);
+    assert.match(rendered, /repository instructions and inspect working-copy state and change ownership/);
+    assert.match(rendered, /Destination instructions/);
+    assert.ok(!rendered.includes("/host/origin"));
+  }
+  assert.deepEqual(transcript, original);
+});
+
+test("recorded handoffs preserve history and do not repeat on reload or ordinary session switches", {
+  skip: !sdkEntry && "requires the host Pi installation",
+}, async () => {
+  const { discoverAndLoadExtensions, ExtensionRunner, SessionManager } = await import(sdkEntry);
+  const directory = mkdtempSync(join(tmpdir(), "recorded-handoff-"));
+  const savedEnvironment = { ...process.env };
+  try {
+    Object.assign(process.env, {
+      CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+      CODEX_SANDBOX_GUEST_CWD: "/src/current",
+      CODEX_SANDBOX_GUEST_REPO: "/src/current",
+      CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
+        "/host/origin": "/src/origin", "/host/current": "/src/current",
+      }),
+    });
+    const cases = [
+      { previous: undefined, reason: "startup", expected: 0 },
+      { previous: "/src/current", reason: "startup", expected: 0 },
+      { previous: "/host/current", reason: "startup", expected: 0 },
+      { previous: "/host/origin", reason: "startup", expected: 1 },
+      { previous: "/src/origin", reason: "reload", expected: 1 },
+      { previous: "/src/origin", reason: "startup", pending: true, expected: 0 },
+      { previous: "/src/origin", reason: "new", expected: 0 },
+      { previous: "/src/origin", reason: "resume", expected: 0 },
+      { previous: "/src/origin", reason: "fork", expected: 0 },
+      { previous: "/src/origin", reason: "startup", existing: "current", expected: 0 },
+      { previous: "/src/origin", reason: "startup", existing: "source", expected: 1 },
+    ];
+    for (const example of cases) {
+      if (example.previous === undefined) delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
+      else process.env.CODEX_SANDBOX_PREVIOUS_CWD = example.previous;
+      const manager = SessionManager.inMemory(example.pending ? join(directory, "old-cwd") : directory);
+      manager.appendMessage({ role: "user", content: "Existing work remains here.", timestamp: 1 });
+      if (example.existing) manager.appendCustomMessageEntry("sandbox-handoff", "Older handoff", false, {
+        sessionId: example.existing === "current" ? manager.getSessionId() : "prior-session-id",
+      });
+      const prefix = structuredClone(manager.getBranch());
+      const loaded = await discoverAndLoadExtensions([
+        join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
+      ], directory, directory);
+      assert.deepEqual(loaded.errors, []);
+      const messages = [];
+      loaded.runtime.sendMessage = (message, options) => {
+        messages.push({ message, options });
+        manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
+      };
+      const runner = new ExtensionRunner(loaded.extensions, loaded.runtime, directory, manager, {});
+      const errors = [];
+      runner.onError((error) => errors.push(error));
+      await runner.emit({ type: "session_start", reason: example.reason });
+      if (example.reason === "startup" || example.reason === "reload") {
+        await runner.emit({ type: "session_start", reason: "reload" });
+      }
+      assert.deepEqual(errors, []);
+      assert.equal(messages.length, example.expected, JSON.stringify(example));
+      assert.deepEqual(manager.getBranch().slice(0, prefix.length), prefix);
+      if (example.expected) {
+        assert.deepEqual(messages[0].options, { triggerTurn: false }, "a directory switch does not start new work");
+        assert.match(messages[0].message.content, /from \/src\/origin to \/src\/current\./);
+        assert.ok(!messages[0].message.content.includes("/host/"));
+      }
+    }
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnvironment)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnvironment);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
