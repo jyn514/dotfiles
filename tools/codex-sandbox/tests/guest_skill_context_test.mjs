@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -24,6 +24,7 @@ test("guest context rewrites expanded skills in history without changing stored 
   try {
     process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture";
     process.env.CODEX_SANDBOX_GUEST_CWD = "/src/repository";
+    process.env.CODEX_SANDBOX_GUEST_REPO = "/src/repository";
     process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS = JSON.stringify({
       "/home/jyn/.agents/skills": "/home/codex/.agents/skills",
     });
@@ -116,10 +117,12 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   mkdirSync(agentDir);
   writeFileSync(join(skillDir, "SKILL.md"),
     "---\nname: ready-workqueue\ndescription: offline queue fixture\n---\nRead the queue.");
-  const guestCwd = "/src/renamed-project";
+  const guestRepository = "/src/renamed-project";
+  const guestCwd = `${guestRepository}/nested`;
   Object.assign(process.env, {
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
     CODEX_SANDBOX_GUEST_CWD: guestCwd,
+    CODEX_SANDBOX_GUEST_REPO: guestRepository,
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [cwd]: guestCwd }),
     CODEX_SANDBOX_PREVIOUS_CWD: "/src/previous-project",
   });
@@ -131,8 +134,13 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   };
   // Pi's custom-message route initially sends only tool declarations. Its first
   // tool result prepares the catalog, as in the reported ls -> read failure.
+  let firstGoalSystem;
   faux.setResponses([
-    () => fauxAssistantMessage([fauxToolCall("context_probe", {})], { stopReason: "toolUse" }),
+    (context) => {
+      firstGoalSystem = context.messages.filter((message) => message.role === "system")
+        .map(getSystemMessageText).join("\n");
+      return fauxAssistantMessage([fauxToolCall("context_probe", {})], { stopReason: "toolUse" });
+    },
     capture, capture, capture,
   ]);
   const settingsManager = SettingsManager.inMemory({
@@ -178,11 +186,18 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   await resumed.sendCustomMessage(goal, { triggerTurn: true });
   assert.equal(beforeStarts, 1, "resumed goal also skips before_agent_start");
   assert.equal(requests.length, 3);
+  const template = readFileSync(join(root, "config/agents/sandbox-context.md"), "utf8");
+  const expectedSandbox = template.split("{{repository}}").join(guestRepository).trim();
+  const incorrectSandbox = template.split("{{repository}}").join(guestCwd).trim();
+  assert.ok(firstGoalSystem.includes(expectedSandbox), "the initial goal request also receives the sandbox context");
   for (const messages of requests) {
     const system = messages.filter((message) => message.role === "system")
       .map(getSystemMessageText).join("\n");
     assert.ok(system.includes(`${guestCwd}/.agents/skills/ready-workqueue/SKILL.md`), system);
     assert.ok(system.includes(`<cwd>\n${guestCwd}\n</cwd>`), system);
+    assert.ok(system.includes(expectedSandbox), "provider receives the rendered template with the launch repository");
+    assert.ok(!system.includes(incorrectSandbox), "nested cwd is not the writable root");
+    assert.ok(!system.includes("{{repository}}"), "provider never receives the placeholder");
     assert.ok(!system.includes(cwd), "host repository paths never reach the provider");
     assert.equal(system.split("This conversation moved from").length - 1, 1);
   }
@@ -190,4 +205,81 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     .filter((message) => message.role === "system").map(getSystemMessageText).join("\n");
   assert.ok(storedSystem.includes(join(skillDir, "SKILL.md")), "stored catalog retains host paths");
   assert.ok(!storedSystem.includes("This conversation moved from"));
+  assert.ok(!sessionManager.buildSessionContext().messages
+    .some((message) => message.role === "system" && "sandbox_context" in (message.sections ?? {})),
+    "sandbox facts are request-local");
 });
+
+test("editable sandbox prose follows the launch repository and replaces stale section updates", {
+  skip: !sdkEntry && "requires the host Pi installation",
+}, async () => {
+  const { discoverAndLoadExtensions, ExtensionRunner, SessionManager } = await import(sdkEntry);
+  const directory = mkdtempSync(join(tmpdir(), "editable-sandbox-context-"));
+  const savedEnvironment = { ...process.env };
+  try {
+    const extensions = join(directory, "config/pi-agent/pi-extensions");
+    const agents = join(directory, "config/agents");
+    mkdirSync(extensions, { recursive: true });
+    mkdirSync(agents, { recursive: true });
+    for (const name of ["guest-tools.ts", "guest-tools-core.ts"]) {
+      const source = join(root, "config/pi-agent/pi-extensions", name);
+      const copy = join(extensions, name);
+      copyFileSync(source, copy);
+      assert.deepEqual(readFileSync(copy), readFileSync(source));
+    }
+    Object.assign(process.env, {
+      CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
+      CODEX_SANDBOX_GUEST_CWD: "/src/current/nested",
+      CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
+    });
+    delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
+    const template = join(agents, "sandbox-context.md");
+    const cases = [
+      { repository: "/src/current", prose: "Selected: {{repository}}.", expected: "Selected: /src/current." },
+      { repository: "/src/$&-other", prose: "New wording: {{repository}}; again {{repository}}.",
+        expected: "New wording: /src/$&-other; again /src/$&-other." },
+    ];
+    for (const { repository, prose, expected } of cases) {
+      process.env.CODEX_SANDBOX_GUEST_REPO = repository;
+      process.env.CODEX_SANDBOX_GUEST_CWD = `${repository}/nested`;
+      writeFileSync(template, prose);
+      const loaded = await discoverAndLoadExtensions([join(extensions, "guest-tools.ts")], directory, directory);
+      assert.deepEqual(loaded.errors, []);
+      const runner = new ExtensionRunner(
+        loaded.extensions, loaded.runtime, directory, SessionManager.inMemory(directory), {},
+      );
+      const errors = [];
+      runner.onError((error) => errors.push(error));
+      const messages = [
+        { role: "system", content: "Original instructions", timestamp: 0 },
+        { role: "system", content: "", sections: { sandbox_context: "Stale repository: /src/old" }, timestamp: 1 },
+      ];
+      const original = structuredClone(messages);
+      const projected = await runner.emitContext(messages);
+      assert.deepEqual(errors, []);
+      assert.equal(projected[0].content, "Original instructions");
+      assert.equal(projected[0].sections?.sandbox_context, expected);
+      assert.equal(projected[1].sections.sandbox_context, expected);
+      assert.deepEqual(messages, original);
+      assert.deepEqual(await runner.emitContext(projected), projected);
+    }
+    delete process.env.CODEX_SANDBOX_GUEST_REPO;
+    const missing = await discoverAndLoadExtensions([join(extensions, "guest-tools.ts")], directory, directory);
+    assert.deepEqual(missing.errors, [], "an older launcher must not disable guest tools on reload");
+    const runner = new ExtensionRunner(
+      missing.extensions, missing.runtime, directory, SessionManager.inMemory(directory), {},
+    );
+    assert.ok(runner.getToolDefinition("bash"), "an older launcher keeps guest tools attached");
+    const cleared = await runner.emitContext([
+      { role: "system", content: "Original instructions", sections: { sandbox_context: "Stale repository: /src/old" }, timestamp: 0 },
+    ]);
+    assert.equal(cleared[0].sections.sandbox_context, null, "missing launch repository clears stale facts without guessing from cwd");
+  } finally {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnvironment)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnvironment);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+

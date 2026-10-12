@@ -81,10 +81,12 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             repository = root / "repo"
             git_directory = repository / ".git"
             git_directory.mkdir(parents=True)
+            subdirectory = repository / "nested"
+            subdirectory.mkdir()
             state = SimpleNamespace(
                 repository=repository, git_repository=repository,
                 container_repository=Path("/src/repo"), home=root / "home",
-                host_working_directory=repository, skills_tmp=root / "skills",
+                host_working_directory=subdirectory, skills_tmp=root / "skills",
                 image="agent-image", codex_container="worker-container",
                 codex_arguments=[], pi_model_session_id="test-session",
                 host_editor=None, handoff_origin=None,
@@ -138,6 +140,9 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                                                 "guest tool worker exited during startup"):
                         run_agent(state, [])
                     owner.return_value.start.assert_not_called()
+                    environment = owner.call_args.args[3]
+                    self.assertEqual("/src/repo", environment["CODEX_SANDBOX_GUEST_REPO"])
+                    self.assertEqual("/src/repo/nested", environment["CODEX_SANDBOX_GUEST_CWD"])
                 log.seek(0)
                 self.assertEqual({"[false, false, false]", "worker stderr"},
                                  set(log.read().splitlines()))

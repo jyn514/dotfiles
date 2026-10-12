@@ -2083,6 +2083,7 @@ def run_agent(state: State, arguments: list[str]) -> int:
         "CODEX_SANDBOX_TOOL_CONTAINER": state.codex_container,
         "CODEX_SANDBOX_TOOL_CONNECT": str(DOTFILES / "tools/codex-sandbox/sandbox-tool-connect"),
         "CODEX_SANDBOX_GUEST_CWD": str(container_working_directory),
+        "CODEX_SANDBOX_GUEST_REPO": str(state.container_repository),
         "CODEX_SANDBOX_CD_VALIDATE": str(DOTFILES / "tools/codex-sandbox/codex-sandbox"),
         "CODEX_SANDBOX_PI_RESOURCE_PATHS": json.dumps(pi_resource_paths),
         "PI_SUBAGENT_PI_BIN": str(host_pi_bin),

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool, createEditTool, createFindTool, createGrepTool,
@@ -88,6 +89,16 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!process.env.CODEX_SANDBOX_TOOL_CONTAINER) return;
   const cwd = process.env.CODEX_SANDBOX_GUEST_CWD;
   if (!cwd) throw new Error("guest working directory is unavailable");
+  const repository = process.env.CODEX_SANDBOX_GUEST_REPO;
+  const sandboxContext = repository
+    ? readFileSync(new URL("../../agents/sandbox-context.md", import.meta.url), "utf8")
+      .replaceAll("{{repository}}", () => repository).trim()
+    : null;
+  // Reload can update this extension while the launcher environment stays old.
+  // Keep guest tools attached and clear stale facts rather than guessing from cwd.
+  if (!repository) {
+    console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
+  }
   const encodedResourcePaths = process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
   const resourcePaths = encodedResourcePaths
     ? JSON.parse(encodedResourcePaths) as Record<string, string>
@@ -130,10 +141,13 @@ export default function guestTools(pi: ExtensionAPI) {
     return {
       messages: event.messages.map((message) => {
         if (message.role === "system") {
-          const sections = message.sections && Object.fromEntries(
-            Object.entries(message.sections).map(([name, text]) =>
+          const sections = Object.fromEntries(
+            Object.entries(message.sections ?? {}).map(([name, text]) =>
               [name, text === null ? null : rewriteSystem(text)]),
           );
+          if (firstSystem || message.sections?.sandbox_context !== undefined) {
+            sections.sandbox_context = sandboxContext;
+          }
           const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
           const handoff = firstSystem && previousCwd ? {
             sandbox_handoff: `This conversation moved from ${rewritePiResourcePaths(previousCwd, resourcePaths)} to ${cwd}; older paths remain historical context.`,

@@ -74,6 +74,7 @@ test("registered tools and human bash snapshot their own public invocation conte
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
     CODEX_SANDBOX_TOOL_CONNECT: connector,
     CODEX_SANDBOX_GUEST_CWD: dir,
+    CODEX_SANDBOX_GUEST_REPO: dir,
     CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
     CODEX_GUEST_CALL_TEST_DIR: dir,
     PI_CALL_MODEL: "stale-env",

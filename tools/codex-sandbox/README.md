@@ -83,6 +83,15 @@ mounts must not emit a second mount at the workspace's `.git` path.
 
 ### Host instructions and guest-readable guidance
 
+Edit [sandbox-context.md](../../config/agents/sandbox-context.md) to change the dynamic sandbox prompt.
+It is plain Markdown; `{{repository}}` is the only supported placeholder and is replaced literally wherever it appears.
+The launcher supplies the writable repository root, independently of the working directory or any subdirectory used at startup.
+Host Pi injects the rendered text at request time, including goal-triggered and resumed runs, without changing stored messages.
+Run `/reload` to pick up template edits.
+Start a fresh sandbox once when deploying this feature so the launcher supplies the repository field.
+An older launch keeps guest tools attached but clears the dynamic section and reports the missing context rather than guessing permissions.
+The template is read from the host's dotfiles checkout; it needs no separate Dotbot link or guest mount.
+
 Host Pi loads instructions from the host filesystem. `/reload` refreshes host
 resources, but does not restage configuration or replace guest mounts. An updated
 prompt can therefore point to a file that the guest cannot read.
