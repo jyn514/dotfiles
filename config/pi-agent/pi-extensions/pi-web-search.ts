@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   addWebSearchToPayload,
   appendWebSearchSources,
+  formatWebSearchActivity,
   createMetadataCollector,
   linkWebSearchCitations,
   SUPPORTED_SEARCH_APIS,
@@ -10,7 +11,8 @@ import {
 const SEARCH_INSTRUCTIONS = `Web search is available through the active model provider.
 Use it for current facts, recent events, or information requiring external sources.
 Search results and snippets may lag behind origin sites. For claims about what is latest or current, verify against a live first-party page, feed, or source repository instead of relying only on result ordering or snippets.
-Honor any domain, date-range, result-count, or primary-source constraints in the user's request.`;
+Honor any domain, date-range, result-count, or primary-source constraints in the user's request.
+Hidden web activity messages record provider-reported operations, not page contents or proof of correct interpretation. An absent activity record does not prove that no retrieval happened.`;
 
 export default function webSearch(pi: ExtensionAPI) {
   let collector = createMetadataCollector();
@@ -46,7 +48,11 @@ export default function webSearch(pi: ExtensionAPI) {
 
   pi.on("message_end", (event) => {
     if (event.message.role !== "assistant") return;
-    const { sources, annotatedTexts } = collector.metadata;
+    const { sources, annotatedTexts, activities } = collector.metadata;
+    const activity = formatWebSearchActivity(activities);
+    if (activity) {
+      pi.sendMessage({ customType: "web-activity", content: activity, display: false }, { triggerTurn: false });
+    }
     if (sources.length === 0) return;
     return {
       message: {

@@ -42,20 +42,28 @@ const markdownTheme = Object.fromEntries([
   "hr", "listBullet", "bold", "italic", "strikethrough", "underline",
 ].map((name) => [name, (text) => text]));
 
-function responseEvents(answer, withSource) {
+function responseEvents(answer, withSource, activity) {
+  const messageIndex = activity ? 2 : 0;
+  const reasoning = { type: "reasoning", id: "rs_fixture", summary: [] };
   const item = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
     content: [{ type: "output_text", text: answer, annotations: withSource ? [source] : [] }] };
   return [
     { type: "response.created", response: { id: "resp_fixture", status: "in_progress" } },
-    { type: "response.output_item.added", output_index: 0, item: { ...item, content: [] } },
-    { type: "response.content_part.added", output_index: 0, content_index: 0,
+    ...(activity ? [
+      { type: "response.output_item.added", output_index: 0, item: reasoning },
+      { type: "response.output_item.done", output_index: 0, item: reasoning },
+      { type: "response.output_item.added", output_index: 1, item: { ...activity, status: "in_progress" } },
+      { type: "response.output_item.done", output_index: 1, item: activity },
+    ] : []),
+    { type: "response.output_item.added", output_index: messageIndex, item: { ...item, content: [] } },
+    { type: "response.content_part.added", output_index: messageIndex, content_index: 0,
       part: { type: "output_text", text: "", annotations: [] } },
-    { type: "response.output_text.delta", output_index: 0, content_index: 0, delta: answer },
-    ...(withSource ? [{ type: "response.output_text.annotation.added", output_index: 0, content_index: 0,
+    { type: "response.output_text.delta", output_index: messageIndex, content_index: 0, delta: answer },
+    ...(withSource ? [{ type: "response.output_text.annotation.added", output_index: messageIndex, content_index: 0,
       annotation_index: 0, annotation: source }] : []),
-    { type: "response.output_text.done", output_index: 0, content_index: 0, text: answer },
-    { type: "response.output_item.done", output_index: 0, item },
-    { type: "response.completed", response: { id: "resp_fixture", status: "completed", output: [item],
+    { type: "response.output_text.done", output_index: messageIndex, content_index: 0, text: answer },
+    { type: "response.output_item.done", output_index: messageIndex, item },
+    { type: "response.completed", response: { id: "resp_fixture", status: "completed", output: activity ? [reasoning, activity, item] : [item],
       usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
   ];
 }
@@ -67,7 +75,7 @@ function sse(events) {
 
 // Built-in Responses serializes and parses the real request/stream. Only its
 // HTTP boundary is replaced; no extension handler is invoked by this test.
-test("native request injects web search and streamed citations stay on the stored assistant message", async (t) => {
+test("native search citations and activity survive storage, reload, and request replay without visible reasoning", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "pi-native-web-search-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const cwd = join(root, "project");
@@ -90,7 +98,9 @@ test("native request injects web search and streamed citations stay on the store
     requests.push({ url, body });
     if (url.endsWith("/responses")) {
       responsesCount++;
-      return sse(responseEvents(`Offline answer ${responsesCount}. ${marker}`, responsesCount === 1));
+      const activity = { type: "web_search_call", id: `ws_${responsesCount}`,
+        action: { type: "open_page", url: source.url }, status: responsesCount === 1 ? "completed" : "failed" };
+      return sse(responseEvents(`Offline answer ${responsesCount}. ${marker}`, responsesCount === 1, activity));
     }
     return sse([
       { id: "chat_fixture", object: "chat.completion.chunk", choices: [{ index: 0,
@@ -136,17 +146,40 @@ test("native request injects web search and streamed citations stay on the store
   });
   await loader.reload();
   assert.deepEqual(loader.getExtensions().errors, []);
-  const { session, extensionsResult } = await createAgentSession({
+  const sessionOptions = {
     cwd, agentDir, resourceLoader: loader, settingsManager, modelRuntime,
-    sessionManager: SessionManager.inMemory(cwd),
     model: { id: "fixture", name: "Offline fixture", provider: "offline-search-responses", api: "openai-responses",
       baseUrl, reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 8192, maxTokens: 256 }, tools: [],
-  });
+  };
+  const first = await createAgentSession({ ...sessionOptions, sessionManager: SessionManager.create(cwd, join(root, "sessions")) });
+  let session = first.session;
+  const { extensionsResult } = first;
   t.after(() => session.dispose());
   assert.deepEqual(extensionsResult.errors, []);
   assert.equal(extensionsResult.extensions[0].path, extensionPath, "load the actual owned TypeScript source");
   await session.prompt("Find an offline source.");
+  const completedFooter = `Web activity:\n- Open page: ${source.url} — completed`;
+  const sessionFile = session.sessionFile;
+  assert.ok(sessionFile, "session must be persisted in owned temporary storage");
+  const stored = (await readFile(sessionFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  const savedAssistant = stored.find((entry) => entry.type === "message" && entry.message.role === "assistant").message;
+  assert.ok(savedAssistant.content.some((block) => block.type === "thinking" && block.thinking === ""),
+    "empty visible reasoning must not erase the activity record");
+  const savedActivity = stored.find((entry) => entry.type === "custom_message" && entry.customType === "web-activity");
+  assert.ok(savedActivity, "provider-reported activity must be stored even when reasoning text is empty");
+  assert.equal(savedActivity.content, completedFooter);
+  assert.equal(savedActivity.display, false, "activity must use Pi's model-visible, TUI-hidden message contract");
+  assert.ok(!savedAssistant.content.some((block) => block.type === "text" && block.text.includes("Web activity:")),
+    "activity must not appear in the visible assistant answer");
+  session.dispose();
+  // A replacement session needs freshly loaded extension runtimes, not APIs bound to the disposed session.
+  await loader.reload();
+  session = (await createAgentSession({ ...sessionOptions, sessionManager: SessionManager.open(sessionFile) })).session;
+  assert.deepEqual(session.messages.find((message) => message.role === "assistant"), savedAssistant,
+    "reload restores the authoritative saved assistant message");
+  assert.ok(session.messages.some((message) => message.role === "custom" && message.customType === "web-activity" &&
+    message.display === false && message.content === completedFooter), "reload restores hidden activity in model context");
   await session.prompt("Answer without sources this time.");
   await session.setModel(modelRuntime.getModel("offline-search-unsupported", "fixture"));
   await session.prompt("Search is unsupported here.");
@@ -155,10 +188,14 @@ test("native request injects web search and streamed citations stay on the store
     assert.deepEqual(request.body.tools, [{ type: "web_search", search_context_size: "medium" }],
       "the outgoing serialized request contains exactly one stock native search tool");
   }
+  const replayedText = requests[1].body.input.flatMap((item) => item.role === "user"
+    ? item.content.filter((part) => part.type === "input_text").map((part) => part.text) : []);
+  assert.ok(replayedText.includes(completedFooter), "the next serialized request contains the prior activity, not just citations");
   assert.ok(!requests[2].body.tools || requests[2].body.tools.length === 0,
     "unsupported API must not receive native search tools");
   assert.match(guidance[0], /Web search is available through the active model provider/);
   assert.match(guidance[1], /Web search is available through the active model provider/);
+  assert.match(guidance[0], /An absent activity record does not prove that no retrieval happened/);
   assert.equal(guidance[2], undefined, "unsupported API must not receive search guidance");
   const assistants = session.messages.filter((message) => message.role === "assistant");
   assert.equal(assistants.length, 3, "sources must not create a separate assistant message");
@@ -172,18 +209,22 @@ test("native request injects web search and streamed citations stay on the store
   t.diagnostic(`Pi ${manifest.version}: ${[...notificationKinds].join(", ")}`);
   const text = (message) => message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
   assert.match(text(assistants[0]), /^Offline answer 1\./);
-  assert.equal(text(assistants[0]).split(source.url).length - 1, 1, "source appears once on the answer itself");
   assert.equal(text(assistants[0]), "Offline answer 1. [Offline \\[source\\]](<https://example.invalid/native-(source)>)");
   const labels = [];
   const rendered = new Markdown(text(assistants[0]), 0, 0, {
     ...markdownTheme, link: (label) => { labels.push(label); return label; },
   }).render(120).join("\n");
-  assert.deepEqual(labels, [source.title], "the escaped title renders as exactly one link label");
+  assert.deepEqual(labels, [source.title], "render only the citation, without an activity footer");
   assert.ok(rendered.includes(source.url), "the real Markdown renderer recognizes the citation URL");
   assert.ok(!rendered.includes(marker), "provider citation markup must not reach the rendered answer");
   assert.equal(text(assistants[1]), `Offline answer 2. ${marker}`,
-    "without annotations, never guess an inline URL from an earlier turn");
+    "missing annotations do not reuse an earlier inline citation or expose hidden activity");
+  const activities = session.messages.filter((message) => message.role === "custom" && message.customType === "web-activity");
+  assert.deepEqual(activities.map((message) => ({ content: message.content, display: message.display })), [
+    { content: completedFooter, display: false },
+    { content: `Web activity:\n- Open page: ${source.url} — failed`, display: false },
+  ], "record each operation once, including failures without citations, with no stale activity from unsupported turns");
   assert.deepEqual(endedMessages, assistants, "message_end replacement survives in the real session transcript");
-  assert.equal(text(assistants[1]).includes(source.url), false, "collector resets between turns");
+  assert.equal(text(assistants[1]).includes("— completed"), false, "collector resets between turns");
   assert.equal(text(assistants[2]).includes(source.url), false, "unsupported turn inherits no stale citations");
 });

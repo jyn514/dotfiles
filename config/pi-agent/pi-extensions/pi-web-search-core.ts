@@ -13,10 +13,20 @@ export interface AnnotatedText {
   citations: WebCitation[];
 }
 
+export interface WebActivity {
+  id: string;
+  action:
+    | { type: "search"; queries: string[] }
+    | { type: "open_page"; url?: string }
+    | { type: "find_in_page"; url: string; pattern: string };
+  status: "in_progress" | "searching" | "completed" | "failed" | "incomplete";
+}
+
 export interface SearchMetadata {
   sources: WebSource[];
   searches: string[];
   annotatedTexts: AnnotatedText[];
+  activities: WebActivity[];
 }
 
 const openAISearch = () => ({ type: "web_search", search_context_size: "medium" });
@@ -107,6 +117,27 @@ function annotatedResponseText(item: unknown): AnnotatedText | undefined {
   return { text, citations };
 }
 
+/** Preserve only provider-reported activity, never infer an operation from a citation. */
+function webActivity(value: Record<string, unknown>): WebActivity | undefined {
+  if (value.type !== "web_search_call" || typeof value.id !== "string" || !value.id || !isRecord(value.action)) return;
+  const { status, action } = value;
+  if (status !== "in_progress" && status !== "searching" && status !== "completed" &&
+      status !== "failed" && status !== "incomplete") return;
+  if (action.type === "search") {
+    const queries = Array.isArray(action.queries)
+      ? action.queries.filter((query): query is string => typeof query === "string")
+      : typeof action.query === "string" ? [action.query] : [];
+    return { id: value.id, action: { type: "search", queries }, status };
+  }
+  if (action.type === "open_page") {
+    const url = optionalString(action.url);
+    return { id: value.id, action: { type: "open_page", ...(url ? { url } : {}) }, status };
+  }
+  if (action.type === "find_in_page" && typeof action.url === "string" && typeof action.pattern === "string") {
+    return { id: value.id, action: { type: "find_in_page", url: action.url, pattern: action.pattern }, status };
+  }
+}
+
 export function createMetadataCollector(): {
   metadata: SearchMetadata;
   observe(payload: unknown): void;
@@ -115,6 +146,7 @@ export function createMetadataCollector(): {
   const searches = new Set<string>();
   const seen = new Set<object>();
   const annotatedTexts = new Map<string, AnnotatedText>();
+  const activities = new Map<string, WebActivity>();
 
   function collectResponseItem(item: unknown): void {
     if (!isRecord(item) || typeof item.id !== "string") return;
@@ -166,6 +198,12 @@ export function createMetadataCollector(): {
       const query = optionalString(value.input.query);
       if (query) searches.add(query);
     }
+    const activity = webActivity(value);
+    if (activity) {
+      const previous = activities.get(activity.id);
+      const terminal = (status: WebActivity["status"]) => status !== "in_progress" && status !== "searching";
+      if (!previous || !terminal(previous.status) || terminal(activity.status)) activities.set(activity.id, activity);
+    }
     if (value.type === "web_search_call" && isRecord(value.action)) {
       const query = optionalString(value.action.query);
       if (query) searches.add(query);
@@ -182,10 +220,36 @@ export function createMetadataCollector(): {
 
   return {
     get metadata() {
-      return { sources: [...sources.values()], searches: [...searches], annotatedTexts: [...annotatedTexts.values()] };
+      return {
+        sources: [...sources.values()], searches: [...searches],
+        annotatedTexts: [...annotatedTexts.values()], activities: [...activities.values()],
+      };
     },
     observe: visit,
   };
+}
+
+/** Keep provider-controlled values on one line and prevent Markdown structure injection. */
+function activityText(value: string, quoted = false): string {
+  const encoded = JSON.stringify(value);
+  const text = quoted ? encoded : encoded.slice(1, -1);
+  return text.replace(/[\\`*_[\]<>]/g, "\\$&");
+}
+
+export function formatWebSearchActivity(activities: WebActivity[]): string | undefined {
+  if (activities.length === 0) return;
+  const lines = activities.map(({ action, status }) => {
+    let label: string;
+    if (action.type === "search") {
+      label = `Search: ${action.queries.length ? action.queries.map((query) => activityText(query, true)).join(", ") : "query not reported"}`;
+    } else if (action.type === "open_page") {
+      label = `Open page: ${action.url ? activityText(action.url) : "URL not reported"}`;
+    } else {
+      label = `Find in page: ${activityText(action.url)}; pattern ${activityText(action.pattern, true)}`;
+    }
+    return `- ${label} — ${status}`;
+  });
+  return `Web activity:\n${lines.join("\n")}`;
 }
 
 function citationDestination(url: string): string {

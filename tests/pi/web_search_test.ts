@@ -4,6 +4,7 @@ import webSearch from "../../config/pi-agent/pi-extensions/pi-web-search";
 import {
   addWebSearchToPayload,
   appendWebSearchSources,
+  formatWebSearchActivity,
   createMetadataCollector,
   linkWebSearchCitations,
 } from "../../config/pi-agent/pi-extensions/pi-web-search-core";
@@ -189,6 +190,7 @@ describe("native web search metadata", () => {
       ],
       searches: ["first query", "second query", "third query"],
       annotatedTexts: [],
+      activities: [],
     });
   });
 
@@ -200,8 +202,98 @@ describe("native web search metadata", () => {
     payload.self = payload;
     const collector = createMetadataCollector();
     collector.observe(payload);
-    expect(collector.metadata).toEqual({ sources: [], searches: [], annotatedTexts: [] });
+    expect(collector.metadata).toEqual({ sources: [], searches: [], annotatedTexts: [], activities: [] });
   });
+});
+
+describe("provider-reported web activity", () => {
+  const page = "https://example.com/paper";
+  const open = { type: "web_search_call", id: "ws_open", action: { type: "open_page", url: page } };
+
+  test("tracks status by call identity without collapsing repeated opens of the same URL", () => {
+    const collector = createMetadataCollector();
+    collector.observe({ type: "response.output_item.added", item: { ...open, status: "in_progress" } });
+    const completed = { ...open, status: "completed" };
+    collector.observe({ type: "response.output_item.done", item: completed });
+    collector.observe({ type: "response.completed", response: { output: [completed] } });
+    collector.observe({ ...open, status: "searching" }); // Late partial notification must not undo completion.
+    collector.observe({ ...open, id: "ws_again", status: "failed" });
+    expect(collector.metadata.activities).toEqual([
+      { id: "ws_open", action: { type: "open_page", url: page }, status: "completed" },
+      { id: "ws_again", action: { type: "open_page", url: page }, status: "failed" },
+    ]);
+    expect(collector.metadata.sources).toEqual([]);
+  });
+
+  for (const status of ["in_progress", "searching", "completed", "failed", "incomplete"] as const) {
+    test(`retains ${status} without inferring success or inventing a missing URL`, () => {
+      const collector = createMetadataCollector();
+      collector.observe({ ...open, action: { type: "open_page", url: null }, status });
+      expect(formatWebSearchActivity(collector.metadata.activities))
+        .toBe(`Web activity:\n- Open page: URL not reported — ${status}`);
+    });
+  }
+
+  test("preserves search queries and find patterns, including the legacy singular query", () => {
+    const collector = createMetadataCollector();
+    collector.observe([
+      { type: "web_search_call", id: "ws_search", status: "completed",
+        action: { type: "search", queries: ["fault enforcement", "regression testing"] } },
+      { type: "web_search_call", id: "ws_legacy", status: "failed", action: { type: "search", query: "legacy query" } },
+      { type: "web_search_call", id: "ws_unknown_query", status: "incomplete", action: { type: "search" } },
+      { type: "web_search_call", id: "ws_find", status: "completed",
+        action: { type: "find_in_page", url: page, pattern: "results" } },
+    ]);
+    expect(formatWebSearchActivity(collector.metadata.activities)).toBe(
+      'Web activity:\n- Search: "fault enforcement", "regression testing" — completed\n' +
+      '- Search: "legacy query" — failed\n- Search: query not reported — incomplete\n' +
+      `- Find in page: ${page}; pattern "results" — completed`,
+    );
+  });
+
+  test("keeps provider-controlled labels on one line without Markdown structure", () => {
+    const content = formatWebSearchActivity([{ id: "ws_hostile", status: "completed",
+      action: { type: "search", queries: ['first\n# heading [label](url) `code` *bold*'] } }]);
+    expect(content?.split("\n")).toHaveLength(2);
+    expect(content).toContain('first\\\\n# heading \\[label\\](url) \\`code\\` \\*bold\\*');
+  });
+
+  test("citations and malformed activity cannot become invented retrievals", () => {
+    const collector = createMetadataCollector();
+    collector.observe([
+      { type: "url_citation", url: page },
+      { ...open, status: "success" },
+      { ...open, id: "", status: "completed" },
+      { ...open, action: { type: "unknown" }, status: "completed" },
+      { ...open, action: { type: "find_in_page", url: page }, status: "completed" },
+    ]);
+    expect(collector.metadata.activities).toEqual([]);
+    expect(formatWebSearchActivity([])).toBeUndefined();
+  });
+
+  for (const name of ["provider_event", "provider_stream_event"]) {
+    test(`${name} persists failed activity even without sources and resets on the next turn`, () => {
+      const handlers = new Map<string, (...args: unknown[]) => unknown>();
+      const sent: unknown[] = [];
+      webSearch({
+        on: (event: string, handler: (...args: unknown[]) => unknown) => handlers.set(event, handler),
+        sendMessage: (message: unknown, options: unknown) => sent.push({ message, options }),
+      } as unknown as ExtensionAPI);
+      handlers.get("turn_start")?.({});
+      const item = { ...open, status: "failed" };
+      handlers.get(name)?.(name === "provider_event" ? { event: { payload: item } } : { data: item });
+      const message = { role: "assistant", content: [{ type: "thinking", thinking: "" }] };
+      expect(handlers.get("message_end")?.({ message })).toBeUndefined();
+      expect(sent).toEqual([{
+        message: { customType: "web-activity", content: `Web activity:\n- Open page: ${page} — failed`, display: false },
+        options: { triggerTurn: false },
+      }]);
+      expect(message.content).toEqual([{ type: "thinking", thinking: "" }]);
+      handlers.get("turn_start")?.({});
+      expect(handlers.get("message_end")?.({ message })).toBeUndefined();
+      expect(sent).toHaveLength(1);
+    });
+  }
 });
 
 describe("web search citations", () => {

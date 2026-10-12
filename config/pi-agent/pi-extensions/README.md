@@ -47,6 +47,17 @@ match between the final provider text, its annotation positions, and Pi's text
 block; missing, invalid, or ambiguous annotations leave the text unchanged.
 Other sources are appended in a `Sources:` list without repeating URLs already
 in the answer. Streaming text can still show raw markers until the message ends.
+
+On OpenAI/Azure/Codex Responses, hidden `web-activity` custom messages record provider-reported search, page-open, and find-in-page operations.
+They preserve queries, URLs, find patterns, and the last observed operation status in model context without appearing in the TUI.
+They do not start another model turn; Pi inserts them after the current turn's tool results.
+Repeated notifications for one call produce one record; separate calls to the same URL remain separate.
+These records survive session reload and are included in later model requests without retaining page contents.
+`completed` means the provider reported completion, not that the model read the whole page or interpreted it correctly.
+Failed and incomplete operations remain recorded even without citations; unfinished operations keep their observed status.
+An absent activity record does not prove that no retrieval happened.
+Other providers retain their existing citation behavior without inferred activity records.
+
 Run `/reload` to activate this in existing Pi processes; saved old messages are
 not rewritten. Both the installed SDK's `provider_event` and v0.99's
 `provider_stream_event` are supported.
