@@ -17,6 +17,10 @@ Before writing, identify:
 - nearby skills, repository instructions, or canonical docs that may already own the behavior;
 - the decisions or failure modes that generic agent behavior handles poorly.
 
+For edits prompted by a failed session, inspect the recorded decision and rejected alternatives before drafting.
+Do not infer the cause from an outcome summary alone.
+Distinguish missing guidance from ignored guidance or restrictions introduced by the chosen approach.
+
 Require a concrete repeated use, second consumer, or hard constraint. Do not create a skill for one isolated task, generic advice, or rules that must apply to every task; put always-applicable routing and constraints in the relevant `AGENTS.md` instead.
 
 Before placing a rule in the skill body, ask whether it must act before this skill loads or on tasks the description excludes.

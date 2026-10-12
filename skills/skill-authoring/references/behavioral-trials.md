@@ -8,6 +8,11 @@ vary only the skill under test.
 Inspect the exact worker inputs and keep reference outputs and later diagnoses out of them.
 Judge actual decisions and actions afterward, not just formatting or workflow compliance.
 
+For a failure-driven revision, reconstruct the inputs available at the recorded failure decision point.
+Include a nearby control that should retain its existing path.
+For example, pair a decision about replacing custom profiling instrumentation with an obvious mechanical repair that needs no redesign.
+Test whether the new guidance changes the failure decision without adding unnecessary steps to the control.
+
 For each variant, report task outcomes alongside token use and elapsed time where available.
 Include tool and review overhead when they are part of the compared workflow; separate shared experiment setup from execution cost.
 Assess the added skill against the existing workflow.
