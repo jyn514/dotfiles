@@ -1,0 +1,70 @@
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" = --help ] && [ "$#" -eq 1 ]; then
+	printf '%s\n' 'usage: mosh-agent HOST'
+	exit 0
+fi
+if [ "$#" -ne 1 ]; then
+	printf '%s\n' 'usage: mosh-agent HOST' >&2
+	exit 2
+fi
+host=$1
+case "$host" in
+	''|-*) printf '%s\n' 'mosh-agent: HOST must be an SSH destination, not an option' >&2; exit 2 ;;
+esac
+for tool in autossh mosh ssh ssh-add; do
+	command -v "$tool" >/dev/null 2>&1 || {
+		printf 'mosh-agent: required command missing: %s\n' "$tool" >&2
+		exit 1
+	}
+done
+if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
+	printf '%s\n' 'mosh-agent: SSH_AUTH_SOCK must point to an available agent with keys' >&2
+	exit 1
+fi
+
+socket_relative=.ssh/mosh-agent.sock
+# Expand HOME on the server, using its login shell rather than parsing account data.
+remote_socket=$(ssh -T -o BatchMode=yes -o ConnectTimeout=10 "$host" \
+	"printf '%s\\n' \"\$HOME/$socket_relative\"") || exit
+case "$remote_socket" in
+	/*) ;;
+	*) printf '%s\n' 'mosh-agent: SSH did not return an absolute remote socket path' >&2; exit 1 ;;
+esac
+case "$remote_socket:$SSH_AUTH_SOCK" in
+	*:*:*) printf '%s\n' 'mosh-agent: socket paths cannot contain a colon' >&2; exit 1 ;;
+esac
+
+tunnel_pid=
+mosh_pid=
+# shellcheck disable=SC2329 # Invoked by the EXIT trap.
+cleanup() {
+	result=$?
+	trap - EXIT HUP INT TERM
+	for child in "$mosh_pid" "$tunnel_pid"; do
+		[ -n "$child" ] || continue
+		kill "$child" 2>/dev/null || true
+		wait "$child" 2>/dev/null || true
+	done
+	exit "$result"
+}
+trap 'cleanup' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Own a separate SSH process; autossh terminates it when its supervisor stops.
+AUTOSSH_GATETIME=0 autossh -M 0 -N -T \
+	-o BatchMode=yes -o ControlMaster=no -o ControlPath=none \
+	-o ExitOnForwardFailure=yes -o ConnectTimeout=10 \
+	-o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+	-R "$remote_socket:$SSH_AUTH_SOCK" "$host" </dev/null &
+tunnel_pid=$!
+# Explicit stdin preserves the terminal; wait lets shell traps run immediately.
+mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$host" <&0 &
+mosh_pid=$!
+result=0
+wait "$mosh_pid" || result=$?
+mosh_pid=
+exit "$result"
