@@ -154,6 +154,78 @@ Do not wrap the [configured startup benchmark](../tools/codex-sandbox/developmen
 or live `dev/replay-compaction` requests: those intentionally use installed
 configuration, caches, or authentication. Isolated runs do not measure that setup.
 
+### Broker-backed live provider probe
+
+Running this probe makes a live model request through the sandbox broker and may incur model cost.
+It uses the installed Pi SDK, private HOME, no model-catalog refresh, and no discovered extensions or sessions.
+Unlike `dev/replay-compaction`, it does not need personal configuration or stored authentication.
+The parent passes broker credentials through stdin because `dev/test-environment` removes the inherited broker variables.
+Do not put the key in command arguments, files, or diagnostic output.
+
+Save these two files in a private temporary directory.
+Use an available `openai-codex` model ID when running the launcher from the repository root.
+
+`probe.ts`:
+
+```typescript
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const packageDir = process.env.PI_PACKAGE_DIR;
+assert.ok(packageDir, "Set PI_PACKAGE_DIR to the installed Pi SDK");
+const manifest = JSON.parse(readFileSync(resolve(packageDir, "package.json"), "utf8"));
+const { ModelRuntime, ModelRegistry } = await import(pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
+const { default: codexSidecar } = await import(pathToFileURL(resolve("config/pi-agent/pi-extensions/codex-sidecar.ts")).href);
+const { baseUrl, apiKey } = await Bun.stdin.json();
+assert.ok(baseUrl && apiKey && process.argv[2], "Broker credentials and a model ID are required");
+process.env.CODEX_SIDECAR_URL = baseUrl;
+process.env.CODEX_SIDECAR_KEY = apiKey;
+
+const runtime = await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
+const registry = new ModelRegistry(runtime);
+codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
+const catalogModel = registry.find("openai-codex", process.argv[2]);
+assert.ok(catalogModel, "Model is missing from the installed catalog");
+// Catalog metadata can retain a different endpoint despite provider registration.
+const model = { ...catalogModel, baseUrl };
+const response = await registry.complete(model, {
+  messages: [{ role: "user", content: [{ type: "text", text: "Reply only PROBE_OK." }], timestamp: Date.now() }],
+}, {
+  maxTokens: 256, reasoningEffort: "low", transport: "sse", signal: AbortSignal.timeout(60000),
+  onPayload: (_payload, requestModel) => {
+    assert.equal(requestModel.baseUrl, baseUrl, "Refuse to send broker credentials to another endpoint");
+  },
+});
+assert.equal(response.stopReason, "stop", "Probe did not finish normally");
+console.log("Broker request completed.");
+```
+
+`run.py`:
+
+```python
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+broker = {"baseUrl": os.environ["CODEX_SIDECAR_URL"], "apiKey": os.environ["CODEX_SIDECAR_KEY"]}
+probe = Path(__file__).resolve().with_name("probe.ts")
+result = subprocess.run(
+    ["dev/test-environment", "bun", str(probe), sys.argv[1]],
+    input=json.dumps(broker), text=True, check=False,
+)
+sys.exit(result.returncode)
+```
+
+Run `python3 /path/to/run.py MODEL_ID` with broker variables available in the parent environment.
+Set `PI_PACKAGE_DIR` if the installed SDK is not discoverable under the original HOME.
+The endpoint assertion checks the effective request model before the provider sends HTTP headers.
+This SSE probe checks broker connectivity, not WebSocket behavior or the web-search extension.
+For offline activity persistence and replay coverage, run `dev/test-environment node --test tests/pi/native_web_search.mjs`.
+
 ## Bootstrap maintenance
 
 Run `dev/update-bootstrap-lock --dry-run` to preview newer plugin revisions,
