@@ -339,8 +339,9 @@ The owner-validated mode-`0600` metadata contains authenticated-egress session t
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
-The #link("tic-proxy.typ")[TicGit capability] adds common-store discovery before route selection;
-its routing contract governs local execution eligibility across linked worktrees.
+The #link("tic-proxy.typ")[TicGit capability] instead uses one persistent store-scoped service per Git common directory.
+Workspace publication references its separately accepted owner; workspace teardown does not stop it.
+Its host shim always acquires or joins that service, even without agents; ordinary native-host fallback is forbidden.
 For other capabilities, the router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock

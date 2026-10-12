@@ -440,6 +440,7 @@ a join cannot rewrite shared metadata.
 ## Design and reference
 
 The authoritative [sandbox design specification](spec/main.typ) aggregates the sandbox contracts, including the trust model, proxy manifest, image resolution, and lifecycle.
-The [TicGit proxy design](spec/tic-proxy.typ) proposes offline ticket operations against protected Git metadata; it is not implemented.
+The [TicGit proxy design](spec/tic-proxy.typ) proposes one persistent offline service per Git common directory for host and agent ticket operations.
+It is not implemented; ordinary host `ti` would require the container runtime even with no sandbox running.
 Read the relevant contracts before changing a security boundary.
 See the [tools overview](../README.md).

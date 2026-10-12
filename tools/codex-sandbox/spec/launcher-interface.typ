@@ -612,6 +612,11 @@ reject the join without reading current configuration or disturbing their holder
 Legacy records remain parseable only for owner-validated stale recovery. Final-holder
 cleanup permits the next launch to migrate from current configuration.
 
+The proposed #link("tic-proxy.typ")[TicGit persistent-store scope] is independent of this shared-session lifetime.
+Its accepted owner remains authoritative across worktree sessions; workspace records retain only a validated reference.
+Final-holder cleanup and image refresh do not replace it; accepting a new definition or image requires explicit store shutdown and fresh acquisition.
+This requires a separately versioned store record and a shared-session schema extension for its reference, not reinterpretation of schema 4.
+
 == Acceptance evidence
 
 - Equivalent Bake and project-command configurations produce the same normalized

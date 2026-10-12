@@ -8,6 +8,7 @@ The remaining acceptance gap is Flower's bounded R2 connection-establishment
 retry, blocked because `/src/flower` is read-only in this checkout. Until that
 external client change lands, an early R2 request may fail rather than wait for
 the best-effort relay; no possibly accepted request is replayed.
+The #link("tic-proxy.typ")[TicGit design] additionally requires a `persistent-store` scope; that extension is proposed, not implemented.
 
 == Objective
 
@@ -60,7 +61,7 @@ A service plan is an internal validated value, not repository syntax.
 It contains only lifecycle information needed across service families:
 
 - stable service role and family
-- lifetime scope: `shared-session` or `agent-launch`
+- lifetime scope: `shared-session`, `agent-launch`, or proposed `persistent-store`
 - availability for `agent-launch` services: `required` or `best-effort`
 - immutable image role and image-bound UID and GID where applicable
 - service-adapter name and fixed parameters
@@ -85,8 +86,8 @@ Authorization changes after publication do not mutate a shared service; joins re
 A service's logical identity is independent of its generated container name.
 It comprises:
 
-- canonical repository identity for repository-scoped services
-- shared-session identity or agent-launch identity
+- canonical repository identity for repository-scoped services; canonical Git common directory for `persistent-store`
+- shared-session identity, agent-launch identity, or persistent store identity
 - service role, family, and scope
 - runtime owner and runtime-policy digest
 - immutable image identity and image-bound parameters
@@ -115,6 +116,14 @@ share one existing agent-launch resource owner, not a new launcher or relay
 authorization.
 
 == Scope and availability
+
+The proposed `persistent-store` scope serves one Git common directory independently of workspace sessions.
+TicGit uses one instance and one accepted service record for the host and all opted-in worktrees.
+The supervisor publishes it atomically under store-scoped coordination and retains it until explicit shutdown or recovery.
+Its endpoint is required wherever exposed; this scope has no best-effort availability.
+Session records reference its accepted identity; session exit and final-holder cleanup cannot stop or replace a published instance.
+Acquisition, serial request ownership, stop-and-admin exclusion, and recovery follow the #link("tic-proxy.typ")[TicGit contract].
+This extends the existing supervisor, not the service-family model; it grants no other capability this scope.
 
 `shared-session` services are created once for one repository session and reused by all attached agents.
 Command proxies and Caddy authenticated-egress instances normally use this scope.
@@ -145,14 +154,15 @@ Repository configuration cannot weaken installed availability policy.
 Normal transitions are:
 
 ```text
-shared:      planned -> resolved -> preparing -> starting -> ready -> published -> stopping -> removed
+shared/store: planned -> resolved -> preparing -> starting -> ready -> published -> stopping -> removed
 required:    planned -> resolved -> preparing -> starting -> ready -> attached  -> stopping -> removed
 best-effort: planned -> resolved -> preparing -> starting -> attached -> ready -> stopping -> removed
 startup:     planned | resolved | preparing | starting | ready | attached -> failed -> stopping
 recovery:    stopping -> cleanup-failed -> stopping -> removed
 ```
 
-A published service that later disappears remains recorded; requests fail naturally and join-time validation rejects it until final-holder cleanup.
+A published shared-session service that later disappears remains recorded; requests fail naturally and joins reject it until final-holder cleanup.
+A persistent-store instance instead remains recorded until explicit store-scoped shutdown or recovery; it never restarts beneath attached clients.
 Recovery may leave `cleanup-failed` only after exclusive ownership validation.
 
 / `planned`: Policy, authority, image role, scope, service-adapter identity, and state schema are fixed; no service resource exists.
@@ -160,7 +170,8 @@ Recovery may leave `cleanup-failed` only after exclusive ownership validation.
 / `preparing`: The supervisor creates runtime-owned networks, volumes, forwards, temporary files, and credential mounts. Service plans declare resource roles and attachments before effects begin; adapters bind runtime identities and register every successful creation for dependency-ordered cleanup.
 / `starting`: The service process or container exists but no endpoint is usable by the agent or host router.
 / `ready`: All declared endpoints passed their service-adapter probe. Shared authenticated services have their session token installed and reject unauthenticated requests; required per-launch relays have installed their token, peer allowlist, or equivalent admission. For Caddy authenticated egress, a dedicated local Caddy route performs a bodyless helper admission check and returns locally without an upstream handler. Readiness validates both container identities, their private socket-volume attachment, and local credential structure/readability; it performs no upstream request, OAuth refresh, or persistent credential write.
-/ `published`: One atomic shared-session record exposes the complete ready shared-service set. Individual shared services are never published incrementally.
+/ `published`: One atomic shared-session record exposes the complete ready shared-service set; individual shared services are never published incrementally.
+A persistent-store service publishes its own single-instance accepted record, independently of workspace publication.
 / `attached`: A per-launch service has been projected into one agent's mounts or environment. Required services enter only from `ready`; best-effort services may enter from `starting` after their endpoint identity and authorization boundary exist.
 / `stopping`: New attachment and routing are disabled; the service adapter may perform one bounded protocol-specific graceful shutdown, then the runtime forcibly terminates remaining owned processes.
 / `removed`: All owned runtime resources and temporary authority are gone.
@@ -199,6 +210,11 @@ A protocol with no safe active probe uses a passive condition such as a bound so
 Semantic credential failure or upstream unavailability is therefore a request failure, not a reason to reject an otherwise healthy join.
 
 == Publication and joining
+
+Persistent-store acquisition publishes or validates its separate accepted record before a workspace exposes that endpoint.
+A failed later workspace startup releases its reference without unwinding an already published persistent service.
+Workspace publication records only that reference; it does not copy the store endpoint or acquire its cleanup ownership.
+Store coordination precedes workspace coordination, and store acquisition never waits for a workspace lock while holding store coordination.
 
 Shared publication is one atomic operation.
 The record includes accepted policy provenance, service identities, verified immutable images, runtime ownership, endpoints, implementation identities, and lifecycle-state schema versions.
@@ -240,6 +256,7 @@ It validates repository, runtime, service, image, and endpoint identity before o
 The caller supplies only the stable service role and protocol request.
 Transport failure never triggers execution of a more privileged local command while the shared-session lock is held.
 Outside an active session, a host shim may use its separately reviewed local implementation under the existing host coordination contract.
+Persistent-store routes are the exception: ordinary host calls always acquire or join the service, never a native-host fallback.
 
 == Cancellation and shutdown
 
@@ -251,7 +268,10 @@ After the deadline, the runtime terminates the complete owned process or contain
 Per-launch services stop on startup failure or final attachment release. Host Pi
 release follows the launcher contract; `/split` keeps the workload owner and
 shared-session lock alive while peers remain.
-Shared services stop only after the final launcher proves final ownership through the host session lock.
+Shared-session services stop only after the final launcher proves final ownership through the host session lock.
+Published persistent-store services stop only through explicit store-scoped shutdown or recovery, never launcher signal handling or final-holder cleanup.
+Unpublished acquisition attempts retain normal supervisor cancellation, worker joining, and cleanup on startup failure or signal.
+Store shutdown revokes acquisition and proves every database-using descendant stopped before administration or replacement.
 Cleanup runs in reverse dependency order derived from the declared resource attachments: disable host forwards and agent reachability, stop service processes, remove containers, remove socket volumes and temporary credential views, then remove networks and temporary files.
 Independent removals may run concurrently when ownership and dependency order permit it.
 
@@ -311,6 +331,8 @@ It accepts no destination supplied by the agent and never relays the agent-room 
 + Completed: normalized plans and adapters preserve service scope and authority; gateway clients use bounded connection-only retries without replay.
 + Completed: common resource registration, state, identity, cleanup, and recovery use the lifecycle supervisor.
 + Completed: command proxies use supervised shared publication and host routing.
++ Proposed: add `persistent-store` identity, publication, attachment references, explicit shutdown, and recovery for TicGit.
+  Existing `shared-session` and `agent-launch` behavior stays unchanged.
 + Completed: each Codex and Zulip trust domain uses a separately recorded unmodified Docker Official Image Caddy 2.11.4-alpine container, minimal helper container, and private socket volume; credentials mount only into the helper, and the custom authenticated HTTP brokers are removed.
 + Completed: per-launch gateway and R2 resources use supervised ownership, worker joining, and cleanup.
 + External action: implement and test bounded connection-establishment retry in Flower's R2 client. Do not retry after connecting or after any request byte may have been sent. The source is outside this writable repository at `/src/flower`.
@@ -333,6 +355,9 @@ Do not retain a service-specific cleanup path beside generic cleanup as a fallba
 - Required per-launch failure prevents agent startup; best-effort failure leaves its projected endpoint unavailable, reports failure after bounded retries, and completes owned cleanup without terminating the agent.
 - Agent root cannot use lifecycle metadata to select another endpoint, credential domain, repository, executable, mount, or runtime operation.
 - Host routing validates published service and endpoint identity and never falls back to privileged local execution while a session is active.
+- Persistent-store acquisition creates one instance across host-first and multi-worktree races; failed joins cannot replace it.
+  Workspace teardown leaves the store instance running; explicit shutdown accounts for endpoint holders and every native descendant.
+  Ordinary host calls require its runtime even outside sessions, and failed published instances require explicit recovery.
 - Codex and Zulip share the Docker Official Image Caddy 2.11.4-alpine dependency and lifecycle pattern but not Caddy/helper containers, socket volumes, credentials, tokens, networks, mutable state, or failure domains.
 - Join and startup verify the OCI index, platform-manifest, image-configuration, and runtime container image chain plus platform tuple; implementation identity separately binds the mounted Caddy configuration digest.
 - Caddy, helper, and private socket-volume identities are lifecycle-owned; credentials mount only into the helper, and the removed custom HTTP parser, DNS parser, header/framing engine, and response-byte limiter are not retained as fallback resources.

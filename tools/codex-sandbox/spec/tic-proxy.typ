@@ -2,7 +2,8 @@
 
 *Status:* Draft design; not implemented.
 The `tic` capability follows the existing `jj-proxy` pattern: admit a native argument vector, run the pinned CLI, and return its output.
-Concurrent sessions in linked worktrees and ordinary host `ti` use remain available; only ticket invocations contend.
+One persistent service per Git common directory serves host `ti` and every opted-in worktree through one serial request loop.
+Ordinary host `ti` therefore requires the accepted container runtime even when no sandbox is running.
 It does not replace Flower's `bug` bridge, migrate tickets, or authorize implementation.
 The #link("proxy-design.typ")[proxy design] owns transport, mounts, and host routing;
 the #link("trusted-service-lifecycle.typ")[trusted-service lifecycle] owns startup, joining, cleanup, and recovery.
@@ -26,6 +27,11 @@ The trusted server stages the contents privately, substitutes its own path, and 
 Native TicGit parses the title and description and produces the Markdown output.
 The proxy returns that output and the native exit status; it never opens the guest-supplied path.
 
+A host invocation and an agent in another worktree connect to the same service, not separately owned proxies.
+The trusted host launcher starts it on demand and keeps it after the final sandbox session exits.
+Explicit store shutdown and maintenance are the only transitions back to native host administration.
+This removes the native/proxy handoff, multi-proxy invocation lock, and index of workspace service owners.
+
 Keep native `ti` rather than building a replacement ticket API around `ticgit-lib`.
 Native TicGit owns ordinary option parsing, field validation, ticket-prefix resolution, filters, persisted data, and rendering.
 In particular, `--markdown`, `--json`, and ordinary text output remain native behavior.
@@ -47,6 +53,9 @@ Pin the toolchain and image through existing image resolution; do not install or
 
 Select `tic` as an opt-in version 2 repository manifest command using the existing image binding.
 Its fixed entrypoint is `tic-proxy serve`, with `workdir` set to `.` and `network` set to `false`.
+The manifest selects agent access; the launcher acquires the store-scoped service instead of starting a workspace-owned instance.
+Host setup installs the trusted `tic` service definition and image binding so host-first startup does not require a sandbox manifest opt-in.
+Both entrypoints use the same trusted planner and existing image resolver; requests cannot supply service definitions or images.
 Declare the existing Git mount:
 
 ```json
@@ -152,19 +161,19 @@ Neither the wrapper nor the server parses the ticket body or recreates native Ma
 == Prepared store
 
 The host initializes the store, performs required sync/import, and fully materializes TicGit project metadata before first use.
-Initialization, upgrades, sync, import, serialization, and recovery require all services for this store stopped through the generic supervisor.
-Ordinary host ticket inspection and mutation instead use the routing contract below.
+Initialization, upgrades, sync, import, serialization, and recovery require explicit coordinated shutdown of the store service.
+Ordinary host ticket inspection and mutation instead use the service route below.
 
-Each proxy validates the store under the same runtime invocation lock used by requests.
+The service validates the store before endpoint publication, while the supervisor holds exclusive store creation coordination.
 Read-only SQLite validation must include committed WAL state; the main database file alone is not the complete store.
-Another live proxy's WAL does not require stopping that session or running a host checkpoint.
+Committed WAL left by an earlier service instance does not require a host checkpoint before normal startup.
 Allow SQLite synchronization sidecars in protected metadata if needed for reading, but do not migrate, checkpoint, repair, or change ticket data.
-Lock contention during startup uses only the bounded preparation deadline.
+Store preparation uses only the bounded preparation deadline.
 Require SQLite `user_version` `1` and the initialized project `ticgit:schema-version` string `"1"`.
 Reject unresolved promised TicGit project keys or missing referenced blobs: native bulk reads can otherwise silently omit tickets.
 Check database and existing WAL/SHM files without following symlinks; require regular files with one hard link.
 The generic mount validation rejects metadata indirection and agent-writable aliases.
-Release the validation lock after checking the store; later operations take it again.
+Publish only after validation; no other service or host administrator may access the store during preparation.
 Protected mounts and the host-administration restriction preserve file identity and store compatibility between requests.
 Later sidecars stay inside the protected directory.
 Do not duplicate the native schema with a table/column/index catalogue or require a full integrity scan at startup.
@@ -178,70 +187,86 @@ The immutable runtime contains no `git-meta` command helper.
 Configuration isolation and disabled networking are additional controls; local-URL setup is not considered safe.
 Readiness validates the prepared store and policy and binds the socket; it never runs a mutating native probe.
 
-== Invocation locking and host routing
+== Persistent ownership and routing
 
-Workspace-session identity remains the pair of canonical workspace root and Git common directory, as in the existing launcher.
-Linked worktrees share one database but keep independent sandbox sessions and proxy endpoints.
-The common-directory store index below does not replace workspace-session identity or merge their proxy sets.
-Use two existing coordination patterns for different purposes:
+Workspace-session identity remains the pair of canonical workspace root and Git common directory.
+Other proxies remain workspace-session resources; TicGit alone uses the proposed `persistent-store` lifecycle scope.
+Its sole logical identity is the canonical Git common directory, independent of any workspace or attached agent.
+The generic supervisor owns one accepted service record, resource registry, endpoint publication, and cleanup for that store.
+Workspace records reference its accepted owner and implementation identity rather than copying its endpoint or acquiring cleanup ownership.
 
-/ Runtime invocation lock: Serialize complete native operations, including reads, across every proxy for the store.
-Use one stable `tic-proxy.lock` file in the protected Git common directory, opened without following symlinks and validated as a regular file
-with one hard link.
-Before opening the store or spawning native `ti`, acquire a nonblocking exclusive advisory lock.
-Contention returns `125` with a store-busy diagnostic and no native child or ticket changes from this request.
-Do not queue or automatically retry that lock attempt.
-Use a lock whose ownership survives descriptor inheritance, such as `flock`, not a process-owned lock released when the server dies.
-The child inherits the locked descriptor and retains it through execution; the parent retains its copy through descendant cleanup.
-A crashed server cannot release exclusion while its native child continues writing.
-Never unlink or replace the lock file, including on session cleanup.
+=== Acquire or join
 
-/ Host admission and discovery: Key a private host runtime directory by the canonical Git common directory, not the worktree.
-Its stable host-kernel coordination lock protects launcher registration, host route selection, and inactive-store local execution.
-A launcher-owned, atomically updated store index contains references to generic service-owner records,
-not copied endpoints or a second lifecycle state machine.
-Create its empty initialized form under host coordination only after generic discovery/recovery proves the store inactive.
-Keep its schema and store identity durable; do not delete it on final cleanup.
-The launcher registers each reference under that lock as its first adapter step in `preparing`, before any store access,
-then releases host coordination while the service prepares and runs.
-Remove it only after the generic supervisor proves that owner's database-using services and children stopped.
-Cleanup failure retains the reference; stale or uncertain ownership requires generic recovery.
-This is not a lifetime exclusive lease: multiple workspace sessions may register and remain active.
+Use one private host state directory keyed by the canonical Git common directory.
+Its service and recovery records survive host restart; a lost transient runtime directory cannot authorize a replacement writer.
+Its stable host-kernel coordination lock serializes service creation, publication, explicit shutdown, and host administration.
+Never unlink or replace this lock file.
+The trusted host launcher, not the request server or guest client, acquires it and uses the generic supervisor:
 
-For the first version, all registered proxies for one store must use the same accepted runtime owner,
-VM generation where applicable, pinned native baseline, and underlying invocation-lock file.
-Reject an incompatible runtime before it accesses the store, not another worktree merely because it has a live session.
-Container locks are not assumed to coordinate with native host processes or another VM/kernel.
-SQLite transactions alone do not serialize whole multi-step ticket operations.
+- With generic discovery/recovery proving a fresh or fully cleaned store scope, plan and resolve one instance,
+  durably record its fresh resource owner before effects,
+  prepare the protected store, and publish its ready endpoint atomically.
+  Newly created resources are registered before any database-using process starts.
+- With a published instance, validate its store identity, owner, runtime, image, endpoint, and readiness before joining.
+  Use its accepted definition and image; current worktree declarations cannot replace it or create a second instance.
+- With preparing, stopping, failed, unavailable, malformed, or inconsistent state, wait within the existing acquisition deadline or fail.
+  Never treat uncertain state or an unavailable runtime as permission to create another service.
+  Owner-validated recovery must finish before a fresh instance can access the database.
+  A missing record alone does not prove freshness; unaccounted store resources block startup and require recovery, not guessed deletion.
 
-The host `ti` shim reads host file inputs with the caller's authority and uses the same request protocol.
-Discover active services even if the caller's worktree does not currently declare `tic`; accepted service records, not current manifests,
-authorize the active route.
-Extend the existing host router's discovery to all `tic` service references for the Git common directory:
+Accepted identity includes the runtime owner and policy, VM generation where applicable, native baseline, image,
+configuration overlay, and lifecycle-state schema.
+An incompatible runtime or worktree rejects only that join; it cannot start an alternative writer.
+For sandbox attachment, register a generic endpoint dependency under store coordination before any guest mount is created.
+The dependency reserves the accepted owner against shutdown while attachment is preparing, not just after workspace publication.
+Finish acquisition and dependency registration before taking workspace-session coordination; never wait for workspace locks under store coordination.
+Release store coordination before sending an application request.
+Startup uses the existing bounded image-resolution and service-startup deadlines; the request exchange begins only after endpoint acquisition.
+Cancellation or failure before publication joins startup workers and cleans that unpublished attempt through the generic supervisor.
+Cleanup failure keeps its durable recovery record; cancellation after publication does not stop the persistent service.
 
-- If a published service is available, validate its generic owner, accepted image, store identity, and endpoint, then route there.
-  The selected server applies the same admission policy and runtime invocation lock as for agent requests.
-  Any valid endpoint for that store is sufficient; do not attach the host caller to another workspace's other proxies.
-  Release host coordination before waiting for the proxy response; later endpoint loss is a request failure, not permission to execute locally.
-- If services are preparing, stopping, unavailable, or recovery-owned without a usable endpoint, wait within the existing routing deadline or fail.
-  Runtime, transport, store-busy, and native-command failures never trigger local fallback or another-endpoint replay.
-- Run native host `ti` locally only after complete discovery and owner-validated recovery establish that no service or surviving child can access
-  the store.
-  Retain the host coordination lock through local execution and child cleanup; the native child inherits it so wrapper death cannot admit startup
-  while that child writes.
+A sandbox opting into `tic` must acquire this service before exposing its validated socket volume.
+Several worktrees may attach concurrently without merging their other proxy sets.
+Session exit, failed workspace startup after store publication, and final-holder cleanup release only that session's dependency and reference.
+Release the dependency after its guest mount holders stop and workspace coordination is released.
+They never stop a published store service or remove its resources.
 
-Missing, corrupt, or inconsistent discovery state is not evidence of inactivity.
-Do not wait for workspace locks or run generic startup, cleanup, or recovery while holding store host coordination.
-Release it for recovery, then reacquire it and repeat discovery before permitting local execution.
-Registration and local execution use the same host lock, so a new proxy cannot start between the idle check and a host mutation.
-The router uses generic lifecycle records as execution authority; the index only locates them and does not supervise resources.
-Native host `ti` invoked outside this shim bypasses coordination and is unsupported while proxies may access the store.
-No new daemon or request-wide transaction is introduced.
+=== Ordinary requests
 
-Each proxy retains JJ's sequential request loop, without an application queue or worker pool.
+The host `ti` shim reads host file inputs with the caller's authority and uses the same protocol and admission policy as agent requests.
+It acquires or joins the store service even without a running sandbox or a manifest opt-in in the caller's worktree.
+The trusted host router resolves and validates the endpoint from the single accepted store record.
+Neither callers nor workspace records select endpoints, containers, images, or runtime owners.
+Host `ti` always uses that route; there is no ordinary native-host execution path.
+Runtime, connection, protocol, and native-command failures never trigger local fallback or replay.
+
+The server retains JJ's sequential accept-and-execute loop, without an application queue or worker pool.
+It runs one complete native operation, including reads and descendant cleanup, before starting another.
+This sole execution owner replaces a multi-proxy invocation lock; SQLite transactions alone would not serialize whole native commands.
 Do not start work after a lost connection or expired framing/admission deadline.
 The client bounds its complete exchange, including socket waiting.
-The store lock prevents overlap across endpoints, not partial mutations or uncertain delivery.
+Serialization prevents overlapping operations, not partial mutations or uncertain delivery.
+
+=== Explicit shutdown and administration
+
+A trusted host stop-and-admin operation holds store coordination through dependency checks, admission revocation, administration, and child cleanup.
+First check preparing endpoint dependencies and attached socket-volume holders through generic resource ownership.
+If any remain, report the required detach and fail without stopping the service or admitting administration.
+Otherwise disable endpoint acquisition, then ask the generic supervisor to stop the service and reap every database-using descendant.
+Do not silently terminate unrelated workloads.
+Failed cleanup, a surviving native child, or an unavailable runtime blocks host administration and replacement startup.
+Server death alone never proves that its native child stopped.
+
+Only after owner-validated shutdown may this operation invoke native host initialization, upgrades, sync, import,
+serialization, or recovery with the human's authority.
+The administrator child inherits the host coordination lock so wrapper death cannot admit another service while it writes.
+Keep the store record non-routable through descendant cleanup; release coordination only after administration has stopped.
+Do not restart the service automatically; the next ordinary request plans a fresh instance through normal acquisition.
+Direct native `ti` outside this coordinated operation is unsupported, even when no agent is running.
+
+The existing supervisor remains the only lifecycle and recovery owner; add this scope there, not a TicGit daemon manager or health monitor.
+A failed published instance stays recorded until explicit owner-validated recovery; requests cannot restart or replace it in place.
+Recovery preserves the database and WAL and never replays the failed operation.
 
 == Bounds and uncertain outcomes
 
@@ -259,15 +284,15 @@ Completed native execution preserves exit status, stdout, and stderr.
 Admission rejection returns `2` without spawning a child; transport/output/client-deadline failures return `125`, and execution timeout returns `124`,
 when a response can be delivered.
 Inside the sandbox, missing or failed proxy transport never falls back to a local CLI.
-On the host, local execution is permitted only by the inactive-store routing check, never as recovery from a failed request.
+On the host, native execution is permitted only inside explicit coordinated administration, never as an ordinary route or failed-request recovery.
 
 There is no automatic replay after any request byte is sent.
 A native error, timeout, disconnect, or output failure can follow a partial or complete mutation.
 Distinguish rejection before execution from a possibly executed operation; transport loss may prevent any diagnostic.
 Do not claim rollback, add deduplication state, or recreate the database from serialized refs.
 On execution failure requiring cancellation, terminate and reap the complete process group before the next command.
-Cleanup preserves the database, WAL, and stable lock file.
-Store recovery stops all associated services through their generic owners before coordinated host administration.
+Cleanup preserves the database, WAL, and stable host coordination lock.
+Store recovery stops the recorded service and every database-using descendant through its generic owner before host administration.
 Inspect an uncertain `new` before a human decides whether to retry it.
 
 == Acceptance evidence
@@ -287,15 +312,19 @@ Implementation must verify the boundary with disposable repositories and the act
   offline native execution, and unchanged code refs, host configuration, and working-tree files.
   Include malicious config includes, editor settings, and `.git-meta` inputs.
 - Run simultaneous sessions in linked worktrees and issue host and agent requests from different worktrees.
-  Verify one active store operation, pre-execution store-busy failures, native output preservation, and no shared current-ticket state.
-- Prove that a server crash leaves its live native child holding the invocation lock, and child cleanup permits the next operation.
-  Reject another runtime/VM generation or a different lock-file alias before store access.
-- Exercise host routing during preparation, publication, endpoint loss, final-holder cleanup, and abandoned-service recovery.
-  Missing/corrupt index state, surviving children, and unavailable runtimes must never authorize local fallback.
-  Race an inactive host invocation against proxy startup; prove inherited host-lock lifetime, no overlap, and no request replay.
-  Initialization/sync/recovery require every associated service stopped, not just the caller's workspace session.
+  Verify one shared service and one active native operation, native output preservation, and no shared current-ticket state.
+  Final session exit and failed workspace startup leave a published store service available to host requests.
+- Race host-first startup against launches from multiple worktrees; prove one owner, one endpoint publication, and no duplicate writer.
+  Reject incompatible runtime/VM generations, store aliases, images, and stale accepted-owner references before store access.
+- Exercise acquisition during preparation, publication, endpoint loss, explicit shutdown, and abandoned-service recovery.
+  Missing/corrupt existing state, surviving children, and unavailable runtimes must never authorize native fallback or replacement startup.
+  Fresh state permits only normal planned startup, not local ticket execution; failed published instances require explicit recovery.
+- Kill the server while its native child survives; prove new startup and host administration remain blocked until descendant cleanup.
+  Race ordinary acquisition against stop-and-admin; prove admission revocation, inherited host-lock lifetime, no overlap, and no replay.
+  Preparing attachments and socket-volume holders prevent unsafe cleanup; initialization/sync/recovery run only after complete service shutdown.
+  Runtime-free host `ti` fails rather than bypassing the service.
 - Test missing/incompatible/partially materialized stores, symlink/hard-link aliases, pending WAL, and native database errors.
-  A second proxy starts against a valid live store with committed WAL without requiring a host checkpoint.
+  A fresh instance starts against a valid stopped store with committed WAL without requiring a host checkpoint.
   Startup and final-holder cleanup preserve unsynchronized ticket state without schema repair or deletion.
 - Interrupt after a native field write and exceed output limits after mutation.
   Verify uncertain outcomes, no replay, process-group cleanup, and no execution after lost connections or expired admission deadlines.
