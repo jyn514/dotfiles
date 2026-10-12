@@ -63,6 +63,7 @@ When validation strategy is unclear, use `design-for-change`.
 ### After changing configuration
 
 After changing configuration, verify the running application loaded it before interpreting test results.
+When diagnosing a daemon, check the running process's executable and version, not just the installed version.
 
 ### Before mutating a working copy
 
