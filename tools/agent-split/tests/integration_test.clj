@@ -232,6 +232,39 @@
           (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
                  (slurp (str (fs/file repo "note.txt"))))))))))
 
+(deftest jj-split-patch-preflight-errors-identify-the-resolved-target-without-mutating-history
+  (doseq [options [[] ["--json"]]
+          {:keys [patch revision reason]}
+          [{:patch (str/replace selected-patch "-two" "-obsolete")
+            :revision "@" :reason "patch dry-run failed"}
+           {:patch (str/replace selected-patch "+TWO" "+INVENTED")
+            :revision "@" :reason "not contained"}
+           {:patch selected-patch :revision "@-" :reason "patch dry-run failed"}]]
+    (with-repo*
+      (fn [{:keys [repo]}]
+        (let [patch-file (fs/file repo "target" "jj-split" "selected.patch")
+              _ (write-file! patch-file patch)
+              before (:out (shell! repo "jj" "log" "-r" "@" "--no-graph" "-T" "commit_id"))
+              operation (:out (shell! repo "jj" "op" "log" "--limit" "1" "--no-graph" "-T" "id"))
+              commit (:out (shell! repo "jj" "log" "-r" revision "--no-graph" "-T" "commit_id"))
+              parents (str/split-lines (:out (shell! repo "jj" "log" "-r" (str "parents(" revision ")")
+                                                    "--no-graph" "-T" "commit_id ++ \"\\n\"")))
+              result (apply run repo "env" "-u" "SANDBOX_PROXY_DIR"
+                            "SANDBOX_PROXY_DEFAULT_DIR=/nonexistent" "bb" script
+                            (concat options [(str patch-file) "-m" "selected" revision]))]
+          (is (= 1 (:exit result)))
+          (is (= "" (:out result)) "failure diagnostics stay on stderr, including in JSON mode")
+          (is (str/includes? (:err result) reason) (:err result))
+          (is (str/includes? (:err result) (str "Preflight target: " revision "\n")))
+          (is (str/includes? (:err result) (str "Resolved commit: " commit "\n")))
+          (doseq [parent parents]
+            (is (str/includes? (:err result) parent)))
+          (is (str/includes? (:err result) "No split was run."))
+          (is (= before (:out (shell! repo "jj" "log" "-r" "@" "--no-graph" "-T" "commit_id"))))
+          (is (= operation (:out (shell! repo "jj" "op" "log" "--limit" "1" "--no-graph" "-T" "id"))))
+          (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
+                 (slurp (str (fs/file repo "note.txt"))))))))))
+
 (deftest jj-split-patch-selects-header-like-content
   (with-repo*
     (fn [{:keys [repo] :as ctx}]
@@ -313,6 +346,11 @@
             (str "stdout:\n" (:out second-result) "\nstderr:\n" (:err second-result)))
         (is (str/includes? (:err second-result) "already describe revision"))
         (is (str/includes? (:err second-result) "continue with child"))
+        (is (str/includes? (:err second-result) (str "Preflight target: " selected "\n")))
+        (is (str/includes? (:err second-result)
+                           (str "Resolved commit: "
+                                (:out (shell! repo "jj" "log" "-r" selected "--no-graph" "-T" "commit_id")) "\n")))
+        (is (str/includes? (:err second-result) "No split was run."))
         (is (= 1 (count (str/split-lines
                          (:out (shell! repo "jj" "log" "-r" (str "children(" selected ")")
                                        "--no-graph" "-T" "change_id ++ \"\\n\""))))))))))

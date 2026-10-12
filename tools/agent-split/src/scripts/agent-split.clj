@@ -19,8 +19,15 @@
 (defn ^:dynamic *exit!* [status]
   (System/exit status))
 
+(def ^:dynamic *preflight-revision* nil)
+
 (defn- failure-text [step message]
-  (str step ": " message))
+  (str step ": " message
+       (when (and (= step "preflight") *preflight-revision*)
+         (str "\nPreflight target: " (:revision *preflight-revision*)
+              "\nResolved commit: " (:commit *preflight-revision*)
+              "\nResolved parents: " (str/join ", " (sort (:parents *preflight-revision*)))
+              "\nNo split was run."))))
 
 (defn- fail-with-status! [status step message]
   (binding [*out* *err*]
@@ -686,9 +693,13 @@
       (let [selected-change-id (revision-change-id revision)
             original-commit (revision-commit-id revision)
             original-parents (parent-commit-ids revision)
-            preflight (preflight! patch-text revision helper-root)]
-        (check-snapshot-safety! repo-root artifact-root patch helper-root)
-        (reject-already-applied! preflight revision message helper-root)
+            preflight (binding [*preflight-revision* {:revision revision
+                                                     :commit original-commit
+                                                     :parents original-parents}]
+                        (let [preflight (preflight! patch-text revision helper-root)]
+                          (check-snapshot-safety! repo-root artifact-root patch helper-root)
+                          (reject-already-applied! preflight revision message helper-root)
+                          preflight))]
         (let [operation-id (current-operation-id route)
               _ (run-split! route patch message revision)
               post-split (capture-failure

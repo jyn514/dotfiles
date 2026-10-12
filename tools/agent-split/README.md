@@ -65,6 +65,9 @@ Run tests or lint appropriate to each newly separated change.
 - The wrapper takes one initial snapshot, then runs revision-only preflight and verification queries with `--ignore-working-copy`; the mutating `jj split` retains normal snapshot behavior.
 - Always provide `-m`; interactive patch and description editors are outside this workflow.
 - Do not continue after a failure. Exit `1` means preflight failed before mutation, `2` means `jj split` failed, and `3` means post-split verification failed.
+- Once the target resolves, preflight errors include the requested revision and the commit and parent IDs resolved before the checks.
+  Compare those IDs with the current target when another writer may have committed; they do not guarantee the target stayed unchanged during preflight.
+  Failures before target resolution cannot include these IDs.
 - For exit `1`, regenerate the patch from the current diff and retry. For exit `2`, inspect `jj status` and `jj op log` before retrying.
 - Independent container-local repositories use native `jj split`, even with a sandbox proxy mounted. The shared JJ router resolves the workspace and backing metadata against effective mounts, not socket presence. Rootfs, private tmpfs, and guest-created volumes are supported; a local workspace linked to protected host metadata is not independent.
 - Native verification failures trigger restoration of the operation captured in the same workspace before the split. If recovery fails, the original failure and `jj op restore <operation>` guidance remain on stderr. Inspect the operation before further history edits.
