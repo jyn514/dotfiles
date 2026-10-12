@@ -11,6 +11,15 @@ links. Conflicting regular files move to `~/.local/config/`. Other `./setup`
 options can install packages or change system configuration; read the relevant
 function before running them on a new machine.
 
+Mise's Python is scoped to bootstrap tasks, including `pi-install`; it is not a global shell default.
+Run `mise run bootstrap-python -- <arguments>` from the repository root for bootstrap scripts.
+Run `./setup py` to install runtime libraries from `install/python.txt` into system Python's per-user package directory.
+This does not overwrite distro-owned packages; user packages can still take precedence over distro packages when imported.
+On Windows, install native Python with its `py` launcher before running `setup.ps1`.
+After refreshing configuration links, start a new shell to clear an already-active mise Python from PATH.
+If `~/.local/bin/python`, `py`, or `pip` still points into a mise installation, remove only those stale links and rerun `./setup install-local`.
+Existing mise Python installations are retained for bootstrap use.
+
 See [configuration layout](config/README.md) for grouped sources and adding files,
 and [Pi configuration](config/pi-agent/README.md) for agent settings and extensions.
 

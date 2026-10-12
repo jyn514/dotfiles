@@ -19,7 +19,7 @@ install_macos_local() {
 	brew install --cask glide-browser || return
 	cmd_alias gdu gdu-go || return
 	if exists cargo; then
-		brew_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git brew-command-not-found revision) || return
+		brew_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git brew-command-not-found revision) || return
 		cargo install --git https://github.com/jyn514/brew-command-not-found \
 			--rev "$brew_revision" --locked || return
 		unset brew_revision
@@ -46,19 +46,24 @@ install_glide_native() {
 	fi
 }
 
-mise_exec() {
-	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise exec -- "$@" < /dev/null
+bootstrap_python() {
+	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise run bootstrap-python -- "$@" < /dev/null
 }
 
 mise_run() {
 	MISE_AUTO_INSTALL=0 MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise run "$@" < /dev/null
 }
 
+install_bootstrap_python() {
+	bootstrap_python_version=$(mise config get --file "$MISE_SETUP_CONFIG" vars.bootstrap_python) || return
+	MISE_GLOBAL_CONFIG_FILE="$MISE_SETUP_CONFIG" mise install --yes "python@$bootstrap_python_version"
+}
+
 install_platform_bundles() {
 	if exists apk; then
 		python3 libexec/setup/install_platform_bundles.py powershell-editor-services
 	else
-		mise_exec python libexec/setup/install_platform_bundles.py powershell-editor-services
+		bootstrap_python libexec/setup/install_platform_bundles.py powershell-editor-services
 	fi
 }
 
@@ -144,6 +149,9 @@ install_mise() {
 		else
 			mise_install_status=$?
 		fi
+		# Installing task tools together bypasses mise's tool exclusions.
+		# Install only the bootstrap pin separately, retaining platform policy.
+		install_bootstrap_python < /dev/null || mise_install_status=$?
 	fi
 	if [ "$mise_install_status" != 0 ]; then
 		echo "Some mise tools failed to install; continuing with the remaining setup" >&2
@@ -310,12 +318,10 @@ setup_shell () {
 }
 
 setup_python () {
-	echo Installing python packages in python.txt
-	if exists apk; then
-		python3 -m pip install --quiet --break-system-packages -r install/python.txt
-	else
-		mise_exec python -m pip install --quiet -r install/python.txt
-	fi
+	echo Installing runtime libraries for system Python
+	# --user keeps distro-owned files intact; externally managed Python also
+	# requires the override for user-site installs.
+	python3 -m pip install --quiet --user --break-system-packages -r install/python.txt
 }
 
 prepare_vim_setup () {
@@ -380,7 +386,7 @@ setup_install_local () {
 	mkdir -p ~/.local/bin || return
 	install_glide_native || return
 	# The explicit setup config bypasses global conf.d, so carry its exclusion
-	# into mise_exec as well as ordinary shell invocations.
+	# into bootstrap_python as well as ordinary shell invocations.
 	glide_disabled=$(python3 libexec/setup/glide.py) || return
 	if [ -n "$glide_disabled" ]; then
 		MISE_DISABLE_TOOLS=${MISE_DISABLE_TOOLS:+$MISE_DISABLE_TOOLS,}$glide_disabled
@@ -400,15 +406,15 @@ setup_install_local () {
 	fi
 
 	if ! [ -e ~/.config/zsh/antidote ]; then
-		mise_exec python libexec/setup/install_bootstrap.py clone antidote ~/.config/zsh/antidote || return
+		bootstrap_python libexec/setup/install_bootstrap.py clone antidote ~/.config/zsh/antidote || return
 	fi
 	if ! [ -e ~/.config/fish/fish_plugins ]; then
 		fisher_installer=$(tmp_file fisher.XXXXXX)
-		mise_exec python libexec/setup/install_bootstrap.py download fisher "$fisher_installer" || {
+		bootstrap_python libexec/setup/install_bootstrap.py download fisher "$fisher_installer" || {
 			rm -f "$fisher_installer"
 			return 1
 		}
-		fisher_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git fisher revision) || {
+		fisher_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git fisher revision) || {
 			rm -f "$fisher_installer"
 			return 1
 		}
@@ -419,9 +425,9 @@ setup_install_local () {
 			return "$result"
 		}
 		rm -f "$fisher_installer"
-		nvm_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git nvm.fish revision) || return
+		nvm_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git nvm.fish revision) || return
 		fish -c 'fisher install jorgebucaran/nvm.fish@$argv[1]' "$nvm_revision" || return
-		zoxide_revision=$(mise_exec python libexec/setup/install_bootstrap.py get git zoxide.fish revision) || return
+		zoxide_revision=$(bootstrap_python libexec/setup/install_bootstrap.py get git zoxide.fish revision) || return
 		fish -c 'fisher install icezyclon/zoxide.fish@$argv[1]' "$zoxide_revision" || return
 		unset fisher_installer fisher_revision nvm_revision zoxide_revision
 	fi

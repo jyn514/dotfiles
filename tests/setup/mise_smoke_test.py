@@ -16,12 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
     "set RUN_MISE_SMOKE_TESTS=1 after install-local",
 )
 class MiseSmokeTests(unittest.TestCase):
-    def mise_exec(self, *command: str) -> subprocess.CompletedProcess[str]:
+    def mise_exec(self, *command: str, bootstrap: bool = False) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["MISE_GLOBAL_CONFIG_FILE"] = str(ROOT / "config/mise.toml")
         env["MISE_AUTO_INSTALL"] = "0"
         return subprocess.run(
-            ["mise", "exec", "--", *command],
+            (["mise", "run", "bootstrap-python", "--", *command] if bootstrap
+             else ["mise", "exec", "--", *command]),
             cwd=ROOT,
             env=env,
             text=True,
@@ -29,13 +30,13 @@ class MiseSmokeTests(unittest.TestCase):
             check=False,
         )
 
-    def assert_mise_command(self, *command: str) -> str:
-        result = self.mise_exec(*command)
+    def assert_mise_command(self, *command: str, bootstrap: bool = False) -> str:
+        result = self.mise_exec(*command, bootstrap=bootstrap)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         return result.stdout
 
     def test_runtime_commands_resolve(self) -> None:
-        for command in ("node", "python", "rustc", "cargo"):
+        for command in ("node", "rustc", "cargo"):
             with self.subTest(command=command):
                 self.assert_mise_command(command, "--version")
 
@@ -84,12 +85,16 @@ class MiseSmokeTests(unittest.TestCase):
         self.assert_mise_command("sh", "-c", script)
         self.assert_mise_command("cargo", "tree", "--help")
 
-    def test_python_libraries_import(self) -> None:
-        self.assert_mise_command(
-            "python",
-            "-c",
-            "import toml, tomli",
+    def test_bootstrap_python_resolves(self) -> None:
+        self.assert_mise_command("--version", bootstrap=True)
+
+    def test_system_python_libraries_import(self) -> None:
+        command = (["py.exe", "-3"] if platform.system() == "Windows" else ["python3"])
+        result = subprocess.run(
+            [*command, "-c", "import toml, tomli, ruamel.yaml, yaml, docker"],
+            text=True, capture_output=True, check=False,
         )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     @unittest.skipIf(platform.system() == "Windows", "Windows uses mise providers")
     def test_native_search_and_formatter_resolve_through_mise_exec(self) -> None:

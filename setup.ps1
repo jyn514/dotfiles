@@ -145,8 +145,26 @@ function Install-Mise() {
     $env:MISE_GLOBAL_CONFIG_FILE = Join-Path $PSScriptRoot "config\mise.toml"
     Add-Path (Join-Path $env:LOCALAPPDATA "mise\shims")
     mise install --yes
+    $BootstrapPython = mise config get --file $env:MISE_GLOBAL_CONFIG_FILE vars.bootstrap_python
+    if ($LASTEXITCODE -ne 0) {
+        throw "Cannot read the bootstrap Python version"
+    }
+    mise install --yes "python@$BootstrapPython"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Bootstrap Python installation failed (exit $LASTEXITCODE)"
+    }
     mise reshim
-    mise exec -- python -m pip install --quiet -r (Join-Path $PSScriptRoot "install\python.txt")
+}
+
+function Install-PythonLibraries() {
+    if (! (Test-Application "py.exe")) {
+        throw "Install native Python with the py launcher before installing runtime libraries"
+    }
+    Write-Output "Installing runtime libraries for system Python"
+    py.exe -3 -m pip install --quiet --user -r (Join-Path $PSScriptRoot "install\python.txt")
+    if ($LASTEXITCODE -ne 0) {
+        throw "System Python runtime library installation failed (exit $LASTEXITCODE)"
+    }
 }
 
 Set-Location $PSScriptRoot
@@ -154,3 +172,4 @@ Install-PowerShell7
 Install-Dotfiles
 Install-SystemPrograms
 Install-Mise
+Install-PythonLibraries

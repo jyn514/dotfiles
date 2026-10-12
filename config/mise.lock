@@ -182,6 +182,7 @@ specifiers = ["latest"]
 checksum = "sha256:13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df"
 url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_windows_amd64.exe"
 url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320827"
+
 [[tools."aqua:pnpm/pnpm"]]
 version = "12.8.1"
 backend = "aqua:pnpm/pnpm"
@@ -372,7 +373,10 @@ uv = { path = ".mise/locks/pipx-yt-dlp/2026.8.19", digest = "sha256:257673f14e50
 [[tools.python]]
 version = "3.14.7"
 backend = "core:python"
-specifiers = ["latest"]
+specifiers = [
+    "3.14.7",
+    "latest",
+]
 
 [tools.python."platforms.linux-arm64"]
 checksum = "sha256:9b8bd45d06fc3fcdc56f2713a62535fe1c019816461ae87c170dd56184dd3f4d"

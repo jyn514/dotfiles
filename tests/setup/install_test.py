@@ -184,6 +184,9 @@ class LocalInstallationTests(unittest.TestCase):
             'printf "%s" "$name" >> "$INSTALL_COMMAND_LOG"\n'
             'for argument do printf " <%s>" "$argument" >> "$INSTALL_COMMAND_LOG"; done\n'
             'printf "\\n" >> "$INSTALL_COMMAND_LOG"\n'
+            'if [ "$name" = mise ] && [ "${1:-}" = config ]; then\n'
+            f'  printf "%s\\n" "{tomllib.loads((ROOT / "config/mise.toml").read_text())["vars"]["bootstrap_python"]}"\n'
+            'fi\n'
             'case "$name:$*:${FAIL_MISE_INSTALL:-}" in mise:install*:1) exit 1;; esac\n'
             'case "$name:$*:${FAIL_OAUTH:-}" in mise:token\\ github\\ --oauth:1) exit 1;; esac\n'
             'if [ "$name" = mise ] && [ "${1:-}" = token ]; then\n'
@@ -369,36 +372,13 @@ class LocalInstallationTests(unittest.TestCase):
             any("fisher install icezyclon/zoxide.fish" in script for script in fish_scripts)
         )
         self.assertFalse((ROOT / "install/fish.txt").exists())
-        if InstallationTests.platform()["ID"] == "alpine":
-            self.assertIn(
-                [
-                    "python3",
-                    "-m",
-                    "pip",
-                    "install",
-                    "--quiet",
-                    "--break-system-packages",
-                    "-r",
-                    "install/python.txt",
-                ],
-                commands,
-            )
-        else:
-            self.assertIn(
-                [
-                    "mise",
-                    "exec",
-                    "--",
-                    "python",
-                    "-m",
-                    "pip",
-                    "install",
-                    "--quiet",
-                    "-r",
-                    "install/python.txt",
-                ],
-                commands,
-            )
+        self.assertIn(
+            [
+                "python3", "-m", "pip", "install", "--quiet", "--user",
+                "--break-system-packages", "-r", "install/python.txt",
+            ],
+            commands,
+        )
         for alias, target in (("python", "python3"), ("py", "python3"), ("pip", "pip3")):
             destination = self.home / ".local/bin" / alias
             self.assertTrue(destination.is_symlink(), destination)
@@ -475,7 +455,7 @@ class LocalInstallationTests(unittest.TestCase):
         commands = self.commands() if self.log.exists() else []
         self.assertFalse(any(command[0] == "mise" for command in commands))
 
-    def test_installs_all_declarative_tools_in_one_mise_command(self) -> None:
+    def test_installs_global_tools_in_one_mise_command(self) -> None:
         result = self.run_install()
 
         self.assertEqual(0, result.returncode, result.stderr)
@@ -648,7 +628,6 @@ class MiseConfigTests(unittest.TestCase):
 
         tools = config["tools"]
         self.assertEqual("lts", tools["node"])
-        self.assertEqual("latest", tools["python"])
         self.assertEqual("latest", tools["uv"])
         self.assertEqual("nightly", tools["rust"]["version"])
         self.assertEqual("minimal", tools["rust"]["profile"])
@@ -728,7 +707,10 @@ class MiseConfigTests(unittest.TestCase):
         with (ROOT / "config/mise.lock").open("rb") as lock_file:
             lock = tomllib.load(lock_file)
 
-        self.assertEqual(set(config["tools"]), set(lock["tools"]))
+        declared_tools = set(config["tools"])
+        for task in config["tasks"].values():
+            declared_tools.update(task.get("tools", {}))
+        self.assertEqual(declared_tools, set(lock["tools"]))
         for tool, resolutions in lock["tools"].items():
             self.assertTrue(resolutions, tool)
             self.assertTrue(all("version" in resolution for resolution in resolutions), tool)

@@ -1,6 +1,5 @@
 [tools]
 node = "lts"
-python = "latest"
 rust = { version = "nightly", profile = "minimal", components = ["rustfmt", "clippy", "rust-analyzer", "miri"] }
 uv = "latest"
 "asdf:mise-plugins/mise-clojure" = "latest"
@@ -35,9 +34,20 @@ uv = "latest"
 "pipx:pylint" = { version = "latest", depends = ["uv"] }
 "pipx:yt-dlp" = { version = "latest", depends = ["uv"] }
 
+[vars]
+# Task tool requests do not honor floating-version locks; keep the bootstrap pin explicit.
+bootstrap_python = "3.14.7"
+
+[tasks.bootstrap-python]
+description = "Run Python for dotfiles bootstrapping, without changing shell Python"
+dir = "{{cwd}}"
+tools.python = "{{vars.bootstrap_python}}"
+run = "python"
+
 [tasks.pi-install]
 description = "Build and install jyn514/pi from upstream main"
 dir = "{{cwd}}"
+tools.python = "{{vars.bootstrap_python}}"
 run = "python libexec/setup/install_pi.py"
 
 [settings]
