@@ -40,6 +40,11 @@ Keep policy separate from effects as declarative data, not runtime checks. Decla
 Before introducing coordination between systems, ask whether one owner can make the decision and pass a completed result across the boundary.
 Do not mix concerns between two different systems just because it simplifies the current implementation.
 
+Before designing an application-side workaround for a tool limitation, inspect the tool's data model and extension points.
+Establish whether changing the tool is permitted; a missing CLI option does not prove a missing model capability or an immutable dependency.
+When existing interfaces are insufficient, compare a narrow native extension with a separate adapter.
+Include maintenance, packaging, and upstream review or release delays in that comparison.
+
 Prefer simplicity over exhaustiveness.
 Tools should be reliable, but complexity itself can cause reliability issues.
 Favor designs that "passively" do the right thing rather than needing ongoing interventions.
