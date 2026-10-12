@@ -11,7 +11,11 @@ For a staged new-tool workflow only, require a ready implementation specificatio
 
 ## Procedure
 
-1. **Observe first.** Inspect entry points, data flow, side effects, tests, docs, dependencies, and repository guidance. Separate observations from assumptions.
+1. **Observe first.** Inspect entry points, data flow, side effects, tests, docs, dependencies, and repository guidance.
+   Separate observations from assumptions.
+   Before treating preservation as required, cite its source and trace affected consumers, including whether they change and deploy together.
+   Apply [Compatibility](../references/change-with-evidence.md#compatibility).
+   Mark unknown preservation requirements as unresolved rather than conservative defaults.
 2. **Confirm the design is selected.** If viable alternatives change public APIs, ownership, persistence, concurrency, or migration, use design deliberation instead.
 3. **Record decisions.** Classify material choices as `decided`, `conservative default`, or `unresolved`; mark unresolved choices as blocking or non-blocking.
 4. **Declare boundaries.** Name mutable-state ownership, permitted side effects, authoritative and derived representations, lifecycle rules, compatibility requirements, and non-goals.
