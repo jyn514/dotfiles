@@ -124,10 +124,6 @@ class ResurrectTests(unittest.TestCase):
                 tmux("set-option", "-g", "@resurrect-save-command-strategy", "ps")
                 shell = shutil.which("fish") or "/bin/bash"
                 tmux("set-option", "-g", "default-shell", shell)
-                if Path(shell).name == "fish":
-                    # System Fish startup generates completions in the background.
-                    # Exercise Fish quoting without launching those unrelated jobs.
-                    tmux("set-option", "-g", "default-command", shlex.join(["exec", shell, "--no-config"]))
 
             def plugin_script(name):
                 tmux_env = tmux("display-message", "-p", "#{socket_path},#{pid},0").stdout.strip()

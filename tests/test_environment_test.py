@@ -184,6 +184,22 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(before, self.snapshot(self.old_home))
                 self.assert_private_home(report)
 
+    @unittest.skipUnless(shutil.which("fish"), "Fish is required")
+    def test_interactive_fish_loads_config_without_background_completion_generation(self) -> None:
+        before = self.snapshot(self.old_home)
+        self.inherited.pop("FISH_UNIT_TESTS_RUNNING", None)
+        for inherited in ({}, {"FISH_UNIT_TESTS_RUNNING": "0"}):
+            with self.subTest(inherited=inherited):
+                result, report = self.run_probe("fish", shutil.which("fish"),
+                    str(ROOT / "tests/fixtures/test_environment_fish.fish"), values=inherited)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(report["fish_status"], 0, report["fish_stderr"])
+                self.assertIsNotNone(report["fish_test_mode"])
+                self.assertTrue(report["fish_startup_ran"])
+                self.assertFalse(report["fish_completions_generated"])
+                self.assert_private_home(report)
+                self.assertEqual(before, self.snapshot(self.old_home))
+
     def test_explicit_sdk_path_is_preserved_without_modification(self) -> None:
         self.make_sdk(self.installed_sdk_path())
         sdk = self.make_sdk(self.root / "explicit SDK")

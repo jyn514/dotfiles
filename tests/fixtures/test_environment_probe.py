@@ -62,6 +62,20 @@ def main():
         value["stdin"] = sys.stdin.read()
         emit(value)
         return 0
+    if mode == "fish":
+        config = Path(os.environ["XDG_CONFIG_HOME"]) / "fish"
+        config.mkdir()
+        subprocess.run(["cp", sys.argv[3], str(config / "config.fish")], check=True)
+        subprocess.run(["cmp", sys.argv[3], str(config / "config.fish")], check=True)
+        shell = subprocess.run([sys.argv[2], "--interactive", "--command", "true"],
+            capture_output=True, text=True, check=False)
+        value["fish_status"] = shell.returncode
+        value["fish_stderr"] = shell.stderr
+        value["fish_startup_ran"] = (config / "startup-ran").is_file()
+        value["fish_completions_generated"] = (Path(os.environ["XDG_CACHE_HOME"]) / "fish/generated_completions").exists()
+        value["fish_test_mode"] = os.environ.get("FISH_UNIT_TESTS_RUNNING")
+        emit(value)
+        return 0
     if mode == "nested":
         wrapper = sys.argv[2]
         nested = subprocess.run(

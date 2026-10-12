@@ -76,6 +76,10 @@ def main(arguments: list[str]) -> int:
     ):
         environment.pop(key, None)
     environment["SANDBOX_PROXY_DEFAULT_DIR"] = "/nonexistent"
+    # Fish's own interactive startup checks this before spawning detached
+    # completion generation. Those jobs otherwise outlive the test child and
+    # race removal of the private HOME.
+    environment["FISH_UNIT_TESTS_RUNNING"] = "1"
     if not arguments:
         return 0
 

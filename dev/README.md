@@ -115,6 +115,10 @@ the affected command outside that sandbox using the harness's approval mechanism
 Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket
 permissions.
 
+The wrapper sets `FISH_UNIT_TESTS_RUNNING=1` so interactive Fish skips detached man-page completion generation.
+Fish still loads its normal startup configuration.
+This prevents its startup completion jobs from racing private-HOME cleanup.
+
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides
 or resolves mise shims before changing HOME. Failed resolution stops the run before
 a child starts. Repository-local exclusions keep dependencies, notes, test caches,
