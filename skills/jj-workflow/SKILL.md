@@ -117,10 +117,11 @@ Use isolated workspaces to generate or compare artifacts at revisions:
 
 ```bash
 jj workspace add --name NAME -r REV /temporary/path
-jj workspace forget --cleanup NAME
+jj workspace remove NAME
 ```
 
-The workspace files represent a working-copy commit on top of `REV`. Keep artifacts out of the main dirty working copy and forget temporary workspaces when finished.
+The workspace files represent a working-copy commit on top of `REV`.
+Keep artifacts out of the main dirty working copy and remove temporary workspaces when finished.
 
 ## Repository-specific authorship
 
