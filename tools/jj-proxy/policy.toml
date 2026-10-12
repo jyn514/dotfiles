@@ -12,12 +12,18 @@ diff = true
 log = true
 show = true
 interdiff = true
+evolog = true
+root = true
+version = true
 help = true
 file = { subcmds = ["annotate", "list", "search", "show"] }
-workspace = { subcmds = ["list"] }
-op = { subcmds = ["log", "show"] }
+workspace = { subcmds = ["list", "root"] }
+op = { subcmds = ["log", "show", "diff"] }
+bookmark = { subcmds = ["list"] }
+tag = { subcmds = ["list"] }
+sparse = { subcmds = ["list"] }
 git = { subcmds = ["root"] }
-config = { subcmds = ["get"] }
+config = { subcmds = ["get", "list", "path"] }
 
 # Mutation mode also permits every inspection rule.
 [mutate]

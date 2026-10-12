@@ -77,6 +77,9 @@ jj git fetch --remote origin
 ```
 
 Common history, bookmark, file, and workspace operations are also allowed.
+Inspection also permits `evolog`, `bookmark list`, `tag list`, `op diff`, `sparse list`, `root`, `version`, and `workspace root`.
+Configuration diagnostics permit `config get`, `config list`, and `config path`.
+For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 
 ## Safety and recovery
 

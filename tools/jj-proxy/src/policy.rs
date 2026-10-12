@@ -480,6 +480,35 @@ mod tests {
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
     #[test]
+    fn inspection_diagnostics_are_inherited_without_allowing_sibling_mutations() {
+        let policy = checked_in_policy().unwrap();
+        for args in [
+            vec!["evolog", "-p"], vec!["bookmark", "list", "--all-remotes"],
+            vec!["tag", "list"], vec!["op", "diff", "--from", "@-", "--to", "@"],
+            vec!["sparse", "list"], vec!["root"], vec!["version"], vec!["workspace", "root"],
+            vec!["config", "list"], vec!["config", "path", "--repo"],
+        ] {
+            let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            for inspect in [true, false] {
+                let decision = evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap();
+                assert_eq!(decision.kind, CommandKind::Standard);
+                assert_eq!(decision.read_only, inspect);
+                assert!(!decision.updates_author);
+                assert_eq!(decision.argv, argv);
+            }
+        }
+        for args in [
+            vec!["bookmark", "create", "test"], vec!["tag", "set", "test"],
+            vec!["sparse", "set", "src"], vec!["workspace", "add", "other"],
+            vec!["config", "set", "user.name", "other"], vec!["git", "remote", "add", "test", "url"],
+            vec!["op", "diff", "--operation", "@"], vec!["evolog", "--tool", "/tmp/tool"],
+        ] {
+            let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert!(policy.validate_inspect(&argv).is_err(), "accepted {argv:?}");
+        }
+    }
+
+    #[test]
     fn repository_selector_is_extracted_once_without_hiding_other_options() {
         for input in [vec!["-R", "/src/other", "status"], vec!["-R/src/other", "status"], vec!["--repository", "/src/other", "status"], vec!["status", "--repository=/src/other"]] {
             let args = input.into_iter().map(str::to_owned).collect::<Vec<_>>();
