@@ -359,9 +359,14 @@ override the production path. Tests load the checked-in file through
 inspection permissions; mutation mode inherits them and adds `mutate` rules.
 A command value of `true` or an empty table permits its prefix; an optional,
 nonempty `subcmds` list in a table limits it to those prefixes. A value of `false`
-is rejected; omit a command to deny it. Keys and list entries must each be one nonempty token.
-`updates_author` defaults to false and applies to every path in its rule. A
-mutation rule takes precedence over an inherited inspection rule. Fetch checks
+is rejected; omit a command to deny it.
+Keys are nonempty command prefixes split on whitespace into whole argv tokens.
+Each `subcmds` entry must be one nonempty token and appends to the key's prefix.
+For example, `"git remote" = { subcmds = ["list"] }` permits only the `git remote list` prefix.
+`updates_author` defaults to false and applies to every path in its rule.
+A mutation rule takes precedence over an inherited inspection rule.
+Within each section, the longest matching prefix selects the rule's metadata.
+Fetch checks
 and remote expansion are fixed evaluator behavior, not policy fields. The
 evaluator in `src/policy.rs` returns the command kind, normalized arguments,
 read-only classification, and author-update hook; execution consumes this

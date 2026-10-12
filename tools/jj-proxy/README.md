@@ -114,6 +114,7 @@ The library's `Policy::load` takes a trusted caller-selected path; request argum
 status = true
 file = { subcmds = ["annotate", "list", "search", "show"] }
 git = { subcmds = ["root"] }
+"git remote" = { subcmds = ["list"] }
 
 [mutate]
 commit = { updates_author = true }
@@ -121,7 +122,16 @@ file = true
 git = { subcmds = ["fetch"] }
 ```
 
-Each key is one command token. `true` and `{}` are equivalent: both permit that command prefix, including all its subcommands. `false` is rejected; omit a command to deny it. `subcmds` restricts permission to the listed subcommand prefixes; trailing options and operands remain allowed. The list must be nonempty and each entry must be one nonempty token. `updates_author` defaults to `false` and applies to every path in the rule. Mutation entries take precedence over inherited inspection entries. Unknown fields are rejected; there are no `prefix`, `kind`, or `approved_remote` fields.
+Each key is a nonempty command prefix, split on whitespace into whole argv tokens.
+`true` and `{}` are equivalent: both permit that prefix, including all its subcommands.
+`false` is rejected; omit a command to deny it.
+`subcmds` appends each listed token to the key's prefix; trailing options and operands remain allowed.
+The list must be nonempty and each entry must be one nonempty token.
+For example, `"git remote" = { subcmds = ["list"] }` is equivalent to `"git remote list" = true`.
+Both allow `git remote list --help`, but neither allows `git remote add` or `git remote listing`.
+`updates_author` defaults to `false` and applies to every path in the rule.
+Mutation entries take precedence over inherited inspection entries; within each section, the longest matching prefix selects the rule's metadata.
+Unknown fields are rejected; there are no `prefix`, `kind`, or `approved_remote` fields.
 
 `[global]` defines `forbidden_options` and `forbidden_prefixes` lists. The evaluator checks options after the matched command path: exact option names are compared before `=`, while forbidden prefixes match the option name. Ordinary option and operand validation remains with the pinned Jujutsu binary.
 

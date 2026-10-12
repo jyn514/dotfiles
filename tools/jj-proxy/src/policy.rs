@@ -68,19 +68,23 @@ fn command_token(value: &str) -> Result<()> {
 fn expand_rules(specs: BTreeMap<String, RuleSpec>) -> Result<Vec<CommandRule>> {
     let mut rules = Vec::new();
     for (command, spec) in specs {
-        command_token(&command)?;
+        let path: Vec<String> = command.split_whitespace().map(str::to_owned).collect();
+        if path.is_empty() { bail!("policy command prefix must not be empty: {command:?}"); }
+        for token in &path { command_token(token)?; }
         let spec = match spec {
             RuleSpec::Enabled(true) => RuleDetails { subcmds: None, updates_author: false },
             RuleSpec::Enabled(false) => bail!("policy rule must be true or a table; omit {command} to deny it"),
             RuleSpec::Details(details) => details,
         };
         match spec.subcmds {
-            None => rules.push(CommandRule { path: vec![command], updates_author: spec.updates_author }),
+            None => rules.push(CommandRule { path, updates_author: spec.updates_author }),
             Some(subcmds) => {
                 if subcmds.is_empty() { bail!("policy subcmds must not be empty: {command}"); }
                 for subcmd in subcmds {
                     command_token(&subcmd)?;
-                    rules.push(CommandRule { path: vec![command.clone(), subcmd], updates_author: spec.updates_author });
+                    let mut subcmd_path = path.clone();
+                    subcmd_path.push(subcmd);
+                    rules.push(CommandRule { path: subcmd_path, updates_author: spec.updates_author });
                 }
             }
         }
@@ -116,8 +120,12 @@ impl Policy {
 
     fn rule_for(&self, argv: &[String], inspect: bool) -> Result<&CommandRule> {
         // Mutation entries take precedence; inspection permissions are inherited.
-        self.mutate.iter().filter(|_| !inspect).chain(self.inspect.iter())
-            .find(|rule| argv.starts_with(&rule.path))
+        let mutation_rule = self.mutate.iter()
+            .filter(|rule| !inspect && argv.starts_with(&rule.path))
+            .max_by_key(|rule| rule.path.len());
+        mutation_rule.or_else(|| self.inspect.iter()
+            .filter(|rule| argv.starts_with(&rule.path))
+            .max_by_key(|rule| rule.path.len()))
             .ok_or_else(|| eyre!("command is not allowed: {}", argv.first().map(String::as_str).unwrap_or("")))
     }
 }
@@ -289,6 +297,75 @@ mod tests {
     }
 
     #[test]
+    fn command_prefix_keys_support_arbitrary_depth_and_single_token_subcommands() {
+        let grouped = Policy::parse(&COMPACT_POLICY.replace("state = true", concat!(
+            "\"git remote\" = { subcmds = [\"list\"] }\n",
+            "\"future nested command leaf\" = {}\n",
+            "\"  spaced\\t prefix  \" = true",
+        ))).unwrap();
+        let flat = Policy::parse(&COMPACT_POLICY.replace("state = true", concat!(
+            "\"git remote list\" = true\n",
+            "\"future nested command leaf\" = true\n",
+            "\"spaced prefix\" = {}",
+        ))).unwrap();
+        for inspect in [true, false] {
+            for args in [
+                vec!["git", "remote", "list"],
+                vec!["git", "remote", "list", "--future-option", "operand"],
+                vec!["future", "nested", "command", "leaf", "operand"],
+                vec!["spaced", "prefix", "operand"],
+            ] {
+                let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                let decision = evaluate(&grouped, &argv, inspect, &HashSet::new()).unwrap();
+                assert_eq!(decision, evaluate(&flat, &argv, inspect, &HashSet::new()).unwrap());
+                assert_eq!(decision.argv, argv);
+                assert_eq!(decision.read_only, inspect);
+            }
+            for args in [
+                vec!["git", "remote"], vec!["git", "remote", "add"], vec!["git", "remote", "listing"],
+                vec!["git remote", "list"], vec!["git", "remote list"],
+                vec!["future", "nested", "command"],
+                vec!["git", "remote", "list", "--blocked=x"],
+                vec!["future", "nested", "command", "leaf", "--private-key"],
+            ] {
+                let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                assert!(evaluate(&grouped, &argv, inspect, &HashSet::new()).is_err(), "accepted {argv:?}");
+                assert!(evaluate(&flat, &argv, inspect, &HashSet::new()).is_err(), "accepted {argv:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn longest_prefix_selects_hooks_with_mutation_precedence() {
+        let text = COMPACT_POLICY.replace("state = true", concat!(
+            "history = true\n",
+            "\"history nested\" = { subcmds = [\"create\", \"amend\"], updates_author = true }",
+        )).replace("history = { subcmds = [\"list\", \"show\"] }", "")
+            .replace("history = { subcmds = [\"restore\"] }", concat!(
+                "history = { updates_author = true }\n",
+                "\"history list\" = { updates_author = false }",
+            ));
+        let policy = Policy::parse(&text).unwrap();
+        for inspect in [true, false] {
+            for (args, updates_author) in [
+                (vec!["history", "nested", "create"], true),
+                (vec!["history", "nested", "amend", "operand"], true),
+                (vec!["history", "nested", "other"], !inspect),
+                (vec!["history", "list"], false),
+            ] {
+                let argv = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+                assert_eq!(evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap().updates_author,
+                    updates_author, "wrong author hook for {argv:?} in inspect={inspect}");
+            }
+        }
+        let text = text.replace("history = { updates_author = true }", "history = { updates_author = false }");
+        let policy = Policy::parse(&text).unwrap();
+        let argv = ["history", "nested", "create"].map(str::to_owned);
+        assert!(policy.validate_inspect(&argv).unwrap().updates_author);
+        assert!(!policy.validate(&argv, &HashSet::new()).unwrap().updates_author);
+    }
+
+    #[test]
     fn editing_policy_changes_permissions_and_author_hooks() {
         let text = COMPACT_POLICY.replace("\"list\", \"show\"", "\"search\"")
             .replace("updates_author = true", "updates_author = false")
@@ -312,7 +389,8 @@ mod tests {
             COMPACT_POLICY.replace("[\"list\", \"show\"]", "[\"\"]"),
             COMPACT_POLICY.replace("[\"list\", \"show\"]", "[\"list show\"]"),
             COMPACT_POLICY.replace("state = true", "\"\" = true"),
-            COMPACT_POLICY.replace("state = true", "\"git fetch\" = true"),
+            COMPACT_POLICY.replace("state = true", "\"   \" = true"),
+            COMPACT_POLICY.replace("state = true", "\"git \\u0000 fetch\" = true"),
             COMPACT_POLICY.replace("state = true", "state = { prefix = true }"),
             COMPACT_POLICY.replace("state = true", "state = { kind = \"git-fetch\" }"),
             COMPACT_POLICY.replace("state = true", "state = { approved_remote = true }"),
