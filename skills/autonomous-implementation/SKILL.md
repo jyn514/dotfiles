@@ -41,7 +41,11 @@ If prerequisite or hardening work displaces integration, show the failing check 
 
 Switch acceptance conditions only when the current one passes or no authorized advancing work can proceed, with supporting blocker evidence. Retain blocked conditions as unmet and select the next permitted independent condition. Missing real inputs do not block integration using valid fixture inputs.
 
-Revisit the approach when repeated research or local artifacts do not increase integrated progress, not only when work stops.
+Before a diagnostic follow-up adds instrumentation or changes its question, compare it with the smallest existing-tool alternative.
+Do this even when the preceding probe produced useful partial evidence.
+Keep the original question visible and distinguish user requirements from experiment-imposed restrictions.
+Repair obvious mechanical failures directly when they require no new mechanism or change of question.
+Use [creative-inquiry](../creative-inquiry/SKILL.md) when the approach remains uncertain or local work repeatedly fails to advance integration.
 
 Record unspecified choices as assumptions or unresolved decisions, using only defaults permitted by the governing authority. If a choice changes the objective, ownership, preservation requirements, or selected design, ask for a decision and continue independent authorized work. Route a genuine design fork to [design-deliberation](../design-deliberation/SKILL.md), not to an improvised fixture restriction.
 
@@ -75,6 +79,10 @@ Before delegating coupled implementation, apply [boundary-declaration's delegati
 Delegate only tasks permitted by [Choose work that closes the path](#choose-work-that-closes-the-path), with clear inputs and expected outputs whose integration can be checked without repeating the worker's task. Use independent review for consequential judgment. Perform small inspections directly.
 
 Include the open acceptance condition, remaining integration obligation, declared ownership/contracts, owned files, protected work, and local checks in each worker packet; repository delegation rules still apply.
+Ask reviewers whether the mechanism is necessary, not only whether its implementation is correct.
+Give them the original diagnostic or acceptance question, authoritative constraints, and cumulative added mechanisms—not just the latest patch.
+Ask whether a smaller approach answers that question without inheriting conditions from the chosen mechanism.
+A correctness-only review does not justify the approach.
 
 Record progress in existing task state as **integrated**, **local-only**, or **blocked**, with the exact acceptance check and evidence. Apply [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status) to determine which scope the result establishes.
 

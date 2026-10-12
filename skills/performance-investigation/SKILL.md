@@ -15,6 +15,20 @@ Before the first measurement, choose an evidence directory that survives session
 
 Keep disposable build outputs separate from evidence. Before cleanup, verify that retained sources and raw results suffice to recompute reported measurements.
 
+## Choose the simplest measurement
+
+Before choosing tools, name the question, the decision it informs, and the least attribution detail sufficient to decide.
+Separate user limits and preservation requirements from diagnostic choices, such as sampling windows and observation points.
+Do not reject an alternative because it cannot satisfy conditions needed only by the current diagnostic.
+
+Distinguish a progressing, CPU-heavy computation from a hang.
+For a progressing computation, prefer an existing profiler that can answer the question over sampling hooks or custom telemetry.
+Use existing evidence or the cheapest viability check; do not require an expensive profiling run just to rule out a tool.
+Completion-only profiling cannot diagnose a hang, but may capture a computation that completes or safely unwinds on timeout.
+Check the output path under relevant stop conditions and user limits; name conditions that can lose results.
+Keep profiled attribution separate from unprofiled timing benchmarks.
+Before adding custom instrumentation, identify the required answer an existing tool cannot provide and the evidence of that limitation.
+
 ## Diagnose boundedly
 
 When a command exceeds its expected duration or remains unexpectedly silent for 30 seconds:
@@ -22,11 +36,11 @@ When a command exceeds its expected duration or remains unexpectedly silent for 
 1. Record elapsed time, output so far, and the process tree. Use shell timestamps when no portable timing tool exists, and retain diagnostic logs and stack samples in the evidence directory.
 2. Capture descendants recursively and, when children are short-lived, repeatedly. Identify the active child operation rather than attributing its time to the outer command.
 3. Classify the active phase as CPU-bound, I/O-bound, blocked, sleeping, or waiting on a child.
-4. For JVM work, take a thread dump; for other runtimes, use a bounded stack or syscall sample.
+4. For hangs, take a JVM thread dump or a bounded stack or syscall sample for other runtimes.
 5. Separate launcher setup, dependency resolution, discovery/loading, execution, reporting, and shutdown.
 6. Stop once the sample answers the current question. If terminating a wrapper, clean up only descendants created by that invocation; preserve shared daemons and pre-existing workers.
 
-Completion-only profilers cannot diagnose hangs. Locate the expensive phase with bounded samples before running a representative completion run.
+For a hang, locate the active phase with bounded samples before attempting a representative completion run.
 
 ## Improve the measured boundary
 
