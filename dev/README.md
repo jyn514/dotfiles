@@ -107,6 +107,14 @@ explicit paths outside HOME. Check generated-source freshness with check-only
 commands or a disposable checkout, not an updater targeting the working copy.
 The wrapper clears inherited `JJ_CONFIG` so Jujutsu loads user configuration from
 the private HOME/XDG directories instead.
+Cargo is the exception to disposable per-run state: the wrapper sets `CARGO_HOME` to `target/test-environment/cargo` in this checkout.
+That stable test-only directory reuses downloads and source paths, allowing unchanged compiled dependencies to stay fresh across runs.
+It never imports the inherited Cargo home's configuration or credentials.
+Anything a test command writes there, including Cargo configuration or credentials, persists until you remove the directory.
+Set `DOTFILES_TEST_CARGO_HOME` to another owned disposable directory when testing Cargo configuration or when a fresh cache is required.
+Nested wrapper calls retain that path.
+An unusable cache directory fails before the child starts; the wrapper does not fall back to the user's Cargo home.
+Cargo's build-output location is unchanged.
 
 The sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
 permission to create local TCP and Unix sockets. If an execution sandbox denies

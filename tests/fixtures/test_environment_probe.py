@@ -54,6 +54,16 @@ def main():
             (directory / "probe-write").write_bytes(b"isolated child state\x00\xff")
         emit(value)
         return int(sys.argv[2])
+    if mode == "cargo-cache":
+        cargo = Path(os.environ["CARGO_HOME"])
+        marker = cargo / "registry/cache/probe"
+        value["cargo_cache_existed"] = marker.is_file()
+        value["cargo_config_files"] = [name for name in ("config", "config.toml", "credentials", "credentials.toml")
+            if (cargo / name).exists()]
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(b"persistent test-only Cargo cache")
+        emit(value)
+        return int(sys.argv[2])
     if mode == "native-signal":
         emit(value)
         os.kill(os.getpid(), int(sys.argv[2]))
@@ -93,22 +103,28 @@ def main():
         emit(value)
         return 0
     if mode == "signal":
+        received = None
+
         def terminated(signum, frame):
-            # Make deleting HOME before reaping the child observable.
-            time.sleep(0.15)
-            value["home_exists_during_cleanup"] = home.is_dir()
-            if home.is_dir():
-                (home / "child-cleanup").write_bytes(b"cleanup completed")
-            value["cleanup_completed"] = True
-            emit(value)
-            raise SystemExit(130 if signum == signal.SIGINT else 37)
+            nonlocal received
+            # The parent can signal as soon as it reads the readiness newline,
+            # while emit() still holds stdout's buffer lock. Do not print here.
+            received = signum
 
         signal.signal(signal.SIGTERM, terminated)
         signal.signal(signal.SIGINT, terminated)
         signal.alarm(10)
         emit(value)
-        while True:
-            signal.pause()
+        while received is None:
+            time.sleep(0.01)
+        # Make deleting HOME before reaping the child observable.
+        time.sleep(0.15)
+        value["home_exists_during_cleanup"] = home.is_dir()
+        if home.is_dir():
+            (home / "child-cleanup").write_bytes(b"cleanup completed")
+        value["cleanup_completed"] = True
+        emit(value)
+        return 130 if received == signal.SIGINT else 37
     raise ValueError(mode)
 
 

@@ -35,7 +35,7 @@ class TestEnvironmentTest(unittest.TestCase):
         self.inherited = {
             key: value for key, value in os.environ.items()
             if not key.startswith("DOTFILES_TEST_")
-            and key not in (*STATE_NAMES, "PI_PACKAGE_DIR", "HOME")
+            and key not in (*STATE_NAMES, "PI_PACKAGE_DIR", "HOME", "CARGO_HOME")
         }
         self.inherited["HOME"] = str(self.old_home)
         for name in STATE_NAMES:
@@ -46,6 +46,13 @@ class TestEnvironmentTest(unittest.TestCase):
         for name in UNSET_NAMES:
             self.inherited[name] = str(self.old_home / name.lower())
         (self.old_home / "existing-home").write_bytes(b"home state\x00\xfe")
+        user_cargo = self.old_home / ".cargo"
+        user_cargo.mkdir()
+        (user_cargo / "config.toml").write_text('[net]\noffline = true\n')
+        (user_cargo / "credentials.toml").write_text('[registry]\ntoken = "fixture-secret"\n')
+        self.inherited["CARGO_HOME"] = str(user_cargo)
+        self.cargo_home = self.root / "cargo-test-home"
+        self.inherited["DOTFILES_TEST_CARGO_HOME"] = str(self.cargo_home)
 
     def snapshot(self, path: Path) -> dict:
         return {
@@ -183,6 +190,71 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(status, result.returncode, result.stderr)
                 self.assertEqual(before, self.snapshot(self.old_home))
                 self.assert_private_home(report)
+
+    def test_cargo_home_persists_without_reusing_user_config_or_credentials(self) -> None:
+        before = self.snapshot(self.old_home)
+        homes = []
+        for status in (0, 23):
+            result, report = self.run_probe("cargo-cache", str(status))
+            self.assertEqual(status, result.returncode, result.stderr)
+            homes.append(self.assert_private_home(report))
+            self.assertEqual(str(self.cargo_home), report["environment"]["CARGO_HOME"])
+            self.assertEqual(str(self.cargo_home), report["environment"]["DOTFILES_TEST_CARGO_HOME"])
+            self.assertEqual(status == 23, report["cargo_cache_existed"])
+            self.assertEqual([], report["cargo_config_files"])
+        self.assertNotEqual(*homes)
+        self.assertTrue((self.cargo_home / "registry/cache/probe").is_file())
+        self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_default_cargo_home_belongs_to_the_wrapper_checkout(self) -> None:
+        wrapper = self.root / "checkout/dev/test-environment"
+        wrapper.parent.mkdir(parents=True)
+        subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
+        subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
+        environment = dict(self.inherited)
+        environment.pop("DOTFILES_TEST_CARGO_HOME")
+        before = self.snapshot(self.old_home)
+        result = subprocess.run([wrapper, sys.executable, PROBE, "write", "0"],
+            env=environment, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = json.loads(result.stdout)
+        self.assert_private_home(report)
+        expected = self.root / "checkout/target/test-environment/cargo"
+        self.assertEqual(str(expected), report["environment"]["CARGO_HOME"])
+        self.assertEqual(0o700, expected.stat().st_mode & 0o777)
+        self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_nested_use_keeps_the_same_cargo_home(self) -> None:
+        result, outer = self.run_probe("nested", str(WRAPPER))
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, outer["nested_status"], outer["nested_stderr"])
+        for report in (outer, outer["nested"]):
+            self.assert_private_home(report)
+            self.assertEqual(str(self.cargo_home), report["environment"]["CARGO_HOME"])
+
+    def test_invalid_cargo_home_prevents_child_start_without_falling_back(self) -> None:
+        self.cargo_home.write_text("not a directory")
+        before = self.snapshot(self.old_home)
+        result = subprocess.run([WRAPPER, sys.executable, PROBE, "write", "0"],
+            env=self.inherited, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertIn("cannot prepare Cargo test home", result.stderr)
+        self.assertIn(str(self.cargo_home), result.stderr)
+        self.assertEqual("not a directory", self.cargo_home.read_text())
+        self.assertEqual(before, self.snapshot(self.old_home))
+
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses directory permissions")
+    def test_read_only_cargo_home_prevents_child_start(self) -> None:
+        self.cargo_home.mkdir(mode=0o500)
+        self.addCleanup(self.cargo_home.chmod, 0o700)
+        before = self.snapshot(self.old_home)
+        result = subprocess.run([WRAPPER, sys.executable, PROBE, "write", "0"],
+            env=self.inherited, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertIn("directory requires write and search access", result.stderr)
+        self.assertEqual(before, self.snapshot(self.old_home))
 
     @unittest.skipUnless(shutil.which("fish"), "Fish is required")
     def test_interactive_fish_loads_config_without_background_completion_generation(self) -> None:

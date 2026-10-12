@@ -83,6 +83,19 @@ def main(arguments: list[str]) -> int:
     if not arguments:
         return 0
 
+    # Stable source paths let Cargo reuse both downloads and compiled dependencies.
+    # Never reuse the user's Cargo home: this directory is disposable test state.
+    cargo_home = Path(environment.get("DOTFILES_TEST_CARGO_HOME")
+        or Path(__file__).resolve().parent.parent / "target/test-environment/cargo").resolve()
+    try:
+        cargo_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not os.access(cargo_home, os.W_OK | os.X_OK):
+            raise OSError("directory requires write and search access")
+    except OSError as error:
+        raise OSError(f"cannot prepare Cargo test home {cargo_home}: {error}") from error
+    environment["DOTFILES_TEST_CARGO_HOME"] = str(cargo_home)
+    environment["CARGO_HOME"] = str(cargo_home)
+
     with tempfile.TemporaryDirectory(prefix="dotfiles-test-home-") as directory:
         home = Path(directory)
         environment["HOME"] = directory
