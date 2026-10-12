@@ -146,6 +146,7 @@ Reuse existing evidence when it settles that decision.
 
 ### Before optimizing or caching
 
+Prefer append-only context updates where possible, to preserve prompt-cache prefixes.
 Before optimizing or caching an operation, check whether the operation or
 intermediate representation can be eliminated.
 
