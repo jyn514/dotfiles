@@ -237,7 +237,9 @@ The agent's `rg` wrapper disables ripgrep configuration and rejects executable
 `--pre`, `--pre-glob`, and `--hostname-bin` options. Those strings remain valid
 as `-e`/`--regexp` values or after `--`. Unknown option shapes fail closed for
 these strings because the wrapper cannot safely infer their argument roles.
-Refresh the sandbox image after changing the wrapper.
+With `RG_REAL` unset, the packaged command finds ripgrep on `PATH`, including through the public command symlink.
+Source discovery for `rg`, `java`, `bb`, and the JJ routing helper uses `realpath` on `PATH` to follow symlinks to the script target.
+Refresh the sandbox image after changing the wrappers.
 
 The image build installs the packages selected by `config/pi-agent/settings.json` with npm lifecycle scripts disabled, then loads their extensions without network access to seed Jiti's transpilation cache.
 Only the cache enters the final image, at `/tmp/jiti`;

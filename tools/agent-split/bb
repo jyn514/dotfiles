@@ -9,7 +9,8 @@ if [ -n "${BB_REAL:-}" ]; then
 	fi
 	real_bb=$BB_REAL
 else
-	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	source_path=$(realpath -- "$0") || exit 1
+	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" bb
 	real_bb=$REAL
@@ -30,7 +31,8 @@ if [ "${1:-}" = agent-split ]; then
 	shift
 	root=${BB_SOURCE_ROOT:-${root:-}}
 	if [ -z "$root" ]; then
-		root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+		source_path=$(realpath -- "$0") || exit 1
+		root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	fi
 	exec "$real_bb" ${tmpdir_opt:+"$tmpdir_opt"} "$root/tools/agent-split/src/scripts/agent-split.clj" "$@"
 fi

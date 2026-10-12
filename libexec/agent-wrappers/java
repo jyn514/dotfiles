@@ -8,7 +8,8 @@ if [ -n "${JAVA_REAL:-}" ]; then
 	fi
 	REAL=$JAVA_REAL
 else
-	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	source_path=$(realpath -- "$0") || exit 1
+	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" java
 fi

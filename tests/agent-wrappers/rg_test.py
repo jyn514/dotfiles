@@ -43,6 +43,80 @@ class RgWrapperTest(unittest.TestCase):
             ["--no-config", "needle", "haystack"], result.stdout.splitlines()
         )
 
+    def run_packaged_wrapper(
+        self, *arguments: str, relative_link: bool, with_backend: bool = True,
+        through_public: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory(prefix="rg packaged ") as temporary:
+            root = Path(temporary)
+            private = root / "libexec/agent-wrappers"
+            public = root / "opt/agent-tools/bin"
+            commands = root / "commands"
+            backend = root / "backend"
+            for directory in (private, public, commands, backend, root / "lib/shell"):
+                directory.mkdir(parents=True)
+            for source, destination in (
+                (WRAPPER, private / "rg"),
+                (ROOT / "lib/shell/lib.sh", root / "lib/shell/lib.sh"),
+                (ROOT / "lib/shell/realpath.sh", root / "lib/shell/realpath.sh"),
+            ):
+                subprocess.run(["cp", str(source), str(destination)], check=True)
+                subprocess.run(["cmp", str(source), str(destination)], check=True)
+            for command in ("dirname", "readlink", "realpath"):
+                executable = shutil.which(command)
+                if executable is not None:
+                    (commands / command).symlink_to(executable)
+            if relative_link:
+                (public / "rg").symlink_to("../../../libexec/agent-wrappers/rg")
+            else:
+                (public / "rg").symlink_to(private / "rg")
+            if with_backend:
+                real_rg = os.environ.get("DOTFILES_TEST_RG_REAL") or shutil.which("rg")
+                if real_rg is None:
+                    self.skipTest("ripgrep is not installed")
+                (backend / "rg").symlink_to(Path(real_rg).resolve())
+            config = root / "rg.config"
+            config.write_text("--max-count=0\n")
+            # An explicit minimal environment models env -i, without RG_REAL.
+            return subprocess.run(
+                [str(public / "rg") if through_public else "rg", *arguments],
+                input="ordinary\n--pre\n", cwd=root,
+                env={
+                    "PATH": os.pathsep.join(map(str, (private, public, backend, commands))),
+                    "RIPGREP_CONFIG_PATH": str(config),
+                },
+                text=True, capture_output=True, check=False, timeout=5,
+            )
+
+    def test_packaged_symlinks_search_without_real_tool_override(self) -> None:
+        for relative_link in (False, True):
+            for through_public in (False, True):
+                with self.subTest(relative_link=relative_link, through_public=through_public):
+                    result = self.run_packaged_wrapper(
+                        "--line-number", "-e", "--pre",
+                        relative_link=relative_link, through_public=through_public,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, "2:--pre\n")
+
+    def test_packaged_symlinks_fail_when_no_backend_exists(self) -> None:
+        result = self.run_packaged_wrapper(
+            "needle", relative_link=True, with_backend=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "rg wrapper: real rg not found on PATH\n")
+
+    def test_packaged_symlink_still_blocks_executable_options(self) -> None:
+        for option in ("--pre", "--pre-glob", "--hostname-bin"):
+            with self.subTest(option=option):
+                result = self.run_packaged_wrapper(
+                    option, "evil", relative_link=True, through_public=True,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("not permitted", result.stderr)
+
     def run_wrapper(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary:
             temp_dir = Path(temporary)

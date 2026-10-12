@@ -81,7 +81,10 @@ if [ -n "${RG_REAL:-}" ]; then
 	fi
 	REAL=$RG_REAL
 else
-	root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+	# Locate support beside the script target, but remove the invoked PATH entry.
+	# Using the target for both would leave public symlinks free to recurse.
+	source_path=$(realpath -- "$0") || exit 1
+	root=$(CDPATH='' cd -- "${source_path%/*}/../.." && pwd -P) || exit 1
 	. "$root/lib/shell/lib.sh"
 	shim_resolve "$0" rg
 fi

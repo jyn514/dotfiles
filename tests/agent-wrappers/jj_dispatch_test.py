@@ -107,25 +107,26 @@ class JjDispatchTest(unittest.TestCase):
                 self.assertEqual(["proxy"], [call["role"] for call in self.calls()])
                 self.assertEqual(["status", "--no-pager"], self.calls()[0]["argv"])
 
-    def test_failed_dirname_discovery_never_reaches_a_backend(self):
-        real_dirname = shutil.which("dirname")
-        self.assertIsNotNone(real_dirname)
+    def test_failed_realpath_discovery_never_reaches_a_backend(self):
+        real_realpath = shutil.which("realpath")
+        self.assertIsNotNone(real_realpath)
         commands = self.root / "commands"
         commands.mkdir()
-        dirname = commands / "dirname"
-        fixture = ROOT / "tests/fixtures/jj_dirname_failure.sh"
-        subprocess.run(["cp", str(fixture), str(dirname)], check=True)
-        subprocess.run(["cmp", str(fixture), str(dirname)], check=True)
-        dirname.chmod(0o755)
+        realpath = commands / "realpath"
+        fixture = ROOT / "tests/fixtures/wrapper_realpath_failure.sh"
+        subprocess.run(["cp", str(fixture), str(realpath)], check=True)
+        subprocess.run(["cmp", str(fixture), str(realpath)], check=True)
+        realpath.chmod(0o755)
         for mode in ("direct", "relative-chain"):
             with self.subTest(mode=mode):
                 self.wrapper = self.discovery_wrapper(mode)
-                env = {**self.env, "REAL_DIRNAME": real_dirname,
+                env = {**self.env, "REAL_REALPATH": real_realpath,
                        "PATH": str(commands) + os.pathsep + self.env["PATH"]}
                 env.pop("JJ_ROUTE_HELPER")
                 result = self.run_wrapper("status", cwd=ROOT, env=env)
                 self.assertEqual(125, result.returncode, result.stderr)
-                self.assertIn("fixture: dirname failed", result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertIn("fixture: realpath failed", result.stderr)
                 self.assertEqual([], self.calls())
 
     def test_local_commit_uses_native_and_scopes_both_hooks_to_selected_workspace(self):

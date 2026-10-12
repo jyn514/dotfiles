@@ -16,6 +16,9 @@ Shared internal implementations belong in `libexec/`, maintenance commands in
 vendored code in `vendor/`, and package manifests in `install/`.
 Setup entry points are `setup`, `setup.ps1`, and `track`.
 
+Command wrappers use the installed `realpath` to locate support beside the script target rather than implement symlink walks.
+Pass the original `$0`, not that target, to `shim_resolve` in `lib/shell/lib.sh` so PATH cleanup removes the invoked wrapper directory.
+
 Keep scripts portable unless the existing file targets one platform. Match native
 formatting rather than normalizing unrelated code. Declared POSIX `sh` scripts use
 tab-indented blocks and explicit `set -e` or `set -u` when failure handling matters.

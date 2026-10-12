@@ -69,19 +69,8 @@ if [ -z "$route_helper" ] && [ -n "${SANDBOX_PROXY_DIR:-}" ]; then
   route_helper=/tools/jj-proxy/route.py
 fi
 if [ -n "$route_helper" ] && [ ! -f "$route_helper" ] && [ -z "${JJ_ROUTE_HELPER:-}" ]; then
-  source_path=$0
-  while [ -L "$source_path" ]; do
-    link=$(readlink "$source_path") || exit 125
-    case "$link" in
-      /*) source_path=$link ;;
-      *)
-        source_parent=$(dirname -- "$source_path") || exit 125
-        source_path=$source_parent/$link
-        ;;
-    esac
-  done
-  source_parent=$(dirname -- "$source_path") || exit 125
-  source_dir=$(CDPATH='' cd -- "$source_parent" && pwd -P) || exit 125
+  source_path=$(realpath -- "$0") || exit 125
+  source_dir=${source_path%/*}
   route_helper=$source_dir/../../tools/jj-proxy/route.py
 fi
 
