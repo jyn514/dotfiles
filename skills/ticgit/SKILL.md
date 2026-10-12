@@ -1,6 +1,6 @@
 ---
 name: ticgit
-description: How to use TicGit (`ti`) to track Git-native tickets in a local repository. Use when the repository documents that it uses TicGit for issue tracking and you need to interface with the tracker.
+description: How to use TicGit (`ti`) to track Git-native tickets in a local repository. Use when you need to interface with the tracker and the repository documents TicGit or an active workflow explicitly selects it as the fallback.
 ---
 
 # TicGit Agent Guide
