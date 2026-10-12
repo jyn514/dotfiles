@@ -74,7 +74,7 @@ def check_agent_pi_revision(runtime, reference):
     if result.stdout.strip() != expected:
         raise ValueError(
             'Shared sandbox image uses a different or unknown Pi revision; '
-            'run codex-sandbox restart-all to rebuild for the installed host Pi'
+            'run `codex-sandbox restart --repo .` to rebuild for the installed host Pi'
         )
 
 
