@@ -323,7 +323,8 @@ Proxy failure is fail-closed; a client never falls back to a local privileged ex
 The launcher, not a proxy container, owns cross-boundary coordination between sandbox and host processes.
 Container advisory locks cannot provide that coordination on systems such as macOS, where containers run under a separate Linux virtual-machine kernel and bind-mounted files cross the host/guest boundary.
 
-The launcher derives a repository identity from the canonical Git common directory and uses a per-user host runtime directory for that identity.
+The launcher derives a workspace-session repository identity from both the canonical workspace root and Git common directory.
+It uses a per-user host runtime directory for that identity.
 The directory contains stable `coordination.lock` and `session.lock` files plus atomically published session metadata.
 The runtime directory is outside the repository and is not mounted into the agent container.
 
@@ -338,7 +339,9 @@ The owner-validated mode-`0600` metadata contains authenticated-egress session t
 
 A launcher-supplied host router owns lock acquisition, stale-state cleanup, session discovery, and recorded-runtime invocation for every host-routable manifest command or typed authenticated-egress adapter.
 A host-side shim supplies the accepted command or adapter name, framed request, and local entrypoint; it never supplies a container, socket, token, image, or upstream origin.
-The router chooses one path:
+The #link("tic-proxy.typ")[TicGit capability] adds common-store discovery before route selection;
+its routing contract governs local execution eligibility across linked worktrees.
+For other capabilities, the router chooses one path:
 
 + If it acquires the host lock, retain stale recovery metadata, run the local bridge with the human's authority, then release the lock
 + If the launcher holds the lock and valid metadata exists, use the recorded runtime's transport to the validated proxy socket
