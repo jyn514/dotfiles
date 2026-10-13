@@ -94,12 +94,11 @@ and set -gx WAYLAND_DISPLAY (string replace -- 'WAYLAND_DISPLAY=' '' $display)
 
 ## Moving panes between windows
 
-Ctrl+K, then Alt+W moves the active pane to the next window in the current
-session and follows it. Repeating the binding cycles through windows, wrapping
-from the last to the first. It works from split windows too. Moving the only
-pane out of a window removes that empty window; with only one window, the
-binding leaves the layout unchanged. Ctrl+K, then Shift+W breaks a pane into
-its own window.
+Ctrl+K, then Alt+W moves the active pane to the previous window in the current session and follows it.
+Repeating the binding cycles from higher to lower window numbers, wrapping from the first to the last.
+It works from split windows too.
+Moving the only pane out of a window removes that empty window; with only one window, the binding leaves the layout unchanged.
+Ctrl+K, then Shift+W breaks a pane into its own window.
 
 ## Keybinding troubleshooting
 
