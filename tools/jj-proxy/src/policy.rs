@@ -466,6 +466,31 @@ mod tests {
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
     #[test]
+    fn version_flag_is_allowed_without_bypassing_security_options() {
+        let policy = checked_in_policy().unwrap();
+        for inspect in [true, false] {
+            for argument in ["version", "--version"] {
+                let argv = [argument.to_owned()];
+                let decision = evaluate(&policy, &argv, inspect, &HashSet::new()).unwrap();
+                assert_eq!(decision.argv, argv);
+                assert_eq!(decision.kind, CommandKind::Standard);
+                assert_eq!(decision.read_only, inspect);
+                assert!(!decision.updates_author);
+            }
+            for option in ["--config=ui.editor=evil", "--ignore-working-copy", "--at-op=@"] {
+                for args in [["--version", option], [option, "--version"]] {
+                    let argv = args.map(str::to_owned);
+                    assert!(evaluate(&policy, &argv, inspect, &HashSet::new()).is_err(),
+                        "accepted {argv:?} in inspect={inspect}");
+                }
+            }
+            for option in ["--version=1", "--help", "--no-pager"] {
+                assert!(evaluate(&policy, &[option.to_owned()], inspect, &HashSet::new()).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn rejects_caller_working_copy_controls_in_both_modes() {
         let policy = checked_in_policy().unwrap();
         let forbidden = [

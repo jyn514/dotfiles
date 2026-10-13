@@ -16,6 +16,7 @@ interdiff = true
 evolog = true
 root = true
 version = true
+"--version" = true
 help = true
 file = { subcmds = ["annotate", "list", "search", "show"] }
 workspace = { subcmds = ["list", "root"] }
