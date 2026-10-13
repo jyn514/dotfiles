@@ -15,11 +15,15 @@ Build from the repository root:
 
 ```sh
 cargo build --locked --manifest-path tools/jj-proxy/Cargo.toml
-docker build -f tools/jj-proxy/Dockerfile -t jj-proxy .
+.agents/sandbox/jj-proxy-image
 ```
 
+The image owner reads the exact JJ revision from `config/mise.toml`, also used by host mise.
+The guest image copies the JJ binary from the resolved proxy image instead of downloading a separate release.
+Standalone Docker or Podman builds must supply `JJ_REVISION` from that pin as a build argument.
+
 Sandbox startup uses `.agents/sandbox/jj-proxy-image`, which reuses a tag keyed
-by the Dockerfile's copied inputs. Local Cargo artifacts and test output do not
+by the Dockerfile's copied inputs and `config/mise.toml`. Local Cargo artifacts and test output do not
 change that key. Keep the builder's input list aligned with Dockerfile `COPY`
 instructions when adding image sources.
 
@@ -97,7 +101,7 @@ From the repository root:
 ```sh
 cargo test --locked --manifest-path tools/jj-proxy/Cargo.toml
 python3 -m unittest discover -s tools/jj-proxy/tests -p '*_test.py'
-docker build -f tools/jj-proxy/Dockerfile -t jj-proxy .
+.agents/sandbox/jj-proxy-image
 ```
 
 The Rust suite covers command and Landlock execution policy plus protocol behavior. Python tests cover routing, client framing, and the trusted split editor. Wrapper tests also cover local dispatch with a mounted proxy, target-scoped attribution, and private split identity. The image build also runs release Rust tests, including secure-config preparation against its pinned Jujutsu binary. These checks do not establish acceptance in a real container.

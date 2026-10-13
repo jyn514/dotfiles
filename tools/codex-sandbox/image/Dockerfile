@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 ARG BASE_IMAGE=node:24-alpine3.22
+ARG JJ_IMAGE
+
+FROM ${JJ_IMAGE} AS jj
 
 FROM ${BASE_IMAGE} AS agent-deps
 COPY ./tools/codex-sandbox/image/install-deps.sh /usr/local/bin/install-agent-deps
@@ -12,10 +15,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm /usr/local/bin/install-agent-deps
 
 FROM alpine:3.22 AS tools
+COPY --from=jj /trusted/bin/jj /usr/local/bin/jj
 COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-tools
 ARG BB_VERSION=1.13.219
 ARG GH_VERSION=2.76.1
-ARG JJ_VERSION=0.42.0
 ARG DOCKER_VERSION=29.8.0
 ARG BUILDX_VERSION=0.37.0
 ARG TYPST_VERSION=0.15.1
@@ -25,7 +28,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/yum,sharing=locked \
     BB_VERSION=${BB_VERSION} \
     GH_VERSION=${GH_VERSION} \
-    JJ_VERSION=${JJ_VERSION} \
     DOCKER_VERSION=${DOCKER_VERSION} \
     BUILDX_VERSION=${BUILDX_VERSION} \
     TYPST_VERSION=${TYPST_VERSION} \

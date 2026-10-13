@@ -210,14 +210,14 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             for value in (b'', b'hello\n', b'hello\r\n', b'\xff\0binary'):
                 (root / source).write_bytes(value)
                 with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
-                    actual = key(501, 20, "linux/arm64", base, 'a' * 40)
+                    actual = key(501, 20, "linux/arm64", base, 'a' * 40, jj_image='jj@sha256:' + '1' * 64)
                 self.assertNotEqual(actual, previous)
                 previous = actual
             with mock.patch.dict(key.__globals__, ROOT=root, agent_sources=lambda: [source]):
-                self.assertNotEqual(actual, key(502, 20, "linux/arm64", base, 'a' * 40))
-                self.assertNotEqual(actual, key(501, 20, "linux/amd64", base, 'a' * 40))
+                self.assertNotEqual(actual, key(502, 20, "linux/arm64", base, 'a' * 40, jj_image='jj@sha256:' + '1' * 64))
+                self.assertNotEqual(actual, key(501, 20, "linux/amd64", base, 'a' * 40, jj_image='jj@sha256:' + '1' * 64))
                 changed = SimpleNamespace(**{**vars(base), "config": "sha256:" + "d" * 64})
-                self.assertNotEqual(actual, key(501, 20, "linux/arm64", changed, 'a' * 40))
+                self.assertNotEqual(actual, key(501, 20, "linux/arm64", changed, 'a' * 40, jj_image='jj@sha256:' + '1' * 64))
 
     def test_failed_publication_keeps_coordination_until_cleanup(self):
         attach = runpy.run_path(str(LAUNCHER))['attach_proxies']
@@ -372,7 +372,8 @@ class ContainerRepositoryPathTest(unittest.TestCase):
 class SharedProxyCleanupTest(unittest.TestCase):
     def repository(self, directory):
         root = Path(directory) / "repo"
-        subprocess.run(["jj", "git", "init", str(root)], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["jj", "git", "init", str(root)], cwd=directory,
+                       check=True, stdout=subprocess.DEVNULL)
         return root
 
     def test_launcher_removes_shared_services_after_last_attachment(self):

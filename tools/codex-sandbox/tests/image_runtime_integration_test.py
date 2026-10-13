@@ -12,11 +12,11 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         revision = 'b' * 40
         for base in (None, 'node:20-bookworm-slim'):
             with self.subTest(base=base), mock.patch('subprocess.run') as run:
-                build('test-image', revision, base)
+                build('test-image', revision, base, jj_image='proxy@sha256:' + 'a' * 64)
                 command = run.call_args.args[0]
                 build_args = [command[index + 1] for index, argument in enumerate(command)
                               if argument == '--build-arg']
-                expected = [f'PI_REVISION={revision}']
+                expected = [f'PI_REVISION={revision}', 'JJ_IMAGE=proxy@sha256:' + 'a' * 64]
                 if base is not None:
                     expected.append(f'BASE_IMAGE={base}')
                 self.assertEqual(expected, build_args)

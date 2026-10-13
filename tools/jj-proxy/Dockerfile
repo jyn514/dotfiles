@@ -21,7 +21,8 @@ RUN --mount=type=cache,target=/build/target \
     && cp target/release/jj-proxy /jj-proxy
 
 FROM chef AS jj
-ARG JJ_REVISION=f1b29bced933e289096a9c98276153e29dd95674
+ARG JJ_REVISION
+RUN test -n "${JJ_REVISION}"
 RUN apk add --no-cache git musl-dev openssl-dev openssl-libs-static perl make
 RUN git init /jj \
     && git -C /jj fetch --depth=1 https://github.com/jj-vcs/jj.git "${JJ_REVISION}" \

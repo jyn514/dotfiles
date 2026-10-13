@@ -38,9 +38,13 @@ class ImageBuilderTest(unittest.TestCase):
             )
             (root / 'config').mkdir()
             (root / 'config/gitignore').write_text('ignored\n')
+            (root / 'config/mise.toml').write_text(
+                '[tools]\n"cargo:https://github.com/jj-vcs/jj" = {version="rev:' + 'a' * 40 + '"}\n')
             def key():
                 result = subprocess.run([str(builder)], capture_output=True, text=True, check=True)
                 arguments = result.stdout.splitlines()
+                self.assertEqual('JJ_REVISION=' + 'a' * 40,
+                                 arguments[arguments.index('--build-arg') + 1])
                 return arguments[arguments.index('--tag') + 1]
             first = key()
             artifact = root / 'tools/jj-proxy/target/debug/artifact'

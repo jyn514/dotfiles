@@ -7,6 +7,7 @@ import re
 import stat
 import sys
 import tempfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMANDS = {
@@ -14,7 +15,7 @@ COMMANDS = {
     str(ROOT / '.agents/sandbox/jj-proxy-image'): 'jj',
     str(ROOT / '.agents/sandbox/zulip-proxy-image'): 'zulip',
 }
-AGENT_CACHE_CONTRACT = 2
+AGENT_CACHE_CONTRACT = 3
 DEFAULT_BASE = "node:24-alpine3.22"
 
 
@@ -78,12 +79,12 @@ def check_agent_pi_revision(runtime, reference):
         )
 
 
-def agent_cache_key(uid, gid, platform, base, pi_revision, *, root=None):
+def agent_cache_key(uid, gid, platform, base, pi_revision, *, jj_image, root=None):
     root = ROOT if root is None else root
     identity = hashlib.sha256()
     identity.update(f"agent-cache-contract={AGENT_CACHE_CONTRACT}\0".encode())
     identity.update(f"uid={uid}\0gid={gid}\0platform={platform}\0".encode())
-    identity.update(f"pi-revision={pi_revision}\0".encode())
+    identity.update(f"pi-revision={pi_revision}\0jj-image={jj_image}\0".encode())
     identity.update(
         f"base={base.content}\0{base.config}\0{base.rootfs}\0".encode()
     )
@@ -93,6 +94,31 @@ def agent_cache_key(uid, gid, platform, base, pi_revision, *, root=None):
         identity.update(os.fsencode(path.as_posix()) + b"\0")
         identity.update(hashlib.sha256(data).digest())
     return identity.hexdigest()
+
+
+def resolve_jj(runtime, *, operation="resolve"):
+    """Resolve the owned proxy artifact through the selected engine's builder."""
+    from bake import _capture, resolve
+    if runtime.provider == 'lima-docker':
+        return resolve(
+            runtime, ROOT, ['jj'], declaration=declaration(['jj']),
+            captures=source_paths(['jj']), operation=operation,
+        )['jj']
+    # The legacy helper uses this source-keyed tag with sandbox-image build.
+    # Lima's nerdctl builder does not expose Docker Buildx/Bake.
+    target = declaration(['jj'])['target']['jj']
+    tag = target['tags'][0]
+    existing = None if operation == 'clean' else runtime.image_if_available(tag)
+    if existing is not None:
+        return existing.reference
+    with tempfile.TemporaryDirectory(prefix='sandbox-jj-image-') as directory:
+        captured = Path(directory).resolve() / 'context'
+        _capture(ROOT, ROOT, captured, hashlib.sha256(), source_paths(['jj'])['jj'])
+        return runtime.build(
+            tag, captured / target['dockerfile'], captured,
+            build_args=[f'{name}={value}' for name, value in target['args'].items()],
+            no_cache=operation == 'clean',
+        ).reference
 
 
 def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
@@ -109,12 +135,14 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
         if base_reference == DEFAULT_BASE and runtime.image_if_available(base_reference) is None:
             runtime.run(["pull", base_reference], stdout=sys.stderr)
         base = runtime.inspect_image(base_reference)
+        jj_image = resolve_jj(runtime, operation=operation)
         _pin_dockerfile(
             runtime, captured / "tools/codex-sandbox/image/Dockerfile",
-            {"BASE_IMAGE": base.reference}, set(), refresh=operation == "refresh",
+            {"BASE_IMAGE": base.reference, "JJ_IMAGE": jj_image}, set(),
+            refresh=operation == "refresh",
         )
         tag = "codex-sandbox:" + agent_cache_key(
-            uid, gid, runtime.build_platform(), base, pi_revision, root=captured,
+            uid, gid, runtime.build_platform(), base, pi_revision, jj_image=jj_image, root=captured,
         )
         existing = None if operation == "clean" else runtime.image_if_available(tag)
         if existing is not None:
@@ -123,7 +151,8 @@ def resolve_agent(runtime, uid, gid, base_reference, *, operation="resolve"):
         return runtime.build(
             tag, captured / "tools/codex-sandbox/image/Dockerfile", captured,
             build_args=[f"AGENT_UID={uid}", f"AGENT_GID={gid}",
-                        f"PI_REVISION={pi_revision}", f"BASE_IMAGE={base.reference}"],
+                        f"PI_REVISION={pi_revision}", f"BASE_IMAGE={base.reference}",
+                        f"JJ_IMAGE={jj_image}"],
             **build_options,
         ).reference
 
@@ -145,12 +174,22 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
     if 'jj' in requested:
         sources['jj'] = [str(path) for path in dockerfile_sources(
             ROOT, Path('tools/jj-proxy/Dockerfile'),
-        )]
+        )] + ['config/mise.toml']
     if 'zulip' in requested:
         sources['zulip'] = ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
                             'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json',
                             'tools/codex-sandbox/auth-proxy/typed_broker.py']
     return sources
+
+
+def jj_revision(root=None):
+    """Use the host's exact JJ source revision for both sandbox consumers."""
+    root = ROOT if root is None else root
+    with (root / 'config/mise.toml').open('rb') as stream:
+        version = tomllib.load(stream)['tools']['cargo:https://github.com/jj-vcs/jj']['version']
+    if not isinstance(version, str) or re.fullmatch(r'rev:[0-9a-f]{40}', version) is None:
+        raise ValueError('config/mise.toml must pin JJ to an exact source revision')
+    return version.removeprefix('rev:')
 
 
 def declaration(requested=('auth', 'jj', 'zulip')):
@@ -163,6 +202,8 @@ def declaration(requested=('auth', 'jj', 'zulip')):
         targets[name] = {'context': '.', 'dockerfile': paths[0],
                          'tags': [f'codex-{name}:{key.hexdigest()}'],
                          'platforms': ['${BUILDPLATFORM}']}
+        if name == 'jj':
+            targets[name]['args'] = {'JJ_REVISION': jj_revision()}
     return {'variable': {'BUILDPLATFORM': {'default': 'linux/arm64'}}, 'target': targets}
 
 
@@ -177,5 +218,8 @@ if __name__ == '__main__':
     image = declaration([sys.argv[1]])['target'][sys.argv[1]]
     executable = str(ROOT / 'tools/codex-sandbox/sandbox-image')
     os.chdir(ROOT)
-    os.execv(executable, [executable, 'build', '--if-missing', '--file',
-                         image['dockerfile'], '--tag', image['tags'][0], '.'])
+    arguments = [executable, 'build', '--if-missing', '--file',
+                 image['dockerfile'], '--tag', image['tags'][0]]
+    for name, value in image.get('args', {}).items():
+        arguments.extend(['--build-arg', f'{name}={value}'])
+    os.execv(executable, [*arguments, '.'])

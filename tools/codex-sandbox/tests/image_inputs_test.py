@@ -88,12 +88,35 @@ class ImageInputsTest(unittest.TestCase):
             self.assertIn('tools/jj-proxy/route.py', sources)
             self.assertIn('config/jj.toml', sources)
             base = SimpleNamespace(content='base', config='config', rootfs='rootfs')
-            key = lambda: owned['agent_cache_key'](1000, 1000, 'linux/amd64', base, 'a' * 40, root=root)
+            key = lambda: owned['agent_cache_key'](1000, 1000, 'linux/amd64', base, 'a' * 40, jj_image='jj@sha256:' + '1' * 64, root=root)
             for name in ('tools/jj-proxy/route.py', 'config/jj.toml'):
                 before = key()
                 with (root / name).open('a') as output:
                     output.write('\n# changed authoritative input\n')
                 self.assertNotEqual(before, key(), name)
+
+    def test_host_pin_selects_proxy_revision_and_cache_identity(self):
+        owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source in owned['source_paths'](['jj'])['jj']:
+                destination = root / source
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(['cp', str(ROOT / source), str(destination)], check=True)
+                subprocess.run(['cmp', str(ROOT / source), str(destination)], check=True)
+            config = root / 'config/mise.toml'
+            with patch.dict(owned['declaration'].__globals__, ROOT=root):
+                targets = []
+                for revision in ('a' * 40, 'b' * 40):
+                    config.write_text('[tools]\n"cargo:https://github.com/jj-vcs/jj" = '
+                                      '{version = "rev:' + revision + '"}\n')
+                    target = owned['declaration'](['jj'])['target']['jj']
+                    self.assertEqual({'JJ_REVISION': revision}, target['args'])
+                    targets.append(target)
+                self.assertNotEqual(targets[0]['tags'], targets[1]['tags'])
+                config.write_text('[tools]\n"cargo:https://github.com/jj-vcs/jj" = {version="latest"}\n')
+                with self.assertRaisesRegex(ValueError, 'exact source revision'):
+                    owned['declaration'](['jj'])
 
     def test_zulip_protocol_is_captured_and_changes_image_identity(self):
         owned_images = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))

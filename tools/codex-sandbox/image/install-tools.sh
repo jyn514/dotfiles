@@ -2,7 +2,6 @@
 
 set -eux
 
-JJ_VERSION=${JJ_VERSION:-0.42.0}
 BB_VERSION=${BB_VERSION:-1.13.219}
 GH_VERSION=${GH_VERSION:-2.76.1}
 DOCKER_VERSION=${DOCKER_VERSION:-29.8.0}
@@ -27,7 +26,6 @@ case "$(uname -m)" in
         bb_arch=amd64
         bb_sha256=9ac1fe988d7001625b30ef3e3307e67f8545505a7cb49a4aa179f578115a3e09
         gh_arch=amd64
-        jj_arch=x86_64
         docker_arch=x86_64
         docker_sha256=cc21815cf1e2efed867dc9c8b96b46ffed8ea176ffab32b0aacb54726ded8f25
         buildx_arch=amd64
@@ -38,7 +36,6 @@ case "$(uname -m)" in
         bb_arch=aarch64
         bb_sha256=e8d7a9c66c364b80627a43cb6ba5c14fb6ac7e4af114e8e5d80f97551ccdfe11
         gh_arch=arm64
-        jj_arch=aarch64
         docker_arch=aarch64
         docker_sha256=1462a696be6029bd478d7d60d7f3c31cdd15affd1178a4a278aaf4a1d1b7f8b5
         buildx_arch=arm64
@@ -65,10 +62,6 @@ curl -fsSL \
     "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" \
     | tar -xz --strip-components=2 -C /usr/local/bin \
         "gh_${GH_VERSION}_linux_${gh_arch}/bin/gh"
-curl -fsSL \
-    "https://github.com/jj-vcs/jj/releases/download/v${JJ_VERSION}/jj-v${JJ_VERSION}-${jj_arch}-unknown-linux-musl.tar.gz" \
-    | tar -xz -C /usr/local/bin
-
 typst_target="${typst_arch}-unknown-linux-musl"
 curl -fsSL \
     "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${typst_target}.tar.xz" \

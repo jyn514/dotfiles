@@ -15,6 +15,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import bake
+import owned_images
 from bake import resolve
 from docker_runtime import BuildError
 from sandbox_runtime import Image, RuntimeError
@@ -108,6 +109,30 @@ class BakeTest(unittest.TestCase):
                      'output': [{'type': 'cacheonly'}]},
             'proxy': {'context': '.', 'dockerfile': 'proxy.Dockerfile', 'tags': ['proxy:source-one'],
                       'args': {'BASE_IMAGE': 'base-context'}, 'contexts': {'base-context': 'target:base'}}}})
+
+    def test_owned_proxy_resolution_feeds_its_immutable_binary_source_to_guest_builder(self):
+        metadata = owned_images.declaration(['jj'])
+        metadata['target']['jj']['platforms'] = ['linux/arm64']
+        engine = Engine(metadata)
+        engine.provider = 'lima-docker'
+        base = Image('base@sha256:' + '2' * 64, 'base', 'base-config', 'base-rootfs')
+        engine.inspect_image = lambda _reference: base
+        builds = []
+
+        def build(tag, dockerfile, context, *, build_args):
+            builds.append((dockerfile.read_text(), build_args))
+            return Image('guest@sha256:' + '3' * 64, 'guest', 'guest-config', 'guest-rootfs')
+
+        engine.build = build
+        with mock.patch.object(owned_images, 'installed_pi_revision', return_value='a' * 40):
+            result = owned_images.resolve_agent(engine, 501, 20, base.reference)
+        self.assertEqual('guest@sha256:' + '3' * 64, result)
+        self.assertEqual(1, len(engine.builds))
+        proxy_target = engine.builds[0]['jj']
+        self.assertEqual({'JJ_REVISION': owned_images.jj_revision()}, proxy_target['args'])
+        proxy = engine.resolve_image(proxy_target['tags'][0]).reference
+        self.assertIn('JJ_IMAGE=' + proxy, builds[0][1])
+        self.assertIn('FROM ' + proxy + ' AS jj', builds[0][0])
 
     def test_warm_launch_skips_build_and_proxy_key_tracks_sources_and_actual_base(self):
         first = resolve(self.engine, self.repo, ['base', 'proxy'])

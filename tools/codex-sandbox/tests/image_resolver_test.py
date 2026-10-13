@@ -12,14 +12,14 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import image_resolver
 import owned_images
-from sandbox_runtime import Image
+from sandbox_runtime import ContainerRuntime, Image, Lima
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "resolver_protocol.py"
 
 
 class Runtime:
-    provider = "test-engine"
+    provider = "lima-docker"
 
     def __init__(self):
         self.inspected = []
@@ -54,6 +54,8 @@ class ImageResolverTest(unittest.TestCase):
         cache = Path(home) / 'image-cache'
         cache.mkdir(mode=0o700)
         self.enterContext(mock.patch('bake._cache_directory', return_value=cache))
+        self.jj_image = Image('jj@sha256:' + '9' * 64, 'jj', 'jj-config', 'jj-rootfs')
+        self.jj_resolver = self.enterContext(mock.patch('bake.resolve', return_value={'jj': self.jj_image.reference}))
 
     def test_installed_pi_commit_selects_build_argument_and_cached_image(self):
         runtime = Runtime()
@@ -80,6 +82,86 @@ class ImageResolverTest(unittest.TestCase):
         self.assertIn('PI_REVISION=' + 'b' * 40, builds[-1])
         self.assertEqual(second, owned_images.resolve_agent(runtime, 501, 20, 'base'))
         self.assertEqual(2, len(builds))
+
+    def test_guest_uses_resolved_proxy_artifact_and_invalidates_cache_when_it_changes(self):
+        runtime = Runtime()
+        images = {}
+        builds = []
+        runtime.image_if_available = images.get
+
+        def build(tag, dockerfile, context, *, build_args):
+            builds.append((build_args, dockerfile.read_text()))
+            image = Image(tag + '@sha256:' + 'd' * 64, tag, tag, 'rootfs')
+            images[tag] = image
+            return image
+
+        runtime.build = build
+        first = owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertIn('JJ_IMAGE=' + self.jj_image.reference, builds[-1][0])
+        self.assertIn('FROM ' + self.jj_image.reference + ' AS jj', builds[-1][1])
+        self.assertIn('COPY --from=jj /trusted/bin/jj /usr/local/bin/jj', builds[-1][1])
+        self.assertEqual(first, owned_images.resolve_agent(runtime, 501, 20, 'base'))
+        self.assertEqual(1, len(builds))
+        replacement = Image('jj@sha256:' + '8' * 64, 'jj-new', 'jj-new-config', 'jj-rootfs')
+        self.jj_resolver.return_value = {'jj': replacement.reference}
+        second = owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertNotEqual(first, second)
+        self.assertEqual(2, len(builds))
+        self.assertIn('JJ_IMAGE=' + replacement.reference, builds[-1][0])
+
+    def test_legacy_engines_share_owned_proxy_tag_without_docker_bake(self):
+        for runtime_type in (ContainerRuntime, Lima):
+            with self.subTest(provider=runtime_type.provider):
+                runtime = object.__new__(runtime_type)
+                images = {}
+                builds = []
+                runtime.image_if_available = images.get
+                runtime.build_platform = lambda: 'linux/arm64'
+                runtime.inspect_image = lambda reference: Image(reference, 'base', 'config', 'rootfs')
+                runtime.upstream_image = lambda reference: reference + '@sha256:' + 'e' * 64
+
+                def build(tag, dockerfile, context, *, build_args, no_cache=False):
+                    self.assertTrue(dockerfile.is_file())
+                    self.assertTrue(dockerfile.is_relative_to(context))
+                    builds.append((tag, build_args, dockerfile.read_text(), no_cache))
+                    image = Image('sha256:' + str(len(builds)) * 64, tag, tag, 'rootfs')
+                    images[tag] = image
+                    return image
+
+                runtime.build = build
+                guest = owned_images.resolve_agent(runtime, 501, 20, 'base')
+                target = owned_images.declaration(['jj'])['target']['jj']
+                self.assertEqual(target['tags'][0], builds[0][0])
+                self.assertEqual(['JJ_REVISION=' + owned_images.jj_revision()], builds[0][1])
+                proxy = images[target['tags'][0]].reference
+                self.assertIn('JJ_IMAGE=' + proxy, builds[1][1])
+                self.assertIn('FROM ' + proxy + ' AS jj', builds[1][2])
+                self.assertEqual(guest, owned_images.resolve_agent(runtime, 501, 20, 'base'))
+                self.assertEqual(2, len(builds))
+                self.jj_resolver.assert_not_called()
+                self.assertEqual(proxy, owned_images.resolve_jj(runtime))
+                owned_images.resolve_jj(runtime, operation='clean')
+                self.assertTrue(builds[-1][3])
+
+    def test_legacy_proxy_build_failure_stops_guest_composition(self):
+        runtime = ContainerRuntime()
+        runtime.image_if_available = lambda _tag: None
+        runtime.inspect_image = lambda reference: Image(reference, 'base', 'config', 'rootfs')
+        runtime.build = mock.Mock(side_effect=OSError('JJ build failed'))
+        with self.assertRaisesRegex(OSError, 'JJ build failed'):
+            owned_images.resolve_agent(runtime, 501, 20, 'base')
+        self.assertEqual(1, runtime.build.call_count)
+        self.assertIn('JJ_REVISION=' + owned_images.jj_revision(),
+                      runtime.build.call_args.kwargs['build_args'])
+        self.jj_resolver.assert_not_called()
+
+    def test_proxy_build_failure_stops_guest_composition(self):
+        runtime = Runtime()
+        runtime.build = mock.Mock()
+        self.jj_resolver.side_effect = OSError('JJ build failed')
+        with self.assertRaisesRegex(OSError, 'JJ build failed'):
+            owned_images.resolve_agent(runtime, 501, 20, 'base')
+        runtime.build.assert_not_called()
 
     def test_missing_or_invalid_pi_metadata_stops_before_engine_work(self):
         for record in (None, b'', b'main\n', b'a' * 39, b'a' * 41,
@@ -115,7 +197,7 @@ class ImageResolverTest(unittest.TestCase):
     def test_default_base_is_pulled_only_when_missing(self):
         for available in (False, True):
             with self.subTest(available=available):
-                runtime = mock.Mock()
+                runtime = mock.Mock(provider='lima-docker')
                 base = Image('sha256:' + 'a' * 64, 'base', 'config', 'rootfs')
                 local = {owned_images.DEFAULT_BASE: base} if available else {}
                 runtime.image_if_available.side_effect = lambda ref: local.get(ref)
@@ -212,7 +294,7 @@ class ImageResolverTest(unittest.TestCase):
 
     def test_agent_composition_builds_only_for_a_missing_complete_identity(self):
         runtime = type("AgentRuntime", (), {})()
-        runtime.provider = "test-engine"
+        runtime.provider = "lima-docker"
         runtime.build_platform = lambda: "linux/arm64"
         runtime.upstream_image = lambda reference: reference + "@sha256:" + "e" * 64
         runtime.inspect_image = lambda reference: Image(
@@ -231,11 +313,12 @@ class ImageResolverTest(unittest.TestCase):
             owned_images.resolve_agent(runtime, 501, 20, "base@sha256:" + "a" * 64),
         )
         self.assertEqual(1, len(built))
-        self.assertIn("BASE_IMAGE=base@sha256:", built[0][3][-1])
+        self.assertIn("BASE_IMAGE=base@sha256:" + "a" * 64, built[0][3])
+        self.assertIn("JJ_IMAGE=" + self.jj_image.reference, built[0][3])
 
     def test_agent_composition_propagates_engine_errors_without_building(self):
         runtime = type("AgentRuntime", (), {})()
-        runtime.provider = "test-engine"
+        runtime.provider = "lima-docker"
         runtime.build_platform = lambda: "linux/arm64"
         runtime.upstream_image = lambda reference: reference + "@sha256:" + "e" * 64
         runtime.inspect_image = lambda reference: Image(
