@@ -1953,6 +1953,77 @@ class CodexSandboxTest(unittest.TestCase):
         kill.assert_not_called()
         self.assertTrue(any(call[:2] == ["tmux", "respawn-pane"] for call in calls))
 
+    @unittest.skipUnless(shutil.which("tmux"), "tmux is required")
+    def test_failed_restart_preserves_registration_after_old_owner_cleanup_and_retries(self) -> None:
+        for failure in ("reset", "respawn"):
+            with self.subTest(failure=failure):
+                launcher = runpy.run_path(str(LAUNCHER))
+                socket_path = self.root / f"restart-recovery-{failure}.sock"
+                prefix = ["tmux", "-S", str(socket_path)]
+
+                def tmux(*arguments):
+                    return subprocess.run([*prefix, *arguments], check=True,
+                                          capture_output=True, text=True, timeout=10)
+
+                environment = {"HOME": str(self.home), "TMUX": f"{socket_path},0,0"}
+                try:
+                    pane = tmux("-f", "/dev/null", "new-session", "-d", "-P", "-F", "#{pane_id}",
+                                "-s", "recovery", "-c", str(self.repo), "sleep 30").stdout.strip()
+                    tmux("new-session", "-d", "-s", "keepalive", "sleep 30")
+                    state = SimpleNamespace(repository=self.repo, host_working_directory=self.repo,
+                                            codex_arguments=["--resume"])
+                    with mock.patch.dict(os.environ, {**environment, "TMUX_PANE": pane}):
+                        launcher["register_tmux_pane"](state)
+                        original = launcher["decode_tmux_registration"](state.tmux_registration)
+                        selected = self.restart_registration(pane=pane, session_id=f"recover-{failure}")
+                        saved = {**original, **{key: selected[key] for key in
+                                 ("version", "pane", "repository", "session", "cwd")}}
+                        encoded = base64.urlsafe_b64encode(json.dumps(saved).encode()).decode()
+                        tmux("set-option", "-p", "-t", pane, "@codex_sandbox_restart", encoded)
+                        real_kill = os.kill
+                        real_run = launcher["run"]
+
+                        def stop_old_owner(pid, signum):
+                            # Cleanup runs with the old owner's original generation.
+                            launcher["unregister_tmux_pane"](state)
+                            real_kill(pid, signum)
+
+                        def run(arguments, **kwargs):
+                            if failure == "respawn" and arguments[:2] == ["tmux", "respawn-pane"]:
+                                raise subprocess.CalledProcessError(1, arguments)
+                            return real_run(arguments, **kwargs)
+
+                        helper = mock.Mock()
+                        if failure == "reset":
+                            helper.side_effect = subprocess.CalledProcessError(1, ["reset"])
+                        with mock.patch.dict(launcher["main"].__globals__, helper=helper, run=run), \
+                                mock.patch.object(os, "kill", side_effect=stop_old_owner), \
+                                contextlib.redirect_stderr(io.StringIO()):
+                            self.assertEqual(1, launcher["main"](["restart-all"]))
+                        remaining = launcher["tmux_registrations"]()
+                        self.assertEqual(1, len(remaining))
+                        self.assertTrue(remaining[0]["dead"])
+                        self.assertNotEqual(original["token"], remaining[0]["token"])
+                        self.assertEqual(saved, {**{key: remaining[0][key] for key in saved},
+                                                 "token": original["token"]})
+
+                        # The actual tmux respawn accepts the saved retry record.
+                        # Substitute a harmless child rather than launching a sandbox.
+                        def resume(arguments, **kwargs):
+                            if arguments[:2] == ["tmux", "respawn-pane"]:
+                                expected = shlex.join(["cd", saved["cwd"]]) + " && " + \
+                                           shlex.join(["pi", "--session", saved["session"]])
+                                self.assertEqual(expected, arguments[-1])
+                                arguments = [*arguments[:-1], "sleep 30"]
+                            return real_run(arguments, **kwargs)
+
+                        with mock.patch.dict(launcher["main"].__globals__, helper=mock.Mock(), run=resume), \
+                                contextlib.redirect_stdout(io.StringIO()):
+                            self.assertEqual(0, launcher["main"](["restart-all"]))
+                        self.assertFalse(launcher["tmux_registrations"]()[0]["dead"])
+                finally:
+                    subprocess.run([*prefix, "kill-server"], capture_output=True, timeout=10)
+
     def test_restart_repo_leaves_other_repositories_running(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         subdirectory = self.repo / "playground"
