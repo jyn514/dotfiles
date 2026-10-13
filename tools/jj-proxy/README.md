@@ -137,6 +137,10 @@ Mutation entries take precedence over inherited inspection entries; within each 
 Unknown fields are rejected; there are no `prefix`, `kind`, or `approved_remote` fields.
 
 `[global]` defines `forbidden_options` and `forbidden_prefixes` lists. The evaluator checks options after the matched command path: exact option names are compared before `=`, while forbidden prefixes match the option name. Ordinary option and operand validation remains with the pinned Jujutsu binary.
+Both inspection and mutation requests reject caller-supplied `--ignore-working-copy` and operation selectors in every argument position.
+Forbidden selectors include `--at-operation` and `--at-op`, including attached values.
+The trusted inspection executor adds its own `--ignore-working-copy` only after request validation.
+Rebuild the proxy image and recreate the server to apply policy changes; an already-running server retains its startup policy.
 
 Allowing `git fetch` does not make its behavior configurable: the evaluator always checks approved remotes, expands an omitted remote selection, and marks the decision for fetch execution. The executor consumes that decision rather than repeating command-policy checks.
 See the [tools overview](../README.md).

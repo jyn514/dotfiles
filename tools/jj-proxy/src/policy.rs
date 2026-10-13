@@ -466,6 +466,41 @@ mod tests {
         ] { assert!(!check(args), "accepted {args:?}"); }
     }
     #[test]
+    fn rejects_caller_working_copy_controls_in_both_modes() {
+        let policy = checked_in_policy().unwrap();
+        let forbidden = [
+            vec!["--ignore-working-copy"], vec!["--ignore-working-copy=true"],
+            vec!["--at-operation", "@"], vec!["--at-operation=@"],
+            vec!["--at-op", "@"], vec!["--at-op=@"],
+        ];
+        for (inspect, command) in [
+            (true, vec!["status", "--no-pager"]),
+            (false, vec!["status", "--no-pager"]),
+            (true, vec!["op", "log", "--no-pager"]),
+            (false, vec!["op", "log", "--no-pager"]),
+            (false, vec!["commit", "-m", "ordinary change"]),
+        ] {
+            let ordinary = command.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+            assert!(evaluate(&policy, &ordinary, inspect, &HashSet::new()).is_ok());
+            for option in &forbidden {
+                // Reject controls at every argument position, also after a
+                // repository selector is stripped from the caller's request.
+                for position in 0..=command.len() {
+                    let mut argv = command.clone();
+                    argv.splice(position..position, option.iter().copied());
+                    for selector in [vec![], vec!["-R", "/src/selected"]] {
+                        let input = [selector, argv.clone()].concat()
+                            .into_iter().map(str::to_owned).collect::<Vec<_>>();
+                        let (_, extracted) = extract_repository(&input).unwrap();
+                        assert!(evaluate(&policy, &extracted, inspect, &HashSet::new()).is_err(),
+                            "accepted {input:?} in inspect={inspect}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn inspection_accepts_only_observational_commands() {
         let check = |args: &[&str]| validate_inspect(&args.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>()).is_ok();
         assert!(check(&["file", "show", "src/main.rs"]));
