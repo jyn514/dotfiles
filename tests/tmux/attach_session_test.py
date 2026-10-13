@@ -178,6 +178,26 @@ class AttachmentTests(unittest.TestCase):
         _, third_remote = self.start("100.64.0.1", name="remote4")
         self.assertEqual(self.session(third_remote), "remote4")
 
+    def test_local_agent_check_uses_live_client_source(self):
+        for source, wrapped, expected in ((None, True, 0), ("100.64.0.1", True, 1),
+                                          (None, False, 1)):
+            with self.subTest(source=source, wrapped=wrapped):
+                _, client = self.start(source, name="agent-check", wrapped=wrapped)
+                session = self.session(client)
+                pane = self.tmux("display-message", "-p", "-t", session, "#{pane_id}")
+                environment = self.environment | {
+                    "TMUX": f"{self.socket},1,0", "TMUX_PANE": pane,
+                    "SSH_CONNECTION": "stale metadata",
+                }
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "libexec/tmux/local-client.py")],
+                    env=environment, capture_output=True, check=False)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                name = next(line.split("\t")[1] for line in self.tmux(
+                    "list-clients", "-F", "#{client_pid}\t#{client_name}").splitlines()
+                    if line.split("\t")[0] == client)
+                self.tmux("detach-client", "-t", name)
+
     def test_existing_sources_survive_session_environment_overwrite(self):
         _, local = self.start(name="first")
         _, remote = self.start("100.64.0.1", command="attach-session", name="seed")

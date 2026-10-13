@@ -114,13 +114,7 @@ if [ "$kernel" = Linux ]; and [ -x /home/linuxbrew/.linuxbrew/bin/brew ]
 	. $brew_cache; or return
 end
 
-if [ -z "$SSH_AUTH_SOCK" ]
-	if [ "$kernel" = Darwin ]
-		export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
-	else
-		export SSH_AUTH_SOCK=$HOME/.1password/agent.sock
-	end
-end
+. $DOTFILES/lib/shell/ssh-agent.fish; or return
 
 if exists mise
 	set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
