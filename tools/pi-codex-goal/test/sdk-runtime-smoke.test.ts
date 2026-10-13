@@ -13,7 +13,6 @@ import {
 import {
   createAgentSession,
   DefaultResourceLoader,
-  getAgentDir,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -57,24 +56,33 @@ function assistantResponse(
   return stream;
 }
 
-test("SDK completion report includes its calling response exactly once", async () => {
+// noExtensions does not skip package resolution; the loader must share the session's in-memory settings.
+function sdkTestEnvironment(t: TestContext, settingsManager: SettingsManager) {
+  const root = mkdtempSync(join(tmpdir(), "goal-sdk-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return { cwd: root, agentDir: root, settingsManager };
+}
+
+test("SDK completion report includes its calling response exactly once", async (t) => {
+  const environment = sdkTestEnvironment(t, SettingsManager.inMemory({ compaction: { enabled: false } }));
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: false,
     credentials: new InMemoryCredentialStore(),
     modelsPath: null,
   });
   const loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     noContextFiles: true,
     noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
     extensionFactories: [goalExtension],
   });
   await loader.reload();
   modelRuntime.registerProvider("sdk-smoke", { apiKey: "test" });
   const { session } = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     model: {
       provider: "sdk-smoke",
       id: "completion",
@@ -90,8 +98,7 @@ test("SDK completion report includes its calling response exactly once", async (
     modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(process.cwd()),
-    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+    sessionManager: SessionManager.inMemory(environment.cwd),
   });
   let requests = 0;
   let providerPrompt = "";
@@ -153,17 +160,22 @@ function goalIdFromToolResult(result: unknown): string {
   return goalId;
 }
 
-test("SDK runtime uses Pi settings for the sole persisted threshold compaction", async () => {
+test("SDK runtime uses Pi settings for the sole persisted threshold compaction", async (t) => {
+  const environment = sdkTestEnvironment(t, SettingsManager.inMemory({
+    compaction: { enabled: true, reserveTokens: 16_834, keepRecentTokens: 40_000 },
+  }));
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: false,
     credentials: new InMemoryCredentialStore(),
     modelsPath: null,
   });
   const loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     noContextFiles: true,
     noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
     extensionFactories: [goalExtension],
   });
   await loader.reload();
@@ -184,18 +196,14 @@ test("SDK runtime uses Pi settings for the sole persisted threshold compaction",
   });
   const model = modelRuntime.getModel("sdk-smoke", "compaction");
   assert.ok(model);
-  const sessionManager = SessionManager.inMemory(process.cwd());
+  const sessionManager = SessionManager.inMemory(environment.cwd);
   const { session } = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     model,
     modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
     sessionManager,
-    settingsManager: SettingsManager.inMemory({
-      compaction: { enabled: true, reserveTokens: 16_834, keepRecentTokens: 40_000 },
-    }),
   });
 
   let nextContextTokens = 247_783;
@@ -222,17 +230,20 @@ test("SDK runtime uses Pi settings for the sole persisted threshold compaction",
   }
 });
 
-test("SDK runtime emits a continuation after willRetry compaction when no retry agent starts", async () => {
+test("SDK runtime emits a continuation after willRetry compaction when no retry agent starts", async (t) => {
+  const environment = sdkTestEnvironment(t, SettingsManager.inMemory());
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: false,
     credentials: new InMemoryCredentialStore(),
     modelsPath: null,
   });
   const loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     noContextFiles: true,
     noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
     extensionFactories: [goalExtension],
   });
   await loader.reload();
@@ -250,14 +261,12 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
     maxTokens: 100,
   };
   const { session } = await createAgentSession({
-    cwd: process.cwd(),
-    agentDir: getAgentDir(),
+    ...environment,
     model,
     modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(process.cwd()),
-    settingsManager: SettingsManager.inMemory(),
+    sessionManager: SessionManager.inMemory(environment.cwd),
   });
 
   try {
@@ -326,27 +335,25 @@ async function withinSdkEditTest<T>(operation: Promise<T>, label: string): Promi
 }
 
 async function createSdkEditSession(t: TestContext, edit: (prefill: string | undefined) => string | undefined) {
-  const root = mkdtempSync(join(tmpdir(), "goal-edit-sdk-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const environment = sdkTestEnvironment(t, SettingsManager.inMemory({ compaction: { enabled: false } }));
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: false,
     credentials: new InMemoryCredentialStore(),
     modelsPath: null,
   });
   const loader = new DefaultResourceLoader({
-    cwd: root,
-    agentDir: root,
-    settingsManager,
+    ...environment,
     noContextFiles: true,
     noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
     extensionFactories: [goalExtension],
   });
   await loader.reload();
   modelRuntime.registerProvider("sdk-smoke", { apiKey: "test" });
   const { session } = await createAgentSession({
-    cwd: root,
-    agentDir: root,
+    ...environment,
     model: {
       provider: "sdk-smoke", id: "edit", name: "SDK Edit Smoke",
       api: "openai-completions", baseUrl: "http://localhost", reasoning: false,
@@ -356,8 +363,7 @@ async function createSdkEditSession(t: TestContext, edit: (prefill: string | und
     modelRuntime,
     noTools: "builtin",
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(root),
-    settingsManager,
+    sessionManager: SessionManager.inMemory(environment.cwd),
   });
   t.after(() => session.dispose());
   const runner = session.extensionRunner;
