@@ -93,6 +93,8 @@ Do not turn a historical decision into current policy without verifying that it 
 ## Verify
 
 - Check Markdown link targets, active-page reachability, and whether each archive root is reachable from active reference navigation
+- Review prose references such as "the command above", "below", and "the previous section" after moving content.
+  Replace references that no longer identify the intended procedure with an explicit command or link.
 - Search repository-wide for stale paths and old names;
   distinguish intentional former-path provenance from live stale references
 - Compare moved or split pages with the prior revision;
