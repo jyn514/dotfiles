@@ -124,6 +124,21 @@ it does not identify editors. Plain Page Up enters tmux history only when both
 values are zero. Alt+Page Up/Down switches sessions even in the alternate screen,
 but preserves tmux pane modes. See [tmux.conf](tmux.conf) for the bindings.
 
+To run compound tmux command text, use `source-file -` to parse standard input.
+Passing the whole command as one CLI argument does not parse it as configuration:
+
+```sh
+tmux source-file - <<'TMUX'
+if-shell -F '#{>:#{session_windows},1}' {
+  display-message -p 'multiple windows'
+} {
+  display-message -p 'one window'
+}
+TMUX
+```
+
+Use an isolated server for probes that move panes or otherwise change session state.
+
 ## Keybinding tests
 
 Run from the repository root:
