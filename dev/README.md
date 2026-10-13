@@ -136,6 +136,16 @@ or resolves mise shims before changing HOME. Failed resolution stops the run bef
 a child starts. Repository-local exclusions keep dependencies, notes, test caches,
 and editor sessions untracked even when private HOME hides global ignore rules.
 
+Inside an agent sandbox, invoke the Docker wrapper by its absolute path when using `dev/test-environment`:
+
+```sh
+dev/test-environment /libexec/sandbox-wrappers/docker info
+```
+
+Resolving real tools can prepend their directory to PATH and select the private Docker binary instead of its sandbox wrapper.
+The Docker wrapper configures the gateway's SSH identity and pinned host key; bypassing it can fail with `Host key verification failed`.
+Use the same absolute path for isolated Docker builds and probes.
+
 An explicit `PI_PACKAGE_DIR` takes precedence. Otherwise, the wrapper discovers the
 installed Pi SDK under the original HOME before replacing HOME, so tests can
 read the installed SDK without loading personal settings or using its caches.
