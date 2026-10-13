@@ -2,11 +2,11 @@
 set -eu
 
 if [ "${1:-}" = --help ] && [ "$#" -eq 1 ]; then
-	printf '%s\n' 'usage: mosh-agent HOST'
+	printf '%s\n' 'usage: mosh-agent HOST [COMMAND...]'
 	exit 0
 fi
-if [ "$#" -ne 1 ]; then
-	printf '%s\n' 'usage: mosh-agent HOST' >&2
+if [ "$#" -eq 0 ]; then
+	printf '%s\n' 'usage: mosh-agent HOST [COMMAND...]' >&2
 	exit 2
 fi
 host=$1
@@ -62,7 +62,7 @@ AUTOSSH_GATETIME=0 autossh -M 0 -N -T \
 	-R "$remote_socket:$SSH_AUTH_SOCK" "$host" </dev/null &
 tunnel_pid=$!
 # Explicit stdin preserves the terminal; wait lets shell traps run immediately.
-mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$host" <&0 &
+mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$@" <&0 &
 mosh_pid=$!
 result=0
 wait "$mosh_pid" || result=$?

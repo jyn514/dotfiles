@@ -30,6 +30,8 @@ if name == 'native-ssh':
     sys.exit(subprocess.run(['/bin/sh', '-c', sys.argv[-1]], env=remote_environment).returncode)
 if name == 'mosh-server':
     (directory / 'remote-agent').write_text(os.environ.get('SSH_AUTH_SOCK', ''))
+    (directory / 'remote-command').write_text(json.dumps(
+        sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []))
     print('MOSH CONNECT 60000 AAAAAAAAAAAAAAAAAAAAAA')
     sys.exit(0)
 if name == 'native-client':

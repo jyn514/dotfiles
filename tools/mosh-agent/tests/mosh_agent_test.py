@@ -91,7 +91,7 @@ class MoshAgentTest(unittest.TestCase):
                 self.assertEqual(self.events(), [])
 
     def test_invalid_arguments_start_no_children(self):
-        for arguments in ((), ('-option',), ('devbox', 'extra-argument')):
+        for arguments in ((), ('-option',)):
             with self.subTest(arguments=arguments):
                 result = self.run_wrapper(*arguments)
                 self.assertEqual(result.returncode, 2)
@@ -117,16 +117,26 @@ class MoshAgentTest(unittest.TestCase):
         self.assertEqual(result.returncode, 255)
         self.assertEqual(self.events(), [])
 
+    def test_forwards_original_arguments_without_splitting_or_expansion(self):
+        original = ['devbox', 'tmux', 'new-session', 'name with spaces', '', '$HOME', '*', "it's quoted"]
+        result = self.run_wrapper(*original)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = next(event[3] for event in self.events() if event[:2] == ['mosh', 'started'])
+        self.assertEqual(arguments[1:], original)
+        self.assert_stopped()
+
     @unittest.skipUnless(NATIVE_MOSH, 'installed mosh is required for the bootstrap consumer check')
     def test_real_mosh_sets_only_its_remote_session_agent(self):
         self.environment['NATIVE_MOSH'] = NATIVE_MOSH
-        result = self.run_wrapper('localhost')
+        command = ['tmux', 'new-session', 'name with spaces', '', '$HOME', '*', "it's quoted"]
+        result = self.run_wrapper('localhost', *command)
         self.assertEqual(result.returncode, 0, result.stderr)
         arguments = next(event[3] for event in self.events() if event[:2] == ['autossh', 'started'])
         remote_socket = arguments[arguments.index('-R') + 1].split(':', 1)[0]
         self.assertEqual((self.directory / 'remote-agent').read_text(),
             remote_socket)
         self.assertEqual(self.environment['SSH_AUTH_SOCK'], str(self.directory / 'local agent.sock'))
+        self.assertEqual(json.loads((self.directory / 'remote-command').read_text()), command)
 
 
 if __name__ == '__main__':

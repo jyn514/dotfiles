@@ -1,7 +1,7 @@
 # Agent forwarding alongside mosh
 
 Mosh closes its bootstrap SSH connection, so normal agent forwarding disappears before the terminal session starts.
-`mosh-agent HOST` keeps a separate SSH connection open for the lifetime of mosh and configures the remote session's agent automatically.
+`mosh-agent HOST [COMMAND...]` keeps a separate SSH connection open for the lifetime of mosh and configures the remote session's agent automatically.
 It requires POSIX sh, OpenSSH with Unix socket forwarding, autossh, and mosh on the local machine.
 Only use it with a trusted remote account: that account can use your agent while the tunnel is connected.
 
@@ -26,6 +26,7 @@ Run this from the machine with your agent:
 
 ```sh
 mosh-agent devbox
+mosh-agent devbox tmux new-session -A -s work
 ```
 
 Host aliases and authentication use the normal SSH configuration.
@@ -38,7 +39,10 @@ Existing tmux panes keep their old environment; set `SSH_AUTH_SOCK` to this path
 The local agent must be available through `SSH_AUTH_SOCK`; an `IdentityAgent` setting alone does not select the socket being forwarded.
 Use one wrapper per remote account at a time, including across laptops and host aliases.
 A second tunnel would replace the first tunnel's socket.
-Mosh options and remote command arguments are deliberately outside this initial interface.
+HOST must be the first argument.
+The wrapper passes the original argument list to mosh unchanged, after its agent environment option.
+Remote commands and their arguments, including spaces and empty arguments, retain their boundaries.
+The wrapper does not parse mosh options; mosh decides how to interpret arguments after HOST.
 
 ## Design
 
@@ -68,7 +72,7 @@ It does not change remote configuration, install dependencies, or manage tmux.
 
 Run `dev/test-environment python3 tools/mosh-agent/tests/mosh_agent_test.py` from the checkout.
 These tests exercise the executable with disposable command fixtures: prerequisites, remote discovery, child ownership, exit status, and termination.
-When mosh is installed, a native bootstrap test verifies its `--server` command sets the remote environment using disposable SSH, server, and client fixtures.
+When mosh is installed, a native bootstrap test verifies its `--server` command sets the remote environment and preserves remote command arguments using disposable SSH, server, and client fixtures.
 They are discovered by the repository's normal pytest configuration.
 Shellcheck validates the shell wrapper.
 Real acceptance requires starting the wrapper from the local agent machine, checking `ssh-add -l` remotely, reconnecting the network, and checking again from the same tmux pane.
