@@ -79,6 +79,53 @@ class MisePythonScopeTests(unittest.TestCase):
         # A completed task must not leave Python active for subsequent commands.
         self.assert_report(self.run_mise("exec", "--", "python", "-c", REPORT), self.system, [])
 
+    def test_fresh_shells_remove_stale_python_shims_and_keep_managed_tools(self) -> None:
+        home = self.directory / "home"
+        native_bin = home / ".local/bin"
+        native_bin.mkdir(parents=True)
+        native_python = native_bin / "python3"
+        native_python.symlink_to(sys.executable)
+        (home / ".profile").symlink_to(ROOT / "config/profile")
+        shims = home / ".local/share/mise/shims"
+        self.install_wrapper(shims / "python3")
+        node_version = tomllib.loads((self.directory / "mise.lock").read_text())["tools"]["node"][0]["version"]
+        node_bin = self.data / "installs/node" / node_version / "bin"
+        node_bin.mkdir(parents=True)
+        (node_bin / "node").symlink_to(sys.executable)
+        config = tomllib.loads(self.config.read_text())
+        environment = self.env | {
+            "HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+            "SSH_AUTH_SOCK": "present", "TERM": "dumb",
+            "MISE_DISABLE_TOOLS": ",".join(tool for tool in config["tools"] if tool not in ("python", "node")),
+        }
+        for shell in ("sh", "bash", "zsh", "fish"):
+            executable = shutil.which(shell)
+            if executable is None:
+                continue
+            if shell == "fish":
+                command = ['-c', 'source "$PROFILE_FISH"; or exit; command -s python3; command -s node']
+            else:
+                command = ['-c', '. "$HOME/.profile" || exit; command -v python3; command -v node']
+            native_resolution = None
+            for inherited_shims in (False, True):
+                path = os.pathsep.join((str(Path(MISE).parent), "/usr/bin", "/bin"))
+                if inherited_shims:
+                    path = os.pathsep.join((str(shims), path, str(shims)))
+                with self.subTest(shell=shell, inherited_shims=inherited_shims):
+                    result = subprocess.run(
+                        [executable, *command], cwd=self.directory,
+                        env=environment | {"PROFILE_FISH": str(ROOT / "config/config.fish"), "PATH": path},
+                        text=True, capture_output=True, timeout=30,
+                    )
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    resolutions = result.stdout.splitlines()
+                    self.assertEqual(2, len(resolutions))
+                    self.assertNotIn(str(shims), resolutions[0])
+                    self.assertNotIn(str(self.data), resolutions[0])
+                    if native_resolution is None:
+                        native_resolution = resolutions[0]
+                    self.assertEqual([native_resolution, str(node_bin / "node")], resolutions)
+
     def test_pi_install_selects_bootstrap_python_and_preserves_callers_directory(self) -> None:
         installer = self.directory / "libexec/setup/install_pi.py"
         installer.parent.mkdir(parents=True)

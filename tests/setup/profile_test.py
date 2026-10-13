@@ -63,10 +63,6 @@ class ProfileContractTests(unittest.TestCase):
             profile.index('remove_path "$HOME/.local/share/mise/shims"'),
             profile.index("mise_activation=$(mise activate bash) || {"),
         )
-        self.assertGreater(
-            profile.index('add_path "$DOTFILES/bin"', profile.index("if exists mise; then")),
-            profile.index('eval "$mise_activation" || {'),
-        )
         self.assertLess(
             profile.index('add_path "$DOTFILES/bin"'),
             profile.index('case "$-" in'),
@@ -80,7 +76,7 @@ class ProfileContractTests(unittest.TestCase):
             fish.index("if not status --is-interactive"),
         )
 
-    def test_mise_shims_are_added_after_linuxbrew(self) -> None:
+    def test_native_paths_are_configured_after_linuxbrew(self) -> None:
         profile = (ROOT / "config/profile").read_text()
 
         self.assertLess(
@@ -475,7 +471,7 @@ class ProfileContractTests(unittest.TestCase):
             env = os.environ.copy()
             env.update(
                 HOME=str(home),
-                PATH=f"{local_bin}:/usr/bin:{local_bin}",
+                PATH=f"{mise_shims}:{local_bin}:/usr/bin:{mise_shims}:{local_bin}",
                 SSH_AUTH_SOCK="",
             )
 
@@ -496,14 +492,35 @@ class ProfileContractTests(unittest.TestCase):
             paths = result.stdout.strip().split(":")
             expected_prefix = [
                 str(ROOT / "bin"),
-                str(mise_shims),
                 str(local_bin),
                 str(cargo_bin),
             ]
             self.assertEqual(expected_prefix, paths[: len(expected_prefix)])
             self.assertEqual(1, paths.count(str(local_bin)))
             self.assertEqual(1, paths.count(str(cargo_bin)))
-            self.assertEqual(1, paths.count(str(mise_shims)))
+            self.assertNotIn(str(mise_shims), paths)
+
+    def test_noninteractive_profile_evaluates_only_successful_mise_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            binaries = home / ".local/bin"
+            binaries.mkdir(parents=True)
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            (binaries / "mise").symlink_to(ROOT / "tests/setup/fixtures/mise_environment.sh")
+            for exit_status, applied in ((0, "yes"), (37, "unset")):
+                with self.subTest(exit_status=exit_status):
+                    result = subprocess.run(
+                        ["/bin/sh", "-c", '. "$HOME/.profile"; profile_status=$?; '
+                         'printf "%s:%s:%s\\n" "$profile_status" '
+                         '"${DOTFILES_MISE_ENV_APPLIED-unset}" "${mise_environment-unset}"'],
+                        cwd=ROOT,
+                        env=os.environ | {"HOME": str(home), "PATH": "/usr/bin:/bin",
+                                          "SSH_AUTH_SOCK": "present",
+                                          "DOTFILES_MISE_ENV_EXIT": str(exit_status)},
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(f"{exit_status}:{applied}:unset\n", result.stdout)
 
     def test_profile_does_not_fabricate_dotfiles_when_profile_resolution_fails(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -576,7 +593,7 @@ class ProfileContractTests(unittest.TestCase):
             (home / ".profile").symlink_to(ROOT / "config/profile")
             (directory / "literal-a").touch()
             env = os.environ.copy()
-            env.update(HOME=str(home), SSH_AUTH_SOCK="")
+            env.update(HOME=str(home), SSH_AUTH_SOCK="", PATH="/usr/bin:/bin")
 
             result = subprocess.run(
                 [

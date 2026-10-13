@@ -62,6 +62,11 @@ remove_path () {
 	[ -z "$restore_glob" ] || set +f
 }
 
+# Task-scoped installations still leave global shims behind. They must not
+# shadow native commands in either interactive or non-interactive shells.
+remove_path "$HOME/.local/share/mise/shims"
+unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
+
 add_path_if_present() {
 	if [ -d "$1" ]; then
 		add_path "$1"
@@ -117,12 +122,16 @@ add_path "$DOTFILES/bin"
 
 case "$-" in
 	*i*) ;;
-	*)	return 0;;
+	*)	if exists mise; then
+			mise_environment=$(MISE_AUTO_INSTALL=0 mise env --shell bash) || { set -- "$?"; unset mise_environment; return "$1"; }
+			eval "$mise_environment" || { set -- "$?"; unset mise_environment; return "$1"; }
+			unset mise_environment
+			add_path "$DOTFILES/bin"
+		fi
+		return 0;;
 esac
 
 if exists mise; then
-	unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
-	remove_path "$HOME/.local/share/mise/shims"
 	if [ -n "${BASH_VERSION:-}" ]; then
 		mise_activation=$(mise activate bash) || { set -- "$?"; unset mise_activation; return "$1"; }
 	elif [ -n "${ZSH_VERSION:-}" ]; then

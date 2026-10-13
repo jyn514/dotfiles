@@ -50,6 +50,13 @@ function source_init
 	or return
 end
 
+while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
+	set --erase PATH[$shim_index]
+end
+while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $fish_user_paths)
+	set --erase fish_user_paths[$shim_index]
+end
+
 function refresh-fish-cache
 	set -l cache_arguments $argv
 	set -l destination
@@ -118,12 +125,6 @@ end
 
 if exists mise
 	set --erase MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH
-	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $PATH)
-		set --erase PATH[$shim_index]
-	end
-	while set --local shim_index (contains --index -- "$HOME/.local/share/mise/shims" $fish_user_paths)
-		set --erase fish_user_paths[$shim_index]
-	end
 	set --local clean_path
 	for path_entry in $PATH
 		contains -- $path_entry $clean_path; or set --append clean_path $path_entry
