@@ -2452,10 +2452,25 @@ def cleanup(state: State) -> bool:
             except (OSError, LauncherError) as error:
                 print(f"warning: gateway recovery state could not be persisted: {error}", file=sys.stderr)
     timing("gateway")
-    keep_scratch = (isinstance(OUTER_RUNTIME, VMRuntime)
-                    and (not all([*container_results, *network_results])
-                         or bool(gateway_result and gateway_result.remaining)
-                         or bool(keychain_result and keychain_result.remaining)))
+    proxy_cleanup_succeeded = True
+    if state.proxy_lock is not None:
+        unpublished_state = (state.proxy_state
+                             if state.proxy_lock.coordination is not None else None)
+        try:
+            state.proxy_lock.finish(lambda: proxy_module().reset_session(
+                proxy_module().runtime_directory(state.repository),
+                unpublished_state=unpublished_state,
+            ))
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, proxy_module().ConfigError) as error:
+            proxy_cleanup_succeeded = False
+            print(f"warning: Shared proxy cleanup failed; recovery metadata retained: {error}",
+                  file=sys.stderr)
+    timing("shared proxies")
+    keep_scratch = (not proxy_cleanup_succeeded
+                    or (isinstance(OUTER_RUNTIME, VMRuntime)
+                        and (not all([*container_results, *network_results])
+                             or bool(gateway_result and gateway_result.remaining)
+                             or bool(keychain_result and keychain_result.remaining))))
     if keep_scratch:
         state.recovery_record = temporary_file()
         recovery = {"runtime": runtime_identity(OUTER_RUNTIME),
@@ -2464,7 +2479,7 @@ def cleanup(state: State) -> bool:
             "skills": str(state.skills_tmp), "agent-state": str(state.pi_agent_tmp),
             "shared-state": str(state.proxy_state)}
         state.recovery_record.write_text(json.dumps(recovery))
-        print(f"Lima cleanup incomplete; recovery state retained at {state.recovery_record}", file=sys.stderr)
+        print(f"Sandbox cleanup incomplete; recovery state retained at {state.recovery_record}", file=sys.stderr)
     timing("networks")
     if state.skills_tmp is not None and not keep_scratch:
         removal_started = time.monotonic()
@@ -2482,8 +2497,6 @@ def cleanup(state: State) -> bool:
             elapsed = int(time.monotonic() - removal_started)
             print(f"warning: Cleaning up private Pi state {state.pi_agent_tmp} failed after {elapsed}s.", file=sys.stderr)
     timing("Pi state")
-    if state.proxy_lock is not None:
-        state.proxy_lock.close()
     for path in (
         state.proxy_state, state.proxy_args, state.manifest,
         state.prepared_images, getattr(state, "cd_request", None),
@@ -2494,6 +2507,7 @@ def cleanup(state: State) -> bool:
     if os.environ.get("CODEX_SANDBOX_TIMING"):
         print(f"Sandbox cleanup total: {time.monotonic() - cleanup_started:.2f}s", file=sys.stderr)
     state.cleanup_succeeded = (all([*container_results, *network_results])
+                               and proxy_cleanup_succeeded
                                and not bool(gateway_result and gateway_result.remaining)
                                and not bool(keychain_result and keychain_result.remaining))
     return state.cleanup_succeeded

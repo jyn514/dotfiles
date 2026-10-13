@@ -2,14 +2,17 @@
 
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from sandbox_runtime import image_runtime, runtime_identity
+from sandbox_runtime import image_runtime, runtime_identity, resource_exists, ResourceKind
+from proxy_session import SessionLock
 
 spec = importlib.util.spec_from_file_location("proxies", ROOT / "sandbox-proxies.py")
 proxies = importlib.util.module_from_spec(spec)
@@ -35,8 +38,25 @@ def exercise(runtime, base):
         else:
             raise AssertionError("native proxy accepted another repository")
         proxies.OUTER_RUNTIME = None  # Cleanup must not consult the caller's default.
-        proxies.stop_state(state)
-        print(f"{runtime.provider}: native proxy identity and recorded-owner container/volume cleanup passed.")
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory)
+            metadata = session / "session.json"
+            metadata.write_text(json.dumps({"version": 2, "state": state}))
+            first = SessionLock(session)
+            first.release_coordination()
+            second = SessionLock(session)
+            try:
+                first.finish(lambda: proxies.reset_session(session))
+                assert metadata.exists(), "first exit removed shared recovery authority"
+                assert runtime.inspect_container(name)["State"]["Running"]
+                second.finish(lambda: proxies.reset_session(session))
+                assert not metadata.exists(), "final exit retained recovery authority"
+                for kind in (ResourceKind.CONTAINER, ResourceKind.VOLUME):
+                    assert not resource_exists(runtime, kind, name), f"final exit retained {kind.value}"
+            finally:
+                first.close()
+                second.close()
+        print(f"{runtime.provider}: native identity, shared attachment, and final-holder cleanup passed.")
     finally:
         runtime.run(["rm", "--force", name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         runtime.run(["volume", "rm", name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -44,7 +64,7 @@ def exercise(runtime, base):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=("lima",), required=True)
+    parser.add_argument("--provider", choices=("lima", "lima-docker"), required=True)
     parser.add_argument("--state", type=Path)
     parser.add_argument("--base", required=True)
     args = parser.parse_args()

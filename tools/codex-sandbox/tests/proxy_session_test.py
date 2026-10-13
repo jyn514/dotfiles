@@ -78,6 +78,53 @@ class SessionLockTest(unittest.TestCase):
         self.assertEqual(first.wait(timeout=2), 0)
         self.assertEqual(self.read(third), 'new')
 
+    def test_only_final_holder_cleans_services(self):
+        first = self.start()
+        self.assertEqual(self.read(first), 'new')
+        self.send(first, 'publish')
+        self.assertEqual(self.read(first), 'published')
+        second = self.start()
+        self.assertEqual(self.read(second), 'shared')
+        self.send(first, 'finish')
+        self.assertEqual(self.read(first), 'retained')
+        self.assertEqual(first.wait(timeout=2), 0)
+        self.send(second, 'finish')
+        self.assertEqual(self.read(second), 'cleaned')
+        self.assertEqual(second.wait(timeout=2), 0)
+
+    def test_failed_unpublished_cleanup_releases_locks_for_recovery(self):
+        first = self.start()
+        self.assertEqual(self.read(first), 'new')
+        self.send(first, 'finish-fail')
+        self.assertEqual(self.read(first), 'cleanup-failed')
+        self.assertEqual(first.wait(timeout=2), 0)
+        second = self.start()
+        self.assertEqual(self.read(second), 'new')
+        self.send(second, 'finish')
+        self.assertEqual(self.read(second), 'cleaned')
+
+    def test_exit_does_not_deadlock_reset_waiting_for_lifetime_lock(self):
+        first = self.start()
+        self.assertEqual(self.read(first), 'new')
+        self.send(first, 'publish')
+        self.assertEqual(self.read(first), 'published')
+        with (self.directory / 'coordination.lock').open('a+b') as coordination:
+            fcntl.flock(coordination, fcntl.LOCK_EX)
+            self.send(first, 'finish')
+            with (self.directory / 'session.lock').open('a+b') as session:
+                # Reset can acquire lifetime exclusion while finish waits for
+                # coordination, then release both locks without a cycle.
+                import time
+                deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        fcntl.flock(session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        self.assertLess(time.monotonic(), deadline, 'exit kept its lifetime lock')
+                        time.sleep(0.01)
+        self.assertEqual(self.read(first), 'cleaned')
+
     def test_abrupt_exit_releases_lock_even_when_exec_child_survives(self):
         first = self.start()
         self.assertEqual(self.read(first), 'new')

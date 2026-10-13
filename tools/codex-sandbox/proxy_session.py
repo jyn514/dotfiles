@@ -8,6 +8,7 @@ class SessionLock:
     """Acquire on the signal-owning thread so a contended launch can be cancelled."""
 
     def __init__(self, directory: Path):
+        self.directory = directory
         self.coordination = None
         self.session = None
         try:
@@ -33,6 +34,26 @@ class SessionLock:
         if self.coordination is not None:
             self.coordination.close()
             self.coordination = None
+
+    def finish(self, cleanup):
+        """Remove shared services only with exclusive publication and lifetime ownership."""
+        try:
+            # Reset may hold coordination while waiting for lifetime holders.
+            # Drop our lifetime lock first so exit cannot deadlock with reset.
+            if self.session is not None:
+                self.session.close()
+                self.session = None
+            if self.coordination is None:
+                self.coordination = (self.directory / 'coordination.lock').open('a+b')
+                fcntl.flock(self.coordination, fcntl.LOCK_EX)
+            self.session = (self.directory / 'session.lock').open('a+b')
+            try:
+                fcntl.flock(self.session, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            cleanup()
+        finally:
+            self.close()
 
     def close(self):
         # On failed first publication, release lifetime before coordination so

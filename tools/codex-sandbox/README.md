@@ -412,6 +412,9 @@ by Pi's retry classifier; check Pi's retry outcome before restarting the sandbox
 
 The launcher preserves the agent's exit status and attempts to remove its containers, relays, networks, temporary files, and—after the final attached session exits—shared proxies.
 `SIGINT`, `SIGHUP`, and `SIGTERM` also trigger cleanup.
+Shared proxies remain available while any attached session is active.
+The final exiting launcher removes them under exclusive session locks; a later launch creates new proxies.
+If removal fails, repository recovery metadata survives for the next launch or reset, including failures before publication.
 
 The first session serializes proxy creation and publication.
 Joining sessions validate the published proxies concurrently while holding lifetime locks that prevent reset or replacement;

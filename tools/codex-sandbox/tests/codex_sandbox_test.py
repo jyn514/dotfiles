@@ -371,6 +371,65 @@ class ContainerRepositoryPathTest(unittest.TestCase):
             self.assertEqual(Path("/src/repository"), function(home, repository))
 
 
+class SharedProxyCleanupTest(unittest.TestCase):
+    def repository(self, directory):
+        root = Path(directory) / "repo"
+        subprocess.run(["jj", "git", "init", str(root)], check=True, stdout=subprocess.DEVNULL)
+        return root
+
+    def test_launcher_removes_shared_services_after_last_attachment(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        proxies = launcher["proxy_module"]()
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
+            root = self.repository(directory)
+            runtime = proxies.runtime_directory(root)
+            recovery = {"runtime": {"provider": "container"}, "proxies": []}
+            metadata = runtime / "session.json"
+            metadata.write_text(json.dumps({"version": 2, "state": recovery}))
+            first = launcher["new_state"]([])
+            first.repository = root
+            first.proxy_lock = launcher["SessionLock"](runtime)
+            first.proxy_lock.release_coordination()
+            second = launcher["new_state"]([])
+            second.repository = root
+            second.proxy_lock = launcher["SessionLock"](runtime)
+            with mock.patch.object(proxies, "stop_state") as stop:
+                self.assertTrue(launcher["cleanup"](first))
+                stop.assert_not_called()
+                self.assertTrue(metadata.exists())
+                self.assertTrue(launcher["cleanup"](second))
+                stop.assert_called_once_with(recovery)
+                self.assertFalse(metadata.exists())
+                # Cleanup is idempotent even when invoked again by finalization.
+                self.assertTrue(launcher["cleanup"](second))
+                self.assertEqual(1, stop.call_count)
+
+    def test_launcher_retains_unpublished_recovery_on_removal_failure(self):
+        launcher = runpy.run_path(str(LAUNCHER))
+        proxies = launcher["proxy_module"]()
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, HOME=directory):
+            root = self.repository(directory)
+            runtime = proxies.runtime_directory(root)
+            state = launcher["new_state"]([])
+            state.repository = root
+            state.proxy_lock = launcher["SessionLock"](runtime)
+            state.proxy_state = root / "unpublished.json"
+            recovery = {"runtime": {"provider": "container"}, "proxies": []}
+            state.proxy_state.write_text(json.dumps(recovery))
+            with mock.patch.object(proxies, "stop_state", side_effect=proxies.ConfigError("busy")):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertFalse(launcher["cleanup"](state))
+            self.assertIn("Shared proxy cleanup failed", stderr.getvalue())
+            metadata = runtime / "session.json"
+            self.assertEqual(recovery, proxies.session_state(json.loads(metadata.read_text())))
+            self.assertTrue(state.proxy_state.exists())
+            with mock.patch.object(proxies, "stop_state") as stop:
+                self.assertEqual(0, proxies.reset_main(SimpleNamespace(repo=str(root))))
+            stop.assert_called_once_with(recovery)
+            self.assertFalse(metadata.exists())
+
+
 class ProxyHelperTest(unittest.TestCase):
     def test_short_calls_do_not_spawn_an_interpreter_and_preserve_failure(self) -> None:
         helper = runpy.run_path(str(LAUNCHER))["helper"]
@@ -1645,7 +1704,7 @@ class CodexSandboxTest(unittest.TestCase):
                     output=$(value_for --output "$@")
                     printf '%s\n' '--env' 'SANDBOX_PROXY_DIR=/run/sandbox-proxies' > "$output"
                     ;;
-                publish|monitor) ;;
+                publish|monitor|stop) ;;
                 *) exit 91 ;;
             esac
         """)

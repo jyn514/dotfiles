@@ -129,6 +129,7 @@ and native image identity. Displayed image names alone do not establish identity
 Launcher cleanup also checks the pinned VM identity and relay/volume creator
 labels before deletion. Failed cleanup retains recovery metadata.
 
-`tests/session_owner_integration.py --provider lima --base IMAGE` checks native
-proxy identity and recorded-owner cleanup using owned resources. The disposable
-Lima host gate runs the same checks before and after reboot.
+`tests/session_owner_integration.py --provider lima --base IMAGE` checks native proxy identity and final-holder cleanup using owned resources.
+It verifies that an earlier attachment's exit leaves the proxy running and the final exit removes its container, volume, and recovery record.
+Use `--provider lima-docker --state STATE` to run the same probe against an existing Docker VM with an already installed image.
+The disposable Lima host check runs the same checks before and after reboot.

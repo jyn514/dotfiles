@@ -28,5 +28,18 @@ try:
             print(child.pid, flush=True)
         elif command == 'close':
             break
+        elif command == 'finish':
+            cleaned = []
+            lock.finish(lambda: cleaned.append(True))
+            print('cleaned' if cleaned else 'retained', flush=True)
+            break
+        elif command == 'finish-fail':
+            def fail():
+                raise OSError('removal failed')
+            try:
+                lock.finish(fail)
+            except OSError:
+                print('cleanup-failed', flush=True)
+            break
 finally:
     lock.close()

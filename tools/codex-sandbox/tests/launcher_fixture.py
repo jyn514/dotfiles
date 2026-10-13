@@ -18,6 +18,21 @@ def helper(*arguments: str, check: bool = True):
 
 
 launcher["main"].__globals__["helper"] = helper
+
+def reset_session(_runtime, *, unpublished_state=None):
+    helper("stop", *(["--state", str(unpublished_state)] if unpublished_state is not None else []))
+
+# Startup and removal use the same fake service boundary. Real metadata and
+# native session locking are covered by the cleanup and session-lock suites.
+native_proxy_module = launcher["proxy_module"]
+
+def proxy_module():
+    module = native_proxy_module()
+    module.reset_session = reset_session
+    return module
+
+proxy_module.cache_clear = native_proxy_module.cache_clear
+launcher["main"].__globals__["proxy_module"] = proxy_module
 acquire = launcher['acquire_lock']
 
 def acquire_lock(state):

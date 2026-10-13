@@ -543,31 +543,46 @@ def reset_main(args: argparse.Namespace, *, wait: bool = False) -> int:
                         print(f"Waiting for sandbox cleanup: {args.repo}", file=sys.stderr, flush=True)
                         announced = True
                     time.sleep(0.1)
-        metadata_path = runtime / "session.json"
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
-            metadata = None
-        state = recoverable_session_state(metadata)
-        if state is not None:
-            try:
-                stop_state(state)
-            except BaseException:
-                if metadata.get("version") == 4:
-                    for role, service in metadata["services"].items():
-                        recovery = next((p for p in state.get("proxies", []) if p.get("name") == role), None)
-                        if role == "codex-broker":
-                            recovery = state.get("auth")
-                        if recovery is not None:
-                            service["recovery"] = recovery
-                    write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
-                    os.chmod(metadata_path, 0o600)
-                elif state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA:
-                    metadata["state"] = state
-                    write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
-                raise
-        metadata_path.unlink(missing_ok=True)
+        reset_session(runtime)
     return 0
+
+
+def reset_session(runtime: Path, *, unpublished_state: Path | None = None) -> None:
+    """Clean recovery authority while the caller owns both exclusive session locks."""
+    metadata_path = runtime / "session.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        metadata = None
+    state = recoverable_session_state(metadata)
+    if state is None and unpublished_state is not None and unpublished_state.exists():
+        contents = unpublished_state.read_text(encoding="utf-8")
+        if contents.strip():
+            state = json.loads(contents)
+            # Failed publication has no accepted session record. Preserve the
+            # staged recovery authority before attempting removal.
+            metadata = {"version": 2, "state": state}
+            write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
+            os.chmod(metadata_path, 0o600)
+    if state is not None:
+        try:
+            stop_state(state)
+        except BaseException:
+            if metadata.get("version") == 4:
+                for role, service in metadata["services"].items():
+                    recovery = next((p for p in state.get("proxies", []) if p.get("name") == role), None)
+                    if role == "codex-broker":
+                        recovery = state.get("auth")
+                    if recovery is not None:
+                        service["recovery"] = recovery
+                write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
+                os.chmod(metadata_path, 0o600)
+            elif (state.get("trusted-services") == SESSION_LIFECYCLE_SCHEMA
+                  or unpublished_state is not None):
+                metadata["state"] = state
+                write_atomic(metadata_path, json.dumps(metadata, sort_keys=True))
+            raise
+    metadata_path.unlink(missing_ok=True)
 
 
 def publish_main(args: argparse.Namespace) -> int:

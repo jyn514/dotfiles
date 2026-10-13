@@ -29,6 +29,40 @@ import sandbox_runtime
 
 
 class RecordedEffectTest(unittest.TestCase):
+    def test_failed_publication_retains_recovery_until_cleanup_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            staged = runtime / "staged.json"
+            staged.write_text(json.dumps({"runtime": {"provider": "container"},
+                                          "proxies": [{"container": "unpublished"}]}))
+            def fail(state):
+                state["proxies"][0]["lifecycle-state"] = "cleanup-failed"
+                raise sandbox_proxies.ConfigError("container still exists")
+            with mock.patch.object(sandbox_proxies, "stop_state", side_effect=fail):
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, "container still exists"):
+                    sandbox_proxies.reset_session(runtime, unpublished_state=staged)
+            staged.unlink()
+            metadata = json.loads((runtime / "session.json").read_text())
+            self.assertEqual("cleanup-failed", metadata["state"]["proxies"][0]["lifecycle-state"])
+            self.assertEqual(0o600, (runtime / "session.json").stat().st_mode & 0o777)
+            with mock.patch.object(sandbox_proxies, "stop_state") as stop:
+                sandbox_proxies.reset_session(runtime)
+            stop.assert_called_once_with(metadata["state"])
+            self.assertFalse((runtime / "session.json").exists())
+
+    def test_published_authority_takes_precedence_over_stale_attachment_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            published = {"runtime": {"provider": "container"},
+                         "proxies": [{"container": "published"}]}
+            (runtime / "session.json").write_text(json.dumps({"version": 2, "state": published}))
+            staged = runtime / "staged.json"
+            staged.write_text(json.dumps({"proxies": [{"container": "stale"}]}))
+            with mock.patch.object(sandbox_proxies, "stop_state") as stop:
+                sandbox_proxies.reset_session(runtime, unpublished_state=staged)
+            stop.assert_called_once_with(published)
+            self.assertFalse((runtime / "session.json").exists())
+
     def test_ambiguous_effect_is_durably_unknown(self) -> None:
         record = {"resource-status": {"container": "absent"}}
         observed = []
