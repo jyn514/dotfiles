@@ -50,7 +50,8 @@ Do not introduce a shared proxy framework as a prerequisite.
 Build `schacon/ticgit` revision `d0bda85fa593e5d4488dd13af1216b0d2766d6dc`, version `0.3.1`, with its unchanged Cargo lockfile.
 It selects `git-meta-lib` `0.1.10` and requires Rust at least `1.88`.
 The relevant native owners are `commands/new.rs`, `commands/edit.rs`, `commands/mod.rs`, `commands/setup.rs`,
-`commands/list.rs`, `commands/view.rs`, `session_state.rs`, and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
+`commands/list.rs`, `commands/view.rs`, `commands/writeup.rs`, `commands/review.rs`, `session_state.rs`,
+and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
 An upgrade requires reviewing the admitted commands' file, subprocess, setup, and network effects, and regenerating grammar metadata.
 Pin the toolchain and image through existing image resolution; do not install or update tools at runtime.
 
@@ -88,7 +89,8 @@ Without an explicit target, native `resolve_ticket()` reports that no current ti
 Do not duplicate that target check in proxy admission.
 
 Fix `GIT_EDITOR` to a trusted executable that exits unsuccessfully with a noninteractive-use diagnostic.
-The pinned `soe` library gives this variable highest precedence and propagates editor failure rather than trying its built-in editor.
+The pinned `soe` library and TicGit's Markdown editor path give this variable highest precedence
+and propagate editor failure rather than trying a built-in editor.
 Its external-editor path uses `sh`; supply a fixed trusted shell with only the fixed editor command and private temporary path as inputs.
 Caller text never becomes shell code.
 Admitted commands capture editor input before writing ticket changes.
@@ -111,9 +113,9 @@ The server validates direct socket requests, not merely wrapper-produced request
 
 Admit these native command families:
 
-- Inspection: `list`, `show`, `history`, `recent`, `stats`, and `next`.
+- Inspection: `list`, `show`, `history`, `recent`, `stats`, `next`, `writeup list`, `writeup show`, `review list`, and `review show`.
 - Mutation: `new`, `edit`, `comment`, `state`, `claim`, `close`, `tag`, `assign`, `priority`, `points`, `milestone`,
-  `code`, `depends`, `subissue`, `meta`, and `spec`.
+  `code`, `depends`, `subissue`, `meta`, `spec`, and all other native `writeup` and `review` subcommands.
 
 An empty argument vector means native `list`.
 Admit the native aliases `ls`, `dep`, and `status` with the corresponding command policy.
@@ -123,16 +125,33 @@ Pass admitted arguments unchanged except for transported file inputs and the vie
 Native TicGit rejects unknown or conflicting ordinary options and renders completed results.
 
 The command policy excludes `init`, `setup`, `update`, `pull`, `push`, `sync`, `import`, `tui`, `agent`, `checkout`,
-`users`, `mine`, `writeup`, and `review`.
+`users` and `mine`.
 Admit only the `views save` extension below; other `views` forms remain excluded.
+`users` remains host administration; `mine` cannot identify individual agents under the store's shared authorship identity.
 Initialization, upgrades, sync, import, serialization, and recovery remain coordinated host operations.
 Help and version use packaged information without opening the store.
 Help describes the admitted subset, request-private current-ticket state, file-based editing, and explicit view-save filters.
 
-Command-specific inspection rejects `new --checkout`, writeup targets,
-repository/configuration/executable overrides, and file options not replaced by the transport placeholder.
-Admit transported file input only for native `new`, `edit`, `meta`, and `spec` as described below.
-Missing targets and editor-triggering forms are native errors, not proxy admission failures.
+Command-specific inspection rejects `new --checkout`, repository/configuration/executable overrides,
+and file options not replaced by the transport placeholder.
+Admit native `tag --writeup` targets without reproducing writeup resolution.
+Admit transported file input only for native `new`, `edit`, `meta`, `spec`, `writeup new`, and `writeup edit` as described below.
+Missing ticket targets and editor-triggering forms are native errors, not proxy admission failures.
+
+Writeup creation requires a noninteractive title and body or transported file; native TicGit owns missing-input diagnostics.
+For `writeup new`, `--file` supplies only the body; `--title` supplies the title separately.
+For `writeup edit`, `--body` appends body text, while `--file` uses native title-and-description parsing.
+Do not reinterpret either file format or render writeups in the proxy.
+Native writeup promotion, linking, and ticket-field updates run inside the same serial request loop.
+
+Review operations read local Git refs and objects and write review metadata, not code refs or working-tree files.
+Their Git subprocesses use the fixed trusted Git binary, isolated configuration, disabled networking, and ordinary descendant cleanup.
+`review integrate` records an integration commit; it does not execute a merge.
+Inline review `--path` values are metadata, not transported files or permission to open caller-selected paths.
+Native remote-URL discovery sees no excluded remote configuration; it cannot contact or configure a remote.
+Review defaults use the common-directory Git HEAD, not the invoking agent's or host's worktree branch.
+The skill uses explicit branch/review references; the proxy neither infers a caller branch nor rewrites native defaults.
+The pinned `review new` evaluates `current_branch()` even with `--branch`, so a detached common-directory HEAD remains a native error.
 
 === Explicit view-save filters <tic-views>
 
@@ -243,8 +262,9 @@ Neither the wrapper nor the server parses the ticket body or recreates native Ma
 
 == Prepared store
 
-The host initializes the common-directory store, performs required sync/import, and fully materializes TicGit project metadata before first use.
-Initialization, upgrades, sync, import, serialization, and recovery require explicit coordinated shutdown of the store service.
+The host initializes the common-directory store, performs required sync/import, and fully materializes metadata used by admitted
+ticket, writeup, and review operations before first use.
+Initialization, upgrades, sync, import, serialization, user-map administration, and recovery require explicit coordinated shutdown of the store service.
 Database-using administration selects the same common-directory database as the service, regardless of the caller's worktree.
 Ordinary host ticket inspection and mutation instead use the service route below.
 
@@ -260,7 +280,8 @@ Committed WAL left by an earlier service instance does not require a host checkp
 Allow SQLite synchronization sidecars in protected metadata if needed for reading, but do not migrate, checkpoint, repair, or change ticket data.
 Store preparation uses only the bounded preparation deadline.
 Require SQLite `user_version` `1` and the initialized project `ticgit:schema-version` string `"1"`.
-Reject unresolved promised TicGit project keys or missing referenced blobs: native bulk reads can otherwise silently omit tickets.
+Reject unresolved promised keys or missing referenced blobs used by admitted ticket, writeup, and review operations.
+This includes project metadata and review-referenced branch and commit metadata; native bulk reads can otherwise silently omit results.
 Check database and existing WAL/SHM files without following symlinks; require regular files with one hard link.
 The generic mount validation rejects metadata indirection and agent-writable aliases.
 Publish only after validation; no other service or host administrator may access the store during preparation.
@@ -348,7 +369,7 @@ Failed cleanup, a surviving native child, or an unavailable runtime blocks host 
 Server death alone never proves that its native child stopped.
 
 Only after owner-validated shutdown may this operation invoke native host initialization, upgrades, sync, import,
-serialization, or recovery with the human's authority.
+serialization, user-map administration, or recovery with the human's authority.
 For database-using administration, fix native cwd to the accepted canonical Git common directory and verify repository discovery selects it.
 Caller cwd, repository-selection environment variables, and command options cannot redirect administration to a worktree-local or other store.
 This store selection applies to initialization even when the accepted database does not yet exist.
@@ -409,6 +430,15 @@ Implementation must verify the boundary with disposable repositories and the act
   Missing targets fail natively against fresh state, even after another request selected a current ticket.
   Blank non-file titles, missing comment bodies, editor flags, and fileless editing invoke only the fixed failing editor.
   Blank transported titles fail native file parsing without an editor; both error paths leave ticket data unchanged.
+- Compare admitted writeup and review subcommands and writeup-targeted field updates with the actual pinned CLI.
+  Exercise transported writeup creation and editing with their distinct native file formats, explicit bodies, promotion, and linking.
+  Missing titles/bodies and interactive forms use only the failing editor before ticket or writeup changes.
+  Review reads and mutations preserve native output and metadata while leaving code refs and working-tree files unchanged.
+  Include review creation, revision refresh and patch-id Git subprocesses, inline path metadata, approvals, and integration recording.
+  Use different caller worktree branches to verify explicit references and native common-directory default behavior.
+  A detached common-directory HEAD retains the pinned `review new` failure even with an explicit branch.
+  Review metadata preparation rejects promised branch/commit values and missing blobs rather than silently omitting results.
+  `users`, `mine`, and top-level `update` remain rejected; admitting `review update` does not admit executable updates.
 - Exercise `views save NAME LIST_ARGS...` through both clients and direct socket requests with the actual pinned CLI.
   Compare stored views and save output with equivalent native list-and-save operations, including defaults, aliases, and option-looking data.
   Interleave agent A's ordinary bug listing, agent B's cleanup listing, and A's explicit bug-view save.
