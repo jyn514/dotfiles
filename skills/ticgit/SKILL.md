@@ -12,25 +12,34 @@ Native Markdown can suggest commands unavailable through the proxy; follow the s
 
 ## Basic Workflow
 
-Find and inspect work:
+Inspect the assigned ticket; use listing to locate tickets when needed:
 
 ```sh
 ti list --markdown
-ti next --markdown
 ti show <id> --markdown
 ```
 
-Treat `next` as a recommendation, not a persistent selection.
+Use `next` only when authorized to choose work, with filters appropriate to that scope.
+For example:
+
+```sh
+ti next --assigned <email> --tag <tag> --markdown
+```
+
+Treat the result as a recommendation, not a persistent selection or reservation.
+Inspect its assignment and blockers before starting; `next` can return blocked tickets and excludes child tickets.
+It does not supersede an assigned task or coordinate ownership between agents.
 Pass the ticket ID on every later operation, including work delegated to subagents.
 
-Claim a ticket only when it should be assigned to the configured author:
+Claim a ticket only when assigning it to the configured author and setting its status to open and state to assigned are both intended.
+Claiming can reopen a closed ticket or replace an in-progress or blocked state; do not use it merely to announce that work starts.
 
 ```sh
 ti claim -t <id>
 ```
 
 The proxy uses one authorship identity for the store, not a separate identity for each agent or subagent.
-Assignment identifies a person or stable role; an explicit ticket ID identifies a subagent's task.
+Assignment and explicit ticket IDs do not reserve work for an agent.
 Filter assignments explicitly with `ti list --assigned <email>`.
 
 ## Create And Edit Tickets
@@ -80,7 +89,8 @@ ti close <id>
 
 ## Planning Fields
 
-Use priority, tags, estimates, and milestones to keep work easy to sort:
+Set priority, tags, estimates, or milestones only when the task or project workflow calls for them.
+These are independent operations, not required setup steps:
 
 ```sh
 ti priority -t <id> 2
@@ -89,7 +99,9 @@ ti points -t <id> 3
 ti milestone -t <id> v1.0
 ```
 
-Use `spec` for implementation notes before coding:
+Read existing requirements before implementing and clarify missing decisions when needed.
+Use the ticket's `spec` field when it is the chosen home for those requirements or implementation notes.
+Do not create a spec for every change or duplicate a maintained repository specification:
 
 ```sh
 ti spec -t <id> -F /tmp/spec.md
@@ -105,7 +117,7 @@ ti dep <blocker-id> -t <id>
 ti dep <blocker-id> -t <id> --remove
 ```
 
-`ti next` skips tickets with unresolved dependencies.
+`ti next` skips tickets whose dependencies are not closed; it does not require those dependencies to be closed as resolved.
 
 ## Saved Views
 
@@ -122,32 +134,56 @@ Plain native TicGit does not accept the extended arguments; do not substitute a 
 
 ## Writeups
 
-Capture rough notes before promoting them into tickets:
+Use a writeup when the task calls for a versioned draft, not as a required step before creating tickets.
+Create a ticket directly for actionable work; use ticket comments for incremental observations about existing work.
+
+Create and inspect a draft:
 
 ```sh
 ti writeup new --title "Parser cleanup" -F /tmp/writeup-body.md
 ti writeup list
 ti writeup show <writeup-id>
-ti writeup edit <writeup-id> --body "Another observation"
-ti writeup link <writeup-id> <ticket-id>
-ti tag --writeup <writeup-id> cleanup
-ti writeup promote <writeup-id>
 ```
 
 For `writeup new`, the file contains only the body; supply the title separately.
-For `writeup edit -F`, the first line is the updated title and remaining lines form a new body version.
+To revise the draft:
+
+```sh
+ti writeup edit <writeup-id> -F /tmp/revised-writeup.md
+```
+
+For `writeup edit -F`, the first line is the updated title and remaining lines supply a new body version when present.
+Alternatively, `--body` supplies a complete new body version without changing the title.
+Neither form appends observations to the previous body; default `show` and promotion use the latest version.
+Use `ti writeup show <writeup-id> --all` to inspect earlier versions.
+
+Linking to an existing ticket and promotion into a new ticket are different choices, not required sequential steps.
+To link a draft to existing work:
+
+```sh
+ti writeup link <writeup-id> <ticket-id>
+```
+
+To create a new ticket from the draft:
+
+```sh
+ti writeup promote <writeup-id>
+```
+
 Promotion creates a ticket and closes the writeup; use the returned ticket ID for later work.
 
 ## Code Reviews
 
-Create and inspect review metadata using explicit branch and base refs:
+Create a review only when the repository uses TicGit review metadata and you are authorized to hand off a named Git branch.
+Making commits or completing subagent work does not by itself require a review.
+Use explicit branch and base refs:
 
 ```sh
 ti review new --branch <branch-name> --base <base-ref> --ticket <id>
 ti review show <branch-name> --markdown
 ```
 
-Refresh the review after adding commits:
+Refresh an existing review after its branch changes:
 
 ```sh
 ti review update <branch-name>
@@ -169,8 +205,8 @@ Inspect the affected ticket, writeup, or review before deciding whether to retry
 ## Agent Practices
 
 - Use ticket IDs or unique prefixes and explicit branch/review references.
-- Check for a spec before implementing; add one if the path is unclear.
+- Read existing requirements and clarify missing decisions; add a ticket spec only when it is the appropriate owner.
 - Comment when you learn something important or finish a meaningful step.
-- Open or update reviews when branch commits change.
+- Create reviews only for an authorized TicGit review handoff; refresh existing reviews when their branches change.
 - Mark blockers with an explicit state update and dependencies with `ti dep`.
 - Resolve tickets only after implementation and verification are complete.

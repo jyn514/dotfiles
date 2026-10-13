@@ -140,7 +140,7 @@ Missing ticket targets and editor-triggering forms are native errors, not proxy 
 
 Writeup creation requires a noninteractive title and body or transported file; native TicGit owns missing-input diagnostics.
 For `writeup new`, `--file` supplies only the body; `--title` supplies the title separately.
-For `writeup edit`, `--body` appends body text, while `--file` uses native title-and-description parsing.
+For `writeup edit`, `--body` adds a complete new body version, while `--file` uses native title-and-description parsing.
 Do not reinterpret either file format or render writeups in the proxy.
 Native writeup promotion, linking, and ticket-field updates run inside the same serial request loop.
 
