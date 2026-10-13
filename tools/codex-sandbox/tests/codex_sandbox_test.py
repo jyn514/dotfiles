@@ -35,6 +35,10 @@ DOTFILES_PROFILE = TOOL / "image" / "dotfiles-profile.sh"
 SANDBOX_GITCONFIG = TOOL / "image" / "gitconfig"
 SANDBOX_DOCKERFILE = TOOL / "image" / "Dockerfile"
 SANDBOX_PI = TOOL / "image" / "pi"
+try:
+    NATIVE_TMUX = runpy.run_path(str(ROOT / "libexec/tmux/attachment.py"))["native_tmux"]()
+except RuntimeError:
+    NATIVE_TMUX = None
 
 
 def write_executable(path: Path, content: str) -> None:
@@ -1332,6 +1336,10 @@ class CodexSandboxTest(unittest.TestCase):
         self.pi_marker.write_text(self.pi_revision + '\n')
         self.fake_bin = self.root / "fake-bin"
         self.fake_bin.mkdir()
+        if NATIVE_TMUX is not None:
+            # Fake Python is only the proxy boundary. Host wrapper shebangs must
+            # not turn native tmux calls into fake proxy-helper invocations.
+            (self.fake_bin / "tmux").symlink_to(NATIVE_TMUX)
         self.docker_log = self.root / "docker.log"
         self.python_log = self.root / "python.log"
         self.codex_log = self.root / "codex.log"
@@ -2060,15 +2068,15 @@ class CodexSandboxTest(unittest.TestCase):
         )
         self.assertFalse(any("%5" in call for call in calls))
 
-    @unittest.skipUnless(shutil.which("tmux") and shutil.which("node") and shutil.which("bun"),
+    @unittest.skipUnless(NATIVE_TMUX and shutil.which("node") and shutil.which("bun"),
                          "tmux, Node and Bun are required")
     def test_restart_uses_sdk_selected_file_with_real_tmux_and_pi_cli(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         socket_path = self.root / "restart-tmux.sock"
-        prefix = ["tmux", "-S", str(socket_path)]
+        prefix = [NATIVE_TMUX, "-S", str(socket_path)]
         # First check error retention with a failing native child, then forward the
         # exact resumed arguments to the installed Pi CLI to verify session identity.
-        (self.fake_bin / "pi").symlink_to(sys.executable)
+        (self.fake_bin / "pi").symlink_to(TOOL / "tests/fixtures/restart_failure.mjs")
         environment = {"HOME": str(self.home), "FAKE_HOST_PI_READY": "", "FAKE_AGENT_EXIT": "0",
                        "PATH": str(self.fake_bin) + os.pathsep + os.environ["PATH"]}
         with mock.patch.dict(os.environ, environment):
@@ -2113,14 +2121,14 @@ class CodexSandboxTest(unittest.TestCase):
                     status = next((line.split(":")[1:] for line in result.stdout.splitlines()
                                    if line.startswith(pane + ":")), None)
                     self.assertIsNotNone(status, f"failed restart destroyed pane {pane!r}: {result.stdout!r}")
-                    if status == ["1", "2"]:
+                    if status == ["1", "23"]:
                         break
                     time.sleep(0.01)
                 else:
                     self.fail("native restarted pane did not fail")
                 result = subprocess.run([*prefix, "capture-pane", "-p", "-S", "-", "-t", pane],
                                         check=True, capture_output=True, text=True)
-                self.assertIn("unknown option --session", result.stdout)
+                self.assertIn("restart fixture: intentional Pi startup failure", result.stdout)
                 # A retry must accept "failed", and successful exit must still close the pane.
                 (self.fake_bin / "pi").unlink()
                 fixture = TOOL / "tests/restart_pi_cli_fixture.mjs"
@@ -2671,7 +2679,8 @@ class CodexSandboxTest(unittest.TestCase):
                     self.final_run()
                 else:
                     self.assertEqual(1, result.returncode)
-                    self.assertIn('run codex-sandbox restart-all', result.stderr)
+                    self.assertIn('Pi revision', result.stderr)
+                    self.assertIn('codex-sandbox restart', result.stderr)
                     calls = read_calls(self.docker_log)
                     self.assertFalse(any(call[:1] == ['build'] for call in calls))
                     self.assertFalse(any('/opt/agent-tools/bin/tool-worker.mjs' in call
@@ -2734,15 +2743,15 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertTrue(ready.exists())
         self.assertIsInstance(json.loads(ready.read_text())["owner"], str)
 
-    @unittest.skipUnless(shutil.which("tmux"), "tmux unavailable")
+    @unittest.skipUnless(NATIVE_TMUX, "native tmux unavailable")
     def test_cli_side_keeps_exact_worker_after_original_sigkill(self) -> None:
         server = "sandbox-cli-owner-" + uuid.uuid4().hex
-        started = subprocess.run(["tmux", "-L", server, "new-session", "-d", "-P", "-F",
+        started = subprocess.run([NATIVE_TMUX, "-L", server, "new-session", "-d", "-P", "-F",
                                   "#{pane_id}", "sleep 60"], text=True, capture_output=True)
         if started.returncode:
             self.skipTest(started.stderr)
         pane = started.stdout.strip()
-        tmux = subprocess.check_output(["tmux", "-L", server, "display-message", "-p",
+        tmux = subprocess.check_output([NATIVE_TMUX, "-L", server, "display-message", "-p",
                                         "#{socket_path},#{pid},0"], text=True).strip()
         ready = self.root / "actual-host-pi-ready"
         process = subprocess.Popen([sys.executable, str(LAUNCHER_FIXTURE)], cwd=self.repo,
@@ -2780,7 +2789,7 @@ class CodexSandboxTest(unittest.TestCase):
             self.assertEqual(original["container"], copied["container"])
             process.kill()
             process.wait(timeout=5)
-            subprocess.run(["tmux", "-L", server, "kill-pane", "-t", pane], check=True)
+            subprocess.run([NATIVE_TMUX, "-L", server, "kill-pane", "-t", pane], check=True)
             time.sleep(.2)
             removals = [call for call in read_calls(self.docker_log) if call[:1] == ["rm"]]
             self.assertFalse(any(original["container"] in call for call in removals))
@@ -2797,7 +2806,7 @@ class CodexSandboxTest(unittest.TestCase):
                               any(argument.startswith("codex-gateway-") for argument in call)]
             self.assertEqual([], gateway_starts)
         finally:
-            subprocess.run(["tmux", "-L", server, "kill-server"], capture_output=True)
+            subprocess.run([NATIVE_TMUX, "-L", server, "kill-server"], capture_output=True)
             if process.poll() is None:
                 process.kill()
             process.wait()
