@@ -70,8 +70,14 @@ describe("compaction replay", () => {
       required: [
         "look at the code, how would you design this?",
         "separate persistent clone acceptable",
+        "the remaining investigation is whether direct ChatGPT OAuth can replace the model translator.",
         "investigate",
+        "ok stop. what are you doing, why, and what have you discovered so far",
+        "An in-process adaptation worked in a local prototype",
         'your "client" is just the proxy, rebuilt in-process. assume we keep the model proxy.',
+        "Agreed: I moved the translation into the client rather than removing it.",
+        "Model OAuth stays with the existing proxy outside the guest",
+        "No model-client adaptation, external Git-management patch, JJ bridge, or trusted publisher.",
         "could it be as simple as running on docker-compose or does codex-sandbox still provide value?",
       ],
     },
@@ -83,6 +89,25 @@ describe("compaction replay", () => {
     expect(prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
     expect(prompt).not.toContain("<previous-checkpoint>");
     expect(prompt).not.toContain(checkpointText(original));
+  });
+
+  test("investigation replay keeps the proposal, report, correction, and acknowledgment in speaker order", () => {
+    const { prompt } = replayInput(historicalFixture("investigation-only"));
+    const exchange = [
+      "[Assistant]: Then the guest owns the persistent clone",
+      "[User]: investigate",
+      "[User]: ok stop. what are you doing",
+      "[Assistant]: Stopped. I was checking whether Strix can use ChatGPT OAuth directly",
+      '[User]: your "client" is just the proxy, rebuilt in-process.',
+      "[Assistant]: Agreed: I moved the translation into the client rather than removing it.",
+      "[User]: cool, so this is basically just a normal docker container",
+    ];
+    let preceding = -1;
+    for (const clause of exchange) {
+      const position = prompt.indexOf(clause);
+      expect(position).toBeGreaterThan(preceding);
+      preceding = position;
+    }
   });
 
   test("repeated historical replays inherit the saved checkpoint while keeping later task authority at its recorded cut", () => {

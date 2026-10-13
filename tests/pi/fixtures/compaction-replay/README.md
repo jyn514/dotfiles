@@ -83,12 +83,17 @@ Selected entries: **October 3, 2026**.
 
 Raw users: `a5a54061`, `1aeee1ee` (sandbox/design), `9d45d288` (Discord token),
 `e653a86f` (persistent clone), `dda5eb73` (investigate), `1e7b65b1` (keep model
-proxy), `e36b2202` (Compose question). Checkpoint `bc29caa4` keeps objective and
-corrections before `## Open obligations`; its proxy-replacement advice is stale
-against `1e7b65b1`. Terminal cut is synthetic.
+proxy), `e36b2202` (Compose question).
+The fixture also retains assistant `60f76c4a` (proposed direct OAuth replacement), user `05e3c818` (stop and report),
+assistant `d5376b29` (in-process prototype report), and assistant `7ae88ffe` (acknowledgment and revised design).
+These complete text messages establish what the user rejected and distinguish the existing outside-guest proxy from the proposed client adaptation.
+Checkpoint `bc29caa4` keeps objective and corrections before `## Open obligations`; its proxy-replacement advice is stale against `1e7b65b1`.
+The terminal cut is synthetic; the real cut does not summarize this later correction exchange.
+Earlier replays without these surrounding messages cannot establish whether the summarizer misread the rejection.
 
 - [ ] Investigation/design only; no implementation or final-design approval.
-- [ ] Keep the model proxy; reject the in-process proxy rebuild and stale advice.
+- [ ] Keep the existing model proxy; reject replacing it with the reported in-process client adaptation and stale replacement advice.
+      Do not turn this correction into a general prohibition on in-process proxies.
 - [ ] Persistent clone and dedicated Discord token are accepted simplifications,
   not arbitrary host-credential approval. Compose versus codex-sandbox stays open.
 
