@@ -194,6 +194,7 @@ A subagent's summary or test count is not evidence by itself.
 
 ### When diagnosing a failure
 
+Before recommending recovery actions, read the owning project's recovery documentation.
 Do not assume the most obvious answer is the correct one.
 Ask what would distinguish this diagnosis from another diagnosis that would cause the same symptom.
 When existing evidence cannot distinguish competing diagnoses, use an experiment that can.
