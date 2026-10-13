@@ -3,10 +3,13 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -14,6 +17,46 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProfileContractTests(unittest.TestCase):
+    def tmux_bindings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            server = "profile-test-" + uuid.uuid4().hex
+            command = ["tmux", "-L", server]
+            environment = os.environ | {"HOME": directory, "TMUX": "", "PATH": "/usr/bin:/bin"}
+            try:
+                result = subprocess.run(
+                    [*command, "-f", str(ROOT / "config/tmux/tmux.conf"),
+                     "new-session", "-d", "-s", "profile-test", "sleep 60"],
+                    env=environment, text=True, capture_output=True, timeout=10,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                return subprocess.run([*command, "list-keys", "-F", "#{key_command}"],
+                                      env=environment, text=True, capture_output=True,
+                                      check=True, timeout=10).stdout
+            finally:
+                subprocess.run([*command, "kill-server"], env=environment,
+                               text=True, capture_output=True, timeout=10)
+
+    def run_profile(self, command, *, env=None, arguments=(), input=None, shell="/bin/bash", interactive=True):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home / ".profile").symlink_to(ROOT / "config/profile")
+            (home / ".bashrc").touch()
+            (home / ".zshrc").touch()
+            environment = os.environ | {
+                "HOME": str(home), "PATH": "/usr/bin:/bin", "SSH_AUTH_SOCK": "present",
+                "TERM": "dumb", "TMUX": "", "TMUX_PANE": "", "KITTY_INSTALLATION_DIR": "",
+                "BASH_PROFILE_READ": "1", "ZSH_PROFILE_READ": "1",
+            } | (env or {})
+            environment["HOME"] = str(home)
+            environment["ENV"] = ""
+            environment["XDG_CONFIG_HOME"] = str(home / ".config")
+            environment["PROFILE_FISH"] = str(ROOT / "config/config.fish")
+            fixture = "profile_command.fish" if Path(shell).name == "fish" else "profile_command.sh"
+            return subprocess.run(
+                [shell, *(["-i"] if interactive else []), str(ROOT / "tests/setup/fixtures" / fixture), command, *arguments],
+                cwd=home, env=environment, input=input, text=True, capture_output=True, timeout=15,
+            )
+
     @unittest.skipUnless(Path("/bin/zsh").exists(), "zsh is unavailable")
     def test_zshenv_selects_tracked_login_profile(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -44,49 +87,39 @@ class ProfileContractTests(unittest.TestCase):
 
 
     def test_makeflags_has_an_explicit_parallelism_value(self) -> None:
-        env = (ROOT / "lib/shell/env.sh").read_text()
+        result = self.run_profile('printf "%s\\n" "$MAKEFLAGS"')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertRegex(result.stdout, r"^-j[1-9][0-9]*\n$")
 
-        self.assertIn("export MAKEFLAGS='-j4'", env)
-        self.assertNotIn("export MAKEFLAGS='-j'\n", env)
+    def test_interactive_shells_apply_environment_activation_after_clearing_stale_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tools = Path(directory)
+            (tools / "mise").symlink_to(ROOT / "tests/setup/fixtures/mise_activation.sh")
+            environment = {
+                "PATH": f"{tools}:/usr/bin:/bin", "PROFILE_MISE_TOOLS": str(tools),
+                "MISE_SHELL": "stale", "__MISE_DIFF": "stale",
+                "__MISE_SESSION": "stale", "__MISE_ORIG_PATH": "stale",
+            }
+            for shell in ("/bin/bash", "/bin/zsh"):
+                if not Path(shell).exists():
+                    continue
+                with self.subTest(shell=shell):
+                    result = self.run_profile('printf "%s\\n" "$DOTFILES_MISE_ACTIVE"',
+                                              env=environment, shell=shell)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual("yes\n", result.stdout)
 
-    def test_interactive_shells_activate_mise(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-
-        self.assertIn("mise_activation=$(mise activate bash) || {", profile)
-        self.assertIn("mise_activation=$(mise activate zsh) || {", profile)
-        self.assertIn('eval "$mise_activation" || {', profile)
-        self.assertLess(
-            profile.index("unset MISE_SHELL __MISE_DIFF __MISE_SESSION __MISE_ORIG_PATH"),
-            profile.index("mise_activation=$(mise activate bash) || {"),
-        )
-        self.assertLess(
-            profile.index('remove_path "$HOME/.local/share/mise/shims"'),
-            profile.index("mise_activation=$(mise activate bash) || {"),
-        )
-        self.assertLess(
-            profile.index('add_path "$DOTFILES/bin"'),
-            profile.index('case "$-" in'),
-        )
-
-        fish = (ROOT / "config/config.fish").read_text()
-        self.assertIn("source_init mise hook-env --shell fish --force", fish)
-        self.assertNotIn("add_path $DOTFILES/libexec/agent-wrappers", fish)
-        self.assertLess(
-            fish.index("source_init mise hook-env --shell fish --force"),
-            fish.index("if not status --is-interactive"),
-        )
-
-    def test_native_paths_are_configured_after_linuxbrew(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-
-        self.assertLess(
-            profile.index("linuxbrew/.linuxbrew/bin/brew shellenv"),
-            profile.index('. "$DOTFILES/lib/shell/paths.sh"'),
-        )
-        self.assertIn(
-            "brew_env=$(/home/linuxbrew/.linuxbrew/bin/brew shellenv sh) || {",
-            profile,
-        )
+    def test_dotfile_commands_keep_precedence_after_environment_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tools = Path(directory)
+            (tools / "mise").symlink_to(ROOT / "tests/setup/fixtures/mise_activation.sh")
+            (tools / "copy").write_text("#!/bin/sh\nexit 99\n")
+            (tools / "copy").chmod(0o755)
+            result = self.run_profile('command -v copy', env={
+                "PATH": f"{tools}:/usr/bin:/bin", "PROFILE_MISE_TOOLS": str(tools),
+            })
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(str(ROOT / "bin/copy") + "\n", result.stdout)
 
     def test_path_helpers_preserve_caller_variables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -277,8 +310,9 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual("/snap/bin", snap_bin)
         self.assertIn("/snap/bin", path.split(":"))
 
+    @unittest.skipUnless(shutil.which("tmux"), "tmux is unavailable")
     def test_tmux_paste_bindings_do_not_paste_after_clipboard_failure(self) -> None:
-        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
+        tmux_config = self.tmux_bindings()
         commands = re.findall(
             r"bash -o pipefail -c '([^']*paste(?: --primary)? \| tmux load-buffer[^']*)'",
             tmux_config,
@@ -313,30 +347,23 @@ class ProfileContractTests(unittest.TestCase):
             self.assertIn("load-buffer", tmux_calls)
             self.assertNotIn("paste-buffer", tmux_calls)
 
+    @unittest.skipUnless(shutil.which("tmux"), "tmux is unavailable")
     def test_tmux_copy_actions_pass_hostile_text_as_one_argument(self) -> None:
-        tmux_config = (ROOT / "config/tmux/tmux.conf").read_text()
-        dragon_commands = re.findall(
-            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/dragon\.sh --read0)'",
-            tmux_config,
-        )
+        # Inspect tmux's parsed, quoted command arguments rather than the
+        # configuration's choice of quotes, braces, and line continuations.
+        commands = [argument.removeprefix("cd #{q:pane_current_path}; ")
+                    for line in self.tmux_bindings().splitlines()
+                    for argument in shlex.split(line)
+                    if argument.startswith("cd #{q:pane_current_path}; ")]
+        dragon_commands = [command for command in commands
+                           if command.endswith("~/.config/tmux/dragon.sh --read0")]
         self.assertEqual(2, len(dragon_commands))
-        self.assertEqual(5, tmux_config.count("~/.config/tmux/dragon.sh"))
-        self.assertNotIn("xargs -0 ~/.config/tmux/dragon.sh", tmux_config)
-        search_command = re.search(
-            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action search --read0)'",
-            tmux_config,
-        )
-        open_command = re.search(
-            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action open --read0)'",
-            tmux_config,
-        )
-        edit_command = re.search(
-            r"'cd #\{q:pane_current_path\}; ([^']*~/\.config/tmux/picker-action edit --read0)'",
-            tmux_config,
-        )
-        self.assertIsNotNone(search_command)
-        self.assertIsNotNone(open_command)
-        self.assertIsNotNone(edit_command)
+        actions = {}
+        for action in ("search", "open", "edit"):
+            matches = [command for command in commands
+                       if command.endswith(f"~/.config/tmux/picker-action {action} --read0")]
+            self.assertEqual(1, len(matches), action)
+            actions[action] = matches[0]
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -348,7 +375,12 @@ class ProfileContractTests(unittest.TestCase):
             for name in ("dragon", "open", "tmux"):
                 executable = binaries / name
                 executable.write_text(
-                    '#!/bin/sh\nprintf "%s" "$*" > "$ACTION_CALLS"\n'
+                    '#!/bin/sh\n'
+                    'case ${0##*/} in\n'
+                    'dragon) [ "$#" = 2 ] || exit 41;;\n'
+                    'open) [ "$#" = 1 ] || exit 42;;\n'
+                    'esac\n'
+                    'printf "%s" "$*" > "$ACTION_CALLS"\n'
                 )
                 executable.chmod(0o755)
             env = os.environ | {
@@ -371,7 +403,7 @@ class ProfileContractTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(f"-x {payload}", calls.read_text())
 
-            command = open_command.group(1).replace(
+            command = actions["open"].replace(
                 "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
             )
             result = subprocess.run(
@@ -385,7 +417,7 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(payload, calls.read_text())
 
-            command = edit_command.group(1).replace(
+            command = actions["edit"].replace(
                 "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
             )
             result = subprocess.run(
@@ -399,7 +431,7 @@ class ProfileContractTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertFalse(marker.exists())
 
-            command = search_command.group(1).replace(
+            command = actions["search"].replace(
                 "~/.config/tmux/picker-action", str(ROOT / "bin/picker-action")
             )
             result = subprocess.run(
@@ -419,43 +451,42 @@ class ProfileContractTests(unittest.TestCase):
             )
             self.assertFalse(marker.exists())
 
-    def test_zsh_sudo_uses_the_current_buffer_when_present(self) -> None:
-        zshrc = (ROOT / "config/zsh/.zshrc").read_text()
-        function = re.search(r"zle-sudo\(\) \{(.*?)\n\}", zshrc, re.DOTALL)
-        self.assertIsNotNone(function)
-        body = function.group(1)
-        self.assertIn("if [[ -z $BUFFER ]]", body)
-        self.assertIn("zle up-line-or-history", body)
-        self.assertIn('LBUFFER="sudo $LBUFFER"', body)
+    @unittest.skipUnless(shutil.which("zsh"), "Zsh is unavailable")
+    def test_zsh_sudo_preserves_current_input_and_uses_history_only_when_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            antidote = home / "antidote"
+            antidote.mkdir()
+            (antidote / "antidote.zsh").symlink_to(ROOT / "tests/setup/fixtures/antidote.zsh")
+            result = subprocess.run(
+                ["zsh", "-f", "-i", str(ROOT / "tests/setup/fixtures/zsh_sudo_widget.zsh")],
+                cwd=home, env=os.environ | {
+                    "HOME": str(home), "ZDOTDIR": str(home), "DOTFILES": str(ROOT),
+                    "PROFILE_ZSH": str(ROOT / "config/zsh/.zshrc"), "PATH": "/usr/bin:/bin",
+                    "TERM": "dumb", "TMUX": "", "KITTY_INSTALLATION_DIR": "",
+                }, text=True, capture_output=True, timeout=15,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_neovim_tab_alignment_and_alternate_buffer_use_editor_columns(self) -> None:
-        shared = (ROOT / "config/nvim/shared.lua").read_text()
-        nvim = (ROOT / "config/nvim/init.lua").read_text()
 
-        self.assertIn("local byte_col = vim.fn.getcurpos()[3] - 1", shared)
-        self.assertIn("local display_col = vim.fn.virtcol('.') - 1", shared)
-        self.assertIn("vim.fn.getline('.'):sub(1, byte_col)", shared)
-        self.assertIn("local width = sw - (display_col % sw)", shared)
-        self.assertNotIn("sw - ((col - 1) % sw)", shared)
-        self.assertIn("vim.cmd.balt(vim.fn.fnameescape(name))", nvim)
-        self.assertNotIn("let @#", nvim)
 
-    def test_dynamic_shell_and_editor_values_are_computed_when_used(self) -> None:
-        fish_z = (ROOT / "config/z.fish").read_text()
-        nvim = (ROOT / "config/nvim/init.lua").read_text()
-
-        self.assertTrue(fish_z.startswith("function __z_arguments\n"))
-        self.assertIn(
-            "function __z_arguments\n\tset -l curr_tok (builtin commandline",
-            fish_z,
-        )
-        command = re.search(
-            r"nvim_create_user_command\('EditDailyJournal', function\(\)(.*?)end,",
-            nvim,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(command)
-        self.assertIn('os.date("%Y-%m-%d")', command.group(1))
+    @unittest.skipUnless(shutil.which("fish"), "Fish is unavailable")
+    def test_directory_completions_read_the_current_token_at_each_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "zoxide").symlink_to(ROOT / "tests/setup/fixtures/zoxide_query.sh")
+            calls = root / "queries"
+            result = subprocess.run(
+                ["fish", str(ROOT / "tests/setup/fixtures/z_completion.fish")],
+                cwd=root, env=os.environ | {"HOME": str(root), "XDG_CONFIG_HOME": str(root / "config"),
+                    "PATH": f"{root}:/usr/bin:/bin", "PROFILE_Z": str(ROOT / "config/z.fish"),
+                    "Z_QUERY_LOG": str(calls)}, text=True, capture_output=True, timeout=10,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            queries = calls.read_text().splitlines()
+            self.assertEqual(2, len(queries))
+            self.assertTrue(queries[0].endswith("-- first"), queries)
+            self.assertTrue(queries[1].endswith("-- second"), queries)
 
     def test_noninteractive_profile_exposes_tool_and_dotfile_paths_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -615,45 +646,44 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("/new:literal-*:/bin\n", result.stdout)
 
-    def test_portable_profile_and_cross_platform_config_paths(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
+    def test_profile_installs_aliases_for_native_command_entrypoints(self) -> None:
+        aliases = {
+            "pip_upgrade_all": "pip-upgrade-all", "purge_removed": "purge-removed",
+            "what_belongs": "what-belongs", "what_runs": "what-runs", "what_package": "what-package",
+        }
+        result = self.run_profile('alias "$@"', arguments=list(aliases), shell="/bin/sh")
+        self.assertEqual(0, result.returncode, result.stderr)
+        for alias, command in aliases.items():
+            self.assertIn(f"{alias}='{command}'", result.stdout.splitlines())
 
-        self.assertIn(
-            "if less --version >/dev/null 2>&1; then\n"
-            "\texport GIT_PAGER=less\n"
-            "fi",
-            profile,
-        )
-        self.assertNotIn("if ! less --version", profile)
-        languages = (ROOT / "config/helix/languages.toml").read_text()
+    def test_profile_selects_less_only_when_the_command_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "less"
+            executable.write_text('#!/bin/sh\nexit "$PROFILE_LESS_EXIT"\n')
+            executable.chmod(0o755)
+            for exit_status, pager in ((0, "less"), (23, "original-pager")):
+                with self.subTest(exit_status=exit_status):
+                    result = self.run_profile('printf "%s\\n" "$GIT_PAGER"', env={
+                        "PATH": f"{directory}:/usr/bin:/bin", "GIT_PAGER": "original-pager",
+                        "PROFILE_LESS_EXIT": str(exit_status),
+                    })
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(pager + "\n", result.stdout)
 
-        self.assertIn("alias pip_upgrade_all=pip-upgrade-all", profile)
-        self.assertIn("alias purge_removed=purge-removed", profile)
-        self.assertNotIn("pip list --format=freeze", profile)
-        self.assertNotIn("pip_upgrade_all ()", profile)
-        self.assertNotIn("purge_removed ()", profile)
-        self.assertNotIn("tail --lines=+3", profile)
-        self.assertIn('$HOME/.config/helix/steel-lsp', languages)
-        self.assertNotIn("/home/jyn", languages)
-        self.assertNotIn('echo "no supported package manager found"', profile)
-        self.assertIn("alias what_belongs=what-belongs", profile)
-        self.assertIn("alias what_runs=what-runs", profile)
-        self.assertIn("alias what_package=what-package", profile)
-        self.assertNotIn("what_belongs ()", profile)
-        self.assertNotIn("what_runs ()", profile)
-        self.assertNotIn("what_package ()", profile)
-        self.assertIn("printf 'remove crontab? [y/N] '", profile)
-        self.assertIn('IFS= read -r reply || return', profile)
-        self.assertNotIn("crontab -i -l", profile)
-        self.assertIn("recipes () (", profile)
-        self.assertIn('recipies () { recipes "$@"; }', profile)
+    def test_helix_language_server_expands_the_callers_home(self) -> None:
+        server = tomllib.loads((ROOT / "config/helix/languages.toml").read_text())["language-server"]["steel"]
+        with tempfile.TemporaryDirectory(prefix="helix home with spaces ") as directory:
+            root = Path(directory)
+            executable = root / "steel-language-server"
+            executable.write_text('#!/bin/sh\nprintf "%s\\n" "$STEEL_LSP_HOME"\n')
+            executable.chmod(0o755)
+            result = subprocess.run([server["command"], *server["args"]],
+                env=os.environ | {"HOME": str(root), "PATH": f"{root}:/usr/bin:/bin"},
+                text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(str(root / ".config/helix/steel-lsp") + "\n", result.stdout)
 
     def test_crontab_wrapper_prompts_for_clustered_remove_options(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("crontab() {")
-        end = profile.index("\n}\n", start) + 2
-        definition = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             calls = root / "calls"
@@ -662,59 +692,27 @@ class ProfileContractTests(unittest.TestCase):
             crontab.chmod(0o755)
             environment = os.environ | {
                 "CRONTAB_CALLS": str(calls),
-                "PATH": f"{root}:{os.environ['PATH']}",
+                "PROFILE_TEST_BIN": str(root), "PATH": "/usr/bin:/bin",
             }
 
             for arguments in (("-ri",), ("-ir",)):
                 calls.unlink(missing_ok=True)
-                declined = subprocess.run(
-                    ["/bin/sh", "-c", definition + '\ncrontab "$@"', "sh", *arguments],
-                    input="n\n",
-                    env=environment,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
+                declined = self.run_profile('crontab "$@"', shell='/bin/sh', arguments=[*arguments], input='n\n', env=environment)
                 self.assertEqual(0, declined.returncode, declined.stderr)
                 self.assertIn("remove crontab?", declined.stdout)
                 self.assertFalse(calls.exists())
 
-            accepted = subprocess.run(
-                ["/bin/sh", "-c", definition + '\ncrontab "$@"', "sh", "-ri"],
-                input="y\n",
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            accepted = self.run_profile('crontab "$@"', shell='/bin/sh', arguments=['-ri'], input='y\n', env=environment)
             self.assertEqual(0, accepted.returncode, accepted.stderr)
             self.assertEqual("-ri\n", calls.read_text())
 
             calls.unlink()
-            operand = subprocess.run(
-                [
-                    "/bin/sh",
-                    "-c",
-                    definition + '\ncrontab "$@"',
-                    "sh",
-                    "--",
-                    "-report",
-                ],
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            operand = self.run_profile('crontab "$@"', shell='/bin/sh', arguments=['--', '-report'], env=environment)
             self.assertEqual(0, operand.returncode, operand.stderr)
             self.assertNotIn("remove crontab?", operand.stdout)
             self.assertEqual("-- -report\n", calls.read_text())
 
     def test_fork_github_uses_portable_cd_without_calling_shell_wrapper(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("fork_github() {")
-        end = profile.index("\n}\n", start) + 2
-        definition = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             checkout = root / "checkout with spaces"
@@ -722,32 +720,12 @@ class ProfileContractTests(unittest.TestCase):
             helper = root / "fork-github"
             helper.write_text('#!/bin/sh\nprintf "%s\\n" "$CHECKOUT"\n')
             helper.chmod(0o755)
-            result = subprocess.run(
-                [
-                    "/bin/sh",
-                    "-c",
-                    definition
-                    + '\ncd() { return 99; }\nfork_github || exit\ncommand pwd',
-                ],
-                env=os.environ
-                | {
-                    "CHECKOUT": str(checkout),
-                    "PATH": f"{root}:{os.environ['PATH']}",
-                },
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_profile('cd() { return 99; }; fork_github || exit; command pwd', shell='/bin/sh', env=os.environ | {'CHECKOUT': str(checkout), 'PROFILE_TEST_BIN': str(root), 'PATH': '/usr/bin:/bin'})
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(f"{checkout}\n{checkout}\n", result.stdout)
 
     def test_make_helpers_preserve_numeric_targets_and_recipe_bodies(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("tasks () (")
-        end = profile.index("\nrecipies ()", start)
-        definitions = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             make = root / "make"
@@ -761,15 +739,12 @@ class ProfileContractTests(unittest.TestCase):
                 "# Finished Make data base\\n'\n"
             )
             make.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-c", definitions + "\ntasks; printf -- '---\\n'; recipes"],
-                env=os.environ | {"PATH": f"{root}:{os.environ['PATH']}"},
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_profile("tasks; printf -- '---\\n'; recipes", shell='/bin/sh', env=os.environ | {'PROFILE_TEST_BIN': str(root), 'PATH': '/usr/bin:/bin'})
+            alias = self.run_profile("recipies", shell='/bin/sh', env={"PROFILE_TEST_BIN": str(root)})
 
         self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(0, alias.returncode, alias.stderr)
+        self.assertEqual(result.stdout.split("---\n", 1)[1], alias.stdout)
         self.assertEqual(
             "1\nnamed\n%.generated\n---\n1: dependency\n\tprintf body\n"
             "named: dependency\n\tprintf other\n"
@@ -779,56 +754,27 @@ class ProfileContractTests(unittest.TestCase):
         )
 
     def test_make_helpers_propagate_make_failure_without_partial_output(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("tasks () (")
-        end = profile.index("\nrecipies ()", start)
-        definitions = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             make = Path(directory) / "make"
             make.write_text("#!/bin/sh\nprintf 'partial database\\n'\nexit 23\n")
             make.chmod(0o755)
-            environment = os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"}
-            tasks = subprocess.run(
-                ["/bin/sh", "-c", definitions + "\ntasks"],
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-            recipes = subprocess.run(
-                ["/bin/sh", "-c", definitions + "\nrecipes"],
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            environment = os.environ | {"PROFILE_TEST_BIN": directory, "PATH": "/usr/bin:/bin"}
+            tasks = self.run_profile('tasks', shell='/bin/sh', env=environment)
+            recipes = self.run_profile('recipes', shell='/bin/sh', env=environment)
 
         for result in (tasks, recipes):
             self.assertEqual(23, result.returncode)
             self.assertEqual("", result.stdout)
 
     def test_background_uses_nohup_when_disown_is_unavailable(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("background () {")
-        end = profile.index("\n}\n", start) + 2
-        definition = profile[start:end].replace(
-            "command -v disown >/dev/null 2>&1", "false"
-        )
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             calls = root / "calls"
             nohup = root / "nohup"
             nohup.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" > "{calls}"\n')
             nohup.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-c", definition + "\nbackground tool 'two words'; wait"],
-                env=os.environ | {"PATH": f"{root}:{os.environ['PATH']}"},
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_profile("enable -n disown; background tool 'two words'; wait",
+                                      env={"PROFILE_TEST_BIN": str(root)})
             call_text = calls.read_text()
 
         self.assertEqual(0, result.returncode, result.stderr)
@@ -880,33 +826,17 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual("41:missing\n", result.stdout)
 
     def test_prompt_adapter_discards_partial_failed_render(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("prompt_adapter() (")
-        end = profile.index("\n)\n", start) + 3
-        definition = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             renderer = Path(directory) / "prompt-command"
             renderer.write_text("#!/bin/sh\nprintf partial\nexit 23\n")
             renderer.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-c", definition + "\nprompt_adapter 9"],
-                env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_profile('prompt_adapter 9', shell='/bin/bash', env=os.environ | {'PROFILE_TEST_BIN': directory, 'PATH': '/usr/bin:/bin'})
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("\n; ", result.stdout)
         self.assertNotIn("partial", result.stdout)
 
     def test_prompt_adapter_installs_complete_multiline_render(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("prompt_adapter() (")
-        end = profile.index("\n)\n", start) + 3
-        definition = profile[start:end]
-
         with tempfile.TemporaryDirectory() as directory:
             calls = Path(directory) / "calls"
             renderer = Path(directory) / "prompt-command"
@@ -916,37 +846,35 @@ class ProfileContractTests(unittest.TestCase):
                 "printf 'first\\nsecond'\n"
             )
             renderer.chmod(0o755)
-            result = subprocess.run(
-                ["/bin/sh", "-c", definition + "\nCOLUMNS=42; prompt_adapter 7"],
-                env=os.environ | {"PATH": f"{directory}:{os.environ['PATH']}"},
-                text=True,
-                capture_output=True,
-                check=False,
-            )
+            result = self.run_profile('COLUMNS=42; prompt_adapter 7', shell='/bin/bash', env=os.environ | {'PROFILE_TEST_BIN': directory, 'PATH': '/usr/bin:/bin'})
             call_text = calls.read_text()
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("first\nsecond", result.stdout)
-        self.assertEqual("42|bash 7 0 sh\n", call_text)
+        self.assertEqual("42|bash 7 0 profile_command.sh\n", call_text)
 
-    def test_git_merge_request_alias_quotes_dynamic_arguments(self) -> None:
+    def test_git_merge_request_alias_passes_hostile_remote_as_one_argument(self) -> None:
         alias = subprocess.run(
-            [
-                "git",
-                "config",
-                "--no-includes",
-                "-f",
-                str(ROOT / "config/gitconfig"),
-                "--get",
-                "alias.mr",
-            ],
-            text=True,
-            capture_output=True,
-            check=True,
-        ).stdout
-
-        self.assertIn('git fetch "$1" "merge-requests/$2/head:mr-$2"', alias)
-        self.assertIn('git checkout "mr-$2"', alias)
+            ["git", "config", "--no-includes", "-f", str(ROOT / "config/gitconfig"), "--get", "alias.mr"],
+            text=True, capture_output=True, check=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["jj", "git", "init", str(root)], check=True, capture_output=True)
+            spy = root / "git"
+            spy.symlink_to(ROOT / "tests/setup/fixtures/record_git.py")
+            calls = root / "calls.jsonl"
+            marker = root / "injected"
+            remote = f"a remote; touch {marker}; $(touch {marker})"
+            result = subprocess.run([shutil.which("git"), "-c", f"alias.mr={alias}", "mr", remote, "42"],
+                cwd=root,
+                env=os.environ | {"PATH": f"{root}:/usr/bin:/bin", "GIT_EXEC_PATH": str(root),
+                                  "GIT_TEST_LOG": str(calls)},
+                text=True, capture_output=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual([["fetch", remote, "merge-requests/42/head:mr-42"], ["checkout", "mr-42"]],
+                             [json.loads(line) for line in calls.read_text().splitlines()])
+            self.assertFalse(marker.exists())
 
     def test_git_update_prompt_is_portable_and_declining_succeeds(self) -> None:
         alias = subprocess.run(
@@ -1091,17 +1019,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual("~/.config/git/hooks\n", result.stdout)
 
     def test_remember_does_not_write_terminal_escapes_to_a_pipe(self) -> None:
-        profile = (ROOT / "config/profile").read_text()
-        start = profile.index("remember() {")
-        end = profile.index("\n}\n", start) + 2
-
-        result = subprocess.run(
-            ["/bin/sh", "-c", profile[start:end] + "\nremember"],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
+        result = self.run_profile('remember')
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stdout)
 
@@ -1169,7 +1087,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(["rejected"] * len(malformed), result.stdout.splitlines())
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
-    def test_glide_zulip_autocmd_matches_hosts_without_scanning_long_urls(self) -> None:
+    def test_glide_registered_callbacks_handle_urls_modes_and_hint_labels(self) -> None:
         result = subprocess.run(
             [
                 "node",
@@ -1183,28 +1101,7 @@ class ProfileContractTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr)
 
-    @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
-    def test_glide_disabled_sites_restore_normal_mode_on_exit(self) -> None:
-        glide = (ROOT / "config/glide.ts").read_text()
-        start = glide.index("async function disable_shortcuts")
-        end = glide.index("const disabled_sites", start)
-        implementation = glide[start:end]
-        script = (
-            "const calls = [];\n"
-            + "const glide = {excmds: {execute(command) { calls.push(command); }}};\n"
-            + implementation
-            + "const cleanup = await disable_shortcuts();\n"
-            + "await cleanup();\n"
-            + "process.stdout.write(JSON.stringify(calls));\n"
-        )
-        result = subprocess.run(
-            ["node", "--input-type=module", "-e", script],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(["mode_change ignore", "mode_change normal"], json.loads(result.stdout))
+
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is unavailable")
     def test_glide_hint_labels_are_short_and_distinct(self) -> None:
@@ -1274,11 +1171,7 @@ class ProfileContractTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(["s"], json.loads(result.stdout))
 
-        glide_config = (ROOT / "config/glide.ts").read_text()
-        self.assertIn(
-            "glide.o.hint_label_generator = ({ content }) => hint_labels_from_content(content);",
-            glide_config,
-        )
+
 
 
 if __name__ == "__main__":

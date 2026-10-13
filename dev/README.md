@@ -119,7 +119,8 @@ Nested wrapper calls retain that path.
 An unusable cache directory fails before the child starts; the wrapper does not fall back to the user's Cargo home.
 Cargo's build-output location is unchanged.
 
-The sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
+The profile tests in `tests/setup/profile_test.py`, Neovim tests in `tests/nvim/`,
+and sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
 permission to create local TCP and Unix sockets. If an execution sandbox denies
 socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun
 the affected command outside that sandbox using the harness's approval mechanism.
@@ -152,6 +153,8 @@ survives nested wrappers. The fixture copies plugins into temporary storage;
 Neovim never writes to the installed plugin tree. Run the focused suite with
 `dev/test-environment python3 tests/nvim/nvim_test.py`. It requires Neovim and
 installed plugins, and reports skipped tests when either is absent.
+The profile suite loads complete shell configurations and reads bindings from a private tmux server.
+Its Glide cases import the complete TypeScript configuration with Node's native type stripping and replace browser APIs with fixtures.
 
 The native prompt-section regression needs an installed Pi build with
 `systemPromptOptions.sections`; the locked test SDK predates that API. Run it

@@ -1,31 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { runInNewContext } from "node:vm";
+import { loadConfig } from "./glide-config.mjs";
 
-const config = readFileSync(process.argv[2], "utf8");
-const registrations = [];
-const deleted = [];
-runInNewContext(
-  config.slice(config.indexOf("async function disable_shortcuts"), config.indexOf("// pin tab")),
-  {
-    URL,
-    glide: {
-      autocmds: {
-        create(event, pattern, callback) {
-          assert.equal(event, "UrlEnter");
-          registrations.push({ pattern, callback });
-        },
-      },
-      excmds: { async execute() {} },
-      buf: {
-        keymaps: {
-          del(mode, key) { deleted.push([mode, key]); },
-          set() {},
-        },
-      },
-    },
-  },
-);
+const { registrations, deleted, executed, glide } = await loadConfig(process.argv[2]);
 
 const zulipKeys = ["d", "e", "r", "t", "U", ":"].map(key => ["normal", key]);
 const longTail = "a".repeat(1_000_000);
@@ -49,7 +25,8 @@ const cases = [
 
 for (const [url, expected] of cases) {
   deleted.length = 0;
-  for (const { pattern, callback } of registrations) {
+  for (const { event, pattern, callback } of registrations) {
+    if (event !== "UrlEnter") continue;
     // Glide matches regex patterns against the whole URL, not the hostname.
     const matches = "test" in pattern
       ? pattern.test(url)
@@ -58,3 +35,19 @@ for (const [url, expected] of cases) {
   }
   assert.deepEqual(deleted, expected ? zulipKeys : [], url.slice(0, 100));
 }
+
+for (const hostname of ["configure.zsa.io", "linear.app", "kumo.io"]) {
+  executed.length = 0;
+  const registration = registrations.find(({ event, pattern }) => event === "UrlEnter" && pattern.hostname === hostname);
+  assert.ok(registration, `missing disabled site: ${hostname}`);
+  const cleanup = await registration.callback({ url: `https://${hostname}/`, tab_id: 1 });
+  assert.deepEqual(executed, ["mode_change ignore"]);
+  await cleanup();
+  assert.deepEqual(executed, ["mode_change ignore", "mode_change normal"]);
+}
+
+assert.equal(typeof glide.o.hint_label_generator, "function");
+const labels = await glide.o.hint_label_generator({
+  content: { async map(callback) { return [{ textContent: "Settings", ariaLabel: null }].map(callback); } },
+});
+assert.deepEqual(labels, ["s"]);

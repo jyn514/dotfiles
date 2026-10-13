@@ -13,4 +13,6 @@ status() {
 	fi
 }
 
-[ -n "$1" ] && status
+if [ -n "$1" ]; then
+	status
+fi

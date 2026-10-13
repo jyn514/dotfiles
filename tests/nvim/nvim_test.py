@@ -28,7 +28,7 @@ class NeovimConfigTests(unittest.TestCase):
         # Lazy can write plugin metadata; never point it at installed checkouts.
         shutil.copytree(PLUGINS, cls.plugins, ignore=shutil.ignore_patterns(".git"))
 
-    def run_nvim(self, lua: str) -> None:
+    def run_nvim(self, lua: str | Path, *, case: str = "") -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             config = root / "config/nvim"
@@ -41,17 +41,16 @@ class NeovimConfigTests(unittest.TestCase):
             (config / "init.lua").symlink_to(NVIM_CONFIG)
             (config / "shared.lua").symlink_to(NVIM_CONFIG.parent / "shared.lua")
             script = root / "test.lua"
-            script.write_text(
-                "local ok, err = xpcall(function()\n" + lua
-                + "\nend, debug.traceback)\n"
-                + "if not ok then print(err); vim.cmd('cquit 1') end\n"
-            )
+            script.write_text(lua.read_text() if isinstance(lua, Path) else lua)
 
             env = os.environ.copy()
             env["XDG_CONFIG_HOME"] = str(root / "config")
             env["XDG_DATA_HOME"] = str(root / "data")
+            env["HOME"] = str(root / "home")
+            env["DOTFILES_NVIM_CASE"] = case
+            env["DOTFILES_NVIM_TEST_SCRIPT"] = str(script)
             result = subprocess.run(
-                ["nvim", "--headless", "-c", f"luafile {script}", "-c", "qa!"],
+                ["nvim", "--headless", "-c", f"luafile {Path(__file__).with_name('fixtures') / 'run_test.lua'}", "-c", "qa!"],
                 cwd=work,
                 env=env,
                 text=True,
@@ -59,6 +58,15 @@ class NeovimConfigTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+
+    def test_tab_alignment_uses_display_columns(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "profile_behavior.lua", case="tab-alignment")
+
+    def test_buffer_delete_keeps_loaded_alternate_with_special_filename(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "profile_behavior.lua", case="alternate-buffer")
+
+    def test_daily_journal_uses_the_date_at_each_invocation(self) -> None:
+        self.run_nvim(Path(__file__).with_name("fixtures") / "profile_behavior.lua", case="journal")
 
     def test_buffer_commands_handle_default_ranges_and_invalid_buffers(self) -> None:
         self.run_nvim(
