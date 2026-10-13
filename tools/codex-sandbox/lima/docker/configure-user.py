@@ -10,7 +10,8 @@ dropin = home / '.config/systemd/user/docker.service.d'
 dropin.mkdir(parents=True, exist_ok=True)
 source = Path('/usr/local/share/codex-sandbox')
 shutil.copyfile(source / 'docker-service.conf', dropin / 'sandbox.conf')
-for name in ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer'):
+for name in ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer',
+             'sandbox-image-gc.service', 'sandbox-image-gc.timer'):
     shutil.copyfile(source / name, dropin.parent / name)
 # Preserve operator enablement on repair. The host enables new installations
 # only after their full provisioning audit succeeds.

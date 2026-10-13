@@ -131,6 +131,32 @@ python3 tools/codex-sandbox/lima/docker_host.py stop
 python3 tools/codex-sandbox/lima/docker_host.py start
 ```
 
+## Image and build-cache garbage collection
+
+New VMs and `upgrade` configure BuildKit's automatic garbage collection with a 10 GB cache budget.
+This is a cleanup target, not a disk quota; active builds and exported images can exceed it.
+A guest user timer runs daily with up to one hour of random delay and catches up after downtime.
+It removes images created more than seven days ago that no running or stopped container references.
+The age is creation time, not last use; an idle project's images may need rebuilding.
+Containers, networks, and volumes are not pruned.
+The Docker client uses the runtime directory for configuration so cleanup can run when the guest disk is full.
+
+The timer is enabled after the first successful installation or upgrade that adds it.
+Later upgrades preserve an operator's disabled timer.
+Inspect or control it inside the selected VM:
+
+```sh
+limactl shell sandbox-host-docker systemctl --user status sandbox-image-gc.timer sandbox-image-gc.service
+limactl shell sandbox-host-docker systemctl --user start sandbox-image-gc.service
+limactl shell sandbox-host-docker systemctl --user disable --now sandbox-image-gc.timer
+limactl shell sandbox-host-docker systemctl --user enable --now sandbox-image-gc.timer
+```
+
+`doctor` verifies the installed GC units against the provisioning snapshot.
+If first-time enablement fails after upgrade publishes the snapshot, use the `enable --now` command above.
+Read cleanup results with `sudo journalctl _SYSTEMD_USER_UNIT=sandbox-image-gc.service` inside the VM.
+Use `docker_host.py upgrade` to deploy this policy to an existing VM; it restarts shared Docker and stops running containers.
+
 ## Container cache reclamation
 
 New VMs put containers under a persistent `sandbox.slice`. A guest systemd

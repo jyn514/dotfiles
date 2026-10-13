@@ -1,0 +1,17 @@
+[Unit]
+Description=Daily cleanup of unused sandbox images
+# As with sandbox-reclaim.timer, Docker supplies startup ordering.
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+BindsTo=docker.service
+After=docker.service
+PartOf=docker.service
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=docker.service

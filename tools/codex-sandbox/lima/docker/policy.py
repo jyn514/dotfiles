@@ -73,6 +73,8 @@ def verify(record):
         raise ValueError('Docker engine identity or security configuration changed')
     if 'docker-reclaim.py' in record['files']:
         verify_reclamation(info)
+    if 'sandbox-image-gc.timer' in record['files']:
+        verify_units(('sandbox-image-gc.service', 'sandbox-image-gc.timer'), 'image GC')
     network = json.loads(run('docker', 'network', 'inspect', 'codex-public-only'))[0]
     if (network['Id'] != record['network_id'] or network['Driver'] != 'bridge' or
             network['Internal'] or network['EnableIPv6'] or
@@ -102,17 +104,22 @@ def verify(record):
     firewall()
 
 
-def verify_reclamation(info):
-    if info.get('CgroupDriver') != 'systemd' or info.get('CgroupVersion') != '2':
-        raise ValueError('sandbox reclamation requires the systemd cgroup v2 driver')
+def verify_units(names, purpose):
     units = Path.home() / '.config/systemd/user'
-    for name in ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer'):
+    for name in names:
         if (units / name).read_bytes() != (BASE / name).read_bytes():
-            raise ValueError(f'installed reclaim unit changed: {name}')
+            raise ValueError(f'installed {purpose} unit changed: {name}')
         properties = dict(line.split('=', 1) for line in run(
             'systemctl', '--user', 'show', name, '--property=FragmentPath,DropInPaths').splitlines())
         if properties != {'FragmentPath': str(units / name), 'DropInPaths': ''}:
-            raise ValueError(f'reclaim unit overridden: {name}')
+            raise ValueError(f'{purpose} unit overridden: {name}')
+
+
+def verify_reclamation(info):
+    if info.get('CgroupDriver') != 'systemd' or info.get('CgroupVersion') != '2':
+        raise ValueError('sandbox reclamation requires the systemd cgroup v2 driver')
+    verify_units(('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer'), 'reclaim')
+    units = Path.home() / '.config/systemd/user'
     dropin = units / 'docker.service.d/sandbox.conf'
     if dropin.read_bytes() != (BASE / 'docker-service.conf').read_bytes():
         raise ValueError('Docker service cgroup policy changed')

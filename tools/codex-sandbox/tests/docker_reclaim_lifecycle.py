@@ -66,9 +66,11 @@ def main():
     timer, service = 'sandbox-reclaim.timer', 'sandbox-reclaim.service'
     files = {'docker-daemon.json': 'daemon.json', 'docker-user.py': 'configure-user.py',
              'docker-policy.py': 'policy.py', 'docker-reclaim.py': 'reclaim.py',
-             **{name: name for name in ('docker-service.conf', 'sandbox.slice', service, timer)}}
+             **{name: name for name in ('docker-service.conf', 'sandbox.slice', service, timer,
+                                      'sandbox-image-gc.service', 'sandbox-image-gc.timer')}}
     targets = [*[BASE / name for name in files], home / 'docker.service.d/sandbox.conf',
-               *[home / name for name in ('sandbox.slice', service, timer)]]
+               *[home / name for name in ('sandbox.slice', service, timer,
+                                         'sandbox-image-gc.service', 'sandbox-image-gc.timer')]]
     backup = Path(tempfile.mkdtemp(prefix='reclaim-lifecycle-'))
     saved = {}
     timer_override = Path(f'/run/user/{os.getuid()}/systemd/user/{timer}.d')

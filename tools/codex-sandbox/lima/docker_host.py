@@ -133,7 +133,8 @@ class DockerHost(Host):
                 'docker-service.conf': SOURCE / 'docker/docker-service.conf',
                 'docker-reclaim.py': SOURCE / 'docker/reclaim.py',
                 **{name: SOURCE / 'docker' / name for name in
-                   ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer')}}
+                   ('sandbox.slice', 'sandbox-reclaim.service', 'sandbox-reclaim.timer',
+                    'sandbox-image-gc.service', 'sandbox-image-gc.timer')}}
 
     def install_snapshot(self, record, temporary):
         self.guest(record, 'sudo', 'mkdir', '-p', GUEST)
@@ -141,6 +142,16 @@ class DockerHost(Host):
             self.guest(record, 'sudo', 'install', '-m', '0644', temporary + '/' + name, GUEST + '/' + name)
         self.guest(record, 'sudo', 'python3', GUEST + '/mount-shares.py', input=json.dumps(record).encode())
         self.guest(record, 'python3', GUEST + '/docker-user.py')
+
+    def upgrade(self):
+        previous = self.record()
+        record = super().upgrade()
+        # Enable only on first installation, after verification and publication.
+        # Later upgrades preserve an operator's disabled timer.
+        if 'sandbox-image-gc.timer' not in previous['files']:
+            self.guest(record, 'systemctl', '--user', 'enable', '--now',
+                       'sandbox-image-gc.timer', timeout=30)
+        return record
 
     def setup(self, instance='sandbox-host-docker', read=None, write=None, client=None):
         if not re.fullmatch(r'sandbox-host-docker(?:-[a-z0-9-]+)?', instance):
@@ -282,6 +293,9 @@ class DockerHost(Host):
             # above, preserving an operator's disabled timer during repair.
             self.guest(record, 'systemctl', '--user', 'enable', '--now',
                        'sandbox-reclaim.timer', timeout=30)
+        if 'sandbox-image-gc.timer' in record['files']:
+            self.guest(record, 'systemctl', '--user', 'enable', '--now',
+                       'sandbox-image-gc.timer', timeout=30)
         record['phase'] = 'ready'
         atomic_json(self.record_path, record)
         return record
