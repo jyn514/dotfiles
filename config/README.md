@@ -18,6 +18,11 @@ edit those implementations, not copies.
 
 ## Agent instructions
 
+Agent launchers put `libexec/agent-wrappers` on PATH.
+Noninteractive Bash, Zsh, and Fish startup preserves that inherited directory ahead of native tools after mise activation.
+Ordinary shells do not acquire agent wrappers through startup alone.
+Check `command -v jj` in the agent's login shell when diagnosing wrapper routing.
+
 The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
 to [Change with evidence](../skills/references/change-with-evidence.md) and note writing
 to [Note records](../skills/references/note-records.md).

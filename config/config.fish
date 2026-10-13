@@ -140,6 +140,10 @@ if exists mise
 end
 
 if not status --is-interactive
+	# Tool activation prepends native binaries; inherited agent wrappers win.
+	if contains -- "$DOTFILES/libexec/agent-wrappers" $PATH
+		add_path "$DOTFILES/libexec/agent-wrappers"
+	end
 	return
 end
 

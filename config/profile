@@ -128,6 +128,10 @@ case "$-" in
 			unset mise_environment
 			add_path "$DOTFILES/bin"
 		fi
+		# Tool activation prepends native binaries; inherited agent wrappers win.
+		case ":${PATH:-}:" in
+			*:"$DOTFILES/libexec/agent-wrappers":*) add_path "$DOTFILES/libexec/agent-wrappers";;
+		esac
 		return 0;;
 esac
 
