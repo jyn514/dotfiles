@@ -9,9 +9,28 @@ import { rewritePiResourcePaths } from "./guest-tools-core.ts";
 
 type CallModel = { provider: string; modelId: string } | null;
 
-export function callModel(ctx: ExtensionContext): CallModel {
+type CallContext = {
+  model: CallModel;
+  session: { id: string; file: string | null } | null;
+};
+
+function guestResourcePaths(): Record<string, string> {
+  const paths = JSON.parse(process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS || "{}");
+  if (Object.entries(paths).some(([hostPath, guestPath]) =>
+    !hostPath.startsWith("/") || typeof guestPath !== "string" || !guestPath.startsWith("/"))) {
+    throw new Error("Pi resource path mapping is invalid");
+  }
+  return paths;
+}
+
+export function callContext(ctx: ExtensionContext): CallContext {
   const model = ctx.model;
-  return model ? { provider: model.provider, modelId: model.id } : null;
+  const id = ctx.sessionManager.getSessionId();
+  const file = ctx.sessionManager.getSessionFile();
+  return {
+    model: model ? { provider: model.provider, modelId: model.id } : null,
+    session: id ? { id, file: file ? rewritePiResourcePaths(file, guestResourcePaths()) : null } : null,
+  };
 }
 
 type GuestFrame =
@@ -23,7 +42,7 @@ type GuestFrame =
 export function callGuest(
   tool: string,
   params: Record<string, unknown>,
-  model: CallModel,
+  context: CallContext,
   signal?: AbortSignal,
   onUpdate?: (result: any) => void,
   onData?: (data: Buffer) => void,
@@ -43,7 +62,7 @@ export function callGuest(
     child.on("error", (error) => { protocolError = error; });
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
-    child.stdin.write(`${JSON.stringify({ tool, params, model })}\n`);
+    child.stdin.write(`${JSON.stringify({ tool, params, ...context })}\n`);
     child.stdout.on("data", (data: Buffer) => {
       pending += data.toString("utf8");
       if (pending.length > 32 * 1024 * 1024) {
@@ -99,14 +118,7 @@ export default function guestTools(pi: ExtensionAPI) {
   if (!repository) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
-  const encodedResourcePaths = process.env.CODEX_SANDBOX_PI_RESOURCE_PATHS;
-  const resourcePaths = encodedResourcePaths
-    ? JSON.parse(encodedResourcePaths) as Record<string, string>
-    : {};
-  if (Object.entries(resourcePaths).some(([hostPath, guestPath]) =>
-    !hostPath.startsWith("/") || !guestPath.startsWith("/"))) {
-    throw new Error("Pi resource path mapping is invalid");
-  }
+  const resourcePaths = guestResourcePaths();
   const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
   const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
   pi.on("session_start", (event, ctx) => {
@@ -139,15 +151,15 @@ export default function guestTools(pi: ExtensionAPI) {
     pi.registerTool({
       ...tool,
       execute: (id, params, signal, onUpdate, ctx) =>
-        callGuest(tool.name, params as Record<string, unknown>, callModel(ctx), signal, onUpdate),
+        callGuest(tool.name, params as Record<string, unknown>, callContext(ctx), signal, onUpdate),
     });
   }
   pi.on("user_bash", (_event, ctx) => {
-    const model = callModel(ctx);
+    const context = callContext(ctx);
     return {
       operations: {
         exec: (command, _cwd, { onData, signal, timeout }) =>
-          callGuest("user_bash", { command, timeout }, model, signal, undefined, onData),
+          callGuest("user_bash", { command, timeout }, context, signal, undefined, onData),
       },
     };
   });

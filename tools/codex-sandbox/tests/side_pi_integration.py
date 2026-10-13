@@ -158,7 +158,9 @@ def run_case(root, pi, package, close_source_first):
 
     def tool_probe(pane, label, session):
         before = len(entries(session))
-        input_line(pane, f"!pwd; cat guest-only-marker; printf '{label}\\n'")
+        input_line(pane, "!pwd; cat guest-only-marker; "
+                   "printf 'SESSION=%s\\nFILE=%s\\n' \"$PI_SESSION_ID\" \"$PI_SESSION_FILE\"; "
+                   f"printf '{label}\\n'")
         def completed():
             messages = [item["message"] for item in entries(session)[before:]
                         if item.get("type") == "message"]
@@ -168,6 +170,8 @@ def run_case(root, pi, package, close_source_first):
         assert message["exitCode"] == 0, message
         assert str(guest) in message["output"] and marker in message["output"], message
         assert str(host) not in message["output"], message
+        assert f"SESSION={entries(session)[0]['id']}\n" in message["output"], message
+        assert f"FILE={session}\n" in message["output"], message
         assert alive(receipt()["worker_pid"]), receipt()
         return message["output"].strip()
 
@@ -223,7 +227,7 @@ def run_case(root, pi, package, close_source_first):
         producer_models = {}
         for label, model_id in (("SDK_A", "fixture-model-A-raw"), ("SDK_B", "fixture-model-B-raw")):
             frame = call_receipt(label)
-            assert {"tool", "params", "model"} <= frame.keys() <= {"tool", "params", "model", "id"}, frame
+            assert {"tool", "params", "model", "session"} <= frame.keys() <= {"tool", "params", "model", "session", "id"}, frame
             assert frame["tool"] == "bash" and frame["model"] == {
                 "provider": "side-attribution", "modelId": model_id}, frame
             producer_models[label] = frame["model"]
@@ -261,7 +265,9 @@ def run_case(root, pi, package, close_source_first):
         assert old_a["jj_user"] != result_a["jj_user"], (old_a, result_a)
         frames = {label: call_receipt(label) for label in ("A", "B", "OLD_A")}
         for label, model_id in (("A", model_a), ("B", model_b), ("OLD_A", model_a)):
-            assert {"tool", "params", "model"} <= frames[label].keys() <= {"tool", "params", "model", "id"}, frames
+            assert {"tool", "params", "model", "session"} <= frames[label].keys() <= {"tool", "params", "model", "session", "id"}, frames
+            invoked_session = side_session if label == "B" else source
+            assert frames[label]["session"] == {"id": entries(invoked_session)[0]["id"], "file": str(invoked_session)}, frames
             assert frames[label]["tool"] == "user_bash", frames
             assert frames[label]["model"] == {"provider": "side-attribution", "modelId": model_id}, frames
         assert not (runtime / "inference-attempted").exists(), "provider inference unexpectedly invoked"

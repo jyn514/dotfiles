@@ -62,9 +62,12 @@ Pi continues to write sessions on the host.
 
 Guest `jj` calls snapshot the invoking Pi's model at dispatch, including in side
 panes and ordinary subagents; later model changes cannot alter in-flight
-attribution. Close existing sandbox panes and start a new sandbox to deploy the
-host extension and guest worker together; `/reload` alone does not replace the
-worker.
+attribution.
+Shell tools and `!` commands also snapshot `PI_SESSION_ID` and `PI_SESSION_FILE` per invocation.
+The file path names the guest's read-only session mount, not the host path; ephemeral sessions leave `PI_SESSION_FILE` unset.
+Unknown session metadata clears inherited session values rather than using another pane's identity.
+Close existing sandbox panes and start a new sandbox to deploy the host extension and guest worker together;
+`/reload` alone does not replace the worker.
 
 Agent containers drop `NET_RAW` on every backend, including after container-local sudo.
 Sidecars drop all capabilities.

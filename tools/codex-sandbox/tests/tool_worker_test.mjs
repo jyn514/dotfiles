@@ -28,7 +28,7 @@ async function eventually(predicate) {
 async function connect(request, path = socketPath) {
   const socket = createConnection(path);
   await once(socket, "connect");
-  socket.write(`${JSON.stringify({ model: null, ...request })}\n`);
+  socket.write(`${JSON.stringify({ model: null, session: null, ...request })}\n`);
   return socket;
 }
 
@@ -74,6 +74,7 @@ before(async () => {
   nativeWorker = spawn(process.execPath, [resolve(here, "../image/tool-worker.mjs")], {
     cwd: directory,
     env: { ...process.env, HOME: directory, PI_CALL_MODEL: "stale-env-model",
+      PI_SESSION_ID: "stale-session", PI_SESSION_FILE: "/stale/session.jsonl",
       PI_MODEL_FILE: staleFile, CODEX_SANDBOX_TOOL_SOCKET: nativeSocket,
       CODEX_SANDBOX_PI_TOOL_MODULE: pathToFileURL(resolve(packageDir, publicEntry)).href },
     stdio: ["ignore", "ignore", "inherit"],
@@ -174,6 +175,42 @@ test("overlapping SDK bash calls keep their invocation models", async () => {
   } }, nativeSocket);
   assert.equal(output(await frames(b)), "model-b");
   assert.equal(output(await aFrames), "model-a");
+});
+
+test("overlapping SDK calls keep session ID and file in both shell paths", async () => {
+  for (const tool of ["bash", "user_bash"]) {
+    const started = `session-${tool}-started`;
+    const release = `session-${tool}-release`;
+    const a = await connect({ tool, session: { id: "session-a", file: "/sessions/a with spaces.jsonl" }, params: {
+      command: `touch ${started}; while [ ! -f ${release} ]; do sleep 0.02; done; printf '%s|%s' "$PI_SESSION_ID" "$PI_SESSION_FILE"`,
+    } }, nativeSocket);
+    const aFrames = frames(a);
+    await eventually(() => existsSync(join(directory, started)));
+    const b = await connect({ tool, session: { id: "session-b", file: "/sessions/b.jsonl" }, params: {
+      command: `printf '%s|%s' "$PI_SESSION_ID" "$PI_SESSION_FILE"; touch ${release}`,
+    } }, nativeSocket);
+    const shellOutput = (records) => tool === "bash" ? output(records)
+      : records.filter(frame => frame.kind === "data")
+        .map(frame => Buffer.from(frame.data, "base64").toString()).join("");
+    assert.equal(shellOutput(await frames(b)), "session-b|/sessions/b.jsonl");
+    assert.equal(shellOutput(await aFrames), "session-a|/sessions/a with spaces.jsonl");
+    for (const session of [null, { id: "ephemeral", file: null }]) {
+      const socket = await connect({ tool, session, params: {
+        command: "printf '%s|%s|%s' \"${PI_SESSION_ID-unset}\" \"${PI_SESSION_FILE-unset}\" \"$PI_CALL_MODEL\"",
+      } }, nativeSocket);
+      assert.equal(shellOutput(await frames(socket)), session ? "ephemeral|unset|" : "unset|unset|");
+    }
+  }
+});
+
+test("malformed or missing session metadata prevents execution", async () => {
+  for (const session of [undefined, {}, [], "session", { id: "a" }, { id: "", file: null },
+    { id: "a\n", file: null }, { id: "a", file: "relative.jsonl" },
+    { id: "a", file: "/bad\nfile" }, { id: "a", file: null, extra: true }]) {
+    const socket = await connect({ tool: "bash", session, params: { command: "touch invalid-executed" } }, nativeSocket);
+    assert.deepEqual(await frames(socket), [{ kind: "error", message: "invalid call session" }]);
+  }
+  assert.equal(existsSync(join(directory, "invalid-executed")), false);
 });
 
 test("explicit unknown overrides stale environment and shared file in both shell paths", async () => {

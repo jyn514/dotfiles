@@ -72,7 +72,7 @@ class SidePiConnectorTest(unittest.TestCase):
         self.assertEqual(records[0].read_bytes(), data)
 
     def test_connector_failure_exits_with_caller_stdin_still_open(self):
-        child, data = self.adapter({"tool": "read", "params": {"path": "file.txt"}, "model": None})
+        child, data = self.adapter({"tool": "read", "params": {"path": "file.txt"}, "model": None, "session": None})
         # The caller closes stdin only after a terminal result. Do not use
         # communicate(), which would hide the original circular wait by sending EOF.
         child.wait(timeout=5)
@@ -82,7 +82,7 @@ class SidePiConnectorTest(unittest.TestCase):
 
     def test_success_exits_with_caller_stdin_still_open(self):
         self.worker()
-        child, data = self.adapter({"tool": "read", "params": {"path": "file.txt"}, "model": None})
+        child, data = self.adapter({"tool": "read", "params": {"path": "file.txt"}, "model": None, "session": None})
         child.wait(timeout=5)
         self.assertEqual(child.returncode, 0, child.stderr.read())
         self.assertEqual(json.loads(child.stdout.read()), {"kind": "result", "result": {
@@ -92,7 +92,7 @@ class SidePiConnectorTest(unittest.TestCase):
 
     def test_caller_eof_cancels_pending_guest_work(self):
         self.worker()
-        child, data = self.adapter({"tool": "bash", "params": {"command": "sleep"}, "model": None})
+        child, data = self.adapter({"tool": "bash", "params": {"command": "sleep"}, "model": None, "session": None})
         with selectors.DefaultSelector() as selector:
             selector.register(child.stdout, selectors.EVENT_READ)
             self.assertTrue(selector.select(timeout=5), "guest work did not start")

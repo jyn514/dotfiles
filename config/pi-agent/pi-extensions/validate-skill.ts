@@ -7,7 +7,7 @@ import {
   type ResourceDiagnostic,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { callGuest, callModel } from "./guest-tools.ts";
+import { callGuest, callContext } from "./guest-tools.ts";
 
 export const validateSkillTool = defineTool({
   name: "validate_skill",
@@ -20,7 +20,7 @@ export const validateSkillTool = defineTool({
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     let details: { loaded: boolean; name?: string; diagnostics: ResourceDiagnostic[] };
     if (process.env.CODEX_SANDBOX_TOOL_CONTAINER) {
-      details = await callGuest("validate_skill", params, callModel(ctx), signal);
+      details = await callGuest("validate_skill", params, callContext(ctx), signal);
     } else {
       const { skills, diagnostics } = loadSkills({
         cwd: ctx.cwd,

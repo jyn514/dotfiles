@@ -75,7 +75,7 @@ test("registered tools and human bash snapshot their own public invocation conte
     CODEX_SANDBOX_TOOL_CONNECT: connector,
     CODEX_SANDBOX_GUEST_CWD: dir,
     CODEX_SANDBOX_GUEST_REPO: dir,
-    CODEX_SANDBOX_PI_RESOURCE_PATHS: "{}",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ "/host/sessions": "/guest/sessions" }),
     CODEX_GUEST_CALL_TEST_DIR: dir,
     PI_CALL_MODEL: "stale-env",
     PI_MODEL_FILE: join(dir, "model.json"),
@@ -88,32 +88,47 @@ test("registered tools and human bash snapshot their own public invocation conte
   try {
     guestTools({ registerTool: (tool: any) => tools.set(tool.name, tool),
       on: (name: string, hook: any) => hooks.set(name, hook) } as any);
-    const ctx = { model: { provider: "provider-a", id: "model-a" } };
+    let sessionId = "session-a";
+    let sessionFile: string | undefined = "/host/sessions/a.jsonl";
+    const ctx = { model: { provider: "provider-a", id: "model-a" }, sessionManager: {
+      getSessionId: () => sessionId, getSessionFile: () => sessionFile,
+    } };
     const params = { command: "pause", model: "model-selected-parameter" };
     const a = tools.get("bash").execute("a", params, undefined, undefined, ctx);
     await eventually(() => existsSync(join(dir, "started")));
     // Mutate the actual model object, not just the context reference.
     ctx.model.provider = "provider-b";
     ctx.model.id = "model-b";
+    sessionId = "session-b";
+    sessionFile = "/host/sessions/b.jsonl";
     const b = await tools.get("bash").execute("b", { command: "b" }, undefined, undefined, ctx);
     writeFileSync(join(dir, "release"), "");
     const aResult = await a;
     expect(b).toEqual({ tool: "bash", params: { command: "b" },
-      model: { provider: "provider-b", modelId: "model-b" } });
+      model: { provider: "provider-b", modelId: "model-b" },
+      session: { id: "session-b", file: "/guest/sessions/b.jsonl" } });
     expect(aResult).toEqual({ tool: "bash", params,
-      model: { provider: "provider-a", modelId: "model-a" } });
+      model: { provider: "provider-a", modelId: "model-a" },
+      session: { id: "session-a", file: "/guest/sessions/a.jsonl" } });
 
     const human = hooks.get("user_bash")({ command: "human" }, ctx);
     ctx.model.id = "later-model";
+    sessionId = "later-session";
+    sessionFile = undefined;
     expect(await human.operations.exec("human", dir, { onData() {} })).toEqual({
       tool: "user_bash", params: { command: "human" },
       model: { provider: "provider-b", modelId: "model-b" },
+      session: { id: "session-b", file: "/guest/sessions/b.jsonl" },
     });
+    const ephemeral = await tools.get("bash").execute("ephemeral", {}, undefined, undefined, ctx);
+    expect(ephemeral.session).toEqual({ id: "later-session", file: null });
+    sessionId = "";
     for (const tool of tools.values()) {
-      const result = await tool.execute("unknown", {}, undefined, undefined, { model: undefined });
+      const result = await tool.execute("unknown", {}, undefined, undefined, { ...ctx, model: undefined });
       expect(result.model).toBeNull();
+      expect(result.session).toBeNull();
     }
-    const unknown = hooks.get("user_bash")({}, { model: undefined });
+    const unknown = hooks.get("user_bash")({}, { ...ctx, model: undefined });
     expect((await unknown.operations.exec("unknown", dir, { onData() {} })).model).toBeNull();
     expect(process.env.PI_CALL_MODEL).toBe("stale-env");
     expect(readFileSync(env.PI_MODEL_FILE, "utf8")).toBe('{"modelId":"stale-file"}');

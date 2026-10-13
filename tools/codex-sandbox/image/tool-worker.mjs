@@ -29,6 +29,18 @@ function parseCallModel(model) {
   return { provider: model.provider, modelId: model.modelId };
 }
 
+function parseCallSession(session) {
+  if (session === null) return null;
+  if (!session || typeof session !== "object" || Array.isArray(session) ||
+      Object.keys(session).length !== 2 ||
+      typeof session.id !== "string" || !session.id || /[\x00-\x1f\x7f-\x9f]/u.test(session.id) ||
+      !(session.file === null || (typeof session.file === "string" &&
+        session.file.startsWith("/") && !/[\x00-\x1f\x7f-\x9f]/u.test(session.file)))) {
+    throw new Error("invalid call session");
+  }
+  return { id: session.id, file: session.file };
+}
+
 function send(socket, message) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
 }
@@ -69,11 +81,22 @@ const server = createServer((socket) => {
         if (!request || typeof request !== "object" ||
             typeof request.tool !== "string" || !request.params ||
             typeof request.params !== "object" || Array.isArray(request.params) ||
-            Object.keys(request).some(key => !["tool", "params", "model", "id"].includes(key))) {
+            Object.keys(request).some(key => !["tool", "params", "model", "session", "id"].includes(key))) {
           throw new Error("invalid tool request");
         }
         const model = parseCallModel(request.model);
-        const callEnv = { PI_CALL_MODEL: model?.modelId ?? "" };
+        const session = parseCallSession(request.session);
+        // Each request owns its environment; never publish session state globally.
+        const callEnv = (base) => {
+          const env = { ...base, PI_CALL_MODEL: model?.modelId ?? "" };
+          delete env.PI_SESSION_ID;
+          delete env.PI_SESSION_FILE;
+          if (session) {
+            env.PI_SESSION_ID = session.id;
+            if (session.file !== null) env.PI_SESSION_FILE = session.file;
+          }
+          return env;
+        };
         let result;
         if (request.tool === "validate_skill") {
           if (typeof request.params.path !== "string" || request.params.path.length === 0 ||
@@ -91,7 +114,7 @@ const server = createServer((socket) => {
           if (typeof request.params.command !== "string") throw new Error("invalid bash command");
           result = await createLocalBashOperations().exec(
             request.params.command, process.cwd(), {
-              env: { ...process.env, ...callEnv },
+              env: callEnv(process.env),
               signal: controller.signal,
               timeout: request.params.timeout,
               onData: (data) => send(socket, { kind: "data", data: data.toString("base64") }),
@@ -99,7 +122,7 @@ const server = createServer((socket) => {
           );
         } else {
           const spawnHook = context => ({
-            ...context, env: { ...context.env, ...callEnv },
+            ...context, env: callEnv(context.env),
           });
           if (!Object.hasOwn(toolFactories, request.tool)) throw new Error("unknown tool");
           const shellOptions = request.tool === "bash" || request.tool === "powershell"

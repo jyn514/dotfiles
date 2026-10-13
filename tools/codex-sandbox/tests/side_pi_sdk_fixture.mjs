@@ -64,6 +64,12 @@ try {
   assert.equal(receiptB.cwd, process.env.CODEX_SANDBOX_GUEST_CWD);
   assert.equal(a.messages.length, 0, "SDK tool check must not submit a model prompt");
   assert.equal(b.messages.length, 0, "SDK tool check must not submit a model prompt");
+  for (const session of [a, b]) {
+    const result = await bash(session, "printf '%s|%s' \"$PI_SESSION_ID\" \"${PI_SESSION_FILE-unset}\"");
+    assert.ok(!result.isError, JSON.stringify(result));
+    const text = result.content.map(block => block.text ?? "").join("");
+    assert.equal(text, `${session.sessionId}|unset`, "ephemeral SDK session metadata must reach guest bash");
+  }
   await writeFile(join(runtime, "sdk-attribution.json"), JSON.stringify({
     ctx_model_a: { provider: a.model.provider, modelId: a.model.id },
     ctx_model_b: { provider: b.model.provider, modelId: b.model.id },
