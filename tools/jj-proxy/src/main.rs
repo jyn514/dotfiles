@@ -640,9 +640,27 @@ mod tests {
             eprintln!("skipping inspection config test: set JJ_PROXY_TEST_JJ to a real jj binary");
             return;
         };
-        let root = env::temp_dir().join(format!("jj-proxy-inspect-config-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let child_root = env::var_os("JJ_PROXY_INSPECTION_TEST_ROOT");
+        if child_root.is_none() {
+            let root = env::temp_dir().join(format!("jj-proxy-inspect-config-{}", std::process::id()));
+            fs::create_dir(&root).unwrap();
+            let root = fs::canonicalize(root).unwrap();
+            // Configuration helpers also spawn JJ. Isolate the whole case
+            // without changing the working directory of parallel tests.
+            let output = Command::new(env::current_exe().unwrap())
+                .args(["--exact", "tests::inspection_prepares_config_without_changing_repository_metadata", "--nocapture"])
+                .current_dir(&root)
+                .env("JJ_PROXY_INSPECTION_TEST_ROOT", &root)
+                .env("JJ_PROXY_TEST_JJ", &jj)
+                .output().unwrap();
+            assert!(output.status.success(), "inspection child failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(root.join("linked/.jj/repo").is_file(), "inspection child did not run the linked-workspace case");
+            fs::remove_dir_all(root).unwrap();
+            return;
+        }
+        let root = PathBuf::from(child_root.unwrap());
+        assert_eq!(root, env::current_dir().unwrap());
         let repo = root.join("repo");
         let original_home = root.join("original-config");
         let inspection_home = root.join("inspection-config");
@@ -670,7 +688,7 @@ mod tests {
         fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
         let linked = root.join("linked");
         let output = Command::new(&jj).args(["--repository"]).arg(&repo)
-            .args(["workspace", "add", "--no-colocate"]).arg(&linked)
+            .args(["workspace", "add"]).arg(&linked)
             .env_clear().env("HOME", "/nonexistent").env("XDG_CONFIG_HOME", &original_home)
             .output().unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -684,7 +702,6 @@ mod tests {
             .output().unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         fs::set_permissions(config_id.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
-        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
