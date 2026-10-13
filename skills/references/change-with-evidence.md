@@ -33,3 +33,7 @@ API guarantees between architecture boundaries must be explicitly documented.
 Do not depend on internal details, exact source code, or coincidentally convenient properties.
 This applies WHENEVER there is an architecture boundary, even when writing tests for code you wrote yourself.
 Consult the "Principles" section of `architecture-design` for what constitutes a boundary.
+
+Before recommending reuse, verify that the actual component at its pinned version exposes a supported interface to the intended consumer.
+A public API in an underlying library does not expose the tool's private modules.
+If reuse requires private-source integration, a downstream patch, or a fork, name that and its maintenance cost before recommending it.

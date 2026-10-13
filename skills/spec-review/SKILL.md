@@ -64,9 +64,8 @@ Separate required outcomes from proposed mechanisms. Require justification for
 each mechanism; do not promote an implementation choice into a constraint when
 evaluating simplifications or alternatives.
 
-Before recommending reuse of a dependency's parser or other component, verify that the pinned version exposes a supported, consumable interface.
-Distinguish public API reuse from integration with private source modules, downstream patches, or forks.
-Include the maintenance cost of that integration in the recommendation.
+Before recommending parser or component reuse, apply the
+[supported-interface rule](../references/change-with-evidence.md#distinguish-guarantees-from-details).
 
 ## Duplication
 
