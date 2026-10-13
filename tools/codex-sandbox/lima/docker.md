@@ -75,6 +75,10 @@ python3 tools/codex-sandbox/lima/docker_host.py upgrade
 The operation restarts Docker, stopping running containers, then verifies the
 updated guest policy before publishing its new provisioning snapshot.
 Stop active sessions and other VM workloads before upgrading.
+Setup reports the current Docker state after unit reload and restart, including its start time and whether units need reloading.
+Successful rootless-service installation output is hidden because it can contain status and journal entries from the previous daemon.
+Failed steps retain their command diagnostics and stop provisioning; a failed restart also reports the current unit state.
+`setup` and `upgrade` end with a completion summary; use `status` to inspect the full provisioning record as JSON.
 
 For existing state, or to repair a missing or altered private CLI, run:
 

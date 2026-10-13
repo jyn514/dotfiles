@@ -456,7 +456,10 @@ def main():
             atomic_json(host.record_path, record)
         else:
             record = getattr(host, args.operation)()
-        print(json.dumps(record))
+        if args.operation in ('setup', 'upgrade'):
+            print(f"Docker VM {record['instance']}: {args.operation} complete.")
+        else:
+            print(json.dumps(record))
 
 
 if __name__ == '__main__':

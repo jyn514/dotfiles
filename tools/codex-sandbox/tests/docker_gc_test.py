@@ -1,6 +1,8 @@
 """GC provisioning must not re-enable disabled timers or precede verification."""
 
 import importlib.util
+from contextlib import redirect_stderr
+import io
 import json
 from pathlib import Path
 import runpy
@@ -71,9 +73,11 @@ class DockerGCTest(unittest.TestCase):
                 return staged if value == '/usr/local/share/codex-sandbox' else real_path(value)
 
             with patch('pathlib.Path', side_effect=guest_path) as paths, \
-                    patch('subprocess.run') as run:
+                    patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0,
+                          'ActiveState=active\nSubState=running\nNeedDaemonReload=no\n', '')) as run, \
+                    redirect_stderr(io.StringIO()):
                 paths.home.return_value = home
-                runpy.run_path(str(SOURCE / 'configure-user.py'))
+                self.assertEqual(0, runpy.run_path(str(SOURCE / 'configure-user.py'))['main']())
             with patch.object(Path, 'home', return_value=home), patch.object(policy, 'BASE', staged):
                 for name in ('sandbox-image-gc.service', 'sandbox-image-gc.timer'):
                     properties = f'FragmentPath={home / ".config/systemd/user" / name}\nDropInPaths=\n'
