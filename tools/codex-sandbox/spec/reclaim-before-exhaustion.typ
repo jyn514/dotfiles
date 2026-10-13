@@ -143,8 +143,8 @@ No supervisor or state journal is needed.
 + *Roll out explicitly.* Existing provisioning snapshots are immutable; use
   a fresh VM/state generation first, then a drained migration. Recreate old
   containers under the parent and use a scheduled VM restart to clear earlier
-  cache ownership. `lima/docker.md`, `lima/README.md`, and command help document
-  setup, status, manual reclaim, and timer/job shutdown behavior.
+  cache ownership. `lima/docker.md` and command help document setup, status,
+  manual reclaim, and timer/job shutdown behavior.
   Reclamation never kills or pauses containers.
 
 Process migration does not transfer earlier memory charges.

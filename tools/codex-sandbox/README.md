@@ -159,7 +159,7 @@ Lima-Docker is the default outer runtime (`lima-docker`).
 Follow the [Docker setup guide](lima/docker.md) before launching;
 missing setup is an error, not a fallback to another engine.
 [Opt-in Lima launches](lima/launch.md) use a separately provisioned VM, Keychain boot credentials, and runtime-aware image builders.
-The [network fixture](lima/README.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
+The [network fixture](lima/network-feasibility.md) and [runtime contracts](lima/runtime.md) preserve the container boundaries;
 `dev/test --lima` includes the disposable host, network, and runtime gate.
 The [rootless Docker backend](lima/docker.md) uses Docker's forwarded API socket and has its own setup and validation commands.
 Its [default-readiness record](lima/docker.md#default-readiness) distinguishes passed bounded tests from unresolved host file-table pressure and sustained-workload validation.
