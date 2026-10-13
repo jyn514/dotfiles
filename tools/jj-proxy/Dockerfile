@@ -34,6 +34,8 @@ RUN --mount=type=cache,target=/jj/target \
 RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
 FROM build AS verified
+# The pinned JJ binary uses external Git during secure-config test setup.
+RUN apk add --no-cache git
 COPY --from=jj /jj-bin /jj-bin
 COPY tools/jj-proxy/jj.toml ./
 COPY tools/jj-proxy/policy.toml ./policy.toml
