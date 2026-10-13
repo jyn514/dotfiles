@@ -173,6 +173,13 @@ defaults do not replace observation sequencing or user-authorization requirement
 
 ## Prompt inspection
 
+`Ctrl+R` or `/history-search` opens previous prompts from the current branch and saved sessions.
+Search matches all whitespace-separated terms, ignoring case, anywhere in the prompt.
+Pi's `SelectList` displays results and handles arrow navigation; `Ctrl+R` selects the next result.
+Enter restores the original prompt text, including line breaks, and Escape leaves the editor unchanged.
+Saved history loads in the background without changing the selected prompt.
+Run `/reload` after updating the picker extension.
+
 `/system-prompt` shows the last prepared Pi system prompt, with the selected model
 and capture time. Both this viewer and `/context-breakdown` retain a shared snapshot
 from `before_provider_request`; Pi's idle getter otherwise loses per-run changes.

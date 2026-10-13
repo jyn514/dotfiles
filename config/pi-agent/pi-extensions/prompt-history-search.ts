@@ -11,6 +11,7 @@ import {
   Input,
   Key,
   matchesKey,
+  SelectList,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import {
@@ -25,8 +26,7 @@ import {
 
 class PromptHistorySearch implements Component, Focusable {
   private readonly input = new Input();
-  private filtered: PromptHistoryEntry[];
-  private selected = 0;
+  private list: SelectList;
   private loading = true;
   private _focused = false;
 
@@ -34,13 +34,13 @@ class PromptHistorySearch implements Component, Focusable {
     private prompts: PromptHistoryEntry[],
     private readonly theme: Theme,
     initialQuery: string,
-    private readonly done: (result: string | null) => void,
+    done: (result: string | null) => void,
   ) {
     this.input.setValue(initialQuery);
     this.input.handleInput("\x1b[F");
-    this.filtered = searchPromptHistory(prompts, initialQuery);
+    this.list = this.createList();
     this.input.onEscape = () => done(null);
-    this.input.onSubmit = () => this.select();
+    this.input.onSubmit = () => done(this.list.getSelectedItem()?.value ?? null);
   }
 
   get focused(): boolean {
@@ -53,30 +53,22 @@ class PromptHistorySearch implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, Key.up)) {
-      this.move(-1);
-      return;
-    }
-    if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("r"))) {
-      this.move(1);
+    if (matchesKey(data, Key.up) || matchesKey(data, Key.down) || matchesKey(data, Key.ctrl("r"))) {
+      this.list.handleInput(matchesKey(data, Key.ctrl("r")) ? "\x1b[B" : data);
       return;
     }
 
     const previousQuery = this.input.getValue();
     this.input.handleInput(data);
     if (this.input.getValue() !== previousQuery) {
-      this.filtered = searchPromptHistory(this.prompts, this.input.getValue());
-      this.selected = 0;
+      this.list = this.createList();
     }
   }
 
   setPrompts(prompts: PromptHistoryEntry[]): void {
-    const selectedText = this.filtered[this.selected]?.text;
+    const selectedText = this.list.getSelectedItem()?.value;
     this.prompts = prompts;
-    this.filtered = searchPromptHistory(prompts, this.input.getValue());
-    this.selected = selectedText
-      ? Math.max(0, this.filtered.findIndex(({ text }) => text === selectedText))
-      : 0;
+    this.list = this.createList(selectedText);
   }
 
   finishLoading(): void {
@@ -89,19 +81,11 @@ class PromptHistorySearch implements Component, Focusable {
       ...this.input.render(width),
     ];
 
-    if (this.filtered.length === 0) {
+    if (!this.list.getSelectedItem()) {
       const message = this.loading ? "Loading older prompts…" : "No matching prompts";
       lines.push(truncateToWidth(this.theme.fg(this.loading ? "dim" : "warning", message), width));
     } else {
-      const maxVisible = 10;
-      const start = Math.max(0, Math.min(this.selected - Math.floor(maxVisible / 2), this.filtered.length - maxVisible));
-      const end = Math.min(start + maxVisible, this.filtered.length);
-      for (let index = start; index < end; index++) {
-        const normalized = this.filtered[index].text.replace(/\s+/g, " ").trim();
-        const prefix = index === this.selected ? "› " : "  ";
-        const text = truncateToWidth(`${prefix}${normalized}`, width);
-        lines.push(index === this.selected ? this.theme.fg("accent", text) : text);
-      }
+      lines.push(...this.list.render(width));
     }
 
     const help = this.loading
@@ -113,15 +97,24 @@ class PromptHistorySearch implements Component, Focusable {
 
   invalidate(): void {
     this.input.invalidate();
+    this.list.invalidate();
   }
 
-  private move(direction: -1 | 1): void {
-    if (this.filtered.length === 0) return;
-    this.selected = (this.selected + direction + this.filtered.length) % this.filtered.length;
-  }
-
-  private select(): void {
-    this.done(this.filtered[this.selected]?.text ?? null);
+  private createList(selectedText?: string): SelectList {
+    // Keep multi-term history search; SelectList's built-in filter is prefix-only.
+    const prompts = searchPromptHistory(this.prompts, this.input.getValue());
+    const list = new SelectList(prompts.map(({ text }) => ({
+      value: text,
+      label: text.replace(/\s+/g, " ").trim(),
+    })), 10, {
+      selectedPrefix: (text) => this.theme.fg("accent", text),
+      selectedText: (text) => this.theme.fg("accent", text),
+      description: (text) => this.theme.fg("dim", text),
+      scrollInfo: (text) => this.theme.fg("dim", text),
+      noMatch: (text) => this.theme.fg("warning", text),
+    });
+    list.setSelectedIndex(Math.max(0, prompts.findIndex(({ text }) => text === selectedText)));
+    return list;
   }
 }
 
