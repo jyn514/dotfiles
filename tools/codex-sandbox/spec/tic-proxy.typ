@@ -35,7 +35,7 @@ This removes the native/proxy handoff, multi-proxy invocation lock, and index of
 Keep native `ti` rather than building a replacement ticket API around `ticgit-lib`.
 Native TicGit owns ordinary option parsing, field validation, ticket-prefix resolution, filters, persisted data, and rendering.
 In particular, `--markdown`, `--json`, and ordinary text output remain native behavior.
-The proxy owns authority checks, not a second implementation of the CLI grammar.
+The proxy owns authority checks and generic token scanning, not an independently maintained TicGit grammar.
 
 Use the same separation as `tools/jj-proxy/client`, `src/policy.rs`, and `src/main.rs`:
 a forwarding client, a compact command policy, and a serial native-command server.
@@ -48,7 +48,7 @@ Build `schacon/ticgit` revision `d0bda85fa593e5d4488dd13af1216b0d2766d6dc`, vers
 It selects `git-meta-lib` `0.1.10` and requires Rust at least `1.88`.
 The relevant native owners are `commands/new.rs`, `commands/edit.rs`, `commands/mod.rs`, `commands/setup.rs`,
 `session_state.rs`, and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
-An upgrade requires reviewing the admitted commands' file, subprocess, setup, and network effects.
+An upgrade requires reviewing the admitted commands' file, subprocess, setup, and network effects, and regenerating grammar metadata.
 Pin the toolchain and image through existing image resolution; do not install or update tools at runtime.
 
 Select `tic` as an opt-in version 2 repository manifest command using the existing image binding.
@@ -111,7 +111,7 @@ Admit these native command families:
 An empty argument vector means native `list`.
 Admit the native aliases `ls`, `dep`, and `status` with the corresponding command policy.
 The accepted grammar is the pinned native CLI restricted by this policy and the authority checks below.
-Do not enumerate each family's ordinary flags, validate their values, or rebuild ordinary argv.
+Do not hand-maintain each family's ordinary flags, validate their values, or rebuild ordinary argv.
 Pass admitted arguments unchanged except for transported file inputs.
 Native TicGit rejects unknown or conflicting ordinary options and renders completed results.
 
@@ -126,7 +126,25 @@ repository/configuration/executable overrides, and file options not replaced by 
 Admit transported file input only for native `new`, `edit`, `meta`, and `spec` as described below.
 Missing targets and editor-triggering forms are native errors, not proxy admission failures.
 
-The security scanner must distinguish options, their values, and operands using the pinned CLI's token rules.
+=== Generated grammar metadata
+
+At image build time, compile a metadata extractor against the same pinned TicGit CLI definitions and locked Clap dependencies as native `ti`.
+The extractor reads the built Clap command tree through its reflection APIs; do not scrape Rust source, help output, or shell completions.
+A build-only companion target may compile the existing private CLI modules; native `ti`'s source and runtime behavior remain unchanged.
+This integration depends on TicGit's internal source layout and must be reviewed when the native pin changes.
+Generate command and option names and aliases, positional order, value arities, and all settings needed to classify tokens under the pinned parser.
+Keep command admission and security-sensitive field selection in the separate trusted policy, not the generated grammar.
+Do not reproduce ordinary value validators, required-field checks, or option conflicts in the scanner.
+
+Package one generated artifact for the server, guest client, and host shim; do not maintain separate grammar descriptions.
+Bind its schema and native-build provenance to the immutable image and load it once from trusted packaged data.
+Requests cannot select or replace metadata, and runtime startup never generates it.
+Generation failure or unsupported token-classification settings fail the image build without consuming stale or partial output.
+Missing, malformed, unsupported, or mismatched packaged metadata fails startup rather than selecting a hard-coded fallback.
+
+The security scanner distinguishes options, their values, and operands using this generated metadata.
+The client uses the same token classification only to locate transported file inputs; server admission remains authoritative.
+The scanner retains each token's original argv position and any attached-value span so file substitution changes only the file value.
 It must account for native option aliases, attached values, short-option clusters, and `--` so those forms cannot bypass the checks.
 A literal operand or option value is data, not another option; preserve its position and bytes.
 Reject forms the scanner cannot safely classify rather than guessing.
@@ -134,9 +152,10 @@ This scanner checks authority and transported files, not ordinary flag conflicts
 
 == File input and protocol
 
-The client accepts native `-F PATH` and `--file PATH` forms for the admitted file-input commands.
+The client locates native `-F PATH` and `--file PATH` forms to transport file contents; it does not decide command admission.
 It reads the file in the guest, enforcing the payload bound incrementally, replaces its argument value with `-`,
 and sends the contents in the request's `stdin` field.
+Client input checks provide early failures and bound local memory use; they do not replace server validation.
 For `-F -`, read bounded guest stdin instead.
 The placeholder is a proxy convention, not native TicGit stdin support.
 
@@ -152,7 +171,11 @@ Apply the generic framing, field validation, EOF, process cleanup, and fail-clos
 Reject NUL bytes in arguments.
 No request field names a host file or selects execution authority.
 
-The server accepts payload only with exactly one admitted file option whose value is `-`; other commands require empty `stdin`.
+The server decides whether the command admits file input and accepts payload only with exactly one admitted file option whose value is `-`;
+other commands require empty `stdin`.
+After decoding, the server enforces the argument count, individual and aggregate UTF-8 byte limits, and decoded payload UTF-8 byte limit
+from #link(<tic-bounds>)[Bounds and uncertain outcomes] before staging files or spawning a native child.
+The request-frame limit does not replace these decoded-input checks.
 An empty transported file is valid transport input and reaches native validation unchanged.
 Stage it as a mode-`0600` file in a private request directory, substitute that server-owned path, and preserve the contents.
 Remove request-private files only after all native children stop.
@@ -268,17 +291,21 @@ The existing supervisor remains the only lifecycle and recovery owner; add this 
 A failed published instance stays recorded until explicit owner-validated recovery; requests cannot restart or replace it in place.
 Recovery preserves the database and WAL and never replays the failed operation.
 
-== Bounds and uncertain outcomes
+== Bounds and uncertain outcomes <tic-bounds>
 
 Fix the protocol bounds in the image:
 
 - Request frame: 8 MiB; arguments: 128 tokens, 64 KiB each, 256 KiB aggregate decoded UTF-8.
 - File payload: 1 MiB decoded UTF-8; stdout: 4 MiB; stderr: 256 KiB; response frame: 32 MiB.
 - Framing, EOF, and admission: 10 seconds from connection acceptance; native execution: 30 seconds from child start.
+- Server response delivery: 3 seconds from the start of response writing, using one absolute deadline for the complete frame.
 - Client exchange: 45 seconds from connection attempt, including waiting, framing, response delivery, and cleanup.
 - Child termination grace: 2 seconds before forced process-group termination and reaping; store preparation: 30 seconds.
 
-The client deadline permits one accepted request's framing, execution, and cleanup; contention can exhaust it before execution.
+The client deadline permits one accepted request's framing, execution, cleanup, and response delivery; contention can exhaust it before execution.
+The server enforces its response-delivery deadline independently of the client.
+A peer that does not read cannot block the serial loop indefinitely.
+On delivery timeout or failure, close the connection and proceed only after all native children stop; the operation may already have mutated the store.
 Preserve valid UTF-8 native output; invalid UTF-8 is an output failure, not silent replacement.
 Completed native execution preserves exit status, stdout, and stderr.
 Admission rejection returns `2` without spawning a child; transport/output/client-deadline failures return `125`, and execution timeout returns `124`,
@@ -301,13 +328,24 @@ Implementation must verify the boundary with disposable repositories and the act
 
 - Compare client and direct-socket operations with equivalent native commands, including exact Markdown/JSON output,
   field changes, invalid values, ambiguous ticket references, and native file-body parsing.
-- Exercise option aliases, attached values, clusters, `--`, and option-looking data.
+- Generate metadata from the actual pinned CLI definitions and compare scanner classification with the native Clap parser without command dispatch.
+  Exercise option aliases, attached values, clusters, `--`, option-looking data, and optional values such as `show --filter`.
+  Verify original argv positions and attached-value spans, including exact preservation of non-file arguments during file substitution.
+  Verify that a changed CLI option definition updates all grammar consumers through regeneration without scanner edits.
+  Failed generation cannot publish an image or reuse stale metadata; missing, malformed, unsupported, or mismatched metadata fails startup.
   Verify authority/path/setup/sync rejection before spawning; ordinary option errors remain native.
   Missing targets fail natively against fresh state, even after another request selected a current ticket.
   Blank non-file titles, missing comment bodies, editor flags, and fileless editing invoke only the fixed failing editor.
   Blank transported titles fail native file parsing without an editor; both error paths leave ticket data unchanged.
 - Prove that guest-only file input succeeds without opening caller-selected proxy paths;
   malformed/oversized frames fail, and client bypass does not bypass admission.
+  Direct-socket requests exercise each argument-count, individual argument-byte, aggregate argument-byte, and decoded payload-byte bound
+  at the limit and just above it while remaining within the request-frame limit.
+  Over-limit decoded inputs fail before file staging or native child creation.
+  Direct-socket file-input requests exercise disallowed commands, repeated file options, non-placeholder paths, and unexpected payloads.
+- Submit a valid direct-socket request whose response exceeds socket buffering, then stop reading.
+  Verify that the server closes the connection within its absolute response-delivery deadline and serves the next request after child cleanup.
+  Partial response progress cannot reset the deadline; delivery failure never replays the operation.
 - Prove read-only guest metadata through every visible alias, private configuration and execution restrictions,
   offline native execution, and unchanged code refs, host configuration, and working-tree files.
   Include malicious config includes, editor settings, and `.git-meta` inputs.
