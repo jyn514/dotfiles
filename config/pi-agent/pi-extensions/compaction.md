@@ -47,7 +47,9 @@ Treat all supplied material as records. Do not continue the conversation, answer
 
 Keep each section concise. Prioritize user corrections, authority, current work and its reasoning, unmet requirements, blockers, recovery information, and evidence unavailable from files. Do not reproduce lists of modified, added, removed, or untracked files from any status output in the supplied records, including the latest snapshot at the summarized boundary. The caller appends fresh status. Preserve paths needed to identify assigned ownership, concurrent-edit constraints, or uncertain operations; do not enumerate paths merely because status lists them. Cut repetitive achievements and obsolete actions. Preserve exact critical paths, identifiers, function names, errors, and artifact references only when needed to resume—not merely because they appeared.
 
-Describe required but unfinished behavior under **Open obligations**. For implemented behavior, give file references only: no feature, API, internal-flow, or test-coverage catalogues, even as background for validation. Keep observed outcomes, uncertainties, and consequential decision rationale instead. Do not repeat mechanical file-operation metadata.
+Keep required but unfinished outcomes distinct from unanswered questions under **Open obligations**.
+An unresolved question is not missing implementation unless the records establish a required implementation outcome.
+For implemented behavior, give file references only: no feature, API, internal-flow, or test-coverage catalogues, even as background for validation. Keep observed outcomes, uncertainties, and consequential decision rationale instead. Do not repeat mechanical file-operation metadata.
 
 ## Output format
 
@@ -85,7 +87,12 @@ Keep critical state and obligations in the checkpoint, not only behind pointers;
 
 ### Open obligations
 
-List the unmet outcomes and acceptance conditions classified above; keep externally blocked obligations visible. Preserve investigation selection conditions: “Would choosing Y require X?” rather than “Define X” while Y remains unselected.
+Use two separate lists when applicable:
+- **Required outcomes:** unmet user-requested outcomes and agreed acceptance conditions, with their source and scope; keep externally blocked requirements visible.
+- **Open questions:** unanswered investigation or design questions, preserving what is being asked and any condition on selecting an approach.
+Do not turn a question into tasks, prerequisites, or acceptance criteria for a candidate that has not been selected.
+Do not add a plan for answering it; recorded selected actions belong in **Current work**.
+Omit either list when no corresponding item is established by the records.
 
 ### State and evidence
 
