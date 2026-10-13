@@ -93,6 +93,11 @@ Check both layers independently:
 
 Read each changed caller and the target skill’s description together. Confirm the caller’s intended tasks satisfy the target’s trigger conditions and do not fall under its exclusions. Trace further delegation when it replaces removed policy.
 
+Review when each recommended operation is warranted, not just whether its syntax is valid.
+When importing or adapting a guide, inspect inherited workflow advice rather than accepting it as policy.
+Remove or qualify recommendations that lack a task or project-workflow reason; command availability does not make an operation required.
+For example, a tracker supporting reviews or specs does not require agents to create them for every change.
+
 Challenge the draft with at least two concrete tasks: one that must trigger it and one nearby task that must not. For a skill claiming general-purpose use, include a positive task outside its originating domain. Check that the procedure works without that domain's unstated vocabulary, data model, or workflow; explain domain-specific examples rather than treating them as prerequisites. The existing positive task can meet this check; add another only when needed. Also trace cases where two requirements interact; verify the instructions produce compatible actions or explicitly resolve the conflict. For each consequential requirement, identify supporting evidence and the cheapest check that could disprove it; do not claim completion while a requirement lacks evidence. Remove rules that merely restate normal competence. For references, apply §3's entry test: can the agent choose and begin the workflow without reading them?
 
 When conducting paired behavioral or summarization trials, read [Behavioral trials](references/behavioral-trials.md) before preparing inputs.
