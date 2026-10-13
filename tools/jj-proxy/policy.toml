@@ -24,6 +24,7 @@ bookmark = { subcmds = ["list"] }
 tag = { subcmds = ["list"] }
 sparse = { subcmds = ["list"] }
 git = { subcmds = ["root"] }
+"git remote" = { subcmds = ["list"] }
 config = { subcmds = ["get", "list", "path"] }
 
 # Mutation mode also permits every inspection rule.
