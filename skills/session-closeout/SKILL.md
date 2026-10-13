@@ -29,7 +29,7 @@ For work not covered by an existing audit, use `double-check` for substantial co
 - uncommitted owned work, unrelated dirty work, and commits already created.
 
 Search earlier turns when the current context does not establish the opening request or a decision's outcome. Do not call work complete when a requirement lacks evidence; name the missing check or remaining task.
-You can identify the current session with `PI_MODEL_SESSION_ID` (for the Pi harness) or `CODEX_THREAD_ID` (for Codex).
+You can identify the current session with `PI_SESSION_ID` (for the Pi harness) or `CODEX_THREAD_ID` (for Codex).
 
 ## 3. Resolve closeout findings
 
