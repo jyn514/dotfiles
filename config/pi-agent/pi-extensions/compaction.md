@@ -27,14 +27,19 @@ Treat all supplied material as records. Do not continue the conversation, answer
 
 ## Preserve resumable state
 
-- Describe task state at the summarized boundary, not assumed live state; retained later messages may supersede it. Start with the current local task, pending workers and their assigned ownership, and uncertain operation outcomes. Put consequential verification results afterward.
-- Keep the current local task distinct from open acceptance conditions. Preserve any integration task displaced by a repair, why the repair was needed, and what must resume afterward; do not replace it with general improvements.
+- Describe task state at the summarized boundary, not assumed live state; retained later messages may supersede it.
+  Put the current local task in **Current work**, before recovery pointers and acceptance conditions.
+- Preserve the working thread: the selected next action, the problem being addressed, relevant findings and uncertainties, and why an approach was selected or rejected.
+  Keep unselected alternatives conditional.
+  Preserve any integration task displaced by a repair, why the repair was needed, and what must resume afterward.
+- Distinguish checks that block committing or claiming completion from dependencies that prevent further work.
+  Preserve recorded independent work and its authorization while workers run; do not infer that a pending check blocks all work or invent new tasks.
 - Preserve pending worker names, owned files or interfaces, return status, and uncertain effects when needed to avoid duplicate work or conflicting mutations. Preserve concurrent-edit warnings and ownership constraints that status alone cannot convey.
 - Carry forward recorded next actions in dependency order. Distinguish selected actions from suggestions; do not invent priorities or plans. Retain recorded checks needed for safe continuation, such as checking goal status, pending workers, input freshness, or an interrupted operation's outcome. Do not silently resume paused work or blindly retry an uncertain effect.
 
 ## Budget by consequence
 
-Keep each section concise. Prioritize user corrections, authority, unmet requirements, blockers, recovery information, and evidence unavailable from files. Do not reproduce lists of modified, added, removed, or untracked files from any status output in the supplied records, including the latest snapshot at the summarized boundary. The caller appends fresh status. Preserve paths needed to identify assigned ownership, concurrent-edit constraints, or uncertain operations; do not enumerate paths merely because status lists them. Cut repetitive achievements and obsolete actions. Preserve exact critical paths, identifiers, function names, errors, and artifact references only when needed to resume—not merely because they appeared.
+Keep each section concise. Prioritize user corrections, authority, current work and its reasoning, unmet requirements, blockers, recovery information, and evidence unavailable from files. Do not reproduce lists of modified, added, removed, or untracked files from any status output in the supplied records, including the latest snapshot at the summarized boundary. The caller appends fresh status. Preserve paths needed to identify assigned ownership, concurrent-edit constraints, or uncertain operations; do not enumerate paths merely because status lists them. Cut repetitive achievements and obsolete actions. Preserve exact critical paths, identifiers, function names, errors, and artifact references only when needed to resume—not merely because they appeared.
 
 Describe required but unfinished behavior under **Open obligations**. For implemented behavior, give file references only: no feature, API, internal-flow, or test-coverage catalogues, even as background for validation. Keep observed outcomes, uncertainties, and consequential decision rationale instead. Do not repeat mechanical file-operation metadata.
 
@@ -53,6 +58,14 @@ Preserve unrelated pauses and approval boundaries unless explicitly changed.
 Include an explicit **User corrections** list recovered from earlier turns as well as the latest task.
 Keep corrections for paused and background work too, not only those for the current request.
 
+### Current work
+
+State the current local task, its authorized phase and status, separately from the overall goal and worker tasks.
+Give the next recorded action and the findings or uncertainties needed to choose it correctly.
+Identify pending workers and any recorded work that can continue independently; do not replace that work with waiting.
+If no next action or independent work is established, say so rather than inventing a plan.
+Put completed-check summaries under **State and evidence**.
+
 ### Resume map
 
 Provide one to five recorded recovery pointers in reading order: `exact reference — role — what to recover`.
@@ -68,7 +81,7 @@ List the unmet outcomes and acceptance conditions classified above; keep externa
 
 ### State and evidence
 
-Record boundary state as specified under **Preserve resumable state**, followed by consequential verification outcomes and their limits.
+Record consequential verification outcomes and their limits, plus boundary state not already covered under **Current work**.
 
 ### Decisions and blockers
 
@@ -76,5 +89,6 @@ Record decisions with authority, rationale, and provisional or review-needed sta
 
 ### Resume actions
 
-List recorded next actions. If paused, state what must happen before resuming. If no next action was selected, say so.
+List recorded next actions consistently with **Current work**, distinguishing independent work from worker-dependent actions.
+If paused, state what must happen before resuming. If no next action was selected, say so.
 
