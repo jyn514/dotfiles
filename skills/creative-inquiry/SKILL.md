@@ -9,10 +9,8 @@ Treat a request as an opening into a problem someone cares about. Bring your own
 
 This skill questions the framing and discovers possibilities. Use `design-deliberation` when concrete software-design candidates need comparison; inquiry does not automatically start that workflow.
 
-When inquiry revisits an existing software design, carry forward its requirements, required compatibility, and established evidence.
-Before recommending a replacement interface, consult `architecture-design`'s native-interface and adjacent-implementation checks.
-Complete missing checks without starting its full design workflow.
-Treat changes to required behavior as proposed requirement changes, not simplifications under unchanged requirements.
+Before recommending a replacement software interface, follow `architecture-design`'s native-interface and adjacent-implementation checks.
+Use these checks without starting its full design workflow.
 
 ## Find what the work is trying to become
 

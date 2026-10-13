@@ -61,11 +61,9 @@ Otherwise prefer safe defaults rather than forcing the runtime user to make ever
 ### 1. Map the current subsystem
 
 Complete this inspection before choosing or proposing an API, protocol, or subsystem split.
-Do not defer it until a draft design exists.
 
 For an existing subsystem, inspect its specification, implementation, same-path tests, callers, API inventories, generated contracts, open or closed issues, and prepared issue drafts or campaign ledgers. For a staged greenfield new tool, inspect adjacent systems, existing primitives, runtime and deployment boundaries, and integration callers instead; do not require a current implementation or extraction history.
 For adapters and proxies, inspect the native interface and any existing analogous adapter before deciding what to forward, restrict, or replace.
-Identify reusable behavior and required compatibility, including accepted inputs, output formats, and failure semantics.
 Search by exact proposed title and boundary before recording work; do not duplicate a finding merely because publication is pending.
 Use history as evidence when useful, but do not equate churn with pain. Check whether the proposed arrangement existed before and why it changed; a prior separation may encode a correctness constraint.
 
