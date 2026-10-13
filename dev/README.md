@@ -75,180 +75,50 @@ so bootstrap behavior stays predictable.
 
 ## Testing and probes
 
-Before running Pi tests or compaction replays, ensure the locked dependencies are
-installed. This requires Node/npm; Pi tests and replays also require Bun.
-For initial setup or after dependency changes, run this before starting tests,
-not alongside them:
+Before running Pi tests or compaction replays, install the locked dependencies on first setup or after dependency changes.
+This requires Node/npm; Pi tests and replays also require Bun.
+Run the install before starting tests, not alongside them:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 ```
 
-This makes tests and replays use the locked Pi SDK instead of Bun's
-auto-installed or cached version.
+This makes tests and replays use the locked Pi SDK instead of Bun's auto-installed or cached version.
 
-Run `dev/test` for the suite, including `tests/pi`, with the prerequisites above.
-It checks for Bun on PATH before running any suite and stops with installation
-guidance if Bun is missing.
+Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
+It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.
-Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/`
-and `tools/`. Other suites need an existing discovery route or explicit dispatch
-in `dev/test`, by default or through a documented opt-in mode. Check that the
-intended cases execute through that route, not only through a focused command.
-For focused tests and ad-hoc Pi probes, including `--help` checks, use
-`dev/test-environment COMMAND [ARGS...]`. For example:
+Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/` and `tools/`.
+Other suites need an existing discovery route or explicit dispatch in `dev/test`, by default or through a documented opt-in mode.
+Check that intended cases execute through that route, not only through a focused command.
+For focused tests and ad-hoc Pi probes, including `--help` checks, use `dev/test-environment COMMAND [ARGS...]`:
 
 ```sh
 dev/test-environment bun test tests/pi/luna_compaction_test.ts tests/pi/replay_compaction_test.ts
 ```
 
-The wrapper requires Python 3 and creates a private HOME and Pi/XDG state
-directories. It removes them after the child exits normally, nonzero, or by
-forwarded signal, preserving stdin, stdout, stderr, and exit status. This is
-environment isolation, not a filesystem sandbox: commands can still write
-explicit paths outside HOME. Check generated-source freshness with check-only
-commands or a disposable checkout, not an updater targeting the working copy.
-The wrapper clears inherited `JJ_CONFIG` so Jujutsu loads user configuration from
-the private HOME/XDG directories instead.
-Cargo is the exception to disposable per-run state: the wrapper sets `CARGO_HOME` to `target/test-environment/cargo` in this checkout.
-That stable test-only directory reuses downloads and source paths, allowing unchanged compiled dependencies to stay fresh across runs.
-It never imports the inherited Cargo home's configuration or credentials.
-Anything a test command writes there, including Cargo configuration or credentials, persists until you remove the directory.
-Set `DOTFILES_TEST_CARGO_HOME` to another owned disposable directory when testing Cargo configuration or when a fresh cache is required.
-Nested wrapper calls retain that path.
-An unusable cache directory fails before the child starts; the wrapper does not fall back to the user's Cargo home.
-Cargo's build-output location is unchanged.
+The wrapper provides HOME and XDG environment isolation, not a filesystem sandbox.
+Commands can still write explicit paths outside HOME.
+Check generated-source freshness with check-only commands or a disposable checkout, not an updater targeting the working copy.
+For wrapper behavior, persistent Cargo state, and real-tool selection, see [test-environment details](test-environment.md).
+For Neovim test prerequisites and invocation, see the [Neovim config test guide](../tests/nvim/README.md).
+For installed-Pi-specific test recipes, see the [Pi configuration guide](../config/pi-agent/README.md#testing).
 
-The profile tests in `tests/setup/profile_test.py`, Neovim tests in `tests/nvim/`,
-and sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` require
-permission to create local TCP and Unix sockets. If an execution sandbox denies
-socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun
-the affected command outside that sandbox using the harness's approval mechanism.
-Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket
-permissions.
+The profile tests in `tests/setup/profile_test.py` and Neovim tests in `tests/nvim/` need permission to create local TCP and Unix sockets.
+Sandbox launcher and proxy tests in `tools/codex-sandbox/tests/` need that permission too.
+If an execution sandbox denies socket creation with `PermissionError: [Errno 1] Operation not permitted`, rerun the affected command outside it.
+Use the harness's approval mechanism for the rerun.
+Keep the `dev/test-environment` wrapper; HOME isolation does not grant socket permissions.
 
-The wrapper sets `FISH_UNIT_TESTS_RUNNING=1` so interactive Fish skips detached man-page completion generation.
-Fish still loads its normal startup configuration.
-This prevents its startup completion jobs from racing private-HOME cleanup.
-
-For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides
-or resolves mise shims before changing HOME. Failed resolution stops the run before
-a child starts. Repository-local exclusions keep dependencies, notes, test caches,
-and editor sessions untracked even when private HOME hides global ignore rules.
-
-Inside an agent sandbox, invoke the Docker wrapper by its absolute path when using `dev/test-environment`:
-
-```sh
-dev/test-environment /libexec/sandbox-wrappers/docker info
-```
-
-Resolving real tools can prepend their directory to PATH and select the private Docker binary instead of its sandbox wrapper.
-The Docker wrapper configures the gateway's SSH identity and pinned host key; bypassing it can fail with `Host key verification failed`.
-Use the same absolute path for isolated Docker builds and probes.
-
-An explicit `PI_PACKAGE_DIR` takes precedence. Otherwise, the wrapper discovers the
-installed Pi SDK under the original HOME before replacing HOME, so tests can
-read the installed SDK without loading personal settings or using its caches.
-The wrapper resolves SDK directory symlinks before isolation, including explicit
-overrides, so Node can discover dependencies beside the source checkout.
-For `dev/test --containers`, the runner also captures the validated host Pi
-installation revision before replacing HOME. The runtime-image probe builds and
-checks that commit. Missing or invalid revision metadata stops the runner before
-any tests; repair the installation with `mise run pi-install`.
-
-For Neovim config tests, the wrapper discovers installed plugins at
-`${XDG_DATA_HOME:-$HOME/.local/share}/nvim/lazy` before isolation and passes
-`DOTFILES_TEST_NVIM_PLUGINS`. An explicit nonempty value takes precedence and
-survives nested wrappers. The fixture copies plugins into temporary storage;
-Neovim never writes to the installed plugin tree. Run the focused suite with
-`dev/test-environment python3 tests/nvim/nvim_test.py`. It requires Neovim and
-installed plugins, and reports skipped tests when either is absent.
-The profile suite loads complete shell configurations and reads bindings from a private tmux server.
-Its Glide cases import the complete TypeScript configuration with Node's native type stripping and replace browser APIs with fixtures.
-
-The native prompt-section regression needs an installed Pi build with
-`systemPromptOptions.sections`; the locked test SDK predates that API. Run it
-without Bun's module mocks:
-
-```sh
-dev/test-environment node --test tests/pi/native_prompt_sections.mjs
-```
-
-Do not wrap the [configured startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup)
-or live `dev/replay-compaction` requests: those intentionally use installed
-configuration, caches, or authentication. Isolated runs do not measure that setup.
+Do not wrap the [configured startup benchmark](../tools/codex-sandbox/development.md#measure-interactive-startup).
+Do not wrap live `dev/replay-compaction` requests.
+Those use installed configuration, caches, or authentication, so isolated runs do not measure that setup.
+For replay prerequisites and usage, see [replay a compaction](#replay-a-compaction).
 
 ### Broker-backed live provider probe
 
-Running this probe makes a live model request through the sandbox broker and may incur model cost.
-It uses the installed Pi SDK, private HOME, no model-catalog refresh, and no discovered extensions or sessions.
-Unlike `dev/replay-compaction`, it does not need personal configuration or stored authentication.
-The parent passes broker credentials through stdin because `dev/test-environment` removes the inherited broker variables.
-Do not put the key in command arguments, files, or diagnostic output.
-
-Save these two files in a private temporary directory.
-Use an available `openai-codex` model ID when running the launcher from the repository root.
-
-`probe.ts`:
-
-```typescript
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const packageDir = process.env.PI_PACKAGE_DIR;
-assert.ok(packageDir, "Set PI_PACKAGE_DIR to the installed Pi SDK");
-const manifest = JSON.parse(readFileSync(resolve(packageDir, "package.json"), "utf8"));
-const { ModelRuntime, ModelRegistry } = await import(pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
-const { default: codexSidecar } = await import(pathToFileURL(resolve("config/pi-agent/pi-extensions/codex-sidecar.ts")).href);
-const { baseUrl, apiKey } = await Bun.stdin.json();
-assert.ok(baseUrl && apiKey && process.argv[2], "Broker credentials and a model ID are required");
-process.env.CODEX_SIDECAR_URL = baseUrl;
-process.env.CODEX_SIDECAR_KEY = apiKey;
-
-const runtime = await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
-const registry = new ModelRegistry(runtime);
-codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
-const catalogModel = registry.find("openai-codex", process.argv[2]);
-assert.ok(catalogModel, "Model is missing from the installed catalog");
-// Catalog metadata can retain a different endpoint despite provider registration.
-const model = { ...catalogModel, baseUrl };
-const response = await registry.complete(model, {
-  messages: [{ role: "user", content: [{ type: "text", text: "Reply only PROBE_OK." }], timestamp: Date.now() }],
-}, {
-  maxTokens: 256, reasoningEffort: "low", transport: "sse", signal: AbortSignal.timeout(60000),
-  onPayload: (_payload, requestModel) => {
-    assert.equal(requestModel.baseUrl, baseUrl, "Refuse to send broker credentials to another endpoint");
-  },
-});
-assert.equal(response.stopReason, "stop", "Probe did not finish normally");
-console.log("Broker request completed.");
-```
-
-`run.py`:
-
-```python
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-
-broker = {"baseUrl": os.environ["CODEX_SIDECAR_URL"], "apiKey": os.environ["CODEX_SIDECAR_KEY"]}
-probe = Path(__file__).resolve().with_name("probe.ts")
-result = subprocess.run(
-    ["dev/test-environment", "bun", str(probe), sys.argv[1]],
-    input=json.dumps(broker), text=True, check=False,
-)
-sys.exit(result.returncode)
-```
-
-Run `python3 /path/to/run.py MODEL_ID` with broker variables available in the parent environment.
-Set `PI_PACKAGE_DIR` if the installed SDK is not discoverable under the original HOME.
-The endpoint assertion checks the effective request model before the provider sends HTTP headers.
-This SSE probe checks broker connectivity, not WebSocket behavior or the web-search extension.
-For offline activity persistence and replay coverage, run `dev/test-environment node --test tests/pi/native_web_search.mjs`.
+This probe makes a live model request through the sandbox broker and may incur model cost.
+See the [sandbox development guide](../tools/codex-sandbox/development.md#broker-backed-live-provider-probe) for the procedure.
 
 ## Bootstrap maintenance
 
@@ -260,42 +130,4 @@ but does not require or export one.
 
 ## Replay a compaction
 
-A replay makes a live Luna request and may incur model cost. It uses normal Pi
-authentication or the sandbox model broker; do not run it through
-`dev/test-environment`. Install the [locked dependencies](#testing-and-probes) first.
-
-To compare [compaction instruction](../config/pi-agent/pi-extensions/compaction.md)
-changes against a saved compaction, run:
-
-```sh
-dev/replay-compaction SESSION.jsonl [COMPACTION_ID]
-```
-
-By default, the command selects the latest compaction on the session's active
-branch; an entry ID selects a specific one. It saves `original.md`, `new.md`,
-the input and instructions, and token usage in a private temporary directory
-for manual comparison. The session file is never modified; failed requests
-retain the replay inputs.
-
-Replay uses the recorded cut point and previous checkpoint, not today's retention
-settings. It uses current instructions, SDK serialization, and the default model
-budget; original custom compaction instructions and generation settings are not
-recorded and cannot be reconstructed. Caller-added repository status is excluded
-from the comparison and input when saved checkpoint metadata identifies it;
-older summaries without that metadata remain intact.
-
-The replay applies the extension's required-header check to generated output;
-it does not judge semantic retention. Use the source-backed
-[retention cases](../tests/pi/fixtures/compaction-replay/README.md) to compare
-persistent corrections, conditional permissions, paused work, investigation-only
-authority, repeated compaction, and accepted evidence versus newer experiments.
-Their checklists require human comparison against recorded source turns, not a score for prose quality.
-Before using replay results to tune instructions, compare `input.txt` with the recorded source history.
-For reconstructed fixtures, retain the proposals, reports, corrections, and acknowledgments needed to establish what each statement refers to, with their speakers and order.
-If a judgment depends on omitted context, repair the fixture and rerun the comparison; do not count the old output as a retention failure.
-Add input-reconstruction regression coverage for that context, not an expected model reply.
-
-The offline [replay tests](../tests/pi/replay_compaction_test.ts) run with the
-focused test command above. They verify input reconstruction, not model retention.
-See the [extension guide](../config/pi-agent/pi-extensions/README.md#compaction)
-for compaction behavior and instruction updates.
+See [compaction replay guidance](compaction-replay.md) for the replay command, its limits, and the comparison workflow.

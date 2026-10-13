@@ -66,3 +66,14 @@ for session retry policy and context-overflow recovery. The installed classifier
 recognizes `exceeded request buffer limit while retrying upstream`; this is an
 implementation detail to recheck after updates, not a reason to add proxy retries.
 The sandbox proxy forwards application requests without retrying them.
+
+## Testing
+
+The native prompt-section regression needs an installed Pi build with `systemPromptOptions.sections` because the locked test SDK predates that API.
+Run it with Node so Bun's module mocks cannot replace the installed SDK:
+
+```sh
+dev/test-environment node --test tests/pi/native_prompt_sections.mjs
+```
+
+See [testing and probes](../../dev/README.md#testing-and-probes) for shared prerequisites and isolation rules.
