@@ -290,6 +290,10 @@ it does not judge semantic retention. Use the source-backed
 persistent corrections, conditional permissions, paused work, investigation-only
 authority, repeated compaction, and accepted evidence versus newer experiments.
 Their checklists require human comparison against recorded source turns, not a score for prose quality.
+Before using replay results to tune instructions, compare `input.txt` with the recorded source history.
+For reconstructed fixtures, retain the proposals, reports, corrections, and acknowledgments needed to establish what each statement refers to, with their speakers and order.
+If a judgment depends on omitted context, repair the fixture and rerun the comparison; do not count the old output as a retention failure.
+Add input-reconstruction regression coverage for that context, not an expected model reply.
 
 The offline [replay tests](../tests/pi/replay_compaction_test.ts) run with the
 focused test command above. They verify input reconstruction, not model retention.
