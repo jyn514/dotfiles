@@ -4,7 +4,8 @@
 
 - Treat this process as a disposable container, not the host, but remember that mounted writes persist. Before changing configuration or diagnosing missing state, distinguish guest state, host mounts, and external services.
 - `/src` is a read-only view of the host's source directory.
-  The working tree named by the dynamic sandbox context is overlaid writable; do not modify neighboring repositories.
+  The working tree named by the dynamic sandbox context is overlaid writable.
+  If jyn tells you to edit a file in a neighboring repository, ask to switch repositories with `/cd`.
 - A command, credential, file, or daemon missing here may exist on the host. When that distinction matters, inspect the launcher, mounts, environment, or proxy boundary.
 - `/home/codex/.agents/skills` is writable and host-backed, you may edit it.
 - Other shared instructions under `/home/codex/.agents` are staged read-only; edit their tracked source instead.
@@ -18,7 +19,6 @@
 - Public network acccess is allowed, but must be READ-ONLY unless explicitly authorized by a human.
   Be considerate of others and do not hammer expensive network endpoints.
 - Root, `sudo`, and the exposed `docker` or `podman` command do not grant access to the outer container daemon or sibling proxy containers.
-
 
 ## Behavior
 

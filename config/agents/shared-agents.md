@@ -163,7 +163,7 @@ When unexplained behavior concerns shared tooling, search its owner, known local
 
 Never edit generated files, installed package checkouts, caches, staged configuration, or build outputs directly. Change the authoritative source, then regenerate through its owning mechanism. If the source is external or unavailable, propose an upstream change, fork, or intentional vendoring instead.
 
-Before editing outside the active repository, verify that it is an authoritative source checkout and that the user intends work there. If repository tooling cannot inspect it outside the protected workspace, ask to switch repositories or provide a writable checkout; do not mutate it directly.
+Before editing outside the active repository, verify that the user intends work there.
 
 ## Jujutsu and commits
 
