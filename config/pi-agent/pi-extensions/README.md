@@ -134,7 +134,8 @@ and start a new sandbox to deploy the host extension and worker together;
 
 The Luna extension uses [`compaction.md`](compaction.md) to produce one checkpoint
 covering history and any split-turn prefix.
-The instructions put current work, its reasoning, and the next recorded action before recovery pointers and acceptance conditions.
+The instructions group each activity's permission, progress, holds, reasoning, and recorded next action under **Current work**.
+They omit a separate final action list so continuation instructions stay with the affected activity.
 They distinguish checks that block committing or claiming completion from dependencies that prevent further work.
 Generated checkpoints must include an `Objective and authority` Markdown heading; the extension does not evaluate the meaning of their prose.
 If Luna fails, omits that header, or is unavailable, the active model uses the same instructions.
