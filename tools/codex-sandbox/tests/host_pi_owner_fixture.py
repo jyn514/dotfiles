@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Disposable native process boundary for the host owner regression tests."""
 import json
+import fcntl
 import os
 from pathlib import Path
 import signal
+import runpy
 import socket
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import host_pi_owner
@@ -33,6 +36,9 @@ def child():
     if not answer.get("ok"):
         return 2
     connection.close()
+    if os.environ.get("FIXTURE_RESTART_LOCK"):
+        subprocess.run(["bun", str(Path(__file__).with_name("publish_restart_fixture.ts")), str(session)],
+                       check=True, stdout=subprocess.DEVNULL)
     session.with_suffix(".ready").write_text(json.dumps({"owner": os.environ["CODEX_SANDBOX_PI_OWNER"],
                                                         "attachment": os.environ["CODEX_SANDBOX_PI_ATTACHMENT"],
                                                         "pid": os.getpid(), "argv": sys.argv[2:],
@@ -94,13 +100,22 @@ def startup_main(arguments, bootstrap):
 
 def owner_main(arguments, bootstrap):
     session, marker, worker_pid = arguments
+    registration = lifetime = launcher = None
+    environment = dict(os.environ)
+    if environment.get("FIXTURE_RESTART_LOCK"):
+        launcher = runpy.run_path(str(Path(__file__).resolve().parents[1] / "codex-sandbox"))
+        registration = SimpleNamespace(repository=Path.cwd(), host_working_directory=Path.cwd())
+        launcher["register_tmux_pane"](registration)
+        environment["CODEX_SANDBOX_CD_VALIDATE"] = str(Path(__file__).resolve().parents[1] / "codex-sandbox")
+        lifetime = open(environment["FIXTURE_RESTART_LOCK"], "a+b")
+        fcntl.flock(lifetime, fcntl.LOCK_SH)
     worker = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],
                               stdin=subprocess.DEVNULL, stdout=host_pi_owner.OWNER_LOG_FD,
                               stderr=host_pi_owner.OWNER_LOG_FD)
     Path(worker_pid).write_text(str(worker.pid))
     wrapper = __file__ if not os.environ.get("FIXTURE_BAD_WRAPPER") else str(Path(marker).with_name("missing-wrapper"))
     owner = HostPiOwner(wrapper, ["--session-dir", str(Path(session).parent / "obsolete-directory"),
-                                 "--session", session, "ORIGINAL_PROMPT"], os.getcwd(), os.environ, timeout=3)
+                                 "--session", session, "ORIGINAL_PROMPT"], os.getcwd(), environment, timeout=3)
     owner.original.pane = os.environ.get("TMUX_PANE")
     owner.mark_bootstrapped()
     owner.start()
@@ -113,6 +128,9 @@ def owner_main(arguments, bootstrap):
     finally:
         worker.terminate()
         worker.wait()
+        if lifetime is not None:
+            lifetime.close()
+            launcher["unregister_tmux_pane"](registration)
         Path(marker).write_text("cleaned")
         owner.finish(True)
     return result

@@ -10,7 +10,9 @@ const result = spawnSync(process.execPath, [process.env.RESTART_PI_CLI,
   input: '{"type":"get_state"}\n', encoding: "utf8", timeout: 15_000,
 });
 if (result.error) throw result.error;
-fs.writeFileSync(process.env.RESTART_PI_RECEIPT, result.stdout);
+const receipt = process.env.RESTART_PI_RECEIPT ??
+  `${process.env.RESTART_PI_RECEIPT_DIR}/pane-${process.env.TMUX_PANE.slice(1)}.jsonl`;
+fs.writeFileSync(receipt, result.stdout);
 process.stdout.write(result.stdout);
 process.stderr.write(result.stderr);
 process.exit(result.status ?? 1);

@@ -1,11 +1,13 @@
 import errno
 import json
 import pty
+import runpy
 import select
 import tty
 import os
 from pathlib import Path
 import shutil
+import shlex
 import signal
 import socket
 import subprocess
@@ -292,9 +294,13 @@ class ProcessAndTmuxTest(unittest.TestCase):
         info = json.loads(original.with_suffix(".ready").read_text())
         return process, info, original, marker, pidfile
 
-    def side(self, info, prompt=None):
-        snapshot = self.root / "copied.jsonl"
-        snapshot.write_text('{}\n')
+    def side(self, info, prompt=None, *, name="copied"):
+        snapshot = self.root / f"{name}.jsonl"
+        if self.environment.get("FIXTURE_RESTART_LOCK"):
+            snapshot.write_text(json.dumps({"type": "session", "version": 3, "id": str(uuid.uuid4()),
+                "timestamp": "2026-10-13T00:00:00.000Z", "cwd": str(self.root)}) + "\n")
+        else:
+            snapshot.write_text('{}\n')
         answer = request(info["owner"], {"op": "side", "attachment": info["attachment"], "session": str(snapshot), "prompt": prompt})
         self.assertTrue(answer["ok"], answer)
         until(snapshot.with_suffix(".ready").exists)
@@ -315,6 +321,89 @@ class ProcessAndTmuxTest(unittest.TestCase):
                                           answer["pane"], "#{pane_active}"], text=True).strip()
         self.assertEqual(active, "1")
         return snapshot, clone, answer["pane"]
+
+    @unittest.skipUnless(shutil.which("bun") and shutil.which("node"), "Bun and Node required")
+    def test_restart_stops_all_peer_attachments_and_cleanup_failure_keeps_exact_resumes(self):
+        tool = Path(__file__).resolve().parents[1]
+        launcher = runpy.run_path(str(tool / "codex-sandbox"))
+        (Path(os.environ["HOME"]) / "src").mkdir(exist_ok=True)
+        subprocess.run(["jj", "git", "init", "--colocate", str(self.root)],
+                       check=True, capture_output=True)
+        proxies = launcher["proxy_module"]()
+        proxies.use_repository_metadata(self.root, (self.root / ".git", self.root / ".git"))
+        runtime = proxies.runtime_directory(self.root)
+        self.environment["FIXTURE_RESTART_LOCK"] = str(runtime / "session.lock")
+        original = self.root / "original.jsonl"
+        original.write_text(json.dumps({"type": "session", "version": 3, "id": str(uuid.uuid4()),
+            "timestamp": "2026-10-13T00:00:00.000Z", "cwd": str(self.root)}) + "\n")
+        marker = self.root / "cleaned"
+        worker_pid = self.root / "worker"
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "pi").symlink_to(tool / "tests/restart_pi_cli_fixture.mjs")
+        receipts = self.root / "receipts"
+        receipts.mkdir()
+        package = Path(os.environ["PI_PACKAGE_DIR"])
+        manifest = json.loads((package / "package.json").read_text())
+
+        def tmux(*arguments):
+            return subprocess.run(["tmux", "-L", self.server, *arguments],
+                                  check=True, capture_output=True, text=True)
+
+        self.environment["PATH"] = str(fake_bin) + os.pathsep + os.environ["PATH"]
+        tmux("set-environment", "-g", "PATH", self.environment["PATH"])
+        tmux("set-option", "-g", "default-shell", "/bin/sh")
+        tmux("set-environment", "-g", "RESTART_PI_CLI", str(package / manifest["bin"]["pi"]))
+        tmux("set-environment", "-g", "RESTART_PI_RECEIPT_DIR", str(receipts))
+        tmux("set-option", "-p", "-t", self.pane, "remain-on-exit", "on")
+        command = shlex.join(["env", f"FIXTURE_RESTART_LOCK={runtime / 'session.lock'}",
+            "HOST_OWNER_SECRET=" + self.environment["HOST_OWNER_SECRET"],
+            sys.executable, str(FIXTURE), "launcher", str(original), str(marker), str(worker_pid)])
+        tmux("respawn-pane", "-k", "-t", self.pane, "-c", str(self.root), command)
+        until(original.with_suffix(".ready").exists)
+        info = json.loads(original.with_suffix(".ready").read_text())
+        peers = [self.side(info, name=name) for name in ("first-peer", "second-peer")]
+        selected = {self.pane: original, **{pane: snapshot for snapshot, _clone, pane in peers}}
+        reset = launcher["helper"]
+        attempts = []
+
+        def reset_after_final_release(*arguments, **kwargs):
+            until(marker.exists)
+            until(lambda: not Path(info["owner"]).exists())
+            panes = tmux("list-panes", "-F", "#{pane_id}:#{pane_dead}").stdout.splitlines()
+            self.assertEqual({pane + ":1" for pane in selected}, set(panes))
+            result = reset(*arguments, **kwargs)
+            attempts.append(arguments)
+            if len(attempts) == 1:
+                raise launcher["LauncherError"]("injected reset failure after owner cleanup")
+            return result
+
+        try:
+            with mock.patch.dict(os.environ, self.environment), mock.patch.dict(
+                    launcher["restart_tmux_sessions"].__globals__, helper=reset_after_final_release):
+                with self.assertRaisesRegex(launcher["LauncherError"], "injected reset failure"):
+                    launcher["restart_tmux_sessions"]()
+                retained = launcher["tmux_registrations"]()
+                self.assertEqual({item["pane"]: item["session"] for item in retained},
+                                 {pane: str(session) for pane, session in selected.items()})
+                self.assertTrue(all(item["dead"] for item in retained))
+                self.assertEqual(0, launcher["restart_tmux_sessions"]())
+            try:
+                until(lambda: len(list(receipts.iterdir())) == len(selected), timeout=15)
+            except AssertionError:
+                screens = {pane: tmux("capture-pane", "-p", "-S", "-200", "-t", pane).stdout for pane in selected}
+                self.fail(f"resumed Pi receipts missing: {list(receipts.iterdir())}; screens={screens!r}")
+            for pane, session in selected.items():
+                response = json.loads((receipts / f"pane-{pane[1:]}.jsonl").read_text())
+                self.assertTrue(response["success"])
+                self.assertEqual(response["data"]["sessionFile"], str(session))
+                self.assertEqual(response["data"]["sessionId"], json.loads(session.read_text().splitlines()[0])["id"])
+            self.assertEqual(len(attempts), 2)
+        finally:
+            # If an assertion fails before restart, release only this fixture's peers.
+            for session in selected.values():
+                session.with_suffix(".exit").touch()
+            until(marker.exists)
 
     def test_split_prompt_is_delivered_verbatim_over_private_attachment(self):
         process, info, original, marker, pidfile = self.launch()

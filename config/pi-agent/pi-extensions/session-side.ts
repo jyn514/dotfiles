@@ -1,6 +1,7 @@
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { createConnection } from "node:net";
+import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 
 const splitOriginType = "split-origin";
@@ -176,8 +177,7 @@ export async function publishResurrectSession(pi: Pick<ExtensionAPI, "exec">,
   if ((session !== null && !isAbsolute(session)) || !isAbsolute(cwd)) {
     throw new Error("SDK resurrect session/cwd must be absolute");
   }
-  // A split has no restart registration, but resurrect must still resume its
-  // selected conversation. The save hook checks PID ancestry before using it.
+  // The save hook checks PID ancestry before using the selected conversation.
   const encoded = Buffer.from(JSON.stringify({ version: 1, pid: process.pid, session, cwd })).toString("base64url");
   const result = await pi.exec("tmux", ["set-option", "-p", "-t", pane, "@resurrect_pi_session", encoded]);
   if (result.code !== 0) throw new Error("Could not publish Pi resurrect session");
@@ -193,8 +193,22 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
     if (result.code !== 0) throw new Error("Could not read sandbox restart registration");
     return result.stdout.trim();
   };
-  const encoded = await read();
-  if (!encoded) return; // Side panes are deliberately unmanaged.
+  const current = await read();
+  let encoded = current;
+  if (!encoded) {
+    const validator = process.env.CODEX_SANDBOX_CD_VALIDATE;
+    const attachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
+    if (!validator || !attachment) return;
+    // Reuse the launcher's repository lookup rather than inferring a root from
+    // the session directory or another pane. This also upgrades existing splits.
+    const result = await pi.exec(validator, ["validate-cd", source.getCwd()]);
+    if (result.code !== 0) throw new Error(`Could not register sandbox attachment: ${result.stderr.trim()}`);
+    let repository: unknown;
+    try { repository = JSON.parse(result.stdout).repository; }
+    catch { throw new Error("Invalid sandbox repository lookup"); }
+    encoded = Buffer.from(JSON.stringify({ version: 2, pane, repository,
+      session: null, cwd: source.getCwd(), token: randomUUID() })).toString("base64url");
+  }
   let registration: any;
   try {
     if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)
@@ -219,12 +233,12 @@ export async function publishRestartSession(pi: Pick<ExtensionAPI, "exec">,
   if ((session !== null && !isAbsolute(session)) || !isAbsolute(cwd)) {
     throw new Error("SDK sandbox restart session/cwd must be absolute");
   }
-  const payload = { version: 2, pane: registration.pane, repository: registration.repository,
+  const payload = { version: 2, pane, repository: registration.repository,
     session, cwd, token: registration.token };
   // Expand and assign in one tmux server command so a replacement generation
   // wins even if it appeared after our read. Base64url excludes format delimiters.
   const updated = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const conditional = `#{?#{==:#{${option}},${encoded}},${updated},#{${option}}}`;
+  const conditional = `#{?#{==:#{${option}},${current}},${updated},#{${option}}}`;
   const result = await pi.exec("tmux", ["set-option", "-p", "-F", "-t", pane, option, conditional]);
   if (result.code !== 0) throw new Error("Could not publish sandbox restart registration");
 }

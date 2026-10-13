@@ -375,6 +375,11 @@ test("ordinary /split command and readiness use host socket; no source control/e
   const oldOwner = process.env.CODEX_SANDBOX_PI_OWNER;
   const oldAttachment = process.env.CODEX_SANDBOX_PI_ATTACHMENT;
   const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const oldTmux = process.env.TMUX;
+  const oldPane = process.env.TMUX_PANE;
+  // This socket/command test does not exercise tmux publication.
+  delete process.env.TMUX;
+  delete process.env.TMUX_PANE;
   let ephemeralDir: string | undefined;
   let launchMode = "success";
   const host = await controller(f.dir, (_request, socket) => {
@@ -456,6 +461,8 @@ test("ordinary /split command and readiness use host socket; no source control/e
     if (oldOwner === undefined) delete process.env.CODEX_SANDBOX_PI_OWNER; else process.env.CODEX_SANDBOX_PI_OWNER = oldOwner;
     if (oldAttachment === undefined) delete process.env.CODEX_SANDBOX_PI_ATTACHMENT; else process.env.CODEX_SANDBOX_PI_ATTACHMENT = oldAttachment;
     if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    if (oldTmux === undefined) delete process.env.TMUX; else process.env.TMUX = oldTmux;
+    if (oldPane === undefined) delete process.env.TMUX_PANE; else process.env.TMUX_PANE = oldPane;
     await host.close();
     if (ephemeralDir) rmSync(ephemeralDir, { recursive: true, force: true });
     f.cleanup();
@@ -488,7 +495,7 @@ function restartExec(initial: any, fail = false) {
     if (args[0] === "show-option") return { code: 0, stdout: encoded + "\n", stderr: "" };
     expect(args).toContain("-F");
     const format = args.at(-1)!;
-    const match = /^#\{\?#\{==:#\{@codex_sandbox_restart\},([^,]+)\},([^,]+),#\{@codex_sandbox_restart\}\}$/.exec(format)!;
+    const match = /^#\{\?#\{==:#\{@codex_sandbox_restart\},([^,]*)\},([^,]+),#\{@codex_sandbox_restart\}\}$/.exec(format)!;
     expect(match).not.toBeNull();
     const updated = encoded === match[1] ? match[2] : encoded;
     writes.push(JSON.parse(Buffer.from(updated, "base64url").toString()));
@@ -560,6 +567,72 @@ test("restart publication follows native SDK switching and custom storage withou
     for (const [key, value] of Object.entries(env)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
+    f.cleanup();
+  }
+});
+
+test("split restart publication resolves repository authority once and follows its own selected session", async () => {
+  const f = fixture();
+  const keys = ["TMUX", "TMUX_PANE", "CODEX_SANDBOX_PI_ATTACHMENT", "CODEX_SANDBOX_CD_VALIDATE"];
+  const env = keys.map(key => process.env[key]);
+  try {
+    process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%8";
+    process.env.CODEX_SANDBOX_PI_ATTACHMENT = "side-attachment";
+    process.env.CODEX_SANDBOX_CD_VALIDATE = "/launcher/codex-sandbox";
+    const publication = restartExec(undefined);
+    let lookups = 0;
+    const pi = { ...publication, exec: async (command: string, args: string[]) => {
+      if (command === "tmux") return publication.exec(command, args);
+      expect(command).toBe("/launcher/codex-sandbox");
+      expect(args).toEqual(["validate-cd", f.dir]);
+      lookups++;
+      return { code: 0, stdout: JSON.stringify({ repository: "/launcher/repo", destination: f.dir }), stderr: "" };
+    } };
+    const source = SessionManager.create(f.dir, join(f.dir, "split-storage"));
+    await publishRestartSession(pi as any, source);
+    const generation = pi.writes[0].token;
+    expect(typeof generation).toBe("string");
+    expect(generation).not.toBe("side-attachment");
+    expect(pi.writes[0]).toEqual({ version: 2, pane: "%8", repository: "/launcher/repo",
+      session: source.getSessionFile(), cwd: f.dir, token: generation });
+    const switched = SessionManager.create(f.dir, join(f.dir, "switched-storage"));
+    switched.appendMessage(assistant());
+    source.setSessionFile(switched.getSessionFile());
+    await publishRestartSession(pi as any, source);
+    expect(pi.writes[1].session).toBe(switched.getSessionFile());
+    expect(pi.writes[1].token).toBe(generation);
+    await publishRestartSession(pi as any, SessionManager.inMemory(f.dir));
+    expect(pi.writes[2].session).toBeNull();
+    expect(lookups).toBe(1);
+    delete process.env.CODEX_SANDBOX_PI_ATTACHMENT;
+    const outside = restartExec(undefined);
+    await publishRestartSession(outside as any, source);
+    expect(outside.writes).toEqual([]);
+  } finally {
+    keys.forEach((key, i) => { if (env[i] === undefined) delete process.env[key]; else process.env[key] = env[i]; });
+    f.cleanup();
+  }
+});
+
+test("failed or malformed repository lookup cannot publish a split registration", async () => {
+  const f = fixture();
+  const keys = ["TMUX", "TMUX_PANE", "CODEX_SANDBOX_PI_ATTACHMENT", "CODEX_SANDBOX_CD_VALIDATE"];
+  const env = keys.map(key => process.env[key]);
+  try {
+    process.env.TMUX = "fixture"; process.env.TMUX_PANE = "%8";
+    process.env.CODEX_SANDBOX_PI_ATTACHMENT = "attachment";
+    process.env.CODEX_SANDBOX_CD_VALIDATE = "/launcher/codex-sandbox";
+    for (const result of [{ code: 1, stdout: '{"repository":"/repo"}', stderr: "lookup failed" },
+      { code: 0, stdout: "not-json", stderr: "" },
+      { code: 0, stdout: '{"repository":"relative"}', stderr: "" }]) {
+      const publication = restartExec(undefined);
+      await expect(publishRestartSession({ exec: (command: string, args: string[]) =>
+        command === "tmux" ? publication.exec(command, args) : Promise.resolve(result) } as any, f.source))
+        .rejects.toThrow();
+      expect(publication.writes).toEqual([]);
+    }
+  } finally {
+    keys.forEach((key, i) => { if (env[i] === undefined) delete process.env[key]; else process.env[key] = env[i]; });
     f.cleanup();
   }
 });

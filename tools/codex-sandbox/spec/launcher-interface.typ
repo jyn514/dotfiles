@@ -159,7 +159,13 @@ release. `/cd` releases only the invoking attachment; peers keep the old worker.
 Final release uses existing workload and trusted-service cleanup.
 Failed startup cleans only that attempt; worker loss
 affects all panes. Reuse existing owner-loss recovery and unknown-write-outcome
-handling; add no cancellation protocol, tmux-restart feature, or worker replacement.
+handling; add no cancellation protocol or automatic worker replacement.
+
+Explicit restart commands include every registered Pi attachment in the selected repositories within the current tmux server, including split panes.
+Validate every saved conversation before stopping any attachment.
+Stop all selected attachments and wait for final-owner cleanup before resetting shared services.
+Resume each pane's selected conversation in a new sandbox owner without replaying an initial prompt or live tool work.
+Retain resume registrations through old-owner cleanup so a failed restart can be retried from dead panes.
 
 The host derives the conversation, worker, directory, executable, and pane target
 from the invoking session. This is a bounded human operation, not a model-facing

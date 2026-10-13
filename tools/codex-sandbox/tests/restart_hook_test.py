@@ -34,9 +34,11 @@ class RestartHookTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="pi-restart-hook-") as directory:
             root = Path(directory)
             project = root / "project"
-            project.mkdir()
+            subprocess.run(["jj", "git", "init", "--colocate", str(project)],
+                           check=True, capture_output=True)
             home = root / "home"
             home.mkdir()
+            (home / "src").mkdir()
             saved = root / "sdk-selected.jsonl"
             saved.write_text(json.dumps({"type": "session", "version": 3,
                 "id": str(uuid.uuid4()), "timestamp": "2026-10-09T00:00:00.000Z",
@@ -88,7 +90,7 @@ class RestartHookTest(unittest.TestCase):
 
             def registration(pane):
                 encoded = tmux("show-option", "-pqv", "-t", pane, "@codex_sandbox_restart").stdout.strip()
-                return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+                return json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))) if encoded else None
 
             def resurrect_registration(pane):
                 encoded = tmux("show-option", "-pqv", "-t", pane, "@resurrect_pi_session").stdout.strip()
@@ -118,11 +120,15 @@ class RestartHookTest(unittest.TestCase):
                 pending = registration(pane)
                 self.assertIsNone(pending["session"])
                 expected = {**pending, "session": str(saved), "cwd": str(project)}
-                command = shlex.join(["env", f"CODEX_SANDBOX_PI_OWNER={owner_socket}",
-                    "CODEX_SANDBOX_PI_ATTACHMENT=hook-attachment", node, str(cli), "--offline",
-                    "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files",
-                    "--no-approve", "--extension", str(ROOT / "config/pi-agent/pi-extensions/session-side.ts"),
-                    "--session", str(saved)])
+                def pi_command(attachment, session):
+                    return shlex.join(["env", f"CODEX_SANDBOX_PI_OWNER={owner_socket}",
+                        f"CODEX_SANDBOX_PI_ATTACHMENT={attachment}",
+                        f"CODEX_SANDBOX_CD_VALIDATE={ROOT / 'tools/codex-sandbox/codex-sandbox'}",
+                        node, str(cli), "--offline", "--no-extensions", "--no-skills",
+                        "--no-prompt-templates", "--no-context-files", "--no-approve",
+                        "--extension", str(ROOT / "config/pi-agent/pi-extensions/session-side.ts"),
+                        "--session", str(session)])
+                command = pi_command("hook-attachment", saved)
                 tmux("respawn-pane", "-k", "-t", pane, "-c", str(project), command)
                 wait_for(lambda: registration(pane) == expected, "startup publication", pane)
                 wait_for(lambda: resurrect_registration(pane) is not None, "resurrect publication", pane)
@@ -137,16 +143,31 @@ class RestartHookTest(unittest.TestCase):
                 tmux("send-keys", "-t", pane, "Enter")
                 wait_for(lambda: len(requests) >= 2 and registration(pane) == expected, "reload publication", pane)
                 self.assertEqual(requests, [requests[0], requests[0]])
-                # Split attachments deliberately have no restart-all registration.
-                # The real TUI must still publish the file that resurrect will resume.
-                tmux("set-option", "-pu", "-t", pane, "@codex_sandbox_restart")
-                tmux("set-option", "-pu", "-t", pane, "@resurrect_pi_session")
-                tmux("send-keys", "-t", pane, "-l", "/reload")
-                tmux("send-keys", "-t", pane, "Enter")
-                wait_for(lambda: len(requests) >= 3 and resurrect_registration(pane) is not None,
-                    "split resurrect publication", pane)
-                self.assertEqual(resurrect_registration(pane), resume)
-                self.assertEqual(tmux("show-option", "-pqv", "-t", pane, "@codex_sandbox_restart").stdout.strip(), "")
+                # A real split starts without a launcher registration and uses
+                # another session in custom storage, sharing only repository authority.
+                split_saved = root / "split-selected.jsonl"
+                split_saved.write_text(json.dumps({"type": "session", "version": 3,
+                    "id": str(uuid.uuid4()), "timestamp": "2026-10-09T00:00:00.000Z",
+                    "cwd": str(project)}) + "\n")
+                side = tmux("split-window", "-P", "-F", "#{pane_id}", "-t", pane,
+                    "-c", str(project), pi_command("side-attachment", split_saved)).stdout.strip()
+                wait_for(lambda: tmux("show-option", "-pqv", "-t", side,
+                    "@codex_sandbox_restart").stdout.strip() != "", "split registration", side)
+                split_expected = {**expected, "pane": side, "session": str(split_saved), "token": registration(side)["token"]}
+                self.assertNotEqual(split_expected["token"], "side-attachment")
+                wait_for(lambda: registration(side) == split_expected, "split startup publication", side)
+                self.assertEqual(registration(pane), expected)
+                # Existing splits from before this change acquire their missing
+                # registration on /reload without replacing the accepted worker.
+                tmux("set-option", "-pu", "-t", side, "@codex_sandbox_restart")
+                tmux("send-keys", "-t", side, "-l", "/reload")
+                tmux("send-keys", "-t", side, "Enter")
+                wait_for(lambda: len(requests) >= 4 and registration(side) is not None,
+                    "split reload publication", side)
+                reloaded = registration(side)
+                self.assertNotEqual(reloaded["token"], split_expected["token"])
+                self.assertEqual({**reloaded, "token": split_expected["token"]}, split_expected)
+                self.assertEqual(resurrect_registration(side)["session"], str(split_saved))
                 # Join the real SDK publisher to the actual save hook, including
                 # the reporting child's ancestry within the live tmux pane.
                 snapshot = root / "resurrect.txt"

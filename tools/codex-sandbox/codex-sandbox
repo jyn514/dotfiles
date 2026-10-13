@@ -2418,6 +2418,16 @@ def restart_tmux_sessions(repository: Path | None = None) -> int:
             "tmux", "set-option", "-p", "-t", registration["pane"],
             "remain-on-exit", "on",
         ])
+        # Take ownership of the resume record before stopping the old owner.
+        # Its generation-checked cleanup must not erase a failed restart's retry.
+        registration["token"] = secrets.token_hex(16)
+        payload = {key: registration[key] for key in
+                   ("version", "pane", "repository", "session", "cwd", "token")}
+        encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        run([
+            "tmux", "set-option", "-p", "-t", registration["pane"],
+            "@codex_sandbox_restart", encoded,
+        ])
         if not registration["dead"]:
             os.kill(registration["pid"], signal.SIGTERM)
     panes = {registration["pane"] for registration in registrations}
