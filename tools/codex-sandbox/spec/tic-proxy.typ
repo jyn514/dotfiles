@@ -2,6 +2,7 @@
 
 *Status:* Draft design; not implemented.
 The `tic` capability follows the existing `jj-proxy` pattern: admit a native argument vector, run the pinned CLI, and return its output.
+Its one argument-language extension, `views save NAME [LIST_ARGS...]`, runs a serial native list-and-save operation.
 One persistent service per Git common directory serves host `ti` and every opted-in worktree through one serial request loop.
 Ordinary host `ti` therefore requires the accepted container runtime even when no sandbox is running.
 It does not replace Flower's `bug` bridge, migrate tickets, or authorize implementation.
@@ -11,7 +12,9 @@ This document owns TicGit-specific admission, store selection, and outcome seman
 
 == Problem and selected approach
 
-TicGit stores ticket changes in `git-meta.sqlite` inside the Git common directory, with adjacent WAL and SHM files.
+Native TicGit selects `git-meta.sqlite` inside the discovered repository's Git directory, with adjacent WAL and SHM files.
+In a linked worktree, that directory is worktree-specific, not the Git common directory.
+This design deliberately selects the common-directory database for all host and agent operations.
 An agent needs ticket operations without direct write access to that metadata.
 For example:
 
@@ -47,7 +50,7 @@ Do not introduce a shared proxy framework as a prerequisite.
 Build `schacon/ticgit` revision `d0bda85fa593e5d4488dd13af1216b0d2766d6dc`, version `0.3.1`, with its unchanged Cargo lockfile.
 It selects `git-meta-lib` `0.1.10` and requires Rust at least `1.88`.
 The relevant native owners are `commands/new.rs`, `commands/edit.rs`, `commands/mod.rs`, `commands/setup.rs`,
-`session_state.rs`, and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
+`commands/list.rs`, `commands/view.rs`, `session_state.rs`, and `git-meta-lib`'s `session.rs` and `db/mod.rs`.
 An upgrade requires reviewing the admitted commands' file, subprocess, setup, and network effects, and regenerating grammar metadata.
 Pin the toolchain and image through existing image resolution; do not install or update tools at runtime.
 
@@ -68,14 +71,18 @@ Neither side receives an outer daemon socket through this capability.
 The proxy receives no host HOME, credentials, or SSH agent.
 Its immutable image contains the server, native `ti`, required fixed runtime binaries, and the conventional generic forwarding client.
 Use a read-only root filesystem and fail-closed filesystem and execution restrictions following the JJ pattern,
-but permit writes only to the accepted Git metadata and request-private storage, not `.jj` or ordinary files.
+but permit writes only to the accepted Git metadata, request-private storage, and service-private saved-view storage,
+not `.jj` or ordinary working-tree files.
 Executable lookup never uses the working tree.
 
 The launcher supplies the canonical Git common directory as `SANDBOX_GIT_DIR` through its existing Git built-in mount.
 The server fixes native cwd there and verifies that native store discovery selects the accepted database.
 Requests cannot choose cwd, repository, environment, executable, or configuration.
 Invoke native `ti` directly, with no terminal, closed child stdin, an empty inherited environment, and fixed private HOME/XDG paths.
-Use a fresh, initially absent `TICGIT_STATE_FILE` in each private request directory.
+Use a fresh `TICGIT_STATE_FILE` in each private request directory.
+For `list` and the composite view-save operation, seed it with only the accepted named views as described below.
+For other commands, leave it initially absent.
+No request inherits current-ticket state or last-used filters from a previous request.
 Native current-ticket writes never select a later request's target.
 Without an explicit target, native `resolve_ticket()` reports that no current ticket exists before changing tickets.
 Do not duplicate that target check in proxy admission.
@@ -112,19 +119,72 @@ An empty argument vector means native `list`.
 Admit the native aliases `ls`, `dep`, and `status` with the corresponding command policy.
 The accepted grammar is the pinned native CLI restricted by this policy and the authority checks below.
 Do not hand-maintain each family's ordinary flags, validate their values, or rebuild ordinary argv.
-Pass admitted arguments unchanged except for transported file inputs.
+Pass admitted arguments unchanged except for transported file inputs and the view-save expansion below.
 Native TicGit rejects unknown or conflicting ordinary options and renders completed results.
 
 The command policy excludes `init`, `setup`, `update`, `pull`, `push`, `sync`, `import`, `tui`, `agent`, `checkout`,
-`users`, `mine`, `views`, `writeup`, and `review`.
+`users`, `mine`, `writeup`, and `review`.
+Admit only the `views save` extension below; other `views` forms remain excluded.
 Initialization, upgrades, sync, import, serialization, and recovery remain coordinated host operations.
 Help and version use packaged information without opening the store.
-Help describes the admitted subset, request-private current-ticket state, and file-based rather than interactive editing.
+Help describes the admitted subset, request-private current-ticket state, file-based editing, and explicit view-save filters.
 
-Command-specific inspection rejects `new --checkout`, named list views, writeup targets,
+Command-specific inspection rejects `new --checkout`, writeup targets,
 repository/configuration/executable overrides, and file options not replaced by the transport placeholder.
 Admit transported file input only for native `new`, `edit`, `meta`, and `spec` as described below.
 Missing targets and editor-triggering forms are native errors, not proxy admission failures.
+
+=== Explicit view-save filters <tic-views>
+
+Native `views save NAME` saves the last-used list filters from session state.
+With shared state, agent A's `list --tag bug`, agent B's `list --tag cleanup`, and A's `views save bugs`
+would save B's filters under A's view name even when individual commands run serially.
+The proxy instead requires the complete filter selection in one request:
+
+```sh
+ti views save bugs --tag bug
+ti list bugs --markdown
+```
+
+`views save NAME [LIST_ARGS...]` is proxy syntax, not a change to native TicGit.
+The server takes the view name from the native save-name operand and treats all following arguments as native `list` arguments.
+The trusted policy owns this expansion; classify its trailing tokens with the generated native `list` grammar.
+Apply ordinary list admission, including named-view selection, to that invocation.
+Do not forward the trailing list arguments to native `views save` or recreate their filter semantics.
+Packaged help describes the extended syntax; help requests do not execute either child or publish a view.
+Direct socket requests follow the same rules as the host and guest shims.
+
+Seed one private native state file with the accepted named views and empty current-ticket and last-filter maps.
+Run native `ti list LIST_ARGS...`, then native `ti views save NAME` with that same file.
+Run both children and publish the saved views before accepting another request.
+With no trailing arguments, run native `ti list` with its defaults; never use another request's last-used filters.
+Discard successful list output and return the native save result after publication.
+Both children retain the ordinary output and process-cleanup bounds.
+If listing fails, return its native status and diagnostics without running save or publishing state.
+
+Native `list` ignores state-file write failures, so its successful exit alone does not authorize save.
+Require a valid state file containing freshly written last-used filters for the accepted repository before starting the save child.
+The initially empty last-filter map makes a missing write distinguishable from success without comparing timestamps or reproducing filters.
+Missing or malformed state, verification failure, save failure, or publication failure prevents publication of the request's views.
+State-verification and publication failures return `125`; native failures preserve their status and diagnostics.
+Only a completed save with validated native state may durably and atomically replace the persistent view snapshot.
+A response failure after publication has an uncertain outcome and never causes replay.
+Two successful requests saving the same name replace that view in execution order.
+
+The service owns one persistent named-view snapshot per accepted Git common directory.
+Keep it in a dedicated protected data directory, separate from lifecycle records, locks, credentials, and ticket metadata.
+The supervisor mounts only that data directory into the service; the guest cannot access it directly.
+Preserve it through service shutdown, recovery, and host restart; native ticket sync does not synchronize these local views.
+An absent snapshot means no saved views; an existing malformed or incompatible snapshot blocks startup rather than silently discarding views.
+
+Use the pinned native saved-view representation; persist only the accepted repository's named views from its `views` map.
+Native repository-path keys are request-local; bind the stored views to the current instance's canonical native Git directory when seeding.
+A different container mount path after service restart cannot hide the saved views.
+Default every other native state field when seeding a request, and never persist current-ticket selections or last-used filters.
+This projection is a private-format integration with `session_state.rs`, not a public TicGit API.
+Validate it against the pinned native definitions and review it whenever the native pin changes.
+Native TicGit remains the owner of saved filter values and view rendering.
+Ordinary `list NAME` reads the accepted views through its private state file; its last-filter writes are discarded.
 
 === Generated grammar metadata
 
@@ -183,9 +243,16 @@ Neither the wrapper nor the server parses the ticket body or recreates native Ma
 
 == Prepared store
 
-The host initializes the store, performs required sync/import, and fully materializes TicGit project metadata before first use.
+The host initializes the common-directory store, performs required sync/import, and fully materializes TicGit project metadata before first use.
 Initialization, upgrades, sync, import, serialization, and recovery require explicit coordinated shutdown of the store service.
+Database-using administration selects the same common-directory database as the service, regardless of the caller's worktree.
 Ordinary host ticket inspection and mutation instead use the service route below.
+
+Before each fresh service publication, inspect the common directory's linked-worktree metadata for worktree-local `git-meta.sqlite` entries
+and their WAL/SHM sidecars without following symlinks or opening those databases.
+Any such entry blocks startup and reports the conflicting paths and required human consolidation or repair.
+Do not silently hide existing worktree-local tickets, merge their databases, delete them, or recreate them from serialized refs.
+Ticket migration remains outside this design.
 
 The service validates the store before endpoint publication, while the supervisor holds exclusive store creation coordination.
 Read-only SQLite validation must include committed WAL state; the main database file alone is not the complete store.
@@ -264,7 +331,7 @@ Host `ti` always uses that route; there is no ordinary native-host execution pat
 Runtime, connection, protocol, and native-command failures never trigger local fallback or replay.
 
 The server retains JJ's sequential accept-and-execute loop, without an application queue or worker pool.
-It runs one complete native operation, including reads and descendant cleanup, before starting another.
+It runs one complete request, including reads, all native children, saved-view publication, and descendant cleanup, before starting another.
 This sole execution owner replaces a multi-proxy invocation lock; SQLite transactions alone would not serialize whole native commands.
 Do not start work after a lost connection or expired framing/admission deadline.
 The client bounds its complete exchange, including socket waiting.
@@ -282,6 +349,9 @@ Server death alone never proves that its native child stopped.
 
 Only after owner-validated shutdown may this operation invoke native host initialization, upgrades, sync, import,
 serialization, or recovery with the human's authority.
+For database-using administration, fix native cwd to the accepted canonical Git common directory and verify repository discovery selects it.
+Caller cwd, repository-selection environment variables, and command options cannot redirect administration to a worktree-local or other store.
+This store selection applies to initialization even when the accepted database does not yet exist.
 The administrator child inherits the host coordination lock so wrapper death cannot admit another service while it writes.
 Keep the store record non-routable through descendant cleanup; release coordination only after administration has stopped.
 Do not restart the service automatically; the next ordinary request plans a fresh instance through normal acquisition.
@@ -297,7 +367,8 @@ Fix the protocol bounds in the image:
 
 - Request frame: 8 MiB; arguments: 128 tokens, 64 KiB each, 256 KiB aggregate decoded UTF-8.
 - File payload: 1 MiB decoded UTF-8; stdout: 4 MiB; stderr: 256 KiB; response frame: 32 MiB.
-- Framing, EOF, and admission: 10 seconds from connection acceptance; native execution: 30 seconds from child start.
+- Framing, EOF, and admission: 10 seconds from connection acceptance; native execution: 30 seconds from the first child start.
+  A composite view-save request shares that deadline across both children, state verification, and view publication.
 - Server response delivery: 3 seconds from the start of response writing, using one absolute deadline for the complete frame.
 - Client exchange: 45 seconds from connection attempt, including waiting, framing, response delivery, and cleanup.
 - Child termination grace: 2 seconds before forced process-group termination and reaping; store preparation: 30 seconds.
@@ -307,7 +378,8 @@ The server enforces its response-delivery deadline independently of the client.
 A peer that does not read cannot block the serial loop indefinitely.
 On delivery timeout or failure, close the connection and proceed only after all native children stop; the operation may already have mutated the store.
 Preserve valid UTF-8 native output; invalid UTF-8 is an output failure, not silent replacement.
-Completed native execution preserves exit status, stdout, and stderr.
+Completed ordinary native execution preserves exit status, stdout, and stderr.
+The #link(<tic-views>)[view-save operation] owns its intermediate-output suppression and state-publication failures.
 Admission rejection returns `2` without spawning a child; transport/output/client-deadline failures return `125`, and execution timeout returns `124`,
 when a response can be delivered.
 Inside the sandbox, missing or failed proxy transport never falls back to a local CLI.
@@ -337,6 +409,19 @@ Implementation must verify the boundary with disposable repositories and the act
   Missing targets fail natively against fresh state, even after another request selected a current ticket.
   Blank non-file titles, missing comment bodies, editor flags, and fileless editing invoke only the fixed failing editor.
   Blank transported titles fail native file parsing without an editor; both error paths leave ticket data unchanged.
+- Exercise `views save NAME LIST_ARGS...` through both clients and direct socket requests with the actual pinned CLI.
+  Compare stored views and save output with equivalent native list-and-save operations, including defaults, aliases, and option-looking data.
+  Interleave agent A's ordinary bug listing, agent B's cleanup listing, and A's explicit bug-view save.
+  The saved view uses only A's supplied filters; no request starts between the composite children and publication.
+  Verify named-view reads, replacement of one name in execution order, preservation of other views, and persistence across service restart.
+  Restart with a different accepted container mount path; request-local repository keys cannot hide or duplicate persistent views.
+  Ordinary listing and `next` cannot supply later save filters or current-ticket targets.
+  Force list-state write failure after a successful list, and inject native save, state-validation, and publication failures.
+  No failure publishes stale filters or partial view state; failed listing never starts save.
+  Successful intermediate list output is suppressed; help neither runs children nor changes state.
+  Both children share one execution deadline; timeout, disconnect, and output failure stop the operation without replay.
+  A response failure after publication preserves the possibly completed save.
+  Missing view snapshots start empty; corrupt or incompatible existing snapshots fail startup without discarding views.
 - Prove that guest-only file input succeeds without opening caller-selected proxy paths;
   malformed/oversized frames fail, and client bypass does not bypass admission.
   Direct-socket requests exercise each argument-count, individual argument-byte, aggregate argument-byte, and decoded payload-byte bound
@@ -361,6 +446,11 @@ Implementation must verify the boundary with disposable repositories and the act
   Race ordinary acquisition against stop-and-admin; prove admission revocation, inherited host-lock lifetime, no overlap, and no replay.
   Preparing attachments and socket-volume holders prevent unsafe cleanup; initialization/sync/recovery run only after complete service shutdown.
   Runtime-free host `ti` fails rather than bypassing the service.
+- Create tickets natively in a linked worktree before enabling the proxy.
+  Its worktree-local database or sidecars block startup with a diagnostic identifying the conflicting store; no ticket data is changed or migrated.
+  Invoke coordinated initialization, import, sync, and recovery from a linked worktree and with repository-selection overrides.
+  Every admitted database-using administrator operation selects only the accepted common-directory store, including first initialization.
+  Worktree-local stores remain unchanged; rejected overrides cause no database access.
 - Test missing/incompatible/partially materialized stores, symlink/hard-link aliases, pending WAL, and native database errors.
   A fresh instance starts against a valid stopped store with committed WAL without requiring a host checkpoint.
   Startup and final-holder cleanup preserve unsynchronized ticket state without schema repair or deletion.
