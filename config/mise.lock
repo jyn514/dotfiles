@@ -7,6 +7,16 @@ version = "15.2.0"
 backend = "aqua:BurntSushi/ripgrep"
 specifiers = ["latest"]
 
+[tools."aqua:BurntSushi/ripgrep"."platforms.linux-x64"]
+checksum = "sha256:33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478120097"
+
+[tools."aqua:BurntSushi/ripgrep"."platforms.macos-arm64"]
+checksum = "sha256:3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478118851"
+
 [tools."aqua:BurntSushi/ripgrep"."platforms.windows-x64"]
 checksum = "sha256:71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip"
@@ -153,6 +163,21 @@ url = "https://github.com/getzola/zola/releases/download/v0.21.0/zola-v0.21.0-aa
 url_api = "https://api.github.com/repos/getzola/zola/releases/assets/272846895"
 provenance = "github-attestations"
 
+[[tools."aqua:jj-vcs/jj"]]
+version = "0.46.0"
+backend = "aqua:jj-vcs/jj"
+specifiers = ["latest"]
+
+[tools."aqua:jj-vcs/jj"."platforms.linux-x64"]
+checksum = "sha256:fce0271158e665ceb82dc66c5eb95b1728649094e9133074f3b5baece345fc08"
+url = "https://github.com/jj-vcs/jj/releases/download/v0.46.0/jj-v0.46.0-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/619869961"
+
+[tools."aqua:jj-vcs/jj"."platforms.macos-arm64"]
+checksum = "sha256:43daa37ce0f9716cdf6fb65a29cbcae74a3160aef048cf3cb3d166d41cb4ab58"
+url = "https://github.com/jj-vcs/jj/releases/download/v0.46.0/jj-v0.46.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/619877551"
+
 [[tools."aqua:lima-vm/lima"]]
 version = "2.2.0"
 backend = "aqua:lima-vm/lima"
@@ -177,6 +202,16 @@ specifiers = ["latest"]
 
 [tools."aqua:mvdan/sh".options]
 "vars.filter_bins" = "shfmt"
+
+[tools."aqua:mvdan/sh"."platforms.linux-x64"]
+checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
+
+[tools."aqua:mvdan/sh"."platforms.macos-arm64"]
+checksum = "sha256:b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_darwin_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320930"
 
 [tools."aqua:mvdan/sh"."platforms.windows-x64"]
 checksum = "sha256:13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df"

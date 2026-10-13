@@ -20,7 +20,7 @@ uv = "latest"
 "aqua:Wilfred/difftastic" = "latest"
 "aqua:Byron/dua-cli" = "latest"
 "aqua:lima-vm/lima" = "latest"
-"cargo:https://github.com/jj-vcs/jj" = { version = "rev:f1b29bced933e289096a9c98276153e29dd95674", crate = "jj-cli", bin = "jj", depends = ["rust"] }
+"aqua:jj-vcs/jj" = "latest"
 "aqua:BurntSushi/ripgrep" = { version = "latest", os = ["windows"] }
 "aqua:Myriad-Dreamin/tinymist" = "latest"
 "github:glide-browser/glide" = { version = "latest", os = ["linux"], filter_bins = "glide" }
