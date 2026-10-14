@@ -44,6 +44,8 @@ RUN /opt/agent-tools/libexec/jj --version
 FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/
 RUN npm ci --ignore-scripts --prefix /opt/pi-npm
+COPY ./tools/pi-link/package.json ./tools/pi-link/package-lock.json /opt/pi-link/
+RUN npm ci --ignore-scripts --omit=dev --prefix /opt/pi-link
 
 FROM alpine:3.22 AS pi-source
 RUN apk add --no-cache curl libarchive-tools
@@ -77,10 +79,13 @@ ENV HOME=/home/codex
 ENV PI_PACKAGE_DIR=/opt/agent-pi/src/packages/coding-agent
 ENV npm_config_ignore_scripts=true npm_config_legacy_peer_deps=true
 WORKDIR /workspace
+COPY --from=pi-extensions /opt/pi-link /home/codex/.pi/agent/pi-link
 COPY ./config/pi-agent/settings.json /home/codex/.pi/agent/settings.json
 COPY ./tools/codex-sandbox/image/cache-pi-extensions.mjs /opt/cache-pi-extensions.mjs
 RUN node /opt/cache-pi-extensions.mjs install
 COPY ./config/pi-agent/pi-extensions /home/codex/.pi/agent/pi-extensions
+COPY ./tools/pi-link/index.ts /home/codex/.pi/agent/pi-link/index.ts
+COPY ./tools/pi-link/skills /home/codex/.pi/agent/pi-link/skills
 COPY ./tools/codex-sandbox/auth-proxy/pi-extension /home/codex/.pi/agent/extensions/codex-sidecar
 RUN --network=none PI_OFFLINE=1 node /opt/cache-pi-extensions.mjs warm
 

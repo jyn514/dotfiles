@@ -8,6 +8,9 @@ description: "How `link_send`, `link_list` and `link_compact` behave between Pi 
 - Each terminal knows only its own conversation; sending a message does not share the rest of yours.
 - A message asks another terminal to act with its own tools and access, which may differ from yours.
 - Messages that reach another terminal enter its reasoning and can redirect its work.
+- The user can see sent and received messages in the transcript.
+  Do not repeat or paraphrase them in your ordinary reply merely to report the exchange.
+  Reply to peers with `link_send`; tell the user only new conclusions, decisions, or questions that need their attention.
 
 ---
 
@@ -15,7 +18,10 @@ description: "How `link_send`, `link_list` and `link_compact` behave between Pi 
 
 ### `link_list`
 
-- Returns connected terminals with names, status (`idle`, `thinking`, `compacting`, `tool:<name>`), cwd, and (when available) context usage such as `45K/272K (17%)`.
+- Returns connected terminals with names, Pi session IDs, status (`idle`, `thinking`, `compacting`, `tool:<name>`), cwd, and available context usage.
+  Full IDs appear in the text and in `details.sessionIds`, keyed by terminal name.
+  Older peers may not report an ID; missing means unknown.
+  Match a known parent session ID to this list to find its terminal; do not infer parentage from names or cwd.
 - Your own entry is marked `(you)` and cannot be a target of `link_send` or `link_compact`; its status and context are computed when listed, while peer values are their latest published snapshots.
 - A missing status means no status has been reported yet, not `idle`.
 - A `?` context value means usage is unknown; it can appear after successful compaction until a new measurement is available.

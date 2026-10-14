@@ -2,7 +2,7 @@
  * Pi Link — WebSocket-based inter-terminal communication
  *
  * Connects multiple Pi terminals over a local WebSocket link.
- * Opt-in via --link flag, --link-name flag, pi-link CLI, or /link-connect command.
+ * Connects on startup by default; /link-disconnect persists a session opt-out.
  * First terminal to connect becomes the hub; others join as clients.
  * Hub loss triggers automatic promotion of a surviving client.
  *
@@ -53,6 +53,7 @@ const TOP_LEVEL_TOOL = { loadMode: "essential" } as const;
 interface RegisterMsg {
   type: "register";
   name: string;
+  sessionId?: string;
   cwd?: string;
   context?: ContextSnapshot;
 }
@@ -62,12 +63,14 @@ interface WelcomeMsg {
   terminals: string[];
   statuses?: Record<string, LinkStatus>;
   cwds?: Record<string, string>;
+  sessionIds?: Record<string, string>;
   contexts?: Record<string, ContextSnapshot>;
 }
 interface TerminalJoinedMsg {
   type: "terminal_joined";
   name: string;
   terminals: string[];
+  sessionId?: string;
   cwd?: string;
   context?: ContextSnapshot;
 }
@@ -88,6 +91,7 @@ interface StatusUpdateMsg {
   type: "status_update";
   name: string;
   status: LinkStatus;
+  sessionId?: string;
   // Per-terminal LLM context. Absent = keep the stored value; null = clear it;
   // object = store it. Only status_update carries the null-clear.
   context?: ContextSnapshot | null;
@@ -205,7 +209,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerFlag("link", {
     description: "Connect to link on startup",
     type: "boolean",
-    default: false,
+    default: true,
   });
 
   pi.registerFlag("link-name", {
@@ -245,6 +249,7 @@ export default function (pi: ExtensionAPI) {
   const terminalContexts = new Map<string, ContextSnapshot>(); // other terminals' context
   let currentCwd = "";
   const terminalCwds = new Map<string, string>(); // other terminals' cwds
+  const terminalSessionIds = new Map<string, string>(); // other terminals' Pi session IDs
 
   // Hub state
   let wss: WebSocketServer | null = null;
@@ -376,6 +381,7 @@ export default function (pi: ExtensionAPI) {
       type: "status_update",
       name: terminalName,
       status,
+      sessionId: ctx?.sessionManager.getSessionId(),
       context: context ?? null, // explicit null tells peers to clear
     };
     if (role === "hub") {
@@ -448,6 +454,10 @@ export default function (pi: ExtensionAPI) {
   function getCwdFor(name: string): string | null {
     if (name === terminalName) return currentCwd || null;
     return terminalCwds.get(name) ?? null;
+  }
+
+  function getSessionIdFor(name: string): string | undefined {
+    return name === terminalName ? ctx?.sessionManager.getSessionId() : terminalSessionIds.get(name);
   }
 
   function getContextFor(name: string): ContextSnapshot | null {
@@ -786,6 +796,7 @@ export default function (pi: ExtensionAPI) {
         connectedTerminals = msg.terminals;
         terminalStatuses.clear();
         terminalCwds.clear();
+        terminalSessionIds.clear();
         terminalContexts.clear();
         if (msg.statuses) {
           for (const [name, status] of Object.entries(msg.statuses)) {
@@ -795,6 +806,11 @@ export default function (pi: ExtensionAPI) {
         if (msg.cwds) {
           for (const [name, cwd] of Object.entries(msg.cwds)) {
             terminalCwds.set(name, cwd);
+          }
+        }
+        if (msg.sessionIds) {
+          for (const [name, sessionId] of Object.entries(msg.sessionIds)) {
+            terminalSessionIds.set(name, sessionId);
           }
         }
         if (msg.contexts) {
@@ -814,6 +830,7 @@ export default function (pi: ExtensionAPI) {
       case "terminal_joined":
         connectedTerminals = msg.terminals;
         if (msg.cwd) terminalCwds.set(msg.name, msg.cwd);
+        if (msg.sessionId) terminalSessionIds.set(msg.name, msg.sessionId);
         if (msg.context) terminalContexts.set(msg.name, msg.context);
         updateStatus();
         if (groupOf(msg.name) === groupOf(terminalName))
@@ -824,6 +841,7 @@ export default function (pi: ExtensionAPI) {
         connectedTerminals = msg.terminals;
         terminalStatuses.delete(msg.name);
         terminalCwds.delete(msg.name);
+        terminalSessionIds.delete(msg.name);
         terminalContexts.delete(msg.name);
         // Fail any pending compact request to the departed terminal
         for (const [id, pending] of pendingCompactResponses) {
@@ -845,6 +863,7 @@ export default function (pi: ExtensionAPI) {
       // ── Status update from another terminal ──
       case "status_update":
         terminalStatuses.set(msg.name, msg.status);
+        if (msg.sessionId) terminalSessionIds.set(msg.name, msg.sessionId);
         if (msg.context) terminalContexts.set(msg.name, msg.context);
         else if (msg.context === null) terminalContexts.delete(msg.name);
         break;
@@ -980,6 +999,10 @@ export default function (pi: ExtensionAPI) {
         const cwds: Record<string, string> = Object.create(null);
         if (currentCwd) cwds[terminalName] = currentCwd; // hub's own cwd
         for (const [name, cwd] of terminalCwds) cwds[name] = cwd;
+        const sessionIds: Record<string, string> = Object.create(null);
+        const hubSessionId = ctx?.sessionManager.getSessionId();
+        if (hubSessionId) sessionIds[terminalName] = hubSessionId;
+        for (const [name, sessionId] of terminalSessionIds) sessionIds[name] = sessionId;
         const contexts: Record<string, ContextSnapshot> = Object.create(null);
         const hubContext = captureContext();
         if (hubContext) contexts[terminalName] = hubContext; // hub's own context
@@ -991,6 +1014,7 @@ export default function (pi: ExtensionAPI) {
             terminals: list,
             statuses,
             cwds,
+            sessionIds,
             contexts,
           } satisfies WelcomeMsg),
         );
@@ -1002,6 +1026,7 @@ export default function (pi: ExtensionAPI) {
           name: clientName,
           terminals: list,
           cwd: msg.cwd,
+          sessionId: msg.sessionId,
           context: msg.context,
         };
         hubBroadcast(joined, clientName);
@@ -1018,6 +1043,7 @@ export default function (pi: ExtensionAPI) {
           type: "status_update",
           name: clientName,
           status: msg.status,
+          sessionId: msg.sessionId,
           context: msg.context, // undefined omitted by JSON; null forwarded to clear
         };
         hubBroadcast(normalized, clientName);
@@ -1174,6 +1200,7 @@ export default function (pi: ExtensionAPI) {
           JSON.stringify({
             type: "register",
             name: preferredName ?? terminalName,
+            sessionId: ctx?.sessionManager.getSessionId(),
             cwd: currentCwd || undefined,
             context: captureContext(),
           } satisfies RegisterMsg),
@@ -1200,6 +1227,7 @@ export default function (pi: ExtensionAPI) {
         // must not serve metadata from the network that just went away.
         terminalStatuses.clear();
         terminalCwds.clear();
+        terminalSessionIds.clear();
         terminalContexts.clear();
         updateStatus();
 
@@ -1341,6 +1369,7 @@ export default function (pi: ExtensionAPI) {
     terminalStatuses.clear();
     terminalContexts.clear();
     terminalCwds.clear();
+    terminalSessionIds.clear();
     lastPushedStatus = null;
     updateStatus();
 
@@ -1783,6 +1812,7 @@ export default function (pi: ExtensionAPI) {
       // Keyed by terminal name, so no prototype (see the welcome snapshots).
       const statuses: Record<string, string> = Object.create(null);
       const cwds: Record<string, string> = Object.create(null);
+      const sessionIds: Record<string, string> = Object.create(null);
       const contexts: Record<string, ContextSnapshot> = Object.create(null);
       const visible = visibleTerminals();
       const list = visible
@@ -1792,12 +1822,15 @@ export default function (pi: ExtensionAPI) {
           if (statusStr) statuses[name] = statusStr;
           const cwd = getCwdFor(name);
           if (cwd) cwds[name] = cwd;
+          const sessionId = getSessionIdFor(name);
+          if (sessionId) sessionIds[name] = sessionId;
           const context = getContextFor(name);
           if (context) contexts[name] = context;
           const ctxStr = formatContext(context);
           const marker = name === terminalName ? " (you)" : "";
           let line = `  \u2022 ${name}${marker}${statusStr ? "  " + statusStr : ""}`;
           if (ctxStr) line += `  \u00b7 ${ctxStr}`;
+          if (sessionId) line += `\n    Pi session ID: ${sessionId}`;
           if (cwd) line += `\n    cwd: ${cwd}`;
           return line;
         })
@@ -1807,6 +1840,7 @@ export default function (pi: ExtensionAPI) {
         terminals: visible,
         statuses,
         cwds,
+        sessionIds,
         contexts,
         self: terminalName,
         role,
@@ -1836,6 +1870,7 @@ export default function (pi: ExtensionAPI) {
         const isSelf = name === details.self;
         const status = details.statuses?.[name] ?? "";
         const cwd = details.cwds?.[name];
+        const sessionId = details.sessionIds?.[name];
         const ctxStr = formatContext(details.contexts?.[name]);
         const nameStr = isSelf ? `\u2022 ${name} (you)` : `\u2022 ${name}`;
         text +=
@@ -1843,6 +1878,7 @@ export default function (pi: ExtensionAPI) {
           (isSelf ? theme.fg("accent", nameStr) : theme.fg("text", nameStr)) +
           (status ? "  " + theme.fg("dim", status) : "") +
           (ctxStr ? theme.fg("dim", "  \u00b7 " + ctxStr) : "");
+        if (sessionId) text += "\n    " + theme.fg("dim", `Pi session ID: ${sessionId}`);
         if (cwd) text += "\n    " + theme.fg("dim", `cwd: ${shortenPath(cwd)}`);
       }
       return new Text(text, 0, 0);
@@ -1937,6 +1973,7 @@ export default function (pi: ExtensionAPI) {
             name: newName,
             terminals: list,
             cwd: currentCwd,
+            sessionId: ctx?.sessionManager.getSessionId(),
             context: captureContext(),
           },
           terminalName,

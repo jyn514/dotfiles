@@ -182,6 +182,7 @@ class ContainerRepositoryPathTest(unittest.TestCase):
                 self.assertEqual(source.is_dir(), target.is_dir())
                 self.assertTrue(target.exists())
             self.assertTrue((state.pi_agent_tmp / "pi-extensions").is_dir())
+            self.assertTrue((state.pi_agent_tmp / "pi-link").is_dir())
             self.assertTrue((state.pi_agent_tmp / "extensions/codex-sidecar").is_dir())
 
     def test_policy_opt_out_drops_host_credentials(self):
@@ -611,6 +612,7 @@ class HostPiWrapperTest(unittest.TestCase):
                 "const prompt = [\n"
                 "  `Project config: ${host}/config/agents/breq.md`,\n"
                 "  `Shared skill: ${home}/.agents/skills/spec-review/SKILL.md`,\n"
+                "  `Package skill: ${home}/.pi/agent/pi-link/skills/pi-link-tools/SKILL.md`,\n"
                 "  `Agent instructions: <project_instructions path=\\\"${home}/.pi/agent/AGENTS.md\\\">`,\n"
                 "  `Pi examples: ${piPackage}/examples`,\n"
                 "  `Guest package: /opt/agent-pi/src/packages/coding-agent/README.md`,\n"
@@ -655,6 +657,7 @@ class HostPiWrapperTest(unittest.TestCase):
                 [
                     "Project config: /src/personal/lapwing/stint/config/agents/breq.md",
                     "Shared skill: /home/codex/.agents/skills/spec-review/SKILL.md",
+                    "Package skill: /home/codex/.pi/agent/pi-link/skills/pi-link-tools/SKILL.md",
                     "Agent instructions: <project_instructions path=\"/src/dotfiles/config/pi-agent/AGENTS.md\">",
                     "Pi examples: /opt/agent-pi/src/packages/coding-agent/examples",
                     "Guest package: /opt/agent-pi/src/packages/coding-agent/README.md",
@@ -2506,6 +2509,11 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertIn(
             f"type=bind,src={ROOT / 'config/pi-agent/pi-extensions'},"
             "dst=/home/codex/.pi/agent/pi-extensions,readonly",
+            run,
+        )
+        self.assertIn(
+            f"type=bind,src={ROOT / 'tools/pi-link'},"
+            "dst=/home/codex/.pi/agent/pi-link,readonly",
             run,
         )
         self.assertNotIn("pi-agent-", " ".join(run))

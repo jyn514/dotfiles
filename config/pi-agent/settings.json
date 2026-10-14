@@ -13,6 +13,7 @@
     "./pi-extensions/index.ts"
   ],
   "packages": [
+    "./pi-link",
     "git:github.com/jyn514/pi-codex-goal@main",
     "git:github.com/jyn514/pi-session-search@main",
     {

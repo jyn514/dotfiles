@@ -107,6 +107,8 @@ class DotfileSetupTests(unittest.TestCase):
         self.assertEqual("credentials\n", (agent / "auth.json").read_text())
         self.assertEqual("local Pi settings\n", (self.home / ".local/config/settings.json").read_text())
         self.assertFalse(agent.is_symlink())
+        self.assertTrue((agent / "pi-link").is_symlink())
+        self.assertEqual((ROOT / "tools/pi-link").resolve(), (agent / "pi-link").resolve())
         self.assertTrue(templates.is_symlink())
         self.assertEqual((ROOT / "config/pi-agent/pi-codex-subagents/agents").resolve(), templates.resolve())
         for name in ("settings.json", "AGENTS.md", "breq.md", "mcp.json", "keybindings.json",

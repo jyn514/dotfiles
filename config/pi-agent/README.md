@@ -12,6 +12,11 @@ installation. Conflicting regular files move to `~/.local/config/`; setup does
 not back up or replace the whole agent directory. Adding a configuration file
 needs no new manifest entry.
 
+The local [pi-link fork](../../tools/pi-link/README.md#install) is an exception: setup links its whole package at `~/.pi/agent/pi-link`.
+Settings load that package's extension and skill, and new sessions connect automatically.
+Install its locked dependencies before reloading Pi; `/link-disconnect` opts a session out and persists across reload and resume.
+The sandbox exposes the package read-only at the same agent-directory path, so guest tools can read its bundled skill.
+
 The `luna` and `parent` agent templates instruct children to read
 `~/.agents/coordination-dialect.md` once before their first task. Use a named
 template for each child (`parent` for generic delegation); task prompts do not

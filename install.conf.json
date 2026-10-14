@@ -21,6 +21,7 @@
         ]
       },
       "$HOME/.pi/agent/pi-codex-subagents/agents": "config/pi-agent/pi-codex-subagents/agents",
+      "$HOME/.pi/agent/pi-link": "tools/pi-link",
       "$HOME/.claude/CLAUDE.md": "config/agents/claude/CLAUDE.md",
       "$HOME/Library/LaunchAgents/": {
         "glob": true,

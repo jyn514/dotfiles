@@ -13,6 +13,6 @@ test("pi-link native loader/session/WebSocket reply regressions", () => {
   if (result.status !== 0) {
     throw new Error(`Native pi-link regression fixture failed (${result.status}):\n${result.stdout}\n${result.stderr}\n${result.error ?? ""}`);
   }
-  expect(result.stdout).toContain("# pass 4");
+  expect(result.stdout).toContain("# pass 7");
   expect(result.stdout).toContain("# fail 0");
 }, 100_000);

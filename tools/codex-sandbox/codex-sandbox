@@ -1637,6 +1637,7 @@ def prepare_agent_mountpoints(state: State) -> None:
         else:
             mountpoint.touch(mode=0o600)
     (state.pi_agent_tmp / "pi-extensions").mkdir(exist_ok=True)
+    (state.pi_agent_tmp / "pi-link").mkdir(exist_ok=True)
     (state.pi_agent_tmp / "extensions/codex-sidecar").mkdir(parents=True, exist_ok=True)
     (state.pi_agent_tmp / "sessions").mkdir(exist_ok=True)
 
@@ -1646,6 +1647,7 @@ def host_pi_resource_paths(state: State) -> dict[str, str]:
         str(state.home / source.removeprefix("$HOME/")): destination
         for source, destination in STAGED_CONFIG.values()
     }
+    paths[str(state.home / ".pi/agent/pi-link")] = "/home/codex/.pi/agent/pi-link"
     paths[str(state.home / ".agents/skills")] = str(GUEST_AGENT_SKILLS)
     paths[str(state.home / ".agents/sandbox")] = "/home/codex/.agents/sandbox"
     paths[str(state.home / ".pi/agent/sessions")] = "/home/codex/.pi/agent/sessions"
@@ -1811,6 +1813,8 @@ def build_agent_command(
             )
         ],
         "--mount", f"type=bind,src={pi_extensions},dst=/home/codex/.pi/agent/pi-extensions,readonly",
+        "--mount", f"type=bind,src={installed_config_source('$HOME/.pi/agent/pi-link')},"
+        f"dst={resource_paths[str(state.home / '.pi/agent/pi-link')]},readonly",
         "--mount", f"type=bind,src={state.home / '.codex/config.toml'},dst=/home/codex/.codex/config.toml,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.config/git/ignore')},dst=/home/codex/.gitignore,readonly",
         "--mount", f"type=bind,src={installed_config_source('$HOME/.codex/dotfiles.config.toml')},dst=/home/codex/.codex/dotfiles.config.toml,readonly",

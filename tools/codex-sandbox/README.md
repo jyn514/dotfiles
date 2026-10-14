@@ -123,6 +123,9 @@ Guest visibility depends on how the resource is exposed:
   at `/home/codex/.agents/skills`. In-place edits and new files under that source
   are readable without restarting the worker. Retargeting the installed directory
   link requires a fresh sandbox launch to select the new source.
+- **Live pi-link package:** the local fork is bound read-only at `/home/codex/.pi/agent/pi-link`.
+  Pi discovers its bundled skill through the [host package configuration](../../config/pi-agent/README.md).
+  Start a fresh sandbox to add this mount; `/reload` alone does not expose it to an existing worker.
 
 Put on-demand guidance under the existing skills directory when it should remain
 live, such as `~/.agents/skills/references/change-with-evidence.md`. Plain reference

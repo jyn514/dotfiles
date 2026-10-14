@@ -2,10 +2,12 @@
 
 This is a local fork of `alvivar/pi-link` 0.5.2 at commit `8dcec96c89c3816f6290a68a64c8f40545e0df4a`.
 The upstream MIT license is retained in [LICENSE](LICENSE).
-This fork adds message IDs and optional reply references without blocking asks or offline storage.
+This fork adds message IDs, optional reply references, and Pi session IDs without blocking asks or offline storage.
+It connects on startup by default.
 The npm package `pi-link` still selects upstream, not this fork.
 
-Run several Pi agents side by side and let them work as a team. Open two terminals with `pi --link`; they find each other on your machine, and each one can hand the other work, ask it questions, or wait for it to report back — all from a normal prompt.
+Run several Pi agents side by side and let them work as a team.
+Once this fork is loaded, new sessions connect automatically and can send work or questions to other local Pi sessions.
 
 One Pi is powerful. Several, talking to each other, unlock patterns a single terminal cannot:
 
@@ -49,12 +51,18 @@ Pi's package installation does not check the host version, so `pi install` succe
 
 The minimum install — enables every in-Pi feature (`/link`, `link_send`, `/link-connect`, `--link` flag, auto-resume, and all LLM tools):
 
-From the dotfiles repository root, install this fork's locked dependencies and load its local package:
+From the dotfiles repository root, install this fork's locked dependencies and refresh configuration links:
 
 ```bash
 npm ci --prefix tools/pi-link --ignore-scripts --no-audit --no-fund
-pi install ./tools/pi-link
+./setup dotfiles
 ```
+
+Setup links `~/.pi/agent/pi-link` to this directory.
+The tracked Pi settings select `./pi-link` as a local package, loading both the extension and its skill on startup.
+Run `/reload` in existing Pi sessions after refreshing the links.
+For sandbox sessions, start a fresh sandbox once to expose the package's skill to guest tools.
+Outside this dotfiles setup, register the local package with `pi install ./tools/pi-link` instead.
 
 To try the extension without registering the package:
 
@@ -63,7 +71,7 @@ pi -e ./tools/pi-link/index.ts --link
 ```
 
 Loading the file alone does not load the bundled skill.
-This fork is not enabled by dotfiles bootstrap; installing or loading it is an explicit choice.
+Do not load it separately when the package is already configured.
 
 #### Optional: shell launcher
 
@@ -83,22 +91,24 @@ The shell launcher is convenience-only — you can always reach the same functio
 
 ### Uninstall
 
-```bash
-pi uninstall ./tools/pi-link  # Remove the local package reference (from the dotfiles root)
-npm uninstall -g pi-link      # Remove CLI launcher (if you installed it)
-```
+Remove `./pi-link` from `config/pi-agent/settings.json` to disable the tracked startup integration, then reload Pi.
+For a separately registered local package, run `pi uninstall ./tools/pi-link` from the dotfiles root.
+Run `npm uninstall -g pi-link` to remove the optional shell launcher.
 
 ### Usage
 
-Link is **off by default**. Three ways to start:
+New sessions connect automatically when this fork is loaded.
+To choose a name, use `--link-name` or the optional launcher:
 
 ```bash
-pi --link                    # try it now, random name like t-a3f9
+pi                           # random name like t-a3f9
 pi --link-name builder       # with a name of your choice
 pi-link builder              # same, plus resume that session by name later (needs the shell launcher)
 ```
 
-Already in a session? Use `/link-connect`. Use `/link` any time to check status, or let the LLM tools handle cross-terminal coordination. See [Session Resume](#session-resume) for `pi-link <name>` details.
+Use `/link-disconnect` to opt a session out; that choice survives reload and resume.
+Use `/link-connect` to reconnect, or `/link` to check status.
+See [Session Resume](#session-resume) for `pi-link <name>` details.
 
 ---
 
@@ -156,7 +166,7 @@ Three tools: `link_send` to talk to another terminal, `link_list` to see who is 
 | Tool           | Behavior                                                | Returns                                                 |
 | -------------- | ------------------------------------------------------- | ------------------------------------------------------- |
 | `link_send`    | Send a message to one other terminal                    | Reports whether sending started, not whether it arrived |
-| `link_list`    | List currently connected terminals                      | Terminal list with roles, status, cwd, and context      |
+| `link_list`    | List currently connected terminals                      | Terminal list with roles, Pi session IDs, status, cwd, and context |
 | `link_compact` | Ask another terminal to compact and wait for its result | Compacted, declined, or failed                          |
 
 ### `link_send`
@@ -197,7 +207,12 @@ No response is produced automatically, and the send never waits for one.
 
 ### `link_list`
 
-Lists the connected terminals in your [group](#configuration), with role info, status, working directory, context usage, and self-identification. Takes no parameters. Your own status and context are read when you run `link_list`; for other terminals, you see their most recently reported values, which may be slightly behind.
+Lists the connected terminals in your [group](#configuration), with role info, Pi session IDs, status, working directory, context usage, and self-identification.
+Takes no parameters.
+Full Pi session IDs appear in both the text and `details.sessionIds`, keyed by terminal name.
+A known parent session ID can be matched to its terminal; the list does not infer parentage.
+Older peers may not report an ID, so their map entries are omitted.
+Your own status and context are read when you run `link_list`; peer values are their latest reported snapshots.
 
 Each terminal reports its current working directory on connect. `link_list` shows the full absolute path.
 
@@ -446,7 +461,10 @@ Finally, `--status` and `--json` belong to the wrapper only until a session name
 
 ## Configuration
 
-Link is **off by default**. Without `--link`, `--link-name`, or `pi-link`, a fresh session is completely silent — no status bar, no connections, no warnings.
+This fork connects new sessions by default.
+A saved `/link-disconnect` takes precedence over the default; `/link-connect` or an explicit startup name reconnects that session.
+Agents can see their own tool results and incoming message panels; the user can see both in the transcript.
+The bundled skill tells agents not to repeat those messages in their ordinary replies.
 
 **Naming concepts**
 
@@ -618,7 +636,10 @@ Client                         Hub
   |                             |
 ```
 
-Hub then broadcasts `terminal_joined` to the other connected terminals. The `welcome` message includes status, cwd, and context snapshots for all connected terminals (fields omitted above for brevity). `terminal_joined` also includes the new terminal's optional cwd and context.
+Hub then broadcasts `terminal_joined` to the other connected terminals.
+The `welcome` message includes status, cwd, Pi session ID, and context snapshots for connected terminals.
+`register`, `terminal_joined`, and `status_update` carry an optional `sessionId`; `welcome` carries a name-keyed `sessionIds` map.
+Peers that omit these fields remain supported.
 
 **Sending a chat message:**
 

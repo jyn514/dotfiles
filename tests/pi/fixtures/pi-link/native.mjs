@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -23,7 +24,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 async function until(predicate, label) {
   const deadline = Date.now() + 5000;
-  while (!predicate()) {
+  while (!await predicate()) {
     assert.ok(Date.now() < deadline, `Timed out: ${label}`);
     await pause(10);
   }
@@ -37,7 +38,7 @@ const providerText = (peer) => peer.requests.flatMap((request) => request.messag
 const theme = { fg: (_role, s) => s, bg: (_role, s) => s, bold: (s) => s };
 const plainRows = (component, width) => component.render(width).map((row) => row.replace(/\x1b\[[0-9;]*m/g, "").trim());
 
-async function network(t, names = ["hub", "alice", "bob"]) {
+async function network(t, names = ["hub", "alice", "bob"], { startup = false, disconnected = [] } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "pi-link-native-"));
   const peers = [];
   const sockets = [];
@@ -67,7 +68,7 @@ async function network(t, names = ["hub", "alice", "bob"]) {
   await mkdir(join(directory, "extension/node_modules"));
   await symlink(dirname(lockedRequire.resolve("ws/package.json")), join(directory, "extension/node_modules/ws"), "dir");
 
-  for (const name of names) {
+  async function addPeer(name, restoredSessionManager) {
     const cwd = join(directory, name);
     const agentDir = join(cwd, "agent");
     await mkdir(agentDir, { recursive: true });
@@ -99,34 +100,53 @@ async function network(t, names = ["hub", "alice", "bob"]) {
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
       extensionsOverride: () => loaded, systemPrompt: "Offline link regression fixture." });
     await loader.reload();
-    const sessionManager = SessionManager.create(cwd, join(cwd, "sessions"));
+    let sessionManager = restoredSessionManager ?? SessionManager.create(cwd, join(cwd, "sessions"));
+    if (disconnected.includes(name)) {
+      sessionManager.appendCustomEntry("link-active", { active: false });
+      // Pi buffers a new session until its first assistant message.
+      sessionManager.appendMessage(fauxAssistantMessage("Fixture session saved."));
+      sessionManager = SessionManager.open(sessionManager.getSessionFile());
+      assert.ok(sessionManager.getBranch().some((entry) =>
+        entry.type === "custom" && entry.customType === "link-active" && entry.data.active === false),
+      "restored fixture must contain the saved disconnect");
+    }
     const { session } = await createAgentSession({ cwd, agentDir, settingsManager, modelRuntime, resourceLoader: loader,
       sessionManager, model: provider.getModel(), tools: ["link_send", "link_list"] });
     peer.session = session;
     peer.sessionManager = sessionManager;
     peers.push(peer);
     const runner = session.extensionRunner;
-    runner.setFlagValue("link-name", name);
+    if (startup) session.setSessionName(name);
+    else runner.setFlagValue("link-name", name);
     await session.bindExtensions({ onError: (error) => { peer.extensionError = error; } });
-    // Explicit command avoids the startup timer; no production service or environment is consulted.
-    await runner.getCommand("link-connect").handler("", runner.createCommandContext());
+    // Ordinary routing tests connect explicitly; startup tests use no flag or command.
+    if (!startup) await runner.getCommand("link-connect").handler("", runner.createCommandContext());
     await until(() => !peer.extensionError && runner.getToolDefinition("link_list"), "loaded tools");
+    return peer;
   }
+  for (const name of names) await addPeer(name);
   const roster = async () => peers[0].session.extensionRunner.getToolDefinition("link_list")
     .execute("roster", {}, undefined, undefined, peers[0].session.extensionRunner.createContext());
+  const connectedNames = names.filter((name) => !disconnected.includes(name));
   // WebSocket registration is asynchronous; wait for the authoritative hub roster.
   for (let i = 0; i < 500; i++) {
-    if ((await roster()).details.terminals.length === names.length) break;
-    assert.ok(i < 499, "all fixture peers must register");
+    if ((await roster()).details.terminals?.length === connectedNames.length) break;
+    assert.ok(i < 499, `all fixture peers must register: ${JSON.stringify({
+      roster: (await roster()).details,
+      peers: peers.map((peer) => ({ name: peer.name, flags: [...peer.session.extensionRunner.getFlagValues()],
+        error: peer.extensionError, intent: peer.sessionManager.getBranch().filter((entry) =>
+          entry.type === "custom" && entry.customType === "link-active") })),
+    })}`);
     await pause(10);
   }
   for (const peer of peers) {
     assert.equal(peer.extensionError, undefined);
     const runner = peer.session.extensionRunner;
     const result = await runner.getToolDefinition("link_list").execute("roster", {}, undefined, undefined, runner.createContext());
-    assert.equal(result.details.role, peer === peers[0] ? "hub" : "client");
+    if (disconnected.includes(peer.name)) assert.equal(result.details.error, "not_connected");
+    else assert.equal(result.details.role, peer === peers[0] ? "hub" : "client");
   }
-  return { peers, port, sockets };
+  return { peers, port, sockets, addPeer };
 }
 
 async function send(peer, to, message, replyTo) {
@@ -156,6 +176,136 @@ function assertHeader(entry, from, id, replyTo) {
   assert.ok(content.includes(`From "${from}" (Message ID: ${id})`), content);
   if (replyTo) assert.ok(content.includes(`Reply to ${replyTo}`), content);
 }
+
+test("configured local package loads the fork and its skill through the bootstrap link", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-link-package-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const agentDir = join(directory, ".pi/agent");
+  await mkdir(agentDir, { recursive: true });
+  const manifest = JSON.parse(await readFile(join(root, "install.conf.json"), "utf8"));
+  const links = manifest.find((entry) => entry.link).link;
+  const mapping = Object.entries(links).find(([, source]) => source === "tools/pi-link");
+  assert.ok(mapping, "bootstrap must install the local fork, not upstream npm pi-link");
+  const config = join(directory, "links.json");
+  await writeFile(config, JSON.stringify([
+    ...manifest.filter((entry) => entry.defaults), { link: Object.fromEntries([mapping]) },
+  ]));
+  execFileSync(join(root, "vendor/dotbot/bin/dotbot"), ["-d", root, "-c", config], {
+    env: { ...process.env, HOME: directory },
+  });
+  const settingsFile = join(agentDir, "settings.json");
+  execFileSync("cp", [join(root, "config/pi-agent/settings.json"), settingsFile]);
+  execFileSync("cmp", [join(root, "config/pi-agent/settings.json"), settingsFile]);
+  const settingsManager = SettingsManager.create(directory, agentDir);
+  // Keep the configured local sources. Remote packages and the separate extension
+  // bundle are outside this regression and must not load personal state or use network.
+  settingsManager.setPackages(settingsManager.getPackages().filter((entry) =>
+    (typeof entry === "string" ? entry : entry.source).startsWith("./")));
+  settingsManager.setExtensionPaths([]);
+  const loader = new DefaultResourceLoader({ cwd: directory, agentDir, settingsManager,
+    noPromptTemplates: true, noThemes: true, noContextFiles: true });
+  await loader.reload();
+  const loaded = loader.getExtensions();
+  assert.deepEqual(loaded.errors, []);
+  const fork = loaded.extensions.find((extension) => extension.tools.has("link_send"));
+  assert.ok(fork, "startup settings must discover the fork through the installed local package");
+  assert.equal(await realpath(fork.path), await realpath(join(root, "tools/pi-link/index.ts")));
+  assert.ok(fork.tools.get("link_send").definition.parameters.properties.replyTo,
+    "the configured package must expose the fork's reply references");
+  const { skills, diagnostics } = loader.getSkills();
+  assert.deepEqual(diagnostics, []);
+  const skill = skills.find((entry) => entry.name === "pi-link-tools");
+  assert.ok(skill, "loading the package must also discover its bundled skill");
+  assert.equal(await realpath(skill.filePath), await realpath(join(root, "tools/pi-link/skills/pi-link-tools/SKILL.md")));
+
+  // Run the image's real install script with only its fixed image paths relocated.
+  // A relative source must resolve from agentDir, not the neutral build workspace.
+  const workspace = join(directory, "workspace");
+  await mkdir(workspace);
+  const cacheSource = process.env.PI_LINK_TEST_CACHE_SOURCE || join(root, "tools/codex-sandbox/image/cache-pi-extensions.mjs");
+  const cacheScript = join(directory, "cache-pi-extensions.mjs");
+  execFileSync("cp", [cacheSource, cacheScript]);
+  execFileSync("cmp", [cacheSource, cacheScript]);
+  let script = await readFile(cacheScript, "utf8");
+  for (const [original, relocated] of [
+    ['"/opt/agent-pi/src/packages/coding-agent/dist/bundle/index.js"', JSON.stringify(import.meta.resolve("@earendil-works/pi-coding-agent"))],
+    ['const cwd = "/workspace";', `const cwd = ${JSON.stringify(workspace)};`],
+    ['const agentDir = "/home/codex/.pi/agent";', `const agentDir = ${JSON.stringify(agentDir)};`],
+  ]) {
+    assert.equal(script.split(original).length, 2, `image fixture path must be unique: ${original}`);
+    script = script.replace(original, relocated);
+  }
+  await writeFile(cacheScript, script);
+  execFileSync(process.execPath, [cacheScript, "install"], { cwd: workspace });
+  assert.ok(mapping[0].startsWith("$HOME/"));
+  const installedLink = join(directory, mapping[0].slice("$HOME/".length));
+  await unlink(installedLink);
+  const missing = spawnSync(process.execPath, [cacheScript, "install"], { cwd: workspace, encoding: "utf8" });
+  assert.notEqual(missing.status, 0, "missing local packages must fail instead of silently warming an incomplete cache");
+  assert.ok(missing.stderr.includes(`Path does not exist: ${installedLink}`), missing.stderr);
+});
+
+test("startup connects without flags and preserves a restored session's opt-out", async (t) => {
+  const { peers: [hub, alice, offline] } = await network(t, ["hub", "alice", "offline"], {
+    startup: true, disconnected: ["offline"],
+  });
+  const id = messageId(await send(hub, "alice", "automatic startup delivery"));
+  assertHeader(await received(alice, "automatic startup delivery"), "hub", id);
+  const runner = offline.session.extensionRunner;
+  await runner.getCommand("link-connect").handler("", runner.createCommandContext());
+  await until(async () => {
+    const roster = await runner.getToolDefinition("link_list")
+      .execute("roster", {}, undefined, undefined, runner.createContext());
+    return roster.details.terminals?.includes("hub");
+  }, "explicit reconnect receives the hub roster");
+  const reconnected = messageId(await send(offline, "hub", "explicitly reconnected"));
+  assertHeader(await received(hub, "explicitly reconnected"), "offline", reconnected);
+});
+
+test("Pi session IDs identify native forks and survive link renames without retaining departed IDs", async (t) => {
+  const { peers: [parent, observer], addPeer } = await network(t, ["parent", "observer"], { startup: true });
+  messageId(await send(parent, "observer", "persist the parent before forking"));
+  await received(observer, "persist the parent before forking");
+  const selected = parent.sessionManager.getBranch().find((entry) =>
+    entry.type === "message" && entry.message.role === "user");
+  const forkedManager = SessionManager.open(parent.sessionManager.getSessionFile());
+  assert.ok(forkedManager.createBranchedSession(selected.id));
+  const child = await addPeer("child", forkedManager);
+  assert.notEqual(child.sessionManager.getSessionId(), parent.sessionManager.getSessionId());
+  const peers = [parent, observer, child];
+  const roster = async (peer) => {
+    const runner = peer.session.extensionRunner;
+    return runner.getToolDefinition("link_list").execute("roster", {}, undefined, undefined, runner.createContext());
+  };
+  async function expectSessionIds(expected) {
+    for (const peer of peers) {
+      await until(async () => {
+        const result = await roster(peer);
+        return JSON.stringify(result.details.terminals?.slice().sort()) === JSON.stringify(Object.keys(expected).sort());
+      }, "session ID roster membership");
+      const result = await roster(peer);
+      assert.deepEqual({ ...result.details.sessionIds }, expected);
+      for (const id of Object.values(expected)) assert.ok(text(result).includes(id), "full Pi IDs reach the model");
+      const definition = peer.session.extensionRunner.getToolDefinition("link_list");
+      const rendered = definition.renderResult(result, { expanded: true }, theme);
+      const visible = plainRows(rendered, 140).join("\n");
+      for (const id of Object.values(expected)) assert.ok(visible.includes(id), "full Pi IDs reach the transcript");
+    }
+  }
+  const parentId = parent.sessionManager.getSessionId();
+  const observerId = observer.sessionManager.getSessionId();
+  const childId = child.sessionManager.getSessionId();
+  await expectSessionIds({ parent: parentId, observer: observerId, child: childId });
+  const parentRunner = parent.session.extensionRunner;
+  await parentRunner.getCommand("link-name").handler("parent-renamed", parentRunner.createCommandContext());
+  const observerRunner = observer.session.extensionRunner;
+  await observerRunner.getCommand("link-name").handler("observer-renamed", observerRunner.createCommandContext());
+  await expectSessionIds({ "parent-renamed": parentId, "observer-renamed": observerId, child: childId });
+  await child.session.extensionRunner.getCommand("link-disconnect")
+    .handler("", child.session.extensionRunner.createCommandContext());
+  peers.pop();
+  await expectSessionIds({ "parent-renamed": parentId, "observer-renamed": observerId });
+});
 
 test("native sessions preserve full ordinary IDs and reply references in all WebSocket routing directions", async (t) => {
   const { peers: [hub, alice, bob] } = await network(t);
@@ -228,6 +378,12 @@ test("legacy wire frames and historic entries render with genuine Text/Box at na
   const welcome = new Promise((done) => socket.once("message", (raw) => done(JSON.parse(raw.toString()))));
   socket.send(JSON.stringify({ type: "register", name: "legacy" }));
   assert.equal((await welcome).type, "welcome");
+  await until(async () => {
+    const runner = hub.session.extensionRunner;
+    const roster = await runner.getToolDefinition("link_list").execute("roster", {}, undefined, undefined, runner.createContext());
+    assert.equal(roster.details.sessionIds.legacy, undefined, "legacy peers have unknown IDs, never invented ones");
+    return roster.details.terminals.includes("legacy");
+  }, "legacy peer registration");
   for (const receiver of [hub, alice]) {
     const body = `legacy wire to ${receiver.name}`;
     socket.send(JSON.stringify({ type: "chat", from: "spoof", to: receiver.name, content: body }));

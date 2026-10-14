@@ -9,7 +9,9 @@ import {
 const cwd = "/workspace";
 const agentDir = "/home/codex/.pi/agent";
 const settingsManager = SettingsManager.create(cwd, agentDir);
-const packages = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+// install() resolves local paths from cwd, while resource loading resolves user
+// settings from agentDir. Keep those paths identical for the install phase.
+const packages = new DefaultPackageManager({ cwd: agentDir, agentDir, settingsManager });
 const sources = settingsManager.getPackages().map(entry => typeof entry === "string" ? entry : entry.source);
 
 switch (process.argv[2]) {
