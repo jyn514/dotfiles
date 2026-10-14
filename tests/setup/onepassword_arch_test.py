@@ -37,14 +37,14 @@ class OnePasswordArchTests(unittest.TestCase):
             'printf "\\n" >> "$COMMAND_LOG"\n'
             'eval "destination=\\${$#}"\n'
             'mkdir -p "$destination"\n'
-            f'printf "validpgpkeys=(\'{FINGERPRINT}\')\\n" > "$destination/PKGBUILD"\n'
+            'printf "validpgpkeys=(\'%s\')\\n" "$PKGBUILD_FINGERPRINT" > "$destination/PKGBUILD"\n'
         )
         git.chmod(0o755)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def run_installer(self, fingerprint: str) -> subprocess.CompletedProcess[str]:
+    def run_installer(self, fingerprint: str, pkgbuild_fingerprint: str = FINGERPRINT) -> subprocess.CompletedProcess[str]:
         gpg = self.bin / "gpg"
         gpg.write_text(
             "#!/bin/sh\n"
@@ -59,6 +59,7 @@ class OnePasswordArchTests(unittest.TestCase):
         env = os.environ.copy()
         env.update(
             COMMAND_LOG=str(self.log),
+            PKGBUILD_FINGERPRINT=pkgbuild_fingerprint,
             PATH=f"{self.bin}:{env['PATH']}",
             TMPDIR=str(self.directory),
         )
@@ -92,6 +93,16 @@ class OnePasswordArchTests(unittest.TestCase):
         self.assertIn("fingerprint mismatch", result.stderr)
         self.assertNotIn("<--import>", self.commands())
         self.assertNotIn("git <clone>", self.commands())
+        self.assertNotIn("makepkg", self.commands())
+
+    def test_rejects_an_unexpected_pkgbuild_key_even_with_a_valid_downloaded_key(self) -> None:
+        result = self.run_installer(FINGERPRINT, "0" * 40)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("PKGBUILD does not require the expected signing key", result.stderr)
+        self.assertIn("<--import>", self.commands())
+        self.assertIn("git <clone>", self.commands())
+        self.assertNotIn("makepkg", self.commands())
 
 
 if __name__ == "__main__":

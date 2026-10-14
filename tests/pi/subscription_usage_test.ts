@@ -129,7 +129,15 @@ describe("subscription usage", () => {
       { baseUrl: "https://chatgpt.com.evil.invalid/backend-api" },
     ]) {
       const fixture = context(options);
-      await showSubscriptionUsage(fixture.ctx as never, offline);
+      let calls = 0;
+      await showSubscriptionUsage(fixture.ctx as never, request(() => {
+        calls++;
+        throw new Error("Unexpected network request");
+      }));
+      // Transport errors are sanitized too, so the notification alone cannot
+      // prove that rejected credentials never reached the requester.
+      expect(calls).toBe(0);
+      expect(fixture.notifications).toHaveLength(1);
       expect(fixture.notifications[0][1]).toBe("error");
       expect(fixture.notifications[0][0]).not.toContain("Unexpected network");
       expect(fixture.notifications[0][0]).not.toContain("sk-fixture");

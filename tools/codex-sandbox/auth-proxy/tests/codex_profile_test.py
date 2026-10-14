@@ -142,14 +142,84 @@ class CodexProfileTest(unittest.TestCase):
             _, account = profile.credentials()
         self.assertEqual("derived", account)
 
+    def dns_result(self, result):
+        """Control the resolver IPC, without starting DNS or a child process."""
+        parent, writer, process = mock.Mock(), mock.Mock(), mock.Mock()
+        parent.poll.return_value = True
+        parent.recv.return_value = result
+        process.is_alive.return_value = False
+        self.enterContext(mock.patch.object(profile.multiprocessing, "Pipe", return_value=(parent, writer)))
+        self.enterContext(mock.patch.object(profile.multiprocessing, "Process", return_value=process))
+
+    def test_dns_accepts_public_ipv4_ipv6_and_preserves_pinned_addresses(self):
+        ipv4 = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
+        ipv6 = (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:4700:4700::1111", 443, 0, 0))
+        for answers in [[ipv4], [ipv6], [ipv6, ipv4]]:
+            with self.subTest(answers=answers):
+                self.dns_result(("ok", answers))
+                self.assertEqual(answers, profile._public_addresses(time.monotonic() + 1))
+
     def test_dns_result_must_be_public_and_well_formed(self):
-        parent = mock.Mock()
-        process = mock.Mock(); process.is_alive.return_value = False
-        for result in [("ok", [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]), ("ok", [(1,)]), ("surprise", [])]:
-            parent.poll.return_value = True; parent.recv.return_value = result
-            with self.subTest(result=result), mock.patch.object(profile.multiprocessing, "Pipe", return_value=(parent, mock.Mock())), mock.patch.object(profile.multiprocessing, "Process", return_value=process):
-                with self.assertRaises((RuntimeError, OSError)):
+        public = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))
+        unsafe = [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))
+            for ip in ["127.0.0.1", "10.0.0.1", "169.254.169.254"]
+        ] + [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 443, 0, 0))]
+        results = [("ok", [answer]) for answer in unsafe]
+        results += [("ok", [public, answer]) for answer in unsafe]
+        results += [("ok", []), ("ok", [(1,)]), ("surprise", []),
+                    ("ok", [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("not-an-ip", 443))])]
+        for result in results:
+            with self.subTest(result=result):
+                self.dns_result(result)
+                with self.assertRaises((RuntimeError, OSError, ValueError)):
                     profile._public_addresses(time.monotonic() + 1)
+
+    def test_connect_pins_ip_uses_fixed_tls_hostname_and_closes_failed_sockets(self):
+        answers = [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:4700:4700::1111", 443, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+        ]
+        # Both connect and TLS errors must fall back; a successful first address
+        # must not open the second socket. No native network or TLS is used.
+        for failure in [None, "connect", "tls", "all"]:
+            with self.subTest(failure=failure):
+                self.dns_result(("ok", answers))
+                connection = profile._PinnedHTTPSConnection(5, time.monotonic() + 10)
+                raw = [mock.Mock(), mock.Mock()]
+                wrapped = mock.Mock()
+                tls = mock.Mock()
+                connection._context = tls
+                tls.wrap_socket.return_value = wrapped
+                if failure in ("connect", "all"):
+                    raw[0].connect.side_effect = OSError("first address unavailable")
+                if failure == "tls":
+                    tls.wrap_socket.side_effect = [OSError("TLS failed"), wrapped]
+                if failure == "all":
+                    raw[1].connect.side_effect = OSError("last address unavailable")
+                with mock.patch.object(profile.socket, "socket", side_effect=raw) as create_socket, \
+                     mock.patch.object(profile.socket, "getaddrinfo", side_effect=AssertionError("must not resolve again")):
+                    if failure == "all":
+                        with self.assertRaisesRegex(OSError, "last address unavailable"):
+                            connection.connect()
+                    else:
+                        connection.connect()
+                        self.assertIs(wrapped, connection.sock)
+                    count = 1 if failure is None else 2
+                    self.assertEqual([mock.call(*answer[:3]) for answer in answers[:count]], create_socket.call_args_list)
+                    for index in range(count):
+                        raw[index].connect.assert_called_once_with(answers[index][4])
+                        raw[index].settimeout.assert_called_once_with(connection.timeout)
+                    if failure is not None:
+                        raw[0].close.assert_called_once_with()
+                    if failure == "all":
+                        raw[1].close.assert_called_once_with()
+                        tls.wrap_socket.assert_not_called()
+                    else:
+                        tls.wrap_socket.assert_called_with(raw[count - 1], server_hostname="auth.openai.com")
+                        raw[count - 1].close.assert_not_called()
+                        connection.close()
+                        wrapped.close.assert_called_once_with()
 
     def test_dns_timeout_kills_and_reaps_child(self):
         parent, writer, process = mock.Mock(), mock.Mock(), mock.Mock()
