@@ -16,7 +16,7 @@ from sandbox_runtime import RuntimeError
 from docker_runtime import BuildError
 from lima.docker_api import APIError
 
-CACHE_CONTRACT = 3
+CACHE_CONTRACT = 4
 
 
 def _cache_directory():
@@ -207,6 +207,8 @@ def _capture(root, source, destination, identity, include=None, *, dockerfile=No
             except (ValueError, UnicodeError) as error:
                 raise RuntimeError(f'invalid Docker ignore file {ignore}: {error}') from error
     destination.mkdir(parents=True)
+    destination.chmod(0o700)
+    directory_modes = []
     if include is None:
         paths = list(matcher.walk(source, required)) if matcher else list(source.rglob('*'))
     else:
@@ -225,10 +227,22 @@ def _capture(root, source, destination, identity, include=None, *, dockerfile=No
     for path in sorted(set(paths), key=lambda item: item.relative_to(source).as_posix().encode()):
         relative = path.relative_to(source)
         mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            link = path.readlink()
+            # Container-generated links outside the repository are intentionally
+            # absent from both the captured representation and its identity.
+            resolved = (path.parent / link).resolve(strict=False)
+            if not resolved.is_relative_to(root):
+                continue
+            resolved = resolved.resolve(strict=True)
+            if not resolved.is_relative_to(source):
+                raise RuntimeError(f'Bake context link escapes capture: {relative}')
         identity.update(relative.as_posix().encode() + b'\0' + str(stat.S_IMODE(mode)).encode() + b'\0')
         target = destination / relative
         if stat.S_ISDIR(mode):
             target.mkdir(parents=True, exist_ok=True)
+            target.chmod(0o700)
+            directory_modes.append((target, stat.S_IMODE(mode)))
             identity.update(b'd\0')
         elif stat.S_ISREG(mode):
             data = ignore_contents if path == ignore and ignore_contents is not None else path.read_bytes()
@@ -239,21 +253,15 @@ def _capture(root, source, destination, identity, include=None, *, dockerfile=No
             target.write_bytes(data)
             target.chmod(stat.S_IMODE(mode))
         elif stat.S_ISLNK(mode):
-            link = path.readlink()
-            # Generated environments can leave links to their container path
-            # in a writable checkout. Do not require those unrelated targets
-            # to exist while capturing the repository context.
-            resolved = (path.parent / link).resolve(strict=False)
-            if not resolved.is_relative_to(root):
-                continue
-            resolved = resolved.resolve(strict=True)
-            if not resolved.is_relative_to(source):
-                raise RuntimeError(f'Bake context link escapes capture: {relative}')
             identity.update(b'l\0' + str(link).encode())
             target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(link, target_is_directory=resolved.is_dir())
         else:
             raise RuntimeError(f'Bake context {source} contains a special file: {relative}')
+    # Populate while writable, then finalize children before restrictive parents.
+    # Explicit chmod makes the built modes equal the hashed modes under any umask.
+    for target, mode in reversed(directory_modes):
+        target.chmod(mode)
     return destination
 
 

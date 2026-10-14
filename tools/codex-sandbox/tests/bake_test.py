@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import hashlib
 import json
+import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -109,6 +111,86 @@ class BakeTest(unittest.TestCase):
                      'output': [{'type': 'cacheonly'}]},
             'proxy': {'context': '.', 'dockerfile': 'proxy.Dockerfile', 'tags': ['proxy:source-one'],
                       'args': {'BASE_IMAGE': 'base-context'}, 'contexts': {'base-context': 'target:base'}}}})
+
+    def test_capture_preserves_nested_modes_and_hash_under_different_umasks(self):
+        context = self.repo / 'ci'
+        (context / 'parent/child').mkdir(parents=True)
+        (context / 'parent/child/value').write_bytes(b'payload')
+        (context / 'parent').chmod(0o555)
+        (context / 'parent/child').chmod(0o750)
+        # Permit temporary-tree cleanup even when the capture is restrictive.
+        self.addCleanup((context / 'parent').chmod, 0o755)
+        for include in (None, ['parent/child/value']):
+            for mask in (0o022, 0o077):
+                with self.subTest(include=include, umask=oct(mask)):
+                    directory = self.enterContext(tempfile.TemporaryDirectory())
+                    captured = Path(directory) / 'snapshot'
+                    original = hashlib.sha256()
+                    previous = os.umask(mask)
+                    try:
+                        bake._capture(self.repo, context, captured, original, include)
+                    finally:
+                        os.umask(previous)
+                    self.addCleanup((captured / 'parent').chmod, 0o755)
+                    for relative in ('parent', 'parent/child', 'parent/child/value'):
+                        self.assertEqual(stat.S_IMODE((context / relative).stat().st_mode),
+                                         stat.S_IMODE((captured / relative).stat().st_mode))
+                    self.assertEqual(b'payload', (captured / 'parent/child/value').read_bytes())
+                    # Rehash the actual representation consumed by the builder,
+                    # not a second reading of the original checkout.
+                    copied = hashlib.sha256()
+                    replica = Path(directory) / 'replica'
+                    bake._capture(Path(directory), captured, replica, copied)
+                    self.addCleanup((replica / 'parent').chmod, 0o755)
+                    self.assertEqual(original.digest(), copied.digest())
+
+    def test_build_consumes_source_directory_modes_and_umask_does_not_change_identity(self):
+        context = self.repo / 'ci'
+        (context / 'data/nested').mkdir(parents=True)
+        (context / 'data/nested/value').write_bytes(b'value')
+        (context / 'data').chmod(0o555)
+        (context / 'data/nested').chmod(0o750)
+        self.addCleanup((context / 'data').chmod, 0o755)
+        builder = self.engine.run_builder
+        observed_modes = []
+
+        def inspect_build(command, **kwargs):
+            if command[:2] == ['buildx', 'bake'] and '--print' not in command:
+                targets = json.loads(Path(command[command.index('--file') + 1]).read_text())['target']
+                if 'base' in targets:
+                    captured = Path(targets['base']['context'])
+                    observed_modes.append([stat.S_IMODE((captured / relative).stat().st_mode)
+                                           for relative in ('data', 'data/nested')])
+            return builder(command, **kwargs)
+
+        with mock.patch.object(self.engine, 'run_builder', side_effect=inspect_build):
+            previous = os.umask(0o077)
+            try:
+                first = resolve(self.engine, self.repo, ['base'])
+            finally:
+                os.umask(previous)
+            self.assertEqual(first, resolve(self.engine, self.repo, ['base']))
+            self.assertEqual([[0o555, 0o750]], observed_modes)
+            (context / 'data/nested').chmod(0o755)
+            self.assertNotEqual(first, resolve(self.engine, self.repo, ['base']))
+            self.assertEqual([[0o555, 0o750], [0o555, 0o755]], observed_modes)
+
+    def test_omitted_external_symlink_does_not_change_captured_identity(self):
+        context = self.repo / 'ci'
+        digests = []
+        for destination in (None, '/nonexistent/container-python', '/nonexistent/other'):
+            link = context / 'external'
+            if link.is_symlink():
+                link.unlink()
+            if destination is not None:
+                link.symlink_to(destination)
+            directory = self.enterContext(tempfile.TemporaryDirectory())
+            captured = Path(directory) / 'snapshot'
+            identity = hashlib.sha256()
+            bake._capture(self.repo, context, captured, identity)
+            self.assertFalse((captured / 'external').is_symlink())
+            digests.append(identity.digest())
+        self.assertEqual(1, len(set(digests)))
 
     def test_owned_proxy_resolution_feeds_its_immutable_binary_source_to_guest_builder(self):
         metadata = owned_images.declaration(['jj'])

@@ -19,8 +19,13 @@ uncaptured local files to the builder. Named image dependencies use immutable
 image identities instead of filesystem snapshots.
 
 Hash paths, entry types, contents, relevant permissions, and symlink destinations.
-Reject escaping links and special files among selected inputs; ignore files must
-be regular files rather than symlinks. Use docker-py 7.2.0's internal `Pattern`
+Captured nested directory modes equal source modes independently of the process umask;
+populate directories before applying final restrictive modes.
+Omit symlinks whose destinations lie outside the repository, including missing
+container-generated destinations, from both snapshots and cache identity.
+Reject selected links whose destinations remain within the repository but outside
+their captured context, and reject selected special files.
+Ignore files must be regular files rather than symlinks. Use docker-py 7.2.0's internal `Pattern`
 normalization and `fnmatchcase` implementation through the local adapter, with
 corrections for case sensitivity, wildcard exception traversal, and matching all
 ancestors. The pinned dependency and regression tests protect this internal SDK
