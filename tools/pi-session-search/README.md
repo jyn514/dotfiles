@@ -1,8 +1,7 @@
 # pi-session-search
 
-A [pi-coding-agent](https://github.com/earendil-works/pi) extension that lets the
-active LLM (and you) search prior pi session transcripts on disk **without
-resuming them**.
+A [pi-coding-agent](https://github.com/earendil-works/pi) extension for searching
+prior Pi and Codex transcripts on disk **without resuming them**.
 
 > When a topic comes up that you've discussed in a previous session, you don't
 > want to dig through `~/.pi/agent/sessions/` by hand or fully resume an old
@@ -15,14 +14,15 @@ resuming them**.
 - **Tool `search_sessions`** — the LLM can call this itself when the user
   references a prior conversation. Substring or `/regex/flags`, optional
   filters by `cwd`, time range, role, and tool calls. Returns a JSON list of
-  hits with `sessionFile` (relative to the sessions root), `sessionId`,
-  `sessionCwd`, `timestamp`, `role`, a snippet, and `entryId` when the record has one.
+  hits with `sessionFile` (relative to the Pi root, absolute for Codex),
+  `sessionId`, `sessionCwd`, `timestamp`, `role`, a snippet, and `entryId` when present.
 - **Tool `read_session`** — read around a specific hit, from the start or end,
   or after a previous read. Use after a promising `search_sessions` result to pull more
   context without resuming the session. Provide exactly one of `sessionFile`
   (absolute or relative to the configured root) or `sessionId` (the exact header
   ID). ID reads work when a parent path names a different machine or sandbox;
-  the session must still exist under the configured local root.
+  the session must still exist under a configured local root.
+  Ambiguous Codex IDs return an indexed version list with previews, not full transcripts.
 - **Command `/find-sessions [flags] <query>`** — manual search from the TUI.
   Flags: `--cwd=substr`, `--role=user|assistant`, `--since=ISO`, `--max=N`.
   Results are printed into the current session as a custom message.
@@ -140,20 +140,22 @@ To read recent activity without searching first:
 {"sessionId": "<session ID>", "tail": true, "maxMessages": 10}
 ```
 
-The result contains the last ten eligible messages in file order, not timestamp order.
+The result contains the last ten eligible messages in conversation order, not timestamp order.
 Without a positioning option, reads still start at the beginning.
 
-Each read returns `nextCursor`, including when no new messages exist.
-Pass it back unchanged to continue after that read:
+Each transcript read returns `nextCursor`, including when no new messages exist.
+A Codex version list returns `versions` instead of a cursor; choose a listed `sessionFile` before continuing.
+Pass `nextCursor` back unchanged to continue after that read:
 
 ```json
 {"sessionId": "<same session ID>", "after": "<nextCursor>", "maxMessages": 10}
 ```
 
-`hasMore` means more eligible messages remain in that call's file snapshot.
+`hasMore` means more eligible messages remain in that call's history snapshot.
 A false value does not mean the session has ended: call again with the cursor to check later appends.
 Cursors refer to file positions, not timestamps, so equal or out-of-order timestamps do not lose messages.
-A cursor fails explicitly if its consumed file prefix changes, the file shrinks past its position, or another file replaces it.
+A cursor fails explicitly if consumed history changes, a consumed file shrinks past its position, or another file replaces it.
+For Codex this includes consumed inherited prefixes; later changes outside an inherited cutoff do not invalidate the cursor.
 Start a new read without `after` to recover.
 Cursors are opaque and local to the selected session file; they are not portable bookmarks between machines or copied sessions.
 Changing `PI_SESSION_SEARCH_MAX_BYTES` also invalidates a cursor because it can change which records count as messages.
@@ -169,6 +171,30 @@ Reads include nonempty user/assistant text and assistant tool-call summaries, no
 They omit tool results, thinking-only messages, and custom entries.
 Tool-call summaries mark truncated arguments with an ellipsis.
 Positions count only eligible messages and exclude oversized records.
+
+### Codex versions and inherited history
+
+Search includes retained Codex versions, including versions superseded by revert.
+A session ID can therefore name several files, not consecutive pieces of one conversation.
+
+```json
+{"sessionId": "<Codex thread ID>"}
+```
+
+When several versions match, this returns a successful indexed list with each version's timestamp, cwd,
+first local user-message preview, and absolute `sessionFile`.
+Structured details contain `versions`, an empty `messages` list, and no `nextCursor`.
+Pass a listed path unchanged to read that version:
+
+```json
+{"sessionFile": "<version.sessionFile>", "tail": true, "maxMessages": 10}
+```
+
+The reader follows that version's `history_base` references, retaining only the specified byte and ordinal prefixes of ancestor files.
+Windows and cursors cross those file boundaries in conversation order.
+It does not concatenate same-ID files or guess which version Codex currently selects.
+Missing, cyclic, non-paginated, or unreadable ancestry fails explicitly instead of returning partial history.
+Pi-only duplicate IDs still fail and ask for `sessionFile`.
 
 ### Drive it yourself
 
@@ -190,7 +216,7 @@ and `y` flags are stripped (they break match-position tracking).
 
 ### Automatic filtering
 
-Both search entrypoints always exclude text-only user messages whose whole text
+For Pi, both search entrypoints always exclude text-only user messages whose whole text
 is a `<pi_goal_continuation goal_id="…">…</pi_goal_continuation>` envelope.
 Mentions, quoted examples, partial envelopes, surrounding prose, and messages
 with images remain searchable. This recognizes a format, not authorship: a
@@ -200,7 +226,9 @@ the user/assistant search scope.
 Search also collapses matching copied records across session files when their
 nonempty entry ID and timestamp, complete message value, and hit kind agree.
 Independent repetitions, incomplete identities, changed message values, and
-repeated records within one file remain distinct. Scope filters apply first;
+repeated records within one file remain distinct.
+Pi and Codex identities remain separate.
+Scope filters apply first;
 the retained hit points to the first encountered eligible file, not necessarily
 the original session. Assistant text and tool-call hits remain separate.
 
@@ -210,8 +238,11 @@ search still stops at `maxResults` retained hits, not after scanning the archive
 With `maxResultsPerSession`, counters exclude the unsearched remainder of capped files.
 Neither filter marks coverage incomplete. Identity tracking stores at most
 `maxResults` fingerprints of complete bounded messages, not transcript contents.
-`read_session` remains unfiltered so you can inspect the actual surrounding
-messages.
+Pi reads retain goal-continuation envelopes and copied messages so you can inspect surrounding context.
+Codex search and reads omit duplicate event records, developer instructions, reasoning, and tool results.
+Valid, complete `content_item_kinds` metadata excludes classified non-user context from user messages.
+Missing or malformed classifications, `user.*`, empty classifications, and `unknown` remain readable.
+Older unclassified injected context can therefore appear as user text.
 
 ## Configuration
 
@@ -219,6 +250,10 @@ Environment variables:
 
 - `PI_SESSION_SEARCH_ROOT` — override the sessions directory (default
   `~/.pi/agent/sessions`).
+- `PI_SESSION_SEARCH_CODEX_ROOT` — override the Codex sessions directory.
+  Defaults to `$CODEX_HOME/sessions` when `CODEX_HOME` is set, otherwise `~/.codex/sessions`.
+  A missing Codex root is an empty source; it does not prevent Pi searches.
+  In a sandbox, mount the sessions you want to search and point this variable at that mount.
 - `PI_SESSION_SEARCH_MAX_BYTES` — per-record raw-byte cap (default 5 MiB,
   5,242,880 bytes). It is enforced before decoding/parsing and excludes the LF
   delimiter. Existing overrides still apply, but revisit old file-size
@@ -230,47 +265,45 @@ Environment variables:
 
 ## How it works
 
-pi stores every session as a JSONL file under
+Pi stores each session as a JSONL file under
 `~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl`. Each line is a
 JSON object — the first is a `session` header (with `id` and `cwd`), the rest
 are `message` entries (and a few other types).
 
-`search_sessions` walks that directory, streams each JSONL file, parses
-`message` entries, extracts text content (skipping images and, by default, raw
-tool args), and matches against your query. It retains only hits and stops at
-`maxResults` or cancellation.
+`search_sessions` walks the Pi directory and recursively walks the Codex root.
+It streams JSONL records, extracts conversation text (skipping images and, by default, tool calls), and matches your query.
+Codex `session_meta` supplies thread identity, cwd, and date filtering; `response_item` supplies messages and function/custom tool calls.
+Duplicate `event_msg` representations are ignored.
+Search retains only hits and stops at `maxResults` or cancellation.
 The optional `maxResultsPerSession` skips each file's remaining records once its retained-hit cap is reached.
 See [Let the LLM drive](#let-the-llm-drive) for result-limit and coverage fields.
 Skipped-record counts cover only the portion actually scanned.
 
-For `sessionId`, `read_session` scans the same encoded-cwd directories as search
-and reads only each file's first record to find its header ID. Filenames do not
-establish identity. Only valid headers within the configured record limit
-participate; malformed or oversized headers cannot resolve an ID. If distinct
-files have the same ID, the read fails and asks for `sessionFile`. Symlink aliases
-of the same resolved file do not create ambiguity. ID lookup adds a header scan
-on each call; there is no persistent index or cache.
+For `sessionId`, `read_session` scans the configured roots and reads bounded first-record headers to find matching IDs.
+Malformed or oversized headers cannot resolve an ID.
+Symlink aliases of one resolved file do not create ambiguity.
+Codex rollout filenames identify physical history references, not thread identity.
+See [Codex's upstream lineage reader][codex-lineage] for inherited-history resolution, pinned to the revision inspected for this implementation.
+ID lookup adds a header scan on each call; there is no persistent index or cache.
 
-`read_session` streams a snapshot bounded by the file's initial byte length, so later appends wait until the next call.
+`read_session` streams snapshots bounded by initial file sizes and inherited-prefix cutoffs, so later appends wait until the next call.
 It counts eligible messages, selects the requested window, and retains only that window.
 Cursor validation checks the consumed prefix without retaining the transcript in memory.
 `contextMessages` and `maxMessages` accept non-negative safe integers, including `0` (defaults 6 and 30).
-Memory use depends on one bounded record plus retained hits or the requested window, not the transcript's total size.
+Memory use depends on one bounded record, retained hits or the requested window, and file/history metadata, not transcript contents.
 
 No model is called. No external network. No session is mutated.
 
 ## Trust model & security notes
 
 **This tool is read-only and intended for a single trusted local user.** It
-gives the active LLM the ability to grep every prior pi conversation on
-disk. That makes it a powerful productivity tool *and* a meaningful
-exfiltration primitive if the active LLM is operating on untrusted input.
+gives the active LLM access to prior Pi and Codex conversations under the configured roots.
+That makes it a productivity tool *and* a meaningful exfiltration primitive with untrusted input.
 
 **Trust boundary.**
 
-- The user owns `~/.pi/agent/sessions/` and trusts its contents.
-- The configured sessions root (default: that directory) is the only
-  filesystem region this tool will ever read.
+- The user owns and trusts the configured Pi and Codex sessions roots.
+- Only files within those resolved roots are readable, including inherited Codex history.
 - Anything inside the root — user messages, assistant messages, tool calls,
   tool results — is treated as readable by the active model.
 
@@ -279,9 +312,10 @@ exfiltration primitive if the active LLM is operating on untrusted input.
 - **Read-only.** No tool here writes, deletes, or transmits anything.
 - **Path containment in `read_session`.** Resolves symlinks on both the file
   and the configured root, rejects any path that doesn't end up under the
-  resolved root. ID lookup checks containment on every directory and file
-  before reading its header, then applies the same path check to the selected
-  file. It never rewrites a foreign absolute path to a local path.
+  resolved root.
+  ID and Codex ancestor lookup check containment on every directory and file before reading headers.
+  The same check applies to the selected file.
+  It never rewrites a foreign absolute path to a local path.
 - **Path containment in `search_sessions`.** Per-subdirectory and per-file
   symlink containment: a `.jsonl` symlinked outside the root is detected at
   `realpath` time and skipped (counted as `skippedFiles` in the result).
@@ -315,7 +349,7 @@ exfiltration primitive if the active LLM is operating on untrusted input.
   reads them later may try to follow them. **Treat this tool's output like
   web-search output: signal, not orders.** The same applies to secrets
   pasted into past sessions — they will be echoed back in snippets.
-- **`PI_SESSION_SEARCH_ROOT` accepts any path.** If you set it to a
+- **Session-root overrides accept any path.** If you set one to a
   non-sessions directory (or an attacker can influence your environment),
   the tool will dutifully grep that directory for whatever the model asks
   for. **Never expose `search_sessions` to a model operating on untrusted
@@ -327,6 +361,13 @@ exfiltration primitive if the active LLM is operating on untrusted input.
   timeout.
 
 ## Limitations
+
+- Codex support reads plain JSONL `session_meta` / `response_item` records and paginated `history_base` references.
+  Inter-agent `agent_message` records are currently omitted.
+  Compressed `.jsonl.zst` files and Codex's SQLite-selected active-version pointer are not read.
+  Archived files outside the configured Codex root are not searched or followed.
+  Put required ancestors under that root; the reader does not bypass containment to find them.
+  Byte offsets and ordinals must fit JavaScript's safe-integer range.
 
 - Large transcripts take proportionally longer to scan even though memory
   use is bounded. Tool calls support cancellation between records and reads;
@@ -354,3 +395,5 @@ changes will only land in major bumps.
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+[codex-lineage]: https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/thread-store/src/local/rollout_lineage.rs

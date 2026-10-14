@@ -61,7 +61,7 @@ describe("session navigation", () => {
 		const result = await readSession({ sessionFile, tail: true, maxMessages: 2 });
 		assert.deepEqual(result.messages.map(m => [m.index, m.entryId]), [[2, "middle"], [3, "last"]]);
 		assert.equal(result.hasMore, false);
-		assert.equal(typeof result.nextCursor, "string");
+		assert.ok(typeof result.nextCursor === "string");
 		assert.ok(result.nextCursor.length > 0);
 		assert.ok(!result.text.includes("excluded tool result"));
 		const initial = await readSession({ sessionFile, maxMessages: 1 });

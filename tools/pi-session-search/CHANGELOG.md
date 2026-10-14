@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Search Pi and Codex JSONL history together with both tools and `/find-sessions`.
+  Set `PI_SESSION_SEARCH_CODEX_ROOT` to configure Codex storage; the default honors `CODEX_HOME`.
+- Codex reads reconstruct inherited history for the selected version and preserve append-safe cursors.
+  Ambiguous Codex IDs return a successful indexed preview list with paths to each version, not a tool error.
 - `read_session` accepts `tail: true` for recent messages and `after` with a returned opaque cursor for paging and following appends.
   Cursors reject stale consumed prefixes and replaced files rather than silently restarting.
 - Search hits include `entryId` when available, and `read_session` accepts `aroundEntryId` to select that exact entry.
@@ -18,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Results report `sessionsAtLimit` separately from total-limit truncation and incomplete coverage.
 - Read a session by its exact header `sessionId`, without depending on a host-
   or sandbox-specific path. Provide exactly one of `sessionId` or `sessionFile`.
-  Lookup stays within the configured root, uses bounded first-record headers,
-  and rejects duplicate IDs across distinct files.
+  Lookup stays within configured roots and uses bounded first-record headers.
+  Pi-only duplicate IDs across distinct files remain errors; Codex versions use the indexed list above.
 
 ### Changed
 

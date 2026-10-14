@@ -43,6 +43,21 @@ export function getRoot(): string {
 	return process.env.PI_SESSION_SEARCH_ROOT || DEFAULT_ROOT;
 }
 
+type SessionSource = "pi" | "codex";
+interface SessionRoot { source: SessionSource; root: string }
+
+function sessionRoots(): SessionRoot[] {
+	return [
+		{ source: "pi", root: getRoot() },
+		{ source: "codex", root: process.env.PI_SESSION_SEARCH_CODEX_ROOT ||
+			path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "sessions") },
+	];
+}
+
+function contained(root: string, file: string): boolean {
+	return file === root || file.startsWith(root + path.sep);
+}
+
 export function getMaxBytes(): number {
 	const value = Number.parseInt(process.env.PI_SESSION_SEARCH_MAX_BYTES || "", 10);
 	return Number.isFinite(value) && value > 0 ? value : DEFAULT_MAX_RECORD_BYTES;
@@ -282,10 +297,10 @@ export function extractToolCallText(content: unknown): string {
 }
 
 export interface Hit {
-	// Path to the session JSONL file *relative to the configured sessions root*
-	// (e.g. "--home-foo--/2026-04-23T06-48-02-781Z_<uuid>.jsonl"). Use this with
-	// read_session — it accepts either this relative path or an absolute one.
+	// Pi paths are relative to its configured root; Codex paths are absolute so
+	// callers can pass either source's search hit unchanged to read_session.
 	sessionFile: string;
+	source?: SessionSource;
 	sessionId: string;
 	entryId?: string;
 	sessionCwd: string;
@@ -321,8 +336,113 @@ export interface SearchResult {
 	duplicateHitsSuppressed: number;
 }
 
+interface SessionCandidate {
+	file: string;
+	cwd: string;
+}
+
+// Pi owns one directory level; Codex uses date directories. Check containment
+// before descending and deduplicate resolved directories to avoid alias cycles.
+async function* sessionCandidates(
+	config: SessionRoot, signal?: AbortSignal, skipped: () => void = () => {},
+): AsyncGenerator<SessionCandidate> {
+	let resolvedRoot: string;
+	try { resolvedRoot = await realpath(config.root); }
+	catch { return; } // A missing optional history root is normal.
+	const visited = new Set<string>();
+	const pending = [{ dir: path.resolve(config.root), depth: 0, cwd: "" }];
+	while (pending.length) {
+		signal?.throwIfAborted();
+		const current = pending.pop()!;
+		let dir: string;
+		try { dir = await realpath(current.dir); }
+		catch { skipped(); continue; }
+		if (!contained(resolvedRoot, dir)) { skipped(); continue; }
+		if (visited.has(dir)) continue;
+		visited.add(dir);
+		let entries;
+		try { entries = await readdir(current.dir, { withFileTypes: true }); }
+		catch { skipped(); continue; }
+		for (const entry of entries) {
+			signal?.throwIfAborted();
+			const file = path.join(current.dir, entry.name);
+			if (entry.isDirectory()) {
+				if (config.source === "codex" || current.depth === 0) {
+					pending.push({ dir: file, depth: current.depth + 1,
+						cwd: config.source === "pi" ? decodeSessionDirName(entry.name) : "" });
+				}
+				continue;
+			}
+			if (!entry.name.endsWith(".jsonl") || (config.source === "pi" && current.depth !== 1)) continue;
+			try {
+				const resolved = await realpath(file);
+				if (!contained(resolvedRoot, resolved)) { skipped(); continue; }
+				if (!(await stat(resolved)).isFile()) { skipped(); continue; }
+				yield { file, cwd: current.cwd };
+			} catch { skipped(); }
+		}
+	}
+}
+
+interface SessionHeader {
+	id: string;
+	cwd: string;
+	timestamp: string;
+	base?: unknown;
+	historyMode?: unknown;
+}
+
+function object(value: unknown): Record<string, unknown> | undefined {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? value as Record<string, unknown> : undefined;
+}
+
+function sessionHeader(record: unknown, source: SessionSource): SessionHeader | undefined {
+	const obj = object(record);
+	const header = source === "pi" ? (obj?.type === "session" ? obj : undefined)
+		: obj?.type === "session_meta" ? object(obj.payload) : undefined;
+	if (!header || typeof header.id !== "string" || !header.id) return;
+	return { id: header.id, cwd: typeof header.cwd === "string" ? header.cwd : "",
+		timestamp: typeof header.timestamp === "string" ? header.timestamp : "", historyMode: header.history_mode,
+		...(header.history_base != null ? { base: header.history_base } : {}) };
+}
+
+async function firstHeader(file: string, source: SessionSource, cap: number, signal?: AbortSignal): Promise<SessionHeader | undefined> {
+	const info = await stat(file);
+	if (!info.isFile()) return;
+	for await (const line of sessionRecords(file, info.size, cap, signal)) {
+		return sessionHeader(line === null ? undefined : parseRecord(line), source);
+	}
+}
+
+// Normalize only conversation items. Event records duplicate response items;
+// developer instructions, reasoning and tool results are not conversation text.
+function conversationRecord(record: unknown, source: SessionSource): Record<string, unknown> | undefined {
+	const obj = object(record);
+	if (!obj) return;
+	if (source === "pi") return obj.type === "message" ? obj : undefined;
+	if (obj.type !== "response_item") return;
+	const payload = object(obj.payload);
+	if (!payload) return;
+	let message: { role: string; content: unknown };
+	if (payload.type === "message" && (payload.role === "user" || payload.role === "assistant")) {
+		const kinds = object(payload.internal_chat_message_metadata_passthrough)?.content_item_kinds;
+		const content = Array.isArray(payload.content) ? payload.content : [];
+		const classified = Array.isArray(kinds) && kinds.length === content.length && kinds.every(k => typeof k === "string");
+		message = { role: payload.role, content: content.flatMap((part: unknown, i: number) => {
+			const block = object(part);
+			if (!block || (block.type !== "input_text" && block.type !== "output_text") || typeof block.text !== "string") return [];
+			if (payload.role === "user" && classified && kinds[i] && kinds[i] !== "unknown" && !kinds[i].startsWith("user.")) return [];
+			return [{ type: "text", text: block.text }];
+		}) };
+	} else if ((payload.type === "function_call" || payload.type === "custom_tool_call") && typeof payload.name === "string") {
+		message = { role: "assistant", content: [{ type: "toolCall", name: payload.name,
+			arguments: payload.type === "function_call" ? payload.arguments : payload.input }] };
+	} else return;
+	return { type: "message", id: payload.id, timestamp: obj.timestamp, message };
+}
+
 export async function searchSessions(opts: SearchOptions): Promise<SearchResult> {
-	const root = getRoot();
 	const maxRecordBytes = getMaxBytes();
 	const re = compileQuery(opts.query);
 	const sinceMs = parseDateOrThrow(opts.since, "since");
@@ -333,7 +453,6 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 		? undefined : validateResultLimit(opts.maxResultsPerSession, "maxResultsPerSession");
 	const before = opts.snippetBefore ?? DEFAULT_SNIPPET_BEFORE;
 	const after = opts.snippetAfter ?? DEFAULT_SNIPPET_AFTER;
-
 	const hits: Hit[] = [];
 	let scannedFiles = 0;
 	let skippedFiles = 0;
@@ -342,203 +461,98 @@ export async function searchSessions(opts: SearchOptions): Promise<SearchResult>
 	let skippedRecords = 0;
 	let excludedGoalContinuations = 0;
 	let duplicateHitsSuppressed = 0;
-	// Only retained hits claim identity, so memory is bounded by maxResults.
 	const retainedCopies = new Map<string, string>();
 
-	// Resolve the configured root once so we can apply the same symlink-
-	// containment check we already do in read_session to every subdirectory we
-	// walk. This stops a symlinked entry inside the sessions root from
-	// silently widening the search to arbitrary parts of the filesystem.
-	let resolvedRoot: string;
 	try {
-		resolvedRoot = await realpath(root);
-	} catch {
-		resolvedRoot = path.resolve(root);
-	}
-
-	let dirs: Array<{ name: string; isDirectory: () => boolean }>;
-	try {
-		dirs = await readdir(root, { withFileTypes: true });
-	} catch {
-		return { hits, scannedFiles, skippedFiles, truncated, sessionsAtLimit, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
-	}
-
-	outer: for (const d of dirs) {
-		if (opts.signal?.aborted) break;
-		if (!d.isDirectory()) continue;
-		const sessionCwd = decodeSessionDirName(d.name);
-		if (opts.cwd && !sessionCwd.includes(opts.cwd) && !d.name.includes(opts.cwd)) continue;
-
-		const dirPath = path.join(root, d.name);
-
-		// Symlink containment per subdirectory. A directory entry that resolves
-		// outside the configured sessions root is silently skipped (counted as a
-		// skipped file for visibility). We accept the d.isDirectory() check
-		// already filtering most cases; this is belt-and-braces.
-		let resolvedSubdir: string;
-		try {
-			resolvedSubdir = await realpath(dirPath);
-		} catch {
-			continue;
-		}
-		if (
-			!resolvedSubdir.startsWith(resolvedRoot + path.sep) &&
-			resolvedSubdir !== resolvedRoot
-		) {
-			skippedFiles += 1;
-			continue;
-		}
-
-		let files: string[];
-		try {
-			files = (await readdir(dirPath)).filter((f) => f.endsWith(".jsonl"));
-		} catch {
-			continue;
-		}
-
-		for (const f of files) {
-			if (opts.signal?.aborted) break outer;
-			const full = path.join(dirPath, f);
-
-			// Symlink containment per file: a `.jsonl` symlinked to outside the
-			// sessions root would otherwise be silently followed by the file reader
-			// below. We resolve and check before stat-ing.
-			let resolvedFile: string;
-			try {
-				resolvedFile = await realpath(full);
-			} catch {
-				continue;
-			}
-			if (
-				!resolvedFile.startsWith(resolvedRoot + path.sep) &&
-				resolvedFile !== resolvedRoot
-			) {
-				skippedFiles += 1;
-				continue;
-			}
-
-			let st;
-			try {
-				st = await stat(resolvedFile);
-			} catch {
-				continue;
-			}
-			// Use the filename timestamp (session start) for since/until rather than
-			// mtime, which reflects the last write and would let an old conversation
-			// pass a recent `since` filter.
-			const startMs = parseSessionFileTimestamp(f) || st.mtimeMs;
-			if (sinceMs && startMs < sinceMs) continue;
-			if (untilMs && startMs > untilMs) continue;
-
-			let sessionId = "";
-			let headerCwd = sessionCwd;
-			try {
-				let counted = false;
-				let fileHits = 0;
-				records: for await (const line of sessionRecords(resolvedFile, st.size, maxRecordBytes, opts.signal)) {
-					if (!counted) {
-						scannedFiles += 1;
-						counted = true;
-					}
-					if (line === null) {
-						skippedRecords += 1;
-						continue;
-					}
-					if (!line) continue;
-					const record = parseRecord(line);
-					if (!record || typeof record !== "object") continue;
-					const obj = record as {
-						type?: unknown; id?: unknown; cwd?: unknown;
-						timestamp?: unknown; message?: unknown;
-					};
-
-					if (obj.type === "session") {
-						sessionId = String(obj.id ?? "");
-						if (obj.cwd) headerCwd = String(obj.cwd);
-						if (opts.excludeSessionId && sessionId === opts.excludeSessionId) {
-							// stop scanning this file entirely
-							break;
-						}
-						continue;
-					}
-
-					if (obj.type !== "message") continue;
-					if (!obj.message || typeof obj.message !== "object") continue;
-					const msg = obj.message as { role?: unknown; content?: unknown };
-					const role = msg.role;
-					if (roleFilter !== "any" && role !== roleFilter) continue;
-					if (role !== "user" && role !== "assistant") continue;
-					if (role === "user" && isGoalContinuation(msg.content)) {
-						excludedGoalContinuations += 1;
-						continue;
-					}
-
-					const haystacks: Array<{ kind: string; text: string }> = [];
-					const text = extractText(msg.content);
-					if (text) haystacks.push({ kind: role, text });
-					if (opts.includeToolCalls && role === "assistant") {
-						const tcText = extractToolCallText(msg.content);
-						if (tcText) haystacks.push({ kind: "toolCall", text: tcText });
-					}
-
-					for (const h of haystacks) {
-						// Cap haystack length before regex to bound worst-case backtracking.
-						const haystack = h.text.length > MAX_HAYSTACK_BYTES ? h.text.slice(0, MAX_HAYSTACK_BYTES) : h.text;
-						const m = haystack.match(re);
-						if (!m) continue;
-						const fingerprint = copiedHitFingerprint(obj.id, obj.timestamp, msg, h.kind);
-						if (fingerprint) {
-							const retainedFile = retainedCopies.get(fingerprint);
-							if (retainedFile !== undefined && retainedFile !== full) {
-								duplicateHitsSuppressed += 1;
-								continue;
-							}
-							retainedCopies.set(fingerprint, full);
-						}
-						const idx = m.index ?? 0;
-						const snippet = haystack.slice(Math.max(0, idx - before), idx + after).trim();
-						hits.push({
-							// Display path is the original (non-realpath) location so it round-trips
-							// through read_session's relative-path acceptance and matches what the
-							// user sees in their sessions directory.
-							sessionFile: path.relative(root, full) || full,
-							sessionId,
-							...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
-							sessionCwd: headerCwd,
-							timestamp: String(obj.timestamp ?? ""),
-							role: h.kind,
-							snippet,
-						});
-						fileHits += 1;
-						const atSessionLimit = fileHits === perSessionMax;
-						// Count reached limits even when both limits coincide or this
-						// is the final record. No further matches are implied.
-						if (atSessionLimit) sessionsAtLimit += 1;
-						if (hits.length >= max) {
-							truncated = true;
-							break outer;
-						}
-						if (atSessionLimit) break records;
-					}
-				}
-				if (!counted) scannedFiles += 1;
-			} catch {
+		outer: for (const config of sessionRoots()) {
+			for await (const candidate of sessionCandidates(config, opts.signal, () => { skippedFiles += 1; })) {
 				if (opts.signal?.aborted) break outer;
-				// An I/O failure can occur after some records were searched.
-				// Keep those hits but report that this file was not fully scanned.
-				skippedFiles += 1;
+				const full = candidate.file;
+				if (config.source === "pi" && opts.cwd && !candidate.cwd.includes(opts.cwd) &&
+					!path.basename(path.dirname(full)).includes(opts.cwd)) continue;
+				try {
+					const info = await stat(full);
+					let header: SessionHeader | undefined;
+					let startMs: number;
+					if (config.source === "codex") {
+						header = await firstHeader(full, config.source, maxRecordBytes, opts.signal);
+						if (!header) { skippedFiles += 1; continue; }
+						startMs = Date.parse(header.timestamp);
+						if (!Number.isFinite(startMs)) { skippedFiles += 1; continue; }
+						if (opts.cwd && !header.cwd.includes(opts.cwd)) continue;
+					} else startMs = parseSessionFileTimestamp(path.basename(full)) || info.mtimeMs;
+					if (sinceMs && startMs < sinceMs) continue;
+					if (untilMs && startMs > untilMs) continue;
+					let sessionId = header?.id ?? "";
+					let headerCwd = header?.cwd || candidate.cwd;
+					if (opts.excludeSessionId && sessionId === opts.excludeSessionId) continue;
+					scannedFiles += 1;
+					let fileHits = 0;
+					records: for await (const line of sessionRecords(full, info.size, maxRecordBytes, opts.signal)) {
+						if (line === null) { skippedRecords += 1; continue; }
+						if (!line) continue;
+						const record = parseRecord(line);
+						const h = sessionHeader(record, config.source);
+						if (h) {
+							sessionId = h.id;
+							if (h.cwd) headerCwd = h.cwd;
+							if (opts.excludeSessionId && sessionId === opts.excludeSessionId) break;
+							continue;
+						}
+						const obj = conversationRecord(record, config.source);
+						const msg = object(obj?.message);
+						if (!obj || !msg) continue;
+						const role = msg.role;
+						if (roleFilter !== "any" && role !== roleFilter) continue;
+						if (role !== "user" && role !== "assistant") continue;
+						if (config.source === "pi" && role === "user" && isGoalContinuation(msg.content)) {
+							excludedGoalContinuations += 1;
+							continue;
+						}
+						const haystacks: Array<{ kind: string; text: string }> = [];
+						const text = extractText(msg.content);
+						if (text) haystacks.push({ kind: role, text });
+						if (opts.includeToolCalls && role === "assistant") {
+							const tools = extractToolCallText(msg.content);
+							if (tools) haystacks.push({ kind: "toolCall", text: tools });
+						}
+						for (const h of haystacks) {
+							const haystack = h.text.slice(0, MAX_HAYSTACK_BYTES);
+							const match = haystack.match(re);
+							if (!match) continue;
+							const identityMessage = config.source === "codex" ? object(object(record)?.payload)! : msg;
+							const fingerprint = copiedHitFingerprint(obj.id, obj.timestamp, identityMessage, h.kind);
+							const identity = fingerprint && `${config.source}:${fingerprint}`;
+							if (identity) {
+								const previous = retainedCopies.get(identity);
+								if (previous !== undefined && previous !== full) { duplicateHitsSuppressed += 1; continue; }
+								retainedCopies.set(identity, full);
+							}
+							const idx = match.index ?? 0;
+							hits.push({ sessionFile: config.source === "codex" ? path.resolve(full) : path.relative(config.root, full) || full,
+								...(config.source === "codex" ? { source: "codex" as const } : {}), sessionId,
+								...(typeof obj.id === "string" && obj.id ? { entryId: obj.id } : {}),
+								sessionCwd: headerCwd, timestamp: String(obj.timestamp ?? ""), role: h.kind,
+								snippet: haystack.slice(Math.max(0, idx - before), idx + after).trim() });
+							fileHits += 1;
+							const atSessionLimit = fileHits === perSessionMax;
+							if (atSessionLimit) sessionsAtLimit += 1;
+							if (hits.length >= max) { truncated = true; break outer; }
+							if (atSessionLimit) break records;
+						}
+					}
+				} catch {
+					if (opts.signal?.aborted) break outer;
+					skippedFiles += 1;
+				}
 			}
 		}
+	} catch (error) {
+		if (!opts.signal?.aborted) throw error;
 	}
-
-	// Sort hits newest-first by parsed timestamp. Falls back to 0 for unparseable
-	// values so they sort to the end rather than scrambling lexicographically.
-	hits.sort((a, b) => {
-		const ta = Date.parse(a.timestamp);
-		const tb = Date.parse(b.timestamp);
-		return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-	});
-	return { hits, scannedFiles, skippedFiles, truncated, sessionsAtLimit, skippedRecords, excludedGoalContinuations, duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
+	hits.sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0));
+	return { hits, scannedFiles, skippedFiles, truncated, sessionsAtLimit, skippedRecords, excludedGoalContinuations,
+		duplicateHitsSuppressed, incompleteCoverage: skippedRecords > 0 || skippedFiles > 0 || !!opts.signal?.aborted };
 }
 
 interface WindowEntry {
@@ -549,9 +563,9 @@ interface WindowEntry {
 	text: string;
 }
 
-function windowEntry(record: unknown): WindowEntry | undefined {
-	if (!record || typeof record !== "object") return;
-	const obj = record as { type?: unknown; id?: unknown; timestamp?: unknown; message?: unknown };
+function windowEntry(record: unknown, source: SessionSource = "pi"): WindowEntry | undefined {
+	const obj = conversationRecord(record, source);
+	if (!obj) return;
 	if (obj.type !== "message" || !obj.message || typeof obj.message !== "object") return;
 	const msg = obj.message as { role?: unknown; content?: unknown };
 	if (msg.role !== "user" && msg.role !== "assistant") return;
@@ -573,57 +587,184 @@ function parseRecord(line: string): unknown {
 	}
 }
 
-// Resolve IDs from bounded headers, not filenames or copied message content.
-// SDK discovery does not enforce this tool's containment and record-size limits.
-async function sessionFileById(
-	id: string, root: string, resolvedRoot: string, maxRecordBytes: number, signal?: AbortSignal,
-): Promise<string> {
-	let match: string | undefined;
-	for (const dir of await readdir(root, { withFileTypes: true })) {
-		signal?.throwIfAborted();
-		if (!dir.isDirectory()) continue;
-		let subdir: string;
-		try {
-			subdir = await realpath(path.join(root, dir.name));
-		} catch {
-			continue;
+export interface SessionVersion {
+	index: number;
+	source: SessionSource;
+	sessionFile: string;
+	sessionId: string;
+	timestamp: string;
+	sessionCwd: string;
+	preview: string;
+}
+
+interface SelectedSession {
+	config: SessionRoot;
+	file: string;
+	header?: SessionHeader;
+}
+
+async function resolveSession(opts: ReadSessionOptions, cap: number): Promise<SelectedSession | SessionVersion[]> {
+	const roots = sessionRoots();
+	if (opts.sessionFile !== undefined) {
+		const candidate = path.isAbsolute(opts.sessionFile) ? opts.sessionFile : path.join(getRoot(), opts.sessionFile);
+		let file: string;
+		try { file = await realpath(candidate); }
+		catch { file = path.resolve(candidate); }
+		const permitted: SessionRoot[] = [];
+		for (const config of roots) {
+			let root: string;
+			try { root = await realpath(config.root); }
+			catch { root = path.resolve(config.root); }
+			if (contained(root, file)) permitted.push({ ...config, root });
 		}
-		if (!subdir.startsWith(resolvedRoot + path.sep) && subdir !== resolvedRoot) continue;
-		let files: string[];
-		try {
-			files = await readdir(subdir);
-		} catch {
-			continue;
+		if (!permitted.length) throw new Error("Refusing to read outside session roots configured for Pi and Codex.");
+		permitted.sort((a, b) => b.root.length - a.root.length);
+		// Roots may overlap. Header format, not the first matching path prefix,
+		// selects the decoder when both roots authorize this file.
+		if (permitted.length > 1) {
+			for (const config of permitted) {
+				const header = await firstHeader(file, config.source, cap, opts.signal);
+				if (header) return { config, file, header };
+			}
 		}
-		for (const file of files) {
-			signal?.throwIfAborted();
-			if (!file.endsWith(".jsonl")) continue;
-			let resolvedFile: string;
-			let size: number;
+		return { config: permitted[0], file };
+	}
+	const matches: SelectedSession[] = [];
+	const seen = new Set<string>();
+	for (const config of roots) {
+		for await (const candidate of sessionCandidates(config, opts.signal)) {
+			opts.signal?.throwIfAborted();
+			let file: string;
+			let header: SessionHeader | undefined;
 			try {
-				resolvedFile = await realpath(path.join(subdir, file));
-				if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) continue;
-				const info = await stat(resolvedFile);
-				if (!info.isFile()) continue;
-				size = info.size;
-			} catch {
+				file = await realpath(candidate.file);
+				if (seen.has(file)) continue;
+				header = await firstHeader(file, config.source, cap, opts.signal);
+				if (header) seen.add(file);
+			} catch (error) {
+				if (opts.signal?.aborted) throw error;
 				continue;
 			}
-			let matches = false;
-			for await (const line of sessionRecords(resolvedFile, size, maxRecordBytes, signal)) {
-				const header = line === null ? undefined : parseRecord(line);
-				matches = !!header && typeof header === "object" && "type" in header
-					&& header.type === "session" && "id" in header && header.id === id;
-				break; // Only the first record is a session header.
-			}
-			if (!matches || resolvedFile === match) continue;
-			if (match) throw new Error(`Multiple session files have ID "${id}"; use sessionFile instead.`);
-			match = resolvedFile;
+			if (header?.id === opts.sessionId) matches.push({ config, file, header });
 		}
 	}
-	signal?.throwIfAborted();
-	if (!match) throw new Error(`No readable session with ID "${id}" under the configured sessions root.`);
-	return match;
+	opts.signal?.throwIfAborted();
+	if (!matches.length) throw new Error(`No readable session with ID "${opts.sessionId}" under the configured session roots.`);
+	if (matches.length === 1) {
+		const match = matches[0];
+		return { ...match, config: { ...match.config, root: await realpath(match.config.root) } };
+	}
+	if (matches.every(m => m.config.source === "pi")) {
+		throw new Error(`Multiple session files have ID "${opts.sessionId}"; use sessionFile instead.`);
+	}
+	// An ID names a thread, not one immutable Codex history. Show choices rather
+	// than guessing the active version or combining reverted conversations.
+	matches.sort((a, b) => (Date.parse(b.header!.timestamp) || 0) - (Date.parse(a.header!.timestamp) || 0) || a.file.localeCompare(b.file));
+	const versions: SessionVersion[] = [];
+	for (const [i, match] of matches.entries()) {
+		let preview = "";
+		const size = (await stat(match.file)).size;
+		for await (const line of sessionRecords(match.file, size, cap, opts.signal)) {
+			const entry = line === null ? undefined : windowEntry(parseRecord(line), match.config.source);
+			if (!entry || entry.role !== "user") continue;
+			preview = entry.text.slice(0, 240).replace(/\s+/g, " ");
+			break;
+		}
+		versions.push({ index: i + 1, source: match.config.source, sessionFile: match.file,
+			sessionId: match.header!.id, timestamp: match.header!.timestamp,
+			sessionCwd: match.header!.cwd, preview });
+	}
+	return versions;
+}
+
+interface HistorySegment {
+	file: string;
+	relativeFile: string;
+	handle: FileHandle;
+	identity: { dev: string; ino: string; birth: number };
+	size: number;
+	limit: number;
+	header?: SessionHeader;
+	safeEnd: number;
+	ordinalEnd?: number;
+}
+
+interface HistoryBase { thread_id: string; end_ordinal_exclusive: number; end_byte_offset: number }
+
+function historyBase(value: unknown): HistoryBase {
+	const base = object(value);
+	if (!base || typeof base.thread_id !== "string" || !base.thread_id ||
+		!Number.isSafeInteger(base.end_ordinal_exclusive) || (base.end_ordinal_exclusive as number) < 1 ||
+		!Number.isSafeInteger(base.end_byte_offset) || (base.end_byte_offset as number) < 0) {
+		throw new Error("Invalid Codex history_base reference.");
+	}
+	return base as unknown as HistoryBase;
+}
+
+// Codex's canonical basename is the serialized rollout identity. Header IDs
+// identify threads and remain unchanged on revert. Never use the basename as
+// the authoritative thread ID.
+function rolloutId(file: string): string | undefined {
+	const match = path.basename(file).match(/^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f-]{36})(?:_([0-9a-f-]{36}))?\.jsonl$/i);
+	return match?.[2] ?? match?.[1];
+}
+
+async function openHistory(selected: SelectedSession, cap: number, signal?: AbortSignal): Promise<HistorySegment[]> {
+	const segments: HistorySegment[] = [];
+	const seen = new Set<string>();
+	const config = selected.config;
+	let file = selected.file;
+	let base: HistoryBase | undefined;
+	try {
+		while (true) {
+			signal?.throwIfAborted();
+			file = await realpath(file);
+			if (!contained(config.root, file)) throw new Error("Refusing Codex history outside configured session root.");
+			if (seen.has(file)) throw new Error("Cyclic Codex history_base reference.");
+			seen.add(file);
+			if (!(await stat(file)).isFile()) throw new Error("Session path is not a regular file.");
+			const handle = await open(file, "r");
+			let st;
+			try { st = await handle.stat(); }
+			catch (error) { await handle.close(); throw error; }
+			const segment: HistorySegment = { file, relativeFile: path.relative(config.root, file), handle,
+				identity: { dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs },
+				size: st.size, limit: base?.end_byte_offset ?? st.size, safeEnd: 0, ordinalEnd: base?.end_ordinal_exclusive };
+			segments.unshift(segment);
+			if (!st.isFile()) throw new Error("Session path is not a regular file.");
+			if (segment.limit > st.size) throw new Error("Codex history prefix is truncated.");
+			let finalEnd = 0;
+			let first = true;
+			for await (const item of positionedRecords(file, segment.limit, cap, signal, handle)) {
+				const record = item.line === null ? undefined : parseRecord(item.line);
+				if (first) { segment.header = sessionHeader(record, config.source); first = false; }
+				if (base) {
+					if (!item.terminated) throw new Error("Invalid Codex inherited history byte boundary.");
+					finalEnd = item.end;
+				} else break;
+			}
+			if (config.source === "codex" && !segment.header) throw new Error("Missing or oversized Codex session metadata.");
+			if (base && finalEnd !== base.end_byte_offset) throw new Error("Invalid Codex inherited history byte boundary.");
+			if ((base || segment.header?.base !== undefined) && segment.header?.historyMode !== "paginated") {
+				throw new Error("Codex history ancestors must declare paginated history mode.");
+			}
+			if (config.source !== "codex" || segment.header?.base === undefined) break;
+			base = historyBase(segment.header.base);
+			let match: string | undefined;
+			for await (const candidate of sessionCandidates(config, signal)) {
+				if (rolloutId(candidate.file) !== base.thread_id) continue;
+				const resolved = await realpath(candidate.file);
+				if (match && match !== resolved) throw new Error(`Ambiguous Codex history reference: ${base.thread_id}`);
+				match = resolved;
+			}
+			if (!match) throw new Error(`Missing Codex history reference: ${base.thread_id}`);
+			file = match;
+		}
+		return segments;
+	} catch (error) {
+		await Promise.all(segments.map(s => s.handle.close()));
+		throw error;
+	}
 }
 
 export interface ReadSessionOptions {
@@ -639,7 +780,7 @@ export interface ReadSessionOptions {
 }
 
 export interface ReadSessionMessage {
-	/** 1-based eligible position in file order, not timestamp order. */
+	/** 1-based eligible position in the selected history, not timestamp order. */
 	index: number;
 	entryId?: string;
 	role: "user" | "assistant";
@@ -649,9 +790,11 @@ export interface ReadSessionMessage {
 export interface ReadSessionResult {
 	text: string;
 	messages: ReadSessionMessage[];
-	nextCursor: string;
+	nextCursor?: string;
 	hasMore: boolean;
 	skippedRecords: number;
+	/** Present instead of a transcript when a Codex thread ID has several versions. */
+	versions?: SessionVersion[];
 }
 
 interface ReadCursor {
@@ -666,16 +809,27 @@ interface ReadCursor {
 	cap: number;
 }
 
-function decodeCursor(raw: string): ReadCursor {
+interface CodexReadCursor extends Omit<ReadCursor, "v"> {
+	v: 2;
+	at: string;
+}
+
+type SessionCursor = ReadCursor | CodexReadCursor;
+
+function cursorPath(value: unknown): value is string {
+	return typeof value === "string" && value.length > 0 && value.length <= 8192 &&
+		!path.isAbsolute(value) && !value.split(path.sep).some(p => !p || p === "." || p === "..");
+}
+
+function decodeCursor(raw: string): SessionCursor {
 	// Bound before decoding/JSON parsing; opaque cursors never supply read paths.
 	if (raw.length > 32768 || !/^[A-Za-z0-9_-]+$/.test(raw)) throw new Error("Invalid read_session cursor.");
 	let value: unknown;
 	try { value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")); }
 	catch { throw new Error("Invalid read_session cursor."); }
 	if (!value || typeof value !== "object") throw new Error("Invalid read_session cursor.");
-	const c = value as ReadCursor;
-	if (c.v !== 1 || typeof c.file !== "string" || c.file.length > 8192 || !c.file ||
-		path.isAbsolute(c.file) || c.file.split(path.sep).some(p => !p || p === "." || p === "..") ||
+	const c = value as SessionCursor;
+	if ((c.v !== 1 && c.v !== 2) || !cursorPath(c.file) || (c.v === 2 && !cursorPath(c.at)) ||
 		typeof c.dev !== "string" || typeof c.ino !== "string" ||
 		!Number.isFinite(c.birth) || !Number.isSafeInteger(c.offset) || c.offset < 0 ||
 		!Number.isSafeInteger(c.index) || c.index < 0 || !Number.isSafeInteger(c.cap) || c.cap < 1 ||
@@ -692,30 +846,45 @@ async function prefixHash(handle: FileHandle, size: number, signal?: AbortSignal
 	return hash.digest("hex");
 }
 
-/**
- * Read an initial, bounded file snapshot. Cursors commit a raw-byte prefix and
- * its eligible position. Appends are allowed; replacement or changes before
- * that boundary are stale. Incomplete non-newline JSON is replayed next time.
- * maxMessages=0 does not advance, except tail=true selects the safe EOF.
- */
+function historyEntry(record: unknown, source: SessionSource, segment: HistorySegment): WindowEntry | undefined {
+	const entry = windowEntry(record, source);
+	if (!entry || source !== "codex" || segment.header?.historyMode !== "paginated") return entry;
+	const ordinal = object(record)?.ordinal;
+	if (typeof ordinal !== "number" || !Number.isSafeInteger(ordinal) || ordinal < 0) {
+		throw new Error("Invalid Codex paginated message ordinal.");
+	}
+	const start = segment.header.base === undefined ? 1 : historyBase(segment.header.base).end_ordinal_exclusive + 1;
+	if (ordinal < start || (segment.ordinalEnd !== undefined && ordinal >= segment.ordinalEnd)) return;
+	return entry;
+}
+
+// Hash only the committed logical prefix. The manifest binds each consumed
+// range to its physical file; bytes after an inherited cutoff are not consumed.
+// Keep the cursor constant-size even when a history has many ancestors.
+async function historyPrefixHash(
+	segments: HistorySegment[], at: number, offset: number, signal?: AbortSignal,
+): Promise<string> {
+	const hash = createHash("sha256");
+	for (let i = 0; i <= at; i += 1) {
+		const segment = segments[i];
+		const end = i === at ? offset : segment.limit;
+		hash.update(JSON.stringify([segment.relativeFile, segment.identity, end]) + "\n");
+		for await (const bytes of snapshotChunks(segment.handle, end, signal)) hash.update(bytes);
+	}
+	return hash.digest("hex");
+}
+
+/** Read a bounded snapshot of the selected version's logical conversation. */
 export async function readSession(opts: ReadSessionOptions): Promise<ReadSessionResult> {
 	const maxRecordBytes = getMaxBytes();
 	const ctx = opts.contextMessages ?? 6;
 	const max = opts.maxMessages ?? 30;
-	if (!Number.isSafeInteger(ctx) || ctx < 0) {
-		throw new Error("contextMessages must be a non-negative safe integer.");
-	}
-	if (!Number.isSafeInteger(max) || max < 0) {
-		throw new Error("maxMessages must be a non-negative safe integer.");
-	}
+	if (!Number.isSafeInteger(ctx) || ctx < 0) throw new Error("contextMessages must be a non-negative safe integer.");
+	if (!Number.isSafeInteger(max) || max < 0) throw new Error("maxMessages must be a non-negative safe integer.");
 	opts.signal?.throwIfAborted();
-	if ((opts.sessionFile !== undefined) === (opts.sessionId !== undefined)) {
-		throw new Error("Provide exactly one of sessionFile or sessionId.");
-	}
+	if ((opts.sessionFile !== undefined) === (opts.sessionId !== undefined)) throw new Error("Provide exactly one of sessionFile or sessionId.");
 	const selector = opts.sessionFile ?? opts.sessionId;
-	if (typeof selector !== "string" || !selector.trim()) {
-		throw new Error("sessionFile or sessionId must be a non-empty string.");
-	}
+	if (typeof selector !== "string" || !selector.trim()) throw new Error("sessionFile or sessionId must be a non-empty string.");
 	if (opts.tail !== undefined && typeof opts.tail !== "boolean") throw new Error("tail must be a boolean.");
 	const modes = [opts.tail === true, opts.after !== undefined, opts.aroundEntryId !== undefined,
 		opts.aroundTimestamp !== undefined].filter(Boolean).length;
@@ -727,88 +896,69 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 	}
 	const target = opts.aroundTimestamp === undefined ? NaN : parseDateOrThrow(opts.aroundTimestamp, "aroundTimestamp");
 	const previous = opts.after === undefined ? undefined : decodeCursor(opts.after);
-	const root = getRoot();
-	let resolvedRoot: string;
-	let resolvedFile: string;
-	try {
-		resolvedRoot = await realpath(root);
-	} catch {
-		resolvedRoot = path.resolve(root);
+	const selected = await resolveSession(opts, maxRecordBytes);
+	if (Array.isArray(selected)) {
+		const lines = [`# Session ${opts.sessionId}: ${selected.length} versions`,
+			"Choose a sessionFile below and call read_session again; these histories are not concatenated.", ""];
+		for (const version of selected) {
+			lines.push(`${version.index}. ${version.timestamp} — cwd: ${version.sessionCwd}`,
+				`   sessionFile: ${JSON.stringify(version.sessionFile)}`, `   ${version.preview || "(no local user message)"}`, "");
+		}
+		return { text: lines.join("\n"), versions: selected, messages: [], hasMore: false, skippedRecords: 0 };
 	}
-	const input = opts.sessionFile ?? await sessionFileById(selector, root, resolvedRoot, maxRecordBytes, opts.signal);
-	const candidate = path.isAbsolute(input) ? input : path.join(root, input);
+	const source = selected.config.source;
+	const segments = await openHistory(selected, maxRecordBytes, opts.signal);
 	try {
-		resolvedFile = await realpath(candidate);
-	} catch {
-		resolvedFile = path.resolve(candidate);
-	}
-	if (!resolvedFile.startsWith(resolvedRoot + path.sep) && resolvedFile !== resolvedRoot) {
-		throw new Error(`Refusing to read outside session root: ${resolvedRoot}`);
-	}
-
-	const relativeFile = path.relative(resolvedRoot, resolvedFile);
-	// Reject FIFOs/devices before open("r"), which can block without observing
-	// cancellation. Keep descriptor validation below; the same-user TOCTOU
-	// boundary remains unchanged.
-	const preflight = await stat(resolvedFile);
-	if (!preflight.isFile()) throw new Error("Session path is not a regular file.");
-	opts.signal?.throwIfAborted();
-	const handle = await open(resolvedFile, "r");
-	try {
-		const st = await handle.stat();
-		if (!st.isFile()) throw new Error("Session path is not a regular file.");
-		if (previous && (previous.file !== relativeFile || previous.dev !== String(st.dev) ||
-			previous.ino !== String(st.ino) || previous.birth !== st.birthtimeMs ||
-			previous.offset > st.size || previous.cap !== maxRecordBytes ||
-			previous.hash !== await prefixHash(handle, previous.offset, opts.signal))) {
-			throw new Error("Stale read_session cursor: file identity or committed prefix changed.");
+		const last = segments[segments.length - 1];
+		const previousAt = previous ? (previous.v === 2
+			? segments.findIndex(s => s.relativeFile === previous.at) : 0) : 0;
+		if (previous) {
+			if (previous.file !== last.relativeFile || previous.dev !== last.identity.dev || previous.ino !== last.identity.ino ||
+				previous.birth !== last.identity.birth || previous.cap !== maxRecordBytes ||
+				(source === "codex" ? previous.v !== 2 : previous.v !== 1) || previousAt < 0 ||
+				previous.offset > segments[previousAt].limit) {
+				throw new Error("Stale read_session cursor: file identity or history changed.");
+			}
+			const hash = source === "pi" ? await prefixHash(last.handle, previous.offset, opts.signal)
+				: await historyPrefixHash(segments, previousAt, previous.offset, opts.signal);
+			if (hash !== previous.hash) throw new Error("Stale read_session cursor: committed prefix changed.");
 		}
 
-		let header: { id?: unknown; cwd?: unknown; timestamp?: unknown } | undefined;
 		let total = 0;
 		let skippedRecords = 0;
 		let nearest = 0;
 		let anchorFound = false;
 		let bestDiff = Infinity;
-		let safeEnd = 0;
-		let previousBoundaryFound = !previous || previous.offset === 0;
-		for await (const item of positionedRecords(resolvedFile, st.size, maxRecordBytes, opts.signal, handle)) {
-			const record = item.line === null ? undefined : parseRecord(item.line);
-			// Do not commit incomplete trailing JSON (including an oversized tail).
-			// Complete final JSON without LF remains compatible with older sessions.
-			if (item.line === null) skippedRecords += 1;
-			if (!item.terminated && (item.line === null || record === undefined)) break;
-			safeEnd = item.end;
-			if (record && typeof record === "object" && "type" in record && record.type === "session") {
-				const h = record as { id?: unknown; cwd?: unknown; timestamp?: unknown };
-				header = { id: h.id, cwd: h.cwd, timestamp: h.timestamp };
-			}
-			const entry = windowEntry(record);
-			if (entry) {
-				const diff = Math.abs(entry.ts - target);
-				if (diff < bestDiff) { bestDiff = diff; nearest = total; }
-				if (opts.aroundEntryId !== undefined && entry.entryId === opts.aroundEntryId && !anchorFound) {
-					nearest = total; anchorFound = true;
+		let previousBoundaryFound = !previous;
+		for (const [segmentIndex, segment] of segments.entries()) {
+			if (previous && segmentIndex === previousAt && previous.offset === 0) previousBoundaryFound = total === previous.index;
+			for await (const item of positionedRecords(segment.file, segment.limit, maxRecordBytes, opts.signal, segment.handle)) {
+				const record = item.line === null ? undefined : parseRecord(item.line);
+				if (item.line === null) skippedRecords += 1;
+				if (!item.terminated && (item.line === null || record === undefined)) break;
+				segment.safeEnd = item.end;
+				const entry = historyEntry(record, source, segment);
+				if (entry) {
+					const diff = Math.abs(entry.ts - target);
+					if (diff < bestDiff) { bestDiff = diff; nearest = total; }
+					if (opts.aroundEntryId !== undefined && entry.entryId === opts.aroundEntryId && !anchorFound) {
+						nearest = total; anchorFound = true;
+					}
+					total += 1;
 				}
-				total += 1;
-			}
-			if (previous && item.end === previous.offset) {
-				previousBoundaryFound = total === previous.index;
-			} else if (previous && item.start < previous.offset && previous.offset < item.end &&
-				item.line !== null && record !== undefined && total === previous.index) {
-				// A complete final JSON record may have been committed without LF.
-				// Later appending its delimiter/whitespace moves the record end, not
-				// its identity. Recheck the bounded old prefix as complete JSON.
-				const prefix = Buffer.from(item.line).subarray(0, previous.offset - item.start).toString("utf8");
-				previousBoundaryFound = parseRecord(prefix) !== undefined;
+				if (previous && segmentIndex === previousAt) {
+					if (item.end === previous.offset) previousBoundaryFound = total === previous.index;
+					else if (item.start < previous.offset && previous.offset < item.end &&
+						item.line !== null && record !== undefined && total === previous.index) {
+						// A complete final JSON record may later acquire its LF.
+						const prefix = Buffer.from(item.line).subarray(0, previous.offset - item.start).toString("utf8");
+						previousBoundaryFound = parseRecord(prefix) !== undefined;
+					}
+				}
 			}
 		}
-		if (previous && (!previousBoundaryFound || (previous.offset === 0 && previous.index !== 0))) {
-			throw new Error("Stale read_session cursor: committed record boundary changed.");
-		}
-		if (opts.aroundEntryId !== undefined && !anchorFound) {
-			throw new Error(`No eligible message with entry ID "${opts.aroundEntryId}".`);
-		}
+		if (previous && !previousBoundaryFound) throw new Error("Stale read_session cursor: committed record boundary changed.");
+		if (opts.aroundEntryId !== undefined && !anchorFound) throw new Error(`No eligible message with entry ID "${opts.aroundEntryId}".`);
 
 		let startIdx = previous?.index ?? 0;
 		let endIdx = Math.min(total, startIdx + max);
@@ -817,44 +967,44 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 			const lower = Math.max(0, nearest - ctx);
 			const upper = Math.min(total, nearest + Math.min(ctx, total - nearest - 1) + 1);
 			const count = Math.min(max, upper - lower);
-			// Odd extra context goes before the anchor. At boundaries, redistribute
-			// only within the requested radius; never enlarge context to fill max.
 			startIdx = Math.max(lower, nearest - Math.ceil(Math.max(0, count - 1) / 2));
 			endIdx = Math.min(upper, startIdx + count);
 			startIdx = Math.max(lower, endIdx - count);
 			if (endIdx - startIdx < count) endIdx = Math.min(upper, startIdx + count);
 		}
-
 		const entries: Array<{ entry: WindowEntry; index: number }> = [];
 		let cursorOffset = previous?.offset ?? 0;
 		let cursorIndex = previous?.index ?? 0;
+		let cursorAt = previousAt;
 		if (endIdx > startIdx) {
 			let index = 0;
-			for await (const item of positionedRecords(resolvedFile, safeEnd, maxRecordBytes, opts.signal, handle)) {
-				const entry = item.line === null ? undefined : windowEntry(parseRecord(item.line));
-				if (!entry) continue;
-				if (index >= startIdx) {
-					entries.push({ entry, index: index + 1 });
-					cursorOffset = item.end; cursorIndex = index + 1;
+			window: for (const [segmentIndex, segment] of segments.entries()) {
+				for await (const item of positionedRecords(segment.file, segment.safeEnd, maxRecordBytes, opts.signal, segment.handle)) {
+					const entry = item.line === null ? undefined : historyEntry(parseRecord(item.line), source, segment);
+					if (!entry) continue;
+					if (index >= startIdx) {
+						entries.push({ entry, index: index + 1 });
+						cursorAt = segmentIndex; cursorOffset = item.end; cursorIndex = index + 1;
+					}
+					index += 1;
+					if (index >= endIdx) break window;
 				}
-				index += 1;
-				if (index >= endIdx) break;
 			}
 		}
 		if (opts.tail || (max > 0 && cursorIndex === total)) {
-			cursorOffset = safeEnd; cursorIndex = total;
+			cursorAt = segments.length - 1; cursorOffset = last.safeEnd; cursorIndex = total;
 		}
-		const nextCursor = Buffer.from(JSON.stringify({ v: 1, file: relativeFile,
-			dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs,
-			offset: cursorOffset, index: cursorIndex,
-			hash: await prefixHash(handle, cursorOffset, opts.signal), cap: maxRecordBytes,
-		} satisfies ReadCursor)).toString("base64url");
+		const common = { file: last.relativeFile, ...last.identity, offset: cursorOffset, index: cursorIndex, cap: maxRecordBytes };
+		const cursor: SessionCursor = source === "pi"
+			? { v: 1, ...common, hash: await prefixHash(last.handle, cursorOffset, opts.signal) }
+			: { v: 2, ...common, at: segments[cursorAt].relativeFile,
+				hash: await historyPrefixHash(segments, cursorAt, cursorOffset, opts.signal) };
+		const nextCursor = Buffer.from(JSON.stringify(cursor)).toString("base64url");
 		const messages: ReadSessionMessage[] = entries.map(({ entry, index }) => ({ index,
-			...(entry.entryId === undefined ? {} : { entryId: entry.entryId }),
-			role: entry.role, timestamp: entry.timestamp }));
+			...(entry.entryId === undefined ? {} : { entryId: entry.entryId }), role: entry.role, timestamp: entry.timestamp }));
 		const hasMore = cursorIndex < total;
 		const out: string[] = [];
-		if (header) out.push(`# Session ${header.id} — cwd: ${header.cwd} — started: ${header.timestamp}`);
+		if (last.header) out.push(`# Session ${last.header.id} — cwd: ${last.header.cwd} — started: ${last.header.timestamp}`);
 		out.push(`# Showing messages ${startIdx + 1}–${endIdx} of ${total}`);
 		if (skippedRecords) out.push(`# Incomplete coverage: skipped ${skippedRecords} oversized record${skippedRecords === 1 ? "" : "s"}.`);
 		out.push("");
@@ -865,7 +1015,7 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 		out.push(`# Navigation ${JSON.stringify({ nextCursor, hasMore, skippedRecords })}`);
 		return { text: out.join("\n"), messages, nextCursor, hasMore, skippedRecords };
 	} finally {
-		await handle.close();
+		await Promise.all(segments.map(s => s.handle.close()));
 	}
 }
 
@@ -956,10 +1106,10 @@ function getCurrentSessionId(ctx: ExtensionContext): string | undefined {
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "search_sessions",
-		label: "Search prior pi sessions",
+		label: "Search prior Pi and Codex sessions",
 		description:
-			"Search prior Pi session transcripts (~/.pi/agent/sessions) without resuming them. Use for prior discussions or decisions. Excludes whole user goal-continuation envelopes and collapses recorded message copies across files. Read-only.",
-		promptSnippet: "Find prior pi sessions matching a query.",
+			"Search prior Pi and Codex session transcripts without resuming them. Use for prior discussions or decisions. Searches retained Codex versions, excludes classified injected Codex context and whole Pi goal-continuation envelopes, and collapses recorded copies within each source. Read-only.",
+		promptSnippet: "Find prior Pi and Codex sessions matching a query.",
 		promptGuidelines: [
 			"Use search_sessions with a focused query; narrow by cwd when the project is known.",
 			"Treat search_sessions hits as candidates, not complete evidence: read promising hits with read_session and deduplicate hits from the same session or task.",
@@ -975,10 +1125,10 @@ export default function (pi: ExtensionAPI) {
 				}),
 			),
 			since: Type.Optional(
-				Type.String({ description: "ISO date/time; ignore sessions started before this (parsed from filename timestamp)." }),
+				Type.String({ description: "ISO date/time; ignore sessions started before this (Pi filename timestamp; Codex metadata timestamp)." }),
 			),
 			until: Type.Optional(
-				Type.String({ description: "ISO date/time; ignore sessions started after this (parsed from filename timestamp)." }),
+				Type.String({ description: "ISO date/time; ignore sessions started after this (Pi filename timestamp; Codex metadata timestamp)." }),
 			),
 			role: Type.Optional(
 				Type.Union([Type.Literal("user"), Type.Literal("assistant"), Type.Literal("any")], {
@@ -1060,25 +1210,25 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: "read_session",
-		label: "Read a window of a prior pi session",
+		label: "Read a prior Pi or Codex session",
 		description:
-			"Read prior Pi session messages in file order: start, tail, continuation, or centered context. Read-only.",
-		promptSnippet: "Read a window from a prior pi session by file or session ID.",
+			"Read prior Pi or Codex session messages: start, tail, continuation, or centered context. A Codex file selects that version and reconstructs its inherited history. An ambiguous Codex sessionId returns an indexed version list with previews and sessionFile paths, not full transcripts or a tool error. Read-only.",
+		promptSnippet: "Read prior Pi or Codex history by file or session ID; list versions when a Codex ID is ambiguous.",
 		promptGuidelines: [
 			"Use read_session with the returned sessionFile unchanged and a modest maxMessages.",
 		],
 		parameters: Type.Object({
 			sessionFile: Type.Optional(Type.String({
-				description: "Path to a session .jsonl file. Either absolute, or relative to the configured sessions root (as returned by search_sessions). Provide exactly one of sessionFile or sessionId.",
+				description: "Path to a session .jsonl file, as returned by search_sessions or a version list. Pi paths may be relative to the Pi root; Codex paths are absolute and select one version. Provide exactly one of sessionFile or sessionId.",
 			})),
 			sessionId: Type.Optional(Type.String({
-				description: "Exact session header ID, resolved only within the configured sessions root. Use when a parent session path comes from a different machine or sandbox. Provide exactly one of sessionFile or sessionId.",
+				description: "Exact session header ID, resolved within configured Pi and Codex roots. Multiple Codex versions return an indexed preview list; choose a returned sessionFile to read one. Use when a parent session path comes from another machine or sandbox. Provide exactly one of sessionFile or sessionId.",
 			})),
 			tail: Type.Optional(Type.Boolean({
 				description: "Return the last maxMessages eligible messages in file order. With maxMessages=0, select the safe EOF cursor. Default false.",
 			})),
 			after: Type.Optional(Type.String({
-				description: "Opaque nextCursor from an earlier read of this file. Page or poll messages after its committed boundary; safe across appends, errors if its prefix changed or file was replaced. Cursors are returned even for empty reads; hasMore covers only the initial snapshot, not future appends. Mutually exclusive with tail=true and centered modes.",
+				description: "Opaque nextCursor from an earlier transcript read. Continue the same file/version after its committed boundary; safe across appends, errors if consumed history changed or a file was replaced. Transcript reads return cursors even when empty; version lists do not. hasMore covers only the initial snapshot. Mutually exclusive with tail=true and centered modes.",
 			})),
 			aroundEntryId: Type.Optional(Type.String({
 				description: "Exact entryId from a search hit; center on the first eligible occurrence in file order. Errors if missing. Mutually exclusive with other selection modes.",
@@ -1120,7 +1270,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("find-sessions", {
 		description:
-			"Search past pi sessions for a query string. Usage: /find-sessions [--cwd=substr] [--role=user|assistant] [--since=ISO] [--until=ISO] [--max=N] <query>",
+			"Search past Pi and Codex sessions. Usage: /find-sessions [--cwd=substr] [--role=user|assistant] [--since=ISO] [--until=ISO] [--max=N] <query>",
 		handler: async (rawArgs, ctx) => {
 			const args = (rawArgs ?? "").trim();
 			if (!args) {
