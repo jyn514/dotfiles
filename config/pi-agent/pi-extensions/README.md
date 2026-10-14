@@ -19,6 +19,82 @@ above 70% and red above 90%; unknown usage shows `?`. The provider appears when
 multiple providers are available and space permits. Directory, branch, session
 title, and extension statuses remain visible. Run `/reload` to activate it.
 
+`transport-diagnostics.ts` records Codex Responses HTTP attempt summaries in
+`~/.pi/agent/logs/transport-<pid>.jsonl`. Run `/reload` in existing Pi processes
+to enable it; new processes load it with the bundle. Successful and failed
+attempts are logged, with private directory/file permissions. Each record includes the Pi
+session ID, destination origin/path, elapsed time, response status and header
+timing when available, `x-request-id`, `cf-ray`, error codes, and available socket addresses
+and byte counters. Request bodies, authorization headers, URL credentials/query
+strings, and free-form error messages/stacks are omitted.
+
+`lastChunkAgoMs` measures milliseconds from the last received HTTP body chunk to
+attempt completion or failure, using a monotonic clock. It is `null` when no chunk was observed.
+Chunks are transport chunks, not parsed SSE events; their contents are not logged.
+Records also include first-chunk timing, maximum gap between received chunks,
+chunk count, and per-request received body bytes. Socket byte counters are cumulative
+and may include other requests. `socketId` and `observedRequestsOnSocket` identify
+reuse observed since the extension loaded; a count of one does not prove a fresh
+connection. `addressFamily` is 4 or 6 for an observed IP peer.
+
+The resolved Codex provider is decorated to correlate its authoritative parsed
+events and cancellation signal with each HTTP attempt. Auth, catalog, options,
+callbacks, and the returned stream are preserved. Summaries are written after
+the provider call completes, with model/provider, last event type, terminal event
+type, response ID, `callStopReason`, and `signalAborted`. `callStopReason` describes
+the entire provider call, including any retries. `operationId` groups that call's
+attempts; `attempt` gives their order. `transportOutcome` separates
+`http_complete`, `reader_cleanup` after a terminal SSE event, and `error`.
+Raw requests outside this decorated provider have no parsed-event or signal context.
+Wall-clock start/end timestamps, process/session IDs, and attempt IDs support
+cross-agent comparisons; elapsed times use a monotonic clock.
+
+This observes Node's Undici diagnostic channels without changing parsing or
+retries. It covers HTTP/SSE, not WebSocket requests or transports that do not use
+Undici. A peer address identifies the connected endpoint, not why it closed.
+Files are not automatically rotated; remove old logs when no longer needed.
+If writing fails, logging stops for that extension instance and reports the log
+path once on stderr. Shutdown and `/reload` unsubscribe and flush pending writes.
+The decorated provider is restored on shutdown so reload cannot stack wrappers.
+
+`/transport-probe` resolves `chatgpt.com` and tests TCP/TLS connections to the first
+resolved address of each family. It shows and saves a `network_probe` record with
+DNS, TCP, and total timing, typed errors, and outcome. Each connection has a
+10-second deadline; DNS uses the system resolver. No HTTP request, credentials,
+or model call is sent. Run it on the affected host near a failure: a successful
+handshake does not establish that a long Responses stream will survive, and this
+direct probe does not test a custom proxy path.
+
+Active requests also measure event-loop scheduling delay at 20ms intervals.
+Each attempt's `eventLoop` summary includes maximum delay, maximum delay since
+its last body chunk, count/total delay for stalls of at least 100ms, and Node's
+event-loop utilization delta. These are process-wide measurements over the
+request's lifetime, not CPU time attributable to that request. An overdue sample
+is checked at chunk arrival and attempt completion too. Timers stop when idle.
+
+`socket_event` records observe Node's `end`, `error`, and `close` events, keyed by
+`socketId`; close includes `hadError`, and errors include typed codes.
+`end` indicates readable EOF at the Node socket boundary; it does not prove a
+wire-level FIN or identify who initiated closure. No data listener is attached.
+
+On Linux, `ss -tinHO` samples active connection tuples once per second.
+`tcp_sample` records include socket/attempt/session IDs, sampling start/end time,
+TCP state, send/receive queues, and available numeric TCP_INFO counters.
+`rtt` is `[RTT, variance]` in milliseconds; `retrans` is `[current, total]`;
+`bytes_retrans` is a cumulative socket counter. Missing fields remain absent.
+Samples can miss changes between polls and sockets that close before a poll.
+They do not capture packet flags or packet-by-packet retransmission timing.
+Only matching tracked connection tuples are logged; raw command output is discarded.
+`ss` must be installed and able to read the host's network namespace. A failed
+sample logs `tcp_sampling_status` once and disables TCP polling until `/reload`.
+Other platforms still get socket events and event-loop measurements.
+
+Run the native Node regression (Bun uses a different fetch transport):
+
+```sh
+dev/test-environment node --test tests/pi/native_transport_diagnostics.mjs
+```
+
 The bundle adds the current date and Pi's host OS to the system prompt. On Linux,
 the OS name comes from `/etc/os-release`, or `/usr/lib/os-release` when the former
 cannot be read. Without a display name, and on other platforms, it uses the OS
