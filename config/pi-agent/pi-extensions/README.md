@@ -181,6 +181,8 @@ before writing or delegating. This guidance survives compaction and resume;
 it is not a filesystem lock or an automatic work-ownership check. A nested
 `/split` names its immediate source, and native forks do not inherit this guidance.
 Older snapshots without this metadata are unchanged.
+Use `read_session({ sessionId: "PARENT_ID" })` to inspect a saved parent within the reader's configured session root.
+Its recorded absolute file path may use a different host/guest namespace; do not weaken the reader's root restriction to follow it.
 
 It is unavailable to ordinary subagents
 or outside an interactive sandbox. Native `/clone`, `/fork`, and `/resume` are

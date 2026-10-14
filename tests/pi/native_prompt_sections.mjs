@@ -606,6 +606,9 @@ test("installed Pi renders split provenance at the provider after resume and com
     if (split) {
       assert.ok(system.sections.split_origin.includes(source.getSessionId()), name);
       assert.ok(system.sections.split_origin.includes(source.getSessionFile()), name);
+      assert.ok(system.sections.split_origin.includes(
+        `read_session({ sessionId: "${source.getSessionId()}" })`), name);
+      assert.ok(system.sections.split_origin.includes("different host/guest namespace"), name);
       assert.equal(rendered.split("<split_origin>").length - 1, 1, name);
       assert.ok(rendered.includes("Copied history is context, not a work assignment."), name);
       assert.ok(rendered.includes("Check the parent's current work before writing or delegating."), name);

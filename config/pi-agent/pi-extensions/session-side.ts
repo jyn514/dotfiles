@@ -261,7 +261,10 @@ export default function sessionSide(pi: ExtensionAPI) {
     const parentFile = ctx.sessionManager.getHeader()?.parentSession;
     event.systemPromptOptions.sections.split_origin = [
       `This is a side conversation split from session ${data.parentSessionId}.`,
-      ...(parentFile ? [`Parent session file: ${parentFile}`] : ["The parent has no saved session file."]),
+      ...(parentFile ? [
+        `Parent session file: ${parentFile} (the absolute path may use a different host/guest namespace).`,
+        `Read the parent with read_session({ sessionId: "${data.parentSessionId}" }); the reader resolves it within its configured session root.`,
+      ] : ["The parent has no saved session file."]),
       "The source session may still be working. Files are shared; subsequent messages are not.",
       "Copied history is context, not a work assignment.",
       "Follow the current user request; do not resume an inherited goal merely because it appears in the copied conversation.",
