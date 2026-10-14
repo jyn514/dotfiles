@@ -29,6 +29,8 @@ description: "How `link_send`, `link_list` and `link_compact` behave between Pi 
 - `tool:<name>` names one of the running tool calls.
 - `thinking` covers every kind of unsettled work, not just an LLM call, including automatic retries and compactions that run after the visible turn ends.
 - `compacting` means a compaction holds that terminal's delivery gate: messages to it are held, and the sender is not told. An automatic (threshold or overflow) compaction never shows it: it is not gated, and reads `thinking` like the rest of the run it belongs to.
+- Join/leave notices for terminals in your group appear only in the UI; they do not enter the agent's context.
+  Use `link_list` when you need current membership, not continuous polling.
 - Only connected terminals are visible; messages missed while a terminal was disconnected are not replayed.
 
 ### `link_send`
