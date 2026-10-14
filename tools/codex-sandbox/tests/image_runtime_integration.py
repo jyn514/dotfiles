@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import uuid
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
 WRAPPED_COMMAND_PROBE = Path(__file__).with_name("wrapped_command_probe.clj")
 RUNTIME_PROBE = Path(__file__).with_name('fixtures') / 'image-runtime.sh'
 IMAGE_PREFIX = 'codex-sandbox'
@@ -27,17 +28,27 @@ def run(*args: str, input: str | None = None) -> str:
     ).stdout
 
 
-def build(tag: str, pi_revision: str, base_image: str | None = None, *,
-          jj_image: str, cache_tag: str) -> None:
-    command = [
-        "docker", "build", "-f", str(DOCKERFILE),
-        "--build-arg", f"PI_REVISION={pi_revision}",
-        "--build-arg", f"JJ_IMAGE={jj_image}",
-    ]
-    if base_image is not None:
-        command.extend(["--build-arg", f"BASE_IMAGE={base_image}"])
-    command.extend(["-t", tag, "-t", cache_tag, "."])
-    subprocess.run(command, cwd=ROOT, check=True)
+def build_images(pi_revision: str, tags: dict[str, tuple[str, str]]) -> None:
+    targets = {
+        'jj': {'context': '.', 'dockerfile': 'tools/jj-proxy/Dockerfile',
+               'args': jj_release_args(), 'tags': list(tags['jj'])},
+    }
+    for variant, base in (('pi-alpine', None), ('pi-debian', 'node:20-bookworm-slim')):
+        arguments = {'PI_REVISION': pi_revision, 'JJ_IMAGE': 'jj-artifact'}
+        if base is not None:
+            arguments['BASE_IMAGE'] = base
+        targets[variant] = {
+            'context': '.', 'dockerfile': 'tools/codex-sandbox/image/Dockerfile',
+            'args': arguments, 'tags': list(tags[variant]),
+            # Consume the same JJ build result without a tag-resolution round trip.
+            'contexts': {'jj-artifact': 'target:jj'},
+        }
+    definition = {'group': {'default': {'targets': list(targets)}}, 'target': targets}
+    with tempfile.TemporaryDirectory(prefix='sandbox-runtime-bake-') as directory:
+        path = Path(directory) / 'docker-bake.json'
+        path.write_text(json.dumps(definition))
+        # Probes need engine-local images even with a docker-container builder.
+        subprocess.run(['docker', 'buildx', 'bake', '--file', str(path), '--load'], cwd=ROOT, check=True)
 
 
 def check_guest(tag: str, revision: str, node_prefix: str, jj_checksum: str) -> None:
@@ -81,12 +92,11 @@ def main() -> None:
     debian, debian_cache = image_tags('pi-debian')
     jj_image, jj_cache = image_tags('jj')
     try:
-        subprocess.run([
-            'docker', 'build', '-f', 'tools/jj-proxy/Dockerfile',
-            *[argument for name, value in jj_release_args().items()
-              for argument in ('--build-arg', f'{name}={value}')],
-            '-t', jj_image, '-t', jj_cache, '.',
-        ], cwd=ROOT, check=True)
+        build_images(args.expected_revision, {
+            'jj': (jj_image, jj_cache),
+            'pi-alpine': (alpine, alpine_cache),
+            'pi-debian': (debian, debian_cache),
+        })
         colocated = run(
             'docker', 'run', '--rm', '--interactive', '--tmpfs', '/tmp:mode=1777',
             '--entrypoint', '/trusted/bin/sh', jj_image,
@@ -96,12 +106,7 @@ def main() -> None:
         if not workspace.endswith('jj-colocated-ok\n') or not checksum.split():
             raise RuntimeError(f'unexpected colocated JJ workspace probe: {colocated!r}')
         jj_checksum = checksum.split()[0]
-        for tag, cache_tag, base_image in (
-            (alpine, alpine_cache, None),
-            (debian, debian_cache, "node:20-bookworm-slim"),
-        ):
-            build(tag, args.expected_revision, base_image, jj_image=jj_image, cache_tag=cache_tag)
-            expected_node = 'v24.' if tag == alpine else 'v20.'
+        for tag, expected_node in ((alpine, 'v24.'), (debian, 'v20.')):
             check_guest(tag, args.expected_revision, expected_node, jj_checksum)
     finally:
         subprocess.run(

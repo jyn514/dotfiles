@@ -202,7 +202,7 @@ For allowed helper metadata and forbidden log contents, follow the Readiness and
 [the authenticated-egress specification](spec/proxy-design.typ).
 Passing admission checks alone does not establish compliance with its logging exclusions.
 
-The runtime integration test builds real images and requires a working Docker-compatible daemon and network access:
+The runtime integration test builds real images and requires a working Docker daemon, Docker Buildx with Bake, and network access:
 
 ```sh
 python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revision <full-pi-commit>
@@ -215,6 +215,9 @@ Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `
 It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
 Each guest's binary checksum, runtime, and wrapper checks share one container run.
 The colocated-workspace probe computes the proxy binary's checksum without copying the binary out of its image.
+One Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.
+Bake schedules independent work concurrently and shares common stages without publishing and resolving an intermediate JJ tag.
+All three images are built before the probes run.
 Each run builds against current inputs and checks unique per-run image aliases, which cleanup removes.
 Successful builds also retain one shared `:cache` alias per image so later runs reuse unpacked runtime filesystems.
 Concurrent runs can update the shared caches without changing another run's test images.

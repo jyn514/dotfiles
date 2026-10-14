@@ -1,7 +1,9 @@
 """The live runtime probe must build the Pi commit it checks."""
 
+import json
 from pathlib import Path
 import runpy
+import subprocess
 import unittest
 from unittest import mock
 
@@ -50,21 +52,78 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
                 with mock.patch.dict(check.__globals__, {'run': result}):
                     check('renamed-guest', revision, f'v{major}.', checksum)
 
-    def test_runtime_builds_receive_the_selected_pi_commit(self):
-        build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build']
+    def test_bake_preserves_revisions_aliases_and_the_shared_jj_dependency(self):
+        build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
+        for revision, prefix in (('b' * 40, 'test'), ('c' * 40, 'renamed')):
+            with self.subTest(revision=revision):
+                tags = {role: (f'{prefix}-{role}:unique', f'{prefix}-{role}:cache')
+                        for role in ('jj', 'pi-alpine', 'pi-debian')}
+                release = {'JJ_AMD64_URL': 'https://example.invalid/selected-jj',
+                           'JJ_AMD64_SHA256': 'd' * 64}
+                captured = []
+
+                def consume(command, *, cwd, check):
+                    self.assertEqual(['docker', 'buildx', 'bake', '--file'], command[:4])
+                    self.assertIn('--load', command)
+                    self.assertTrue(check)
+                    path = Path(command[4])
+                    captured.append(path)
+                    definition = json.loads(path.read_text())
+                    targets = definition['target']
+                    self.assertEqual(set(targets), set(definition['group']['default']['targets']))
+                    by_alias = {target['tags'][0]: (name, target) for name, target in targets.items()}
+                    self.assertEqual({value[0] for value in tags.values()}, set(by_alias))
+                    jj_name, jj = by_alias[tags['jj'][0]]
+                    self.assertEqual(release, jj['args'])
+                    for role, aliases in tags.items():
+                        _, target = by_alias[aliases[0]]
+                        self.assertEqual(list(aliases), target['tags'])
+                        if role == 'jj':
+                            continue
+                        self.assertEqual(revision, target['args']['PI_REVISION'])
+                        dependency = target['args']['JJ_IMAGE']
+                        self.assertEqual(f'target:{jj_name}', target['contexts'][dependency])
+                    alpine = by_alias[tags['pi-alpine'][0]][1]
+                    debian = by_alias[tags['pi-debian'][0]][1]
+                    self.assertNotIn('BASE_IMAGE', alpine['args'])
+                    self.assertEqual('node:20-bookworm-slim', debian['args']['BASE_IMAGE'])
+
+                with mock.patch.dict(build.__globals__, {'jj_release_args': lambda: release}), \
+                        mock.patch('subprocess.run', side_effect=consume):
+                    build(revision, tags)
+                self.assertEqual(1, len(captured))
+                self.assertFalse(captured[0].parent.exists())
+
+    def test_bake_failure_removes_the_definition_and_propagates_the_error(self):
+        build = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['build_images']
+        tags = {role: (f'{role}:unique', f'{role}:cache') for role in ('jj', 'pi-alpine', 'pi-debian')}
+        error = subprocess.CalledProcessError(17, ['docker', 'buildx', 'bake'])
+        with mock.patch('subprocess.run', side_effect=error) as run:
+            with self.assertRaises(subprocess.CalledProcessError) as caught:
+                build('b' * 40, tags)
+            command = run.call_args.args[0]
+            definition = Path(command[command.index('--file') + 1])
+        self.assertIs(error, caught.exception)
+        self.assertFalse(definition.parent.exists())
+
+    def test_failed_bake_cleans_run_aliases_without_running_probes_or_removing_caches(self):
+        main = runpy.run_path(str(Path(__file__).with_name('image_runtime_integration.py')))['main']
         revision = 'b' * 40
-        for base in (None, 'node:20-bookworm-slim'):
-            with self.subTest(base=base), mock.patch('subprocess.run') as run:
-                build('test-image', revision, base, jj_image='proxy@sha256:' + 'a' * 64,
-                      cache_tag='test-image:cache')
-                command = run.call_args.args[0]
-                build_args = [command[index + 1] for index, argument in enumerate(command)
-                              if argument == '--build-arg']
-                expected = [f'PI_REVISION={revision}', 'JJ_IMAGE=proxy@sha256:' + 'a' * 64]
-                if base is not None:
-                    expected.append(f'BASE_IMAGE={base}')
-                self.assertEqual(expected, build_args)
-                self.assertTrue(run.call_args.kwargs['check'])
+        build = mock.Mock(side_effect=subprocess.CalledProcessError(17, ['docker', 'buildx', 'bake']))
+        probe = mock.Mock()
+        with mock.patch.dict(main.__globals__, {'build_images': build, 'run': probe,
+                                               'IMAGE_PREFIX': 'renamed-runtime'}), \
+                mock.patch('sys.argv', ['integration', '--expected-revision', revision]), \
+                mock.patch('subprocess.run') as cleanup:
+            with self.assertRaises(subprocess.CalledProcessError):
+                main()
+        self.assertEqual(revision, build.call_args.args[0])
+        tags = build.call_args.args[1]
+        command = cleanup.call_args.args[0]
+        self.assertEqual(['docker', 'image', 'rm', '-f'], command[:4])
+        self.assertEqual({aliases[0] for aliases in tags.values()}, set(command[4:]))
+        self.assertFalse({aliases[1] for aliases in tags.values()} & set(command[4:]))
+        probe.assert_not_called()
 
 
 if __name__ == '__main__':
