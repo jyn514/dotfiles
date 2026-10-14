@@ -14,6 +14,13 @@ workaround rather than forcing it into a bug report.
 
 ## Gather the authoritative inputs
 
+Before drafting, search the target project's open and closed issues and pull requests for existing reports or fixes.
+Search by the visible failure, relevant component, and distinctive error messages or function names.
+Read plausible matches, including relevant comments, and compare their reproductions and affected versions with the current evidence.
+If a matching report exists, recommend adding the new evidence there rather than opening a duplicate, following the project's reporting rules.
+Link related reports and explain the connection when they describe a different failure.
+If search is unavailable or finds no match, state that limit outside the report; do not claim the bug has never been reported.
+
 1. Read the target project's `CONTRIBUTING.md` and current issue template before
    drafting. Follow its issue-reporting requirements, including instructions it
    links to; reading them alone is not sufficient. If `CONTRIBUTING.md` is absent,
@@ -113,7 +120,11 @@ or latest-version checks as completed without evidence.
 Review each authored sentence for passive voice and hidden actors before
 delivery. Rewrite it with the known actor or a direct statement of behavior;
 do not invent an actor to satisfy the style rule.
-Return a copy-ready title and body. Keep process commentary, remaining checks,
+Save the issue body to a Markdown file so copying its contents preserves Markdown syntax.
+Use the user's requested path, or choose a descriptive filename in the working directory when no path is specified.
+Keep the file current when revising the report.
+Return a copy-ready title and a link to the file.
+Keep process commentary, remaining checks,
 and the issue-creation URL outside the report body. For each check that remains,
 give the exact check to run and which sentence or field to replace for each
 possible result. Keep unverified claims out of the report; do not turn agent
