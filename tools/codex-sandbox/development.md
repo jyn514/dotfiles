@@ -205,6 +205,8 @@ python3 tools/codex-sandbox/tests/image_runtime_integration.py --expected-revisi
 Use the full host commit recorded in `~/.local/share/pi/node/.source-revision`.
 The test passes that commit as the required `PI_REVISION` build argument and checks
 its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
+Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `rg` aliases, and blocked nested wrapper operations in the produced images.
+It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
 Direct Dockerfile builds must also supply `--build-arg PI_REVISION=<full-pi-commit>`;
 there is no independent guest revision default.
 

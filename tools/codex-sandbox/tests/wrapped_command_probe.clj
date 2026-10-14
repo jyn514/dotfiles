@@ -23,6 +23,7 @@
 
 (doseq [[command expected-prefix]
         [["bb" "babashka v"]
+         ["jj" "jj "]
          ["rg" "ripgrep "]]]
   (let [result (run {} (str "/opt/agent-tools/bin/" command) "--version")]
     (when-not (and (zero? (:exit result))
@@ -43,5 +44,14 @@
   (when-not (and (= 2 (:exit result))
                  (str/includes? (:err result) "rg wrapper: --pre is not permitted"))
     (throw (ex-info "nested rg bypassed its wrapper" result))))
+
+(let [directory (fs/create-temp-dir {:prefix "wrapped-jj-conflict-"})
+      file (fs/path directory "clean.txt")]
+  (try
+    (spit (str file) "Clean input.\n")
+    (let [result (run {} "jj-conflict" "check" (str file))]
+      (when-not (zero? (:exit result))
+        (throw (ex-info "packaged jj-conflict command is unavailable or broken" result))))
+    (finally (fs/delete-tree directory))))
 
 (println "wrapped-command-probe-ok")
