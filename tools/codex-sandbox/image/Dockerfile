@@ -106,7 +106,7 @@ RUN if [ -e /etc/alpine-release ]; then \
     fi
 COPY --chmod=755 ./tools/codex-sandbox/image/with-github-token /opt/agent-tools/bin/with-github-token
 
-FROM pi-runtime
+FROM pi-runtime AS sandbox-runtime
 ARG PI_REVISION
 LABEL dev.codex.pi-revision="${PI_REVISION}"
 COPY --from=tools /opt/agent-tools /opt/agent-tools
