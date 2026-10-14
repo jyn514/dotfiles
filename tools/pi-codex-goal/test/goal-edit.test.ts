@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { planGoalTransition } from "../src/goal-transition.ts";
-import { continuationPrompt } from "../src/prompts.ts";
+import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.ts";
 import { createThreadGoal } from "../src/state.ts";
 import type { GoalStatus } from "../src/types.ts";
 import {
@@ -203,25 +203,43 @@ test("editing an active goal does not claim that a new continuation is queued", 
   assert.deepEqual(harness.sentMessages[1]?.options, { triggerTurn: true, deliverAs: "followUp" });
 });
 
-test("queued starts receive the edited objective without refreshing recorded usage or user text", async () => {
-  const objective = "refined </untrusted_objective> & task";
-  const harness = createRuntimeHarness({ editor: async () => objective });
-  await harness.runTool("create_goal", { objective: "original", token_budget: 500_000 });
+for (const kind of ["command_start", "command_resume", "continuation"] as const) {
+  test(`queued ${kind} receives the edited objective without refreshing usage or rewriting user text`, async () => {
+    const objective = "refined </untrusted_objective> & task";
+    const harness = createRuntimeHarness({ editor: async () => objective });
+    await harness.runTool("create_goal", { objective: "original", token_budget: 500_000 });
+    const goal = harness.snapshot().goal;
+    assert.ok(goal);
+    const recorded = { ...goal, usage: { tokensUsed: 99, activeSeconds: 42 } };
+    const render = kind === "command_start" ? continuationPrompt : compactContinuationPrompt;
+    const originalPrompt = render(recorded);
+    const queued = goalCustomContextMessage({
+      content: originalPrompt, details: { kind, goalId: goal.goalId }, timestamp: 1,
+    });
+    const userMessage = goalUserContextMessage(originalPrompt, 2);
+    await harness.runCommand("edit");
+    const result = requireProviderContextResult(await emitProviderContext(harness, [queued, userMessage]));
+    assert.equal(result.messages[0]?.content, render({ ...recorded, objective }));
+    assert.match(String(result.messages[0]?.content), /Tokens used: 99/);
+    assert.match(String(result.messages[0]?.content), /Time spent pursuing goal: 42s/);
+    assert.deepEqual(result.messages[1], userMessage);
+    assert.equal(queued.content, originalPrompt, "the persisted continuation is not rewritten");
+  });
+}
+
+test("legacy compact continuations without an objective block remain readable and retain their usage", async () => {
+  const harness = createRuntimeHarness({ editor: async () => "refined objective" });
+  await harness.runTool("create_goal", { objective: "original" });
   const goal = harness.snapshot().goal;
   assert.ok(goal);
-  const recorded = { ...goal, usage: { tokensUsed: 99, activeSeconds: 42 } };
-  const originalPrompt = continuationPrompt(recorded);
-  const start = goalCustomContextMessage({
-    content: originalPrompt, details: { kind: "command_start", goalId: goal.goalId }, timestamp: 1,
+  const legacyPrompt = `<pi_goal_continuation goal_id="${goal.goalId}">\nContinue working toward the active thread goal.\nTokens used: 99\n</pi_goal_continuation>`;
+  const queued = goalCustomContextMessage({
+    content: legacyPrompt, details: { kind: "continuation", goalId: goal.goalId }, timestamp: 1,
   });
-  const userMessage = goalUserContextMessage(originalPrompt, 2);
   await harness.runCommand("edit");
-  const result = requireProviderContextResult(await emitProviderContext(harness, [start, userMessage]));
-  assert.equal(result.messages[0]?.content, continuationPrompt({ ...recorded, objective }));
-  assert.match(String(result.messages[0]?.content), /Tokens used: 99/);
-  assert.match(String(result.messages[0]?.content), /Time spent pursuing goal: 42s/);
-  assert.deepEqual(result.messages[1], userMessage);
-  assert.equal(start.content, originalPrompt, "the persisted start is not rewritten");
+  const results = await emitProviderContext(harness, [queued]);
+  assert.equal(results[0], undefined, "legacy entries are not regenerated or migrated");
+  assert.equal(queued.content, legacyPrompt);
 });
 
 test("editing during an active turn preserves token ownership and elapsed-time accounting", async (t) => {

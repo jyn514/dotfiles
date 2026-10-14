@@ -63,7 +63,13 @@ Returns the current goal state and usage.
 
 ### `update_goal`
 
-Accepts `status: "complete"` after verified completion, or `status: "blocked"` with a non-empty `reason` when missing user input or external work prevents meaningful progress.
+Accepts `status: "complete"` after verified completion.
+Use `status: "blocked"` with a non-empty `reason` only when missing input or external work prevents progress across the remaining goal.
+Before blocking, the agent is instructed to compare the investigation with the governing objective and check independent unmet outcomes.
+It also checks authorized alternative approaches.
+It must respect milestone order and explicit holds rather than continuing unrelated cleanup or weakening acceptance conditions.
+The reason should explain what the dependency prevents and why no independent authorized work remains.
+These are model instructions, not a mechanical proof that the goal is blocked; the tool still enforces only the existing status and non-empty-reason rules.
 
 Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction. It cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool. Use `/goal` to inspect the dependency and explicit `/goal resume` to reactivate the goal. Ordinary input or reopening the session cannot resume it, and completion is rejected while blocked. Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
 
@@ -75,7 +81,11 @@ Completed goals are terminal for automatic transitions: pause, resume, and hidde
 
 In bridged MCP environments, Pi may expose these tools under namespaced names such as `pi__get_goal`, `pi__create_goal`, and `pi__update_goal`.
 Prompt guidance explains naming once per prompt: call the exposed tool name, not display or transcript labels.
-Standing instructions and standalone full continuation prompts share an evidence-backed completion and blocked/resume contract; automatic continuations retain brief reminders.
+Standing instructions, full continuation prompts, and automatic continuations share the evidence-backed completion and whole-goal blocking guidance.
+Every new continuation includes the full current objective as untrusted task data, including compact continuations after resume or compaction.
+Edits update objective blocks in extension-owned pending continuations at the provider boundary.
+The rewrite preserves recorded usage and user-authored messages.
+Legacy continuations without objective blocks remain readable; saved session entries are not migrated or rewritten.
 
 ## Behavior
 

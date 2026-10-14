@@ -253,7 +253,7 @@ export function applyQueuedGoalProviderContextRewrites<TMessage extends QueuedGo
     if (options.goal?.goalId === queuedGoalId && options.goal.status === "active") {
       if (
         message.role === "custom" && message.customType === CUSTOM_ENTRY_TYPE &&
-        isActiveGoalQueuedDetails(message.details) && message.details.kind === "command_start" &&
+        isActiveGoalQueuedDetails(message.details) &&
         typeof message.content === "string"
       ) {
         const content = withCurrentContinuationObjective(message.content, options.goal.objective);

@@ -204,7 +204,7 @@ test("/goal resume sends a custom continuation turn", async () => {
   if (typeof content !== "string") {
     assert.fail("Expected queued goal resume content to be a string.");
   }
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
   assert.match(content, /<pi_goal_continuation goal_id="/);
 });
 
@@ -329,7 +329,7 @@ test("/goal resume restarts an active goal after host overflow recovery", async 
     assert.fail("Expected queued active resume content to be a string.");
   }
   assert.match(content, /<pi_goal_continuation goal_id="/);
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
 });
 
 test("/goal objective replaces a completed goal without confirmation", async () => {

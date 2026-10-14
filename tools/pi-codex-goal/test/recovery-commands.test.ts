@@ -57,7 +57,7 @@ test("/goal resume after overflow pause resets extension recovery counters", asy
   if (typeof content !== "string") {
     assert.fail("Expected overflow resume to send a custom continuation prompt.");
   }
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(content), harness.snapshot().goal?.goalId);
 
   await harness.emit("message_start", {

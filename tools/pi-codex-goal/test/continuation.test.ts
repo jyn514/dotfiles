@@ -148,7 +148,7 @@ test("session resume prompt can reactivate a paused goal", async () => {
   if (typeof content !== "string") {
     assert.fail("Expected session resume to send a custom continuation prompt.");
   }
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   assert.match(content, /<pi_goal_continuation goal_id="/);
 });
 
@@ -712,7 +712,7 @@ test("auto-queued continuations use the compact prompt", async () => {
   assert.ok(continuation);
   const content = String(continuation.message.content);
   assert.match(content, /<pi_goal_continuation goal_id="/);
-  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   assert.match(content, /get_goal/);
 });
 
@@ -923,7 +923,7 @@ test("provider-limit pauses schedule auto-resume", async () => {
     const content = sent.message.content;
     assert.equal(typeof content, "string");
     assert.match(String(content), /<pi_goal_continuation goal_id="/);
-    assert.doesNotMatch(String(content), /<untrusted_objective>/);
+    assert.match(String(content), /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   } finally {
     mock.timers.reset();
   }

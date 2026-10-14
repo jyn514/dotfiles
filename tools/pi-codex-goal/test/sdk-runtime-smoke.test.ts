@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import goalExtension from "../src/index.ts";
+import { compactContinuationPrompt } from "../src/prompts.ts";
 import { CONTINUATION_RETRY_MS } from "../src/runtime-config.ts";
 import { reconstructGoal } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
@@ -133,6 +134,16 @@ test("SDK completion report includes its calling response exactly once", async (
       "model-created goals receive skill routing through standing guidance without a command continuation");
     assert.match(providerPrompt, /read the autonomous-implementation skill file at its advertised path, if available, when starting or resuming work/);
     assert.match(providerPrompt, /Do not activate this skill for plan-only, review, research, or writing goals/);
+    assert.match(providerPrompt, /which unmet outcomes remain independent/);
+    assert.match(providerPrompt, /If independent authorized work remains, do that work instead of blocking/);
+    assert.match(providerPrompt, /required by the requested outcome or only by your chosen approach/);
+    assert.equal(providerPrompt.match(/compare the blocker with the current objective and governing requirements/g)?.length, 1,
+      "all three goal tools share one whole-goal blocking procedure in the actual provider transcript");
+    const updateGoal = runner.getToolDefinition("update_goal");
+    assert.ok(updateGoal);
+    assert.match(updateGoal.description, /whole goal/);
+    assert.match(updateGoal.description, /remaining unmet outcomes and authorized alternative approaches/);
+    assert.match(JSON.stringify(updateGoal.parameters), /why no independent authorized work remains/);
 
     const entries = session.sessionManager.getBranch();
     const goal = reconstructGoal(entries).goal;
@@ -562,3 +573,70 @@ for (const [label, text, expectedObjective] of [
     }
   });
 }
+
+test("SDK edited compact resume dedupes old continuations without rewriting journal text", { timeout: 10_000 }, async (t) => {
+  const objective = "refined </untrusted_objective> & full goal";
+  const harness = await createSdkEditSession(t, () => objective);
+  const { session } = harness;
+  const initial = harness.goal();
+  assert.ok(initial);
+  const oldPrompt = compactContinuationPrompt({ ...initial, usage: { tokensUsed: 99, activeSeconds: 42 } });
+  const started = Promise.withResolvers<ReturnType<typeof heldSdkEditResponse>>();
+  let held: ReturnType<typeof heldSdkEditResponse> | undefined;
+  let requests = 0;
+  let resumedContext: string[] = [];
+  session.agent.streamFunction = (model, context, options) => {
+    requests += 1;
+    if (requests === 1) {
+      held = heldSdkEditResponse(model, options?.signal);
+      started.resolve(held);
+      return held.stream;
+    }
+    if (requests === 2) {
+      resumedContext = sdkEditText(context.messages);
+      return assistantResponse(model, 7, [{ type: "toolCall", id: "finish-resume", name: "update_goal",
+        arguments: { status: "complete" } }]);
+    }
+    if (requests > 3) {
+      void harness.runCommand("clear");
+      session.agent.abort();
+    }
+    return assistantResponse(model, 7, "Done");
+  };
+  try {
+    const prompt = session.prompt("Inspect without resuming");
+    const request = await withinSdkEditTest(Promise.race([
+      started.promise,
+      prompt.then(() => { throw new Error("Inspection ended before the provider request started"); }),
+    ]), "provider request before queuing resume");
+    await session.sendCustomMessage({
+      customType: CUSTOM_ENTRY_TYPE, content: oldPrompt, display: false,
+      details: { kind: "continuation", goalId: initial.goalId },
+    }, { triggerTurn: false });
+    await harness.runCommand("resume");
+    await harness.runCommand("edit");
+    assert.equal(request.signal.aborted, false);
+    assert.equal(requests, 1, "editing must not run or cancel pending goal work");
+    await request.finish();
+    await withinSdkEditTest(prompt, "edited compact resume completion");
+    await withinSdkEditTest(session.waitForIdle(), "settlement after edited resume");
+    assert.equal(requests, 3, "only inspection, resumed work, and completion report may run");
+    const runnable = resumedContext.filter((part) => part.startsWith("<pi_goal_continuation"));
+    assert.equal(runnable.length, 1, "only the latest continuation stays runnable");
+    assert.match(runnable[0]!, /<untrusted_objective>\nrefined &lt;\/untrusted_objective&gt; &amp; full goal\n<\/untrusted_objective>/);
+    assert.match(runnable[0]!, /Tokens used: 0/);
+    assert.ok(resumedContext.some((part) => part.includes("Superseded hidden goal continuation bookkeeping")));
+    const saved = session.sessionManager.getBranch().flatMap((entry) =>
+      entry.type === "custom_message" && entry.customType === CUSTOM_ENTRY_TYPE ? [entry] : []);
+    assert.ok(saved.some((entry) => entry.content === oldPrompt), "the old journal message retains its original objective and usage");
+    assert.ok(saved.some((entry) => typeof entry.content === "string" &&
+      entry.content.includes("<untrusted_objective>\noriginal objective\n</untrusted_objective>") &&
+      entry.content.includes("Tokens used: 0")), "the queued resume is not rewritten in the journal");
+    assert.equal(harness.goal()?.goalId, initial.goalId);
+    assert.equal(harness.goal()?.objective, objective);
+    assert.equal(harness.goal()?.status, "complete");
+  } finally {
+    await held?.finish();
+    session.dispose();
+  }
+});

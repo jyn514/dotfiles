@@ -30,9 +30,9 @@ function createGoalParams(policy: TokenBudgetPolicy) {
 
 const UpdateGoalParams = Type.Object({
   status: StringEnum(["complete", "blocked"] as const, {
-    description: "Complete only when no required work remains; blocked only when missing input or external work prevents meaningful progress.",
+    description: "Complete only when no required work remains; blocked only when a dependency prevents all remaining authorized work toward the whole goal, not just the current investigation.",
   }),
-  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the missing input or external dependency." })),
+  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the dependency, what it prevents, and why no independent authorized work remains." })),
 });
 
 export interface ToolHost {
@@ -105,8 +105,8 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "update_goal",
     label: "Update Goal",
     description:
-      "Mark the goal complete only after the objective is achieved, or blocked with a reason when missing user input or external work prevents meaningful progress. Blocked goals stop automatic continuation and require explicit /goal resume before completion.",
-    promptSnippet: "Complete after an evidence-backed audit, or block on missing input/external work with a reason. Only /goal resume reactivates blocked goals.",
+      "Mark the whole goal complete only after the objective is achieved, or blocked only after checking remaining unmet outcomes and authorized alternative approaches. A blocked investigation is not a blocked goal. Blocking requires a dependency reason and stops automatic continuation until explicit /goal resume.",
+    promptSnippet: "Complete after an evidence-backed audit. Before blocking, check the whole goal for independent authorized work and alternative approaches. Only /goal resume reactivates blocked goals.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",

@@ -68,7 +68,7 @@ test("provider context dedupes many active continuations without refreshing the 
   assert.match(latestContent, /Tokens used: 99/);
   assert.match(latestContent, /Time spent pursuing goal: 42s/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
+  assert.match(latestContent, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
 });
 
 test("active provider-context user marker without passthrough binding remains verbatim", async () => {
@@ -127,7 +127,7 @@ test("active provider-context dedupe preserves historical user marker mixed with
 
   const latestContent = String(providerContextMessageAt(result, 2).content);
   assert.match(latestContent, /Tokens used: 99/);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
+  assert.match(latestContent, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
 });
 
@@ -206,7 +206,7 @@ test("active goal provider-context dedupe preserves pasted marker input mixed wi
 
   const latestContent = String(providerContextMessageAt(result, 2).content);
   assert.match(latestContent, /Tokens used: 99/);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
+  assert.match(latestContent, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
 });
 
