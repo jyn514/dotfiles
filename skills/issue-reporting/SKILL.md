@@ -37,8 +37,10 @@ workaround rather than forcing it into a bug report.
    configuration, and previous attempts with their results. Include a working
    control when it narrows the failure: for example, one picker order fails while
    the reverse order works.
-3. Record the installed version and relevant runtime dependencies. If the project
-   requests testing the development version, check that requirement and report
+3. Record the installed version, installation source, and relevant runtime dependencies.
+   Name the source precisely, such as a project's GitHub release asset, a distribution package, or a local source build.
+   Do not use "official" as a substitute for provenance; state when the source is unknown.
+   If the project requests testing the development version, check that requirement and report
    whether it was met. If testing needs a different build, prefer an isolated
    standalone directory over replacing the installed program. Follow
    `dependency-review` for a requested build or update; do not silently expand
@@ -63,6 +65,7 @@ workaround rather than forcing it into a bug report.
   report does not make. For related reports, describe the connection and link
   the evidence; do not add "I am linking that history rather than claiming that
   nobody has reported this behavior before".
+  For GitHub issues and PRs in the target repository, use `#123` without repeating the full URL.
 - Use active voice throughout authored prose, including delivery commentary.
   Name the actor for actions and checks; avoid impersonal subjects such as
   "a diagnostic check confirms" even though they are grammatically active.
