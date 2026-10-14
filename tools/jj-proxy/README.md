@@ -93,7 +93,9 @@ For `op diff`, use `--from` and `--to`; the policy blocks `--operation`.
 - The proxy rejects shell execution, config/repository overrides, external tools, `git push`, `git init`, and unapproved fetch remotes. The read-only [`jj.toml`](./jj.toml) is the single authority for trusted editor, formatter, and signing settings; proxy command construction does not override it. It can still perform logically destructive but recoverable allowed history edits.
 - For a proxy route, socket failure returns `125` and never falls back to native JJ. A local route does not connect to the proxy.
 - A command timeout returns `124`; policy/request failures normally return `2`. Inspect stderr, correct the request, and retry.
-- Recover history edits with `jj undo` or an explicit `jj op restore <operation>`. If the proxy was interrupted during a metadata write, stop the agent, inspect/recover the repository from a trusted environment, then restart the whole proxy session.
+- Use `jj undo` through the proxy to recover an allowed history edit.
+  The proxy rejects `jj op restore`; run it only from a trusted environment outside the agent sandbox.
+  If the proxy was interrupted during a metadata write, stop the agent, inspect/recover the repository from that trusted environment, then restart the whole proxy session.
 
 ## Tests
 
