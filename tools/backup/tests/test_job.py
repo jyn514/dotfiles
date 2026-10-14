@@ -128,6 +128,78 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(['mica-state', 'documents-backup'], calls)
         self.assertTrue((self.state / 'mica-state/records.log').exists())
 
+    def run_daily_main(self):
+        config = self.root / 'config.json'
+        config.write_text(json.dumps(self.config))
+        stderr = io.StringIO()
+        with patch.object(job, 'CONFIG', config), patch.object(job, 'STATE', self.state), \
+             patch.object(job, 'Job', return_value=self.job), \
+             patch.object(job.os, 'getuid', return_value=0), \
+             patch.object(job.signal, 'signal'), \
+             patch.object(sys, 'argv', ['job.py', 'daily']), contextlib.redirect_stderr(stderr):
+            status = job.main()
+        return status, stderr.getvalue()
+
+    def test_upload_failure_diagnostic_reports_retained_stage_but_absent_marker(self):
+        calls = []
+
+        def upload(tag, root=None):
+            calls.append(tag)
+            if tag == 'mica-state':
+                self.assertTrue(self.read_state()['running'])
+                self.assertFalse(self.job.marker.exists())
+                self.assertEqual('flushed before capture\n', (root / 'records.log').read_text())
+                raise RuntimeError('upload unavailable')
+
+        with patch.object(self.job, 'upload', side_effect=upload):
+            status, diagnostic = self.run_daily_main()
+        self.assertEqual(1, status)
+        self.assertEqual(['mica-state', 'documents-backup'], calls)
+        self.assertTrue(self.read_state()['running'])
+        self.assertFalse(self.job.marker.exists())
+        self.assertEqual('flushed before capture\n', (self.state / 'mica-state/records.log').read_text())
+        self.assertIn('failed: mica-state: upload unavailable', diagnostic)
+        self.assertIn('staged state is retained; recovery marker is absent', diagnostic)
+
+    def test_successful_daily_main_has_no_failure_diagnostic(self):
+        with patch.object(self.job, 'upload') as upload:
+            status, diagnostic = self.run_daily_main()
+        self.assertEqual(0, status)
+        self.assertEqual(['mica-state', 'documents-backup'], [call.args[0] for call in upload.call_args_list])
+        self.assertFalse(self.job.marker.exists())
+        self.assertIn('daily backups complete', diagnostic)
+        self.assertNotIn('failed:', diagnostic)
+
+    def test_documents_only_failure_does_not_claim_mica_state_is_retained(self):
+        del self.config['mica']
+        with patch.object(self.job, 'upload', side_effect=RuntimeError('upload unavailable')):
+            status, diagnostic = self.run_daily_main()
+        self.assertEqual(1, status)
+        self.assertFalse(self.job.marker.exists())
+        self.assertFalse((self.state / 'mica-state').exists())
+        self.assertIn('staged state is absent; recovery marker is absent', diagnostic)
+
+    def test_failed_restart_diagnostic_reports_retained_marker_and_private_capture(self):
+        docker = self.job.docker
+
+        def fail_start(*arguments, **kwargs):
+            if arguments[0] == 'start':
+                raise RuntimeError('restart unavailable')
+            return docker(*arguments, **kwargs)
+
+        with patch.object(self.job, 'docker', side_effect=fail_start), \
+             patch.object(self.job, 'upload') as upload:
+            status, diagnostic = self.run_daily_main()
+        self.assertEqual(1, status)
+        upload.assert_called_once_with('documents-backup')
+        self.assertFalse(self.read_state()['running'])
+        self.assertEqual({'container': 'owned-container'}, json.loads(self.job.marker.read_text()))
+        self.assertEqual('flushed before capture\n',
+                         (self.state / 'capture-private/mica-state/records.log').read_text())
+        self.assertFalse((self.state / 'mica-state').exists())
+        self.assertIn('failed: mica-state: restart unavailable', diagnostic)
+        self.assertIn('staged state is retained; recovery marker is retained', diagnostic)
+
     def test_failed_recovery_still_attempts_documents_and_retains_marker(self):
         self.job.marker.write_text(json.dumps({'container': 'owned-container'}))
         with patch.object(self.job, 'recover', side_effect=RuntimeError('Docker unavailable')):

@@ -190,7 +190,12 @@ def main():
                 shutil.rmtree(target)
                 progress('Mica restore matches the staged snapshot')
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
-            progress(f'failed: {error}; staged state and recovery marker are retained')
+            staged = any(path.exists() for path in (
+                job.state / 'mica-state', job.state / 'capture-private' / 'mica-state'))
+            staged_status = 'retained' if staged else 'absent'
+            marker_status = 'retained' if job.marker.exists() else 'absent'
+            progress(f'failed: {error}; staged state is {staged_status}; '
+                     f'recovery marker is {marker_status}')
             return 1
     return 0
 

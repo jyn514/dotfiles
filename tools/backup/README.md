@@ -125,6 +125,12 @@ recovery happens on the next job; to recover immediately, run the installed
 the marker and fails the job. A container already stopped before capture stays
 stopped. Restart verification checks container liveness, not UI readiness.
 
+Failure diagnostics report staged-state and restart-marker presence separately.
+An upload failure after successful restart retains `mica-state` but has no restart marker.
+A failed restart retains the marker and may leave a private capture under `capture-private/mica-state`.
+That private capture is not uploaded; a later successful capture replaces it after recovery.
+Use `recover` when the marker is retained, not merely because an upload failed.
+
 ## Tests
 
 ```sh
