@@ -11,8 +11,10 @@ validation steps, design posture, and examples that prevent likely mistakes.
 
 ## Delegate the prose pass
 
-The main agent delegates this skill to a small-model subagent to reduce subscription usage. It supplies the owned files or hunks, the requested change, and requirements to preserve.
-The assigned subagent runs the workflow directly, without further delegation, and returns its edits for review.
+The main agent delegates this skill to a small-model subagent to reduce subscription usage.
+It supplies the owned files or hunks, the requested change, and requirements to preserve.
+Include applicable repository/shared prose rules and semantic distinctions explicitly in the assignment; do not assume the worker inherits them.
+The assigned subagent runs the workflow directly, without further delegation, and checks the supplied constraints before returning its edits for review.
 The main agent reviews the returned diff and completes the required checks. If small-model delegation is unavailable, the main agent runs the workflow directly and reports that limitation.
 One completed pass meets the post-rewrite requirement for the reviewed files, including this skill. Check corrections in the same pass; prose edits made during the pass do not require another pass.
 
