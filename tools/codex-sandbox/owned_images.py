@@ -174,7 +174,7 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
     if 'jj' in requested:
         sources['jj'] = [str(path) for path in dockerfile_sources(
             ROOT, Path('tools/jj-proxy/Dockerfile'),
-        )] + ['config/mise.toml']
+        )] + ['config/mise.lock']
     if 'zulip' in requested:
         sources['zulip'] = ['tools/zulip-proxy/Dockerfile', 'tools/zulip-proxy/server.py',
                             'tools/zulip-proxy/forward.py', 'tools/zulip-proxy/protocol.json',
@@ -182,14 +182,26 @@ def source_paths(requested=('auth', 'jj', 'zulip')):
     return sources
 
 
-def jj_revision(root=None):
-    """Use the host's exact JJ source revision for both sandbox consumers."""
+def jj_release_args(root=None):
+    """Use mise's locked release URLs and checksums for both sandbox consumers."""
     root = ROOT if root is None else root
-    with (root / 'config/mise.toml').open('rb') as stream:
-        version = tomllib.load(stream)['tools']['cargo:https://github.com/jj-vcs/jj']['version']
-    if not isinstance(version, str) or re.fullmatch(r'rev:[0-9a-f]{40}', version) is None:
-        raise ValueError('config/mise.toml must pin JJ to an exact source revision')
-    return version.removeprefix('rev:')
+    with (root / 'config/mise.lock').open('rb') as stream:
+        releases = tomllib.load(stream)['tools']['aqua:jj-vcs/jj']
+    if len(releases) != 1:
+        raise ValueError('config/mise.lock must select one JJ release')
+    arguments = {}
+    for architecture, platform in (('AMD64', 'linux-x64'), ('ARM64', 'linux-arm64')):
+        try:
+            artifact = releases[0][f'platforms.{platform}']
+            checksum = artifact['checksum']
+            url = artifact['url']
+        except KeyError as error:
+            raise ValueError(f'config/mise.lock must lock JJ for {platform}') from error
+        if re.fullmatch(r'sha256:[0-9a-f]{64}', checksum) is None:
+            raise ValueError(f'config/mise.lock must contain a JJ SHA-256 checksum for {platform}')
+        arguments[f'JJ_{architecture}_URL'] = url
+        arguments[f'JJ_{architecture}_SHA256'] = checksum.removeprefix('sha256:')
+    return arguments
 
 
 def declaration(requested=('auth', 'jj', 'zulip')):
@@ -203,7 +215,7 @@ def declaration(requested=('auth', 'jj', 'zulip')):
                          'tags': [f'codex-{name}:{key.hexdigest()}'],
                          'platforms': ['${BUILDPLATFORM}']}
         if name == 'jj':
-            targets[name]['args'] = {'JJ_REVISION': jj_revision()}
+            targets[name]['args'] = jj_release_args()
     return {'variable': {'BUILDPLATFORM': {'default': 'linux/arm64'}}, 'target': targets}
 
 

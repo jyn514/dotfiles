@@ -642,15 +642,8 @@ class MiseConfigTests(unittest.TestCase):
                 ["rust", "aqua:cargo-bins/cargo-binstall"],
                 tools[f"cargo:{cargo_tool}"]["depends"],
             )
-        self.assertEqual(
-            {
-                "version": "rev:f1b29bced933e289096a9c98276153e29dd95674",
-                "crate": "jj-cli",
-                "bin": "jj",
-                "depends": ["rust"],
-            },
-            tools["cargo:https://github.com/jj-vcs/jj"],
-        )
+        self.assertEqual("latest", tools["aqua:jj-vcs/jj"])
+        self.assertNotIn("cargo:https://github.com/jj-vcs/jj", tools)
         self.assertEqual(
             {"version": "latest", "os": ["linux"], "filter_bins": "glide"},
             tools["github:glide-browser/glide"],

@@ -211,7 +211,7 @@ class BakeTest(unittest.TestCase):
         self.assertEqual('guest@sha256:' + '3' * 64, result)
         self.assertEqual(1, len(engine.builds))
         proxy_target = engine.builds[0]['jj']
-        self.assertEqual({'JJ_REVISION': owned_images.jj_revision()}, proxy_target['args'])
+        self.assertEqual(owned_images.jj_release_args(), proxy_target['args'])
         proxy = engine.resolve_image(proxy_target['tags'][0]).reference
         self.assertIn('JJ_IMAGE=' + proxy, builds[0][1])
         self.assertIn('FROM ' + proxy + ' AS jj', builds[0][0])

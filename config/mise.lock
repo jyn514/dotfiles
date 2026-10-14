@@ -168,6 +168,11 @@ version = "0.46.0"
 backend = "aqua:jj-vcs/jj"
 specifiers = ["latest"]
 
+[tools."aqua:jj-vcs/jj"."platforms.linux-arm64"]
+checksum = "sha256:80e28f7501c11e50e0ca06cd6a1fa1d982cff9cc59bfe4411a9d36aa501d867e"
+url = "https://github.com/jj-vcs/jj/releases/download/v0.46.0/jj-v0.46.0-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jj-vcs/jj/releases/assets/619871804"
+
 [tools."aqua:jj-vcs/jj"."platforms.linux-x64"]
 checksum = "sha256:fce0271158e665ceb82dc66c5eb95b1728649094e9133074f3b5baece345fc08"
 url = "https://github.com/jj-vcs/jj/releases/download/v0.46.0/jj-v0.46.0-x86_64-unknown-linux-musl.tar.gz"
@@ -259,15 +264,6 @@ specifiers = ["latest"]
 version = "1.0.7"
 backend = "cargo:counts"
 specifiers = ["latest"]
-
-[[tools."cargo:https://github.com/jj-vcs/jj"]]
-version = "rev:f1b29bced933e289096a9c98276153e29dd95674"
-backend = "cargo:https://github.com/jj-vcs/jj"
-specifiers = ["rev:f1b29bced933e289096a9c98276153e29dd95674"]
-
-[tools."cargo:https://github.com/jj-vcs/jj".options]
-bin = "jj"
-crate = "jj-cli"
 
 [[tools."cargo:librespot"]]
 version = "0.8.0"

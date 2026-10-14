@@ -15,7 +15,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm /usr/local/bin/install-agent-deps
 
 FROM alpine:3.22 AS tools
-COPY --from=jj /trusted/bin/jj /usr/local/bin/jj
 COPY ./tools/codex-sandbox/image/install-tools.sh /usr/local/bin/install-agent-tools
 ARG BB_VERSION=1.13.219
 ARG GH_VERSION=2.76.1
@@ -37,8 +36,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         /usr/local/bin/gh \
         /usr/local/bin/typst \
         /opt/agent-tools/bin/ \
-    && cp -a /usr/local/bin/bb /usr/local/bin/docker /opt/agent-tools/libexec/ \
-    && cp -a /usr/local/bin/jj /opt/agent-tools/libexec/jj
+    && cp -a /usr/local/bin/bb /usr/local/bin/docker /opt/agent-tools/libexec/
+# A JJ release update must not rerun downloads for unrelated tools.
+COPY --from=jj /trusted/bin/jj /opt/agent-tools/libexec/jj
+RUN /opt/agent-tools/libexec/jj --version
 
 FROM node:24-alpine3.22 AS pi-extensions
 COPY ./tools/pi-npm/package.json ./tools/pi-npm/package-lock.json /opt/pi-npm/

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
 WRAPPED_COMMAND_PROBE = Path(__file__).with_name("wrapped_command_probe.clj")
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
-from owned_images import jj_revision
+from owned_images import jj_release_args
 
 
 def run(*args: str, input: str | None = None) -> str:
@@ -50,8 +50,17 @@ def main() -> None:
     try:
         subprocess.run([
             'docker', 'build', '-f', 'tools/jj-proxy/Dockerfile',
-            '--build-arg', f'JJ_REVISION={jj_revision()}', '-t', jj_image, '.',
+            *[argument for name, value in jj_release_args().items()
+              for argument in ('--build-arg', f'{name}={value}')],
+            '-t', jj_image, '.',
         ], cwd=ROOT, check=True)
+        colocated = run(
+            'docker', 'run', '--rm', '--interactive', '--tmpfs', '/tmp:mode=1777',
+            '--entrypoint', '/trusted/bin/sh', jj_image,
+            input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
+        )
+        if not colocated.endswith('jj-colocated-ok\n'):
+            raise RuntimeError(f'unexpected colocated JJ workspace probe: {colocated!r}')
         with tempfile.TemporaryDirectory(prefix='sandbox-jj-binary-') as directory:
             container = run('docker', 'create', jj_image).strip()
             try:

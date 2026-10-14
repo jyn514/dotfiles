@@ -30,7 +30,7 @@ the accepted image's Pi revision and reject a different or unknown commit;
 run `codex-sandbox restart-all` to rebuild shared sandboxes after a host Pi update
 or when migrating from images without revision labels. Existing sessions keep
 their current worker until restarted.
-Host and proxy JJ use the exact revision in `config/mise.toml`.
+Host and proxy JJ use the release artifacts pinned in `config/mise.lock`.
 The guest copies the same JJ binary from the resolved proxy image; changing that image also invalidates the guest image cache.
 Run `codex-sandbox restart-all` to replace existing workers after updating the JJ pin or migrating from separate guest release pins.
 The launcher loads its extensions from this checkout;

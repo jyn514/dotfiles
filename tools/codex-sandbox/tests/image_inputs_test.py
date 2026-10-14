@@ -95,7 +95,7 @@ class ImageInputsTest(unittest.TestCase):
                     output.write('\n# changed authoritative input\n')
                 self.assertNotEqual(before, key(), name)
 
-    def test_host_pin_selects_proxy_revision_and_cache_identity(self):
+    def test_host_lock_selects_proxy_artifacts_and_cache_identity(self):
         owned = runpy.run_path(str(ROOT / 'tools/codex-sandbox/owned_images.py'))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -104,18 +104,28 @@ class ImageInputsTest(unittest.TestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 subprocess.run(['cp', str(ROOT / source), str(destination)], check=True)
                 subprocess.run(['cmp', str(ROOT / source), str(destination)], check=True)
-            config = root / 'config/mise.toml'
+            lock = root / 'config/mise.lock'
             with patch.dict(owned['declaration'].__globals__, ROOT=root):
                 targets = []
-                for revision in ('a' * 40, 'b' * 40):
-                    config.write_text('[tools]\n"cargo:https://github.com/jj-vcs/jj" = '
-                                      '{version = "rev:' + revision + '"}\n')
+                for version, checksum in (('1.2.3', 'a' * 64), ('1.2.4', 'b' * 64)):
+                    data = ['[[tools."aqua:jj-vcs/jj"]]', f'version = "{version}"']
+                    expected = {}
+                    for architecture, platform in (('AMD64', 'linux-x64'), ('ARM64', 'linux-arm64')):
+                        url = f'https://example.invalid/{version}/{platform}.tar.gz'
+                        data.extend([f'[tools."aqua:jj-vcs/jj"."platforms.{platform}"]',
+                                     f'url = "{url}"', f'checksum = "sha256:{checksum}"'])
+                        expected[f'JJ_{architecture}_URL'] = url
+                        expected[f'JJ_{architecture}_SHA256'] = checksum
+                    lock.write_text('\n'.join(data) + '\n')
                     target = owned['declaration'](['jj'])['target']['jj']
-                    self.assertEqual({'JJ_REVISION': revision}, target['args'])
+                    self.assertEqual(expected, target['args'])
                     targets.append(target)
                 self.assertNotEqual(targets[0]['tags'], targets[1]['tags'])
-                config.write_text('[tools]\n"cargo:https://github.com/jj-vcs/jj" = {version="latest"}\n')
-                with self.assertRaisesRegex(ValueError, 'exact source revision'):
+                lock.write_text(lock.read_text().replace('sha256:' + checksum, 'sha256:bad'))
+                with self.assertRaisesRegex(ValueError, 'SHA-256 checksum'):
+                    owned['declaration'](['jj'])
+                lock.write_text('\n'.join(data[:-3]) + '\n')
+                with self.assertRaisesRegex(ValueError, 'lock JJ for linux-arm64'):
                     owned['declaration'](['jj'])
 
     def test_zulip_protocol_is_captured_and_changes_image_identity(self):

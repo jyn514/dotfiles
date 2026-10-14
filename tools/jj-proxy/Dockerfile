@@ -20,18 +20,27 @@ RUN --mount=type=cache,target=/build/target \
     cargo build --release --locked \
     && cp target/release/jj-proxy /jj-proxy
 
-FROM chef AS jj
-ARG JJ_REVISION
-RUN test -n "${JJ_REVISION}"
-RUN apk add --no-cache git musl-dev openssl-dev openssl-libs-static perl make
-RUN git init /jj \
-    && git -C /jj fetch --depth=1 https://github.com/jj-vcs/jj.git "${JJ_REVISION}" \
-    && git -C /jj checkout --detach FETCH_HEAD
-WORKDIR /jj
-RUN cargo fetch --locked
-RUN --mount=type=cache,target=/jj/target \
-    cargo build --release --locked --bin jj \
-    && cp target/release/jj /jj-bin
+# Release acquisition has no dependency on Rust or local proxy sources.
+FROM alpine:3.22 AS jj
+RUN apk add --no-cache curl ca-certificates
+ARG TARGETARCH
+ARG JJ_AMD64_URL
+ARG JJ_AMD64_SHA256
+ARG JJ_ARM64_URL
+ARG JJ_ARM64_SHA256
+RUN case "${TARGETARCH}" in \
+        amd64) url="${JJ_AMD64_URL}"; checksum="${JJ_AMD64_SHA256}" ;; \
+        arm64) url="${JJ_ARM64_URL}"; checksum="${JJ_ARM64_SHA256}" ;; \
+        *) echo "Unsupported JJ architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && test -n "$url" && test -n "$checksum" \
+    && curl --fail --location --show-error --output /jj.tar.gz "$url" \
+    && printf '%s  /jj.tar.gz\n' "$checksum" | sha256sum -c - \
+    && mkdir /jj \
+    && tar -xzf /jj.tar.gz -C /jj \
+    && cp /jj/jj /jj-bin \
+    && /jj-bin --version \
+    && rm -rf /jj /jj.tar.gz
 RUN mkdir -p /image-root/src/work/.agents/sandbox /image-root/run/sandbox-proxy
 
 FROM build AS verified

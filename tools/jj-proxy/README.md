@@ -18,12 +18,15 @@ cargo build --locked --manifest-path tools/jj-proxy/Cargo.toml
 .agents/sandbox/jj-proxy-image
 ```
 
-The image owner reads the exact JJ revision from `config/mise.toml`, also used by host mise.
-The guest image copies the JJ binary from the resolved proxy image instead of downloading a separate release.
-Standalone Docker or Podman builds must supply `JJ_REVISION` from that pin as a build argument.
+The image owner reads JJ release URLs and SHA-256 checksums from `config/mise.lock`, also used by host mise.
+The proxy downloads the locked musl binary for amd64 or arm64 and verifies it before extraction.
+The guest image copies that binary from the resolved proxy image instead of downloading a separate release.
+Standalone Docker or Podman builds must supply the `JJ_AMD64_URL`, `JJ_AMD64_SHA256`, `JJ_ARM64_URL`, and `JJ_ARM64_SHA256` build arguments from that lock.
+Refresh the JJ lock with `mise lock aqua:jj-vcs/jj --bump --platform linux-x64,linux-arm64,macos-arm64` from `config/`.
+Release acquisition is independent of proxy source compilation; JJ updates also preserve the guest's unrelated tool-download layers.
 
 Sandbox startup uses `.agents/sandbox/jj-proxy-image`, which reuses a tag keyed
-by the Dockerfile's copied inputs and `config/mise.toml`. Local Cargo artifacts and test output do not
+by the Dockerfile's copied inputs and `config/mise.lock`. Local Cargo artifacts and test output do not
 change that key. Keep the builder's input list aligned with Dockerfile `COPY`
 instructions when adding image sources.
 

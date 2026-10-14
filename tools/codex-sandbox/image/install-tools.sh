@@ -86,5 +86,4 @@ docker --version
 docker buildx version
 bb --version
 gh --version
-jj --version
 typst --version

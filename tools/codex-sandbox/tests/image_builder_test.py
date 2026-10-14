@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -38,13 +39,14 @@ class ImageBuilderTest(unittest.TestCase):
             )
             (root / 'config').mkdir()
             (root / 'config/gitignore').write_text('ignored\n')
-            (root / 'config/mise.toml').write_text(
-                '[tools]\n"cargo:https://github.com/jj-vcs/jj" = {version="rev:' + 'a' * 40 + '"}\n')
+            subprocess.run(['cp', str(ROOT / 'config/mise.lock'), str(root / 'config/mise.lock')], check=True)
+            subprocess.run(['cmp', str(ROOT / 'config/mise.lock'), str(root / 'config/mise.lock')], check=True)
+            release = tomllib.loads((root / 'config/mise.lock').read_text())['tools']['aqua:jj-vcs/jj'][0]
+            expected_url = release['platforms.linux-x64']['url']
             def key():
                 result = subprocess.run([str(builder)], capture_output=True, text=True, check=True)
                 arguments = result.stdout.splitlines()
-                self.assertEqual('JJ_REVISION=' + 'a' * 40,
-                                 arguments[arguments.index('--build-arg') + 1])
+                self.assertIn('JJ_AMD64_URL=' + expected_url, arguments)
                 return arguments[arguments.index('--tag') + 1]
             first = key()
             artifact = root / 'tools/jj-proxy/target/debug/artifact'

@@ -547,7 +547,6 @@ class ImageResolverTest(unittest.TestCase):
         first = owned_images.resolve_agent(runtime, 501, 20, 'base')
         self.assertIn('JJ_IMAGE=' + self.jj_image.reference, builds[-1][0])
         self.assertIn('FROM ' + self.jj_image.reference + ' AS jj', builds[-1][1])
-        self.assertIn('COPY --from=jj /trusted/bin/jj /usr/local/bin/jj', builds[-1][1])
         self.assertEqual(first, owned_images.resolve_agent(runtime, 501, 20, 'base'))
         self.assertEqual(1, len(builds))
         replacement = Image('jj@sha256:' + '8' * 64, 'jj-new', 'jj-new-config', 'jj-rootfs')
@@ -580,7 +579,8 @@ class ImageResolverTest(unittest.TestCase):
                 guest = owned_images.resolve_agent(runtime, 501, 20, 'base')
                 target = owned_images.declaration(['jj'])['target']['jj']
                 self.assertEqual(target['tags'][0], builds[0][0])
-                self.assertEqual(['JJ_REVISION=' + owned_images.jj_revision()], builds[0][1])
+                self.assertEqual([f'{name}={value}' for name, value in owned_images.jj_release_args().items()],
+                                 builds[0][1])
                 proxy = images[target['tags'][0]].reference
                 self.assertIn('JJ_IMAGE=' + proxy, builds[1][1])
                 self.assertIn('FROM ' + proxy + ' AS jj', builds[1][2])
@@ -599,8 +599,8 @@ class ImageResolverTest(unittest.TestCase):
         with self.assertRaisesRegex(OSError, 'JJ build failed'):
             owned_images.resolve_agent(runtime, 501, 20, 'base')
         self.assertEqual(1, runtime.build.call_count)
-        self.assertIn('JJ_REVISION=' + owned_images.jj_revision(),
-                      runtime.build.call_args.kwargs['build_args'])
+        self.assertEqual([f'{name}={value}' for name, value in owned_images.jj_release_args().items()],
+                         runtime.build.call_args.kwargs['build_args'])
         self.jj_resolver.assert_not_called()
 
     def test_proxy_build_failure_stops_guest_composition(self):
