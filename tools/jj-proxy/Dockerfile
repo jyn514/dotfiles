@@ -61,7 +61,7 @@ RUN apk add --no-cache git \
     && ln -s busybox /trusted/bin/rm \
     && cp /usr/bin/git /trusted/bin/git
 
-FROM scratch
+FROM scratch AS proxy-runtime
 ENV PATH=/trusted/bin
 ENV RUST_BACKTRACE=1
 COPY --from=editor /trusted/bin /trusted/bin
