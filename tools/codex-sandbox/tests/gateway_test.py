@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import runpy
+import signal
 import socket
 import subprocess
 import sys
@@ -25,6 +26,35 @@ class GatewayTransportTest(unittest.TestCase):
         with patch.dict(os.environ, {"DOCKER_HOST": ""}), patch("sys.stderr", new_callable=io.StringIO):
             self.assertEqual(125, TRANSPORT["main"](["/nonexistent/docker", "info"]))
 
+    def run_transport(self, client, environment, *, master_failure=False, master_hangs=False,
+                      cancel_during_master_start=False):
+        popen = subprocess.Popen
+        children = []
+
+        def spawn(command, **kwargs):
+            if command[0] == '/usr/bin/ssh':
+                if master_failure or master_hangs:
+                    code = 'import time; time.sleep(300)' if master_hangs else 'raise SystemExit(255)'
+                    command = [sys.executable, '-c', code]
+                else:
+                    command = [sys.executable,
+                               str(Path(__file__).with_name('fixtures') / 'gateway-master.py'),
+                               *command[1:]]
+            child = popen(command, **kwargs)
+            children.append(child)
+            if cancel_during_master_start and len(children) == 1:
+                os.kill(os.getpid(), signal.SIGTERM)
+            return child
+
+        try:
+            with patch.dict(os.environ, environment), patch('subprocess.Popen', side_effect=spawn):
+                return TRANSPORT['main']([str(client)])
+        finally:
+            for child in children:
+                self.assertIsNotNone(child.poll(), 'transport must reap each owned process')
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(child.pid, 0)
+
     def test_docker_can_open_multiple_verified_ssh_connections(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -44,9 +74,92 @@ class GatewayTransportTest(unittest.TestCase):
             environment = {"DOCKER_HOST": "ssh://agentbuilder@relay:2222",
                            "AGENT_DOCKER_SSHKEY": str(home / "key"),
                            "AGENT_DOCKER_KNOWN_HOSTS": str(home / "known"),
-                           "EXPECTED_HOME": os.environ["HOME"], "DOCKER_CONTEXT": "infrastructure"}
-            with patch.dict(os.environ, environment):
-                self.assertEqual(0, TRANSPORT["main"]([str(client)]))
+                           "EXPECTED_HOME": os.environ["HOME"], "DOCKER_CONTEXT": "infrastructure",
+                           "MASTER_RECORD": str(home / 'master.json')}
+            self.assertEqual(0, self.run_transport(client, environment))
+            record = json.loads((home / 'master.json').read_text())
+            self.assertEqual('agentbuilder', record['settings']['user'])
+            self.assertEqual('2222', record['settings']['port'])
+            self.assertEqual('agent-docker', record['settings']['hostkeyalias'])
+            self.assertFalse(Path(record['settings']['controlpath']).exists())
+
+    def test_failed_master_does_not_start_the_client(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            marker = home / 'client-started'
+            client = home / 'client'
+            client.write_text(f'#!{sys.executable}\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n')
+            client.chmod(0o700)
+            environment = {'DOCKER_HOST': 'ssh://agentbuilder@relay:2222',
+                           'AGENT_DOCKER_SSHKEY': str(home / 'key'),
+                           'AGENT_DOCKER_KNOWN_HOSTS': str(home / 'known')}
+            self.assertEqual(255, self.run_transport(client, environment, master_failure=True))
+            self.assertFalse(marker.exists())
+
+    def test_failed_client_reaps_the_master_and_preserves_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            client = home / 'client'
+            client.write_text(f'#!{sys.executable}\nraise SystemExit(23)\n')
+            client.chmod(0o700)
+            environment = {'DOCKER_HOST': 'ssh://%61gentbuilder@another-relay:3333',
+                           'AGENT_DOCKER_SSHKEY': str(home / 'another-key'),
+                           'AGENT_DOCKER_KNOWN_HOSTS': str(home / 'another-known'),
+                           'MASTER_RECORD': str(home / 'master.json')}
+            self.assertEqual(23, self.run_transport(client, environment))
+            record = json.loads((home / 'master.json').read_text())
+            self.assertEqual('agentbuilder', record['settings']['user'])
+            self.assertEqual('another-relay', record['settings']['hostname'])
+            self.assertEqual('3333', record['settings']['port'])
+            self.assertEqual(str(home / 'another-key'), record['settings']['identityfile'])
+            self.assertFalse(Path(record['settings']['controlpath']).exists())
+
+    def test_master_readiness_timeout_reaps_the_process_without_starting_client(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            environment = {'DOCKER_HOST': 'ssh://agentbuilder@relay:2222',
+                           'AGENT_DOCKER_SSHKEY': str(home / 'key'),
+                           'AGENT_DOCKER_KNOWN_HOSTS': str(home / 'known')}
+            with patch.dict(TRANSPORT['main'].__globals__, DEADLINE_SECONDS=0.1), \
+                    patch('sys.stderr', new_callable=io.StringIO) as output:
+                self.assertEqual(255, self.run_transport(home / 'never-started', environment, master_hangs=True))
+            self.assertIn('deadline', output.getvalue())
+
+    def test_cancellation_forwards_the_signal_and_reaps_both_process_groups(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            marker = home / 'signal'
+            client = home / 'client'
+            client.write_text(
+                f'#!{sys.executable}\n'
+                'import os, signal, time\n'
+                'from pathlib import Path\n'
+                'def terminate(signum, _frame):\n'
+                f'    Path({str(marker)!r}).write_text(str(signum))\n'
+                '    raise SystemExit(0)\n'
+                'signal.signal(signal.SIGINT, terminate)\n'
+                'os.kill(os.getppid(), signal.SIGINT)\n'
+                'time.sleep(300)\n'
+            )
+            client.chmod(0o700)
+            environment = {'DOCKER_HOST': 'ssh://agentbuilder@relay:2222',
+                           'AGENT_DOCKER_SSHKEY': str(home / 'key'),
+                           'AGENT_DOCKER_KNOWN_HOSTS': str(home / 'known'),
+                           'MASTER_RECORD': str(home / 'master.json')}
+            self.assertEqual(128 + signal.SIGINT, self.run_transport(client, environment))
+            self.assertEqual(str(signal.SIGINT), marker.read_text())
+            record = json.loads((home / 'master.json').read_text())
+            self.assertFalse(Path(record['settings']['controlpath']).exists())
+
+    def test_cancellation_during_spawn_keeps_ownership_of_the_new_master(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            environment = {'DOCKER_HOST': 'ssh://agentbuilder@relay:2222',
+                           'AGENT_DOCKER_SSHKEY': str(home / 'key'),
+                           'AGENT_DOCKER_KNOWN_HOSTS': str(home / 'known'),
+                           'MASTER_RECORD': str(home / 'master.json')}
+            self.assertEqual(128 + signal.SIGTERM, self.run_transport(
+                home / 'never-started', environment, cancel_during_master_start=True))
 
     def test_proxy_command_preserves_half_close_and_response(self):
         with socket.socket() as server:

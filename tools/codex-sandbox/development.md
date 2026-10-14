@@ -7,6 +7,12 @@ The startup benchmark below uses the host's real configuration.
 
 ## Nested Docker acceptance
 
+The nested Docker wrapper owns one foreground SSH master per Docker invocation.
+Docker and Buildx reuse its private control socket instead of authenticating a new connection for each API request.
+The socket does not cross invocations or credential contexts.
+Normal completion, startup failure, and cancellation close the client and master process groups before removing their private configuration.
+The Docker client's terminal descriptors and requested cancellation signal remain unchanged.
+
 Provision the [build VM](../agent-docker/README.md#setup), then build the current
 agent image and gateway image with their installed image owners. Run this probe
 against the admitted infrastructure VM using its real configuration:

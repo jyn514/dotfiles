@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Docker through verified SSH with a retrying transport for each connection."""
+"""Run Docker through one command-owned, verified SSH connection."""
 from __future__ import annotations
 
 import os
@@ -12,7 +12,7 @@ import sys
 import tempfile
 import time
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 DEADLINE_SECONDS = float(os.environ.get("CODEX_SANDBOX_GATEWAY_RETRY_SECONDS", "15"))
 RETRY_SECONDS = 0.1
@@ -35,6 +35,23 @@ def connect_until(address: tuple[str, int], deadline: float) -> socket.socket:
         except OSError as error:
             last = error
             time.sleep(min(RETRY_SECONDS, max(0, deadline - time.monotonic())))
+
+
+def stop_process_group(child: subprocess.Popen | None, signum: int = signal.SIGTERM) -> None:
+    if child is None:
+        return
+    try:
+        os.killpg(child.pid, signum)
+    except ProcessLookupError:
+        pass
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        child.wait()
 
 
 def main(argv: list[str]) -> int:
@@ -70,10 +87,13 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="gateway-ssh-") as directory:
         home = Path(directory)
         config = home / "config"
+        control = home / "control"
         config.write_text(
             "Host *\n  BatchMode yes\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n"
             "  HostKeyAlias agent-docker\n  ConnectTimeout 20\n"
             "  ServerAliveInterval 5\n  ServerAliveCountMax 3\n"
+            "  ControlMaster no\n  ControlPersist no\n"
+            f"  ControlPath {json.dumps(str(control))}\n"
             f"  IdentityFile {json.dumps(os.environ['AGENT_DOCKER_SSHKEY'])}\n"
             f"  UserKnownHostsFile {json.dumps(os.environ['AGENT_DOCKER_KNOWN_HOSTS'])}\n"
             f"  ProxyCommand {Path(__file__).resolve()} --connect %h %p\n",
@@ -89,23 +109,56 @@ def main(argv: list[str]) -> int:
         environment.pop("DOCKER_CONTEXT", None)
         environment.pop("DOCKER_TLS_VERIFY", None)
         environment.pop("DOCKER_CERT_PATH", None)
-        child = subprocess.Popen(argv, env=environment, start_new_session=True)
+        master = None
+        child = None
         previous = {}
+        cancellation = None
         def terminate(signum, _frame):
-            os.killpg(child.pid, signum)
-            try:
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
-            raise SystemExit(128 + signum)
+            nonlocal cancellation
+            # Record rather than raise: Popen must finish publishing ownership
+            # before cleanup can terminate a just-created process group.
+            cancellation = signum
         for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             previous[signum] = signal.signal(signum, terminate)
         try:
-            return child.wait()
+            # Foreground ownership avoids a detached ControlPersist process. The
+            # private socket cannot reuse another invocation's credentials/host.
+            master = subprocess.Popen([
+                '/usr/bin/ssh', '-F', str(config), '-M', '-N', '-T',
+                '-l', unquote(parsed.username), '-p', str(parsed.port), '--', parsed.hostname,
+            ], env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                start_new_session=True)
+            deadline = time.monotonic() + DEADLINE_SECONDS
+            while not control.exists():
+                if cancellation is not None:
+                    return 128 + cancellation
+                status = master.poll()
+                if status is not None:
+                    return status or 255
+                if time.monotonic() >= deadline:
+                    print('docker: verified SSH master did not become ready before the gateway deadline',
+                          file=sys.stderr)
+                    return 255
+                time.sleep(0.01)
+            if cancellation is not None:
+                return 128 + cancellation
+            child = subprocess.Popen(argv, env=environment, start_new_session=True)
+            while child.poll() is None:
+                if cancellation is not None:
+                    return 128 + cancellation
+                time.sleep(0.01)
+            return 128 + cancellation if cancellation is not None else child.returncode
         finally:
-            for signum, handler in previous.items():
-                signal.signal(signum, handler)
+            for signum in previous:
+                signal.signal(signum, signal.SIG_IGN)
+            try:
+                stop_process_group(child, cancellation or signal.SIGTERM)
+            finally:
+                try:
+                    stop_process_group(master)
+                finally:
+                    for signum, handler in previous.items():
+                        signal.signal(signum, handler)
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

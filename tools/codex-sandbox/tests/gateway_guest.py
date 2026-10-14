@@ -18,6 +18,9 @@ ssh = ['ssh', '-i', os.environ['AGENT_DOCKER_SSHKEY'], '-p', str(host.port),
                 '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                 f'{host.username}@{host.hostname}']
 subprocess.run([*ssh, 'true'], check=True, timeout=10)
+subprocess.run(['/libexec/sandbox-wrappers/gateway-transport', 'python3',
+                str(Path(__file__).with_name('fixtures') / 'gateway-multiplex-client.py')],
+               check=True, timeout=30)
 info = subprocess.check_output(['docker', 'info', '--format', '{{json .SecurityOptions}}'], text=True)
 assert 'name=rootless' in info, info
 tag = 'nested-gateway-probe:' + uuid.uuid4().hex
