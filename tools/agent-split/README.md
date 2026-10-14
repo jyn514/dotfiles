@@ -28,11 +28,26 @@ jj diff --git -r @
 
 Hunk line counts are recalculated automatically, so removing lines from a hunk does not require updating its counts. Context must still apply, and selected changes must belong to the revision.
 
-Containment identifies removed lines by base occurrence and keeps additions associated with their edit region, preserving repeats and terminal-newline state. Pure insertions accept any ordered subsequence at the same base anchor, including non-prefix selections; replacements retain ordinal correspondence. It does not compare sets of line strings. Separated edits remain selectable when earlier unselected edits change line counts; adjacent one-for-one replacements can also be selected independently. Partial unequal-length replacements within a single contiguous region can be rejected conservatively because their replacement correspondence is ambiguous. This is an implementation limitation, not a declaration that every rejected subset is invalid; selecting the complete region avoids it.
+Containment identifies removed lines by base occurrence and associates additions with their edit region, preserving repeats and terminal-newline state.
+Pure insertions accept any ordered subsequence at the same base anchor, including non-prefix selections; replacements retain ordinal correspondence.
+It does not compare sets of line strings.
 
-JJ-generated regular-file/symlink conversion patches currently fail Git's dry-run apply with a mode mismatch, before history changes. Whether to support an alternative conversion encoding remains unresolved; ordinary executable-bit changes are not file-kind conversions. Whole-blob binary selections require equality of canonical Git binary sections from the original and selected trees, ignoring only trailing section-framing newlines. The tool does not parse binary payloads or authorize their content by file mode alone; partial binary selections are not supported. Canonical text diffs must decode losslessly as UTF-8; otherwise preflight rejects before mutation instead of allowing malformed bytes to alias a legitimate U+FFFD character.
+Separated edits remain selectable when earlier unselected edits change line counts.
+Adjacent one-for-one replacements can also be selected independently.
+Partial unequal-length replacements within one contiguous region can be rejected conservatively when replacement correspondence is ambiguous.
+This is an implementation limitation, not a declaration that every rejected subset is invalid; selecting the complete region avoids it.
 
-Symlink materialization uses documented `jj git root` and `jj log -T commit_id`, then reads the target verbatim with `git cat-file blob`. `jj file show` excludes symlinks on the tested JJ version, so it is not a target-byte API. This repair was verified with native JJ 0.45.1 and Git 2.49.1 in colocated Git-backend repositories; non-Git backends, older JJ versions lacking these commands, and protected proxy access to Git blobs are not established by the native tests.
+JJ-generated regular-file/symlink conversion patches currently fail Git's dry-run apply with a mode mismatch before history changes.
+Whether to support an alternative conversion encoding remains unresolved; ordinary executable-bit changes are not file-kind conversions.
+Whole-blob binary selections require equality of canonical Git binary sections from the original and selected trees, ignoring only trailing section-framing newlines.
+The tool does not parse binary payloads or authorize their content by file mode alone; partial binary selections are unsupported.
+Canonical text diffs must decode losslessly as UTF-8.
+Otherwise, preflight rejects before mutation rather than allowing malformed bytes to alias a legitimate U+FFFD character.
+
+Symlink materialization uses documented `jj git root` and `jj log -T commit_id`, then reads the target verbatim with `git cat-file blob`.
+`jj file show` excludes symlinks on the tested JJ version, so it is not a target-byte API.
+This repair was verified with native JJ 0.45.1 and Git 2.49.1 in colocated Git-backend repositories.
+Non-Git backends, older JJ versions lacking these commands, and protected proxy access to Git blobs are not established by the native tests.
 
 ## Common commands
 

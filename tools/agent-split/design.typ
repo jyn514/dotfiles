@@ -159,7 +159,13 @@ A production tool should add validation before and after `git apply`.
 #requirement[The production tool must validate parsed patch paths before invoking `git apply`;
 it must not rely on `git apply` or shell path normalization as the only traversal check.]
 
-#requirement[The production tool must compare `diff(left, patched-left)` with the original `diff(left, right)` and reject any selected change that was not present in the revision being split.]
+#requirement[The production tool must compare `diff(left, patched-left)` with the original `diff(left, right)`
+and reject any selected change that was not present in the revision being split.
+Containment preserves path, line occurrence, multiplicity, replacement pairing, and final-newline state.
+Matching line text alone does not authorize another occurrence or reversed replacement pair.
+Modes and symlink targets retain their native representation; binary changes require canonical equality.
+Lossy decoding cannot establish containment.
+Unsupported canonical forms fail before mutation.]
 
 #requirement[The production tool must replace the right tree atomically enough that a failed copy cannot be mistaken for a successful editor run.
 If the platform cannot make the replacement atomic, the tool must exit non-zero on any copy failure.]
@@ -194,8 +200,13 @@ bb agent-split target/jj-split/selected.patch -m 'Extract focused change' @
 #requirement[The wrapper preflights the patch before invoking `jj split`: it parses patch paths, rejects absolute paths and parent-directory traversal, materializes the revision's left tree for the touched paths, dry-runs and applies the patch there, and checks that the selected diff is contained in the original `jj diff --git -r <revision>` output.
 A patch that does not apply cleanly, or whose selected diff is not contained in the original `diff(left, right)`, never reaches Jujutsu.]
 
-#requirement[The wrapper snapshots the working copy once before preflight, then passes `--ignore-working-copy` to revision-only Jujutsu queries during preflight and verification.
-The mutating `jj split` command still snapshots normally, so splitting the working-copy commit uses current workspace bytes while non-working revisions retain their stored trees, without making every metadata or tree query rescan unrelated files.]
+#requirement[The wrapper snapshots the working copy once before preflight.
+Native revision-only preflight and verification queries pass `--ignore-working-copy`.
+Protected queries use the proxy's inspection request mode without that forbidden caller option;
+the trusted executor injects its own working-copy-ignore flag after validation.
+Inspection mode remains local to each query; snapshots, structured splits, and descriptions retain mutation authority.
+The mutating `jj split` command still snapshots normally, so the working-copy revision uses current workspace bytes.
+Stored revisions retain their trees without rescanning unrelated files for every metadata or tree query.]
 
 #requirement[Before invoking `jj split`, the agent and wrapper must ensure no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.
 `target/jj-split/` must be ignored, and any patch or helper path inside the repository must be contained there.
