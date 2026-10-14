@@ -305,3 +305,31 @@
     (is (str/includes? (:err result) "proxy verification launch failed"))
     (is (str/includes? (:err result) "automatic recovery was unavailable"))
     (is (empty? @calls))))
+
+(deftest revision-read-dispatch-keeps-inspection-scoped-to-proxy-queries
+  (let [calls (atom [])
+        run-command (ns-resolve 'scripts.jj-split-patch 'run)
+        read-command (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
+        backend (ns-resolve 'scripts.jj-split-patch '*read-backend*)
+        snapshot (ns-resolve 'scripts.jj-split-patch 'snapshot-workspace!)
+        describe (ns-resolve 'scripts.jj-split-patch 'describe-revision!)]
+    (with-redefs-fn {run-command (fn [& args] (swap! calls conj args) {:out ""})}
+      (fn []
+        (doseq [route ["native" "proxy"]]
+          (with-bindings {backend route}
+            (read-command "preflight" "log" "-r" "@")
+            (read-command "preflight" {:out "tree" :extra-env {"MARKER" "kept"}}
+                          "file" "show" "-r" "@-" "note.txt")))
+        (with-bindings {backend "proxy"}
+          (snapshot)
+          (describe "remaining" "message"))))
+    (is (= '("preflight" "jj" "log" "--ignore-working-copy" "-r" "@") (nth @calls 0)))
+    (is (= '("preflight" {:out "tree" :extra-env {"MARKER" "kept"}}
+                        "jj" "file" "--ignore-working-copy" "show" "-r" "@-" "note.txt")
+           (nth @calls 1)))
+    (is (= '("preflight" {:extra-env {"JJ_PROXY_INSPECT" "1"}}
+                        "jj" "log" "-r" "@") (nth @calls 2)))
+    (is (= '("preflight" {:out "tree" :extra-env {"MARKER" "kept" "JJ_PROXY_INSPECT" "1"}}
+                        "jj" "file" "show" "-r" "@-" "note.txt") (nth @calls 3)))
+    (is (= '("snapshot safety" "jj" "status" "--no-pager") (nth @calls 4)))
+    (is (= '("verify" "jj" "describe" "-r" "remaining" "-m" "message") (nth @calls 5)))))

@@ -28,6 +28,12 @@ jj diff --git -r @
 
 Hunk line counts are recalculated automatically, so removing lines from a hunk does not require updating its counts. Context must still apply, and selected changes must belong to the revision.
 
+Containment identifies removed lines by base occurrence and keeps additions associated with their edit region, preserving repeats and terminal-newline state. Pure insertions accept any ordered subsequence at the same base anchor, including non-prefix selections; replacements retain ordinal correspondence. It does not compare sets of line strings. Separated edits remain selectable when earlier unselected edits change line counts; adjacent one-for-one replacements can also be selected independently. Partial unequal-length replacements within a single contiguous region can be rejected conservatively because their replacement correspondence is ambiguous. This is an implementation limitation, not a declaration that every rejected subset is invalid; selecting the complete region avoids it.
+
+JJ-generated regular-file/symlink conversion patches currently fail Git's dry-run apply with a mode mismatch, before history changes. Whether to support an alternative conversion encoding remains unresolved; ordinary executable-bit changes are not file-kind conversions. Whole-blob binary selections require equality of canonical Git binary sections from the original and selected trees, ignoring only trailing section-framing newlines. The tool does not parse binary payloads or authorize their content by file mode alone; partial binary selections are not supported. Canonical text diffs must decode losslessly as UTF-8; otherwise preflight rejects before mutation instead of allowing malformed bytes to alias a legitimate U+FFFD character.
+
+Symlink materialization uses documented `jj git root` and `jj log -T commit_id`, then reads the target verbatim with `git cat-file blob`. `jj file show` excludes symlinks on the tested JJ version, so it is not a target-byte API. This repair was verified with native JJ 0.45.1 and Git 2.49.1 in colocated Git-backend repositories; non-Git backends, older JJ versions lacking these commands, and protected proxy access to Git blobs are not established by the native tests.
+
 ## Common commands
 
 ```sh
@@ -62,7 +68,7 @@ Run tests or lint appropriate to each newly separated change.
 
 - The patch must contain only changes already present in `jj diff --git -r <revision>`. Never use the tool to introduce new content.
 - Keep patches and helper artifacts outside visible source or under ignored `target/jj-split/`; `jj split` snapshots the working copy before invoking its editor.
-- The wrapper takes one initial snapshot, then runs revision-only preflight and verification queries with `--ignore-working-copy`; the mutating `jj split` retains normal snapshot behavior.
+- The wrapper resolves its route once and takes one initial snapshot. Native revision-only preflight and verification queries use `--ignore-working-copy`; protected proxy queries instead use child-scoped `JJ_PROXY_INSPECT=1` without that forbidden caller option. The trusted proxy executor injects its own working-copy-ignore flag after validation. Snapshot, structured split, and description requests remain mutations; inspection mode is not globally exported.
 - Always provide `-m`; interactive patch and description editors are outside this workflow.
 - Do not continue after a failure. Exit `1` means preflight failed before mutation, `2` means `jj split` failed, and `3` means post-split verification failed.
 - Once the target resolves, preflight errors include the requested revision and the commit and parent IDs resolved before the checks.
@@ -80,11 +86,11 @@ Run tests or lint appropriate to each newly separated change.
 From the repository root:
 
 ```sh
-bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
-python3 -m unittest discover -s tools/agent-split/tests -p 'bb_wrapper_test.py'
+dev/test-environment bb -cp tools/agent-split/src tools/agent-split/tests/run.clj
+dev/test-environment python3 -m unittest discover -s tools/agent-split/tests -p 'bb_wrapper_test.py'
 ```
 
-The Babashka suite includes unit and real-repository integration coverage and therefore requires `bb`, `git`, and `jj`. The Python suite checks wrapper dispatch and executable resolution.
+The Babashka suite includes unit and real-repository integration coverage and therefore requires `bb`, `git`, and `jj`. Its native boundary tests independently read complete Git trees and blob bytes, compare complete filesystem bytes/kinds/modes, and check commit/operation identity on rejection. They cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection. Repositories are disposable and outside the source repository; test artifacts remain ignored. `tests/run.clj` registers these tests and is invoked by `dev/test`. The Python suite checks wrapper dispatch and executable resolution.
 
 ## Design and reference
 

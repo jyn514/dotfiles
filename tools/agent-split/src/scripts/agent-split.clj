@@ -16,10 +16,14 @@
 
 (def temp-root (ns-resolve 'scripts.temp 'temp-root))
 
+(load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
+                         "containment.clj")))
+
 (defn ^:dynamic *exit!* [status]
   (System/exit status))
 
 (def ^:dynamic *preflight-revision* nil)
+(def ^:dynamic *read-backend* "native")
 
 (defn- failure-text [step message]
   (str step ": " message
@@ -60,9 +64,15 @@
   [step & args]
   (let [opts (when (map? (first args)) (first args))
         [subcommand & subcommand-args] (if opts (rest args) args)]
-    (if opts
-      (apply run step opts "jj" subcommand "--ignore-working-copy" subcommand-args)
-      (apply run step "jj" subcommand "--ignore-working-copy" subcommand-args))))
+    (if (= "proxy" *read-backend*)
+      ;; The proxy forbids caller security-sensitive flags in both modes; its
+      ;; trusted inspect executor adds --ignore-working-copy after validation.
+      (apply run step (update (or opts {}) :extra-env
+                              #(assoc (or % {}) "JJ_PROXY_INSPECT" "1"))
+             "jj" subcommand subcommand-args)
+      (if opts
+        (apply run step opts "jj" subcommand "--ignore-working-copy" subcommand-args)
+        (apply run step "jj" subcommand "--ignore-working-copy" subcommand-args)))))
 
 (defn- snapshot-workspace! []
   (run "snapshot safety" "jj" "status" "--no-pager")
@@ -234,6 +244,16 @@
   (when executable?
     (.setExecutable (fs/file target) true false)))
 
+(defn- symlink-target [revision path]
+  ;; JJ file show intentionally excludes symlinks. Use JJ's backend location
+  ;; and immutable commit ID, then read the Git blob verbatim (no trimming).
+  (let [git-dir (str/trim-newline (:out (run-jj-read "preflight" "git" "root")))
+        commit (str/trim-newline
+                (:out (run-jj-read "preflight" "log" "-r" revision
+                                  "--no-graph" "-T" "commit_id")))]
+    (:out (run "preflight" "git" (str "--git-dir=" git-dir)
+               "cat-file" "blob" (str commit ":" path)))))
+
 (defn- materialize-patch-paths! [revision paths target]
   (let [entries (tree-entry-index revision)]
     (doseq [path paths
@@ -244,31 +264,8 @@
         "file" (write-file-from-revision! revision path target-path executable?)
         "symlink" (do
                     (fs/create-dirs (fs/parent target-path))
-                    (fs/create-sym-link target-path
-                                        (str/trim-newline
-                                         (:out (run-jj-read "preflight" "file" "show"
-                                                            "-r" revision path)))))
+                    (fs/create-sym-link target-path (symlink-target revision path)))
         (fail! "preflight" (str "unsupported tree entry for " path ": " type))))))
-
-(defn- deleted-symlink-paths [patch-text]
-  (loop [[line & more] (str/split-lines patch-text)
-         file nil
-         paths []]
-    (cond
-      (nil? line) paths
-      (str/starts-with? line "diff --git ")
-      (recur more (some-> line split-diff-paths second) paths)
-      (and file (= line "deleted file mode 120000"))
-      (recur more file (conj paths file))
-      :else
-      (recur more file paths))))
-
-(defn- without-deleted-symlink-sections [patch-text]
-  (->> (str/split patch-text #"(?m)(?=^diff --git )")
-       (remove (fn [section]
-                 (some #{"deleted file mode 120000"}
-                       (str/split-lines section))))
-       (apply str)))
 
 (defn- apply-patch! [tree patch]
   ;; Hand-selected hunks may retain old counts; application and containment still validate content.
@@ -286,7 +283,7 @@
 
 (defn- diff-output [left right]
   (let [result (process/shell {:dir (git-tool-dir)
-                               :out :string
+                               :out :bytes
                                :err :string
                                :shutdown nil
                                :continue true}
@@ -294,7 +291,8 @@
                               "--src-prefix=a/" "--dst-prefix=b/" (str left) (str right))]
     (when-not (#{0 1} (:exit result))
       (fail! "preflight" (str "could not diff temporary trees\n" (:err result))))
-    (:out result)))
+    (or ((ns-resolve 'scripts.containment 'decode-utf8) (:out result))
+        (fail! "preflight" "canonical diff contains non-UTF-8 text; selection is unsupported"))))
 
 (defn- diff-path-prefixes [path]
   (let [absolute (normalize-abs path)
@@ -316,103 +314,38 @@
 (defn- current-file [line]
   (some-> (split-diff-paths line) second))
 
-(defn- diff-change-index [diff-text]
-  (loop [[line & more] (str/split-lines diff-text)
-         file nil
-         in-hunk? false
-         index {}]
-    (cond
-      (nil? line) index
-
-      (str/starts-with? line "diff --git ")
-      (recur more (current-file line) false (update index (current-file line) (fnil identity #{})))
-
-      (nil? file)
-      (recur more file in-hunk? index)
-
-      (str/starts-with? line "@@ ")
-      (recur more file true index)
-
-      (or (str/starts-with? line "old mode ")
-          (str/starts-with? line "new mode ")
-          (str/starts-with? line "deleted file mode ")
-          (str/starts-with? line "new file mode "))
-      (recur more file in-hunk? (update index file (fnil conj #{}) line))
-
-      (and in-hunk?
-           (or (str/starts-with? line "+")
-               (str/starts-with? line "-")))
-      (recur more file in-hunk? (update index file (fnil conj #{}) line))
-
-      :else
-      (recur more file in-hunk? index))))
+(def diff-change-index (ns-resolve 'scripts.containment 'change-index))
 
 (defn- validate-contained! [original selected]
   (doseq [[file selected-changes] selected]
-    (let [original-changes (get original file #{})]
-      (when (empty? selected-changes)
+    (let [original-changes (get original file)]
+      (when-not (or (seq (:modes selected-changes)) (seq (:edits selected-changes))
+                    (seq (:binary selected-changes)))
         (fail! "preflight" (str "selected diff for " file " is empty or malformed")))
-      (when-not (set/subset? selected-changes original-changes)
+      (when-not ((ns-resolve 'scripts.containment 'contained?) original-changes selected-changes)
         (fail! "preflight"
                (str "selected change for " file " is not contained in original diff"))))))
 
-(defn- revision-change-index [revision paths helper-root prefix]
-  (let [left-revision (format "(%s)-" revision)
-        left-entries (tree-entry-index left-revision)
-        right-entries (tree-entry-index revision)
-        symlink-paths (->> paths
-                           (filter #(or (= "symlink" (get-in left-entries [% :type]))
-                                        (= "symlink" (get-in right-entries [% :type]))))
-                           set)
-        regular-paths (remove symlink-paths paths)
-        left (fs/file helper-root (str prefix "-left"))
-        right (fs/file helper-root (str prefix "-right"))]
-    (fs/create-dirs left)
-    (fs/create-dirs right)
-    (materialize-patch-paths! left-revision regular-paths left)
-    (materialize-patch-paths! revision regular-paths right)
-    (merge-with set/union
-                (diff-change-index
-                 (normalize-diff-paths (diff-output left right) left right))
-                (select-keys
-                 (diff-change-index
-                  (:out (run-jj-read "preflight" "diff" "--git" "-r" revision)))
-                 symlink-paths))))
-
 (defn- preflight! [patch-text revision helper-root]
   (validate-patch-paths! patch-text)
-  (let [patch-paths (patch-file-paths patch-text)
-        original-patch (:out (run-jj-read "preflight" "diff" "--git" "-r" revision))
+  (let [original-patch (:out (run-jj-read "preflight" "diff" "--git" "-r" revision))
         original-paths (patch-file-paths original-patch)
         left-revision (format "(%s)-" revision)
         left (fs/file helper-root "left")
+        right (fs/file helper-root "right")
         selected (fs/file helper-root "selected")
-        remaining-patch (fs/file helper-root "remaining.patch")
-        original (revision-change-index revision original-paths helper-root "original")
-        deleted-symlinks (deleted-symlink-paths patch-text)
-        materialized-paths (remove (set deleted-symlinks) original-paths)]
-    (validate-contained! original
-                         (select-keys (diff-change-index patch-text)
-                                      deleted-symlinks))
-    (fs/create-dirs left)
-    (fs/create-dirs selected)
-    (materialize-patch-paths! left-revision materialized-paths left)
-    (materialize-patch-paths! left-revision materialized-paths selected)
-    (let [remaining-text (without-deleted-symlink-sections patch-text)]
-      (when-not (str/blank? remaining-text)
-        (spit (str remaining-patch) remaining-text)
-        (apply-patch! selected remaining-patch)))
-    (let [selected-index (merge-with
-                          set/union
-                          (diff-change-index
-                           (normalize-diff-paths (diff-output left selected)
-                                                 left
-                                                 selected))
-                          (select-keys (diff-change-index patch-text)
-                                       deleted-symlinks))]
-      (validate-contained! original selected-index)
-      {:original-paths original-paths
-       :expected-selected-tree selected})))
+        remaining-patch (fs/file helper-root "remaining.patch")]
+    (doseq [tree [left right selected]] (fs/create-dirs tree))
+    (materialize-patch-paths! left-revision original-paths left)
+    (materialize-patch-paths! revision original-paths right)
+    (materialize-patch-paths! left-revision original-paths selected)
+    (spit (str remaining-patch) patch-text)
+    (apply-patch! selected remaining-patch)
+    (validate-contained!
+     (diff-change-index (normalize-diff-paths (diff-output left right) left right))
+     (diff-change-index (normalize-diff-paths (diff-output left selected) left selected)))
+    {:original-paths original-paths
+     :expected-selected-tree selected}))
 
 (defn- script-dir []
   (-> (if (and (not-empty *file*)
@@ -678,8 +611,11 @@
         patch-text (if (fs/regular-file? patch)
                      (slurp (str patch))
                      (fail! "preflight" (str "patch file does not exist: " patch)))
-        route (split-route)
-        ;; Establish one authoritative preflight snapshot. Revision-only reads reuse it.
+        route (split-route)]
+    ;; Resolve once, including workspace-root queries. Inspection mode is scoped
+    ;; to each read child, not snapshots, structured splits or descriptions.
+    (binding [*read-backend* (:backend route)]
+      (let [;; Establish one authoritative preflight snapshot.
         _ (snapshot-workspace!)
         repo-root (or (:workspace route)
                       (str/trim-newline (:out (run-jj-read "snapshot safety" "workspace" "root"))))
@@ -730,7 +666,7 @@
                 (println (str "selected revision: " (:selected split-revisions)))
                 (println (str "remaining revision: " (:remaining split-revisions))))))))
       (finally
-        (fs/delete-tree helper-root)))))
+        (fs/delete-tree helper-root)))))))
 
 (defn main [args]
   ;; Defer process exit until execute-main's artifact cleanup has run.

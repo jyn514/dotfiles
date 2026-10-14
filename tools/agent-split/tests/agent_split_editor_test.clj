@@ -324,3 +324,50 @@
         (assert-success result)
         (is (fs/sym-link? (fs/file right "link")))
         (is (= "new-target" (str (fs/read-link (fs/file right "link")))))))))
+
+(deftest split-editor-rejects-invented-occurrences-before-publishing-right
+  ;; The wrapper rejects these before launching an editor; exercise the primitive
+  ;; independently so removing only its enforcement cannot hide behind preflight.
+  (doseq [[base original body]
+          [["first\nold\nmiddle\nold\nlast\n" "first\nnew\nmiddle\nold\nlast\n"
+            "@@ -3,3 +3,3 @@\n middle\n-old\n+new\n last\n"]
+           ["start\nend\n" "start\nnew\nend\n"
+            "@@ -1,2 +1,4 @@\n start\n+new\n+new\n end\n"]
+           ["start\nalpha\nseparator\nbeta\nend\n" "start\nALPHA\nseparator\nBETA\nend\n"
+            "@@ -1,5 +1,5 @@\n start\n-alpha\n+BETA\n separator\n beta\n end\n"]
+           ["before" "after"
+            "@@ -1 +1 @@\n-before\n\\ No newline at end of file\n+after\n"]]]
+    (with-trees*
+      (fn [{:keys [left right] :as trees}]
+        (write-file! (fs/file left "note.txt") base)
+        (write-file! (fs/file right "note.txt") original)
+        (write-file! (fs/file right "keep.sh") "#!/bin/sh\n")
+        (executable! (fs/file right "keep.sh"))
+        (fs/create-sym-link (fs/file right "link") "dangling")
+        (assert-failure
+         (run-editor trees (str "diff --git a/note.txt b/note.txt\n"
+                                "--- a/note.txt\n+++ b/note.txt\n" body))
+         #"not contained")
+        (is (= base (slurp (fs/file left "note.txt"))))
+        (is (= original (slurp (fs/file right "note.txt"))))
+        (is (and (fs/regular-file? (fs/file right "keep.sh"))
+                 (= "#!/bin/sh\n" (slurp (fs/file right "keep.sh")))))
+        (is (fs/executable? (fs/file right "keep.sh")))
+        (is (and (fs/sym-link? (fs/file right "link"))
+                 (= "dangling" (str (fs/read-link (fs/file right "link"))))))))))
+
+(deftest split-editor-rejects-lossy-byte-alias-before-publishing
+  (with-trees*
+    (fn [{:keys [left right] :as trees}]
+      (write-file! (fs/file left "note.txt") "old\n")
+      (java.nio.file.Files/write (fs/path right "note.txt")
+                                (byte-array [-1 110 101 119 10])
+                                (make-array java.nio.file.OpenOption 0))
+      (assert-failure
+       (run-editor trees (str "diff --git a/note.txt b/note.txt\n"
+                              "--- a/note.txt\n+++ b/note.txt\n"
+                              "@@ -1 +1 @@\n-old\n+�new\n"))
+       #"canonical diff contains non-UTF-8 text")
+      (is (= [-1 110 101 119 10]
+             (vec (java.nio.file.Files/readAllBytes (fs/path right "note.txt")))))
+      (is (= "old\n" (slurp (fs/file left "note.txt")))))))

@@ -530,8 +530,15 @@
                        "TMPDIR" (str helper-temp) "CALLER_MARKER" "preserved")
             message "opaque --message\nsecond paragraph"
             result (run-mounted repo env script (str patch) "-m" message "@")
-            commands (map #(json/parse-string %) (str/split-lines (slurp (str calls))))]
+            requests (map #(json/parse-string % true) (str/split-lines (slurp (str calls))))
+            commands (map :args requests)]
         (is (= 2 (:exit result)) (:err result))
+        (is (every? #(not-any? (fn [arg] (str/starts-with? arg "--ignore-working-copy")) (:args %))
+                    requests))
+        (is (every? #(= (:inspect %) (not (#{"status" "--agent-split"} (first (:args %)))))
+                    requests)
+            "only revision queries carry inspection mode")
+        (is (= "status" (ffirst commands)) "one normal initial snapshot precedes queries")
         (is (= ["--agent-split" (str patch) message "@"] (last commands)))
         (is (not-any? #(= "op" (first %)) commands))
         (is (= 1 (count (filter #(= "--agent-split" (first %)) commands))))

@@ -2,7 +2,6 @@
 (ns jj-agent-split-editor
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
-            [clojure.set :as set]
             [clojure.string :as str]))
 
 (defn- script-file []
@@ -14,6 +13,9 @@
                          "temp.clj")))
 
 (def temp-root (ns-resolve 'scripts.temp 'temp-root))
+
+(load-file (str (fs/file (fs/parent (fs/canonicalize (script-file)))
+                         "containment.clj")))
 
 (defn- fail! [message]
   (binding [*out* *err*]
@@ -46,14 +48,15 @@
 
 (defn- diff-output [left right]
   (let [result (apply process/shell
-                      {:out :string
+                      {:out :bytes
                        :err :string
                        :shutdown nil
                        :continue true}
                       (diff-command left right))]
     (when-not (#{0 1} (:exit result))
       (fail! (str "could not diff trees\n" (:err result))))
-    (:out result)))
+    (or ((ns-resolve 'scripts.containment 'decode-utf8) (:out result))
+        (fail! "canonical diff contains non-UTF-8 text; selection is unsupported"))))
 
 (defn- split-diff-paths [line]
   (when-let [[_ left right] (re-matches #"diff --git a/(.+) b/(.+)" line)]
@@ -117,51 +120,17 @@
         (str/replace left-prefix "")
         (str/replace right-prefix ""))))
 
-(defn- current-file [line]
-  (some-> (split-diff-paths line) second))
-
-(defn- diff-change-index [diff-text]
-  (loop [[line & more] (str/split-lines diff-text)
-         file nil
-         in-hunk? false
-         index {}]
-    (cond
-      (nil? line) index
-
-      (str/starts-with? line "diff --git ")
-      (recur more (current-file line) false (update index (current-file line) (fnil identity #{})))
-
-      (nil? file)
-      (recur more file in-hunk? index)
-
-      (str/starts-with? line "@@ ")
-      (recur more file true index)
-
-      (or (str/starts-with? line "old mode ")
-          (str/starts-with? line "new mode ")
-          (str/starts-with? line "deleted file mode ")
-          (str/starts-with? line "new file mode "))
-      (recur more file in-hunk? (update index file (fnil conj #{}) line))
-
-      (and in-hunk?
-           (or (str/starts-with? line "+")
-               (str/starts-with? line "-")))
-      (recur more file in-hunk? (update index file (fnil conj #{}) line))
-
-      :else
-      (recur more file in-hunk? index))))
+(def diff-change-index (ns-resolve 'scripts.containment 'change-index))
 
 (defn- validate-index-contained! [original selected]
   (doseq [[file selected-changes] selected]
-    (let [original-changes (get original file #{})]
-      (when (empty? selected-changes)
+    (let [original-changes (get original file)]
+      (when-not (or (seq (:modes selected-changes)) (seq (:edits selected-changes))
+                    (seq (:binary selected-changes)))
         (fail! (str "selected diff for " file " is empty or malformed")))
-      (when-not (set/subset? selected-changes original-changes)
-        (let [missing (first (set/difference selected-changes original-changes))]
-          (fail! (str "selected change for " file
-                      " is not contained in original diff"
-                      (when missing
-                        (str ": " missing)))))))))
+      (when-not ((ns-resolve 'scripts.containment 'contained?) original-changes selected-changes)
+        (fail! (str "selected change for " file
+                    " is not contained in original diff"))))))
 
 (defn- validate-contained! [left right selected]
   (let [original (diff-change-index
@@ -169,33 +138,6 @@
         selected (diff-change-index
                   (normalize-diff-paths (diff-output left selected) left selected))]
     (validate-index-contained! original selected)))
-
-(defn- deleted-symlink-paths [patch-text]
-  (loop [[line & more] (str/split-lines patch-text)
-         file nil
-         paths []]
-    (cond
-      (nil? line) paths
-      (str/starts-with? line "diff --git ")
-      (recur more (some-> line split-diff-paths second) paths)
-      (and file (= line "deleted file mode 120000"))
-      (recur more file (conj paths file))
-      :else
-      (recur more file paths))))
-
-(defn- without-deleted-symlink-sections [patch-text]
-  (->> (str/split patch-text #"(?m)(?=^diff --git )")
-       (remove (fn [section]
-                 (some #{"deleted file mode 120000"}
-                       (str/split-lines section))))
-       (apply str)))
-
-(defn- delete-selected-symlinks! [tree paths]
-  (doseq [path paths
-          :let [link (fs/file tree path)]]
-    (if (fs/sym-link? link)
-      (fs/delete link)
-      (fail! (str "expected deleted symlink at " path)))))
 
 (defn- copy-tree! [from to]
   (when (fs/exists? to)
@@ -234,21 +176,12 @@
           tmp-root (fs/create-temp-dir {:dir (str (temp-root))
                                         :prefix "jj-agent-split-editor"})
           selected (fs/file tmp-root "selected")
-          remaining-patch (fs/file tmp-root "remaining.patch")
-          original (diff-change-index
-                    (normalize-diff-paths (diff-output left right) left right))
-          deleted-symlinks (deleted-symlink-paths patch-text)]
+          remaining-patch (fs/file tmp-root "remaining.patch")]
       (try
         (validate-patch-paths! left patch-text)
-        (validate-index-contained! original
-                                   (select-keys (diff-change-index patch-text)
-                                                deleted-symlinks))
         (copy-tree! left selected)
-        (delete-selected-symlinks! selected deleted-symlinks)
-        (let [remaining-text (without-deleted-symlink-sections patch-text)]
-          (when-not (str/blank? remaining-text)
-            (spit (str remaining-patch) remaining-text)
-            (apply-patch! selected remaining-patch)))
+        (spit (str remaining-patch) patch-text)
+        (apply-patch! selected remaining-patch)
         (validate-contained! left right selected)
         (copy-tree! selected right)
         (println "selected files:")
