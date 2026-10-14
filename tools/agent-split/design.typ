@@ -363,13 +363,17 @@ Containment remains a separate check.]
 
 == Patch does not apply
 
-The tool exits non-zero.
-Jujutsu aborts the split.
-The agent rewrites the patch from the current diff and tries again.
+The wrapper rejects an apply failure during preflight with exit status 1, before invoking Jujutsu's split command.
+The initial working-copy snapshot can still occur, but no split revisions are created.
+The agent regenerates selected hunks from the target revision's Git-format diff, preserving unchanged context from its parent.
+
+If apply fails inside the diff editor instead, Jujutsu aborts that split attempt and the wrapper exits with status 2.
+The agent inspects repository state before retrying.
 
 == Patch introduces changes not in the revision
 
-The tool exits non-zero.
+The wrapper rejects this during preflight with exit status 1, before invoking Jujutsu's split command.
+The same initial-snapshot caveat described above applies.
 A patch that applies to the left tree but produces content not present in the original right tree is stale or wrong;
 accepting it would create a selected commit Jujutsu can only compensate for in the remaining commit.
 The agent rewrites the patch from the current `jj diff --git` output and tries again.
