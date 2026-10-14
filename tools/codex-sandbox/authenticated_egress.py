@@ -32,8 +32,16 @@ class EgressPairPlan:
     helper_mounts: tuple[str, ...]
     helper_environment: tuple[str, ...]
     helper_arguments: tuple[str, ...]
+    session_token: str
     runtime_flags: tuple[str, ...] = ()
     extra_caddy_networks: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (not self.session_token or any(c in self.session_token for c in "\r\n")
+                or len(("Bearer " + self.session_token).encode()) > 4096):
+            raise ValueError("invalid authenticated-egress session token")
+        if any(value.split("=", 1)[0] == "CADDY_PROFILE_TOKEN" for value in self.helper_environment):
+            raise ValueError("session_token owns the helper admission token")
 
     def resource_topology(self) -> ResourceTopology:
         network_roles = {network: status for status, _role, network in self.public_networks}
@@ -123,7 +131,7 @@ def start_egress_pair(
     ]
     for mount in plan.helper_mounts:
         helper += ["--mount", mount]
-    for value in plan.helper_environment:
+    for value in (*plan.helper_environment, "CADDY_PROFILE_TOKEN=" + plan.session_token):
         helper += ["--env", value]
     helper += ["--entrypoint", "/trusted/bin/profile-helper", plan.helper_image,
                *plan.helper_arguments]
@@ -149,6 +157,7 @@ def start_egress_pair(
         check_cancelled()
         ready = runtime.run([
             "exec", plan.caddy_name, "wget", "-q", "-O", "/dev/null",
+            "--header=Authorization: Bearer " + plan.session_token,
             "http://127.0.0.1:8787/ready",
         ], check=False, capture_output=True)
         if ready.returncode == 0:

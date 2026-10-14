@@ -25,6 +25,7 @@ MAX_REQUEST = PROTOCOL["max_request_bytes"]
 MAX_RESPONSE = PROTOCOL["max_response_bytes"]
 SESSION_KEY = os.environ.get("ZULIP_BROKER_KEY")
 CADDY_ENDPOINT = os.environ.get("ZULIP_CADDY_ENDPOINT")
+CADDY_TOKEN = os.environ.get("ZULIP_CADDY_TOKEN")
 try:
     import typed_broker
 except ImportError:  # Source-tree tests.
@@ -45,6 +46,21 @@ class RejectRedirects(HTTPRedirectHandler):
 
 
 URL_OPEN = build_opener(RejectRedirects()).open
+
+
+def caddy_token(value: str | None) -> str:
+    # This is a private session-admission token, never a Zulip API credential
+    # or the client-facing typed broker token.
+    if (not isinstance(value, str) or not value or not value.isascii()
+            or any(ord(character) <= 32 or ord(character) == 127 for character in value)
+            or len("Bearer " + value) > 4096):
+        raise RequestError("ZULIP_CADDY_TOKEN must be a nonempty bounded session token")
+    return value
+
+
+def caddy_request(url: str) -> HttpRequest:
+    token = caddy_token(CADDY_TOKEN)
+    return HttpRequest(url, method="GET", headers={"Authorization": "Bearer " + token})
 
 
 def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -172,7 +188,7 @@ def validate_messages(messages: Any, after_id: int = 0) -> list[dict[str, Any]]:
 def fetch_page(
     endpoint: str,
     request: dict[str, Any],
-    opener: Callable[..., Any] = URL_OPEN,
+    opener: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     narrow: list[dict[str, Any]] = [
         {"operator": "channel", "operand": request["channel_id"]},
@@ -191,10 +207,7 @@ def fetch_page(
         "allow_empty_topic_name": "true",
         "narrow": json.dumps(narrow, separators=(",", ":")),
     })
-    http_request = HttpRequest(
-        f"{endpoint}?{query}",
-        method="GET",
-    )
+    http_request = caddy_request(f"{endpoint}?{query}")
     result = fetch_json(http_request, opener)
     if result.get("result") != "success":
         raise RequestError(result.get("msg", "Zulip returned a malformed response"))
@@ -237,7 +250,8 @@ def _read_json_response(response: Any, deadline: float) -> Any:
         raise RequestError("Zulip returned malformed JSON") from error
 
 
-def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
+def fetch_json(http_request: HttpRequest, opener: Callable[..., Any] | None) -> Any:
+    opener = URL_OPEN if opener is None else opener
     deadline = time.monotonic() + 300
     attempts = 0
     while attempts < 5:
@@ -265,14 +279,14 @@ def fetch_json(http_request: HttpRequest, opener: Callable[..., Any]) -> Any:
 def fetch_channels(
     endpoint: str,
     request: dict[str, Any],
-    opener: Callable[..., Any] = URL_OPEN,
+    opener: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     if request != {"version": PROTOCOL_VERSION, "operation": "channels"}:
         raise RequestError("invalid channel-list request")
     channels_endpoint = (
         endpoint.removesuffix("/messages") + "/streams?include_can_access_content=true"
     )
-    result = fetch_json(HttpRequest(channels_endpoint, method="GET"), opener)
+    result = fetch_json(caddy_request(channels_endpoint), opener)
     if not isinstance(result, dict):
         raise RequestError("Zulip returned a malformed channel list")
     unsupported = result.get("ignored_parameters_unsupported", [])
@@ -304,13 +318,10 @@ def fetch_channels(
 def fetch_topics(
     endpoint: str,
     request: dict[str, Any],
-    opener: Callable[..., Any] = URL_OPEN,
+    opener: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     topics_endpoint = endpoint.removesuffix("/messages")
-    http_request = HttpRequest(
-        f"{topics_endpoint}/users/me/{request['channel_id']}/topics",
-        method="GET",
-    )
+    http_request = caddy_request(f"{topics_endpoint}/users/me/{request['channel_id']}/topics")
     result = fetch_json(http_request, opener)
     topics = result.get("topics")
     if result.get("result") != "success" or not isinstance(topics, list):
@@ -401,6 +412,7 @@ def caddy_endpoint(value: str | None) -> str:
 
 def main() -> None:
     endpoint = caddy_endpoint(CADDY_ENDPOINT)
+    caddy_token(CADDY_TOKEN)
     global URL_OPEN
     URL_OPEN = build_opener(RejectRedirects()).open
     if not SESSION_KEY:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Network fixture for live Caddy acceptance tests (stdlib only)."""
 from __future__ import annotations
-import http.client, json, threading, time
+import hmac, http.client, json, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 lock=threading.Lock(); release=threading.Event()
@@ -36,6 +36,9 @@ class Handler(BaseHTTPRequestHandler):
    length=int(self.headers.get("Content-Length","0")); body=self.rfile.read(length)
    with lock: mode=state["mode"]
    record("helper",path=self.path,body=len(body),authorization=self.headers.get("Authorization",""))
+   authorization=self.headers.get("Authorization","")
+   if len(authorization.encode())>4096 or not hmac.compare_digest(authorization.encode(),b"Bearer acceptance-session-token"):
+    return self.reply(401)
    if mode in ("delay","timeout"): release.wait(5)
    if mode=="unauthorized": return self.reply(401)
    if mode=="malformed": return self.reply(204,headers=(("X-Helper-Secret","helper-header-secret"),("Set-Cookie","helper-cookie-secret=1")))
@@ -46,10 +49,12 @@ class Handler(BaseHTTPRequestHandler):
    length=int(self.headers.get("Content-Length","0")); spec=json.loads(self.rfile.read(length))
    def run():
     data=spec.get("body","fixture-request-secret").encode()
-    headers={"Authorization":spec.get("authorization","Bearer caller-secret"),"Content-Type":"application/json",**spec.get("headers",{})}
-    client=http.client.HTTPConnection("caddy",8787,timeout=8); response=None
+    headers={"Content-Type":"application/json",**spec.get("headers",{})}
+    authorization=spec.get("authorization","Bearer acceptance-session-token")
+    if authorization is not None: headers["Authorization"]=authorization
+    client=http.client.HTTPConnection(spec.get("target","caddy"),8787,timeout=8); response=None
     try:
-     client.request("POST",spec.get("path","/codex/responses"),body=data,headers=headers)
+     client.request(spec.get("method","POST"),spec.get("path","/codex/responses"),body=data,headers=headers)
      response=client.getresponse(); body=response.read()
      result={"status":response.status,"body":body.decode(errors="replace"),"headers":dict(response.getheaders())}
     except http.client.IncompleteRead as error:

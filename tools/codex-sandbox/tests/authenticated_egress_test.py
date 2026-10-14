@@ -41,8 +41,8 @@ class AuthenticatedEgressTest(unittest.TestCase):
             application_network=domain + "-application",
             helper_network="none", public_networks=(("network", "application", domain + "-application"),),
             helper_mounts=("type=bind,src=/Users/jyn/.codex-sandbox-auth,dst=/run/credential,readonly",),
-            helper_environment=("CADDY_PROFILE_TOKEN=token",),
-            helper_arguments=("--profile", domain),
+            helper_environment=(),
+            helper_arguments=("--profile", domain), session_token="token",
         )
 
     def test_profiles_share_one_hardened_pair_lifecycle(self):
@@ -65,6 +65,27 @@ class AuthenticatedEgressTest(unittest.TestCase):
                 self.assertIn("--cap-add=NET_BIND_SERVICE", proxy)
                 self.assertEqual(proxy[-4:], ["caddy", "run", "--config", "/etc/caddy/caddy.json"])
                 self.assertEqual(readiness[:2], ["exec", domain + "-caddy"])
+                self.assertIn("--header=Authorization: Bearer token", readiness)
+
+    def test_readiness_uses_each_instances_token(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            runtime = Runtime()
+            plan = replace(self.plan(directory, "codex"), session_token="different-token")
+            egress.start_egress_pair(runtime, plan, lambda status, operation: operation())
+            self.assertIn("--header=Authorization: Bearer different-token", runtime.commands[-1])
+            self.assertNotIn("--header=Authorization: Bearer token", runtime.commands[-1])
+            self.assertIn("CADDY_PROFILE_TOKEN=different-token", runtime.commands[0])
+            self.assertNotIn("CADDY_PROFILE_TOKEN=token", runtime.commands[0])
+
+    def test_pair_rejects_duplicate_or_invalid_admission_authority(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            plan = self.plan(directory, "codex")
+            with self.assertRaisesRegex(ValueError, "owns the helper admission token"):
+                replace(plan, helper_environment=("CADDY_PROFILE_TOKEN=other-token",))
+            for token in ("", "line\nbreak", "x" * 4090):
+                with self.subTest(token_class="empty" if not token else "invalid"):
+                    with self.assertRaisesRegex(ValueError, "invalid authenticated-egress session token"):
+                        replace(plan, session_token=token)
 
     def test_topology_derives_container_dependencies_from_network_attachments(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:

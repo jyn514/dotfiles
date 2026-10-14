@@ -5,6 +5,7 @@ import fcntl
 import io
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -1676,6 +1677,207 @@ class ManifestTest(unittest.TestCase):
         with mock.patch.object(sandbox_proxies.subprocess, "run", return_value=completed):
             images = sandbox_proxies.resolve_images(self.repo, manifest)
         self.assertEqual("sha256:" + digest, images["example"])
+
+    def test_codex_published_pair_authenticates_both_join_readiness_paths(self):
+        from caddy_foundation import CaddyImageIdentity, IMAGE, INDEX, PLATFORMS
+        launcher = runpy.run_path(str(MODULE_PATH.with_name("codex-sandbox")))
+        image = CaddyImageIdentity(IMAGE, INDEX, "linux/amd64", *PLATFORMS["linux/amd64"],
+                                  PLATFORMS["linux/amd64"][1])
+        credentials = self.repo / "codex-auth"
+        credentials.mkdir(mode=0o700)
+        auth_file = credentials / "auth.json"
+        auth_file.write_text('{"tokens":{"access_token":"dummy","refresh_token":"dummy"}}')
+        auth_file.chmod(0o600)
+        state = SimpleNamespace(uid=501, gid=20, sidecar_image="sha256:" + "1" * 64,
+                                codex_sidecar_container="codex-caddy", proxy_state=self.repo / "state")
+        state.proxy_state.write_text('{"proxies":[]}')
+        runtime = mock.Mock(provider="container")
+        runtime.container_matches_image.return_value = True
+        runtime.container_networks.side_effect = lambda snapshot: snapshot["NetworkSettings"]["Networks"]
+        token = []
+        probes = []
+        record = {}
+
+        def run(arguments, **_kwargs):
+            if "/trusted/bin/profile-helper" in arguments:
+                token.extend(item.removeprefix("CADDY_PROFILE_TOKEN=") for item in arguments
+                             if item.startswith("CADDY_PROFILE_TOKEN="))
+            if arguments[-1:] == ["http://127.0.0.1:8787/ready"]:
+                self.assertEqual(1, len(token))
+                self.assertIn("--header=Authorization: Bearer " + token[0], arguments)
+                probes.append(arguments)
+            if arguments[:2] == ["network", "inspect"]:
+                role = next(role for role, name in record["networks"].items() if name == arguments[2])
+                labels = {"dev.codex.service-owner": record["service-owner"],
+                          "dev.codex.credential-domain": "codex", "dev.codex.network-role": role}
+                return subprocess.CompletedProcess(arguments, 0, json.dumps([{"Labels": labels}]), "")
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        runtime.run.side_effect = run
+        with mock.patch.dict(launcher["start_codex_sidecar"].__globals__, OUTER_RUNTIME=runtime,
+                             resolve_caddy_image=lambda _runtime: image):
+            handle, _ = launcher["start_codex_sidecar"](state, credentials)
+        record.update(handle.schema3_record())
+        labels = {"dev.codex.service-owner": record["service-owner"], "dev.codex.credential-domain": "codex"}
+        socket = {"Destination": "/run/profile-helper", "Name": record["socket-volume"]}
+        caddy_snapshot = {"Config": {"Labels": labels},
+            "NetworkSettings": {"Networks": {record["networks"][role]: {} for role in ("agent-link", "application")}},
+            "Mounts": [{**socket, "RW": False}, {"Type": "bind", "Destination": "/etc/caddy/caddy.json",
+                        "Source": record["configuration"]["path"], "RW": False}]}
+        helper_snapshot = {"Config": {"Labels": labels},
+            "NetworkSettings": {"Networks": {record["networks"]["refresh"]: {}}},
+            "Mounts": [{**socket, "RW": True}, {"Destination": "/var/lib/codex-auth",
+                        "Source": str(credentials), "RW": True}]}
+        runtime.inspect_container.side_effect = lambda name: caddy_snapshot if name == record["container"] else helper_snapshot
+        with mock.patch.object(sandbox_proxies, "accepted_caddy_image", return_value=image):
+            sandbox_proxies._validate_codex_broker(runtime, record, state.sidecar_image, state.uid, state.gid)
+        with mock.patch.dict(launcher["attach_codex_sidecar"].__globals__, OUTER_RUNTIME=runtime,
+                             accepted_caddy_image=lambda _chain, _runtime: image,
+                             codex_sidecar_has_sandbox_network=lambda _container: True,
+                             run=lambda arguments, **kwargs: run(arguments[1:], **kwargs)):
+            arguments = launcher["attach_codex_sidecar"](state, credentials)
+        self.assertIn("CODEX_SIDECAR_KEY=" + token[0], arguments)
+        self.assertEqual(3, len(probes))
+
+    def test_zulip_startup_readiness_uses_the_persisted_pair_token(self):
+        from caddy_foundation import CaddyImageIdentity, IMAGE, INDEX, PLATFORMS
+        image = CaddyImageIdentity(IMAGE, INDEX, "linux/amd64", *PLATFORMS["linux/amd64"],
+                                  PLATFORMS["linux/amd64"][1])
+        credentials = self.repo / "zuliprc"
+        credentials.write_text("[api]\nsite=https://zulip.example\nemail=dummy@example\nkey=dummy\n")
+        credentials.chmod(0o600)
+        args = SimpleNamespace(prefix="test", state=str(self.repo / "state"), network="sandbox",
+                               container_repo=str(self.container_repo), zuliprc=str(credentials),
+                               helper_image="sha256:" + "1" * 64)
+        runtime = mock.Mock(provider="container")
+        runtime.public_network_policy_identity.return_value = "sha256:" + "2" * 64
+        runtime.argv.side_effect = lambda arguments: arguments
+        helper_tokens = []
+        probes = []
+        adapter_environment = {}
+        adapter_mounts = []
+
+        def run(arguments, **_kwargs):
+            if "--entrypoint" in arguments and arguments[arguments.index("--entrypoint") + 1] == "zulip-proxy":
+                adapter_environment.update(argument.split("=", 1) for index, argument in enumerate(arguments)
+                                           if index and arguments[index - 1] == "--env")
+                adapter_mounts.extend(argument for index, argument in enumerate(arguments)
+                                      if index and arguments[index - 1] == "--mount")
+            if "/trusted/bin/profile-helper" in arguments:
+                helper_tokens.extend(item.removeprefix("CADDY_PROFILE_TOKEN=") for item in arguments
+                                     if item.startswith("CADDY_PROFILE_TOKEN="))
+            if arguments[-1:] == ["http://127.0.0.1:8787/ready"]:
+                self.assertEqual(1, len(helper_tokens))
+                if "--header=Authorization: Bearer " + helper_tokens[0] not in arguments:
+                    return subprocess.CompletedProcess(arguments, 1, "", "unauthorized")
+                probes.append(arguments)
+            if arguments[:2] == ["volume", "inspect"]:
+                value = ({"Mountpoint": "/fixture/profile-socket"} if arguments[2] == proxy["socket-volume"]
+                         else {"Labels": {("dev.codex.volume-owner" if "volume-owner" in proxy else
+                                           "dev.codex.service-owner"): proxy["service-owner"]}})
+                return subprocess.CompletedProcess(arguments, 0, json.dumps([value]), "")
+            if arguments[:2] == ["network", "inspect"]:
+                value = {"Labels": {"dev.codex.service-owner": proxy["network-owner"],
+                                    "dev.codex.public-policy": proxy["network-policy"]}}
+                return subprocess.CompletedProcess(arguments, 0, json.dumps([value]), "")
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        runtime.run.side_effect = run
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", runtime), \
+                mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo), \
+                mock.patch.object(sandbox_proxies, "resolve_caddy_image", return_value=image), \
+                mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+            proxy = sandbox_proxies.start_one_proxy(args, self.repo, "repository", {"zulip": "sha256:" + "0" * 64},
+                {"proxies": []}, threading.Lock(), "zulip", self.command(argv=["zulip-proxy"], network=True))
+        self.assertEqual(1, len(probes))
+        self.assertEqual(helper_tokens, [proxy["pair-token"]])
+        persisted = json.loads(Path(args.state).read_text())["proxies"][0]
+        self.assertEqual(proxy["pair-token"], persisted["pair-token"])
+        self.assertEqual("ready", persisted["lifecycle-state"])
+        self.assertEqual(proxy["pair-token"], adapter_environment["ZULIP_CADDY_TOKEN"])
+        self.assertEqual(proxy["session-token"], adapter_environment["ZULIP_BROKER_KEY"])
+        self.assertNotEqual(proxy["session-token"], proxy["pair-token"])
+        self.assertEqual({"SANDBOX_PROXY_SOCKET", "ZULIP_BROKER_KEY", "ZULIP_CADDY_TOKEN",
+                          "ZULIP_CADDY_ENDPOINT"}, set(adapter_environment))
+        self.assertEqual([f"type=volume,src={proxy['volume']},dst=/run/sandbox-proxy"], adapter_mounts)
+        self.assertNotIn(str(credentials), " ".join(adapter_mounts))
+        manifest = self.repo / "accepted-manifest"
+        manifest.write_text(json.dumps({"version": 1, "commands": {
+            "zulip": self.command(argv=["zulip-proxy"], network=True)}}))
+        output = self.repo / "agent-args"
+        sandbox_proxies.agent_args_main(SimpleNamespace(
+            repo=str(self.repo), container_repo=str(self.container_repo),
+            manifest=str(manifest), state=args.state, output=str(output)))
+        agent_arguments = output.read_text().splitlines()
+        self.assertNotIn(proxy["pair-token"], output.read_text())
+        self.assertNotIn("ZULIP_CADDY_TOKEN", output.read_text())
+        self.assertNotIn(str(credentials), output.read_text())
+        self.assertIn("SANDBOX_PROXY_DIR=/run/sandbox-proxies", agent_arguments)
+        self.assertTrue(all(argument.split("=", 1)[0] in {"SANDBOX_PROXY_DIR", "JJ_PROXY_REPO", "JJ_PROXY_INSPECT"}
+                            for index, argument in enumerate(agent_arguments)
+                            if index and agent_arguments[index - 1] == "--env"))
+
+        labels = {"dev.codex.service-owner": persisted["service-owner"], "dev.codex.credential-domain": "zulip"}
+        socket_mount = {"Type": "volume", "Name": persisted["socket-volume"],
+                        "Source": "/fixture/profile-socket", "Destination": "/run/profile-helper"}
+        def pair_snapshot(role, network, entrypoint, command, mounts):
+            return {"Config": {"User": f"{os.getuid()}:{os.getgid()}", "Entrypoint": entrypoint,
+                               "Cmd": command, "Labels": {**labels, "dev.codex.service-role": role}},
+                    "HostConfig": {"NetworkMode": network, "ReadonlyRootfs": True, "Privileged": False,
+                                   "CapAdd": ["CAP_NET_BIND_SERVICE"] if role == "zulip-caddy" else [],
+                                   "CapDrop": ["ALL"], "SecurityOpt": ["no-new-privileges"],
+                                   "PidsLimit": 64, "Memory": 256 * 1024 * 1024, "NanoCpus": 1_000_000_000,
+                                   "Ulimits": [{"Name": "nofile", "Soft": 256, "Hard": 256}]},
+                    "NetworkSettings": {"Networks": {network: {}} if network != "none" else {}},
+                    "Mounts": mounts}
+        caddy_snapshot = pair_snapshot("zulip-caddy", persisted["network"], None,
+            ["caddy", "run", "--config", "/etc/caddy/caddy.json"],
+            [{**socket_mount, "RW": False}, {"Type": "bind", "Name": None, "RW": False,
+                "Source": persisted["configuration"]["path"], "Destination": "/etc/caddy/caddy.json"}])
+        helper_snapshot = pair_snapshot("zulip-profile-helper", "none", ["/trusted/bin/profile-helper"],
+            ["--profile", "zulip"],
+            [{**socket_mount, "RW": True}, {"Type": "bind", "Name": None, "RW": False,
+                "Source": str(credentials), "Destination": "/run/secrets/zuliprc"}])
+        adapter_snapshot = {"Config": {"User": f"{os.getuid()}:{os.getgid()}", "Labels": labels,
+                                       "Env": [key + "=" + value for key, value in adapter_environment.items()]},
+                            "HostConfig": {"NetworkMode": persisted["network"]},
+                            "NetworkSettings": {"Networks": {persisted["network"]: {}}}, "Mounts": []}
+        snapshots = {persisted["caddy-container"]: caddy_snapshot,
+                     persisted["helper-container"]: helper_snapshot, persisted["container"]: adapter_snapshot}
+        runtime.inspect_container.side_effect = lambda name: snapshots[name]
+        runtime.container_networks.side_effect = lambda item: item["NetworkSettings"]["Networks"]
+        runtime.container_matches_image.return_value = True
+        runtime.owned_volume_matches.return_value = True
+        with mock.patch.object(sandbox_proxies, "accepted_caddy_image", return_value=image):
+            sandbox_proxies.validate_live_proxy(runtime, persisted, "repository",
+                self.command(argv=["zulip-proxy"], network=True), uid=os.getuid(), gid=os.getgid())
+            wrong_token = {**persisted, "pair-token": "a.b.c"}
+            with self.assertRaisesRegex(sandbox_proxies.ConfigError, "pair is not ready"):
+                sandbox_proxies.validate_live_proxy(runtime, wrong_token, "repository",
+                    self.command(argv=["zulip-proxy"], network=True), uid=os.getuid(), gid=os.getgid())
+        self.assertEqual(2, len(probes))
+        self.assertTrue(all("--header=Authorization: Bearer " + persisted["pair-token"] in probe for probe in probes))
+
+        first_pair_token = persisted["pair-token"]
+        helper_tokens.clear()
+        probes.clear()
+        adapter_environment.clear()
+        adapter_mounts.clear()
+        args.prefix = "next-instance"
+        args.state = str(self.repo / "next-state")
+        with mock.patch.object(sandbox_proxies, "OUTER_RUNTIME", runtime), \
+                mock.patch.object(sandbox_proxies, "runtime_directory", return_value=self.repo), \
+                mock.patch.object(sandbox_proxies, "resolve_caddy_image", return_value=image), \
+                mock.patch.object(sandbox_proxies, "proxy_repository_mount_args", return_value=[]), \
+                mock.patch.object(sandbox_proxies.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")):
+            next_proxy = sandbox_proxies.start_one_proxy(args, self.repo, "repository", {"zulip": "sha256:" + "0" * 64},
+                {"proxies": []}, threading.Lock(), "zulip", self.command(argv=["zulip-proxy"], network=True))
+        self.assertNotEqual(first_pair_token, next_proxy["pair-token"])
+        self.assertEqual([next_proxy["pair-token"]], helper_tokens)
+        self.assertEqual(next_proxy["pair-token"], adapter_environment["ZULIP_CADDY_TOKEN"])
+        self.assertEqual(next_proxy["session-token"], adapter_environment["ZULIP_BROKER_KEY"])
+        self.assertEqual(next_proxy["pair-token"], json.loads(Path(args.state).read_text())["proxies"][0]["pair-token"])
 
     def test_forward_failure_retains_registered_recovery_authority(self) -> None:
         state_path = self.repo / "state"

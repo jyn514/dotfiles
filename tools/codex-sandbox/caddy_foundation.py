@@ -127,7 +127,7 @@ def _nonempty_headers(names: list[str]) -> dict[str, Any]:
     # copy_headers, combined so every required response header must be nonempty.
     return {"not": [{"vars": {f"{{http.reverse_proxy.header.{name}}}": [""]}} for name in names]}
 
-def _gate(profile: str, helper_socket: str, operation: str, token: str) -> dict[str, Any]:
+def _gate(profile: str, helper_socket: str, operation: str) -> dict[str, Any]:
     names = ["Authorization"] + (["Chatgpt-Account-Id"] if profile == "codex" else [])
     mutations = []
     for name in names:
@@ -135,11 +135,12 @@ def _gate(profile: str, helper_socket: str, operation: str, token: str) -> dict[
         mutations.append({"handler": "headers", "request": {"set": {name: [f"{{http.reverse_proxy.header.{name}}}"]}}})
     success = {"group": "admission", "match": [_nonempty_headers(names)], "handle": mutations}
     malformed = {"group": "admission", "handle": [_static(503)]}
+    # Preserve caller Authorization for the helper's constant-time admission.
+    # Installing the configured token here would authenticate every caller.
     # The explicit empty query clears a caller's query on the helper request.
     return {
         "handler": "reverse_proxy", "rewrite": {"method": "GET", "uri": operation + "?"},
         "headers": {"request": {"set": {"Content-Length": ["0"], "Host": ["profile-helper"],
-            "Authorization": ["Bearer " + token],
             "X-Original-Method": ["{http.request.method}"], "X-Original-Uri": ["{http.request.uri}"]},
             "delete": ["Transfer-Encoding", "Forwarded", "Via", "X-Forwarded-For",
                        "X-Forwarded-Host", "X-Forwarded-Proto", "Proxy-Authorization",
@@ -177,13 +178,13 @@ def generate_caddy_config(profile: str, upstream: str, helper_socket: str = "/ru
     proxy = _application_proxy(profile, upstream)
     if profile == "codex":
         matcher = {"expression": "method('POST') && path('/codex/responses') && {http.request.uri.query} == ''"}
-        handlers = [{"handler": "request_body", "max_size": 32 * 1024 * 1024}, _gate(profile, helper_socket, "/admit", token),
+        handlers = [{"handler": "request_body", "max_size": 32 * 1024 * 1024}, _gate(profile, helper_socket, "/admit"),
                     {"handler": "rewrite", "uri": "/backend-api/codex/responses"}, proxy]
     else:
         matcher = {"expression": "method('GET') && (path('/api/v1/messages') || path('/api/v1/streams') || path_regexp('^/api/v1/users/me/[0-9]+/topics$'))"}
-        handlers = [_gate(profile, helper_socket, "/admit", token), proxy]
+        handlers = [_gate(profile, helper_socket, "/admit"), proxy]
     ready_match = {"expression": "method('GET') && path('/ready') && {http.request.uri.query} == ''"}
-    routes = [{"match": [ready_match], "handle": [_gate(profile, helper_socket, "/ready", token), _static(204)]},
+    routes = [{"match": [ready_match], "handle": [_gate(profile, helper_socket, "/ready"), _static(204)]},
               {"match": [matcher], "handle": handlers}, {"handle": [_static(404)]}]
     # Reverse-proxy error records include the mutated request headers.  Caddy
     # redacts Authorization itself, but not profile-owned account identifiers;

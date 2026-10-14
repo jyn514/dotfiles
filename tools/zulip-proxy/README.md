@@ -58,6 +58,12 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 - The protocol supports only bounded `GET` requests for available channels, topic lists, and paginated messages on one configured Zulip server.
   It cannot send, edit, delete, or react to messages.
 - In sandbox sessions the typed adapter, official pinned Caddy, and Zulip profile helper are separate containers. Only the no-egress helper receives the read-only credential mount; Caddy receives fixed GET routes over the ordinary application network, and credentials are never mounted into the adapter or agent.
+- The launcher supplies the adapter's private `ZULIP_CADDY_TOKEN` from the recorded Caddy/helper pair token.
+  The adapter validates it before startup and before constructing upstream requests, then sends its bearer Authorization on every fixed GET, page, and retry.
+  Missing or malformed private tokens fail before network access; a well-formed but wrong token is rejected by the helper through Caddy.
+  This token is distinct from `ZULIP_BROKER_KEY`, which admits typed client requests.
+  The private pair token is not written to the client-facing token file or added to public request/response schemas.
+  The adapter never receives Zulip API credentials, and errors retain typed responses without direct-provider fallback.
 - Socket possession authorizes every supported read allowed by the Zulip account.
   Exported transcripts, including private-channel content, remain sensitive—protect files, logs, and terminal output accordingly.
 - Typed requests and complete responses are size-bounded. The adapter rejects malformed fields and unsupported operations; Caddy owns TLS, redirects, HTTP framing, and fixed-origin routing. Failures do not trigger a more privileged fallback.
@@ -79,11 +85,24 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 
 ## Tests
 
-Run unit tests from the repository root:
+Run unit and admission checks from the repository root through the isolated test environment:
 
 ```sh
-python3 -m unittest tools/zulip-proxy/tests/zulip_proxy_test.py
+dev/test-environment pytest tools/zulip-proxy/tests/zulip_proxy_test.py tools/zulip-proxy/tests/caddy_admission_test.py
 ```
+
+Normal `dev/test` discovery includes both files.
+The local admission check sends actual adapter requests through generated precheck header mutations to the real Unix helper,
+using disposable credentials and no external provider access.
+This validates the producer/helper boundary, not Caddy's HTTP engine.
+The separate native matrix exercises the actual typed adapter, generated pinned Caddy configuration, and actual helper for all three operations.
+It checks correct and wrong pair tokens, missing tokens failing before network access, trusted API auth reaching only the application fixture,
+and zero application requests on rejection.
+It requires already-installed `python:3.12-alpine` and the pinned Caddy manifest for the Docker daemon's platform;
+missing images cause an explicit skip, never an image pull.
+It creates and removes only disposable containers, volumes, and a network.
+This local-image prerequisite does not change the existing native Caddy checks' pull-on-demand policy.
+See [Caddy test and logging limits](../codex-sandbox/development.md#tests).
 
 The end-to-end test builds the real image and requires Docker, OpenSSL, host-gateway support, and local port availability:
 
@@ -104,5 +123,5 @@ The fixture checks message/topic requests and rejects upstream authentication fa
 
 ## Design and reference
 
-The authoritative [sandbox command proxy design](../codex-sandbox/proxy-design.typ) defines the generic proxy lifecycle, including isolation and host coordination.
+The authoritative [sandbox command proxy design](../codex-sandbox/spec/proxy-design.typ) defines the generic proxy lifecycle, including isolation and host coordination.
 See the [tools overview](../README.md).

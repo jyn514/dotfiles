@@ -1384,6 +1384,7 @@ def _validate_codex_broker(owner, auth: dict[str, Any], image: str, uid: int, gi
                                           "dev.codex.credential-domain": "codex"}):
         raise ConfigError("active session has an unhealthy authentication service")
     ready = owner.run(["exec", auth["container"], "wget", "-q", "-O", "/dev/null",
+                       "--header=Authorization: Bearer " + auth["key"],
                        "http://127.0.0.1:8787/ready"],
                       check=False, capture_output=True)
     if ready.returncode:
@@ -1518,8 +1519,8 @@ def start_one_proxy(
             application_network=zulip_network, helper_network="none",
             public_networks=(("network", "application", zulip_network),),
             helper_mounts=(zuliprc_mount_args(Path(args.zuliprc))[1],),
-            helper_environment=("ZULIPRC=/run/secrets/zuliprc",
-                                f"CADDY_PROFILE_TOKEN={pair_token}"),
+            helper_environment=("ZULIPRC=/run/secrets/zuliprc",),
+            session_token=pair_token,
             helper_arguments=("--profile", "zulip"),
         )
         pair_identity = zulip_pair.implementation_identity(helper.implementation_identity)
@@ -1638,6 +1639,7 @@ def start_one_proxy(
             docker_args += [
                 "--label", "dev.codex.credential-domain=zulip",
                 "--env", f"ZULIP_BROKER_KEY={proxy['session-token']}",
+                "--env", f"ZULIP_CADDY_TOKEN={proxy['pair-token']}",
                 "--env", f"ZULIP_CADDY_ENDPOINT=http://{proxy['caddy-container']}:8787/api/v1/messages",
             ]
         checked_repository_path(repo, command["workdir"], f"command {name} workdir")
@@ -2432,6 +2434,7 @@ def validate_live_proxy(owner, proxy, repository, command, *, snapshot=None, uid
                         labels.get("dev.codex.credential-domain") != "zulip"):
                     raise ConfigError("active Zulip pair isolation or runtime identity changed")
                 ready = owner.run(["exec", proxy["caddy-container"], "wget", "-q", "-O", "/dev/null",
+                                   "--header=Authorization: Bearer " + proxy["pair-token"],
                                    "http://127.0.0.1:8787/ready"], check=False, capture_output=True)
                 if ready.returncode:
                     raise ConfigError("active Zulip pair is not ready")

@@ -4,6 +4,7 @@ from pathlib import Path
 import socket, subprocess, sys, tempfile, threading, time, unittest
 from unittest.mock import patch
 ROOT=Path(__file__).parents[1]
+DOCKER="/libexec/sandbox-wrappers/docker" if Path("/libexec/sandbox-wrappers/docker").is_file() else "docker"
 def load(name,path):
  spec=importlib.util.spec_from_file_location(name,path); module=importlib.util.module_from_spec(spec); sys.modules[name]=module; spec.loader.exec_module(module); return module
 caddy=load("caddy_foundation",ROOT/"caddy_foundation.py"); helper=load("profile_helper",ROOT/"auth-proxy/profile_helper.py")
@@ -11,7 +12,7 @@ caddy=load("caddy_foundation",ROOT/"caddy_foundation.py"); helper=load("profile_
 def native_caddy_image():
  # Query the daemon, not the client host: DOCKER_HOST may be remote. Foreign
  # manifests are admitted policy, but executing them requires optional emulation.
- result=subprocess.run(["docker","info","--format","{{.OSType}}/{{.Architecture}}"],capture_output=True,text=True)
+ result=subprocess.run([DOCKER,"info","--format","{{.OSType}}/{{.Architecture}}"],capture_output=True,text=True)
  if result.returncode: raise unittest.SkipTest("Docker unavailable: "+result.stderr.strip())
  platform=result.stdout.strip()
  platform={"linux/x86_64":"linux/amd64","linux/aarch64":"linux/arm64/v8","linux/arm64":"linux/arm64/v8"}.get(platform,platform)
@@ -56,11 +57,25 @@ class NativeImageTest(unittest.TestCase):
   for architecture,platform in (("amd64","linux/amd64"),("x86_64","linux/amd64"),("arm64","linux/arm64/v8"),("aarch64","linux/arm64/v8")):
    with self.subTest(architecture=architecture),patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],0,"linux/"+architecture+"\n","")) as info:
     self.assertEqual(native_caddy_image(),(platform,"caddy@"+caddy.PLATFORMS[platform][0]))
-    self.assertEqual(info.call_args.args[0],["docker","info","--format","{{.OSType}}/{{.Architecture}}"])
+    self.assertEqual(info.call_args.args[0],[DOCKER,"info","--format","{{.OSType}}/{{.Architecture}}"])
  def test_present_engine_validation_failure_is_not_skipped(self):
   with patch(__name__+".native_caddy_image",return_value=("linux/amd64","caddy@"+caddy.PLATFORMS["linux/amd64"][0])),patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],1,b"",b"exec format error")):
    with self.assertRaisesRegex(AssertionError,"exec format error"):
     ConfigTest("test_real_pinned_native_caddy_validates_both_profiles").test_real_pinned_native_caddy_validates_both_profiles()
+ def test_native_validation_does_not_require_a_cached_image(self):
+  image="caddy@"+caddy.PLATFORMS["linux/amd64"][0]
+  def runtime(arguments,**keywords):
+   if arguments[1:3]==["image","inspect"]:
+    return subprocess.CompletedProcess(arguments,1,b"",b"No such image")
+   return subprocess.CompletedProcess(arguments,0,b"",b"")
+  with patch(__name__+".native_caddy_image",return_value=("linux/amd64",image)),patch.object(subprocess,"run",side_effect=runtime) as commands:
+   try: ConfigTest("test_real_pinned_native_caddy_validates_both_profiles").test_real_pinned_native_caddy_validates_both_profiles()
+   except unittest.SkipTest as error: self.fail("Native validation skipped instead of allowing an image pull: "+str(error))
+  runs=[call.args[0] for call in commands.call_args_list if call.args[0][1]=="run"]
+  self.assertEqual(len(runs),2)
+  for arguments in runs:
+   self.assertIn(image,arguments); self.assertNotIn("--pull=never",arguments)
+
  def test_present_unsupported_engine_fails_instead_of_skipping(self):
   with patch.object(subprocess,"run",return_value=subprocess.CompletedProcess([],0,"linux/riscv64\n","")):
    with self.assertRaisesRegex(AssertionError,"Unsupported Docker engine platform"): native_caddy_image()
@@ -71,7 +86,7 @@ class ConfigTest(unittest.TestCase):
   for profile,upstream in (("codex","chatgpt.com"),("zulip","chat.example.com")):
    with self.subTest(platform=platform,profile=profile):
     config=caddy.generate_caddy_config(profile,upstream)
-    result=subprocess.run(["docker","run","--rm","-i","--platform",platform,image,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
+    result=subprocess.run([DOCKER,"run","--rm","-i","--platform",platform,image,"caddy","validate","--config","-"],input=config,capture_output=True,timeout=120)
     self.assertEqual(result.returncode,0,result.stderr.decode())
  def test_security_semantics_are_in_generated_json(self):
   config=json.loads(caddy.generate_caddy_config("codex","chatgpt.com")); server=config["apps"]["http"]["servers"]["egress"]
@@ -97,21 +112,21 @@ class ConfigTest(unittest.TestCase):
   servers["helper"]={"listen":["unix//tmp/helper.sock"],"routes":[{"handle":[{"handler":"static_response","status_code":204,"headers":{"Authorization":["Bearer trusted"],"Chatgpt-Account-Id":["acct"]}}]}]}
   body='auth={{.Req.Header.Get "Authorization"}} acct={{.Req.Header.Get "Chatgpt-Account-Id"}} xff={{.Req.Header.Get "X-Forwarded-For"}} safe={{.Req.Header.Get "X-Safe"}} path={{.Req.URL.Path}}'
   servers["upstream"]={"listen":[":9999"],"routes":[{"handle":[{"handler":"templates"},{"handler":"static_response","body":body}]}]}
-  container=subprocess.check_output(["docker","create","--platform",platform,image,"sh","-c","sleep 3600"],text=True).strip()
+  container=subprocess.check_output([DOCKER,"create","--platform",platform,image,"sh","-c","sleep 3600"],text=True).strip()
   try:
-   subprocess.run(["docker","start",container],check=True,stdout=subprocess.DEVNULL)
+   subprocess.run([DOCKER,"start",container],check=True,stdout=subprocess.DEVNULL)
    with tempfile.NamedTemporaryFile("w") as stream:
-    json.dump(config,stream); stream.flush(); subprocess.run(["docker","cp",stream.name,container+":/tmp/config.json"],check=True)
-   subprocess.run(["docker","exec","-d",container,"caddy","run","--config","/tmp/config.json"],check=True)
+    json.dump(config,stream); stream.flush(); subprocess.run([DOCKER,"cp",stream.name,container+":/tmp/config.json"],check=True)
+   subprocess.run([DOCKER,"exec","-d",container,"caddy","run","--config","/tmp/config.json"],check=True)
    deadline=time.monotonic()+10
    while True:
-    ready=subprocess.run(["docker","exec",container,"wget","-qO-","http://127.0.0.1:8787/ready"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    ready=subprocess.run([DOCKER,"exec",container,"wget","-qO-","--header=Authorization: Bearer session","http://127.0.0.1:8787/ready"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     if ready.returncode == 0: break
     if time.monotonic() >= deadline: self.fail("Caddy did not become ready within 10 seconds")
     time.sleep(.1)
-   output=subprocess.check_output(["docker","exec",container,"wget","-qO-","--header=Authorization: Bearer session","--header=X-Forwarded-For: evil","--header=X-Safe: yes","--post-data={}","http://127.0.0.1:8787/codex/responses"],text=True)
+   output=subprocess.check_output([DOCKER,"exec",container,"wget","-qO-","--header=Authorization: Bearer session","--header=X-Forwarded-For: evil","--header=X-Safe: yes","--post-data={}","http://127.0.0.1:8787/codex/responses"],text=True)
    self.assertEqual(output,"auth=Bearer trusted acct=acct xff= safe=yes path=/backend-api/codex/responses")
-  finally: subprocess.run(["docker","rm","-f",container],stdout=subprocess.DEVNULL)
+  finally: subprocess.run([DOCKER,"rm","-f",container],stdout=subprocess.DEVNULL)
 
 class UnixConnection(http.client.HTTPConnection):
  def __init__(self,path): super().__init__("localhost"); self.path=path
@@ -145,6 +160,37 @@ class HelperTest(unittest.TestCase):
   self.assertIn('decision=deny method="GET" path="/api/v1/streams" result=rejected reason=helper-query-not-allowed helper_path="/admit"',output)
   for sensitive in ("secret","include_can_access_content","anchor=private","token=hidden","retained=yes"):
    self.assertNotIn(sensitive,output)
+ def test_generated_precheck_preserves_caller_admission_for_both_profiles(self):
+  # Deterministic producer-to-helper check, not an emulation of Caddy routing.
+  # LiveCaddyAcceptanceTest below verifies the same matrix in the real engine.
+  for profile,token in (("codex","secret"),("zulip","other-instance-token")):
+   self.server.session_token=token
+   calls=[]
+   trusted=(("Authorization","Bearer trusted"),("Chatgpt-Account-Id","account")) if profile=="codex" else (("Authorization","Basic trusted"),)
+   def credentials(deadline): calls.append("application"); return trusted
+   def readiness(deadline): calls.append("ready"); return trusted
+   self.server.credentials=credentials; self.server.readiness=readiness
+   routes=json.loads(caddy.generate_caddy_config(profile,"example.invalid",token=token))["apps"]["http"]["servers"]["egress"]["routes"]
+   for operation,route in (("ready",routes[0]),("application",routes[1])):
+    precheck=next(handler for handler in route["handle"] if handler.get("rewrite",{}).get("method")=="GET")
+    policy=precheck["headers"]["request"]
+    for authorization,status in ((None,401),("Bearer wrong",401),("Bearer "+"x"*4090,401),("Bearer "+token,204)):
+     with self.subTest(profile=profile,operation=operation,authorization_class="absent" if authorization is None else "valid" if status==204 else "invalid"):
+      calls.clear(); headers={} if authorization is None else {"Authorization":authorization}
+      # Apply the generated request-header mutations at their HTTP boundary.
+      for name in policy["delete"]:
+       if name in headers: del headers[name]
+      for name,values in policy["set"].items():
+       if name=="Authorization": headers[name]=values[0]
+      client=UnixConnection(self.path); client.request("GET",precheck["rewrite"]["uri"].removesuffix("?"),headers=headers)
+      response=client.getresponse(); body=response.read(); returned=dict(response.getheaders()); client.close()
+      self.assertEqual(response.status,status); self.assertEqual(body,b"")
+      self.assertEqual(returned.get("Content-Length"),"0")
+      self.assertEqual(calls,[operation] if status==204 else [])
+      if status==401: self.assertEqual(returned,{"Content-Length":"0"})
+      else:
+       for name,value in trusted: self.assertEqual(returned[name],value)
+
  def test_profile_schema_is_exact(self):
   self.server.credentials=lambda d:(("Authorization","bearer wrong"),)
   self.assertEqual(self.request(),(503,{"Content-Length":"0"},b""))
@@ -161,4 +207,7 @@ class SetupCleanupTest(unittest.TestCase):
    self.assertFalse(Path(case.tmp.name).exists())
   finally:
    helper.operation_deadline=original; case.tmp.cleanup()
+# Register the live suite through pytest.ini's normal *_test.py discovery.
+# Missing unchanged local images are skips, never implicit pulls.
+LiveCaddyAcceptanceTest=load("caddy_acceptance_integration",Path(__file__).with_name("caddy_acceptance_integration.py")).LiveCaddy
 if __name__=="__main__": unittest.main()

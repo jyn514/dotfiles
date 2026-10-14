@@ -2516,6 +2516,24 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["docker", "run"] for call in calls))
         self.assertNotIn("auth", json.loads(proxy_state.read_text(encoding="utf-8")))
 
+    def test_codex_startup_readiness_uses_the_helper_and_agent_instance_token(self):
+        auth = self.home / ".codex-sandbox-auth"
+        auth.mkdir(mode=0o700)
+        credential = auth / "auth.json"
+        credential.write_text('{"tokens":{"access_token":"dummy","refresh_token":"dummy"}}')
+        credential.chmod(0o600)
+        result = self.run_launcher()
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = read_calls(self.docker_log)
+        helper = next(call for call in calls if "/trusted/bin/profile-helper" in call)
+        tokens = [item.removeprefix("CADDY_PROFILE_TOKEN=") for item in helper
+                  if item.startswith("CADDY_PROFILE_TOKEN=")]
+        self.assertEqual(1, len(tokens))
+        readiness = [call for call in calls if call[-1:] == ["http://127.0.0.1:8787/ready"]]
+        self.assertEqual(1, len(readiness))
+        self.assertIn("--header=Authorization: Bearer " + tokens[0], readiness[0])
+        self.assertIn("CODEX_SIDECAR_KEY=" + tokens[0], self.final_run())
+
     def test_starts_codex_auth_sidecar_without_mounting_auth_in_agent(self) -> None:
         auth = self.home / ".codex-sandbox-auth"
         auth.mkdir(mode=0o700)

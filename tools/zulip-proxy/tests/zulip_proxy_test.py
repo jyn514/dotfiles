@@ -98,6 +98,58 @@ class ForwarderTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        token = mock.patch.object(server, "CADDY_TOKEN", "private-pair-token")
+        token.start()
+        self.addCleanup(token.stop)
+
+    def test_private_admission_token_is_required_before_startup_or_requests(self) -> None:
+        requests = (self.request(), {"version": 1, "operation": "channels"},
+                    {"version": 1, "operation": "topics", "channel_id": 123})
+        for token in (None, "", "line\nbreak", "Bearer doubled", "\N{LATIN SMALL LETTER E WITH ACUTE}", "x" * 4090):
+            with self.subTest(token_class="missing" if not token else "malformed"), \
+                    mock.patch.object(server, "CADDY_TOKEN", token), \
+                    mock.patch.object(server, "URL_OPEN") as opener:
+                for request in requests:
+                    result = json.loads(server.process_request(json.dumps(request).encode(),
+                        "http://test-zulip-caddy:8787/api/v1/messages"))
+                    self.assertEqual({"version", "error"}, set(result))
+                    self.assertIn("ZULIP_CADDY_TOKEN", result["error"])
+                opener.assert_not_called()
+                with mock.patch.object(server, "CADDY_ENDPOINT", "http://test-zulip-caddy:8787/api/v1/messages"), \
+                        mock.patch.object(server.Path, "mkdir") as mkdir:
+                    with self.assertRaisesRegex(server.RequestError, "ZULIP_CADDY_TOKEN"):
+                        server.main()
+                    mkdir.assert_not_called()
+
+    def test_all_operation_requests_and_retries_use_only_the_private_pair_token(self) -> None:
+        from urllib.error import HTTPError
+        endpoint = "http://test-zulip-caddy:8787/api/v1/messages"
+        requests = (self.request(anchor="oldest"), self.request(anchor=42),
+                    {"version": 1, "operation": "channels"},
+                    {"version": 1, "operation": "topics", "channel_id": 123})
+        expected = {"result": "success", "messages": [], "found_newest": True,
+                    "streams": [], "topics": []}
+        for token in ("private-pair-token", "different-pair-token", "x" * 4089):
+            for request in requests:
+                observed = []
+                def opener(upstream, timeout):
+                    observed.append((upstream.method, upstream.get_header("Authorization"), upstream.full_url))
+                    if len(observed) == 1:
+                        raise HTTPError(upstream.full_url, 429, "limited", {"Retry-After": "0"}, None)
+                    return io.BytesIO(json.dumps(expected).encode())
+                with self.subTest(operation=request.get("operation", "messages"), page=request.get("anchor")), \
+                        mock.patch.object(server, "CADDY_TOKEN", token), \
+                        mock.patch.object(server, "SESSION_KEY", "different-client-token"), \
+                        mock.patch.object(server, "URL_OPEN", opener):
+                    result = json.loads(server.process_request(json.dumps(request).encode(), endpoint))
+                    self.assertNotIn("error", result)
+                    self.assertEqual(len(observed), 2)
+                    self.assertEqual(observed[0], observed[1])
+                    self.assertEqual(observed[0][:2], ("GET", "Bearer " + token))
+                    self.assertNotIn("different-client-token", json.dumps(observed))
+                    self.assertNotIn(token, json.dumps(result))
+
     def test_write_frame_retries_short_writes(self) -> None:
         class ShortWriter:
             def __init__(self) -> None:

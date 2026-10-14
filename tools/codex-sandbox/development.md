@@ -163,9 +163,40 @@ Dockerfile-specific ignore precedence through actual Bake builds and container
 exports. It removes its containers and tagged images after each case.
 
 Live Caddy checks in `tests/caddy_foundation_test.py` execute the pinned manifest
-for the Docker daemon's platform. Unit checks verify identity selection for both
-supported platforms. Foreign-architecture execution requires emulation and is
-not part of the default suite.
+for the Docker daemon's platform.
+The existing native configuration-validation and request-forwarding checks require a reachable Docker engine and may pull the pinned image.
+A missing cached image does not skip those checks; validation or execution failures fail the test.
+Unit checks verify identity selection for both supported platforms.
+Foreign-architecture execution requires emulation and is not part of the default suite.
+
+Caddy preserves the original caller `Authorization` when making its bodyless helper request.
+It must not replace that value with the configured instance token: doing so admits unauthenticated callers.
+The helper performs constant-time exact bearer-token admission before reading or refreshing credentials.
+Missing, wrong, and over-4096-byte Authorization values return bodyless `401` without an application-upstream request.
+Only successful admission replaces caller auth/account headers with the helper's trusted values.
+Every launcher startup and join probe sends `Authorization: Bearer <instance-token>` to exact bodyless `GET /ready`, with no query.
+Readiness checks local credential readability through Caddy and the helper without an application-upstream request or credential refresh/write.
+`EgressPairPlan.session_token` supplies both the helper admission token and shared startup probe header;
+caller-provided `helper_environment` must not also set `CADDY_PROFILE_TOKEN`.
+
+The additional `LiveCaddyAcceptanceTest` matrix is discovered through `tests/caddy_foundation_test.py` by the normal test runner.
+It also runs directly with:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/caddy_acceptance_integration.py
+```
+
+This matrix requires the daemon's pinned Caddy manifest and `python:3.12-alpine` already installed locally.
+It skips when either image is missing and never pulls images; this restriction applies only to the additional matrix, not the existing native checks.
+It creates and removes disposable containers, volumes, and a network, with no live service or VM configuration changes.
+The matrix exercises rejected and admitted caller tokens through Caddy and the actual Unix helper,
+including authenticated readiness and zero application requests on rejection.
+
+The helper logging requirements in [the authenticated-egress specification](spec/proxy-design.typ) remain contradictory.
+Its metadata table requires logging other headers and original method/URI context;
+its observability section and acceptance checks forbid logging that metadata.
+The existing helper logs bounded original method/path and result classes, without query values or arbitrary headers.
+The caller-token fix preserves that behavior; passing admission checks does not establish compliance with either conflicting logging requirement.
 
 The runtime integration test builds real images and requires a working Docker-compatible daemon and network access:
 

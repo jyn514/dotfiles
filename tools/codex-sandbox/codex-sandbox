@@ -1245,7 +1245,8 @@ def start_codex_sidecar(state: State, auth_directory: Path, *,
         public_networks=(("application-network", "application", application_network),
                          ("refresh-network", "refresh", refresh_network)),
         helper_mounts=(f"type=bind,src={auth_directory},dst=/var/lib/codex-auth",),
-        helper_environment=(f"CADDY_PROFILE_TOKEN={key}",),
+        helper_environment=(),
+        session_token=key,
         helper_arguments=("--profile", "codex"),
         runtime_flags=tuple(proxy_flags()),
         extra_caddy_networks=(SANDBOX_NETWORK,),
@@ -1457,6 +1458,7 @@ def attach_codex_sidecar(state: State, auth_directory: Path | None = None) -> li
         )
     readiness = run([
         "docker", "exec", sidecar["container"], "wget", "-q", "-O", "/dev/null",
+        "--header=Authorization: Bearer " + sidecar["key"],
         "http://127.0.0.1:8787/ready",
     ], check=False, quiet=True)
     if readiness.returncode:
