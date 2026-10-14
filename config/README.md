@@ -16,6 +16,12 @@ matching the group's glob without adding manifest entries. The tmux script
 sources are symlinks to their implementations in `libexec/tmux/` and `bin/`;
 edit those implementations, not copies.
 
+## Mise
+
+`mise.toml` sets `all_compile = false` on every platform so Alpine and NixOS do not implicitly force source builds.
+Tools can still fall back to source when no compatible binary exists; tool-specific compile settings take precedence.
+`mise.lock` records platform-specific artifacts for the selected versions.
+
 ## Agent instructions
 
 Agent launchers put `libexec/agent-wrappers` on PATH.

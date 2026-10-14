@@ -51,6 +51,8 @@ tools.python = "{{vars.bootstrap_python}}"
 run = "python libexec/setup/install_pi.py"
 
 [settings]
+# Prefer available binaries on every host, including Alpine and NixOS.
+all_compile = false
 lockfile = true
 locked = true
 lockfile_platforms = ["linux-x64", "macos-arm64"]
