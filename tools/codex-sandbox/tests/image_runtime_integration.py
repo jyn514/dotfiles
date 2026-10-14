@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import uuid
 
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "tools" / "codex-sandbox" / "image" / "Dockerfile"
 WRAPPED_COMMAND_PROBE = Path(__file__).with_name("wrapped_command_probe.clj")
+RUNTIME_PROBE = Path(__file__).with_name('fixtures') / 'image-runtime.sh'
 IMAGE_PREFIX = 'codex-sandbox'
 sys.path.insert(0, str(ROOT / 'tools/codex-sandbox'))
 from owned_images import jj_release_args
@@ -41,6 +40,32 @@ def build(tag: str, pi_revision: str, base_image: str | None = None, *,
     subprocess.run(command, cwd=ROOT, check=True)
 
 
+def check_guest(tag: str, revision: str, node_prefix: str, jj_checksum: str) -> None:
+    label = run(
+        'docker', 'image', 'inspect', '--format',
+        '{{ index .Config.Labels "dev.codex.pi-revision" }}', tag,
+    ).strip()
+    if label != revision:
+        raise RuntimeError(f'unexpected Pi revision label: {label!r}')
+    output = run(
+        'docker', 'run', '--rm', '--interactive', '--entrypoint', 'sh', tag,
+        '-c', RUNTIME_PROBE.read_text(), input=WRAPPED_COMMAND_PROBE.read_text(),
+    ).splitlines()
+    if len(output) != 7:
+        raise RuntimeError(f'unexpected combined guest probe: {output!r}')
+    checksum = output[0].split()
+    if not checksum or checksum[0] != jj_checksum:
+        raise RuntimeError('guest JJ differs from the proxy binary')
+    if (
+        not output[1].startswith(node_prefix)
+        or output[2] != revision
+        or output[4:6] != ['1.3.14', 'bun-test-ok']
+    ):
+        raise RuntimeError(f'unexpected Pi runtime: {output[1:6]!r}')
+    if output[6] != 'wrapped-command-probe-ok':
+        raise RuntimeError(f'unexpected wrapped-command probe: {output[6]!r}')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description='Build and check Alpine Node and Debian Bun runtimes.')
     parser.add_argument('--expected-revision', required=True, help='expected Pi commit in the built images')
@@ -67,53 +92,17 @@ def main() -> None:
             '--entrypoint', '/trusted/bin/sh', jj_image,
             input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
         )
-        if not colocated.endswith('jj-colocated-ok\n'):
+        checksum, _, workspace = colocated.partition('\n')
+        if not workspace.endswith('jj-colocated-ok\n') or not checksum.split():
             raise RuntimeError(f'unexpected colocated JJ workspace probe: {colocated!r}')
-        with tempfile.TemporaryDirectory(prefix='sandbox-jj-binary-') as directory:
-            container = run('docker', 'create', jj_image).strip()
-            try:
-                binary = Path(directory) / 'jj'
-                subprocess.run(['docker', 'cp', f'{container}:/trusted/bin/jj', str(binary)], check=True)
-                jj_checksum = hashlib.sha256(binary.read_bytes()).hexdigest()
-            finally:
-                subprocess.run(['docker', 'rm', container], check=True)
+        jj_checksum = checksum.split()[0]
         for tag, cache_tag, base_image in (
             (alpine, alpine_cache, None),
             (debian, debian_cache, "node:20-bookworm-slim"),
         ):
             build(tag, args.expected_revision, base_image, jj_image=jj_image, cache_tag=cache_tag)
-            actual = run('docker', 'run', '--rm', '--entrypoint', 'sha256sum',
-                         tag, '/opt/agent-tools/libexec/jj').split()[0]
-            if actual != jj_checksum:
-                raise RuntimeError('guest JJ differs from the proxy binary')
-            label = run(
-                'docker', 'image', 'inspect', '--format',
-                '{{ index .Config.Labels "dev.codex.pi-revision" }}', tag,
-            ).strip()
-            if label != args.expected_revision:
-                raise RuntimeError(f'unexpected Pi revision label: {label!r}')
-            output = run(
-                "docker", "run", "--rm", "--entrypoint", "sh", tag, "-c",
-                "node --version; cat /opt/agent-pi/REVISION; "
-                "/opt/agent-pi/bin/pi --version; bun --version; "
-                "bun test /opt/agent-pi/check-bun.test.ts >/dev/null "
-                "&& printf 'bun-test-ok\\n'",
-            ).splitlines()
-            expected_node = "v24." if tag == alpine else "v20."
-            if (
-                not output[0].startswith(expected_node)
-                or output[1] != args.expected_revision
-                or output[3:] != ["1.3.14", "bun-test-ok"]
-            ):
-                raise RuntimeError(f"unexpected Pi runtime: {output!r}")
-            wrapped = run(
-                "docker", "run", "--rm", "--interactive",
-                "--entrypoint", "/opt/agent-tools/libexec/bb",
-                tag, "--file", "/dev/stdin",
-                input=WRAPPED_COMMAND_PROBE.read_text(),
-            )
-            if wrapped != "wrapped-command-probe-ok\n":
-                raise RuntimeError(f"unexpected wrapped-command probe: {wrapped!r}")
+            expected_node = 'v24.' if tag == alpine else 'v20.'
+            check_guest(tag, args.expected_revision, expected_node, jj_checksum)
     finally:
         subprocess.run(
             ["docker", "image", "rm", "-f", alpine, debian, jj_image],

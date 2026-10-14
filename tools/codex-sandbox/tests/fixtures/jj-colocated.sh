@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+/trusted/bin/busybox sha256sum /trusted/bin/jj
 export HOME=/tmp/home
 busybox mkdir -p "$HOME"
 cd /tmp
