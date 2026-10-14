@@ -228,6 +228,44 @@
     (is (= before-wc (working-tree repo)) "rejected selection keeps filesystem bytes/kinds/modes")
     result))
 
+(deftest ^:needs/bb ^:needs/git ^:needs/jj native-preflight-explains-zero-context-without-relaxing-rejection
+  ;; Removing the diagnostic loses the reported recovery action; guessing from
+  ;; hunk headers falsely labels stale patches. Normal contextual edits stay valid.
+  (doseq [selection [:zero-context :stale-zero-context :wrong-context :with-context]]
+    (testing (name selection)
+      (with-repo
+        (fn [repo]
+          (put! repo "note.txt" "one\ntwo\nthree\nfour\nfive\n")
+          (put! repo "other.txt" "unselected base\n")
+          (checked repo "jj" "commit" "-m" "base")
+          (let [base (revision-tree repo "@-")
+                zero-context (str "diff --git a/note.txt b/note.txt\n"
+                                  "--- a/note.txt\n+++ b/note.txt\n"
+                                  "@@ -2 +2 @@\n-two\n+TWO\n")
+                contextual (str "diff --git a/note.txt b/note.txt\n"
+                                "--- a/note.txt\n+++ b/note.txt\n"
+                                "@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n")
+                patch (case selection
+                        :zero-context zero-context
+                        :stale-zero-context (str/replace zero-context "-two\n" "-not-in-base\n")
+                        :wrong-context (str/replace contextual " one\n" " wrong\n")
+                        :with-context contextual)]
+            (put! repo "note.txt" "one\nTWO\nthree\nfour\nfive\n")
+            (put! repo "other.txt" "unselected change\n")
+            (checked repo "jj" "status")
+            (if (= selection :with-context)
+              (assert-split! repo patch "@"
+                             (assoc base "note.txt" (text-entry "one\nTWO\nthree\nfour\nfive\n")))
+              (let [result (assert-rejected! repo patch "@")
+                    error (:err result)]
+                (is (str/blank? (:out result)) "failure leaves JSON result output empty")
+                (is (str/includes? error "patch dry-run failed"))
+                (is (= (= selection :zero-context)
+                       (str/includes? error "Git accepts this patch only with --unidiff-zero")))
+                (is (str/includes? error "jj diff --git -r <revision>"))
+                (is (str/includes? error "unchanged context from the revision's parent"))
+                (is (str/includes? error "No split was run."))))))))))
+
 (def duplicate-base "first\nold\nmiddle\nold\nlast\n")
 (def wrong-occurrence-patch
   (str "diff --git a/note.txt b/note.txt\n--- a/note.txt\n+++ b/note.txt\n"

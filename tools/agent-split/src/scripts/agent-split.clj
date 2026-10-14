@@ -277,7 +277,20 @@
                              "git" "apply" "--recount" "--unsafe-paths" "--check"
                              (str patch))]
     (when-not (zero? (:exit check))
-      (fail! "preflight" (str "patch dry-run failed\n" (:err check))))
+      ;; Ask Git whether missing context explains the failure; never apply with
+      ;; relaxed matching or infer the cause from patch headers alone.
+      (let [zero-context-check (process/shell {:dir (str tree)
+                                               :out :string
+                                               :err :string
+                                               :shutdown nil
+                                               :continue true}
+                                              "git" "apply" "--recount" "--unsafe-paths"
+                                              "--unidiff-zero" "--check" (str patch))]
+        (fail! "preflight"
+               (str "patch dry-run failed\n" (:err check)
+                    (when (zero? (:exit zero-context-check))
+                      "\nGit accepts this patch only with --unidiff-zero; agent-split does not use that option.")
+                    "\nRegenerate selected hunks from jj diff --git -r <revision>, retaining unchanged context from the revision's parent."))))
     (run "preflight" {:dir (str tree)}
          "git" "apply" "--recount" "--unsafe-paths" (str patch))))
 
