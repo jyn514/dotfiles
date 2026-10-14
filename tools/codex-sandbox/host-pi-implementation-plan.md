@@ -78,3 +78,24 @@ sources, guest-view resource reads, and brokered model requests.
 Model-requested session forks remain selected, not implemented. Operational
 acceptance remains open for worker loss. The direct `/skill:` delegation warning
 is a separate unresolved issue.
+
+## Pending proposal: remove the unused Codex model broker
+
+**Status:** retained for a future decision; not selected for implementation.
+The model-authentication contract and selected broker requirement remain unchanged.
+
+Host Pi currently uses its native providers and credentials.
+The launcher still prepares the Codex Caddy/profile-helper pair and supplies its provider overrides to the guest tool worker.
+`sandbox-host-pi` omits that guest-only provider, so these resources do not broker the current host model requests.
+
+The proposal is to use native host authentication deliberately and remove the unused Codex-specific startup,
+image acquisition, provider overrides, token projection, and persisted live-session fields.
+Remove Codex-only helper/profile/provider code after confirming it has no retained consumer.
+Retain only the recovery support needed to drain already-created resources and older session records.
+Preserve the Zulip typed broker and its Caddy/helper pair, the R2 Keychain relay, and guest tool execution.
+Keep host model credentials out of guest worker mounts and environment.
+
+Acceptance would cover fresh launches, joins, ordinary subagents, `/split`, restart, and final cleanup:
+none creates Codex broker resources or guest provider overrides, and retained relays and guest tools still work.
+The operator guide, authentication/setup references, and specifications would need to adopt the changed model-authentication contract together.
+Protected host code and guest-view instruction reads remain separate isolation work; broker removal would not resolve them.

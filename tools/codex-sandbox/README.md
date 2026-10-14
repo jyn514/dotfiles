@@ -455,5 +455,7 @@ a join cannot rewrite shared metadata.
 The authoritative [sandbox design specification](spec/main.typ) aggregates the sandbox contracts, including the trust model, proxy manifest, image resolution, and lifecycle.
 The [TicGit proxy design](spec/tic-proxy.typ) proposes one persistent offline service per Git common directory for host and agent ticket operations.
 It is not implemented; ordinary host `ti` would require the container runtime even with no sandbox running.
+The [pending Codex broker-removal proposal](host-pi-implementation-plan.md#pending-proposal-remove-the-unused-codex-model-broker) records an alternative to the selected authentication contract.
+It is not selected; the model-authentication contract remains unchanged.
 Read the relevant contracts before changing a security boundary.
 See the [tools overview](../README.md).
