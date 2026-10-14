@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { expandInstructionFile } from "./pi-instruction-includes.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool, createEditTool, createFindTool, createGrepTool,
@@ -119,6 +122,12 @@ export default function guestTools(pi: ExtensionAPI) {
     console.error("Sandbox repository context is unavailable; start a new sandbox to enable it.");
   }
   const resourcePaths = guestResourcePaths();
+  const hostRepository = Object.entries(resourcePaths)
+    .find(([, guestPath]) => guestPath === repository)?.[0];
+  const instructionFiles = [
+    ...(hostRepository ? [join(hostRepository, ".agents/sandbox/AGENTS.md")] : []),
+    join(homedir(), ".agents/sandbox/AGENTS.md"),
+  ];
   const previousCwd = process.env.CODEX_SANDBOX_PREVIOUS_CWD;
   const previousGuestCwd = previousCwd && rewritePiResourcePaths(previousCwd, resourcePaths);
   pi.on("session_start", (event, ctx) => {
@@ -163,7 +172,14 @@ export default function guestTools(pi: ExtensionAPI) {
       },
     };
   });
-  pi.on("context_with_system", (event) => {
+  pi.on("context_with_system", async (event) => {
+    const instructions: string[] = [];
+    for (const path of instructionFiles) {
+      if (existsSync(path)) instructions.push(await expandInstructionFile(path));
+    }
+    const sandboxInstructions = instructions.length
+      ? rewritePiResourcePaths(instructions.join("\n\n"), resourcePaths)
+      : null;
     // Goal-triggered runs skip before_agent_start. Project the guest view at
     // request time, including structured system patches and resumed history.
     const rewriteSystem = (text: string) => rewritePiResourcePaths(text, resourcePaths)
@@ -183,6 +199,9 @@ export default function guestTools(pi: ExtensionAPI) {
           );
           if (firstSystem || message.sections?.sandbox_context !== undefined) {
             sections.sandbox_context = sandboxContext;
+          }
+          if (firstSystem || message.sections?.sandbox_instructions !== undefined) {
+            sections.sandbox_instructions = sandboxInstructions;
           }
           firstSystem = false;
           return {

@@ -24,7 +24,19 @@ class AgentCommandTest(unittest.TestCase):
                 repository=Path("/Users/jyn/src/personal/lapwing/stint"),
                 container_repository=Path("/src/personal/lapwing/stint"),
             )
-            paths = launcher["host_pi_resource_paths"](state)
+            agents_source = state.home / "src/dotfiles/renamed-instructions.md"
+            agents_source.parent.mkdir(parents=True)
+            agents_source.write_text("Host instructions.\n", encoding="utf-8")
+            resource_paths = launcher["host_pi_resource_paths"]
+            with mock.patch.dict(resource_paths.__globals__, {
+                "installed_config_source": lambda _target: agents_source,
+            }):
+                paths = resource_paths(state)
+            self.assertEqual(
+                "/src/dotfiles/renamed-instructions.md",
+                paths[str(state.home / ".pi/agent/AGENTS.md")],
+            )
+            self.assertNotIn("/home/codex/.pi/agent/AGENTS.md", paths.values())
 
             self.assertEqual(
                 "/src/personal/lapwing/stint",
@@ -39,8 +51,8 @@ class AgentCommandTest(unittest.TestCase):
                 paths[str(state.home / ".agents/skills")],
             )
             self.assertEqual(
-                "/home/codex/.pi/agent/AGENTS.md",
-                paths[str(state.home / ".pi/agent/AGENTS.md")],
+                "/home/codex/.agents/sandbox",
+                paths[str(state.home / ".agents/sandbox")],
             )
             self.assertEqual(
                 "/home/codex/.pi/agent/sessions",

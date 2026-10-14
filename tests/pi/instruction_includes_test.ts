@@ -69,13 +69,12 @@ describe("instruction includes", () => {
     expect(result[1]).toContain("second");
   });
 
-  test("expands the sandboxed Pi instruction layout", async () => {
+  test("expands host Pi's shared instruction route", async () => {
     const home = await fixture();
     const agent = join(home, ".pi", "agent");
     const shared = join(home, ".agents");
     await mkdir(agent, { recursive: true });
     await mkdir(shared, { recursive: true });
-    await writeFile(join(agent, "breq.md"), "Breq");
     await writeFile(join(shared, "shared.md"), "Shared");
     const content = await readFile(join(import.meta.dir, "../../config/pi-agent/AGENTS.md"), "utf8");
 
@@ -84,12 +83,7 @@ describe("instruction includes", () => {
       agent,
     );
 
-    // Both the persona and the cross-directory shared rules must reach Pi,
-    // exactly once and in declaration order.
-    expect(result).toEqual([
-      expect.stringContaining("Breq"),
-      expect.stringContaining("Shared"),
-    ]);
+    expect(result).toEqual([expect.stringContaining("Shared")]);
   });
 
   test("ignores directives inside fenced code blocks", async () => {

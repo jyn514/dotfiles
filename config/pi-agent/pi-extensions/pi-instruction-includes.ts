@@ -74,6 +74,10 @@ async function expandFile(
   return [`<!-- instruction include: ${canonical} -->`, content, ...children].join("\n\n");
 }
 
+export async function expandInstructionFile(path: string): Promise<string> {
+  return expandFile(path, []);
+}
+
 export async function expandInstructionIncludes(
   contextFiles: ContextFile[],
   _cwd: string,

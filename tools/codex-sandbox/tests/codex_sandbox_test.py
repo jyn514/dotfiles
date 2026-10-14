@@ -623,12 +623,19 @@ class HostPiWrapperTest(unittest.TestCase):
             )
             cli.chmod(0o700)
             host_pi_package = home / ".local/share/pi/source/packages/coding-agent"
-            resource_paths = launcher["host_pi_resource_paths"](SimpleNamespace(
-                home=home,
-                host_pi_package=host_pi_package,
-                repository=host_repository,
-                container_repository=Path("/src/personal/lapwing/stint"),
-            ))
+            agents_source = home / "src/dotfiles/config/pi-agent/AGENTS.md"
+            agents_source.parent.mkdir(parents=True)
+            agents_source.write_text("Host instructions.\n", encoding="utf-8")
+            resource_paths_function = launcher["host_pi_resource_paths"]
+            with mock.patch.dict(resource_paths_function.__globals__, {
+                "installed_config_source": lambda _target: agents_source,
+            }):
+                resource_paths = resource_paths_function(SimpleNamespace(
+                    home=home,
+                    host_pi_package=host_pi_package,
+                    repository=host_repository,
+                    container_repository=Path("/src/personal/lapwing/stint"),
+                ))
             result = subprocess.run(
                 [str(TOOL / "sandbox-host-pi"), "--mode", "rpc"],
                 env={**os.environ, "HOME": str(home),
@@ -648,11 +655,11 @@ class HostPiWrapperTest(unittest.TestCase):
                 [
                     "Project config: /src/personal/lapwing/stint/config/agents/breq.md",
                     "Shared skill: /home/codex/.agents/skills/spec-review/SKILL.md",
-                    "Agent instructions: <project_instructions path=\"/home/codex/.pi/agent/AGENTS.md\">",
+                    "Agent instructions: <project_instructions path=\"/src/dotfiles/config/pi-agent/AGENTS.md\">",
                     "Pi examples: /opt/agent-pi/src/packages/coding-agent/examples",
                     "Guest package: /opt/agent-pi/src/packages/coding-agent/README.md",
                     "Guest checkout: /src/dotfiles/AGENTS.md",
-                    f"Sibling location: {host_repository}-old/.agents/skills/spec-review/SKILL.md",
+                    "Sibling location: /src/personal/lapwing/stint-old/.agents/skills/spec-review/SKILL.md",
                 ],
                 output["prompt"].splitlines(),
             )
@@ -1786,12 +1793,12 @@ class CodexSandboxTest(unittest.TestCase):
     def test_staging_uses_install_mapping_for_config_source_names(self) -> None:
         launcher = runpy.run_path(str(LAUNCHER))
         checkout = self.root / "alternate-dotfiles"
-        renamed = checkout / "renamed-pi-config/AGENTS.md"
+        renamed = checkout / "renamed-pi-config/breq.md"
         renamed.parent.mkdir(parents=True)
         renamed.write_text("renamed source\n", encoding="utf-8")
         sources = launcher["installed_config_sources"]()
         mappings = {target: str(source) for target, source in sources.items()
-                    if target != "$HOME/.pi/agent/AGENTS.md"}
+                    if target != "$HOME/.pi/agent/breq.md"}
         mappings["$HOME/.pi/agent/"] = {"glob": True, "path": "renamed-pi-config/**"}
         (checkout / "install.conf.json").write_text(json.dumps([{"link": mappings}]))
         launcher["installed_config_sources"].cache_clear()
@@ -1801,14 +1808,14 @@ class CodexSandboxTest(unittest.TestCase):
                 launcher["stage_skills"](state)
             self.assertEqual(
                 "renamed source\n",
-                (state.skills_tmp / "config/agents").read_text(encoding="utf-8"),
+                (state.skills_tmp / "config/breq").read_text(encoding="utf-8"),
             )
         finally:
             launcher["installed_config_sources"].cache_clear()
             if state.skills_tmp is not None:
                 shutil.rmtree(state.skills_tmp)
 
-    def test_loads_repository_and_home_sandbox_instructions(self) -> None:
+    def test_stages_home_sandbox_references_without_guest_pi_instructions(self) -> None:
         repository_sandbox = self.repo / ".agents" / "sandbox"
         repository_sandbox.mkdir(parents=True)
         (repository_sandbox / "AGENTS.md").write_text(
@@ -1833,16 +1840,7 @@ class CodexSandboxTest(unittest.TestCase):
         )
         try:
             launcher["stage_skills"](state)
-            agents = (state.skills_tmp / "config/agents").read_text(encoding="utf-8")
-            source = launcher["installed_config_source"](
-                "$HOME/.pi/agent/AGENTS.md"
-            ).read_text(encoding="utf-8").rstrip("\n")
-            self.assertEqual(
-                source + "\n" +
-                "@/src/repository/.agents/sandbox/AGENTS.md\n"
-                "@../../.agents/sandbox/AGENTS.md\n",
-                agents,
-            )
+            self.assertFalse((state.skills_tmp / "config/agents").exists())
             self.assertEqual(
                 "home rule\n",
                 (state.skills_tmp / "sandbox/home-rule.md").read_text(encoding="utf-8"),
@@ -1855,6 +1853,10 @@ class CodexSandboxTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(any(
             item.endswith("dst=/home/codex/.agents/sandbox,readonly")
+            for item in self.final_run()
+        ))
+        self.assertFalse(any(
+            "dst=/home/codex/.pi/agent/AGENTS.md" in item
             for item in self.final_run()
         ))
 
@@ -2523,14 +2525,13 @@ class CodexSandboxTest(unittest.TestCase):
             if any(item.endswith(f"dst={destination},readonly") for destination in (
                 "/home/codex/.agents/shared.md",
                 "/home/codex/.agents/coordination-dialect.md",
-                "/home/codex/.pi/agent/AGENTS.md",
                 "/home/codex/.pi/agent/breq.md",
                 "/home/codex/.pi/agent/settings.json",
                 "/home/codex/.pi/agent/mcp.json",
                 "/home/codex/.pi/agent/keybindings.json",
             ))
         ]
-        self.assertEqual(7, len(staged_mounts))
+        self.assertEqual(6, len(staged_mounts))
         staged_sources = [
             Path(item.split(",src=", 1)[1].split(",dst=", 1)[0])
             for item in staged_mounts

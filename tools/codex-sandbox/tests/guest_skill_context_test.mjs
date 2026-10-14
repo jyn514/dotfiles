@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -112,20 +112,39 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     rmSync(directory, { recursive: true, force: true });
   });
   const cwd = join(directory, "project");
-  const agentDir = join(directory, "agent");
+  const home = join(directory, "home");
+  const agentDir = join(home, ".pi/agent");
+  const repositoryInstructions = join(cwd, ".agents/sandbox/AGENTS.md");
+  const homeInstructions = join(home, ".agents/sandbox/AGENTS.md");
+  mkdirSync(join(cwd, ".agents/sandbox"), { recursive: true });
+  mkdirSync(join(home, ".agents/sandbox"), { recursive: true });
+  writeFileSync(repositoryInstructions, "Repository sandbox rule.\n@nested.md\n");
+  writeFileSync(join(cwd, ".agents/sandbox/nested.md"), "Nested repository sandbox rule.");
+  // Dotbot installs the home rule as a symlink to source outside the active repository.
+  const homeSource = join(home, "src/dotfiles/config/agents");
+  mkdirSync(homeSource, { recursive: true });
+  writeFileSync(join(homeSource, "sandbox-AGENTS.md"), "Home sandbox rule.\n@nested.md\n");
+  symlinkSync(join(homeSource, "sandbox-AGENTS.md"), homeInstructions);
+  writeFileSync(join(homeSource, "nested.md"), "Nested home sandbox rule.");
   const skillDir = join(cwd, ".agents/skills/ready-workqueue");
   mkdirSync(skillDir, { recursive: true });
-  mkdirSync(agentDir);
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "AGENTS.md"), "Ordinary host user instruction.");
   writeFileSync(join(skillDir, "SKILL.md"),
     "---\nname: ready-workqueue\ndescription: offline queue fixture\n---\nRead the queue.");
   const guestRepository = "/src/renamed-project";
   const guestCwd = `${guestRepository}/nested`;
   Object.assign(process.env, {
+    HOME: home,
     CODEX_SANDBOX_TOOL_CONTAINER: "fixture",
     CODEX_SANDBOX_GUEST_CWD: guestCwd,
     CODEX_SANDBOX_GUEST_REPO: guestRepository,
     CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({
-      [cwd]: guestCwd, "/host/previous-project": "/src/previous-project",
+      [cwd]: guestRepository,
+      [home]: "/home/codex",
+      [join(home, "src")]: "/src",
+      [join(agentDir, "AGENTS.md")]: "/src/dotfiles/config/pi-agent/AGENTS.md",
+      "/host/previous-project": "/src/previous-project",
     }),
     CODEX_SANDBOX_PREVIOUS_CWD: "/host/previous-project",
   });
@@ -157,7 +176,7 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   let beforeStarts = 0;
   const loader = new DefaultResourceLoader({
     cwd, agentDir, settingsManager,
-    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
     additionalSkillPaths: [skillDir],
     additionalExtensionPaths: [join(root, "config/pi-agent/pi-extensions/guest-tools.ts")],
     extensionFactories: [(pi) => {
@@ -182,8 +201,12 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   const goal = { customType: "pi-codex-goal", content: "/skill:ready-workqueue", display: false };
   await session.sendCustomMessage(goal, { triggerTurn: true });
   assert.equal(beforeStarts, 0, "goal-first request skips before_agent_start");
+  writeFileSync(join(homeSource, "nested.md"), "Updated nested home sandbox rule.");
+  writeFileSync(repositoryInstructions, "Updated repository sandbox rule.");
   await session.prompt("ordinary prompt");
   assert.equal(beforeStarts, 1);
+  rmSync(homeInstructions);
+  rmSync(repositoryInstructions);
   session.dispose();
   const { session: resumed } = await createAgentSession(options);
   t.after(() => resumed.dispose());
@@ -195,15 +218,32 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
   const expectedSandbox = template.split("{{repository}}").join(guestRepository).trim();
   const incorrectSandbox = template.split("{{repository}}").join(guestCwd).trim();
   assert.ok(firstGoalSystem.includes(expectedSandbox), "the initial goal request also receives the sandbox context");
+  const systemText = (messages) => messages.filter((message) => message.role === "system")
+    .map(getSystemMessageText).join("\n");
+  for (const text of [firstGoalSystem, systemText(requests[0])]) {
+    for (const rule of ["Repository sandbox rule.", "Nested repository sandbox rule.",
+      "Home sandbox rule.", "Nested home sandbox rule."]) {
+      assert.equal(text.split(rule).length - 1, 1, `provider receives ${rule} exactly once`);
+    }
+    assert.ok(text.includes(`${guestRepository}/.agents/sandbox/AGENTS.md`));
+    assert.ok(text.includes("/src/dotfiles/config/agents/nested.md"));
+  }
+  assert.ok(systemText(requests[1]).includes("Updated repository sandbox rule."));
+  assert.ok(systemText(requests[1]).includes("Updated nested home sandbox rule."));
+  assert.ok(!systemText(requests[1]).includes("Nested repository sandbox rule."));
+  assert.ok(!systemText(requests[2]).includes("sandbox rule."), "removed roots clear historical instruction sections");
   for (const messages of requests) {
     const system = messages.filter((message) => message.role === "system")
       .map(getSystemMessageText).join("\n");
-    assert.ok(system.includes(`${guestCwd}/.agents/skills/ready-workqueue/SKILL.md`), system);
+    assert.ok(system.includes(`${guestRepository}/.agents/skills/ready-workqueue/SKILL.md`), system);
     assert.ok(system.includes(`<cwd>\n${guestCwd}\n</cwd>`), system);
     assert.ok(system.includes(expectedSandbox), "provider receives the rendered template with the launch repository");
+    assert.ok(system.includes("Ordinary host user instruction."), "sandbox guidance preserves normal host instructions");
+    assert.ok(system.includes('/src/dotfiles/config/pi-agent/AGENTS.md'), "the host context advertises its readable source");
     assert.ok(!system.includes(incorrectSandbox), "nested cwd is not the writable root");
     assert.ok(!system.includes("{{repository}}"), "provider never receives the placeholder");
     assert.ok(!system.includes(cwd), "host repository paths never reach the provider");
+    assert.ok(!system.includes(home), "host home paths never reach the provider");
     assert.ok(!system.includes("Working directory switched from"), "handoff preserves the historical system prompt");
     const userText = messages.filter((message) => message.role === "user")
       .map((message) => typeof message.content === "string" ? message.content
@@ -226,8 +266,71 @@ test("native goal-first, ordinary, and resumed requests advertise guest resource
     entry.type === "custom_message" && entry.customType === "sandbox-handoff").length, 1,
     "the handoff is recorded once, including after resume");
   assert.ok(!sessionManager.buildSessionContext().messages
-    .some((message) => message.role === "system" && "sandbox_context" in (message.sections ?? {})),
-    "sandbox facts are request-local");
+    .some((message) => message.role === "system" && ("sandbox_context" in (message.sections ?? {})
+      || "sandbox_instructions" in (message.sections ?? {}))),
+    "sandbox facts and instructions are request-local");
+});
+
+test("sandbox instructions stay sandbox-only and each optional root loads independently", {
+  skip: !sdkEntry && "requires the host Pi installation",
+}, async (t) => {
+  const { discoverAndLoadExtensions, ExtensionRunner, SessionManager } = await import(sdkEntry);
+  const directory = mkdtempSync(join(tmpdir(), "optional-sandbox-instructions-"));
+  const savedEnvironment = { ...process.env };
+  t.after(() => {
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnvironment)) delete process.env[key];
+    }
+    Object.assign(process.env, savedEnvironment);
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const repository = join(directory, "project");
+  const home = join(directory, "home");
+  const repositoryFile = join(repository, ".agents/sandbox/AGENTS.md");
+  const homeFile = join(home, ".agents/sandbox/AGENTS.md");
+  mkdirSync(join(repository, ".agents/sandbox"), { recursive: true });
+  mkdirSync(join(home, ".agents/sandbox"), { recursive: true });
+  Object.assign(process.env, {
+    HOME: home,
+    CODEX_SANDBOX_GUEST_REPO: "/src/project",
+    CODEX_SANDBOX_GUEST_CWD: "/src/project/nested",
+    CODEX_SANDBOX_PI_RESOURCE_PATHS: JSON.stringify({ [repository]: "/src/project", [home]: "/home/codex" }),
+  });
+  delete process.env.CODEX_SANDBOX_PREVIOUS_CWD;
+  for (const [sandbox, withHome, withRepository] of [
+    [false, true, true], [true, true, true], [true, false, true],
+    [true, true, false], [true, false, false],
+  ]) {
+    if (sandbox) process.env.CODEX_SANDBOX_TOOL_CONTAINER = "fixture";
+    else delete process.env.CODEX_SANDBOX_TOOL_CONTAINER;
+    if (withHome) writeFileSync(homeFile, "Optional home rule.");
+    else rmSync(homeFile, { force: true });
+    if (withRepository) writeFileSync(repositoryFile, "Optional repository rule.");
+    else rmSync(repositoryFile, { force: true });
+    const loaded = await discoverAndLoadExtensions([
+      join(root, "config/pi-agent/pi-extensions/guest-tools.ts"),
+    ], repository, directory);
+    assert.deepEqual(loaded.errors, []);
+    const runner = new ExtensionRunner(
+      loaded.extensions, loaded.runtime, repository, SessionManager.inMemory(repository), {},
+    );
+    const errors = [];
+    runner.onError((error) => errors.push(error));
+    const messages = [{ role: "system", content: "Base instructions", timestamp: 0 }];
+    const projected = await runner.emitContext(messages);
+    assert.deepEqual(errors, []);
+    const instructions = projected[0].sections?.sandbox_instructions ?? "";
+    assert.equal(instructions.includes("Optional home rule."), sandbox && withHome);
+    assert.equal(instructions.includes("Optional repository rule."), sandbox && withRepository);
+    assert.deepEqual(messages, [{ role: "system", content: "Base instructions", timestamp: 0 }]);
+    if (!sandbox) assert.deepEqual(projected, messages);
+    if (sandbox && withHome) {
+      writeFileSync(homeFile, "@missing.md");
+      await runner.emitContext(messages);
+      assert.equal(errors.length, 1, "missing nested guidance reports an include error rather than silently skipping it");
+      assert.match(errors[0].error, /instruction include does not exist/);
+    }
+  }
 });
 
 test("editable sandbox prose follows the launch repository and replaces stale section updates", {
@@ -241,7 +344,7 @@ test("editable sandbox prose follows the launch repository and replaces stale se
     const agents = join(directory, "config/agents");
     mkdirSync(extensions, { recursive: true });
     mkdirSync(agents, { recursive: true });
-    for (const name of ["guest-tools.ts", "guest-tools-core.ts"]) {
+    for (const name of ["guest-tools.ts", "guest-tools-core.ts", "pi-instruction-includes.ts"]) {
       const source = join(root, "config/pi-agent/pi-extensions", name);
       const copy = join(extensions, name);
       copyFileSync(source, copy);

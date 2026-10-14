@@ -101,9 +101,16 @@ Start a fresh sandbox once when deploying this feature so the launcher supplies 
 An older launch keeps guest tools attached but clears the dynamic section and reports the missing context rather than guessing permissions.
 The template is read from the host's dotfiles checkout; it needs no separate Dotbot link or guest mount.
 
-Host Pi loads instructions from the host filesystem. `/reload` refreshes host
-resources, but does not restage configuration or replace guest mounts. An updated
-prompt can therefore point to a file that the guest cannot read.
+Host Pi loads instructions from the host filesystem.
+In sandbox sessions, it also expands `~/.agents/sandbox/AGENTS.md` and the selected repository's `.agents/sandbox/AGENTS.md`.
+It reads these optional files and their nested includes for every model request, including goal-triggered and resumed runs.
+Ordinary unsandboxed Pi sessions do not receive these extra instructions.
+The guest does not need a copy of Pi's user-level `AGENTS.md`.
+Run `/reload` in existing panes to apply host-side sandbox instruction loading.
+A fresh sandbox launch updates the resource-path map and removes the old guest copy.
+
+`/reload` refreshes host resources, but does not restage configuration or replace guest mounts.
+An updated prompt can therefore point to a file that the guest cannot read.
 
 Guest visibility depends on how the resource is exposed:
 
