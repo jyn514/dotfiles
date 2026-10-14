@@ -192,11 +192,9 @@ It creates and removes disposable containers, volumes, and a network, with no li
 The matrix exercises rejected and admitted caller tokens through Caddy and the actual Unix helper,
 including authenticated readiness and zero application requests on rejection.
 
-The helper logging requirements in [the authenticated-egress specification](spec/proxy-design.typ) remain contradictory.
-Its metadata table requires logging other headers and original method/URI context;
-its observability section and acceptance checks forbid logging that metadata.
-The existing helper logs bounded original method/path and result classes, without query values or arbitrary headers.
-The caller-token fix preserves that behavior; passing admission checks does not establish compliance with either conflicting logging requirement.
+For allowed helper metadata and forbidden log contents, follow the Readiness and observability section of
+[the authenticated-egress specification](spec/proxy-design.typ).
+Passing admission checks alone does not establish compliance with its logging exclusions.
 
 The runtime integration test builds real images and requires a working Docker-compatible daemon and network access:
 

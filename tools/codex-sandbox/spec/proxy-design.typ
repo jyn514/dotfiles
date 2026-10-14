@@ -421,7 +421,12 @@ For every application request, Caddy performs the normative helper exchange belo
   [Transport], [HTTP over the private Unix socket; the helper has no TCP listener.],
   [Request], [`GET /admit`; no request body.],
   [Admission], [The original client `Authorization` value carries `Bearer <session-token>`. Its total value is at most 4096 bytes. The helper performs a constant-time exact comparison with the instance token.],
-  [Metadata], [Before the exchange Caddy strips authority, forwarding, proxy-authorization, and profile-reserved fields while preserving the session-token `Authorization`; other safe client headers may remain. Caddy supplies original method and URI through fixed precheck headers. Caddy's complete request-header bound is 64 KiB; after standard-library parsing the helper enforces the same aggregate bound. It consumes only the token and method/URI context and ignores and logs every other header and both metadata values. Parser-level failures remain internal because Caddy normalizes every helper failure.],
+  [Metadata], [Before the exchange Caddy strips authority, forwarding, proxy-authorization, and profile-reserved fields while preserving the session-token `Authorization`; other safe client headers may remain.
+  Caddy supplies original method and URI through fixed precheck headers.
+  Caddy's complete request-header bound is 64 KiB; after standard-library parsing the helper enforces the same aggregate bound.
+  The helper consumes only the token and method/URI context and ignores other headers without logging them.
+  Logging of method/path context follows Readiness and observability below, not raw header or complete URI logging.
+  Parser-level failures remain internal because Caddy normalizes every helper failure.],
   [Codex success], [`204` with exactly `Authorization: Bearer <access-token>` and `Chatgpt-Account-Id: <account-id>` as custom response headers. Both values must be nonempty.],
   [Zulip success], [`204` with exactly `Authorization: Basic <value>` as a custom response header. The value must be nonempty.],
   [Wrong token], [`401`, `Content-Length: 0`, no body, and no custom response headers.],
@@ -477,7 +482,17 @@ The Codex helper alone joins a separate lifecycle-owned ordinary refresh-egress 
 
 Readiness is entirely local and causes no upstream request, OAuth refresh, or persistent credential write. The launcher calls exact bodyless `GET /ready` with no query at Caddy using the instance session token; Caddy performs exact bodyless `GET /ready` with no query over the private socket, the helper validates token and local credential structure/readability without refreshing, and Caddy returns local `204`. The readiness route has no application-upstream `reverse_proxy` handler. Publication requires this Caddy-to-helper check for both containers, plus runtime identity and socket-volume attachment validation.
 
-Caddy access logging is disabled. Its default logger remains at `INFO` on standard error, but `http.handlers.reverse_proxy` is excluded because its error records can serialize trusted profile headers after admission. Application and helper reverse-proxy failures therefore produce fixed client status classes and health effects but may not produce Caddy error records. Remaining Caddy operational logs must not contain request metadata or sensitive values. The helper logs only admission and credential-operation result classes; the Zulip typed adapter logs only operation class, status, counts, duration, and bounded failure class. Tests exercise malformed requests and upstream/helper failures and assert that Caddy standard error, helper logs, and typed logs omit methods paired with URIs, URI/query values, bodies, cookies, tokens, auth/account-header values, credential paths, refresh exchanges, and sensitive complete URLs.
+Caddy access logging is disabled.
+Its default logger remains at `INFO` on standard error, but `http.handlers.reverse_proxy` is excluded because its error records can serialize trusted profile headers after admission.
+Application and helper reverse-proxy failures therefore produce fixed client status classes and health effects but may not produce Caddy error records.
+Remaining Caddy operational logs must not contain request metadata or sensitive values.
+
+Logging acceptance applies to the launcher-owned Caddy/helper service interfaces, including Caddy-generated fixed-route helper exchanges.
+For these exchanges, the helper logs decision, original method, query-free route path, result, and optional reason.
+Method and path are JSON-escaped and truncated after 64 and 2048 characters respectively, with an ellipsis on truncation.
+Methods paired with these fixed-route paths, including numeric route IDs, are permitted; numeric channel IDs are not treated as secrets.
+The Zulip typed adapter logs only operation class, status, counts, duration, and bounded failure class.
+Logs must omit raw precheck headers, query values, topic names, bodies, cookies, tokens, auth/account-header values, credential paths, arbitrary header dumps, refresh exchanges, and complete sensitive URLs.
 
 === Credential profiles
 
@@ -505,7 +520,8 @@ The agent's credential-free public network remains outside this reverse proxy. R
 - Startup and join admit only Docker Official Image Caddy 2.11.4-alpine whose OCI index, platform-manifest, image-configuration, and runtime container image identities form the recorded chain; the service implementation identity separately binds the mounted Caddy configuration digest.
 - Every credential domain has separately recorded Caddy and helper containers and private socket volume; credentials are visible only to its helper.
 - Codex accepts only downstream `POST /codex/responses` with no query and rewrites it to fixed upstream `/backend-api/codex/responses`; Zulip Caddy accepts only the two typed-adapter route families; every configuration ends in a non-proxying catch-all.
-- `GET /admit` over the private Unix socket receives no body; constant-time exact admission enforces the at-most-4096-byte bearer session token, and metadata stays within the 64 KiB header bound and is ignored and never logged.
+- `GET /admit` over the private Unix socket receives no body; constant-time exact admission enforces the at-most-4096-byte bearer session token, and metadata stays within the 64 KiB header bound.
+  Other headers are ignored without logging; method/path logging follows Readiness and observability.
 - Helper transport uses separate 10-second Unix dial and 30-second response-header limits; after admission, credential read/refresh uses one internal 30-second monotonic deadline, with no claimed combined complete-exchange deadline.
 - Codex helper success is exactly bodyless `204` with nonempty canonical `Authorization: Bearer` and `Chatgpt-Account-Id`; Zulip success is exactly bodyless `204` with nonempty `Authorization: Basic`; wrong token is `401`, credential failure is `503`, and failures have `Content-Length: 0` with no custom headers.
 - Expanded Caddy response matching requires `2xx` plus every required nonempty helper header before replacing client values and proxying; every other result returns fixed local bodyless `401`/`503` and sends no application body upstream.
@@ -516,7 +532,8 @@ The agent's credential-free public network remains outside this reverse proxy. R
 - Caddy application egress uses an ordinary, separately lifecycle-owned network.
 - Only the Codex helper has a separately lifecycle-owned ordinary refresh-egress network and fixed helper `POST /oauth/token`; the Zulip helper has no egress.
 - Readiness proves Caddy-to-helper admission locally through a no-upstream route and performs no refresh or persistent write.
-- Caddy access logs and its header-bearing reverse-proxy error logger are disabled; this sacrifices per-request proxy diagnostics to prevent trusted profile-header disclosure. Remaining Caddy, helper, and typed-adapter logs satisfy the stated exclusions.
+- Caddy access logs and its header-bearing reverse-proxy error logger are disabled; this sacrifices per-request proxy diagnostics to prevent trusted profile-header disclosure.
+  Logging acceptance for the launcher-owned Caddy/helper service interfaces and typed adapter follows Readiness and observability.
 - Removed custom HTTP, DNS, header/framing, streaming, and response-limit code is unreachable and not retained as fallback.
 - Flower R2 remains on its dedicated relay, including the lifecycle specification's existing connection-establishment retry blocker.
 
@@ -605,7 +622,7 @@ A service-specific implementation must not duplicate lifecycle ownership or use 
 - A route failure does not expose its credential or affect another credential-domain instance
 - Caddy or profile-helper unavailability and authentication failure never fall back to direct authenticated provider access or mounting credentials in the agent
 - An authenticated-egress session token remains available to validated joiners after the publishing launcher exits, fails after its Caddy service instance ends, authorizes only that accepted service, and cannot authenticate directly to an upstream provider
-- Caddy and helper logs and diagnostics contain no query values, bodies, cookies, reusable credentials, refresh exchanges, or complete sensitive URLs
+- Logs and diagnostics for the launcher-owned Caddy/helper service interfaces satisfy the permitted fields and sensitive-content exclusions in Readiness and observability
 - Non-idempotent requests are not retried, and cancellation reports an outcome-unknown remote mutation where success cannot be established
 - Passwordless sudo remains functional inside the agent without granting access to sibling containers or their mounts
 - The agent cannot append arguments, choose another executable, alter mounts, inject environment variables, or redirect the command to another repository
