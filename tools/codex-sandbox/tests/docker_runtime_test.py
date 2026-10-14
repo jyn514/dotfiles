@@ -92,7 +92,7 @@ class DockerRuntimeTest(unittest.TestCase):
                 'trusted': {'image-command': [command]}, 'untrusted': {'image-target': 'jj'}})
         self.assertEqual(prepared.proxies, {'trusted': 'installed-image', 'untrusted': 'repository-image'})
         self.assertEqual(resolve.call_args.args[:3], (runtime, owned_images.ROOT, ['jj']))
-        runtime.run_builders.assert_called_once_with({})
+        runtime.run_builders.assert_not_called()
         self.assertIsNone(owned_images.target([command, 'extra']))
         self.assertIsNone(owned_images.target(['.agents/sandbox/jj-proxy-image']))
 

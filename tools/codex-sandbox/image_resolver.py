@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import os
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import selectors
 import signal
 import subprocess
+import sys
 import time
+from threading import Event
 from typing import Any
 
 
 STDOUT_LIMIT = 1024 * 1024
+STDERR_LIMIT = 8 * 1024 * 1024
 TIMEOUT = 1800
 KILL_TIMEOUT = 5
 
@@ -67,39 +71,101 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
-def _run(command: list[str], repo: Path, request: bytes, environment: dict[str, str]) -> tuple[int, bytes]:
+def _run(
+    command: list[str], repo: Path, request: bytes, environment: dict[str, str], *,
+    cancelled: Event | None = None,
+) -> tuple[int, bytes]:
+    if cancelled is not None and cancelled.is_set():
+        raise ResolverError('image builder cancelled')
     process = subprocess.Popen(
         command, cwd=repo, env=environment, stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE, start_new_session=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
     )
-    assert process.stdin is not None and process.stdout is not None
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     output = bytearray()
+    stderr_size = 0
+    diagnostics = codecs.getincrementaldecoder('utf-8')(errors='replace')
     deadline = time.monotonic() + TIMEOUT
     try:
-        process.stdin.write(request)
-        process.stdin.close()
+        os.set_blocking(process.stdin.fileno(), False)
+        pending = memoryview(request)
         with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
+            if pending:
+                selector.register(process.stdin, selectors.EVENT_WRITE, 'stdin')
+            else:
+                process.stdin.close()
+            selector.register(process.stdout, selectors.EVENT_READ, 'stdout')
+            selector.register(process.stderr, selectors.EVENT_READ, 'stderr')
             while selector.get_map():
+                if cancelled is not None and cancelled.is_set():
+                    raise ResolverError('image builder cancelled')
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(command, TIMEOUT)
                 for key, _ in selector.select(min(remaining, 0.1)):
                     stream = key.fileobj
+                    if key.data == 'stdin':
+                        # Deliver the unchanged request while draining both output
+                        # pipes; a nonreader cannot block the shared deadline.
+                        try:
+                            written = os.write(stream.fileno(), pending[:65536])
+                        except BlockingIOError:
+                            continue
+                        pending = pending[written:]
+                        if not pending:
+                            selector.unregister(stream)
+                            stream.close()
+                        continue
                     chunk = os.read(stream.fileno(), 65536)
                     if not chunk:
                         selector.unregister(stream)
                         stream.close()
                         continue
-                    output.extend(chunk)
-                    if len(output) > STDOUT_LIMIT:
-                        raise ResolverError(f"resolver stdout exceeds {STDOUT_LIMIT} bytes")
-        return process.wait(), bytes(output)
+                    if key.data == 'stdout':
+                        if len(output) + len(chunk) > STDOUT_LIMIT:
+                            raise ResolverError(f"resolver stdout exceeds {STDOUT_LIMIT} bytes")
+                        output.extend(chunk)
+                    else:
+                        # Forward each diagnostic once, never as machine state.
+                        admitted = chunk[:max(0, STDERR_LIMIT - stderr_size)]
+                        if admitted:
+                            sys.stderr.write(diagnostics.decode(admitted))
+                            sys.stderr.flush()
+                        stderr_size += len(chunk)
+                        if stderr_size > STDERR_LIMIT:
+                            raise ResolverError(f"resolver stderr exceeds {STDERR_LIMIT} bytes")
+        while True:
+            if cancelled is not None and cancelled.is_set():
+                raise ResolverError('image builder cancelled')
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, TIMEOUT)
+            try:
+                return process.wait(timeout=min(remaining, 0.1)), bytes(output)
+            except subprocess.TimeoutExpired:
+                pass
     except BaseException:
+        if not process.stdin.closed:
+            process.stdin.close()
         _stop(process)
+        # Join pipe owners after group cancellation without letting a detached
+        # (contract-violating) child make launcher cleanup wait indefinitely.
+        with selectors.DefaultSelector() as selector:
+            for stream in (process.stdout, process.stderr):
+                if not stream.closed:
+                    selector.register(stream, selectors.EVENT_READ)
+            join_deadline = time.monotonic() + KILL_TIMEOUT
+            while selector.get_map() and time.monotonic() < join_deadline:
+                for key, _ in selector.select(max(0, join_deadline - time.monotonic())):
+                    if not os.read(key.fileobj.fileno(), 65536):
+                        selector.unregister(key.fileobj)
         raise
     finally:
-        for stream in (process.stdin, process.stdout):
+        tail = diagnostics.decode(b'', final=True)
+        if tail:
+            sys.stderr.write(tail)
+            sys.stderr.flush()
+        for stream in (process.stdin, process.stdout, process.stderr):
             if not stream.closed:
                 stream.close()
 
@@ -177,7 +243,7 @@ def prepare_launch_images(
     owned = {
         name: owned_images.target(command) for name, (command, _) in builders.items()
         if owned_images.target(command) is not None
-    }
+    } if runtime.provider == 'lima-docker' else {}
     builders = {name: builder for name, builder in builders.items() if name not in owned}
     helper_workers = ThreadPoolExecutor(max_workers=1) if image_policy is not None and owned else None
     helper_future = helper_workers.submit(
@@ -191,7 +257,8 @@ def prepare_launch_images(
             requested = {target for target in bindings.values() if target is not None}
             if include_base:
                 requested.add(image_policy["base"])
-            project = resolve_policy(runtime, repo, image_policy, requested)
+            if requested:
+                project = resolve_policy(runtime, repo, image_policy, requested)
     except BaseException:
         if helper_workers is not None:
             helper_workers.shutdown(wait=True, cancel_futures=True)
@@ -201,7 +268,7 @@ def prepare_launch_images(
         raise ResolverError(
             "Lima-Docker requires .agents/sandbox/bake instead of executable base-image builds"
         )
-    legacy = runtime.bake(repo, legacy_targets)
+    legacy = runtime.bake(repo, legacy_targets) if legacy_targets else {}
     if helper_future is not None:
         try:
             helpers = helper_future.result()
@@ -213,7 +280,6 @@ def prepare_launch_images(
             declaration=owned_images.declaration(owned.values()),
             captures=owned_images.source_paths(owned.values()),
         ) if owned else {}
-    built = runtime.run_builders(builders)
 
     def inspect_builder(item):
         name, result = item
@@ -224,8 +290,37 @@ def prepare_launch_images(
             raise ResolverError(f"image-command for {name} did not print one immutable image hash")
         return name, runtime.verify_builder_image(output).reference
 
-    with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
-        inspected = dict(workers.map(inspect_builder, built.items()))
+    if not builders:
+        inspected = {}
+    elif runtime.provider == 'lima-docker':
+        built = runtime.run_builders(builders)
+        with ThreadPoolExecutor(max_workers=max(1, min(4, len(built)))) as workers:
+            inspected = dict(workers.map(inspect_builder, built.items()))
+    else:
+        # Other engines expose executable helpers, not Docker's Bake/batch API.
+        # Keep their entrypoints and bound concurrent groups through _run.
+        environment = {**runtime.builder_environment(), 'CODEX_SANDBOX_BUILDER_GROUP': '1'}
+        cancelled = Event()
+
+        def run_builder(item):
+            name, (command, cwd) = item
+            status, stdout = _run(command, cwd, b'', environment, cancelled=cancelled)
+            output = stdout.decode().replace('\r\n', '\n').replace('\r', '\n')
+            return inspect_builder((name, subprocess.CompletedProcess(command, status, output)))
+
+        with ThreadPoolExecutor(max_workers=min(4, len(builders))) as workers:
+            futures = []
+            try:
+                for item in builders.items():
+                    futures.append(workers.submit(run_builder, item))
+                inspected = dict(future.result() for future in as_completed(futures))
+            except BaseException:
+                cancelled.set()
+                for future in futures:
+                    future.cancel()
+                # Executor shutdown joins active _run group cleanup before the
+                # original failure (or caller cancellation) leaves preparation.
+                raise
     inspected.update({name: helpers[target] for name, target in owned.items()})
     proxies = {
         name: (project[command["image-target"]].reference if image_policy is not None
