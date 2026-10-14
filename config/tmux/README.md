@@ -74,6 +74,10 @@ Run its selection regressions with `dev/test-environment python3 tests/setup/ssh
 
 ## Clipboard environment
 
+Terminal copies use OSC 52 with an explicit `c` clipboard selector because mosh 1.4 drops tmux's empty selector.
+After reloading the configuration, detach and reattach to refresh terminal capabilities.
+To check remote copying, enter `set-buffer -w hello` at the tmux command prompt, then paste locally.
+
 The [configuration](tmux.conf) refreshes `WAYLAND_DISPLAY` when creating or
 attaching to a session. Attaching without that variable, such as over SSH,
 preserves the previous value. This uses tmux's `update-environment` wildcard
