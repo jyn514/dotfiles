@@ -21,7 +21,12 @@ edit those implementations, not copies.
 Agent launchers put `libexec/agent-wrappers` on PATH.
 Noninteractive Bash, Zsh, and Fish startup preserves that inherited directory ahead of native tools after mise activation.
 Ordinary shells do not acquire agent wrappers through startup alone.
-Check `command -v jj` in the agent's login shell when diagnosing wrapper routing.
+Check `type -a rg jj` in the agent's generated execution shell, in both login and non-login modes, when diagnosing wrapper routing.
+The launcher's environment test does not prove the CLI preserves that PATH in generated commands.
+On Linux, Codex 0.162.1 was observed prepending its package-owned `codex-path` directory after shell startup.
+Its `rg` script invokes `/usr/bin/rg`, bypassing the dotfiles wrapper even though `jj` still selects the wrapper.
+Another profile PATH adjustment cannot fix a post-startup injection.
+The injection's upstream/package owner remains unresolved; inspect that source rather than editing the installed script.
 
 The always-loaded [shared instructions](agents/shared-agents.md) link coding tasks
 to [Change with evidence](../skills/references/change-with-evidence.md) and note writing
