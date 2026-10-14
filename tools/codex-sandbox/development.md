@@ -207,6 +207,15 @@ The test passes that commit as the required `PI_REVISION` build argument and che
 its recorded revision, retaining Alpine Node and Debian Node-20/Bun coverage.
 Its wrapper probe checks public command resolution, successful `bb`, `jj`, and `rg` aliases, and blocked nested wrapper operations in the produced images.
 It also runs `jj-conflict check` on a disposable clean file so a missing packaged command fails the probe.
+Each run builds against current inputs and checks unique per-run image aliases, which cleanup removes.
+Successful builds also retain one shared `:cache` alias per image so later runs reuse unpacked runtime filesystems.
+Concurrent runs can update the shared caches without changing another run's test images.
+To discard these test caches explicitly:
+
+```sh
+docker image rm codex-sandbox-jj-test:cache codex-sandbox-pi-alpine-test:cache codex-sandbox-pi-debian-test:cache
+```
+
 Direct Dockerfile builds must also supply `--build-arg PI_REVISION=<full-pi-commit>`;
 there is no independent guest revision default.
 

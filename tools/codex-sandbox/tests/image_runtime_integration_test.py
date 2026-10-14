@@ -12,7 +12,8 @@ class ImageRuntimeIntegrationTest(unittest.TestCase):
         revision = 'b' * 40
         for base in (None, 'node:20-bookworm-slim'):
             with self.subTest(base=base), mock.patch('subprocess.run') as run:
-                build('test-image', revision, base, jj_image='proxy@sha256:' + 'a' * 64)
+                build('test-image', revision, base, jj_image='proxy@sha256:' + 'a' * 64,
+                      cache_tag='test-image:cache')
                 command = run.call_args.args[0]
                 build_args = [command[index + 1] for index, argument in enumerate(command)
                               if argument == '--build-arg']
