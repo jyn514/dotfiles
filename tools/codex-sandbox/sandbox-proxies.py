@@ -147,7 +147,12 @@ def load_manifest(repo: Path) -> dict[str, Any]:
     validate_sandbox_tree(sandbox)
     repository_identity(repo)
     bake = sandbox / "docker-bake.hcl"
-    return load_manifest_file(path, default_bake=bake.is_file())
+    manifest = load_manifest_file(path, default_bake=bake.is_file())
+    if manifest["version"] == 2:
+        for legacy in ("bake", "base-image"):
+            if (sandbox / legacy).exists():
+                raise ConfigError(f"version 2 policy cannot use legacy {legacy}")
+    return manifest
 
 
 def optional_sandbox_directory(repo: Path) -> Path | None:
@@ -181,32 +186,46 @@ def load_optional_manifest(repo: Path) -> dict[str, Any]:
     return load_manifest(repo)
 
 
-def load_manifest_file(path: Path | None, *, default_bake: bool = False,
-                       data: Any = None) -> dict[str, Any]:
-    if data is not None:
-        # In-memory accepted policy parsing must have no filesystem or resolver effects.
-        try:
-            data = json.loads(json.dumps(data), object_pairs_hook=_unique_object)
-        except (TypeError, ValueError, ConfigError) as error:
-            raise ConfigError(f"invalid accepted proxy manifest: {error}") from error
-    elif path is None:
-        data = {"version": 2, "commands": {}}
-    else:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
-        except (UnicodeError, json.JSONDecodeError) as error:
-            raise ConfigError(f"invalid proxy manifest: {error}") from error
+def load_manifest_file(path: Path | None, *, default_bake: bool = False) -> dict[str, Any]:
+    """Parse an external repository declaration, not accepted launch authority."""
+    return _parse_manifest(_manifest_data(path), default_bake=default_bake, accepted=False)
+
+
+def load_accepted_manifest(path: Path | None = None, *, data: Any = None) -> dict[str, Any]:
+    """Parse trusted launcher snapshots or persisted accepted policy without source effects."""
+    if path is None and data is None:
+        raise ConfigError("accepted proxy manifest must contain a policy")
+    return _parse_manifest(_manifest_data(path, data=data), accepted=True)
+
+
+def _manifest_data(path: Path | None, *, data: Any = None) -> Any:
+    try:
+        if data is not None:
+            return json.loads(json.dumps(data), object_pairs_hook=_unique_object)
+        if path is None:
+            return {"version": 2, "commands": {}}
+        return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeError, TypeError, ValueError) as error:
+        raise ConfigError(f"invalid proxy manifest: {error}") from error
+
+
+def _parse_manifest(data: Any, *, default_bake: bool = False, accepted: bool) -> dict[str, Any]:
     if not isinstance(data, dict) or "version" not in data:
         raise ConfigError("proxy manifest must contain a version")
     version = data["version"]
+    if type(version) is not int:
+        raise ConfigError("proxy manifest version must be an integer")
     if version == 1:
-        if not set(data) <= {"version", "commands", "capabilities", "images"} or "commands" not in data:
+        allowed = {"version", "commands", "capabilities"} | ({"images"} if accepted else set())
+        if not set(data) <= allowed or "commands" not in data:
             raise ConfigError("version 1 proxy manifest has missing or unknown fields")
         capabilities = data.get("capabilities", {})
         images = data.get("images")
         if (not isinstance(capabilities, dict) or not set(capabilities) <= CAPABILITIES or
                 not all(isinstance(value, bool) for value in capabilities.values())):
             raise ConfigError("proxy manifest has invalid capabilities")
+        if not accepted and capabilities.get("flower-r2", False):
+            raise ConfigError("flower-r2 requires a version 2 repository declaration")
     elif version == 2:
         if not set(data) <= {"version", "capabilities", "images", "commands"}:
             raise ConfigError("version 2 proxy manifest has unknown fields")
@@ -221,29 +240,30 @@ def load_manifest_file(path: Path | None, *, default_bake: bool = False,
                 "resolver": {"kind": "bake", "file": ".agents/sandbox/docker-bake.hcl"},
                 "base": "base",
             }
-        if images is not None:
-            if not isinstance(images, dict) or set(images) != {"resolver", "base"}:
-                raise ConfigError("proxy manifest images must contain exactly resolver and base")
-            resolver = images["resolver"]
-            if not isinstance(resolver, dict) or resolver.get("kind") not in {"bake", "command"}:
-                raise ConfigError("proxy manifest has an invalid image resolver")
-            if resolver["kind"] == "bake":
-                if not set(resolver) <= {"kind", "file"}:
-                    raise ConfigError("Bake resolver may contain only kind and file")
-                resolver = {
-                    "kind": "bake",
-                    "file": resolver.get("file", ".agents/sandbox/docker-bake.hcl"),
-                }
-                _plain_relative(resolver["file"], "Bake resolver file")
-                images = {**images, "resolver": resolver}
-            else:
-                if set(resolver) != {"kind", "argv"}:
-                    raise ConfigError("command resolver must contain exactly kind and argv")
-                _string_array(resolver["argv"], "command resolver argv")
-            if not isinstance(images["base"], str) or not NAME_RE.fullmatch(images["base"]):
-                raise ConfigError("proxy manifest has an invalid base image name")
     else:
         raise ConfigError(f"unsupported proxy manifest version: {version!r}")
+    if images is not None:
+        if not isinstance(images, dict) or set(images) != {"resolver", "base"}:
+            raise ConfigError("proxy manifest images must contain exactly resolver and base")
+        resolver = images["resolver"]
+        if not isinstance(resolver, dict) or resolver.get("kind") not in {"bake", "command"}:
+            raise ConfigError("proxy manifest has an invalid image resolver")
+        if resolver["kind"] == "bake":
+            if not set(resolver) <= {"kind", "file"}:
+                raise ConfigError("Bake resolver may contain only kind and file")
+            resolver = {
+                "kind": "bake",
+                "file": resolver.get("file", ".agents/sandbox/docker-bake.hcl"),
+            }
+            _plain_relative(resolver["file"], "Bake resolver file")
+            images = {**images, "resolver": resolver}
+        else:
+            if set(resolver) != {"kind", "argv"}:
+                raise ConfigError("command resolver must contain exactly kind and argv")
+            if not _string_array(resolver["argv"], "command resolver argv"):
+                raise ConfigError("command resolver argv must be nonempty")
+        if not isinstance(images["base"], str) or not NAME_RE.fullmatch(images["base"]):
+            raise ConfigError("proxy manifest has an invalid base image name")
     raw_commands = data.get("commands", {})
     if not isinstance(raw_commands, dict):
         raise ConfigError("proxy manifest commands must be an object")
@@ -319,6 +339,18 @@ def load_manifest_file(path: Path | None, *, default_bake: bool = False,
     if images is not None:
         result["images"] = images
     return result
+
+
+def bind_manifest(repo: Path, manifest: dict[str, Any], runtime: Any) -> dict[str, Any]:
+    """Reject unsupported resolver/provider pairs before image or service work."""
+    policy = manifest.get("images")
+    uses_bake = (policy["resolver"]["kind"] == "bake" if policy is not None else
+                 any(command.get("image-target") for command in manifest["commands"].values()) or
+                 (repo / ".agents/sandbox/bake").is_file() and
+                 not (repo / ".agents/sandbox/base-image").is_file())
+    if runtime.provider != "lima-docker" and uses_bake:
+        raise ConfigError("bundled Bake resolver requires CODEX_SANDBOX_RUNTIME=lima-docker")
+    return manifest
 
 
 def write_atomic(path: Path, content: str) -> None:
@@ -595,7 +627,7 @@ def publish_main(args: argparse.Namespace) -> int:
     if state.get("runtime") != owner:
         raise ConfigError("cannot publish shared state owned by another runtime")
     state["runtime"] = owner
-    manifest = load_manifest_file(Path(args.manifest))
+    manifest = load_accepted_manifest(Path(args.manifest))
     launch = state.get("accepted")
     if not isinstance(launch, dict) or set(launch) != {
             "source-present", "agent-image", "helper-image", "parameters", "proxy-images"}:
@@ -883,7 +915,7 @@ def _accepted_schema4(metadata: Any, *, expected_parameters: dict[str, int]):
             not isinstance(images["services"], dict) or not isinstance(services, dict)):
         raise ConfigError("active session has invalid accepted images")
     try:
-        policy = load_manifest_file(None, data=accepted["policy"])
+        policy = load_accepted_manifest(data=accepted["policy"])
     except ConfigError as error:
         raise ConfigError("active session has invalid accepted policy") from error
     service_roles = list(services)
@@ -1080,7 +1112,7 @@ def attach_main(args: argparse.Namespace) -> int:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
         write_atomic(Path(args.manifest), json.dumps(accepted["manifest"], sort_keys=True))
         return 0
-    current_manifest = load_manifest_file(Path(args.manifest))
+    current_manifest = load_accepted_manifest(Path(args.manifest))
     state = cached_session_state(args, repo, metadata, current_manifest)
     if state is not None:
         write_atomic(Path(args.state), json.dumps(state, sort_keys=True))
@@ -1118,24 +1150,11 @@ def resolve_images(repo: Path, manifest: dict[str, Any], prepared=None) -> dict[
             name: OUTER_RUNTIME.verify_builder_image(image).reference
             for name, image in images.items()
         }
-    if OUTER_RUNTIME.provider == 'lima-docker':
+    bind_manifest(repo, manifest, OUTER_RUNTIME)
+    if OUTER_RUNTIME.provider == 'lima-docker' or manifest.get("images") is not None:
         from image_resolver import prepare_launch_images
         options = ({"image_policy": manifest["images"]} if "images" in manifest else {})
         return prepare_launch_images(OUTER_RUNTIME, repo, manifest['commands'], **options).proxies
-    policy = manifest.get("images")
-    if policy is not None:
-        resolver = policy["resolver"]
-        if resolver["kind"] != "command":
-            raise ConfigError(
-                f"bundled Bake resolver is unavailable for {OUTER_RUNTIME.provider}"
-            )
-        from image_resolver import ResolverError, resolve_command
-        bindings = {name: command["image-target"] for name, command in manifest["commands"].items()}
-        try:
-            resolved = resolve_command(OUTER_RUNTIME, repo, resolver["argv"], set(bindings.values()))
-        except ResolverError as error:
-            raise ConfigError(str(error)) from error
-        return {name: resolved[target].reference for name, target in bindings.items()}
     def resolve(name: str, command: dict[str, Any]) -> tuple[str, str]:
         if not command.get('image-command'):
             raise ConfigError(f"proxy {name} uses Bake targets; select CODEX_SANDBOX_RUNTIME=lima-docker")
@@ -1711,7 +1730,7 @@ def start_one_proxy(
 
 def start_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
-    manifest = load_manifest_file(Path(args.manifest))
+    manifest = load_accepted_manifest(Path(args.manifest))
     images = resolve_images(repo, manifest, getattr(args, 'images', None))
     state: dict[str, Any] = {"proxies": [], "runtime": runtime_identity(OUTER_RUNTIME)}
     if getattr(args, "agent_image", None) is not None:
@@ -2546,7 +2565,7 @@ def finalize_main(args: argparse.Namespace) -> int:
 def agent_args_main(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve()
     container_repo = container_repository(args.container_repo)
-    manifest = load_manifest_file(Path(args.manifest))
+    manifest = load_accepted_manifest(Path(args.manifest))
     state = json.loads(Path(args.state).read_text(encoding="utf-8"))
     volumes = {
         proxy["name"]: proxy["volume"]

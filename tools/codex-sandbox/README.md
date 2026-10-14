@@ -220,6 +220,8 @@ When `.agents/sandbox/docker-bake.hcl` exists, it becomes the default Bake resol
 a repository using the default capabilities with no project command proxies can omit `proxy-commands.json`.
 An explicit image resolver overrides this convention.
 Version 1 and executable `.agents/sandbox/base-image` remain temporarily supported for external repositories.
+Version 1 source manifests reject version 2 image declarations; enabling `flower-r2` requires version 2.
+See [compatibility and migration](spec/launcher-interface.typ) for supported legacy builders and backends.
 This repository uses the version 2 bundled Bake resolver;
 repository Docker CLI shims are no longer supported.
 These files are trusted startup policy, not agent configuration.

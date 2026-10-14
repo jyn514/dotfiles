@@ -544,7 +544,7 @@ remain the project's responsibility.
 Bake resolves its target graph; paracress resolves its image graph. Composition
 also stays inside resolvers: the launch orchestrator needs no generic build graph.
 
-At shared-session creation, a launcher-owned agent-image resolver calls the repository's configured resolver
+At shared-session creation, on every supported backend, a launcher-owned agent-image resolver calls the repository's configured resolver
 (bundled Bake or project command) once with the base and all selected project
 proxy targets. It verifies that image set,
 then builds or reuses the final agent image and returns it with the proxy images.
@@ -619,6 +619,8 @@ shared sessions; it does not change the accepted images of an active session.
 Old and new image declarations never merge. Version 2 rejects `image-command`,
 `image-target`, producer-style `bake`, and executable `base-image`; version 1 rejects
 version 2 `images`, `image`, and capabilities unavailable under its migration policy.
+Version 1 source manifests reject `images` even when null; enabling `flower-r2` requires version 2.
+Defaults in trusted normalized shared-session snapshots are not raw source selections.
 An unsupported resolver/backend pair fails during policy binding, before resolver or
 relay effects. Shared-session schema 4 stores accepted normalized policy, source
 presence, verified images, provider selection, image-bound parameters, and the

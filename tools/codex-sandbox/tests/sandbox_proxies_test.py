@@ -302,6 +302,84 @@ class ManifestTest(unittest.TestCase):
         command.update(updates)
         return command
 
+    def test_raw_v1_and_accepted_policy_have_distinct_authority(self):
+        # R2 is selected only by raw v2. Persisted normalized v1 remains joinable.
+        for capabilities, images, accepted in (
+            ({}, None, True),
+            ({"flower-r2": False}, None, True),
+            ({"flower-r2": True}, None, False),
+            ({}, {"resolver": {"kind": "command", "argv": ["resolver"]}, "base": "base"}, False),
+        ):
+            with self.subTest(capabilities=capabilities, images=images):
+                data = {"version": 1, "commands": {}, "capabilities": capabilities}
+                if images is not None:
+                    data["images"] = images
+                path = self.sandbox / "proxy-commands.json"
+                path.write_text(json.dumps(data))
+                if accepted:
+                    self.assertEqual({}, sandbox_proxies.load_manifest(self.repo)["commands"])
+                else:
+                    output = self.repo / "rejected-snapshot"
+                    with mock.patch.object(sandbox_proxies, "zuliprc_mount_args") as credentials:
+                        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "version 1|flower-r2"):
+                            sandbox_proxies.snapshot_main(SimpleNamespace(
+                                repo=str(self.repo), output=str(output), jj_image_command=None,
+                                zulip_image_command=None, zuliprc=None))
+                    credentials.assert_not_called()
+                    self.assertFalse(output.exists())
+                with mock.patch.object(Path, "read_text", side_effect=AssertionError("accepted source read")):
+                    normalized = sandbox_proxies.load_accepted_manifest(data=data)
+                self.assertEqual(capabilities, normalized.get("capabilities", {}))
+                envelope = self.schema4({})
+                envelope["accepted"]["policy"] = data
+                _, authority = sandbox_proxies._accepted_schema4(envelope, expected_parameters={"uid": 501, "gid": 20})
+                self.assertEqual(normalized, authority["policy"])
+
+    def test_v2_r2_selection_survives_the_accepted_v1_snapshot(self):
+        self.write(version=2, capabilities={"flower-r2": True, "zulip": False})
+        snapshot = self.repo / "r2-policy.json"
+        sandbox_proxies.snapshot_main(SimpleNamespace(repo=str(self.repo), output=str(snapshot),
+                                                       jj_image_command=None))
+        policy = sandbox_proxies.load_accepted_manifest(snapshot)
+        self.assertEqual(1, policy["version"])
+        self.assertTrue(policy["capabilities"]["flower-r2"])
+        self.assertFalse(policy["capabilities"]["zulip"])
+
+    def test_absent_accepted_policy_does_not_become_default_authority(self):
+        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "must contain a policy"):
+            sandbox_proxies.load_accepted_manifest(data=None)
+
+    def test_accepted_v1_images_still_validate_resolver_shape(self):
+        for images in ({"resolver": {"kind": "command", "argv": []}, "base": "base"},
+                       {"resolver": {"kind": "command", "argv": ["resolver"]}, "base": "../base"},
+                       {"resolver": {"kind": "bake", "argv": ["resolver"]}, "base": "base"}):
+            with self.subTest(images=images), self.assertRaises(sandbox_proxies.ConfigError):
+                sandbox_proxies.load_accepted_manifest(data={"version": 1, "commands": {}, "images": images})
+
+    def test_v2_cannot_merge_legacy_repository_build_definitions(self):
+        for legacy in ("base-image", "bake"):
+            with self.subTest(legacy=legacy):
+                builder = self.sandbox / legacy
+                builder.touch(mode=0o700)
+                self.write(version=2, images={
+                    "resolver": {"kind": "command", "argv": ["resolver"]}, "base": "base"})
+                with self.assertRaisesRegex(sandbox_proxies.ConfigError, "legacy " + legacy):
+                    sandbox_proxies.load_manifest(self.repo)
+                builder.unlink()
+
+    def test_resolver_provider_binding_rejects_bake_without_running_it(self):
+        for provider in ("container", "lima", "lima-docker"):
+            for kind in ("command", "bake"):
+                with self.subTest(provider=provider, kind=kind):
+                    policy = {"commands": {}, "images": {"base": "base", "resolver": {"kind": kind}}}
+                    runtime = mock.Mock(provider=provider)
+                    if kind == "bake" and provider != "lima-docker":
+                        with self.assertRaisesRegex(sandbox_proxies.ConfigError, "lima-docker"):
+                            sandbox_proxies.bind_manifest(self.repo, policy, runtime)
+                    else:
+                        self.assertIs(policy, sandbox_proxies.bind_manifest(self.repo, policy, runtime))
+                    runtime.bake.assert_not_called()
+
     def test_accepts_version_one_manifest(self) -> None:
         self.write({"example": self.command()})
         manifest = sandbox_proxies.load_manifest(self.repo)
@@ -350,7 +428,7 @@ class ManifestTest(unittest.TestCase):
         sandbox_proxies.snapshot_main(SimpleNamespace(
             repo=str(self.repo), output=str(snapshot), jj_image_command=None,
         ))
-        accepted = sandbox_proxies.load_manifest_file(snapshot)
+        accepted = sandbox_proxies.load_accepted_manifest(snapshot)
         self.assertEqual("example", accepted["commands"]["example"]["image-target"])
 
     def test_conventional_bake_file_supplies_policy_without_manifest(self) -> None:
@@ -839,7 +917,7 @@ class ManifestTest(unittest.TestCase):
         })
         sandbox_proxies.snapshot_main(args)
         self.write()
-        self.assertIn("example", sandbox_proxies.load_manifest_file(snapshot)["commands"])
+        self.assertIn("example", sandbox_proxies.load_accepted_manifest(snapshot)["commands"])
 
     def test_snapshot_adds_trusted_jj_without_local_manifest(self) -> None:
         builder = self.repo / "trusted-jj-image"
@@ -851,7 +929,7 @@ class ManifestTest(unittest.TestCase):
             "jj_image_command": str(builder.resolve()),
         })
         sandbox_proxies.snapshot_main(args)
-        command = sandbox_proxies.load_manifest_file(snapshot)["commands"]["jj"]
+        command = sandbox_proxies.load_accepted_manifest(snapshot)["commands"]["jj"]
         self.assertEqual([str(builder.resolve())], command["image-command"])
         self.assertEqual("read-write", command["mounts"][0]["proxy"])
 
@@ -868,7 +946,7 @@ class ManifestTest(unittest.TestCase):
             "zulip_image_command": str(builder.resolve()), "zuliprc": str(zuliprc),
         })
         sandbox_proxies.snapshot_main(args)
-        command = sandbox_proxies.load_manifest_file(snapshot)["commands"]["zulip"]
+        command = sandbox_proxies.load_accepted_manifest(snapshot)["commands"]["zulip"]
         self.assertEqual([str(builder.resolve())], command["image-command"])
         self.assertTrue(command["network"])
         self.assertEqual([], command["mounts"])
@@ -882,11 +960,11 @@ class ManifestTest(unittest.TestCase):
             zuliprc=str(self.repo / "missing-credentials"),
         )
         sandbox_proxies.snapshot_main(args)
-        policy = sandbox_proxies.load_manifest_file(snapshot)
+        policy = sandbox_proxies.load_accepted_manifest(snapshot)
         self.assertNotIn("zulip", policy["commands"])
         self.assertFalse(policy["capabilities"]["zulip"])
         self.write(version=2)
-        self.assertFalse(sandbox_proxies.load_manifest_file(snapshot)["capabilities"]["zulip"])
+        self.assertFalse(sandbox_proxies.load_accepted_manifest(snapshot)["capabilities"]["zulip"])
 
     def test_zulip_name_is_reserved_even_when_disabled(self) -> None:
         self.write({"zulip": self.command()}, capabilities={"zulip": False})
@@ -2310,7 +2388,7 @@ class ManifestTest(unittest.TestCase):
             released.set()
             raise RuntimeError("cancelled")
 
-        with mock.patch.object(sandbox_proxies, "load_manifest_file", return_value=manifest), \
+        with mock.patch.object(sandbox_proxies, "load_accepted_manifest", return_value=manifest), \
                 mock.patch.object(sandbox_proxies, "resolve_images", return_value={}), \
                 mock.patch.object(sandbox_proxies, "runtime_identity", return_value={"provider": "container"}), \
                 mock.patch.object(sandbox_proxies, "repository_identity", return_value="repository"), \

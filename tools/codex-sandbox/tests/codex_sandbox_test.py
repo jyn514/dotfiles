@@ -838,6 +838,90 @@ class DirectoryHandoffTest(unittest.TestCase):
 
 
 class BackgroundRelayTest(unittest.TestCase):
+    def test_command_policy_resolves_base_and_project_consumers_before_startup(self):
+        # Native raw declaration -> normalized snapshot -> protocol -> agent composition.
+        for provider in ("container", "lima", "lima-docker"):
+            for targets in ((), ("project-base",), ("bug-image", "project-base")):
+                with self.subTest(provider=provider, targets=targets), tempfile.TemporaryDirectory() as directory:
+                    launcher = runpy.run_path(str(LAUNCHER))
+                    execute = launcher["execute"]
+                    repository = Path(directory)
+                    sandbox = repository / ".agents/sandbox"
+                    sandbox.mkdir(parents=True)
+                    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
+                    names = {"project-base", *targets}
+                    results = {name: "sha256:" + str(index + 1) * 64
+                               for index, name in enumerate(sorted(names))}
+                    commands = {f"proxy-{index}": {"image": target, "argv": ["proxy", "serve"],
+                                "workdir": ".", "network": False, "mounts": []}
+                                for index, target in enumerate(targets)}
+                    (sandbox / "proxy-commands.json").write_text(json.dumps({
+                        "version": 2, "capabilities": {"zulip": False}, "commands": commands,
+                        "images": {"base": "project-base", "resolver": {"kind": "command", "argv": [
+                            sys.executable, str(TOOL / "tests/fixtures/launch-resolver.py")]}}}))
+                    module = launcher["proxy_module"]()
+                    snapshot = repository / "snapshot.json"
+                    module.snapshot_main(SimpleNamespace(repo=str(repository), output=str(snapshot),
+                                                         jj_image_command=None))
+                    state = SimpleNamespace(repository=repository, manifest=snapshot, uid=501, gid=20,
+                                            capabilities=frozenset(), deferred_signal=None)
+                    from sandbox_runtime import ContainerRuntime, VMRuntime
+                    from docker_runtime import Docker
+                    runtime_type = {"container": ContainerRuntime, "lima": VMRuntime, "lima-docker": Docker}[provider]
+                    runtime = mock.Mock(spec=runtime_type, provider=provider)
+                    runtime.build_platform.return_value = "linux/amd64"
+                    runtime.builder_environment.side_effect = lambda: dict(os.environ)
+                    runtime.verify_builder_image.side_effect = lambda image: SimpleNamespace(reference=image)
+                    if provider == "lima-docker":
+                        runtime.run_builders.return_value = {}
+                        runtime.bake.side_effect = lambda _repo, targets: {} if not targets else self.fail("Bake fallback")
+                    network = mock.Mock(return_value=[])
+                    agent = mock.Mock(return_value=0)
+                    compose = mock.Mock(return_value="agent-image")
+                    replacements = {name: mock.Mock(return_value=[]) for name in (
+                        "validate_repository", "recover_relays", "load_repository_policy", "stage_skills",
+                        "register_tmux_pane", "prepare_gateway", "attach_proxies", "preflight_lima", "boot_credential")}
+                    replacements.update(OUTER_RUNTIME=runtime, ensure_network=network, run_agent=agent,
+                                        resolve_agent=compose, _secure_codex_auth_directory=lambda _state: None,
+                                        temporary_file=lambda: repository / "prepared-images.json",
+                                        acquire_lock=lambda value: setattr(value, "proxy_lock", SimpleNamespace(shared=False)))
+                    receipt = repository / "request.json"
+                    environment = {"LAUNCH_RESOLVER_REQUEST": str(receipt),
+                                   "LAUNCH_RESOLVER_IMAGES": json.dumps(results)}
+                    with mock.patch.dict(execute.__globals__, replacements), mock.patch.dict(os.environ, environment):
+                        self.assertEqual(0, execute(state))
+                        compose.assert_called_once_with(runtime, 501, 20, results["project-base"])
+                        requests = [json.loads(line) for line in receipt.read_text().splitlines()]
+                        self.assertEqual(1, len(requests))
+                        self.assertEqual({"version": 1, "operation": "resolve", "images": sorted(names),
+                                          "engine": {"provider": provider, "platform": "linux/amd64"}}, requests[0])
+                        self.assertEqual({name: results[command["image"]] for name, command in commands.items()},
+                                         json.loads(state.prepared_images.read_text()))
+                        self.assertEqual(len(names), runtime.verify_builder_image.call_count)
+                        for invalid in ({}, {**results, "unexpected": "sha256:" + "9" * 64}):
+                            network.reset_mock(); agent.reset_mock(); compose.reset_mock()
+                            runtime.verify_builder_image.reset_mock()
+                            with mock.patch.dict(os.environ, LAUNCH_RESOLVER_IMAGES=json.dumps(invalid)):
+                                with self.assertRaisesRegex(ValueError, "exactly match"):
+                                    execute(state)
+                            network.assert_not_called(); agent.assert_not_called(); compose.assert_not_called()
+                            runtime.verify_builder_image.assert_not_called()
+
+    def test_malformed_new_policy_precedes_relay_and_image_effects(self):
+        execute = runpy.run_path(str(LAUNCHER))["execute"]
+        state = SimpleNamespace(repository=Path("/unused"))
+        effects = {name: mock.Mock(side_effect=AssertionError(name + " before rejection")) for name in (
+            "recover_relays", "stage_skills", "prepare_launch_images", "start_keychain", "ensure_network", "run_agent")}
+        with mock.patch.dict(execute.__globals__, effects | {
+            "validate_repository": mock.Mock(),
+            "acquire_lock": lambda value: setattr(value, "proxy_lock", SimpleNamespace(shared=False)),
+            "load_repository_policy": mock.Mock(side_effect=ValueError("rejected raw policy")),
+        }):
+            with self.assertRaisesRegex(ValueError, "rejected raw policy"):
+                execute(state)
+        for effect in effects.values():
+            effect.assert_not_called()
+
     def test_selects_guest_worker(self) -> None:
         execute = runpy.run_path(str(LAUNCHER))["execute"]
         calls = []
