@@ -18,6 +18,8 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   It uses `CODEX_HOME` (default `~/.codex`) and requires `codex`, `sqlite3`, and `python3`; backups stay beside the database. Reimport reads all rollouts and may replace index metadata, while leaving transcripts unchanged.
 - [`codex-sandbox`](codex-sandbox/) launches Pi or Codex in an isolated container with trusted Git, Jujutsu, authentication, editor, and optional Zulip or nested Docker bridges. Its internal Codex profile helper keeps reusable OAuth credentials outside agent containers; generic authenticated HTTP broker machinery has been deleted. See the [operator guide](codex-sandbox/README.md); before changing security boundaries, read the [proxy design](codex-sandbox/spec/proxy-design.typ).
 - [`jj-proxy`](jj-proxy/) exposes restricted Jujutsu operations to untrusted containers without writable repository metadata. Start with the [operator guide](jj-proxy/README.md); the [design](jj-proxy/design.typ) covers its policy and threat model.
+- [`pi-link`](pi-link/README.md) is a local fork of alvivar's live-session messaging extension, with message IDs and optional reply references in the transcript.
+  It is opt-in and is not enabled by bootstrap.
 - [`pi-npm`](pi-npm/) pins npm dependencies installed in the sandboxed Pi image with `npm ci --ignore-scripts`. It has no user command.
 - [`zulip-proxy`](zulip-proxy/) provides bounded, read-only Zulip transcript and topic access through `bin/zulip`. It requires `~/.zuliprc`; exported private-channel content remains sensitive. See the [operator guide](zulip-proxy/README.md).
 

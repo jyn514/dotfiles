@@ -81,8 +81,10 @@ Run the install before starting tests, not alongside them:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
+npm ci --prefix tools/pi-link --ignore-scripts --no-audit --no-fund
 ```
 
+The second command installs the local pi-link fork's locked WebSocket dependency for its native regression tests.
 This makes tests and replays use the locked Pi SDK instead of Bun's auto-installed or cached version.
 
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
