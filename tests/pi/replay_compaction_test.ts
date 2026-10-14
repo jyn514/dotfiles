@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "bun:test";
-import { replayInput } from "../../dev/replay-compaction";
-import { checkpointText } from "../../config/pi-agent/pi-extensions/luna-compaction";
+import { describe, expect, spyOn, test } from "bun:test";
+import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
+import { listCuts, main, replayInput } from "../../dev/replay-compaction";
+import { checkpointText, COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
 
 const header = { type: "session", version: 3, id: "0537ee54-642f-4ce4-a67b-ff9b06b39104", timestamp: "2026-10-03T00:00:00Z", cwd: "/owned" };
 const user = (id: string, parentId: string | null, text: string) => ({ type: "message", id, parentId, timestamp: header.timestamp, message: { role: "user", content: [{ type: "text", text }], timestamp: 1 } });
@@ -143,6 +145,102 @@ describe("compaction replay", () => {
     expect(replayInput(branched, "second").original.id).toBe("second");
   });
 
+  test("lists every recorded cut, including inactive branches and damaged boundaries", () => {
+    const broken = { ...current, id: "broken", parentId: "tail", firstKeptEntryId: "missing" };
+    const source = jsonl([...entries, broken, user("resumed", "first", "Other branch")]);
+    expect(replayInput(source).original.id).toBe("first");
+    const cuts = listCuts(source);
+    expect(cuts.map(cut => cut.id)).toEqual(["first", "second", "broken"]);
+    expect(cuts[0]).toMatchObject({ parentId: "retained", firstKeptEntryId: "retained", previous: false });
+    expect(cuts[1]).toMatchObject({ parentId: "tail", firstKeptEntryId: "cut", previous: true, characters: replayInput(source, "second").prompt.length });
+    expect(cuts[2].error).toContain("Recorded boundary missing");
+    expect(listCuts(jsonl([header, user("only", null, "Hello")]))).toEqual([]);
+  });
+
+  test("SDK replay serialization keeps only the first 2000 tool-result characters, not the tail", () => {
+    const head = "SOURCE HEAD " + "x".repeat(1988);
+    const tail = "TAIL-ONLY AUTHORITY";
+    const tool = { type: "message", id: "tool", parentId: "new", timestamp: header.timestamp,
+      message: { role: "toolResult", toolCallId: "call", toolName: "read", content: [{ type: "text", text: head + tail }], isError: false, timestamp: 1 } };
+    const source = jsonl([...entries.slice(0, 6), tool, user("cut", "tool", "Retained suffix"), { ...current, parentId: "cut" }]);
+    const { prompt } = replayInput(source);
+    expect(prompt).toContain(`[Tool result]: ${head}\n\n[... ${tail.length} more characters truncated]`);
+    expect(prompt).not.toContain(tail);
+    expect(source).toContain(tail);
+  });
+
+  test("offline listing returns before runtime creation and emits JSON lines without modifying the session", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-list-test-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const path = join(temporary, "session.jsonl");
+      const source = jsonl(entries);
+      writeFileSync(path, source);
+      await main(["--list-cuts", path], async () => { throw new Error("runtime creation forbidden"); });
+      expect(log.mock.calls.map(([line]) => JSON.parse(line).id)).toEqual(["first", "second"]);
+      expect(readFileSync(path, "utf8")).toBe(source);
+    } finally { log.mockRestore(); rmSync(temporary, { recursive: true, force: true }); }
+  });
+
+  test.each(["default", "supplied"])("%s instructions reach the existing generation path with reproducible cut metadata", async mode => {
+    const temporary = mkdtempSync(join(tmpdir(), "replay-instructions-test-"));
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    let output;
+    try {
+      const path = join(temporary, "session with spaces.jsonl");
+      const source = jsonl(entries);
+      writeFileSync(path, source);
+      const instructionsPath = join(temporary, "candidate instructions.md");
+      const supplied = "Candidate instructions 🐟\nKeep these exact bytes.\n";
+      writeFileSync(instructionsPath, supplied);
+      const expected = mode === "default" ? readFileSync(COMPACTION_INSTRUCTIONS, "utf8") : supplied;
+      const args = mode === "default" ? [path, "second"] : ["--instructions", instructionsPath, path, "second"];
+      let request;
+      let options;
+      const modelLimit = mode === "default" ? 999999 : 123;
+      output = await main(args, async () => ({
+        find(provider, id) {
+          expect({ provider, id }).toEqual(COMPACTION_MODEL);
+          return { provider, id, maxTokens: modelLimit };
+        },
+        async complete(model, context, settings) {
+          request = context;
+          options = settings;
+          return { stopReason: "stop", content: [{ type: "text", text: "## Objective and authority\nTest checkpoint" }], usage: { input: 12, output: 3 } };
+        },
+      }));
+      expect(request.systemPrompt).toBe(expected);
+      expect(request.messages[0].content[0].text).toBe(replayInput(source, "second").prompt);
+      expect(options).toMatchObject({
+        maxTokens: Math.min(Math.floor(0.8 * DEFAULT_COMPACTION_SETTINGS.reserveTokens), modelLimit),
+        reasoningEffort: "low", cacheRetention: "none",
+      });
+      expect(readFileSync(join(output, "instructions.md"), "utf8")).toBe(expected);
+      expect(readFileSync(join(output, "new.md"), "utf8")).toBe("## Objective and authority\nTest checkpoint");
+      const metadata = JSON.parse(readFileSync(join(output, "replay.json"), "utf8"));
+      const digest = text => createHash("sha256").update(text).digest("hex");
+      expect(metadata.source).toEqual({ path, sha256: digest(source) });
+      expect(metadata.cut).toEqual({ id: "second", timestamp: header.timestamp, parentId: "tail", firstKeptEntryId: "cut" });
+      expect(metadata.input.sha256).toBe(digest(readFileSync(join(output, "input.txt"), "utf8")));
+      expect(metadata.instructions).toEqual({ path: mode === "default" ? COMPACTION_INSTRUCTIONS : instructionsPath, sha256: digest(expected) });
+      expect(metadata.settings).toEqual({ maxTokens: options.maxTokens, reasoningEffort: options.reasoningEffort, cacheRetention: options.cacheRetention, timeoutMs: 180000 });
+      expect(readFileSync(path, "utf8")).toBe(source);
+    } finally {
+      log.mockRestore(); error.mockRestore();
+      if (output) rmSync(output, { recursive: true, force: true });
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+  test("parseArgs rejects ambiguous listing modes, unknown options, and missing instruction values before a request", async () => {
+    for (const args of [[], ["--list-cuts"], ["--list-cuts", "session", "cut"], ["--list-cuts", "--instructions", "candidate", "session"], ["--instructions"], ["--unknown", "session"], ["one", "two", "three"]]) {
+      let requested = false;
+      await expect(main(args, async () => { requested = true; throw new Error("unexpected runtime"); })).rejects.toThrow();
+      expect(requested).toBe(false);
+    }
+  });
+
   test("rejects absent compactions and broken saved boundaries before requesting a model", () => {
     expect(() => replayInput(jsonl(entries), "new")).toThrow("No compaction entry new");
     expect(() => replayInput(jsonl([header, user("only", null, "Hello")]))).toThrow("No compaction on the active branch");
@@ -164,11 +262,26 @@ describe("compaction replay", () => {
       const path = join(temporary, "session with spaces.jsonl");
       const source = jsonl([header, user("only", null, "No compaction yet")]);
       writeFileSync(path, source);
+      const listed = Bun.spawnSync([command, "--list-cuts", path]);
+      expect(listed.exitCode).toBe(0);
+      expect(listed.stdout.toString()).toBe("");
+      expect(listed.stderr.toString()).toBe("");
+      writeFileSync(path, jsonl(entries));
+      const cuts = Bun.spawnSync([command, "--list-cuts", path]);
+      expect(cuts.exitCode).toBe(0);
+      expect(cuts.stdout.toString().trim().split("\n").map(line => JSON.parse(line).id)).toEqual(["first", "second"]);
+      expect(cuts.stderr.toString()).toBe("");
+      expect(readFileSync(path, "utf8")).toBe(jsonl(entries));
+      const missingInstructions = Bun.spawnSync([command, "--instructions", join(temporary, "missing.md"), path, "second"]);
+      expect(missingInstructions.exitCode).toBe(1);
+      expect(missingInstructions.stderr.toString()).toContain("missing.md");
+      expect(missingInstructions.stderr.toString()).not.toContain("requesting");
+      writeFileSync(path, source);
       const result = Bun.spawnSync([command, path]);
       expect(result.exitCode).toBe(1);
       expect(result.stderr.toString()).toContain("Replay failed: No compaction on the active branch");
       expect(result.stdout.toString()).toBe("");
       expect(readFileSync(path, "utf8")).toBe(source);
     } finally { rmSync(temporary, { recursive: true, force: true }); }
-  }, 30000); // Two fresh Pi SDK imports exceed Bun's default five-second test budget.
+  }, 60000); // Fresh Pi SDK imports exceed Bun's default five-second test budget.
 });

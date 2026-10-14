@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   buildContextEntries, convertToLlm, DEFAULT_COMPACTION_SETTINGS, ModelRegistry,
@@ -31,32 +31,79 @@ export function replayInput(text, entryId) {
   return { original, prompt };
 }
 
-async function main() {
-  const { positionals, values } = parseArgs({ options: { help: { type: "boolean", short: "h" } }, allowPositionals: true });
-  const usage = "Usage: dev/replay-compaction SESSION.jsonl [COMPACTION_ID]";
+export function listCuts(text) {
+  return parseSessionEntries(text).filter(entry => entry.type === "compaction").map(entry => {
+    const cut = { id: entry.id, timestamp: entry.timestamp, parentId: entry.parentId, firstKeptEntryId: entry.firstKeptEntryId };
+    try {
+      const { prompt } = replayInput(text, entry.id);
+      return { ...cut, characters: prompt.length, previous: prompt.startsWith("<previous-checkpoint>") };
+    } catch (error) {
+      // A damaged boundary must not hide a recorded cut or prevent listing others.
+      return { ...cut, error: error.message };
+    }
+  });
+}
+
+async function createReplayRegistry() {
+  const runtime = await ModelRuntime.create({ allowModelNetwork: false });
+  const registry = new ModelRegistry(runtime);
+  // Use Pi's broker registration rather than discover credentials separately.
+  codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
+  return registry;
+}
+
+const sha256 = text => createHash("sha256").update(text).digest("hex");
+
+// Library invocation shares the CLI path; only the model-registry boundary is injectable.
+export async function main(args = process.argv.slice(2), createRegistry = createReplayRegistry) {
+  const { positionals, values } = parseArgs({ args, options: {
+    help: { type: "boolean", short: "h" },
+    "list-cuts": { type: "boolean" },
+    instructions: { type: "string" },
+  }, allowPositionals: true });
+  const usage = "Usage: dev/replay-compaction [--instructions FILE] SESSION.jsonl [COMPACTION_ID]\n       dev/replay-compaction --list-cuts SESSION.jsonl";
   if (values.help) { console.log(usage); return; }
-  if (positionals.length < 1 || positionals.length > 2) throw new Error(usage);
+  if (positionals.length < 1 || positionals.length > 2 || (values["list-cuts"] && (positionals.length !== 1 || values.instructions !== undefined))) throw new Error(usage);
   const [sessionPath, entryId] = positionals;
-  const { original, prompt } = replayInput(readFileSync(sessionPath, "utf8"), entryId);
-  const instructions = readFileSync(COMPACTION_INSTRUCTIONS, "utf8");
+  const source = readFileSync(sessionPath, "utf8");
+  if (values["list-cuts"]) {
+    for (const cut of listCuts(source)) console.log(JSON.stringify(cut));
+    return;
+  }
+  const { original, prompt } = replayInput(source, entryId);
+  const instructionsPath = values.instructions ?? COMPACTION_INSTRUCTIONS;
+  const instructions = readFileSync(instructionsPath, "utf8");
   const output = mkdtempSync(join(tmpdir(), "compaction-replay-"));
   writeFileSync(join(output, "original.md"), checkpointText(original));
   writeFileSync(join(output, "input.txt"), prompt);
   writeFileSync(join(output, "instructions.md"), instructions);
+  const metadata = {
+    source: { path: resolve(sessionPath), sha256: sha256(source) },
+    cut: { id: original.id, timestamp: original.timestamp, parentId: original.parentId, firstKeptEntryId: original.firstKeptEntryId },
+    input: { sha256: sha256(prompt), characters: prompt.length },
+    instructions: { path: resolve(instructionsPath), sha256: sha256(instructions) },
+    model: COMPACTION_MODEL,
+  };
+  const saveMetadata = () => writeFileSync(join(output, "replay.json"), JSON.stringify(metadata, null, 2) + "\n");
+  saveMetadata();
   console.error(`Replaying ${sessionPath}, compaction ${original.id}; requesting ${COMPACTION_MODEL.id}.`);
   try {
-    const runtime = await ModelRuntime.create({ allowModelNetwork: false });
-    const registry = new ModelRegistry(runtime);
-    // Use Pi's broker registration rather than discover credentials separately.
-    codexSidecar({ registerProvider: registry.registerProvider.bind(registry) });
+    const registry = await createRegistry();
     const model = registry.find(COMPACTION_MODEL.provider, COMPACTION_MODEL.id);
     if (!model) throw new Error(`${COMPACTION_MODEL.id} is unavailable`);
+    const settings = {
+      maxTokens: Math.min(Math.floor(0.8 * DEFAULT_COMPACTION_SETTINGS.reserveTokens), model.maxTokens || Infinity),
+      cacheRetention: "none", reasoningEffort: "low", timeoutMs: 180000,
+    };
+    metadata.settings = settings;
+    saveMetadata();
     const response = await registry.complete(model, {
       systemPrompt: instructions,
       messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
     }, {
-      maxTokens: Math.min(Math.floor(0.8 * DEFAULT_COMPACTION_SETTINGS.reserveTokens), model.maxTokens || Infinity),
-      signal: AbortSignal.timeout(180000), cacheRetention: "none", sessionId: randomUUID(), reasoningEffort: "low",
+      maxTokens: settings.maxTokens,
+      signal: AbortSignal.timeout(settings.timeoutMs), cacheRetention: settings.cacheRetention,
+      sessionId: randomUUID(), reasoningEffort: settings.reasoningEffort,
     });
     if (["error", "length", "aborted"].includes(response.stopReason) || response.content.some(block => block.type === "toolCall")) {
       throw new Error(response.errorMessage || `Invalid summary: ${response.stopReason}`);
@@ -67,6 +114,7 @@ async function main() {
     writeFileSync(join(output, "usage.json"), JSON.stringify({ compaction: original.id, model: model.id, original: original.usage, replay: response.usage }, null, 2) + "\n");
     console.error(`Luna completed: ${response.usage.input} input tokens, ${response.usage.output} output tokens.`);
     console.log(`Saved comparison to ${output}\nCompare original.md and new.md manually.`);
+    return output;
   } catch (error) {
     throw new Error(`${error.message}; replay inputs retained at ${output}`);
   }
