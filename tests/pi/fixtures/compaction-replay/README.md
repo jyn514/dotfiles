@@ -1,7 +1,7 @@
 # Manual compaction replay fixtures
 
-Five cases cover persistent corrections, conditional permission,
-investigation-only authority, paused work, repeated compaction, and accepted evidence versus newer experiments.
+Six cases cover persistent corrections, conditional permission,
+investigation-only authority, paused work, repeated compaction, accepted evidence versus newer experiments, and ownership/commit uncertainty.
 Offline tests check **input reconstruction only**, never generated replies or semantic scores.
 Passing them does not prove model retention.
 
@@ -106,6 +106,10 @@ Selected entries: **October 4, 2026**.
 Raw users: `e634a3a7` (arbitrary history), `fe8d8328` (reconsider owner/host Pi;
 path sanitized), `8fcc42a9` (reuse container), `e107e5b3` (JJ routing), `b356d8c4`
 (plan), `13d3d1a6` (review), `c2e50056` (fix), `5450e6f4` (implement).
+Assistant `a69ad163` reports saving `tools/jj-proxy/native-dispatch-implementation-plan.md` immediately before the review request.
+The full message identifies the JJ plan and its proposed scope, reports baseline checks, and says no implementation files changed.
+It is a plan-save report, not implementation approval or independently verified test evidence.
+Earlier fixture versions omitted this referent, so their replays cannot establish whether the compactor misread “review your plan.”
 Checkpoint excerpts and reconstructed cuts:
 
 - `8e424df8`: objective, corrections, paused status, obligations before
@@ -115,7 +119,7 @@ Checkpoint excerpts and reconstructed cuts:
 - `e0fbef33`: objective and single obligation excluding replay from JJ work;
   other bullets omitted; synthetic terminal boundary.
 
-Second input: `8e424df8` + `e107e5b3`, `b356d8c4`, `13d3d1a6`.
+Second input: `8e424df8` + `e107e5b3`, `b356d8c4`, `a69ad163`, `13d3d1a6`.
 Third input: `bf746f62` + `c2e50056`, `5450e6f4`. Older raw corrections survive
 only through a **historical checkpoint excerpt, not a mocked successful reply**.
 “Paused” is checkpoint interpretation supported by reconsideration turns, not an
@@ -176,3 +180,63 @@ Compare the generated checkpoint with `input.txt`, not just the saved checkpoint
       Dictionary work is background to that request, without erasing the pending worker or integration obligations.
 - [ ] The checkpoint distinguishes verified parent results from worker reports and retains the approval limits.
       Offline assertions protect the supplied input and cut, not these generated-output judgments.
+
+## Ownership and commit coverage
+
+`ownership-and-commit-coverage.jsonl`; cuts `41e76fdb`, `4ea2bda0` (default).
+Source: `2026-10-14T06-38-46-602Z_b6c8a016-80bc-419a-871c-818d11743862.jsonl`.
+Selected entries: **October 14, 2026**.
+
+The early input supplies direct parent edit evidence; the later input deliberately lacks it.
+These are two different evidence conditions, not a test that the later compactor can recover deleted proof.
+
+Early selections:
+
+- Users `96a8bcd7` (assessment), `8d18b7b0` (incorporate), `00e6c249` (broker proposal remains pending),
+  and `63adfad8` (separate additions permitted; preserve/exclude existing work).
+  `8d18b7b0` retains only the user's request after the expanded skill; the skill body is omitted.
+- Concurrent inspection `b1acc5c7` / `31e21cef` keeps the full call but only the first `owned_images.py` diff hunk,
+  changing the JJ source identity input from `config/mise.toml` to `config/mise.lock`.
+  This is actual unrelated concurrent edit context, not an invented ownership warning.
+- Worker assignment/launch `69edb8ba` / `41f6c8ef` and completion `b768bfa6` preserve the replay worker's competing assignment and full return.
+  Parent coordination `8cf08afd` / `c885dc68` explicitly names the parent's separate documentation/fixture scope.
+- Successful direct parent edits, with complete arguments and matching results:
+  `c273b2d2` / `01d5376c` (`tools/codex-sandbox/spec/proxy-design.typ`, four three-route/channel-listing changes);
+  `fad102af` / `da0b4a3d` (`tools/codex-sandbox/README.md`, missing-`.git` warning/fixture, generated-shell `rg` pointer, pending broker proposal);
+  `f23b575d` / `064f9c8d` (`tools/codex-sandbox/tests/repository_mounts_integration.py`, missing topology and host-entry preservation assertion);
+  `0719d987` / `02334d8b` (sandbox README native-fixture invocation and failure caveat).
+
+`41e76fdb` keeps all historical checkpoint prose before the caller-captured repository-state appendix.
+It omits these parent edits; it is the saved deficient checkpoint, not a candidate or ideal summary.
+The original retained boundary `042ac293` remains a full historical inspection call, excluded from the early input and included in the later input.
+Its result and other retained messages are omitted.
+The earlier `f19bfae1` checkpoint is omitted; selected raw user turns supply early authority instead.
+Parent chains and the first cut's parent are rebuilt across these omissions.
+
+Later selections:
+
+- Full final-check command `2768065c`; `84b552d4` retains only the status heading and the three disputed dirty paths.
+  Other output, author identities, commit listings, diff statistics, and unrelated inventories are omitted.
+  The command's final `jj diff --name-only --` fileset excludes all three disputed paths.
+  Neither that scoped check nor the retained status establishes their ownership or commit coverage.
+- Completion `a46c4fdc`, question `4080726f`, full report `939a9a07`, and next question `2c0fd8f0`.
+  The report claims the remaining dirty tree is concurrent work; the supplied later evidence does not verify that attribution.
+  “Talk to me about logging” grounds the latest authority as discussion, not implementation.
+  Subsequent logging decisions, edits, worker returns, and later ownership corrections are omitted.
+- `4ea2bda0` keeps historical objective/current-work prose before `### Resume map`, including the unsupported concurrent-work classification.
+  Its terminal boundary is synthetic; its historical summary is excluded from its own input.
+
+IDs/dates and original `tokensBefore` remain; checkpoint lengths are recalculated after excerpting.
+`/src/dotfiles` becomes `/owned/dotfiles`; thinking/signatures, usage/caller metadata, and private home paths are absent.
+The later replay inherits the saved `41e76fdb` excerpt, never the newly generated early reply.
+Offline tests protect these inputs and boundaries, not the judgments below.
+
+- [ ] **Early:** retain all three exact paths, parent authorship supported by the successful direct calls, and distinguishing hunks above.
+      Keep commit coverage **unknown** for those hunks; selected evidence does not prove they were committed.
+- [ ] **Early:** identify the sandbox README's specific authored hunks, not ownership of the entire mixed file.
+      Preserve concurrent work and the worker's separate scope; do not turn those constraints into a ban on committing verified parent additions.
+- [ ] **Later:** distinguish the assistant's completion/concurrent-work **report** from verified ownership.
+      The scoped final check does not cover these paths; dirty status alone proves neither author nor commit coverage.
+- [ ] **Later:** report unresolved ownership/commit coverage and recover provenance before cleanup.
+      Do not invent the absent raw edits, confirm another author, or assert a blanket “do not commit remaining work” constraint.
+- [ ] Preserve broker/authentication protection and latest discussion-only authority without importing later logging approval or ownership corrections.

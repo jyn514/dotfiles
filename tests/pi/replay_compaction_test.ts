@@ -119,6 +119,10 @@ describe("compaction replay", () => {
     expect(third.original.id).toBe("e0fbef33");
     const first = replayInput(source, "8e424df8");
     expect(second.prompt).toContain(`<previous-checkpoint>\n${checkpointText(first.original)}\n</previous-checkpoint>`);
+    const savedPlan = "[Assistant]: Saved `tools/jj-proxy/native-dispatch-implementation-plan.md`.";
+    expect(second.prompt).toContain(savedPlan);
+    expect(second.prompt).toContain("No implementation files changed.");
+    expect(second.prompt.indexOf(savedPlan)).toBeLessThan(second.prompt.indexOf("[User]: review your plan"));
     expect(second.prompt).toContain("review your plan");
     expect(second.prompt).toContain("/skill:implementation-plan");
     expect(second.prompt).not.toContain("fix your findings");
@@ -131,10 +135,102 @@ describe("compaction replay", () => {
     // The old raw corrections are absent at this cut; saved prose, not a fake
     // successful generation, supplies the historical authority for human review.
     expect(first.prompt).toContain("i was intending for the agent to be able to fork from *arbitrarily* far back");
+    expect(first.prompt).not.toContain(savedPlan);
+    expect(third.prompt).not.toContain(savedPlan);
     expect(third.prompt).not.toContain("i was intending for the agent to be able to fork from *arbitrarily* far back");
     expect(third.prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
     expect(third.prompt).not.toContain("Implement the approved JJ dispatch plan:");
     expect(third.prompt).not.toContain("Repository state (caller-captured after summary)");
+  });
+
+  test("ownership replay supplies the parent's complete successful edit calls beside competing worker and concurrent work", () => {
+    const source = historicalFixture("ownership-and-commit-coverage");
+    const { prompt } = replayInput(source, "41e76fdb");
+    const records = source.trim().split("\n").map(line => JSON.parse(line));
+    const edits = [
+      { id: "c273b2d2", result: "01d5376c", path: "tools/codex-sandbox/spec/proxy-design.typ", blocks: 4,
+        hunks: ["available-channel-list framed operations", "GET /api/v1/streams?include_can_access_content=true", "does not fall back to an unfiltered listing", "all three route families", "three upstream request families", "only the three typed-adapter route families"] },
+      { id: "fad102af", result: "da0b4a3d", path: "tools/codex-sandbox/README.md", blocks: 3,
+        hunks: ["mkdirat .../.git: invalid argument", "argument-level tests alone do not establish support", "generated-shell PATH limitation", "this incorporation leaves authentication unchanged"] },
+      { id: "f23b575d", result: "064f9c8d", path: "tools/codex-sandbox/tests/repository_mounts_integration.py", blocks: 3,
+        hunks: ['("missing", False, "common")', "originally_missing = not entry.exists() and not entry.is_symlink()", 'assert not entry.exists() and not entry.is_symlink(), "host .git entry was created"'] },
+      { id: "0719d987", result: "02334d8b", path: "tools/codex-sandbox/README.md", blocks: 1,
+        hunks: ["--state STATE_DIRECTORY --image AGENT_IMAGE", "A failure is not a passing compatibility check.", "Do not create a synthetic `.git` directory"] },
+    ];
+    for (const { id, result, path, blocks, hunks } of edits) {
+      const call = records.find(entry => entry.id === id)?.message.content.find(block => block.type === "toolCall");
+      expect(call?.name).toBe("edit");
+      expect(call.arguments.path).toBe(path);
+      expect(call.arguments.edits).toHaveLength(blocks);
+      // Check complete native call serialization, not just a path mention or a
+      // worker's report. The fixed excerpts also detect accidental fixture loss.
+      expect(prompt).toContain(`path=${JSON.stringify(path)}`);
+      expect(prompt).toContain(`edits=${JSON.stringify(call.arguments.edits)}`);
+      for (const hunk of hunks) expect(call.arguments.edits.some(edit => edit.newText.includes(hunk))).toBe(true);
+      const returned = records.find(entry => entry.id === result)?.message;
+      expect(returned?.isError).toBe(false);
+      expect(returned.toolCallId).toBe(call.id);
+      expect(prompt).toContain(`[Tool result]: Successfully replaced ${blocks} block(s) in ${path}.`);
+    }
+    for (const text of [
+      "[User]: incorporate your suggested materials into the repo",
+      "Add separate changes; preserve and exclude existing work from commits",
+      "Preserve proposal; leave authentication unchanged",
+      "Parent owns README + proxy-design.typ Zulip route corrections + repository_mounts_integration fixture addition",
+      "[Assistant tool calls]: spawn_agent(", 'task_name="incorporate-replay"', "Spawned /incorporate-replay.",
+      '"agent_name": "/incorporate-replay"', "**Owned diff:** only `dev/replay-compaction`",
+      "diff --git a/tools/codex-sandbox/owned_images.py", "+        )] + ['config/mise.lock']",
+    ]) expect(prompt).toContain(text);
+    expect(prompt).not.toContain("Integration is complete");
+    expect(prompt).not.toContain("The remaining dirty tree is concurrent work");
+    expect(prompt).not.toContain("talk to me about logging");
+  });
+
+  test("later ownership replay inherits deficient saved prose, not the missing raw proof or a regenerated checkpoint", () => {
+    const source = historicalFixture("ownership-and-commit-coverage");
+    const first = replayInput(source, "41e76fdb");
+    const later = replayInput(source, "4ea2bda0");
+    expect(later.prompt).toContain(`<previous-checkpoint>\n${checkpointText(first.original)}\n</previous-checkpoint>`);
+    expect(later.prompt).toContain("Resolver/bake worker changes remain uncommitted.");
+    expect(later.prompt).toContain("[Assistant]: Integration is complete; concurrent work remains separate.");
+    expect(later.prompt).toContain("These are committed. The remaining dirty tree is concurrent work deliberately left separate.");
+    expect(later.prompt).toContain("[User]: talk to me about logging");
+    const records = source.trim().split("\n").map(line => JSON.parse(line));
+    const command = records.find(entry => entry.id === "2768065c").message.content.find(block => block.type === "toolCall").arguments.command;
+    expect(later.prompt).toContain(`command=${JSON.stringify(command)}`);
+    const checked = command.split("jj diff --name-only -- ")[1].split(" ");
+    expect(checked).toContain("tools/codex-sandbox/image_resolver.py");
+    expect(checked).toContain("tools/codex-sandbox/sandbox-proxies.py");
+    for (const path of ["tools/codex-sandbox/spec/proxy-design.typ", "tools/codex-sandbox/README.md", "tools/codex-sandbox/tests/repository_mounts_integration.py"]) {
+      expect(checked).not.toContain(path);
+      expect(later.prompt).toContain(`M ${path}`);
+    }
+    for (const text of [
+      "[Assistant tool calls]: edit(", "available-channel-list framed operations",
+      "originally_missing =", "mkdirat .../.git: invalid argument",
+      "Successfully replaced", "Parent owns README + proxy-design.typ",
+      "numeric channels are ok", "k, use a subagent to fix the spec",
+      "The original transcript confirms I authored the three-route/channel-listing edits.",
+    ]) expect(later.prompt).not.toContain(text);
+  });
+
+  test("ownership fixture has two valid native cuts, a latest active default, and no private paths or boundary leaks", () => {
+    const source = historicalFixture("ownership-and-commit-coverage");
+    const cuts = listCuts(source);
+    expect(cuts.map(cut => cut.id)).toEqual(["41e76fdb", "4ea2bda0"]);
+    expect(cuts.map(cut => cut.previous)).toEqual([false, true]);
+    expect(cuts.every(cut => !cut.error)).toBe(true);
+    expect(replayInput(source).original.id).toBe("4ea2bda0");
+    expect(source).not.toMatch(/\/(?:home|Users)\//);
+    expect(source).not.toContain("thinkingSignature");
+    for (const cut of cuts) {
+      const { original, prompt } = replayInput(source, cut.id);
+      expect(prompt.length).toBe(cut.characters);
+      expect(prompt).not.toMatch(/\/(?:home|Users)\//);
+      expect(prompt).not.toContain(checkpointText(original));
+      expect(prompt).not.toContain("Retained suffix (fixture scaffolding, not historical evidence).");
+      expect(prompt).not.toContain("Repository state (caller-captured after summary)");
+    }
   });
 
   test("defaults to the latest compaction on the active branch, with explicit selection of another branch", () => {
