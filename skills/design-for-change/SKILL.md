@@ -46,6 +46,9 @@ Split meaningful business logic and likely bugs where they can be tested. Prefer
 - Make example tests read as a meaningful narrative about important edges and costly regressions.
 - For public refactors, run a clean-interpreter check from the repository root for every supported import and invocation mode; test discovery or an injected module path does not establish package reachability.
 - After applying the [shared rejected-design stop rule](~/.agents/shared.md#when-the-user-rejects-a-design), restate the revised ownership boundary before resuming dependent implementation.
+- When claiming that a change fixes an observed failure, compare baseline and candidate from the same pre-failure state.
+  Verify that the baseline reproduces the failure and judge improvement by observable behavior.
+  Identify other differences that could explain the result, including test setup, dependencies, model versions, and randomness.
 
 When reviewing a system and its tests, check both directions: required behavior without a test, and tested behavior without a corresponding requirement. Apply this to code, APIs, policies, prompts, workflows, and specifications.
 
