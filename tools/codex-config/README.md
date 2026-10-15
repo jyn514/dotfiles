@@ -1,6 +1,7 @@
 # Codex config migration
 
-`move-generated-config PROFILE CONFIG` moves Codex-generated `[projects.*]` and `[tui.model_availability_nux]` tables from a tracked profile into the untracked user config. Top-level settings such as `model` remain tracked.
+`move-generated-config PROFILE CONFIG` moves Codex-generated `[projects.*]`, `[tui.model_availability_nux]`, and `[hooks.state.*]` tables from a tracked profile into the untracked user config.
+Top-level settings such as `model` and other hook configuration remain tracked.
 
 `bin/codex` runs it before launch and after Codex exits outside the sandbox:
 
@@ -10,7 +11,11 @@
 
 The wrapper adds `--profile dotfiles` for runtime commands, MCP, sandbox commands, and `debug prompt-input`. Administrative subcommands such as `app-server`, `login`, `doctor`, and `features` must come first and receive no automatic profile: Codex rejects runtime profiles for those commands. Instruction expansion and config migration still run.
 
-The tool preserves all other TOML text and writes the destination before removing source tables. The active profile replaces stale model-availability state; conflicting project tables leave both files unchanged. Publishing the destination first makes interruption recoverable: a retry removes any harmless duplicate. Post-exit migration removes state Codex writes during startup or the session without racing the running process.
+The tool preserves all other TOML text and writes the destination before removing source tables.
+The active profile replaces stale model-availability state; conflicting project or hook-state entries leave both files unchanged.
+Hook-state entries merge individually, including when Codex emits an explicit empty `[hooks.state]` parent table.
+Publishing the destination first makes interruption recoverable: a retry removes any harmless duplicate.
+Post-exit migration removes state Codex writes during startup or the session without racing the running process.
 
 Run the tests with:
 

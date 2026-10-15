@@ -15,6 +15,9 @@ PROJECT_HEADER = re.compile(
 MODEL_AVAILABILITY_HEADER = re.compile(
     r"^\s*\[tui\.model_availability_nux\]\s*(?:#.*)?$"
 )
+HOOK_STATE_HEADER = re.compile(
+    r"^\s*\[hooks\.state(?:\.(?P<key>\"(?:[^\"\\]|\\.)*\"|'[^']*'))?\]\s*(?:#.*)?$"
+)
 TABLE_HEADER = re.compile(r"^\s*\[\[?.+?\]\]?\s*(?:#.*)?$")
 
 
@@ -34,13 +37,22 @@ def generated_sections(text: str) -> list[tuple[tuple[str, ...], int, int, objec
             starts.append((offset, ("projects", key)))
         elif MODEL_AVAILABILITY_HEADER.match(stripped):
             starts.append((offset, ("tui", "model_availability_nux")))
+        else:
+            match = HOOK_STATE_HEADER.match(stripped)
+            if match:
+                path = ("hooks", "state")
+                if match.group("key") is not None:
+                    key = tomllib.loads(f"key = {match.group('key')}\n")["key"]
+                    path += (key,)
+                starts.append((offset, path))
         offset += len(line)
 
     document = tomllib.loads(text)
     sections = []
     for start, path in starts:
         end = next((candidate for candidate in table_offsets if candidate > start), len(text))
-        value = document
+        # The explicit parent block does not own the following child tables.
+        value = tomllib.loads(text[start:end]) if path == ("hooks", "state") else document
         for component in path:
             value = value[component]
         sections.append((path, start, end, value))
@@ -115,6 +127,9 @@ def migrate(profile: Path, config: Path) -> bool:
         name = ".".join(path)
         if existing is None:
             additions.append(profile_text[start:end])
+        elif path == ("hooks", "state") and value == {} and isinstance(existing, dict):
+            # Existing child tables already declare this empty parent implicitly.
+            pass
         elif existing != value and path == ("tui", "model_availability_nux"):
             destination_start, destination_end, _ = config_sections[path]
             replacements.append((destination_start, destination_end))

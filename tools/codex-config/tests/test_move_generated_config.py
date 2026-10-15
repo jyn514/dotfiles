@@ -4,6 +4,7 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 
 
@@ -99,6 +100,61 @@ class MoveGeneratedConfigTests(unittest.TestCase):
 
             self.assertEqual(profile_text, profile.read_text(encoding="utf-8"))
             self.assertEqual(config_text, config.read_text(encoding="utf-8"))
+
+    def test_moves_hook_state_without_moving_hook_configuration(self) -> None:
+        # Codex emits an empty parent table; TOML also permits implicit parents.
+        for parent in ("", "[hooks.state]\n\n"):
+            for destination in ("", "unrelated", "matching"):
+                with self.subTest(parent=bool(parent), destination=destination):
+                    with tempfile.TemporaryDirectory() as temporary:
+                        root = Path(temporary)
+                        profile = root / "profile.toml"
+                        config = root / "config.toml"
+                        hook = (
+                            '[hooks.state."/work/project/.codex/hooks.json:post_tool_use:0:0"]\n'
+                            'trusted_hash = "sha256:new"\n'
+                        )
+                        other = (
+                            "[hooks.state.'another.hook']\n"
+                            'trusted_hash = "sha256:other"\n'
+                        )
+                        settings = '[hooks]\nenabled = true\n\n[hooks.settings]\nkeep = true\n'
+                        profile.write_text(settings + "\n" + parent + hook)
+                        config.write_text(
+                            "" if destination == "" else other if destination == "unrelated" else hook
+                        )
+
+                        self.assertTrue(module.migrate(profile, config))
+
+                        self.assertEqual(settings, profile.read_text())
+                        migrated = tomllib.loads(config.read_text())
+                        expected = tomllib.loads(hook)["hooks"]["state"]
+                        if destination == "unrelated":
+                            expected.update(tomllib.loads(other)["hooks"]["state"])
+                        self.assertEqual({"hooks": {"state": expected}}, migrated)
+                        before = config.read_text()
+                        self.assertFalse(module.migrate(profile, config))
+                        self.assertEqual(before, config.read_text())
+
+    def test_hook_state_conflict_preserves_both_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            profile = root / "profile.toml"
+            config = root / "config.toml"
+            hook = '[hooks.state."/work/hook.json:post_tool_use:0:0"]\n'
+            profile_text = (
+                '[projects."/new project"]\ntrust_level = "trusted"\n\n'
+                '[hooks.state]\n\n' + hook + 'trusted_hash = "sha256:new"\n'
+            )
+            config_text = hook + 'trusted_hash = "sha256:old"\n'
+            profile.write_text(profile_text)
+            config.write_text(config_text)
+
+            with self.assertRaisesRegex(ValueError, "conflicting"):
+                module.migrate(profile, config)
+
+            self.assertEqual(profile_text, profile.read_text())
+            self.assertEqual(config_text, config.read_text())
 
     def test_missing_profile_is_a_noop(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
