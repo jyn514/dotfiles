@@ -443,10 +443,17 @@ Flower R2 is excluded. AWS Signature Version 4 binds request material and must p
 
 The Codex Caddy configuration fixes upstream host `chatgpt.com`, method `POST`, downstream path `/codex/responses`, upstream path `/backend-api/codex/responses`, and an empty query. A matcher rejects every query, any other method or path, and non-origin-form targets. A final catch-all returns an error locally and cannot invoke `reverse_proxy`. Pi receives only this listener URL and its compatibility placeholder key.
 
-The Zulip typed adapter remains the only agent/host application interface. It accepts transcript and topic-list framed operations, constructs requests, paginates, serializes access, enforces two-second pacing, honors bounded `429 Retry-After`, validates complete responses, and emits the existing schemas. It calls its local Caddy at only two finite route families on the one launcher-admitted Zulip host:
+The Zulip typed adapter remains the only agent/host application interface.
+It accepts transcript, topic-list, and available-channel-list framed operations, constructs requests, paginates, serializes access,
+enforces two-second pacing, honors bounded `429 Retry-After`, validates complete responses, and emits the existing schemas.
+It calls its local Caddy at only three finite route families on the one launcher-admitted Zulip host:
 
 - `GET /api/v1/messages` with the adapter-constructed bounded query
 - `GET /api/v1/users/me/<numeric-user-id>/topics` with the adapter-constructed bounded query
+- `GET /api/v1/streams?include_can_access_content=true` for available-channel listing
+
+Channel listing returns only numeric channel IDs and names for content the account can access.
+The adapter rejects servers that report the content-access filter unsupported; it does not fall back to an unfiltered listing.
 
 Caddy has explicit matchers for those families and a non-proxying catch-all. The agent never receives a general Zulip HTTP endpoint. Host routing continues through the typed adapter, and the sandbox client never falls back locally.
 
@@ -464,7 +471,7 @@ Caddy performs normal protocol hop-by-hop removal. Duplicate, malformed, connect
 
 === Timeouts, bounds, and completion
 
-The immutable Caddy configuration sets a 64 KiB request-header maximum, 10-second header-read timeout, 300-second idle timeout, 10-second application-upstream dial timeout, and 60-second application-upstream `response_header_timeout`. The helper transport separately uses a 10-second Unix-socket dial timeout and 30-second response-header timeout. The Codex request-body maximum is 32 MiB. There is no complete-body deadline: a peer may trickle a body while remaining within the server's idle behavior. Zulip request bodies are absent because both route families are `GET`; its typed request and query bounds remain adapter-owned. Container PID, memory, CPU, file-descriptor, and network bounds constrain each service.
+The immutable Caddy configuration sets a 64 KiB request-header maximum, 10-second header-read timeout, 300-second idle timeout, 10-second application-upstream dial timeout, and 60-second application-upstream `response_header_timeout`. The helper transport separately uses a 10-second Unix-socket dial timeout and 30-second response-header timeout. The Codex request-body maximum is 32 MiB. There is no complete-body deadline: a peer may trickle a body while remaining within the server's idle behavior. Zulip request bodies are absent because all three route families are `GET`; its typed request and query bounds remain adapter-owned. Container PID, memory, CPU, file-descriptor, and network bounds constrain each service.
 
 There is deliberately no response-byte cap and no claimed exact total stream-duration cap. Removing the byte cap avoids truncating valid model streams and preserves backpressure, but permits a fast peer to transfer more data than a byte budget would allow; Caddy's available timeouts and container bounds are coarser controls and do not establish an exact maximum byte count or wall-clock duration. Caddy preserves HTTP framing failures but does not parse Responses SSE events or JSON and therefore cannot decide protocol completion.
 
@@ -507,8 +514,8 @@ The only admitted Caddy dependency is Docker Official Image `caddy:2.11.4-alpine
 === Migration and removal
 
 + Add one unmodified Docker Official Image Caddy container and one minimal helper container per credential domain, with a private socket volume and credentials mounted only into the helper.
-+ Generate immutable Caddy configuration for the fixed Codex route, two Zulip route families, header operations, bounds, catch-alls, bodyless precheck, and local readiness path.
-+ Point Pi at the Codex Caddy listener. Keep the Zulip typed adapter but route its two upstream request families through its local Caddy.
++ Generate immutable Caddy configuration for the fixed Codex route, three Zulip route families, header operations, bounds, catch-alls, bodyless precheck, and local readiness path.
++ Point Pi at the Codex Caddy listener. Keep the Zulip typed adapter but route its three upstream request families through its local Caddy.
 + Record, publish, validate, stop, and recover both Caddy and helper container identities and their shared socket volume; retain the Zulip adapter identity separately.
 + On 2026-09-14, the custom broker HTTP server, parser/framing checks, DNS parser, header filtering/allowlist engine, TLS client, reverse-proxy loop, routing machinery, response-byte limiter, and access-log implementation were deleted after parity acceptance. No fallback path remains.
 + Preserve separate Codex and Zulip trust domains and keep Flower R2's dedicated relay unchanged.
@@ -519,7 +526,7 @@ The agent's credential-free public network remains outside this reverse proxy. R
 
 - Startup and join admit only Docker Official Image Caddy 2.11.4-alpine whose OCI index, platform-manifest, image-configuration, and runtime container image identities form the recorded chain; the service implementation identity separately binds the mounted Caddy configuration digest.
 - Every credential domain has separately recorded Caddy and helper containers and private socket volume; credentials are visible only to its helper.
-- Codex accepts only downstream `POST /codex/responses` with no query and rewrites it to fixed upstream `/backend-api/codex/responses`; Zulip Caddy accepts only the two typed-adapter route families; every configuration ends in a non-proxying catch-all.
+- Codex accepts only downstream `POST /codex/responses` with no query and rewrites it to fixed upstream `/backend-api/codex/responses`; Zulip Caddy accepts only the three typed-adapter route families; every configuration ends in a non-proxying catch-all.
 - `GET /admit` over the private Unix socket receives no body; constant-time exact admission enforces the at-most-4096-byte bearer session token, and metadata stays within the 64 KiB header bound.
   Other headers are ignored without logging; method/path logging follows Readiness and observability.
 - Helper transport uses separate 10-second Unix dial and 30-second response-header limits; after admission, credential read/refresh uses one internal 30-second monotonic deadline, with no claimed combined complete-exchange deadline.
