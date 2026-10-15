@@ -22,7 +22,7 @@ def main():
     launcher = runpy.run_path(str(LAUNCHER))
     mounts = launcher["agent_repository_mounts"]
     mounts.__globals__["OUTER_RUNTIME"] = runtime
-    cases = [("directory", False, "common")]
+    cases = [("directory", False, "common"), ("missing", False, "common")]
     cases.extend(("linked", absolute, backend)
                  for absolute in (False, True) for backend in ("worktree", "common"))
     for layout, absolute, backend in cases:
@@ -32,6 +32,7 @@ def main():
             state.git_mount_source = state.git_repository
             entry = state.repository / ".git"
             original = entry.read_bytes() if entry.is_file() else None
+            originally_missing = not entry.exists() and not entry.is_symlink()
             command = mounts(state)
             launcher["check_mount_destinations"](command)
             expected_common = common if absolute else Path("/src/team/main/.git")
@@ -48,6 +49,8 @@ def main():
             assert (state.repository / "created").read_text() == "writable"
             if original is not None:
                 assert entry.read_bytes() == original
+            if originally_missing:
+                assert not entry.exists() and not entry.is_symlink(), "host .git entry was created"
             print(f"PASS: {layout}, absolute={absolute}, backend={backend}", flush=True)
 
 

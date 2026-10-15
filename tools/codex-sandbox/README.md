@@ -89,6 +89,18 @@ retain their pointer file as a read-only file mount, with backing metadata
 mounted read-only at both host and guest paths so absolute and relative pointers
 resolve. Directory overlays use the selected Git metadata root. Other metadata
 mounts must not emit a second mount at the workspace's `.git` path.
+A workspace with no `.git` entry failed this directory overlay on the Linux uidmapped-virtiofs backend:
+rootless mountpoint creation reported `mkdirat .../.git: invalid argument`.
+Directory and linked-worktree fixtures passed; argument-level tests alone do not establish support for the missing-entry topology.
+The [repository mount fixture](tests/repository_mounts_integration.py) includes that case for native revalidation.
+It creates disposable workspace/container state on an existing Docker VM; run it from the host with that VM's state directory and a prepared Python-capable agent image:
+
+```sh
+dev/test-environment python3 tools/codex-sandbox/tests/repository_mounts_integration.py --state STATE_DIRECTORY --image AGENT_IMAGE
+```
+
+A failure is not a passing compatibility check.
+Do not create a synthetic `.git` directory in the host workspace to bypass the failure.
 
 ### Host instructions and guest-readable guidance
 
@@ -254,6 +266,7 @@ The agent image provides a `codex` wrapper that routes a base image's Codex CLI 
 session authentication proxy. It does not install Codex; invoking it reports how to repair the
 base image when no later `codex` executable is present on `PATH`, or when proxy setup is missing.
 
+The [generated-shell PATH limitation](../../config/README.md#agent-instructions) applies when a Codex CLI replaces wrapper precedence after shell startup.
 The agent's `rg` wrapper disables ripgrep configuration and rejects executable
 `--pre`, `--pre-glob`, and `--hostname-bin` options. Those strings remain valid
 as `-e`/`--regexp` values or after `--`. Unknown option shapes fail closed for
