@@ -278,11 +278,148 @@
             [["01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
              ["rollout-2026-09-15-01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
              ["2026-09-15T18-56-07-795Z_01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
+             ["rollout-2026-09-15-01a0a66d-2c73-77d5-83a1-43ca8362dc92_01a13b22-1a3a-75c2-a8d2-3a3e381f9973.jsonl" true]
+             ["rollout-2026-09-15-other_01a0a66d-2c73-77d5-83a1-43ca8362dc92_extra.jsonl" false]
              ["rollout-2026-09-15-other.jsonl" false]]]
       (let [file (fs/file root filename)]
         (spit file "{}")
         (is (= expected
                (matcher "01a0a66d-2c73-77d5-83a1-43ca8362dc92" (.toPath file))))))))
+
+(deftest extract-chat-selects-newest-codex-rollout-by-session-id
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-rollouts"})
+        session-id "01a13b22-06ae-7ad1-a2c5-bc418dcfe355"
+        original (fs/file root (str "rollout-2026-10-14T17-57-28-" session-id ".jsonl"))
+        later (fs/file root (str "rollout-2026-10-14T17-57-33-" session-id
+                                 "_01a13b22-1a3a-75c2-a8d2-3a3e381f9973.jsonl"))
+        last-file (fs/file root (str "rollout-2026-10-14T18-24-15-" session-id
+                                     "_01a13b3a-8c7b-7e72-aa63-505f516f8d4e.jsonl"))]
+    (try
+      (spit original "{}\n")
+      (doseq [[file text] [[later "Make tea."] [last-file "Pour tea."]
+                           [(fs/file root "rollout-unrelated.jsonl") "Unrelated."]]]
+        (spit file (str (json/generate-string
+                         {:type "response_item"
+                          :payload {:type "message" :role "user"
+                                    :content [{:type "input_text" :text text}]}}) "\n")))
+      (with-redefs [extract-chat/default-root (constantly (str root))
+                    extract-chat/pi-root (constantly (str (fs/file root "pi")))]
+        (is (= (str "# " last-file "\n\n## User\n\nPour tea.\n\n")
+               (with-out-str (extract-chat/main ["--session" session-id])))))
+      (finally (fs/delete-tree root)))))
+
+(defn- write-paginated-rollout [file id base texts]
+  (fs/create-dirs (fs/parent file))
+  (let [start (or (:end_ordinal_exclusive base) 0)]
+    (spit file
+          (str (str/join "\n"
+                         (map json/generate-string
+                              (into [{:type "session_meta" :ordinal start
+                                      :payload (cond-> {:id id :session_id id
+                                                        :history_mode "paginated"}
+                                                 base (assoc :history_base base))}]
+                                    (map-indexed
+                                     (fn [i text]
+                                       (assoc (if (map? text)
+                                                text
+                                                {:type "response_item"
+                                                 :payload {:type "message" :role "user"
+                                                           :content [{:type "input_text" :text text}]}})
+                                              :ordinal (+ start i 1)))
+                                     texts)))) "\n"))))
+
+(defn- history-position [file rollout-id record-count end-ordinal]
+  {:thread_id rollout-id :end_ordinal_exclusive end-ordinal
+   :end_byte_offset (alength (.getBytes
+                             (str (str/join "\n" (take record-count (str/split-lines (slurp file)))) "\n")
+                             "UTF-8"))})
+
+(deftest extract-chat-reconstructs-fork-and-revert-history
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-lineage"})
+        parent-id "01a13add-f050-7e93-88cc-a70f0bf1b3d3"
+        parent-rollout "01a13b1f-1fb7-7e43-ac66-54cca4b4cdb8"
+        child-id "01a13b22-06ae-7ad1-a2c5-bc418dcfe355"
+        child-rollout "01a13b3a-8c7b-7e72-aa63-505f516f8d4e"
+        parent (fs/file root "archived_sessions" (str "rollout-2026-10-14T16-43-05-" parent-id ".jsonl"))
+        reverted-parent (fs/file root "archived_sessions"
+                                 (str "rollout-2026-10-14T17-54-17-" parent-id "_" parent-rollout ".jsonl"))
+        child (fs/file root "sessions" "2026" "10" "14"
+                       (str "rollout-2026-10-14T17-57-28-" child-id ".jsonl"))
+        latest (fs/file (fs/parent child)
+                        (str "rollout-2026-10-14T18-24-15-" child-id "_" child-rollout ".jsonl"))
+        unrelated-parent (fs/file root "archived_sessions"
+                                  (str "rollout-2026-10-14T19-00-00-" parent-id
+                                       "_01a13b3a-8c7b-7e72-aa63-505f516fffff.jsonl"))
+        output-dir (fs/file root "markdown")]
+    (try
+      ;; Older inherited segments can use event_msg while the child uses response_item.
+      (write-paginated-rollout parent parent-id nil
+                              [{:type "event_msg" :payload {:type "user_message" :message "café"}}
+                               "discarded parent turn"])
+      (write-paginated-rollout reverted-parent parent-id
+                              (history-position parent parent-id 2 2)
+                              ["parent continuation" "after fork cutoff"])
+      (write-paginated-rollout child child-id
+                              (history-position reverted-parent parent-rollout 2 4)
+                              ["discarded child turn"])
+      ;; An empty intermediate segment still contributes its inherited history.
+      (write-paginated-rollout latest child-id
+                              (history-position child child-id 1 5)
+                              ["current child turn"])
+      (write-paginated-rollout unrelated-parent parent-id nil ["different parent branch"])
+      (with-redefs [extract-chat/default-root
+                    (fn
+                      ([_] (str (fs/file root "sessions")))
+                      ([_ archived?] (str (fs/file root (if archived? "archived_sessions" "sessions")))))
+                    extract-chat/pi-root (constantly (str (fs/file root "pi")))]
+        (let [expected (str "# " latest "\n\n## User\n\ncafé\n\n"
+                            "## User\n\nparent continuation\n\n"
+                            "## User\n\ncurrent child turn\n\n")]
+          (is (= expected (with-out-str (extract-chat/main ["--session" child-id]))))
+          (is (= expected (with-out-str (extract-chat/main [(str latest)]))))
+          (is (= expected (with-out-str (extract-chat/main ["--final-only" "--session" child-id]))))
+          (extract-chat/main ["--session" child-id "--extract-dir" (str output-dir)])
+          (is (= expected (slurp (fs/file output-dir
+                                         (str/replace (fs/file-name latest) #"\.jsonl$" ".md")))))))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-rejects-incomplete-history-before-printing
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-invalid-lineage"})
+        parent-id "01a13add-f050-7e93-88cc-a70f0bf1b3d3"
+        child-id "01a13b22-06ae-7ad1-a2c5-bc418dcfe355"
+        parent (fs/file root "sessions" (str "rollout-2026-10-14T16-43-05-" parent-id ".jsonl"))
+        child (fs/file root "sessions" (str "rollout-2026-10-14T17-57-28-" child-id ".jsonl"))]
+    (try
+      (write-paginated-rollout parent parent-id nil ["inherited"])
+      (let [valid (history-position parent parent-id 2 2)]
+        (doseq [[base error]
+                [[(assoc valid :thread_id "missing") #"missing or ambiguous source"]
+                 [(assoc valid :end_byte_offset 999999) #"out-of-bounds"]
+                 [(update valid :end_byte_offset dec) #"record boundary"]
+                 [(assoc valid :end_ordinal_exclusive 1) #"cutoffs disagree"]
+                 [(assoc valid :end_ordinal_exclusive 3) #"cutoffs disagree"]
+                 [(assoc valid :thread_id child-id) #"reference cycle"]]]
+          (write-paginated-rollout child child-id base ["child"])
+          (let [stdout (java.io.StringWriter.)]
+            (binding [*out* stdout]
+              (is (thrown-with-msg? clojure.lang.ExceptionInfo error
+                                   (extract-chat/main [(str child)]))))
+            (is (= "" (str stdout))))))
+      (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-keeps-materialized-legacy-forks-self-contained
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-legacy-fork"})
+        file (fs/file root "legacy.jsonl")]
+    (try
+      (spit file (str (json/generate-string
+                      {:type "session_meta" :payload {:id "legacy" :forked_from_id "unavailable"}})
+                     "\n"
+                     (json/generate-string
+                      {:type "event_msg" :payload {:type "user_message" :message "Already copied."}})
+                     "\n"))
+      (is (= (str "# " file "\n\n## User\n\nAlready copied.\n\n")
+             (with-out-str (extract-chat/main [(str file)]))))
+      (finally (fs/delete-tree root)))))
 
 (deftest extract-chat-finds-pi-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-session"})
