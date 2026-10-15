@@ -41,6 +41,9 @@ def main() -> int:
         index += 1
     command = [str(pi_cli), "--extension", str(extensions / "index.ts"),
                "--extension", str(extensions / "guest-tools.ts"), *args]
+    family = os.environ.get("PI_HTTP_FAMILY", "")
+    if family and family != "4":
+        raise SystemExit("PI_HTTP_FAMILY must be 4 or unset")
     if interactive:
         from host_pi_owner import run_interactive
         try:

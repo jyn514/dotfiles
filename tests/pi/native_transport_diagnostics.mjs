@@ -5,7 +5,9 @@ import { createServer as createTcpServer } from "node:net";
 import { createRequire } from "node:module";
 import { once } from "node:events";
 import { test } from "node:test";
-import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile, symlink, copyFile, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,13 +31,31 @@ async function installedAiModule(subpath = ".") {
 
 async function installedProvider() { return (await installedAiModule("openai-codex")).openaiCodexProvider(); }
 
+test("IPv4 fetch survives dispatcher replacement and IPv6-first DNS", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-ipv4-"));
+  try {
+    const packageDir = await realpath(process.env.PI_PACKAGE_DIR);
+    const require = createRequire(join(packageDir, "package.json"));
+    const undici = require.resolve("undici/package.json");
+    await symlink(resolve(undici, "../.."), join(directory, "node_modules"), "dir");
+    const fixture = join(directory, "fetch.mjs");
+    await copyFile(new URL("./fixtures/ipv4_fetch.mjs", import.meta.url), fixture);
+    const preload = fileURLToPath(new URL("../../config/pi-agent/pi-extensions/transport/ipv4.mjs", import.meta.url));
+    const result = await promisify(execFile)(process.execPath, [fixture, preload], { timeout: 10000 });
+    assert.equal(result.stdout.trim(), "IPv4");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test("installed Pi loads the extension and releases its observers on reload", async () => {
   const packageDir = process.env.PI_PACKAGE_DIR;
   assert.ok(packageDir, "run through dev/test-environment to locate installed Pi");
   const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "utf8"));
   const { discoverAndLoadExtensions } = await import(pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href);
-  const extension = fileURLToPath(new URL("../../config/pi-agent/pi-extensions/transport-diagnostics.ts", import.meta.url));
   const directory = await mkdtemp(join(tmpdir(), "pi-transport-loader-"));
+  // The image copies this tree without the repository's tools directory.
+  const packaged = join(directory, "agent/pi-extensions");
+  await cp(new URL("../../config/pi-agent/pi-extensions/", import.meta.url), packaged, { recursive: true });
+  const extension = join(packaged, "transport-diagnostics.ts");
   const source = channel("undici:request:error");
   assert.equal(source.hasSubscribers, false);
   try {

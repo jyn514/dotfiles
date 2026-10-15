@@ -36,6 +36,17 @@ Authorization, cookies, account IDs, and all other headers are excluded.
 Parsed events use Pi's `onProviderStreamEvent` callback; reload after updating Pi
 or this extension before relying on response-ID and terminal-event correlation.
 
+For a sustained IPv4 comparison, start a new host Pi with `PI_HTTP_FAMILY=4 pi`
+and use the same model, SSE transport, and normal workload as the baseline.
+The diagnostics extension supplies Pi's installed Undici fetch with IPv4 DNS
+connections and automatic family fallback disabled for Codex HTTP/SSE requests.
+It uses five-minute header/body timeouts; use the default five-minute baseline
+for this comparison. Authentication and WebSocket requests use their normal
+connectors. It does not change OS networking or existing Pi processes.
+Confirm model attempts report `addressFamily: 4` in the transport log before
+counting results. Compare failures per attempt over several hours; a short clean
+run is inconclusive. Start Pi without the variable to return to the default.
+
 `lastChunkAgoMs` measures milliseconds from the last received HTTP body chunk to
 attempt completion or failure, using a monotonic clock. It is `null` when no chunk was observed.
 Chunks are transport chunks, not parsed SSE events; their contents are not logged.

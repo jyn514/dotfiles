@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isIP } from "node:net";
 import { connect } from "node:tls";
+import { createIpv4Fetch } from "./transport/ipv4.mjs";
 
 interface RequestInfo { origin: string; path: string; method: string }
 interface SocketInfo {
@@ -87,14 +88,14 @@ function providerEvent(operation: Operation, data: unknown) {
 }
 
 /** Decorate the resolved provider, retaining its auth, catalog, parser, and options. */
-export function instrumentProvider(provider: Provider, write: (record: object) => void): Provider {
+export function instrumentProvider(provider: Provider, write: (record: object) => void, forcedFetch?: typeof fetch): Provider {
   function run(original: Provider["streamSimple"], model: Model<any>, context: TranscriptContext, options?: SimpleStreamOptions) {
     if (model.api !== "openai-codex-responses" || options?.transport === "websocket") {
       return original.call(provider, model, context, options);
     }
     const operation: Operation = { id: randomUUID(), attempts: 0,
       model: model.id, provider: provider.id, signal: options?.signal, records: [] };
-    const fetcher = options?.fetch ?? globalThis.fetch;
+    const fetcher = forcedFetch ?? options?.fetch ?? globalThis.fetch;
     const stream = original.call(provider, model, context, {
       ...options,
       fetch: ((input, init) => operations.run(operation, () => fetcher(input, init))) as typeof fetch,
@@ -389,6 +390,7 @@ export async function probeNetwork(hostname = "chatgpt.com", port = 443, timeout
 }
 
 export default function transportDiagnostics(pi: ExtensionAPI) {
+  const ipv4 = process.env.PI_HTTP_FAMILY === "4" ? createIpv4Fetch(process.argv[1]) : undefined;
   const directory = join(homedir(), ".pi", "agent", "logs");
   const file = join(directory, `transport-${process.pid}.jsonl`);
   let pending = Promise.resolve();
@@ -410,7 +412,7 @@ export default function transportDiagnostics(pi: ExtensionAPI) {
     sessionId = ctx.sessionManager.getSessionId();
     if (original) return;
     original = ctx.modelRegistry.getProvider("openai-codex");
-    if (original) pi.registerProvider(instrumentProvider(original, write));
+    if (original) pi.registerProvider(instrumentProvider(original, write, ipv4?.fetch as typeof fetch | undefined));
   });
   pi.registerCommand("transport-probe", {
     description: "Compare direct ChatGPT IPv4/IPv6 DNS, TCP, and TLS connectivity (no model request)",
@@ -436,5 +438,6 @@ export default function transportDiagnostics(pi: ExtensionAPI) {
     stop();
     if (original) pi.registerProvider(original);
     await pending;
+    await ipv4?.close();
   });
 }

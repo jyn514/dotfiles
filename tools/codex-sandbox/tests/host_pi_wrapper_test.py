@@ -70,6 +70,12 @@ class HostPiWrapperTest(unittest.TestCase):
         result = self.run_wrapper("--mode", "rpc", HOST_PI_FIXTURE_EXIT="17")
         self.assertEqual(17, result.returncode, result.stderr)
 
+    def test_invalid_family_fails_before_starting_pi(self) -> None:
+        result = self.run_wrapper(PI_HTTP_FAMILY="6")
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual("", result.stdout)
+        self.assertIn("PI_HTTP_FAMILY must be 4 or unset", result.stderr)
+
     def test_interactive_connection_failure_reports_once_without_traceback(self) -> None:
         result = self.run_wrapper("--sandbox-interactive")
         self.assertEqual(1, result.returncode)
