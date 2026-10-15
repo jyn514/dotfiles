@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import subprocess
@@ -51,17 +52,23 @@ def build_images(pi_revision: str, tags: dict[str, tuple[str, str]]) -> None:
         subprocess.run(['docker', 'buildx', 'bake', '--file', str(path), '--load'], cwd=ROOT, check=True)
 
 
-def check_guest(tag: str, revision: str, node_prefix: str, jj_checksum: str) -> None:
-    label = run(
+def check_labels(tags: list[str], revision: str) -> None:
+    labels = run(
         'docker', 'image', 'inspect', '--format',
-        '{{ index .Config.Labels "dev.codex.pi-revision" }}', tag,
-    ).strip()
-    if label != revision:
-        raise RuntimeError(f'unexpected Pi revision label: {label!r}')
-    output = run(
+        '{{ index .Config.Labels "dev.codex.pi-revision" }}', *tags,
+    ).splitlines()
+    if labels != [revision] * len(tags):
+        raise RuntimeError(f'unexpected Pi revision labels: {labels!r}')
+
+
+def probe_guest(tag: str) -> list[str]:
+    return run(
         'docker', 'run', '--rm', '--interactive', '--entrypoint', 'sh', tag,
         '-c', RUNTIME_PROBE.read_text(), input=WRAPPED_COMMAND_PROBE.read_text(),
     ).splitlines()
+
+
+def check_guest(output: list[str], revision: str, node_prefix: str, jj_checksum: str) -> None:
     if len(output) != 7:
         raise RuntimeError(f'unexpected combined guest probe: {output!r}')
     checksum = output[0].split()
@@ -97,17 +104,24 @@ def main() -> None:
             'pi-alpine': (alpine, alpine_cache),
             'pi-debian': (debian, debian_cache),
         })
-        colocated = run(
-            'docker', 'run', '--rm', '--interactive', '--tmpfs', '/tmp:mode=1777',
-            '--entrypoint', '/trusted/bin/sh', jj_image,
-            input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
-        )
-        checksum, _, workspace = colocated.partition('\n')
-        if not workspace.endswith('jj-colocated-ok\n') or not checksum.split():
-            raise RuntimeError(f'unexpected colocated JJ workspace probe: {colocated!r}')
-        jj_checksum = checksum.split()[0]
-        for tag, expected_node in ((alpine, 'v24.'), (debian, 'v20.')):
-            check_guest(tag, args.expected_revision, expected_node, jj_checksum)
+        check_labels([alpine, debian], args.expected_revision)
+        # Leaving the executor waits for every probe, including on failure,
+        # before the outer finally can remove their image aliases.
+        with ThreadPoolExecutor(max_workers=3) as probes:
+            colocated = probes.submit(
+                run, 'docker', 'run', '--rm', '--interactive', '--tmpfs', '/tmp:mode=1777',
+                '--entrypoint', '/trusted/bin/sh', jj_image,
+                input=Path(__file__).with_name('fixtures').joinpath('jj-colocated.sh').read_text(),
+            )
+            guests = [(probes.submit(probe_guest, tag), expected_node)
+                      for tag, expected_node in ((alpine, 'v24.'), (debian, 'v20.'))]
+            output = colocated.result()
+            checksum, _, workspace = output.partition('\n')
+            if not workspace.endswith('jj-colocated-ok\n') or not checksum.split():
+                raise RuntimeError(f'unexpected colocated JJ workspace probe: {output!r}')
+            jj_checksum = checksum.split()[0]
+            for guest, expected_node in guests:
+                check_guest(guest.result(), args.expected_revision, expected_node, jj_checksum)
     finally:
         subprocess.run(
             ["docker", "image", "rm", "-f", alpine, debian, jj_image],

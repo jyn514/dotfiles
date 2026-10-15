@@ -218,6 +218,8 @@ The colocated-workspace probe computes the proxy binary's checksum without copyi
 One Bake invocation builds the JJ proxy and both runtimes, with the runtimes consuming the JJ target directly as a named build context.
 Bake schedules independent work concurrently and shares common stages without publishing and resolving an intermediate JJ tag.
 All three images are built before the probes run.
+Both revision labels share one Docker inspect query, then the three container probes run concurrently.
+Checksum validation uses the JJ probe's result, and cleanup waits for every probe to finish even when another fails.
 Each run builds against current inputs and checks unique per-run image aliases, which cleanup removes.
 Successful builds also retain one shared `:cache` alias per image so later runs reuse unpacked runtime filesystems.
 Concurrent runs can update the shared caches without changing another run's test images.
