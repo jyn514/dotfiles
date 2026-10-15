@@ -1533,7 +1533,9 @@ class CodexSandboxTest(unittest.TestCase):
                         exit "$FAKE_WORKER_EXIT"
                     fi
                     if [ -n "$FAKE_AGENT_READY" ]; then : > "$FAKE_AGENT_READY"; fi
-                    while [ -f "$marker" ]; do sleep 1; done
+                    # Keep the worker alive until removal without adding a
+                    # one-second shutdown delay to every launcher test.
+                    while [ -f "$marker" ]; do sleep 0.01; done
                 fi
                 exit 0
             fi
