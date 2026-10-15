@@ -117,6 +117,11 @@ revision and lines, reproduction commands match the reported test, and required
 fields are filled or explicitly unknown.
 Check template attestations individually; do not mark research, clean-environment,
 or latest-version checks as completed without evidence.
+Inspect the actual attachments, including archive members, before marking the report ready to submit.
+Compare their paths, hostnames, environment values, and private content with the privacy choices and redactions in the report body.
+A redacted body does not sanitize attached logs or reproducer scripts.
+Preserve raw evidence; when preparing redacted attachments, use labeled copies and inspect the final archive again.
+State any remaining identifying metadata or body/attachment mismatch outside the report, even when no credentials appear.
 Review each authored sentence for passive voice and hidden actors before
 delivery. Rewrite it with the known actor or a direct statement of behavior;
 do not invent an actor to satisfy the style rule.
