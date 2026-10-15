@@ -99,6 +99,17 @@ def main(arguments: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="dotfiles-test-home-") as directory:
         home = Path(directory)
         environment["HOME"] = directory
+        # HotSpot reads _JAVA_OPTIONS after other option sources. Retain caller
+        # options but make the private home win over inherited home properties.
+        environment["_JAVA_OPTIONS"] = (
+            environment.get("_JAVA_OPTIONS", "") + f' -Duser.home="{directory}"'
+        ).strip()
+        # Babashka is a native image, not a JVM. Its preload hook also reaches
+        # absolute binary paths and shebangs without replacing real-tool metadata.
+        preload = Path(__file__).with_suffix(".clj").read_text()
+        inherited_preloads = environment.get("BABASHKA_PRELOADS", "")
+        if not inherited_preloads.startswith(preload):
+            environment["BABASHKA_PRELOADS"] = preload + "\n" + inherited_preloads
         for key, relative in {
             "XDG_CONFIG_HOME": ".config", "XDG_CACHE_HOME": ".cache",
             "XDG_DATA_HOME": ".local/share", "XDG_STATE_HOME": ".local/state",

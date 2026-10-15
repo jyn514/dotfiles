@@ -82,8 +82,9 @@ class TestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
-            for name in ("test", "test-environment"):
-                (root / f"dev/{name}").write_bytes((ROOT / f"dev/{name}").read_bytes())
+            for name in ("test", "test-environment", "test-environment.clj"):
+                subprocess.run(["cp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
+                subprocess.run(["cmp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
                 (root / f"dev/{name}").chmod(0o755)
             bin_directory = root / "bin"
             bin_directory.mkdir()
@@ -182,7 +183,7 @@ class TestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
-                "dev/test", "dev/test-environment",
+                "dev/test", "dev/test-environment", "dev/test-environment.clj",
                 "tools/codex-sandbox/owned_images.py",
                 "tests/fixtures/native_test_runner_command.sh",
             ):

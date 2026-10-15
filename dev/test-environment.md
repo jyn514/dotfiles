@@ -5,6 +5,11 @@ It requires Python 3 and creates a private HOME plus Pi and XDG state directorie
 It removes those directories after normal exit, nonzero exit, or a forwarded signal, while preserving stdin, stdout, stderr, and exit status.
 This is environment isolation, not a filesystem sandbox.
 
+OpenJDK's `user.home` property also points at the private HOME, overriding inherited home properties through `_JAVA_OPTIONS` while preserving other options.
+Native Babashka ignores JVM option variables, so [its preload](test-environment.clj) sets `user.home` before inherited `BABASHKA_PRELOADS` and test code run.
+These settings reach absolute executable paths and script shebangs as well as commands found on PATH.
+Nested wrapper calls use the inner private HOME.
+
 The wrapper clears inherited `JJ_CONFIG` so Jujutsu reads user configuration from the private HOME and XDG directories.
 It also removes inherited sandbox credentials, Pi session selection, and personal configuration paths before starting the child.
 

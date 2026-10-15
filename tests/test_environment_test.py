@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPER = ROOT / "dev" / "test-environment"
 PROBE = ROOT / "tests" / "fixtures" / "test_environment_probe.py"
+HOME_PRELOAD = ROOT / "dev/test-environment.clj"
 PI_HOME_DEFAULT_NAMES = ("PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR")
 STATE_NAMES = (
     *PI_HOME_DEFAULT_NAMES, "PI_SUBAGENT_TEMP_DIR",
@@ -103,11 +104,11 @@ class TestEnvironmentTest(unittest.TestCase):
 
     def run_environment(self, **values: str) -> dict[str, str]:
         result = subprocess.run(
-            [WRAPPER, "env"], env=self.inherited | values,
+            [WRAPPER, "env", "-0"], env=self.inherited | values,
             text=True, capture_output=True, check=False, timeout=15,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        return dict(line.split("=", 1) for line in result.stdout.splitlines())
+        return dict(entry.split("=", 1) for entry in result.stdout.rstrip("\0").split("\0"))
 
     def test_preserves_real_tools_without_exposing_sandbox_authority(self) -> None:
         environment = self.run_environment(
@@ -147,11 +148,11 @@ class TestEnvironmentTest(unittest.TestCase):
     def test_mise_shim_resolves_before_home_isolation_and_child_uses_real_tool(self) -> None:
         values = self.mise_shim()
         result = subprocess.run(
-            [WRAPPER, "rg"], env=self.inherited | values,
+            [WRAPPER, "rg", "-0"], env=self.inherited | values,
             text=True, capture_output=True, check=False, timeout=15,
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        environment = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        environment = dict(entry.split("=", 1) for entry in result.stdout.rstrip("\0").split("\0"))
         self.assertEqual(str(self.old_home), Path(values["FIXTURE_MISE_CALL"]).read_text())
         self.assertEqual(values["FIXTURE_RG_PATH"], environment["DOTFILES_TEST_RG_REAL"])
         self.assertNotEqual(str(self.old_home), environment["HOME"])
@@ -191,6 +192,54 @@ class TestEnvironmentTest(unittest.TestCase):
                 self.assertEqual(before, self.snapshot(self.old_home))
                 self.assert_private_home(report)
 
+    def test_native_babashka_home_is_private_before_inherited_preloads(self) -> None:
+        executable = os.environ.get("DOTFILES_TEST_BB_REAL") or shutil.which("bb")
+        if not executable:
+            self.skipTest("Babashka is required")
+        inherited = (ROOT / "tests/fixtures/test_environment_inherited_preload.clj").read_text()
+        fixture = ROOT / "tests/fixtures/test_environment_home_probe.clj"
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                before = self.snapshot(self.old_home)
+                result = subprocess.run(
+                    [WRAPPER, *([WRAPPER] if nested else []), executable, fixture],
+                    env=self.inherited | {"BABASHKA_PRELOADS": inherited},
+                    capture_output=True, text=True, check=False, timeout=15,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                report = json.loads(result.stdout)
+                self.assertEqual(report["home"], report["property-home"])
+                self.assertEqual(report["home"], report["preload-home"])
+                self.assertNotEqual(str(self.old_home), report["home"])
+                self.assertFalse(Path(report["home"]).exists())
+                self.assertEqual(before, self.snapshot(self.old_home))
+
+    def test_java_home_overrides_inherited_options_and_supports_spaces_and_nesting(self) -> None:
+        executable = os.environ.get("DOTFILES_TEST_JAVA_REAL") or shutil.which("java")
+        if not executable:
+            self.skipTest("Java is required")
+        fixture = ROOT / "tests/fixtures/TestEnvironmentHomeProbe.java"
+        temporary = self.root / "tmp with spaces"
+        temporary.mkdir()
+        environment = self.inherited | {
+            "TMPDIR": str(temporary),
+            "JAVA_TOOL_OPTIONS": f'-Duser.home="{self.old_home}"',
+            "JDK_JAVA_OPTIONS": f'-Duser.home="{self.old_home}"',
+            "_JAVA_OPTIONS": f'-Duser.home="{self.old_home}" -Dtest.existing.option=kept',
+        }
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                before = self.snapshot(self.old_home)
+                result = subprocess.run(
+                    [WRAPPER, *([WRAPPER] if nested else []), executable, fixture], env=environment,
+                    capture_output=True, text=True, check=False, timeout=30,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                home = Path(result.stdout.strip())
+                self.assertTrue(home.is_relative_to(temporary))
+                self.assertFalse(home.exists())
+                self.assertEqual(before, self.snapshot(self.old_home))
+
     def test_cargo_home_persists_without_reusing_user_config_or_credentials(self) -> None:
         before = self.snapshot(self.old_home)
         homes = []
@@ -209,8 +258,10 @@ class TestEnvironmentTest(unittest.TestCase):
     def test_default_cargo_home_belongs_to_the_wrapper_checkout(self) -> None:
         wrapper = self.root / "checkout/dev/test-environment"
         wrapper.parent.mkdir(parents=True)
-        subprocess.run(["cp", str(WRAPPER), str(wrapper)], check=True)
-        subprocess.run(["cmp", str(WRAPPER), str(wrapper)], check=True)
+        for source in (WRAPPER, HOME_PRELOAD):
+            destination = wrapper.parent / source.name
+            subprocess.run(["cp", str(source), str(destination)], check=True)
+            subprocess.run(["cmp", str(source), str(destination)], check=True)
         environment = dict(self.inherited)
         environment.pop("DOTFILES_TEST_CARGO_HOME")
         before = self.snapshot(self.old_home)
