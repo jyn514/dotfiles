@@ -58,6 +58,8 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`extract-chat`](extract-chat/) extracts user and assistant turns from local Pi, Codex, or Claude JSON/JSONL sessions. It supports session lookup, `--final-only`, and per-session Markdown.
   `--session ID` selects the newest matching Codex rollout by filename timestamp and rollout UUID, including replacement rollouts created by revert.
   Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
+  A bare session UUID also implies `--session`, so `extract-chat ID --branches --native` works directly.
+  Existing paths take precedence over UUID lookup, and positional UUIDs can be mixed with file or directory inputs.
   Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
   References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
   Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.

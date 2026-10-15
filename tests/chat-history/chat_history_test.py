@@ -157,7 +157,7 @@ class SharedChatHistoryTests(unittest.TestCase):
         _, latest = self.lineage()
         self.native_environment()
         output_dir = self.root / "HTML exports"
-        result = self.run_command(EXTRACT, "--branches", "--native", "--session", CHILD,
+        result = self.run_command(EXTRACT, "--branches", "--native", CHILD,
                                   "--extract-dir", output_dir)
         self.assertEqual(0, result.returncode, result.stderr)
         html = output_dir / (latest.stem + ".html")

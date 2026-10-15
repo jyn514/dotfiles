@@ -444,6 +444,44 @@
                (with-out-str (extract-chat/main ["--session" session-id])))))
       (finally (fs/delete-tree root)))))
 
+(deftest extract-chat-positional-session-ids-respect-flags-and-existing-paths
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-positional-id"})
+        session-id "019abcde-1234-7000-8000-0123456789ab"
+        active (fs/file root "active")
+        archived (fs/file root "archived")
+        local-path (fs/file root session-id)
+        event (fn [text] (str (json/generate-string
+                              {:type "event_msg" :payload {:type "user_message" :message text}}) "\n"))]
+    (try
+      (fs/create-dirs active)
+      (fs/create-dirs archived)
+      (spit (fs/file active (str "rollout-2026-07-15-" session-id ".jsonl")) (event "Active"))
+      (spit (fs/file archived (str "rollout-2026-07-15-" session-id ".jsonl")) (event "Archived"))
+      (fs/create-dirs local-path)
+      (spit (fs/file local-path "local.jsonl") (event "Local path"))
+      (with-redefs [extract-chat/default-root
+                    (fn
+                      ([_] (str active))
+                      ([_ archived?] (str (if archived? archived active))))
+                    extract-chat/pi-root (constantly (str (fs/file root "pi")))]
+        (doseq [flags [[] ["--archived"] ["--final-only"]]]
+          (is (= (with-out-str (extract-chat/main (into ["--session" session-id] flags)))
+                 (with-out-str (extract-chat/main (into [session-id] flags))))))
+        (let [output (with-out-str (extract-chat/main [session-id (str local-path)]))]
+          (is (str/includes? output "Active"))
+          (is (str/includes? output "Local path")))
+        (let [output (with-out-str (extract-chat/main [(str local-path)]))]
+          (is (str/includes? output "Local path"))
+          (is (not (str/includes? output "Active"))))
+        (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No session found"
+                             (extract-chat/main ["019abcde-1234-7000-8000-000000000000"]))))
+      (let [{:keys [exit out err]}
+            (shell/sh "bb" (str (fs/absolutize "tools/extract-chat/extract-chat")) session-id
+                      :dir (str root))]
+        (is (= 0 exit) err)
+        (is (str/includes? out "Local path")))
+      (finally (fs/delete-tree root)))))
+
 (deftest extract-chat-finds-pi-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-session"})
         session-id "01a0a66d-2c73-77d5-83a1-43ca8362dc92"

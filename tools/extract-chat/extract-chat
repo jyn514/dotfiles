@@ -37,6 +37,7 @@
   (println "With no paths, recursively scans ~/.codex/sessions for .json and .jsonl files.")
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
   (println "With --session, extracts the newest Codex rollout or the matching Pi session.")
+  (println "Bare session UUIDs also use session lookup; existing file and directory paths take precedence.")
   (println "Paginated Codex history includes referenced ancestors up to their saved cutoffs.")
   (println "With --extract-dir, writes one Markdown file per session instead of printing to stdout.")
   (println "Empty scans report source paths on stderr and retain exit status 0.")
@@ -53,6 +54,15 @@
 (defn- find-session [session archived?]
   (history/find-session session [(default-root (System/getenv) archived?)
                                  (when-not archived? (pi-root))]))
+
+(defn- input-files [archived? input]
+  (let [file (path input)
+        session-id? (try
+                      (= input (str (java.util.UUID/fromString input)))
+                      (catch IllegalArgumentException _ false))]
+    (if (and session-id? (not (fs/exists? file)))
+      [(find-session input archived?)]
+      (history/files-under file))))
 
 (defn- content-part-text [part]
   (cond
@@ -352,7 +362,7 @@
                       [(default-root (System/getenv) archived?)]))
             files (if session
                     [(find-session session archived?)]
-                    (mapcat (comp history/files-under path) roots))]
+                    (mapcat #(input-files archived? %) roots))]
         (when (and
                (not (seq paths))
                (not session)
