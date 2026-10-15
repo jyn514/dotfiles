@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -54,13 +53,14 @@ class CodexWrapperTests(unittest.TestCase):
             root = Path(temporary)
             fake_bin = root / "bin"
             fake_bin.mkdir()
-            (fake_bin / "codex").symlink_to(shutil.which("echo"))
+            (fake_bin / "codex").symlink_to(ROOT / "tests/fixtures/codex_native_command.sh")
             codex_home = root / ".codex"
             codex_home.mkdir()
             (codex_home / "developer-instructions.md").write_text("")
             environment = os.environ | {
                 "DOTFILES_SANDBOX": "1",
                 "CODEX_HOME": str(codex_home),
+                "CODEX_TEST_EXIT_STATUS": "0",
                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
             }
             for arguments in (
@@ -76,8 +76,8 @@ class CodexWrapperTests(unittest.TestCase):
                         text=True, capture_output=True,
                     )
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertNotIn("--profile", result.stdout.split())
-                    self.assertTrue(result.stdout.rstrip().endswith(" ".join(arguments)))
+                    self.assertNotIn("--profile", result.stdout.splitlines())
+                    self.assertEqual(arguments, result.stdout.splitlines()[-len(arguments):])
             for arguments in (
                 ["resume", "--all"], ["exec", "prompt"], ["mcp", "list"],
                 ["debug", "prompt-input"], ["prompt"],
@@ -88,7 +88,7 @@ class CodexWrapperTests(unittest.TestCase):
                         text=True, capture_output=True,
                     )
                     self.assertEqual(0, result.returncode, result.stderr)
-                    self.assertEqual(["--profile", "dotfiles"], result.stdout.split()[:2])
+                    self.assertEqual(["--profile", "dotfiles"], result.stdout.splitlines()[:2])
 
     def test_instruction_includes_resolve_from_symlink_location(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -157,6 +157,7 @@ class CodexWrapperTests(unittest.TestCase):
             environment["HOME"] = str(root)
             environment.pop("CODEX_HOME", None)
             environment.pop("CODEX_DEVELOPER_INSTRUCTIONS_FILE", None)
+            environment.pop("DOTFILES_SANDBOX", None)
             inherited_sandbox = root / "sandbox-wrappers"
             inherited_sandbox.mkdir()
             # Own-directory removal is covered by shim tests. Here, check only
@@ -256,6 +257,7 @@ class CodexWrapperTests(unittest.TestCase):
                 "PATH": f"{fake_bin}:{os.environ['PATH']}",
             }
             environment.pop("CODEX_HOME", None)
+            environment.pop("DOTFILES_SANDBOX", None)
 
             result = subprocess.run(
                 [str(WRAPPER)],
