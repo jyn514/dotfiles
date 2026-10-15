@@ -1,9 +1,9 @@
 ;; Shared read-only session loading for extract-chat and codex-to-pi.
 ;; Library API: files-under lists JSON/JSONL inputs; find-session selects a path within explicit search roots;
-;; history-segments returns source event sequences, oldest ancestor first.
+;; history-segments returns event sequences, oldest ancestor first, omitting injected skill instructions.
 ;; Direct invocation: bb chat-history.clj MODE SOURCE CODEX-HOME.
 ;; MODE is file, session, or archived-session. Success writes one JSON object:
-;; {"file": "selected path", "segments": [[original events], ...]}.
+;; {"file": "selected path", "segments": [[exportable source events], ...]}.
 ;; Failure writes a diagnostic to stderr, exits 1, and emits no JSON.
 (ns dotfiles.chat-history
   (:require [cheshire.core :as json]
@@ -124,6 +124,23 @@
           (throw (history-error file "history byte and ordinal cutoffs disagree")))
         events))))
 
+(defn- skill-instruction-message? [{:keys [type payload message]}]
+  (let [content (case type
+                  "event_msg" (when (= "user_message" (:type payload)) (:message payload))
+                  "response_item" (when (and (= "message" (:type payload))
+                                             (= "user" (:role payload))) (:content payload))
+                  "message" (when (= "user" (:role message)) (:content message))
+                  "user" (:content message)
+                  nil)
+        text (cond
+               (string? content) content
+               (map? content) (:text content)
+               (sequential? content) (str/join "\n" (keep :text content))
+               :else "")]
+    ;; Match the complete injected wrapper, preserving invocations and discussion of skills.
+    (boolean (re-matches #"(?s)<skill>\s*<name>[^<]+</name>\s*<path>[^<]+</path>.*</skill>"
+                         (str/trim (or text ""))))))
+
 (defn history-segments [file codex-roots]
   ;; history_base.thread_id is a physical rollout ID, not the logical fork parent.
   ;; Resolve it by the filename's final UUID, without selecting that parent's latest revert.
@@ -152,7 +169,8 @@
               (when-not (= 1 (count matches))
                 (throw (history-error file (str "missing or ambiguous source rollout " id))))
               (recur (first matches) base (conj seen identity) segments))
-            segments))))))
+            ;; Keep source ordinals and byte offsets intact until all cutoffs are checked.
+            (mapv #(vec (remove skill-instruction-message? %)) segments)))))))
 
 (defn- main [[mode source codex-home :as args]]
   (try

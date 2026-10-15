@@ -61,11 +61,13 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
   Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.
   Missing ancestors, reference cycles, and invalid cutoffs fail instead of producing a partial transcript.
+  Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
   For Pi, `--native` uses `pi --export` to produce HTML (`pi` must be on PATH); other formats remain Markdown. Native Pi exports include the full session regardless of `--final-only`; without `--extract-dir`, Pi writes to the current directory.
   Pi Markdown includes saved goal status, objective, and token budget; provider/model switches and assistant or shell cancellations appear in session order, and partial replies remain visible. These events remain with `--final-only`; goal usage counters and continuation prompts are omitted.
   Empty file/directory scans report the searched source paths on stderr and exit 0, without creating or removing export files. Output may expose private conversations.
 - [`codex-to-pi`](../bin/codex-to-pi) converts a Codex session ID, JSONL path, or ChatGPT share URL to Pi v3 JSONL.
   Local conversion uses the same read-only [history reader](../libexec/chat-history.clj) as `extract-chat` and requires `bb` on PATH.
+  It also omits injected skill instructions while preserving skill invocations and discussion.
   Use `codex-to-pi SESSION -o FILE` to choose the destination; otherwise it writes to Pi's session directory.
   `--archived` searches archived sessions; `--normalize` rewrites macOS paths for sandbox sessions.
 - [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.

@@ -22,6 +22,7 @@ PARENT_ROLLOUT = "019abcde-1234-7000-8000-000000000002"
 CHILD = "019abcde-1234-7000-8000-000000000003"
 CHILD_ROLLOUT = "019abcde-1234-7000-8000-000000000004"
 STAMP = "2026-10-14T15:57:28.000Z"
+SKILL = "<skill>\n<name>example</name>\n<path>/skills/example/SKILL.md</path>\nInstructions.\n</skill>"
 
 
 class SharedChatHistoryTests(unittest.TestCase):
@@ -128,6 +129,55 @@ class SharedChatHistoryTests(unittest.TestCase):
                 self.assertEqual("", extracted.stdout)
                 self.assertEqual("", converted.stdout)
                 self.assertEqual("preserve existing session\n", self.output.read_text())
+
+    def test_both_consumers_omit_skill_instructions_in_both_codex_message_formats(self):
+        visible = ["$example", "explain SKILL.md", "what does <skill> mean?", "quoted example:\n" + SKILL]
+        parent = self.write_rollout(f"rollout-2026-10-14T16-00-00-{PARENT}.jsonl",
+                                    PARENT, [SKILL, *visible], archived=True)
+        latest = self.write_rollout(f"rollout-2026-10-14T18-00-00-{CHILD}.jsonl", CHILD,
+                                    [" \n" + SKILL + "\n ", "continue"],
+                                    self.position(parent, PARENT, 6, 6))
+        for format in ("response_item", "event_msg"):
+            with self.subTest(format=format):
+                if format == "event_msg":
+                    for file in (parent, latest):
+                        events = [json.loads(line) for line in file.read_text().splitlines()]
+                        for event in events[1:]:
+                            event["type"] = "event_msg"
+                            event["payload"] = {"type": "user_message",
+                                                "message": event["payload"]["content"][0]["text"]}
+                        file.write_text("".join(json.dumps(e) + "\n" for e in events))
+                    events = [json.loads(line) for line in latest.read_text().splitlines()]
+                    events[0]["payload"]["history_base"] = self.position(parent, PARENT, 6, 6)
+                    latest.write_text("".join(json.dumps(e) + "\n" for e in events))
+                self.assert_consumers(CHILD, [*visible, "continue"])
+
+    def test_skill_filter_preserves_assistant_messages_and_filters_pi_and_claude_users(self):
+        for format in ("pi", "claude", "codex"):
+            with self.subTest(format=format):
+                file = self.root / f"{format}.jsonl"
+                messages = []
+                if format == "pi":
+                    messages.append({"type": "session", "version": 3, "id": "pi"})
+                for role, text in (("user", SKILL), ("user", "$example"), ("assistant", SKILL)):
+                    message = {"role": role, "content": [{"type": "text", "text": text}]}
+                    if format == "codex":
+                        messages.append({"type": "response_item", "payload": {"type": "message", **message}})
+                    else:
+                        messages.append({"type": "message" if format == "pi" else role, "message": message})
+                file.write_text("".join(json.dumps(e) + "\n" for e in messages))
+                result = self.run_command(EXTRACT, file)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(1, result.stdout.count("<skill>"))
+                self.assertIn("## Assistant\n\n" + SKILL, result.stdout)
+                self.assertIn("## User\n\n$example", result.stdout)
+                if format == "codex":
+                    result = self.run_command(CONVERT, file, "-o", self.output)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    output = [json.loads(line) for line in self.output.read_text().splitlines()]
+                    self.assertEqual(3, len(output))
+                    self.assertEqual("$example", output[1]["message"]["content"])
+                    self.assertEqual([{"type": "text", "text": SKILL}], output[2]["message"]["content"])
 
     def test_packaged_extractor_finds_shared_reader_through_symlink(self):
         layout = self.root / "image"
