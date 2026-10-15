@@ -28,6 +28,14 @@ timing when available, `x-request-id`, `cf-ray`, error codes, and available sock
 and byte counters. Request bodies, authorization headers, URL credentials/query
 strings, and free-form error messages/stacks are omitted.
 
+`requestHeaders` records allowlisted headers at Undici's send boundary;
+`responseHeaders` records the same allowlist from received headers. It includes
+`user-agent`, `originator`, `openai-beta`, `accept`, `content-type`, `content-length`,
+`x-client-request-id`, `x-request-id`, `cf-ray`, `server`, and `date`.
+Authorization, cookies, account IDs, and all other headers are excluded.
+Parsed events use Pi's `onProviderStreamEvent` callback; reload after updating Pi
+or this extension before relying on response-ID and terminal-event correlation.
+
 `lastChunkAgoMs` measures milliseconds from the last received HTTP body chunk to
 attempt completion or failure, using a monotonic clock. It is `null` when no chunk was observed.
 Chunks are transport chunks, not parsed SSE events; their contents are not logged.

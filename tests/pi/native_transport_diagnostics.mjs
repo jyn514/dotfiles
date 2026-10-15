@@ -55,7 +55,8 @@ test("captures a real fetch stream failure with response timing and peer", async
   const records = [];
   const stop = observeTransport(record => { if (record.type === "http_attempt") records.push(record); }, () => "test-session");
   const server = createServer((_request, response) => {
-    response.writeHead(200, { "Content-Type": "text/event-stream", "x-request-id": "fixture-request" });
+    response.writeHead(200, { "Content-Type": "text/event-stream", "x-request-id": "fixture-request",
+      "Set-Cookie": "private-cookie", "x-private": "private-response" });
     response.write("data: incomplete\n\n");
     setTimeout(() => response.socket.destroy(), 20);
   });
@@ -63,7 +64,9 @@ test("captures a real fetch stream failure with response timing and peer", async
   await once(server, "listening");
   try {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/codex/responses`, {
-      method: "POST", headers: { Authorization: "Bearer secret" }, body: "private prompt",
+      method: "POST", headers: { Authorization: "Bearer secret", Cookie: "private-cookie",
+        "User-Agent": "diagnostic-fixture", "x-client-request-id": "fixture-client",
+        "OpenAI-Beta": "responses=experimental", "x-private": "private-request" }, body: "private prompt",
     });
     await assert.rejects(response.text());
     assert.equal(records.length, 1);
@@ -71,6 +74,11 @@ test("captures a real fetch stream failure with response timing and peer", async
     assert.equal(record.status, 200);
     assert.equal(record.sessionId, "test-session");
     assert.equal(record.requestId, "fixture-request");
+    assert.equal(record.requestHeaders["user-agent"], "diagnostic-fixture");
+    assert.equal(record.requestHeaders["x-client-request-id"], "fixture-client");
+    assert.equal(record.requestHeaders["openai-beta"], "responses=experimental");
+    assert.equal(record.responseHeaders["x-request-id"], "fixture-request");
+    assert.equal(record.responseHeaders["content-type"], "text/event-stream");
     assert.ok(record.elapsedMs >= record.headersMs);
     assert.equal(typeof record.lastChunkAgoMs, "number");
     assert.ok(record.lastChunkAgoMs >= 0);
@@ -79,7 +87,7 @@ test("captures a real fetch stream failure with response timing and peer", async
     assert.equal(record.socket.remotePort, server.address().port);
     assert.ok(record.socket.bytesRead > 0);
     assert.ok(record.errors.some(error => error.code === "UND_ERR_SOCKET"));
-    assert.doesNotMatch(JSON.stringify(record), /secret|private prompt|incomplete/);
+    assert.doesNotMatch(JSON.stringify(record), /secret|private|incomplete/);
   } finally {
     stop();
     server.close();
@@ -181,7 +189,7 @@ test("native provider distinguishes successful reader cleanup, remote failure, a
       let seenEvents = 0;
       const stream = provider.streamSimple(model, { messages: [] }, {
         apiKey: token, transport: "sse", signal: controller.signal, maxRetries: 0,
-        onProviderEvent: () => {
+        onProviderStreamEvent: () => {
           seenEvents++;
           if (scenario === "abort") controller.abort();
         },

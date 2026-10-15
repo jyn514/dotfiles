@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Model, Provider, ProviderEvent, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
+import type { Model, Provider, SimpleStreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -23,6 +23,7 @@ interface Trace {
   start: number; startedAt: string; attemptId: string; origin: string; path: string; method: string;
   sessionId?: string;
   headersMs?: number; status?: number; requestId?: string;
+  requestHeaders?: Record<string, string>; responseHeaders?: Record<string, string>;
   cfRay?: string; lastChunkAt?: number; firstChunkMs?: number;
   chunkCount: number; receivedBodyBytes: number; maxChunkGapMs: number;
   lastEventType?: string; terminalEventType?: string; responseId?: string;
@@ -71,15 +72,17 @@ export function parseTcpSamples(output: string) {
   });
 }
 
-function providerEvent(operation: Operation, event: ProviderEvent) {
+function providerEvent(operation: Operation, data: unknown) {
   const trace = operation.current;
-  if (!trace) return;
+  if (!trace || !data || typeof data !== "object") return;
+  const event = data as { type?: unknown; response?: { id?: unknown }; payload?: unknown };
+  if (typeof event.type !== "string") return;
   // Use Pi's parsed event metadata, never inspect or retain SSE payload content.
   trace.lastEventType = event.type;
   if (["response.done", "response.completed", "response.incomplete", "response.failed"].includes(event.type)) {
     trace.terminalEventType = event.type;
   }
-  const payload = event.payload as { response?: { id?: unknown } } | undefined;
+  const payload = (event.payload ?? event) as { response?: { id?: unknown } };
   if (typeof payload?.response?.id === "string") trace.responseId = payload.response.id;
 }
 
@@ -95,9 +98,9 @@ export function instrumentProvider(provider: Provider, write: (record: object) =
     const stream = original.call(provider, model, context, {
       ...options,
       fetch: ((input, init) => operations.run(operation, () => fetcher(input, init))) as typeof fetch,
-      onProviderEvent: (event: ProviderEvent) => {
+      onProviderStreamEvent: async (event: unknown, eventModel: Model<any>) => {
         providerEvent(operation, event);
-        options?.onProviderEvent?.(event);
+        await options?.onProviderStreamEvent?.(event, eventModel);
       },
     });
     // result() observes completion without consuming or replacing the event stream.
@@ -120,6 +123,27 @@ export function instrumentProvider(provider: Provider, write: (record: object) =
     stream: (model, context, options) => run(provider.stream, model, context, options),
     streamSimple: (model, context, options) => run(provider.streamSimple, model, context, options),
   } as Provider;
+}
+
+// Explicit allowlist: never persist authorization, cookies, account IDs, or arbitrary headers.
+export function diagnosticHeaders(headers: string | Array<unknown>): Record<string, string> {
+  const allowed = new Set(["user-agent", "originator", "openai-beta", "accept", "content-type",
+    "content-length", "x-client-request-id", "x-request-id", "cf-ray", "server", "date"]);
+  const pairs: Array<[string, string]> = [];
+  if (typeof headers === "string") {
+    for (const line of headers.split("\r\n")) {
+      const colon = line.indexOf(":");
+      if (colon > 0) pairs.push([line.slice(0, colon), line.slice(colon + 1).trim()]);
+    }
+  } else {
+    for (let i = 0; i + 1 < headers.length; i += 2) pairs.push([String(headers[i]), String(headers[i + 1])]);
+  }
+  const result: Record<string, string> = {};
+  for (const [name, value] of pairs) {
+    const key = name.toLowerCase();
+    if (allowed.has(key)) result[key] = value;
+  }
+  return result;
 }
 
 function socketInfo(socket?: SocketInfo): SocketInfo | undefined {
@@ -239,9 +263,10 @@ export function observeTransport(write: (record: object) => void, session: () =>
     sampleLoop(); active.add(trace); startTimers();
     if (operation) { trace.attempt = ++operation.attempts; operation.current = trace; }
   });
-  subscribe("undici:client:sendHeaders", ({ request, socket }) => {
+  subscribe("undici:client:sendHeaders", ({ request, socket, headers }) => {
     const trace = traces.get(request);
     if (trace) {
+      if (typeof headers === "string") trace.requestHeaders = diagnosticHeaders(headers);
       let state = sockets.get(socket);
       if (!state) {
         state = { id: randomUUID(), requests: 0 };
@@ -272,6 +297,7 @@ export function observeTransport(write: (record: object) => void, session: () =>
     if (!trace) return;
     trace.headersMs = performance.now() - trace.start;
     trace.status = response.statusCode;
+    trace.responseHeaders = diagnosticHeaders(response.headers);
     for (let i = 0; i < response.headers.length; i += 2) {
       if (String(response.headers[i]).toLowerCase() === "x-request-id") {
         trace.requestId = String(response.headers[i + 1]);
@@ -309,6 +335,7 @@ export function observeTransport(write: (record: object) => void, session: () =>
       firstChunkMs: trace.firstChunkMs ?? null, maxChunkGapMs: trace.maxChunkGapMs,
       chunkCount: trace.chunkCount, receivedBodyBytes: trace.receivedBodyBytes,
       status: trace.status, requestId: trace.requestId, cfRay: trace.cfRay,
+      requestHeaders: trace.requestHeaders, responseHeaders: trace.responseHeaders,
       errors: errorCodes(error), transportOutcome: error ? "error" : "http_complete",
       signalAborted: trace.operation?.signal?.aborted ?? null,
       eventLoop: { intervalMs: LOOP_INTERVAL_MS, stallThresholdMs: LOOP_STALL_MS,
