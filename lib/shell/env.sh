@@ -23,7 +23,6 @@ export CARGO_TARGET_DIR=$HOME/.cache/cargo
 
 # misc config
 export CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-export DEBUGINFOD_URLS=https://debuginfod.ubuntu.com
 # get ctrl+shift+u for unicode input to work in kitty
 export GLFW_IM_MODULE=ibus
 export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
