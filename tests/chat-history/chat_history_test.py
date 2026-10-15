@@ -1,6 +1,7 @@
 """Both transcript consumers must use the same bounded Codex history."""
 
 import contextlib
+import base64
 import io
 import json
 import os
@@ -130,6 +131,168 @@ class SharedChatHistoryTests(unittest.TestCase):
                 self.assertEqual("", converted.stdout)
                 self.assertEqual("preserve existing session\n", self.output.read_text())
 
+    def pi_tree(self):
+        result = subprocess.run(["node", str(Path(__file__).with_name("inspect-pi-session.mjs")),
+                                 str(self.output)], env=self.environment, cwd=ROOT,
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return json.loads(result.stdout)
+
+    def native_environment(self):
+        binaries = self.root / "native bin"
+        binaries.mkdir()
+        (binaries / "pi").symlink_to(ROOT / "node_modules/.bin/pi")
+        self.environment.update(PATH=f"{binaries}:{self.environment['PATH']}", PI_OFFLINE="1",
+                                PI_PACKAGE_DIR=str(ROOT / "node_modules/@earendil-works/pi-coding-agent"))
+
+    def exported_tree(self, file):
+        encoded = re.search(r'<script id="session-data" type="application/json">([^<]+)</script>',
+                            file.read_text()).group(1)
+        data = json.loads(base64.b64decode(encoded))
+        self.output.write_text("".join(json.dumps(e) + "\n" for e in [data["header"], *data["entries"]]))
+        self.assertEqual(data["leafId"], data["entries"][-1]["id"])
+        return self.pi_tree()
+
+    def test_codex_branches_export_through_native_pi_html(self):
+        _, latest = self.lineage()
+        self.native_environment()
+        output_dir = self.root / "HTML exports"
+        result = self.run_command(EXTRACT, "--branches", "--native", "--session", CHILD,
+                                  "--extract-dir", output_dir)
+        self.assertEqual(0, result.returncode, result.stderr)
+        html = output_dir / (latest.stem + ".html")
+        self.assertEqual([html], list(output_dir.iterdir()))
+        tree = self.exported_tree(html)
+        self.assertEqual(["café", "parent continuation", "current child"], tree["active"])
+        self.assertEqual({("café", "discarded parent"),
+                          ("café", "parent continuation", "after fork"),
+                          ("café", "parent continuation", "discarded child"),
+                          ("café", "parent continuation", "current child")},
+                         {tuple(path) for path in tree["paths"]})
+        self.assertNotIn("extract-chat-codex-", result.stdout)
+
+    def test_codex_native_export_without_directory_uses_source_filename(self):
+        _, latest = self.lineage()
+        self.native_environment()
+        result = self.run_command(EXTRACT, "--branches", "--native", latest, cwd=self.root)
+        self.assertEqual(0, result.returncode, result.stderr)
+        html = self.root / (latest.stem + ".html")
+        self.assertTrue(html.is_file())
+        self.assertEqual(["café", "parent continuation", "current child"], self.exported_tree(html)["active"])
+
+    def test_branch_markdown_is_rejected_before_writing(self):
+        self.lineage()
+        result = self.run_command(EXTRACT, "--branches", "--session", CHILD,
+                                  "--extract-dir", self.root / "exports")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("--branches requires --native", result.stderr)
+        self.assertFalse((self.root / "exports").exists())
+
+    def test_branches_import_forks_and_reverts_as_a_navigable_pi_tree(self):
+        self.lineage()
+        sibling_id = "019abcde-1234-7000-8000-000000000005"
+        parent_revert = next((self.home / "archived_sessions").rglob(f"*_{PARENT_ROLLOUT}.jsonl"))
+        sibling = self.write_rollout(f"rollout-2026-10-14T19-00-00-{sibling_id}.jsonl", sibling_id,
+                                     [SKILL, "sibling fork", "sibling fork"],
+                                     self.position(parent_revert, PARENT_ROLLOUT, 2, 4), archived=True)
+        events = [json.loads(line) for line in sibling.read_text().splitlines()]
+        events[0]["payload"]["forked_from_id"] = PARENT
+        # A common session_id is not a branch link.
+        events[0]["payload"]["session_id"] = PARENT
+        sibling.write_text("".join(json.dumps(e) + "\n" for e in events))
+        unrelated = self.write_rollout("rollout-2026-10-14T20-00-00-unrelated.jsonl", "unrelated",
+                                        ["unrelated session"])
+        events = [json.loads(line) for line in unrelated.read_text().splitlines()]
+        events[0]["payload"]["session_id"] = PARENT
+        unrelated.write_text("".join(json.dumps(e) + "\n" for e in events))
+        agent = self.write_rollout("rollout-2026-10-14T20-30-00-agent.jsonl", "agent", ["subagent"],
+                                   self.position(parent_revert, PARENT_ROLLOUT, 2, 4))
+        events = [json.loads(line) for line in agent.read_text().splitlines()]
+        events[0]["payload"]["parent_thread_id"] = PARENT
+        agent.write_text("".join(json.dumps(e) + "\n" for e in events))
+        result = self.run_command(CONVERT, CHILD, "--branches", "-o", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        tree = self.pi_tree()
+        expected_active = ["café", "parent continuation", "current child"]
+        self.assertEqual(expected_active, tree["active"])
+        self.assertEqual(expected_active, tree["context"])
+        self.assertEqual({("café", "discarded parent"),
+                          ("café", "parent continuation", "after fork"),
+                          ("café", "parent continuation", "discarded child"),
+                          tuple(expected_active),
+                          ("café", "parent continuation", "sibling fork", "sibling fork")},
+                         {tuple(path) for path in tree["paths"]})
+        events = [json.loads(line) for line in self.output.read_text().splitlines()]
+        texts = [e["message"]["content"] for e in events if e["type"] == "message"]
+        self.assertEqual(1, texts.count("café"))
+        self.assertEqual(1, texts.count("parent continuation"))
+        self.assertEqual(2, texts.count("sibling fork"))
+        self.assertTrue(any(sibling_id in label for label in tree["labels"]))
+
+    def test_branch_import_can_select_a_shared_ancestor_or_empty_thread(self):
+        parent, latest = self.lineage()
+        for file, expected in ((parent, ["café", "discarded parent"]),
+                               (latest, ["café", "parent continuation", "current child"])):
+            with self.subTest(file=file.name):
+                result = self.run_command(CONVERT, file, "--branches", "-o", self.output)
+                self.assertEqual(0, result.returncode, result.stderr)
+                tree = self.pi_tree()
+                self.assertEqual(expected, tree["active"])
+                self.assertEqual(expected, tree["context"])
+        empty_id = "019abcde-1234-7000-8000-000000000006"
+        empty = self.write_rollout(f"rollout-2026-10-14T15-00-00-{empty_id}.jsonl", empty_id, [])
+        alternate = self.write_rollout(f"rollout-2026-10-14T16-00-00-{empty_id}_{PARENT_ROLLOUT}.jsonl",
+                                        empty_id, ["alternative from empty"])
+        result = self.run_command(CONVERT, empty, "--branches", "-o", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual([], self.pi_tree()["active"])
+        result = self.run_command(CONVERT, alternate, "--branches", "-o", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        tree = self.pi_tree()
+        self.assertEqual(["alternative from empty"], tree["active"])
+        self.assertEqual({(), ("alternative from empty",)}, {tuple(path) for path in tree["paths"]})
+        self.assertTrue(any(empty_id in label for label in tree["labels"]))
+
+    def test_branch_import_rejects_legacy_and_share_sources_without_writing(self):
+        file = self.root / "legacy.jsonl"
+        file.write_text(json.dumps({"type": "session_meta", "payload": {"id": CHILD}}) + "\n")
+        for source in (file, "https://chatgpt.com/share/test"):
+            with self.subTest(source=str(source)):
+                self.output.write_text("keep existing\n")
+                result = self.run_command(CONVERT, source, "--branches", "-o", self.output)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("paginated", result.stderr)
+                self.assertEqual("keep existing\n", self.output.read_text())
+
+    def test_missing_history_in_a_related_fork_preserves_existing_output(self):
+        self.lineage()
+        sibling_id = "019abcde-1234-7000-8000-000000000005"
+        sibling = self.write_rollout(f"rollout-2026-10-14T19-00-00-{sibling_id}.jsonl", sibling_id,
+                                     ["unreadable fork"], {"thread_id": "missing",
+                                                           "end_byte_offset": 1,
+                                                           "end_ordinal_exclusive": 1})
+        events = [json.loads(line) for line in sibling.read_text().splitlines()]
+        events[0]["payload"]["forked_from_id"] = PARENT
+        sibling.write_text("".join(json.dumps(e) + "\n" for e in events))
+        self.output.write_text("preserve existing\n")
+        result = self.run_command(CONVERT, CHILD, "--branches", "-o", self.output)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("missing or ambiguous source", result.stderr)
+        self.assertEqual("", result.stdout)
+        self.assertEqual("preserve existing\n", self.output.read_text())
+
+    def test_shared_prefix_can_be_the_selected_branch(self):
+        parent = self.write_rollout(f"rollout-2026-10-14T16-00-00-{PARENT}.jsonl", PARENT, ["shared"])
+        self.write_rollout(f"rollout-2026-10-14T17-00-00-{CHILD}.jsonl", CHILD, ["longer fork"],
+                           self.position(parent, PARENT, 2, 2))
+        result = self.run_command(CONVERT, PARENT, "--branches", "-o", self.output)
+        self.assertEqual(0, result.returncode, result.stderr)
+        tree = self.pi_tree()
+        self.assertEqual(["shared"], tree["active"])
+        self.assertEqual(["shared"], tree["context"])
+        self.assertEqual({("shared",), ("shared", "longer fork")},
+                         {tuple(path) for path in tree["paths"]})
+
     def test_both_consumers_omit_skill_instructions_in_both_codex_message_formats(self):
         visible = ["$example", "explain SKILL.md", "what does <skill> mean?", "quoted example:\n" + SKILL]
         parent = self.write_rollout(f"rollout-2026-10-14T16-00-00-{PARENT}.jsonl",
@@ -180,13 +343,14 @@ class SharedChatHistoryTests(unittest.TestCase):
                     self.assertEqual([{"type": "text", "text": SKILL}], output[2]["message"]["content"])
 
     def test_packaged_extractor_finds_shared_reader_through_symlink(self):
-        layout = self.root / "image"
-        for relative in ("tools/extract-chat/extract-chat", "libexec/chat-history.clj"):
+        image = self.root / "image"
+        layout = image / "tools/chat-export"
+        for relative in ("tools/extract-chat/extract-chat", "libexec/chat-history.clj", "bin/codex-to-pi"):
             target = layout / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["cp", str(ROOT / relative), str(target)], check=True)
             subprocess.run(["cmp", str(ROOT / relative), str(target)], check=True)
-        entrypoint = layout / "opt/agent-tools/bin/extract-chat"
+        entrypoint = image / "opt/agent-tools/bin/extract-chat"
         entrypoint.parent.mkdir(parents=True)
         entrypoint.symlink_to(layout / "tools/extract-chat/extract-chat")
         self.lineage()
@@ -195,6 +359,12 @@ class SharedChatHistoryTests(unittest.TestCase):
         self.assertIn("## User\n\ncafé\n\n", result.stdout)
         self.assertIn("## User\n\ncurrent child\n\n", result.stdout)
         self.assertNotIn("discarded", result.stdout)
+        self.native_environment()
+        result = self.run_command(entrypoint, "--branches", "--native", "--session", CHILD,
+                                  "--extract-dir", self.root / "packaged HTML", cwd=self.root)
+        self.assertEqual(0, result.returncode, result.stderr)
+        html = next((self.root / "packaged HTML").glob("*.html"))
+        self.assertEqual(["café", "parent continuation", "current child"], self.exported_tree(html)["active"])
 
     def test_share_conversion_keeps_its_existing_message_policy(self):
         module = runpy.run_path(str(CONVERT))

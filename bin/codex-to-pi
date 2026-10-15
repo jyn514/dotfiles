@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert one Codex JSONL session into a Pi v3 session JSONL file."""
+"""Convert Codex history into a Pi v3 session JSONL file."""
 
 import argparse
 import json
@@ -13,18 +13,19 @@ import subprocess
 from urllib.request import Request, urlopen
 
 
-def read_history(session, root, archived):
+def read_history(session, root, archived, branches=False):
     reader = Path(__file__).resolve().parents[1] / "libexec/chat-history.clj"
     if session.endswith((".json", ".jsonl")) and Path(session).is_file():
         mode = "file"
     else:
         mode = "archived-session" if archived else "session"
-    result = subprocess.run(
-        ["bb", str(reader), mode, session, str(root)], capture_output=True, text=True,
-    )
+    command = ["bb", str(reader), mode, session, str(root)]
+    if branches:
+        command.append("--branches")
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
         raise SystemExit(result.stderr.strip())
-    return json.loads(result.stdout)["segments"]
+    return json.loads(result.stdout)
 
 
 def read_share(url):
@@ -75,7 +76,7 @@ def messages(events):
     for event in events:
         payload = event.get("payload", {})
         if event.get("type") == "share_message":
-            event_messages.append((event["role"], event["text"], event.get("timestamp")))
+            event_messages.append((event["role"], event["text"], event.get("timestamp"), event))
         elif event.get("type") == "event_msg":
             kind = payload.get("type")
             if kind == "user_message":
@@ -87,13 +88,13 @@ def messages(events):
             else:
                 continue
             if text and text.strip():
-                event_messages.append((role, text, event.get("timestamp")))
+                event_messages.append((role, text, event.get("timestamp"), event))
         elif event.get("type") == "response_item":
             if payload.get("type") != "message" or payload.get("role") not in ("user", "assistant"):
                 continue
             role, text = payload["role"], content_text(payload.get("content"))
             if text.strip() and not (role == "user" and synthetic_user_message(text)):
-                response_messages.append((role, text, event.get("timestamp")))
+                response_messages.append((role, text, event.get("timestamp"), event))
     # Codex stores both views. Prefer event_msg, matching extract-chat.
     return event_messages or response_messages
 
@@ -114,34 +115,96 @@ def session_metadata(segments, normalize):
     return payload
 
 
-def convert(segments, destination: Path, normalize=False):
+def branch_messages(branches, normalize):
+    """Join original records by physical rollout and ordinal, never by message text."""
+    nodes = {}
+    turns = []
+    tips = {}
+    selected_tip = None
+    selected_count = 0
+    for branch in branches:
+        parent = None
+        for source_range in branch["ranges"]:
+            payload = session_metadata([source_range["events"]], normalize)
+            for role, text, timestamp, event in messages(source_range["events"]):
+                ordinal = event.get("ordinal")
+                if not isinstance(ordinal, int):
+                    raise SystemExit("cannot join Codex branch: message has no source ordinal")
+                identity = (source_range["rollout_id"], ordinal)
+                entry_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"codex:{identity[0]}:{identity[1]}"))
+                if identity in nodes:
+                    if nodes[identity] != parent:
+                        raise SystemExit("cannot join Codex branch: source record has conflicting parents")
+                else:
+                    nodes[identity] = parent
+                    turns.append((entry_id, parent, role, text, timestamp, payload))
+                parent = entry_id
+        label = f"Codex {branch['thread_id']} / {branch['rollout_id']}"
+        tips.setdefault(parent, []).append(label)
+        if branch["selected"]:
+            selected_tip = parent
+            selected_count += 1
+    if selected_count != 1:
+        raise SystemExit("cannot join Codex branches: expected one selected rollout")
+    return turns, tips, selected_tip
+
+
+def linear_messages(segments, payload):
+    parent = None
+    for index, (role, text, timestamp, _) in enumerate(
+            (turn for events in segments for turn in messages(events)), 1):
+        entry_id = f"{index:08x}"
+        yield entry_id, parent, role, text, timestamp, payload
+        parent = entry_id
+
+
+def convert(segments, destination: Path, normalize=False, branches=None):
     payload = session_metadata(segments, normalize)
     session_id = payload.get("session_id") or str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     header = {"type": "session", "version": 3, "id": session_id,
               "timestamp": now, "cwd": payload.get("cwd") or os.getcwd()}
     output = [header]
-    parent = None
-    turns = (turn for events in segments for turn in messages(events))
-    for index, (role, text, timestamp) in enumerate(turns, 1):
-        entry_id = f"{index:08x}"
+    if branches is None:
+        turns = linear_messages(segments, payload)
+    else:
+        turns, tips, selected_tip = branch_messages(branches, normalize)
+    count = 0
+    for entry_id, parent, role, text, timestamp, source_payload in turns:
         content = [{"type": "text", "text": text}] if role == "assistant" else text
         message = {"role": role, "content": content, "timestamp": timestamp_ms(timestamp)}
         if role == "assistant":
             message.update({
-                "api": "openai-responses", "provider": "openai-codex", "model": payload.get("model", "unknown"),
+                "api": "openai-responses", "provider": "openai-codex", "model": source_payload.get("model", "unknown"),
                 "usage": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
                           "totalTokens": 0, "cost": {"input": 0, "output": 0,
                           "cacheRead": 0, "cacheWrite": 0, "total": 0}},
                 "stopReason": "stop"})
         output.append({"type": "message", "id": entry_id, "parentId": parent,
                        "timestamp": timestamp or now, "message": message})
-        parent = entry_id
+        count += 1
+    if branches is not None:
+        labels_by_tip = {}
+        for tip, labels in tips.items():
+            target_id = tip
+            if target_id is None:
+                target_id = str(uuid.uuid4())
+                output.append({"type": "custom", "id": target_id, "parentId": None,
+                               "timestamp": now, "customType": "codex-import-empty", "data": {}})
+            label_id = str(uuid.uuid4())
+            labels_by_tip[tip] = label_id
+            output.append({"type": "label", "id": label_id, "parentId": target_id,
+                           "timestamp": now, "targetId": target_id, "label": "; ".join(labels)})
+        # Pi reopens at the last entry. This context-free marker selects even an
+        # empty branch or a branch whose last message is shared with a longer one.
+        output.append({"type": "custom", "id": str(uuid.uuid4()),
+                       "parentId": labels_by_tip.get(selected_tip, selected_tip),
+                       "timestamp": now, "customType": "codex-import", "data": {"branches": len(branches)}})
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w") as target:
         for entry in output:
             target.write(json.dumps(entry, separators=(",", ":")) + "\n")
-    return len(output) - 1
+    return count
 
 
 def main():
@@ -149,15 +212,21 @@ def main():
     parser.add_argument("session", help="Codex session ID, JSONL path, or ChatGPT share URL")
     parser.add_argument("-o", "--output", type=Path, help="Pi JSONL output path (default: Pi's session directory)")
     parser.add_argument("--archived", action="store_true", help="Search archived_sessions")
+    parser.add_argument("--branches", action="store_true",
+                        help="Import related forks and reverted rollouts into one Pi tree (use /tree)")
     parser.add_argument("--normalize", action="store_true",
                         help="Rewrite /Users/jyn paths to /home/codex for sandbox sessions")
     args = parser.parse_args()
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     is_share = args.session.startswith(("https://chatgpt.com/share/", "https://chat.openai.com/share/"))
     if is_share:
+        if args.branches:
+            parser.error("--branches requires local paginated Codex history")
         segments = [read_share(args.session)]
+        history = {}
     else:
-        segments = read_history(args.session, codex_home, args.archived)
+        history = read_history(args.session, codex_home, args.archived, args.branches)
+        segments = history["segments"]
     payload = session_metadata(segments, args.normalize)
     if args.output:
         destination = args.output
@@ -168,7 +237,7 @@ def main():
         stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         filename = f"{stamp.replace(':', '-')}_{payload.get('session_id', uuid.uuid4())}.jsonl"
         destination = agent_dir / "sessions" / safe_cwd / filename
-    count = convert(segments, destination, args.normalize)
+    count = convert(segments, destination, args.normalize, history.get("branches"))
     print(f"wrote {count} messages to {destination}")
 
 

@@ -58,6 +58,7 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',
                        'libexec/chat-history.clj',
+                       'bin/codex-to-pi',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj',
                        'libexec/sandbox-wrappers/docker',

@@ -57,12 +57,17 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 - [`archive-webpage`](archive-webpage/) implements `archive-webpage DIRECTORY URL [TITLE]`, saving a rendered page and JSON metadata through PhantomJS.
 - [`extract-chat`](extract-chat/) extracts user and assistant turns from local Pi, Codex, or Claude JSON/JSONL sessions. It supports session lookup, `--final-only`, and per-session Markdown.
   `--session ID` selects the newest matching Codex rollout by filename timestamp and rollout UUID, including replacement rollouts created by revert.
+  Session lookup prefers Codex sources over imported Pi copies with the same ID, falling back to Pi when no Codex source matches.
   Codex exports follow `history_base` references through active and archived rollouts, including inherited fork history only up to the saved byte and ordinal cutoffs.
   References use physical rollout IDs, so later parent edits and reverted turns stay out of the selected history.
   Explicit file paths export that rollout's history; copied histories need their ancestor files alongside them or in the configured Codex home.
   Missing ancestors, reference cycles, and invalid cutoffs fail instead of producing a partial transcript.
   Markdown exports omit standalone injected `<skill>` instruction blocks; skill invocations and discussion remain visible.
   For Pi, `--native` uses `pi --export` to produce HTML (`pi` must be on PATH); other formats remain Markdown. Native Pi exports include the full session regardless of `--final-only`; without `--extract-dir`, Pi writes to the current directory.
+  For Codex, `extract-chat --session ID --branches --native` uses `codex-to-pi --branches` and Pi's native exporter to produce a navigable HTML conversation tree.
+  This requires Python and Pi on PATH and local paginated Codex history; `--branches` requires `--native`.
+  Codex HTML uses the source rollout's basename with `.html` in `--extract-dir` or the current directory; temporary Pi sessions are removed after success or failure.
+  Native Codex exports use the converter's user/assistant message selection and ignore `--final-only`.
   Pi Markdown includes saved goal status, objective, and token budget; provider/model switches and assistant or shell cancellations appear in session order, and partial replies remain visible. These events remain with `--final-only`; goal usage counters and continuation prompts are omitted.
   Empty file/directory scans report the searched source paths on stderr and exit 0, without creating or removing export files. Output may expose private conversations.
 - [`codex-to-pi`](../bin/codex-to-pi) converts a Codex session ID, JSONL path, or ChatGPT share URL to Pi v3 JSONL.
@@ -70,6 +75,12 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
   It also omits injected skill instructions while preserving skill invocations and discussion.
   Use `codex-to-pi SESSION -o FILE` to choose the destination; otherwise it writes to Pi's session directory.
   `--archived` searches archived sessions; `--normalize` rewrites macOS paths for sandbox sessions.
+  `codex-to-pi SESSION --branches -o FILE` imports related forks and superseded rollouts into one Pi tree; use `/tree` to navigate it.
+  Discovery includes active and archived history, ancestors, sibling forks, and descendants, while excluding spawned subagent sessions.
+  Branch endpoints carry Codex thread and rollout labels, and the requested rollout is selected when Pi opens the file.
+  Shared source records appear once; repeated messages from different records remain distinct.
+  Branch import requires local paginated history and all referenced ancestors; legacy sessions and share URLs are rejected.
+  Without `--branches`, conversion and Markdown extraction follow only the selected thread.
 - [`extract-chat-share`](extract-chat-share/) converts public ChatGPT or Claude share pages to Markdown. Claude extraction requires Safari automation on macOS; remote formats may change.
 - [`lapwing-prototype`](lapwing-prototype/) is a compact, heap-free Lapwing stenography translator prototype for Moonlander/QMK. Start with its [README](lapwing-prototype/README.md), then the [firmware specification](lapwing-prototype/SPEC.md); it is not hardware-verified.
 - [`moonlander`](moonlander/) implements `sync-moonlander` and `flash-moonlander` for ZSA Oryx synchronization and QMK compilation or flashing. These can change remote state, a QMK checkout, or hardware; `COMPILE_ONLY=1` avoids flashing. See the [operator guide](moonlander/README.md).

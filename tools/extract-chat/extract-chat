@@ -9,14 +9,16 @@
 ;;   extract-chat --native --extract-dir out ~/.pi/agent/sessions
 
 (ns tools.extract-chat
-  (:require [clojure.java.io :as io]
+  (:require [babashka.fs :as fs]
+            [clojure.java.io :as io]
             [clojure.java.shell :as shell]
             [clojure.string :as str])
   (:import (java.nio.file Path)))
 
 ;; Resolve the script target so bin/ symlinks and the packaged image use the same layout.
-(load-file (str (io/file (.getParentFile (.getCanonicalFile (io/file *file*)))
-                         "../../libexec/chat-history.clj")))
+(def ^:private repository-root
+  (.getCanonicalFile (io/file (.getParentFile (.getCanonicalFile (io/file *file*))) "../..")))
+(load-file (str (io/file repository-root "libexec/chat-history.clj")))
 (alias 'history 'dotfiles.chat-history)
 
 (defn default-root
@@ -30,7 +32,7 @@
   (str (System/getProperty "user.home") "/.pi/agent/sessions"))
 
 (defn- usage []
-  (println "Usage: extract-chat [--archived] [--final-only] [--native] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
+  (println "Usage: extract-chat [--archived] [--final-only] [--native] [--branches] [--extract-dir DIR] [--session ID | FILE-or-DIR ...]")
   (println)
   (println "With no paths, recursively scans ~/.codex/sessions for .json and .jsonl files.")
   (println "With --archived, uses ~/.codex/archived_sessions for the implicit root.")
@@ -40,7 +42,9 @@
   (println "Empty scans report source paths on stderr and retain exit status 0.")
   (println "Pi Markdown includes saved goal changes, model switches, and assistant or shell cancellations.")
   (println "With --native, exports Pi sessions through pi --export to HTML; other formats stay Markdown.")
-  (println "Native exports require pi on PATH and keep the full session, ignoring --final-only.")
+  (println "With --branches --native, converts Codex fork history through codex-to-pi and exports a Pi HTML tree.")
+  (println "--branches requires --native; Codex branch exports require local paginated history and python3.")
+  (println "Native exports require pi on PATH and ignore --final-only; Pi exports keep the full source session.")
   (println "Without --extract-dir, Pi chooses the HTML filename in the current directory."))
 
 (defn- path [s]
@@ -194,6 +198,7 @@
         events (last segments)]
     (merge {:file file
             :pi? (= "session" (:type (first events)))
+            :codex? (= "session_meta" (:type (first events)))
             :messages (vec (filter #(keep-message? final-only? %)
                                    (mapcat messages segments)))}
            (codex-session-meta events))))
@@ -240,9 +245,8 @@
         output-name (str/replace file-name #"\.jsonl?$" extension)]
     (.toPath (io/file extract-dir output-name))))
 
-(defn- export-pi-session [extract-dir file]
-  (let [output-file (when extract-dir (session-output-path extract-dir file ".html"))
-        args (cond-> ["pi" "--export" (.getAbsolutePath (.toFile ^Path file))]
+(defn- export-pi-file [file output-file]
+  (let [args (cond-> ["pi" "--export" (.getAbsolutePath (.toFile ^Path file))]
                output-file (conj (.getAbsolutePath (.toFile ^Path output-file))))]
     (when output-file
       (io/make-parents (.toFile ^Path output-file)))
@@ -253,16 +257,40 @@
       (print out)
       (binding [*out* *err*] (print err)))))
 
-(defn- print-session [final-only? native? file]
+(defn- export-pi-session [extract-dir file]
+  (export-pi-file file (when extract-dir (session-output-path extract-dir file ".html"))))
+
+(defn- export-codex-branches [extract-dir file]
+  (let [temporary (fs/create-temp-dir {:prefix "extract-chat-codex-"})
+        converted (.toPath (io/file (str temporary) "session.jsonl"))
+        output (session-output-path (or extract-dir ".") file ".html")]
+    (try
+      (let [{:keys [exit err]} (shell/sh "python3" (str (io/file repository-root "bin/codex-to-pi"))
+                                        (.getAbsolutePath (.toFile ^Path file)) "--branches"
+                                        "-o" (str converted))]
+        (when-not (zero? exit)
+          (throw (ex-info (str "Codex conversion failed for " file ": " (str/trim err))
+                          {:file (str file) :exit exit}))))
+      (export-pi-file converted output)
+      (finally (fs/delete-tree temporary)))))
+
+(defn- export-native-session [extract-dir branches? {:keys [file pi? codex?]}]
+  (cond
+    pi? (export-pi-session extract-dir file)
+    (and branches? codex?) (export-codex-branches extract-dir file)
+    branches? (throw (ex-info "--branches --native requires a Codex or Pi session" {:file (str file)}))
+    :else nil))
+
+(defn- print-session [final-only? native? branches? file]
   (let [{:keys [pi?] :as session} (read-session final-only? file)]
-    (if (and native? pi?)
-      (export-pi-session nil file)
+    (if (and native? (or pi? branches?))
+      (export-native-session nil branches? session)
       (when-let [markdown (session-markdown session)]
         (print markdown)))))
 
-(defn- write-session [extract-dir native? {:keys [file pi?] :as session}]
-  (if (and native? pi?)
-    (export-pi-session extract-dir file)
+(defn- write-session [extract-dir native? branches? {:keys [file pi?] :as session}]
+  (if (and native? (or pi? branches?))
+    (export-native-session extract-dir branches? session)
     (when-let [markdown (session-markdown session)]
       (let [output-file (session-output-path extract-dir file ".md")]
         (io/make-parents (.toFile output-file))
@@ -277,6 +305,9 @@
         (cond
           (= "--native" arg)
           (recur (assoc opts :native? true) (next args))
+
+          (= "--branches" arg)
+          (recur (assoc opts :branches? true) (next args))
 
           (= "--final-only" arg)
           (recur (assoc opts :final-only? true) (next args))
@@ -310,10 +341,12 @@
           (recur (update opts :paths conj arg) (next args)))))))
 
 (defn main [args]
-  (let [{:keys [archived? final-only? native? help? paths extract-dir session]} (parse-args args)]
+  (let [{:keys [archived? final-only? native? branches? help? paths extract-dir session]} (parse-args args)]
     (if help?
       (usage)
-      (let [roots (when-not session
+      (let [_ (when (and branches? (not native?))
+                (throw (ex-info "--branches requires --native" {})))
+            roots (when-not session
                     (if (seq paths)
                       paths
                       [(default-root (System/getenv) archived?)]))
@@ -336,9 +369,9 @@
                               (sort-by (juxt :timestamp (comp str :file)))
                               without-replayed-prefixes)]
             (doseq [session sessions]
-              (write-session extract-dir native? session)))
+              (write-session extract-dir native? branches? session)))
           (doseq [file files]
-            (print-session final-only? native? file)))))))
+            (print-session final-only? native? branches? file)))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

@@ -146,9 +146,11 @@ COPY --chown=${AGENT_UID}:${AGENT_GID} ./config/jj.toml ${JJ_CONFIG}
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/jj-proxy/client ./tools/jj-proxy/route.py /tools/jj-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/zulip-proxy/client ./tools/zulip-proxy/protocol.json /tools/zulip-proxy/
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./bin/zulip /opt/agent-tools/bin/zulip
-COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /tools/extract-chat/extract-chat
-COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/chat-history.clj /libexec/chat-history.clj
-RUN ln -s /tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
+# Preserve the source layout without relying on /bin (a symlink on Debian).
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./tools/extract-chat/extract-chat /tools/chat-export/tools/extract-chat/extract-chat
+COPY --chown=${AGENT_UID}:${AGENT_GID} ./libexec/chat-history.clj /tools/chat-export/libexec/chat-history.clj
+COPY --chmod=755 --chown=${AGENT_UID}:${AGENT_GID} ./bin/codex-to-pi /tools/chat-export/bin/codex-to-pi
+RUN ln -s /tools/chat-export/tools/extract-chat/extract-chat /opt/agent-tools/bin/extract-chat
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-docker/woodpecker-cli /tools/agent-docker/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-docker/woodpecker-cli /opt/agent-tools/bin/woodpecker-cli
 COPY --chown=${AGENT_UID}:${AGENT_GID} ./tools/agent-split/bb /tools/agent-split/bb

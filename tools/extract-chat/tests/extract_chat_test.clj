@@ -421,6 +421,29 @@
              (with-out-str (extract-chat/main [(str file)]))))
       (finally (fs/delete-tree root)))))
 
+(deftest extract-chat-prefers-codex-source-over-pi-import-with-the-same-id
+  (let [root (fs/create-temp-dir {:prefix "flower-extract-source-priority"})
+        codex-root (fs/file root "codex")
+        pi-root (fs/file root "pi")
+        session-id "019abcde-1234-7000-8000-0123456789ab"
+        codex (fs/file codex-root (str "rollout-2026-07-15-" session-id ".jsonl"))
+        pi (fs/file pi-root (str "timestamp_" session-id ".jsonl"))]
+    (try
+      (fs/create-dirs codex-root)
+      (fs/create-dirs pi-root)
+      (spit codex (str (json/generate-string
+                        {:type "event_msg" :payload {:type "user_message" :message "Codex source"}}) "\n"))
+      (spit pi (str (json/generate-string
+                     {:type "message" :message {:role "user" :content "Pi import"}}) "\n"))
+      (with-redefs [extract-chat/default-root (constantly (str codex-root))
+                    extract-chat/pi-root (constantly (str pi-root))]
+        (is (= (str "# " codex "\n\n## User\n\nCodex source\n\n")
+               (with-out-str (extract-chat/main ["--session" session-id]))))
+        (fs/delete codex)
+        (is (= (str "# " pi "\n\n## User\n\nPi import\n\n")
+               (with-out-str (extract-chat/main ["--session" session-id])))))
+      (finally (fs/delete-tree root)))))
+
 (deftest extract-chat-finds-pi-session-by-id
   (let [root (fs/create-temp-dir {:prefix "flower-extract-pi-session"})
         session-id "01a0a66d-2c73-77d5-83a1-43ca8362dc92"
@@ -581,6 +604,37 @@
                (with-out-str (extract-chat/main ["--native" "--session" session-id])))))
       (is (= [["pi" "--export" (str session-file)]] @calls))
       (finally (fs/delete-tree root)))))
+
+(deftest extract-chat-codex-native-failures-clean-up-and-stop
+  (doseq [failure ["conversion" "export"]]
+    (let [root (fs/create-temp-dir {:prefix "flower-extract-native-codex"})
+          file (fs/file root "codex.jsonl")
+          output (fs/file root "exports")
+          converted (atom nil)
+          calls (atom [])]
+      (try
+        (spit file (str (json/generate-string {:type "session_meta" :payload {:session_id "test"}}) "\n"))
+        (with-redefs [shell/sh
+                      (fn [& args]
+                        (swap! calls conj (vec args))
+                        (if (= "python3" (first args))
+                          (do
+                            (reset! converted (last args))
+                            (is (some #{"--branches"} args))
+                            (spit @converted "{}\n")
+                            (if (= "conversion" failure)
+                              {:exit 1 :out "" :err "conversion failed"}
+                              {:exit 0 :out "temporary conversion output" :err ""}))
+                          (do
+                            (is (fs/exists? @converted))
+                            {:exit 2 :out "" :err "export failed"})))]
+          (is (thrown-with-msg? clojure.lang.ExceptionInfo #"failed"
+                               (extract-chat/main ["--branches" "--native" "--extract-dir" (str output)
+                                                   (str file)]))))
+        (is (= (if (= "conversion" failure) 1 2) (count @calls)))
+        (is (not (fs/exists? (fs/parent @converted))))
+        (is (empty? (fs/glob root "**/*.html")))
+        (finally (fs/delete-tree root))))))
 
 (deftest extract-chat-native-export-failure-stops-without-markdown-fallback
   (let [root (fs/create-temp-dir {:prefix "flower-extract-native-failure"})

@@ -1,9 +1,12 @@
 ;; Shared read-only session loading for extract-chat and codex-to-pi.
-;; Library API: files-under lists JSON/JSONL inputs; find-session selects a path within explicit search roots;
+;; Library API: files-under lists JSON/JSONL inputs; find-session searches explicit roots in priority order;
 ;; history-segments returns event sequences, oldest ancestor first, omitting injected skill instructions.
-;; Direct invocation: bb chat-history.clj MODE SOURCE CODEX-HOME.
+;; history-ranges retains physical rollout identities for graph consumers.
+;; Direct invocation: bb chat-history.clj MODE SOURCE CODEX-HOME [--branches].
 ;; MODE is file, session, or archived-session. Success writes one JSON object:
 ;; {"file": "selected path", "segments": [[exportable source events], ...]}.
+;; --branches adds all related paginated rollouts as branches, each with file,
+;; thread_id, rollout_id, selected, and ranges [{file, rollout_id, events}].
 ;; Failure writes a diagnostic to stderr, exits 1, and emits no JSON.
 (ns dotfiles.chat-history
   (:require [cheshire.core :as json]
@@ -47,12 +50,12 @@
         (str/ends-with? stem (str "_" session)))))
 
 (defn find-session [session roots]
-  (let [matches (->> roots
-                     (remove nil?)
-                     (mapcat #(files-under (path %)))
-                     (filter #(session-file-name-matches? session %))
-                     distinct
-                     (sort-by str))]
+  (let [matches (some (fn [root]
+                        (seq (->> (files-under (path root))
+                                  (filter #(session-file-name-matches? session %))
+                                  distinct
+                                  (sort-by str))))
+                      (remove nil? roots))]
     (cond
       (empty? matches)
       (throw (ex-info (str "No session found for " session)
@@ -141,7 +144,11 @@
     (boolean (re-matches #"(?s)<skill>\s*<name>[^<]+</name>\s*<path>[^<]+</path>.*</skill>"
                          (str/trim (or text ""))))))
 
-(defn history-segments [file codex-roots]
+(defn- physical-rollout-id [file]
+  (second (re-find #"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl?$"
+                   (str file))))
+
+(defn history-ranges [file codex-roots]
   ;; history_base.thread_id is a physical rollout ID, not the logical fork parent.
   ;; Resolve it by the filename's final UUID, without selecting that parent's latest revert.
   (let [candidates (delay (->> (history-search-roots file codex-roots)
@@ -156,7 +163,9 @@
         (let [events (if cutoff (read-history-prefix file cutoff) (read-events file))
               meta (when (= "session_meta" (:type (first events))) (:payload (first events)))
               base (:history_base meta)
-              segments (conj segments events)]
+              segments (conj segments {:file (str identity)
+                                       :rollout_id (physical-rollout-id file)
+                                       :events events})]
           (when (and cutoff (not= "paginated" (:history_mode meta)))
             (throw (history-error file "source rollout is not paginated")))
           (if base
@@ -170,19 +179,69 @@
                 (throw (history-error file (str "missing or ambiguous source rollout " id))))
               (recur (first matches) base (conj seen identity) segments))
             ;; Keep source ordinals and byte offsets intact until all cutoffs are checked.
-            (mapv #(vec (remove skill-instruction-message? %)) segments)))))))
+            (mapv #(update % :events (fn [events] (vec (remove skill-instruction-message? events))))
+                  segments)))))))
 
-(defn- main [[mode source codex-home :as args]]
+(defn history-segments [file codex-roots]
+  (mapv :events (history-ranges file codex-roots)))
+
+(defn- session-header [file]
+  ;; Family discovery needs only metadata, not every unrelated conversation.
   (try
-    (when-not (and (= 3 (count args)) (#{"file" "session" "archived-session"} mode))
-      (throw (ex-info "Expected MODE SOURCE CODEX-HOME" {})))
+    (with-open [reader (io/reader (.toFile ^Path file))]
+      (let [event (some #(when-not (str/blank? %) (json/parse-string % true)) (line-seq reader))]
+        (when (= "session_meta" (:type event)) (:payload event))))
+    (catch Exception _ nil)))
+
+(defn branch-histories [file codex-roots]
+  (let [selected (.toRealPath ^Path file (make-array java.nio.file.LinkOption 0))
+        selected-meta (session-header selected)
+        entries (->> (history-search-roots selected codex-roots)
+                     (mapcat #(files-under (path %)))
+                     (cons selected)
+                     (map #(.toRealPath ^Path % (make-array java.nio.file.LinkOption 0)))
+                     distinct
+                     (keep (fn [file]
+                             (when-let [meta (session-header file)]
+                               (when (or (= (:id meta) (:id selected-meta))
+                                         (nil? (:parent_thread_id meta)))
+                                 {:file file :meta meta :rollout_id (physical-rollout-id file)}))))
+                     (sort-by (comp str :file))
+                     vec)
+        by-rollout (group-by :rollout_id entries)
+        links (fn [{:keys [meta]}]
+                (remove nil? [(:id meta) (:forked_from_id meta)
+                              (when-let [base-id (get-in meta [:history_base :thread_id])]
+                                (-> by-rollout (get base-id) first :meta :id))]))
+        family (loop [ids #{(:id selected-meta)}]
+                 (let [expanded (reduce (fn [ids entry]
+                                          (let [neighbors (links entry)]
+                                            (if (some ids neighbors) (into ids neighbors) ids)))
+                                        ids entries)]
+                   (if (= ids expanded) ids (recur expanded))))]
+    (when-not (and (:id selected-meta) (= "paginated" (:history_mode selected-meta)))
+      (throw (history-error file "--branches requires paginated Codex history")))
+    (mapv (fn [{:keys [file meta rollout_id]}]
+            (when-not (and rollout_id (= "paginated" (:history_mode meta)))
+              (throw (history-error file "cannot join a related legacy or noncanonical rollout")))
+            {:file (str file) :thread_id (:id meta) :rollout_id rollout_id
+             :selected (= selected file) :ranges (history-ranges file codex-roots)})
+          (filter #(contains? family (get-in % [:meta :id])) entries))))
+
+(defn- main [[mode source codex-home branches :as args]]
+  (try
+    (when-not (and (or (= 3 (count args))
+                       (and (= 4 (count args)) (= "--branches" branches)))
+                   (#{"file" "session" "archived-session"} mode))
+      (throw (ex-info "Expected MODE SOURCE CODEX-HOME [--branches]" {})))
     (let [roots (map #(str (io/file codex-home %)) ["sessions" "archived_sessions"])
           file (if (= "file" mode)
                  (path source)
                  (find-session source [(if (= "archived-session" mode)
                                          (second roots) (first roots))]))]
       (println (json/generate-string
-                {:file (str file) :segments (history-segments file roots)})))
+                (cond-> {:file (str file) :segments (history-segments file roots)}
+                  branches (assoc :branches (branch-histories file roots))))))
     (catch Exception error
       (binding [*out* *err*]
         (println (str "chat-history: " (ex-message error))))
