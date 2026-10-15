@@ -78,6 +78,11 @@ Terminal copies use OSC 52 with an explicit `c` clipboard selector because mosh 
 After reloading the configuration, detach and reattach to refresh terminal capabilities.
 To check remote copying, enter `set-buffer -w hello` at the tmux command prompt, then paste locally.
 
+If copying fails after reattaching, run `tmux info` and find `Ms` under the affected client's terminal entry.
+`Ms: [missing]` means tmux cannot emit clipboard writes, even if the configuration parses successfully.
+tmux 3.8 discards an `Ms` format that omits parameter 1; `%p1%.0s` consumes it without printing it before the explicit `c` selector.
+The effective format should contain `52;%p1%.0sc;%p2%s`.
+
 The [configuration](tmux.conf) refreshes `WAYLAND_DISPLAY` when creating or
 attaching to a session. Attaching without that variable, such as over SSH,
 preserves the previous value. This uses tmux's `update-environment` wildcard
