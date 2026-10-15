@@ -273,7 +273,7 @@
 
 (deftest extract-chat-matches-session-id-filename-forms
   (let [root (fs/create-temp-dir {:prefix "flower-extract-session-names"})
-        matcher (deref #'extract-chat/session-file-name-matches?)]
+        matcher (deref #'dotfiles.chat-history/session-file-name-matches?)]
     (doseq [[filename expected]
             [["01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]
              ["rollout-2026-09-15-01a0a66d-2c73-77d5-83a1-43ca8362dc92.jsonl" true]

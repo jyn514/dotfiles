@@ -57,6 +57,7 @@ class ImageInputsTest(unittest.TestCase):
                        'tools/codex-sandbox/image/agent_supervisor.py',
                        'tools/codex-sandbox/image/codex',
                        'tools/extract-chat/extract-chat',
+                       'libexec/chat-history.clj',
                        'tools/agent-split/bb', 'tools/agent-split/src/scripts/temp.clj',
                        'libexec/agent-wrappers/jj',
                        'libexec/sandbox-wrappers/docker',

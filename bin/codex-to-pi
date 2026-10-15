@@ -13,9 +13,18 @@ import subprocess
 from urllib.request import Request, urlopen
 
 
-def read_events(path: Path):
-    with path.open() as source:
-        return [json.loads(line) for line in source if line.strip()]
+def read_history(session, root, archived):
+    reader = Path(__file__).resolve().parents[1] / "libexec/chat-history.clj"
+    if session.endswith((".json", ".jsonl")) and Path(session).is_file():
+        mode = "file"
+    else:
+        mode = "archived-session" if archived else "session"
+    result = subprocess.run(
+        ["bb", str(reader), mode, session, str(root)], capture_output=True, text=True,
+    )
+    if result.returncode:
+        raise SystemExit(result.stderr.strip())
+    return json.loads(result.stdout)["segments"]
 
 
 def read_share(url):
@@ -96,19 +105,25 @@ def timestamp_ms(value):
     return int(parsed.timestamp() * 1000)
 
 
-def convert(source: Path, destination: Path, normalize=False):
-    events = read_events(source)
+def session_metadata(segments, normalize):
+    events = segments[-1]
     meta = next((event for event in events if event.get("type") == "session_meta"), {})
-    payload = meta.get("payload", {})
+    payload = dict(meta.get("payload", {}))
     if normalize and isinstance(payload.get("cwd"), str):
         payload["cwd"] = normalize_cwd(payload["cwd"])
+    return payload
+
+
+def convert(segments, destination: Path, normalize=False):
+    payload = session_metadata(segments, normalize)
     session_id = payload.get("session_id") or str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     header = {"type": "session", "version": 3, "id": session_id,
               "timestamp": now, "cwd": payload.get("cwd") or os.getcwd()}
     output = [header]
     parent = None
-    for index, (role, text, timestamp) in enumerate(messages(events), 1):
+    turns = (turn for events in segments for turn in messages(events))
+    for index, (role, text, timestamp) in enumerate(turns, 1):
         entry_id = f"{index:08x}"
         content = [{"type": "text", "text": text}] if role == "assistant" else text
         message = {"role": role, "content": content, "timestamp": timestamp_ms(timestamp)}
@@ -129,18 +144,6 @@ def convert(source: Path, destination: Path, normalize=False):
     return len(output) - 1
 
 
-def find_session(session_id, root, archived):
-    if session_id.endswith((".json", ".jsonl")) and Path(session_id).is_file():
-        return Path(session_id)
-    directory = root / ("archived_sessions" if archived else "sessions")
-    matches = sorted(path for path in directory.rglob("*.jsonl")
-                     if path.stem == session_id or path.stem.endswith("-" + session_id))
-    if len(matches) != 1:
-        detail = "no" if not matches else "multiple"
-        raise SystemExit(f"{detail} Codex sessions found for {session_id} under {directory}")
-    return matches[0]
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session", help="Codex session ID, JSONL path, or ChatGPT share URL")
@@ -152,15 +155,10 @@ def main():
     codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     is_share = args.session.startswith(("https://chatgpt.com/share/", "https://chat.openai.com/share/"))
     if is_share:
-        events = read_share(args.session)
-        source = None
+        segments = [read_share(args.session)]
     else:
-        source = find_session(args.session, codex_home, args.archived)
-        events = read_events(source)
-    meta = next((event for event in events if event.get("type") == "session_meta"), {})
-    payload = meta.get("payload", {})
-    if args.normalize and isinstance(payload.get("cwd"), str):
-        payload["cwd"] = normalize_cwd(payload["cwd"])
+        segments = read_history(args.session, codex_home, args.archived)
+    payload = session_metadata(segments, args.normalize)
     if args.output:
         destination = args.output
     else:
@@ -170,17 +168,7 @@ def main():
         stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         filename = f"{stamp.replace(':', '-')}_{payload.get('session_id', uuid.uuid4())}.jsonl"
         destination = agent_dir / "sessions" / safe_cwd / filename
-    if source is None:
-        temp = Path(f"/tmp/codex-to-pi-{os.getpid()}.jsonl")
-        with temp.open("w") as target:
-            for event in events:
-                target.write(json.dumps(event) + "\n")
-        try:
-            count = convert(temp, destination, args.normalize)
-        finally:
-            temp.unlink(missing_ok=True)
-    else:
-        count = convert(source, destination, args.normalize)
+    count = convert(segments, destination, args.normalize)
     print(f"wrote {count} messages to {destination}")
 
 
