@@ -248,6 +248,14 @@ Failed captures report unknown state. The snapshot can become stale and is not
 evidence of task completion. It is excluded from later compaction requests
 rather than summarized again.
 
+The extension also appends recorded edit/write paths as recovery pointers, independently of the generated prose.
+These come from tool-call arguments and can include failed attempts or already committed work;
+they do not prove successful edits, authorship, current working-copy state, or commit coverage.
+Targets from the matching previous checkpoint carry forward without being summarized again or filtered by current status.
+The visible JSON is limited to 8,192 characters without splitting paths and reports how many paths are omitted.
+The complete list remains in `details.modifiedFiles`.
+This preserves recovery paths, not hunk-level provenance or an uncommitted-work inventory.
+
 Instructions are read afresh for each compaction; instruction-only edits need no
 reload. After changing extension code, use `/reload` as described above. Follow
 the [testing guide](../../../dev/README.md#testing-and-probes) to install locked

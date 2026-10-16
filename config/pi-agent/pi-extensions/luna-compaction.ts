@@ -23,7 +23,7 @@ export const COMPACTION_INSTRUCTIONS = resolve(
 
 export function checkpointText(entry: { summary: string; details?: unknown }): string {
   const length = (entry.details as { checkpointLength?: number } | undefined)?.checkpointLength;
-  // The saved offset separates generated prose from the caller's status block.
+  // The saved offset separates generated prose from caller-produced appendices.
   return typeof length === "number" && Number.isSafeInteger(length) && length > 0 && length <= entry.summary.length
     ? entry.summary.slice(0, length)
     : entry.summary;
@@ -64,10 +64,32 @@ function repositoryStateText(state: RepositoryState): string {
   }
 }
 
-function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
-  const previous = event.preparation.previousSummary;
+function previousCompaction(event: SessionBeforeCompactEvent) {
   const entry = event.branchEntries.findLast((entry) => entry.type === "compaction");
-  return previous && entry?.type === "compaction" && entry.summary === previous ? checkpointText(entry) : previous;
+  return entry?.type === "compaction" && entry.summary === event.preparation.previousSummary ? entry : undefined;
+}
+
+function previousCheckpoint(event: SessionBeforeCompactEvent): string | undefined {
+  const entry = previousCompaction(event);
+  return entry ? checkpointText(entry) : event.preparation.previousSummary;
+}
+
+function fileOperationPointers(modifiedFiles: string[]): string {
+  if (!modifiedFiles.length) return "";
+  const view = {
+    modifiedFiles: [] as string[],
+    omittedFiles: modifiedFiles.length,
+    fullCapture: "Saved compaction entry details.modifiedFiles",
+  };
+  let text = JSON.stringify(view, null, 2);
+  for (const path of modifiedFiles) {
+    view.modifiedFiles.push(path);
+    view.omittedFiles--;
+    const next = JSON.stringify(view, null, 2);
+    if (next.length > 8192) break;
+    text = next;
+  }
+  return `\n\n## Recorded edit/write targets (caller-preserved)\n\nRecovery pointers from recorded tool-call arguments, including failed attempts. These do not establish successful edits, authorship, current working-copy state, or commit coverage.\n\n${text}`;
 }
 
 export default function lunaCompaction(pi: ExtensionAPI): void {
@@ -149,11 +171,17 @@ export default function lunaCompaction(pi: ExtensionAPI): void {
       }
       signal.throwIfAborted();
       const modified = new Set([...preparation.fileOps.edited, ...preparation.fileOps.written]);
+      // The SDK does not inherit file lists from hook-produced compactions.
+      // Carry only the matching active checkpoint's recorded targets, not status.
+      const inherited = (previousCompaction(event)?.details as { modifiedFiles?: unknown } | undefined)?.modifiedFiles;
+      if (Array.isArray(inherited)) {
+        for (const path of inherited) if (typeof path === "string") modified.add(path);
+      }
       const modifiedFiles = [...modified].sort();
       const readFiles = [...preparation.fileOps.read].filter((file) => !modified.has(file)).sort();
       return {
         compaction: {
-          summary: `${checkpoint}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${repositoryStateText(repositoryState)}`,
+          summary: `${checkpoint}${fileOperationPointers(modifiedFiles)}\n\n## Repository state (caller-captured after summary)\n\nAuthoritative for working-copy state at capture time only; later edits can invalidate it. This is not evidence of task completion.\n\n${repositoryStateText(repositoryState)}`,
           firstKeptEntryId: preparation.firstKeptEntryId,
           tokensBefore: preparation.tokensBefore,
           usage,

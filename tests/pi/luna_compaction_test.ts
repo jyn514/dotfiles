@@ -1,9 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { discoverAndLoadExtensions, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { buildContextEntries, discoverAndLoadExtensions, ModelRegistry, parseSessionEntries, sessionEntryToContextMessages, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "bun:test";
 import lunaCompaction, { COMPACTION_INSTRUCTIONS, COMPACTION_MODEL } from "../../config/pi-agent/pi-extensions/luna-compaction";
+import { listCuts, replayInput } from "../../dev/replay-compaction";
 
 const usage = { input: 12, output: 8, cacheRead: 0, cacheWrite: 0, totalTokens: 20, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const message = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: 1 });
@@ -62,6 +63,11 @@ function snapshot(summary: string) {
   return JSON.parse(summary.slice(summary.lastIndexOf("\n\n{") + 2));
 }
 
+function filePointers(summary: string) {
+  const end = summary.lastIndexOf("\n\n## Repository state");
+  return JSON.parse(summary.slice(summary.lastIndexOf("\n\n{", end) + 2, end));
+}
+
 describe("Luna compaction", () => {
   test("uses the moved instructions for one reconciled history and split-turn call, then captures status", async () => {
     const h = harness();
@@ -99,6 +105,138 @@ describe("Luna compaction", () => {
     expect(prompt).not.toContain("pending.py");
     expect(prompt).not.toContain("capturedAt");
     expect(h.requests[1].options.sessionId).not.toBe(h.requests[0].options.sessionId);
+  });
+
+  test("preserves edit/write recovery pointers even when prose and status omit them, without changing generation", async () => {
+    const control = harness();
+    await control.run();
+    const h = harness();
+    const paths = [
+      "tools/codex-sandbox/README.md",
+      "tools/codex-sandbox/spec/proxy-design.typ",
+      "tools/codex-sandbox/tests/repository_mounts_integration.py",
+    ];
+    for (const path of paths) h.event.preparation.fileOps.edited.add(path);
+    h.event.preparation.fileOps.written.add(paths[0]);
+    h.event.preparation.fileOps.read.add("read-only.py");
+    h.pi.exec = async () => ({ stdout: "M observed-not-edited.py", stderr: "", code: 0, killed: false });
+    const result = (await h.run()).compaction;
+    expect(h.requests[0].context.systemPrompt).toBe(control.requests[0].context.systemPrompt);
+    expect(h.requests[0].context.messages[0].content).toEqual(control.requests[0].context.messages[0].content);
+    expect(result.summary.slice(0, result.details.checkpointLength)).toBe(response().content[0].text);
+    for (const path of paths) expect(result.summary).toContain(JSON.stringify(path));
+    expect(filePointers(result.summary)).toEqual({
+      modifiedFiles: paths, omittedFiles: 0, fullCapture: "Saved compaction entry details.modifiedFiles",
+    });
+    expect(result.details.modifiedFiles).toEqual(paths);
+    expect(result.summary).toContain("including failed attempts");
+    expect(result.summary).toContain("do not establish successful edits, authorship, current working-copy state, or commit coverage");
+    expect(control.requests[0].context.messages[0].content[0].text).not.toContain(paths[0]);
+  });
+
+  test("all retention fixtures keep the replay generation payload unchanged while adding caller-only pointers", async () => {
+    const directory = new URL("./fixtures/compaction-replay/", import.meta.url);
+    let checked = 0;
+    for (const name of readdirSync(directory).filter(name => name.endsWith(".jsonl"))) {
+      const source = readFileSync(new URL(name, directory), "utf8");
+      const entries = parseSessionEntries(source).filter(entry => entry.type !== "session");
+      for (const cut of listCuts(source)) {
+        const { original, prompt } = replayInput(source, cut.id);
+        const context = buildContextEntries(entries, original.parentId);
+        const boundary = context.findIndex(entry => entry.id === original.firstKeptEntryId);
+        const previous = context[0]?.type === "compaction" ? context[0] : undefined;
+        const h = harness();
+        h.event.preparation.messagesToSummarize = context.slice(previous ? 1 : 0, boundary).flatMap(sessionEntryToContextMessages);
+        h.event.preparation.turnPrefixMessages = [];
+        h.event.preparation.previousSummary = previous?.summary;
+        h.event.branchEntries = context;
+        h.event.customInstructions = undefined;
+        h.event.preparation.fileOps.written.add("caller-only/recovery-pointer.ts");
+        const result = (await h.run()).compaction;
+        expect(h.requests[0].context.messages[0].content[0].text).toBe(prompt);
+        expect(h.requests[0].context.systemPrompt).toBe(readFileSync(COMPACTION_INSTRUCTIONS, "utf8"));
+        expect(filePointers(result.summary).modifiedFiles).toContain("caller-only/recovery-pointer.ts");
+        expect(result.summary.slice(0, result.details.checkpointLength)).toBe(response().content[0].text);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(9);
+  });
+
+  test("carries recorded targets through repeated hook compactions without feeding footers back to the model", async () => {
+    const h = harness();
+    const baseline = (await h.run()).compaction;
+    const control = harness();
+    expect(baseline.summary).not.toContain("Recorded edit/write targets");
+    const paths = ["--leading-option", 'quoted/"name".md', "line\nbreak.py", "λ/🐟.ts", "case.py", "CASE.py"];
+    // Seed 17; bounded generated path strings plus forced escaping/identity cases.
+    let seed = 17;
+    for (let i = 0; i < 24; i++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      paths.push(`generated/${seed.toString(16)}/${i}.md`);
+    }
+    const seen: string[] = [];
+    for (const [index, path] of paths.entries()) {
+      h.event.preparation.fileOps = { edited: new Set([path]), written: new Set([path]), read: new Set([path, "only-read.py"]) };
+      seen.push(path);
+      const result = (await h.run()).compaction;
+      expect(filePointers(result.summary).modifiedFiles).toHaveLength(seen.length);
+      for (const expected of seen) expect(filePointers(result.summary).modifiedFiles).toContain(expected);
+      expect(result.details.modifiedFiles).toHaveLength(seen.length);
+      expect(result.details.readFiles).toEqual(["only-read.py"]);
+      expect(result.summary.match(/## Recorded edit\/write targets/g)).toHaveLength(1);
+      const request = h.requests[index + 1].context.messages[0].content[0].text;
+      expect(request).not.toContain("caller-preserved");
+      expect(request).not.toContain("Saved compaction entry details.modifiedFiles");
+      const controlResult = (await control.run()).compaction;
+      expect(h.requests[index + 1].context.messages[0].content).toEqual(control.requests[index].context.messages[0].content);
+      control.event.preparation.previousSummary = controlResult.summary;
+      control.event.branchEntries = [{ type: "compaction", summary: controlResult.summary, details: controlResult.details, fromHook: true }];
+      h.event.preparation.previousSummary = result.summary;
+      h.event.branchEntries = [{ type: "compaction", summary: result.summary, details: result.details, fromHook: true }];
+    }
+    h.event.preparation.fileOps = { edited: new Set(), written: new Set(), read: new Set() };
+    const repeated = (await h.run()).compaction;
+    expect(filePointers(repeated.summary).modifiedFiles).toHaveLength(seen.length);
+    expect(repeated.details.modifiedFiles).toEqual(filePointers(repeated.summary).modifiedFiles);
+  });
+
+  test.each([true, false])("inherits only the active matching checkpoint's targets: match=%s", async (matching) => {
+    const h = harness();
+    h.event.branchEntries = [{ type: "compaction", summary: matching ? h.event.preparation.previousSummary : "another branch", details: { modifiedFiles: ["earlier.py", null, 42] } }];
+    h.event.preparation.fileOps.written.add("current.py");
+    const result = (await h.run()).compaction;
+    expect(filePointers(result.summary).modifiedFiles).toEqual(matching ? ["current.py", "earlier.py"] : ["current.py"]);
+  });
+
+  test.each([undefined, null, "not an array", { path: "not-a-list.py" }])("malformed legacy target metadata does not invent paths: %j", async (modifiedFiles) => {
+    const h = harness();
+    h.event.branchEntries = [{ type: "compaction", summary: h.event.preparation.previousSummary, details: { modifiedFiles } }];
+    const result = (await h.run()).compaction;
+    expect(result.details.modifiedFiles).toEqual([]);
+    expect(result.summary).not.toContain("Recorded edit/write targets");
+  });
+
+  test.each(["many", "oversized-first-path"])('bounds visible pointer JSON without splitting paths; keeps the full list across compactions: %s', async (mode) => {
+    const h = harness();
+    const paths = mode === "many"
+      ? Array.from({ length: 1500 }, (_, index) => `docs/${String(index).padStart(4, "0")}/\"quoted\"-λ.md`)
+      : ["a" + "\u0000".repeat(10000), "z/short.md"];
+    for (const path of paths) h.event.preparation.fileOps.edited.add(path);
+    for (let index = 0; index < 3; index++) {
+      const result = (await h.run()).compaction;
+      const visible = filePointers(result.summary);
+      const json = result.summary.slice(result.summary.indexOf("\n\n{") + 2, result.summary.indexOf("\n\n## Repository state"));
+      expect(json.length).toBeLessThanOrEqual(8192);
+      expect(visible.omittedFiles).toBe(paths.length - visible.modifiedFiles.length);
+      expect(visible.omittedFiles).toBeGreaterThan(0);
+      expect(visible.modifiedFiles).toEqual(paths.slice(0, visible.modifiedFiles.length));
+      expect(result.details.modifiedFiles).toEqual(paths);
+      expect(visible.fullCapture).toBe("Saved compaction entry details.modifiedFiles");
+      h.event.preparation.previousSummary = result.summary;
+      h.event.branchEntries = [{ type: "compaction", summary: result.summary, details: result.details, fromHook: true }];
+      h.event.preparation.fileOps = { edited: new Set(), written: new Set(), read: new Set() };
+    }
   });
 
   test("normal turns use the same instructions and preserve the retained boundary", async () => {
@@ -168,9 +306,11 @@ describe("Luna compaction", () => {
   ])("failed or killed status capture remains unknown without discarding a valid checkpoint: %j", async (status) => {
     const h = harness();
     h.pi.exec = async () => status;
+    h.event.preparation.fileOps.edited.add("recorded-before-status-failed.md");
     const result = (await h.run()).compaction;
     expect(result.summary).toContain(response().content[0].text);
     expect(snapshot(result.summary)).toMatchObject({ ...status, state: "unknown" });
+    expect(filePointers(result.summary).modifiedFiles).toEqual(["recorded-before-status-failed.md"]);
   });
 
   test("status launch exceptions become explicit unknown state", async () => {
@@ -251,7 +391,7 @@ describe("Luna compaction", () => {
     expect(h.notifications[0][0]).toContain("keeping session history");
   });
 
-  test("native loader resolves installed symlinks, executes status after generation, and rebuilds parent context", async () => {
+  test("native loader resolves installed symlinks, captures status, and preserves pointers through persisted context rebuilds", async () => {
     const root = mkdtempSync(join(tmpdir(), "pi compaction-"));
     const source = join(root, "checkout/config/pi-agent/pi-extensions/luna-compaction.ts");
     const policy = join(root, "checkout/config/pi-agent/pi-extensions/compaction.md");
@@ -278,6 +418,7 @@ describe("Luna compaction", () => {
       expect(callbacks).toHaveLength(1);
       const h = harness();
       h.ctx.cwd = project;
+      h.event.preparation.fileOps.edited.add("native docs/README.md");
       const complete = h.ctx.modelRegistry.complete;
       const stdout = "Working copy changes:\n" + "M pending.py\n".repeat(100000) + "Complete final status row\n";
       h.ctx.modelRegistry = new ModelRegistry({
@@ -290,7 +431,9 @@ describe("Luna compaction", () => {
           return complete(...args);
         },
       } as never);
-      const sessions = SessionManager.inMemory(project);
+      const sessions = SessionManager.create(project, join(root, "sessions"));
+      // Pi flushes a new session after its first assistant message.
+      sessions.appendMessage(response("Initial native fixture response") as never);
       sessions.appendMessage(message("Retained user message") as never);
       h.event.preparation.firstKeptEntryId = sessions.getLeafId();
       const result = (await callbacks[0](h.event, h.ctx) as any).compaction;
@@ -303,19 +446,27 @@ describe("Luna compaction", () => {
       expect(captured.stdout).toEndWith("Complete final status row\n");
       expect(result.summary.length).toBeLessThan(10000);
       sessions.appendCompaction(result.summary, result.firstKeptEntryId, result.tokensBefore, result.details, true, result.usage);
-      const saved = sessions.getEntries().find(entry => entry.type === "compaction");
+      const restored = SessionManager.open(sessions.getSessionFile()!);
+      const saved = restored.getEntries().find(entry => entry.type === "compaction");
       expect((saved?.details as any).repositoryState.stdout === stdout).toBe(true);
-      const parent = sessions.buildSessionContext().messages.find((message) => message.role === "compactionSummary");
+      const parent = restored.buildSessionContext().messages.find((message) => message.role === "compactionSummary");
       expect(parent).toMatchObject({ summary: result.summary });
+      expect(filePointers((parent as any).summary).modifiedFiles).toEqual(["native docs/README.md"]);
       expect(JSON.stringify(parent).length).toBeLessThan(11000);
-      expect(sessions.buildSessionContext().messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "Retained user message" }] });
+      expect(restored.buildSessionContext().messages.at(-1)).toMatchObject({ role: "user", content: [{ type: "text", text: "Retained user message" }] });
 
       writeFileSync(policy, "Changed authoritative compaction instructions.\n");
       h.event.preparation.previousSummary = result.summary;
-      h.event.branchEntries = sessions.getBranch();
-      await callbacks[0](h.event, h.ctx);
+      h.event.branchEntries = restored.getBranch();
+      h.event.preparation.fileOps = { edited: new Set(), written: new Set(), read: new Set() };
+      const second = (await callbacks[0](h.event, h.ctx) as any).compaction;
       expect(h.requests[1].context.systemPrompt).toBe(readFileSync(policy, "utf8"));
       expect(h.requests[1].context.messages[0].content[0].text).not.toContain("Complete final status row");
+      expect(h.requests[1].context.messages[0].content[0].text).not.toContain("native docs/README.md");
+      restored.appendCompaction(second.summary, second.firstKeptEntryId, second.tokensBefore, second.details, true, second.usage);
+      const reopened = SessionManager.open(restored.getSessionFile()!);
+      const resumed = reopened.buildSessionContext().messages.find(message => message.role === "compactionSummary");
+      expect(filePointers((resumed as any).summary).modifiedFiles).toEqual(["native docs/README.md"]);
     } finally {
       if (oldPath === undefined) delete process.env.PATH;
       else process.env.PATH = oldPath;
