@@ -8,6 +8,7 @@ import signal
 import struct
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from unittest import mock
@@ -69,7 +70,81 @@ class BridgeTest(unittest.TestCase):
         while part := connection.recv(16384):
             data.extend(part)
         self.assertEqual(struct.unpack('>I', data[:4])[0], len(data) - 4)
-        return json.loads(data[4:])
+        response = json.loads(data[4:])
+        # Socket EOF can precede the handler thread's return. These sequential
+        # fixture requests must not race the bridge's explicit excess-connection
+        # rejection, which remains covered separately below.
+        worker = self.bridge.worker
+        self.assertIsNotNone(worker)
+        worker.join(timeout=3)
+        self.assertFalse(worker.is_alive(), 'completed request worker did not exit')
+        return response
+
+    def test_response_waits_for_worker_exit_after_native_handler_closes_socket(self):
+        native_handle = self.bridge._handle
+        handler_closed = threading.Event()
+        release_worker = threading.Event()
+        eof_observed = threading.Event()
+        response_done = threading.Event()
+        outcome = {}
+
+        def hold_after_close(connection):
+            native_handle(connection)
+            handler_closed.set()
+            # Model the scheduling window after native socket closure but
+            # before request-thread exit makes admission available again.
+            release_worker.wait(6)
+
+        def read_response(connection):
+            try:
+                outcome['response'] = self.response(connection)
+            except BaseException as error:
+                outcome['error'] = error
+            finally:
+                response_done.set()
+
+        self.mode = 'deny-first'
+        reader = None
+        try:
+            with mock.patch.object(self.bridge, '_handle', side_effect=hold_after_close):
+                connection = self.connect()
+                connection.sendall(frame(self.request()))
+                self.assertTrue(handler_closed.wait(3), 'native handler did not close socket')
+                worker = self.bridge.worker
+                self.assertTrue(worker.is_alive())
+
+                def receive(size):
+                    part = connection.recv(size)
+                    if not part:
+                        eof_observed.set()
+                    return part
+
+                observed = mock.Mock(wraps=connection)
+                observed.recv.side_effect = receive
+                reader = threading.Thread(target=read_response, args=(observed,))
+                reader.start()
+                self.assertTrue(eof_observed.wait(3), 'response reader did not observe native EOF')
+                self.assertFalse(response_done.wait(.1),
+                                 'response helper completed while the request worker was still held')
+                release_worker.set()
+                reader.join(timeout=3)
+                self.assertFalse(reader.is_alive())
+            if 'error' in outcome:
+                raise outcome['error']
+            self.assertEqual(outcome['response'], {'version': 1, 'status': 'unavailable'})
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(self.accounts, ['access-key'])
+            self.mode = 'ok'
+            second = self.connect()
+            second.sendall(frame(self.request()))
+            self.assertEqual(self.response(second), {
+                'version': 1, 'status': 'ok', 'access_key': 'canary-access-key',
+                'secret_key': 'canary-secret-key'})
+            self.assertEqual(self.accounts, ['access-key', 'access-key', 'secret-key'])
+        finally:
+            release_worker.set()
+            if reader is not None:
+                reader.join(timeout=3)
 
     def test_success_returns_pair_in_order_and_closes(self):
         connection = self.connect()
