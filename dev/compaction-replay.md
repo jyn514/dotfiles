@@ -47,6 +47,11 @@ They also compare accepted evidence versus newer experiments.
 Their checklists require human comparison against recorded source turns, not a score for prose quality.
 The saved historical summary is not an oracle for what the source authorized.
 
+Evaluate the summary together with retained messages and recovery pointers.
+Judge omissions by their effect on continuation, not by how much history the summary retains.
+Before calling an omission a regression, identify the concrete wrong belief, lost obligation, or incorrect next action it would cause.
+Omitting completed work or commit details is not itself a failure.
+
 Before using replay results to tune instructions, compare `input.txt` with the raw session history at the recorded cut.
 The current SDK's compaction `utils.ts` serializer keeps only the first 2000 characters of each tool result, then adds a truncation marker.
 It does not retain the tail; an authority clause or worker result later in a long tool output may never reach the replay model.
