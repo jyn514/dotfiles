@@ -42,6 +42,20 @@ if name == 'mosh' and os.environ.get('NATIVE_MOSH'):
         '--ssh=' + str(directory / 'native-ssh'),
         '--client=' + str(directory / 'native-client'), *sys.argv[1:]]).returncode)
 
+# Record descriptor ownership before opening fixture files: FD 3 is the
+# wrapper's saved stdin, and must not survive into either child's process.
+try:
+    os.fstat(3)
+    saved_stdin_open = True
+except OSError:
+    saved_stdin_open = False
+stdin = os.fstat(0)
+null = os.stat(os.devnull)
+(directory / f'{name}-descriptors').write_text(json.dumps({
+    'saved_stdin_open': saved_stdin_open,
+    'stdin_is_devnull': (stdin.st_dev, stdin.st_ino) == (null.st_dev, null.st_ino),
+}))
+
 child = None
 
 

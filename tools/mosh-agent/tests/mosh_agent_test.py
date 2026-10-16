@@ -51,6 +51,11 @@ class MoshAgentTest(unittest.TestCase):
         result = self.run_wrapper('devbox')
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, 'terminal input\n')
+        for name in ('autossh', 'ssh', 'mosh'):
+            with self.subTest(child=name):
+                descriptors = json.loads((self.directory / f'{name}-descriptors').read_text())
+                self.assertFalse(descriptors['saved_stdin_open'])
+                self.assertEqual(name != 'mosh', descriptors['stdin_is_devnull'])
         arguments = next(event[3] for event in self.events() if event[:2] == ['autossh', 'started'])
         remote_socket, local_socket = arguments[arguments.index('-R') + 1].split(':', 1)
         self.assertEqual(Path(remote_socket).parent, self.directory / 'remote home/.ssh')

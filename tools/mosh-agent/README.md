@@ -55,6 +55,7 @@ SSH multiplexing is disabled for this connection so its lifetime belongs to the 
 SSH runs without a remote command and uses batch authentication, a connection timeout, and keepalive checks.
 Autossh retries initial failures and restarts SSH after disconnects.
 The wrapper then runs mosh with its ordinary terminal input and output.
+Only mosh inherits terminal input; autossh and SSH read from `/dev/null`.
 Mosh's `--server` command invokes `env SSH_AUTH_SOCK=... mosh-server`, expanding the same path remotely without writing configuration.
 On normal exit or HUP, INT, or TERM, it stops and waits for autossh, which stops its SSH child.
 It preserves mosh's exit status, or the conventional signal exit status.

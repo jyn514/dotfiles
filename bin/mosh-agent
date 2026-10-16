@@ -38,7 +38,7 @@ esac
 
 tunnel_pid=
 mosh_pid=
-# shellcheck disable=SC2329 # Invoked by the EXIT trap.
+# shellcheck disable=SC2317,SC2329 # Invoked by the EXIT trap.
 cleanup() {
 	result=$?
 	trap - EXIT HUP INT TERM
@@ -54,16 +54,20 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# Noninteractive shells reset asynchronous stdin before applying redirections.
+# Save it before either child starts, and close the extra descriptor in each.
+exec 3<&0
 # Own a separate SSH process; autossh terminates it when its supervisor stops.
 AUTOSSH_GATETIME=0 autossh -M 0 -N -T \
 	-o BatchMode=yes -o ControlMaster=no -o ControlPath=none \
 	-o ExitOnForwardFailure=yes -o ConnectTimeout=10 \
 	-o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
-	-R "$remote_socket:$SSH_AUTH_SOCK" "$host" </dev/null &
+	-R "$remote_socket:$SSH_AUTH_SOCK" "$host" </dev/null 3<&- &
 tunnel_pid=$!
 # Explicit stdin preserves the terminal; wait lets shell traps run immediately.
-mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$@" <&0 &
+mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$@" <&3 3<&- &
 mosh_pid=$!
+exec 3<&-
 result=0
 wait "$mosh_pid" || result=$?
 mosh_pid=
