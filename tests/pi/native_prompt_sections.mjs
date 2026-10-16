@@ -476,9 +476,13 @@ test("native prompt expands shared instructions but reads task evidence only exp
   const client = await readFile(instructionsPath, "utf8");
   const shared = await readFile(join(home, ".agents/shared.md"), "utf8");
   const routes = [...shared.matchAll(/\[Change with evidence\]\(([^)]+)\)/g)];
-  assert.equal(routes.length, 1);
-  assert.equal(routes[0][1], "~/.agents/skills/references/change-with-evidence.md");
-  const referencePath = join(home, routes[0][1].slice(2));
+  const referenceTargets = new Set(routes.map(([, route]) => {
+    assert.ok(route.startsWith("~/"), "task references address the installed HOME");
+    return fileURLToPath(new URL(route.slice(2), pathToFileURL(`${home}/`)));
+  }));
+  assert.equal(referenceTargets.size, 1, "repeated and fragment links use one installed authority");
+  const [referencePath] = referenceTargets;
+  assert.ok(referencePath.startsWith(`${skillsPath}/`), "task reference uses the whole-directory skills installation");
   const reference = await readFile(referencePath, "utf8");
   assert.ok(!reference.startsWith("---"), "plain Markdown reference has no skill frontmatter");
   const referenceParagraphs = reference.trim().split(/\n\s*\n/)
@@ -527,7 +531,7 @@ test("native prompt expands shared instructions but reads task evidence only exp
   const prepared = systems(requests[0]).map(getSystemMessageText).join("\n");
   assert.ok(prepared.includes(client.trim()), "native prompt retains the actual client route");
   assert.ok(prepared.includes(shared.trim()), "native prompt expands the authoritative shared rules");
-  assert.ok(prepared.includes(routes[0][0]), "the task reference remains a Markdown route");
+  assert.ok(routes.every(([link]) => prepared.includes(link)), "task references remain Markdown routes");
   for (const paragraph of referenceParagraphs) {
     assert.ok(!prepared.includes(paragraph), "task reference body must not enter the startup prompt");
   }
