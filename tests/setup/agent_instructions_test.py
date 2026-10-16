@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from urllib.parse import urldefrag
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,10 +69,12 @@ class AgentInstructionTests(unittest.TestCase):
 
     def routed_reference(self) -> Path:
         shared = self.installed(SHARED).read_text()
-        routes = re.findall(r"\[Change with evidence\]\(([^)]+)\)", shared)
-        self.assertEqual(1, len(routes), "shared instructions must route to the task reference once")
-        self.assertTrue(routes[0].startswith("~/"), "route must address the installed HOME")
-        return self.home / routes[0][2:]
+        routes = {urldefrag(route)[0] for route in
+                  re.findall(r"\[Change with evidence\]\(([^)]+)\)", shared)}
+        self.assertEqual(1, len(routes), "reference routes must use one installed authority")
+        route = next(iter(routes))
+        self.assertTrue(route.startswith("~/"), "route must address the installed HOME")
+        return self.home / route[2:]
 
     def test_manifest_installs_shared_and_whole_skills_and_reference_route_resolves(self) -> None:
         self.install()
