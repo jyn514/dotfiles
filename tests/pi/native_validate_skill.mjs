@@ -16,7 +16,7 @@ const manifest = JSON.parse(await readFile(join(packageDir, "package.json"), "ut
 assert.equal(manifest.name, "@earendil-works/pi-coding-agent");
 assert.equal(typeof manifest.exports?.["."]?.import, "string");
 const sdkUrl = pathToFileURL(resolve(packageDir, manifest.exports["."].import)).href;
-const { discoverAndLoadExtensions, getAgentDir, loadSkills } = await import(sdkUrl);
+const { discoverAndLoadExtensions, getAgentDir, loadSkills, SessionManager } = await import(sdkUrl);
 const extension = join(root, "config/pi-agent/pi-extensions/validate-skill.ts");
 const connector = join(root, "tools/codex-sandbox/tests/fixtures/local-tool-connect.py");
 
@@ -56,7 +56,9 @@ async function loadTool(cwd) {
 }
 
 async function check(tool, cwd, path, signal) {
-  const result = await tool.execute("validation-test", { path }, signal, undefined, { cwd });
+  const result = await tool.execute("validation-test", { path }, signal, undefined, {
+    cwd, sessionManager: SessionManager.inMemory(cwd),
+  });
   assert.deepEqual(JSON.parse(result.content[0].text), JSON.parse(JSON.stringify(result.details)));
   return result.details;
 }
