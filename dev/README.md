@@ -92,8 +92,8 @@ Native integration cases also use SQLite's `sqlite3` command, Java, `xdg-mime`, 
 individual suites report unavailable optional tools as skips.
 If a sandbox provides transport wrappers instead of offline executables, select installed native binaries with
 `DOTFILES_TEST_JAVA_REAL` and `DOTFILES_TEST_CODEX_REAL`.
-Set `PI_PACKAGE_DIR` explicitly for installed-Pi tests when the SDK is not under the original HOME;
-the locked checkout package is `node_modules/@earendil-works/pi-coding-agent`.
+Set `PI_PACKAGE_DIR` to the installed Pi SDK directory when it is not under the original HOME.
+Installed-Pi tests need that build's APIs, not the older locked unit-test SDK in `node_modules/`.
 
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
 It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
