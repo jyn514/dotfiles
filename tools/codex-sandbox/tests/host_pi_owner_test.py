@@ -327,8 +327,10 @@ class ProcessAndTmuxTest(unittest.TestCase):
         tool = Path(__file__).resolve().parents[1]
         launcher = runpy.run_path(str(tool / "codex-sandbox"))
         (Path(os.environ["HOME"]) / "src").mkdir(exist_ok=True)
+        # Keep Jujutsu's initial config discovery in the disposable repository,
+        # not the sandbox's protected source working copy.
         subprocess.run(["jj", "git", "init", "--colocate", str(self.root)],
-                       check=True, capture_output=True)
+                       cwd=self.root, check=True, capture_output=True)
         proxies = launcher["proxy_module"]()
         proxies.use_repository_metadata(self.root, (self.root / ".git", self.root / ".git"))
         runtime = proxies.runtime_directory(self.root)

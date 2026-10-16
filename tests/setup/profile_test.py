@@ -29,7 +29,7 @@ class ProfileContractTests(unittest.TestCase):
                     env=environment, text=True, capture_output=True, timeout=10,
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
-                return subprocess.run([*command, "list-keys", "-F", "#{key_command}"],
+                return subprocess.run([*command, "list-keys"],
                                       env=environment, text=True, capture_output=True,
                                       check=True, timeout=10).stdout
             finally:
@@ -860,7 +860,7 @@ class ProfileContractTests(unittest.TestCase):
         ).stdout.strip()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            subprocess.run(["jj", "git", "init", str(root)], check=True, capture_output=True)
+            subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
             spy = root / "git"
             spy.symlink_to(ROOT / "tests/setup/fixtures/record_git.py")
             calls = root / "calls.jsonl"

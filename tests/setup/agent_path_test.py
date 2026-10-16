@@ -12,7 +12,7 @@ WRAPPERS = ROOT / 'libexec/agent-wrappers'
 
 
 class AgentPathTests(unittest.TestCase):
-    def test_login_shells_preserve_inherited_wrappers_after_mise(self):
+    def test_shell_profiles_preserve_inherited_wrappers_after_mise(self):
         for shell in ('bash', 'zsh', 'fish'):
             executable = shutil.which(shell)
             if executable is None:
@@ -39,7 +39,14 @@ class AgentPathTests(unittest.TestCase):
                         TMUX='', TMUX_PANE='', KITTY_INSTALLATION_DIR='', FISH_UNIT_TESTS_RUNNING='1')
                     for name in ('MISE_SHELL', '__MISE_DIFF', '__MISE_SESSION', '__MISE_ORIG_PATH'):
                         environment.pop(name, None)
-                    result = subprocess.run([executable, '-lc', 'command -v jj'],
+                    # Load the real user profile without /etc/profile replacing
+                    # the inherited fixture PATH before the profile sees it.
+                    if shell == 'fish':
+                        command = [executable, '-lc', 'command -v jj']
+                    else:
+                        command = [executable, str(ROOT / 'tests/setup/fixtures/profile_command.sh'),
+                                   'command -v jj']
+                    result = subprocess.run(command,
                         env=environment, cwd=home, text=True, capture_output=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     expected = WRAPPERS / 'jj' if agent else tools / 'jj'

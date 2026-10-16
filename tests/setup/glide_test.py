@@ -97,10 +97,29 @@ class GlideTests(unittest.TestCase):
         config = self.config / "mimeapps.list"
         config.parent.mkdir(parents=True)
         config.write_text("[Default Applications]\ntext/html=glide-browser-bin.desktop\n")
-        result = subprocess.run(["xdg-mime", "query", "default", "text/html"],
-                                env=os.environ, text=True, capture_output=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("glide-browser-bin.desktop", result.stdout.strip())
+        # xdg-mime checks that Exec names an installed executable. Keep the
+        # package-path assertions above, but query a disposable copy so this
+        # regression does not require Glide installed in /usr/bin. This path
+        # has no spaces: the malformed quoting under test is the basename's.
+        with tempfile.TemporaryDirectory(prefix="glide-xdg-") as temporary:
+            data = Path(temporary)
+            executable = data / "glide-bin"
+            executable.symlink_to(shutil.which("true"))
+            query_desktop = data / "applications" / desktop.name
+            query_desktop.parent.mkdir()
+            subprocess.run(["cp", str(desktop), str(query_desktop)], check=True)
+            subprocess.run(["cmp", str(desktop), str(query_desktop)], check=True)
+            repaired = query_desktop.read_text().replace("/usr/bin/glide-bin", str(executable))
+            environment = dict(os.environ, XDG_DATA_HOME=str(data),
+                               XDG_CURRENT_DESKTOP="X-Generic")
+            for command, expected in ((f'{data}/"glide-bin"', ""),
+                                      (str(executable), desktop.name)):
+                with self.subTest(command=command):
+                    query_desktop.write_text(repaired.replace(str(executable), command))
+                    result = subprocess.run(["xdg-mime", "query", "default", "text/html"],
+                                            env=environment, text=True, capture_output=True)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(expected, result.stdout.strip())
         # A package update must replace the overlay's old arguments too.
         native.write_text(content.replace('Exec=/usr/bin/"glide-bin" %u', 'Exec=/usr/bin/glide-bin --new-window %u'))
         with mock.patch.object(mimetypes, "command_exists", side_effect=lambda name: name == "glide-bin"):

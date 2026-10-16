@@ -193,7 +193,8 @@ class KeybindingTests(unittest.TestCase):
         second = self.tmux("new-window", "-d", "-P", "-F", "#{window_id}", "sleep 90")
         third = self.tmux("new-window", "-d", "-P", "-F", "#{window_id}", "sleep 90")
         self.tmux("new-session", "-d", "-s", "other-session", "sleep 90")
-        for window in (second, third, first, second):
+        # Alt-W follows descending window order, wrapping from first to last.
+        for window in (third, second, first, third):
             self.press("C-k", "M-w")
             self.wait_for(lambda: self.value("#{window_id}") == window)
             self.assertEqual(self.value("#{pane_id}"), moving)

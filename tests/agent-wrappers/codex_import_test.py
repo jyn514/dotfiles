@@ -102,7 +102,9 @@ class CodexImportTests(unittest.TestCase):
             entry for entry in os.environ["PATH"].split(os.pathsep)
             if Path(entry).resolve() != (ROOT / "bin").resolve()
         )
-        real_codex = shutil.which("codex", path=real_path)
+        # The sandbox's PATH command is an authenticated transport wrapper,
+        # not the offline CLI this schema/import compatibility check needs.
+        real_codex = os.environ.get("DOTFILES_TEST_CODEX_REAL") or shutil.which("codex", path=real_path)
         if real_codex is None:
             self.skipTest("Codex CLI is not installed")
         (self.fake_bin / "codex").unlink()

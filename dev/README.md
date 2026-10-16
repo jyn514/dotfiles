@@ -87,6 +87,14 @@ npm ci --prefix tools/pi-link --ignore-scripts --no-audit --no-fund
 The second command installs the local pi-link fork's locked WebSocket dependency for its native regression tests.
 This makes tests and replays use the locked Pi SDK instead of Bun's auto-installed or cached version.
 
+Install the Python runtime requirements in `install/python.txt` in the same environment as pytest.
+Native integration cases also use SQLite's `sqlite3` command, Java, `xdg-mime`, Codex, mosh, and restic;
+individual suites report unavailable optional tools as skips.
+If a sandbox provides transport wrappers instead of offline executables, select installed native binaries with
+`DOTFILES_TEST_JAVA_REAL` and `DOTFILES_TEST_CODEX_REAL`.
+Set `PI_PACKAGE_DIR` explicitly for installed-Pi tests when the SDK is not under the original HOME;
+the locked checkout package is `node_modules/@earendil-works/pi-coding-agent`.
+
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
 It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.

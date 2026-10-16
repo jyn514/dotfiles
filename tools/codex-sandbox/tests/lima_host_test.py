@@ -43,10 +43,34 @@ class LimaPidNamespaceTests(unittest.TestCase):
             "unshare", "--user", "--map-root-user", "--pid", "--fork",
             sys.executable, str(fixture), str(os.getpid()),
         ], capture_output=True, text=True, timeout=10)
-        if "unshare failed: Operation not permitted" in result.stderr:
-            self.skipTest("unprivileged PID namespaces are unavailable")
+        # util-linux and BusyBox report the same denied namespace operation
+        # differently. Only skip an unshare diagnostic, never a fixture failure.
+        if result.returncode and result.stderr.startswith("unshare: ") and \
+                "Operation not permitted" in result.stderr:
+            self.skipTest("unprivileged PID namespaces are unavailable: " + result.stderr.strip())
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("live parent hidden; Lima rejected before execution", result.stdout)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux PID namespaces required")
+    def test_namespace_permission_diagnostics_skip_but_fixture_failures_do_not(self):
+        probe = self.test_live_parent_hidden_in_child_namespace_rejects_before_lima
+        with patch.object(host.shutil, "which", return_value="/usr/bin/unshare"):
+            for diagnostic in (
+                    "unshare: unshare failed: Operation not permitted\n",
+                    "unshare: unshare(0x30000000): Operation not permitted\n"):
+                with self.subTest(diagnostic=diagnostic), \
+                        patch.object(subprocess, "run", return_value=SimpleNamespace(
+                            returncode=1, stderr=diagnostic, stdout="")), \
+                        self.assertRaisesRegex(unittest.SkipTest, "PID namespaces are unavailable"):
+                    probe()
+            for diagnostic in (
+                    "AssertionError: fixture: Operation not permitted\n",
+                    "unshare: invalid option\n"):
+                with self.subTest(diagnostic=diagnostic), \
+                        patch.object(subprocess, "run", return_value=SimpleNamespace(
+                            returncode=1, stderr=diagnostic, stdout="")), \
+                        self.assertRaises(AssertionError):
+                    probe()
 
     def test_nested_namespace_rejects_every_lima_command_before_execution(self):
         with patch.object(host.sys, "platform", "linux"), \

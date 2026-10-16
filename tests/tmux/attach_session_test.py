@@ -76,6 +76,10 @@ class SourceTests(unittest.TestCase):
 @unittest.skipUnless(NATIVE, "tmux is required")
 class AttachmentTests(unittest.TestCase):
     def setUp(self):
+        # tmux replaces tab separators with underscores in its non-UTF-8
+        # output mode. Apply the locale to subprocesses launched both here and
+        # by attachment.Tmux during the in-process failure-injection tests.
+        self.enterContext(mock.patch.dict(os.environ, {"LC_ALL": "C.UTF-8"}))
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)

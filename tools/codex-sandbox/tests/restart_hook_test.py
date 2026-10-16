@@ -34,8 +34,9 @@ class RestartHookTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="pi-restart-hook-") as directory:
             root = Path(directory)
             project = root / "project"
+            # Avoid config discovery in the sandbox's protected source working copy.
             subprocess.run(["jj", "git", "init", "--colocate", str(project)],
-                           check=True, capture_output=True)
+                           cwd=root, check=True, capture_output=True)
             home = root / "home"
             home.mkdir()
             (home / "src").mkdir()
@@ -44,7 +45,11 @@ class RestartHookTest(unittest.TestCase):
                 "id": str(uuid.uuid4()), "timestamp": "2026-10-09T00:00:00.000Z",
                 "cwd": str(project)}) + "\n")
             original = saved.read_bytes()
-            environment = {**os.environ, "HOME": str(home), "PI_CODING_AGENT_DIR": str(home / ".pi/agent"),
+            # tmux's non-UTF-8 output mode replaces the resurrect snapshot's
+            # tab separators with underscores. Keep this fixture's server and
+            # save-hook subprocesses in UTF-8 mode regardless of caller locale.
+            environment = {**os.environ, "LC_ALL": "C.UTF-8",
+                "HOME": str(home), "PI_CODING_AGENT_DIR": str(home / ".pi/agent"),
                 "XDG_CONFIG_HOME": str(home / ".config"), "XDG_DATA_HOME": str(home / ".local/share"),
                 "XDG_CACHE_HOME": str(home / ".cache"), "PI_OFFLINE": "1", "TERM": "xterm-256color"}
             environment.pop("TMUX", None)
