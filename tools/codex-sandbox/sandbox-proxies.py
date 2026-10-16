@@ -434,8 +434,10 @@ def git_metadata_paths(repo: Path) -> tuple[Path, Path]:
     if not (repo / ".git").exists():
         try:
             backing = subprocess.run(
-                ["jj", "--ignore-working-copy", "-R", str(repo), "git", "root"],
-                check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                ["jj", "--ignore-working-copy", "git", "root"],
+                # Jujutsu reads secure config in cwd even with -R; the caller's
+                # repository may be unrelated or have protected metadata.
+                cwd=repo, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
             backing_path_text = backing.stdout.strip()
             backing_path = Path(backing_path_text)

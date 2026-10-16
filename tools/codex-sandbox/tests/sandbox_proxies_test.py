@@ -520,7 +520,7 @@ class ManifestTest(unittest.TestCase):
         repo = Path(self.temporary.name + "-noncolocated")
         self.addCleanup(shutil.rmtree, repo, True)
         subprocess.run(["jj", "git", "init", "--no-colocate", str(repo)],
-                       check=True, capture_output=True, text=True)
+                       cwd=self.repo, check=True, capture_output=True, text=True)
         sandbox = repo / ".agents" / "sandbox"
         sandbox.mkdir(parents=True)
         declaration = {"builtin": "git", "proxy": "read-write", "agent": "read-only"}
@@ -565,11 +565,11 @@ class ManifestTest(unittest.TestCase):
         main = self.repo / "main"
         workspace = main / ".workspaces" / "other"
         subprocess.run(["jj", "git", "init", "--colocate", str(main)],
-                       check=True, capture_output=True, text=True)
+                       cwd=self.repo, check=True, capture_output=True, text=True)
         workspace.parent.mkdir()
         result = subprocess.run(
             ["jj", "-R", str(main), "workspace", "add", "--no-colocate", str(workspace)],
-            capture_output=True, text=True,
+            cwd=main, capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, result.stderr)
         command = self.command(mounts=[{
