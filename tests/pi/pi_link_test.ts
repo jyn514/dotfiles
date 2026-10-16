@@ -7,8 +7,12 @@ import { fileURLToPath } from "node:url";
 // model providers, and an ephemeral socket port (never the shared :9900 link).
 test("pi-link native loader/session/WebSocket reply regressions", () => {
   const fixture = fileURLToPath(new URL("./fixtures/pi-link/native.mjs", import.meta.url));
+  const environment = { ...process.env };
+  // This fixture imports the locked npm SDK, so it must also use that SDK's
+  // bundled assets rather than themes from the separately installed Pi build.
+  delete environment.PI_PACKAGE_DIR;
   const result = spawnSync("node", ["--test", "--test-reporter=tap", fixture], {
-    encoding: "utf8", timeout: 90_000, env: process.env,
+    encoding: "utf8", timeout: 90_000, env: environment,
   });
   if (result.status !== 0) {
     throw new Error(`Native pi-link regression fixture failed (${result.status}):\n${result.stdout}\n${result.stderr}\n${result.error ?? ""}`);
