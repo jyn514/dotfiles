@@ -32,12 +32,14 @@ def mise_tool_path(tool: str, environment: dict[str, str]) -> str:
 
 def main(arguments: list[str]) -> int:
     environment = dict(os.environ)
-    for tool in ("BB", "JAVA", "JJ", "RG"):
-        key = f"DOTFILES_TEST_{tool}_REAL"
-        environment[key] = (
-            environment.get(key) or environment.get(f"{tool}_REAL")
+    real_tools = {
+        tool.lower(): (
+            environment.get(f"DOTFILES_TEST_{tool}_REAL") or environment.get(f"{tool}_REAL")
             or mise_tool_path(tool.lower(), environment)
         )
+        for tool in ("BB", "JAVA", "JJ", "RG")
+    }
+    environment.update({f"DOTFILES_TEST_{tool.upper()}_REAL": real for tool, real in real_tools.items()})
     key = "DOTFILES_TEST_SANDBOX_PROXY_DIR"
     environment[key] = environment.get(key) or environment.get("SANDBOX_PROXY_DIR", "")
 
@@ -61,11 +63,6 @@ def main(arguments: list[str]) -> int:
         else:
             environment.pop("DOTFILES_TEST_NVIM_PLUGINS", None)
 
-    # Prefer private binaries over sandbox wrappers, retaining nested-call values.
-    for tool in ("BB", "JAVA", "JJ", "RG"):
-        real = environment[f"DOTFILES_TEST_{tool}_REAL"]
-        if "/" in real:
-            environment["PATH"] = str(Path(real).parent) + os.pathsep + environment.get("PATH", os.defpath)
     for key in (
         "BB_REAL", "BB_SOURCE_ROOT", "JAVA_REAL", "JJ_REAL", "RG_REAL",
         "CLAUDECODE", "CODEX_THREAD_ID", "JJ_AGENT", "JJ_CONFIG", "PI_CODING_AGENT",
@@ -99,6 +96,14 @@ def main(arguments: list[str]) -> int:
     with tempfile.TemporaryDirectory(prefix="dotfiles-test-home-") as directory:
         home = Path(directory)
         environment["HOME"] = directory
+        # Override command names, not their installation directories: siblings
+        # such as Docker must retain their original PATH selection.
+        tool_directory = home / ".test-tools"
+        tool_directory.mkdir(mode=0o700)
+        for tool, real in real_tools.items():
+            if "/" in real:
+                (tool_directory / tool).symlink_to(os.path.abspath(real))
+        environment["PATH"] = str(tool_directory) + os.pathsep + environment.get("PATH", os.defpath)
         # HotSpot reads _JAVA_OPTIONS after other option sources. Retain caller
         # options but make the private home win over inherited home properties.
         environment["_JAVA_OPTIONS"] = (

@@ -54,6 +54,15 @@ def main():
             (directory / "probe-write").write_bytes(b"isolated child state\x00\xff")
         emit(value)
         return int(sys.argv[2])
+    if mode == "commands":
+        if extra_path := os.environ.get("FIXTURE_COMMAND_PATH"):
+            os.environ["PATH"] = extra_path + os.pathsep + os.environ["PATH"]
+        value["commands"] = {
+            name: json.loads(subprocess.check_output([name], text=True))
+            for name in sys.argv[2:]
+        }
+        emit(value)
+        return 0
     if mode == "cargo-cache":
         cargo = Path(os.environ["CARGO_HOME"])
         marker = cargo / "registry/cache/probe"
@@ -89,7 +98,7 @@ def main():
     if mode == "nested":
         wrapper = sys.argv[2]
         nested = subprocess.run(
-            [wrapper, sys.executable, __file__, "write", "0"],
+            [wrapper, sys.executable, __file__, *(sys.argv[3:] or ["write", "0"])],
             env=dict(os.environ, BB_REAL="/replacement/bb"),
             text=True,
             capture_output=True,

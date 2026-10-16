@@ -20,13 +20,17 @@ docker_host = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(docker_host)
 
 
-@unittest.skipUnless(shutil.which('docker'), 'requires the Docker CLI')
+# Local context operations need the native client, not the sandbox SSH transport.
+DOCKER = shutil.which('docker', path=os.environ.get('CONTAINER_CLI_REAL_DIR'))
+
+
+@unittest.skipUnless(DOCKER, 'requires the native Docker CLI')
 class DockerContextTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
-        self.client = shutil.which('docker')
+        self.client = DOCKER
         self.record = {'client': self.client, 'instance': 'fixture',
                        'socket': str(self.directory / 'first socket.sock')}
         self.host = mock.Mock()

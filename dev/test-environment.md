@@ -23,21 +23,22 @@ An unusable cache directory fails before the child starts; the wrapper does not 
 Cargo's build-output location is unchanged.
 
 For `bb`, `java`, `jj`, and `rg`, the wrapper preserves explicit real-tool overrides or resolves mise shims before changing HOME.
-Failed resolution stops the run before a child starts.
+`DOTFILES_TEST_<TOOL>_REAL` takes precedence over `<TOOL>_REAL`.
+The selected paths supply both the exported test overrides and temporary command symlinks under the private HOME.
+Only those command names change; sibling executables in their installation directories do not enter PATH.
+Children inherit the selections, can prepend their own fakes, and lose the temporary symlinks when HOME is cleaned up.
+Failed mise resolution stops the run before a child starts.
 Repository-local exclusions keep dependencies, notes, test caches, and editor sessions untracked even when private HOME hides global ignore rules.
 The wrapper sets `FISH_UNIT_TESTS_RUNNING=1` so interactive Fish skips detached man-page completion generation.
 Fish still loads its normal startup configuration.
 This prevents its startup completion jobs from racing private-HOME cleanup.
 
-Inside an agent sandbox, invoke Docker by its absolute wrapper path:
+Unselected commands such as Docker retain their incoming PATH selection.
+Inside an agent sandbox, this keeps the Docker wrapper that configures the gateway's SSH identity and pinned host key:
 
 ```sh
-dev/test-environment /libexec/sandbox-wrappers/docker info
+dev/test-environment docker info
 ```
-
-Resolving real tools can prepend their directory to PATH and select the private Docker binary instead of its sandbox wrapper.
-The Docker wrapper configures the gateway's SSH identity and pinned host key; bypassing it can fail with `Host key verification failed`.
-Use the same absolute path for isolated Docker builds and probes.
 
 An explicit `PI_PACKAGE_DIR` takes precedence.
 Otherwise, the wrapper discovers the installed Pi SDK under the original HOME before replacing HOME.

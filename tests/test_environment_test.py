@@ -183,6 +183,72 @@ class TestEnvironmentTest(unittest.TestCase):
         )
         self.assertEqual("/original/bb", environment["DOTFILES_TEST_BB_REAL"])
 
+    def make_tool(self, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        source = ROOT / "tests/fixtures/test_environment_tool.py"
+        subprocess.run(["cp", str(source), str(path)], check=True)
+        subprocess.run(["cmp", str(source), str(path)], check=True)
+        path.chmod(0o755)
+        return path
+
+    def test_native_tool_selection_does_not_promote_sibling_commands(self) -> None:
+        tools = ("bb", "java", "jj", "rg")
+        public = self.root / "public"
+        selected = {tool: self.make_tool(self.root / "native tools" / tool / tool) for tool in tools}
+        public_commands = {tool: self.make_tool(public / tool) for tool in (*tools, "docker", "unrelated")}
+        # A selected installation contains other commands, including another
+        # selected tool. Neither sibling may replace its independent selection.
+        for sibling in ("jj", "docker", "unrelated"):
+            self.make_tool(selected["rg"].parent / sibling)
+        fake = self.make_tool(self.root / "child fakes/jj")
+        values = {f"DOTFILES_TEST_{tool.upper()}_REAL": str(path) for tool, path in selected.items()}
+        values["PATH"] = str(public) + os.pathsep + self.inherited["PATH"]
+        expected = {**selected, "docker": public_commands["docker"], "unrelated": public_commands["unrelated"]}
+        for nested in (False, True):
+            for child_fake in (False, True):
+                with self.subTest(nested=nested, child_fake=child_fake):
+                    overrides = values | ({"FIXTURE_COMMAND_PATH": str(fake.parent)} if child_fake else {})
+                    arguments = ("nested", str(WRAPPER), "commands") if nested else ("commands",)
+                    result, report = self.run_probe(*arguments, *expected, values=overrides)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assert_private_home(report)
+                    if nested:
+                        self.assertEqual(0, report["nested_status"], report["nested_stderr"])
+                        report = report["nested"]
+                        self.assert_private_home(report)
+                    wanted = expected | ({"jj": fake} if child_fake else {})
+                    self.assertEqual({name: str(path) for name, path in wanted.items()},
+                                     {name: entry["executable"] for name, entry in report["commands"].items()})
+                    for tool, path in selected.items():
+                        self.assertEqual(str(path), report["environment"][f"DOTFILES_TEST_{tool.upper()}_REAL"])
+
+    def test_native_tool_path_need_not_share_the_command_name(self) -> None:
+        fallback = self.make_tool(self.root / "public/rg")
+        selected = self.make_tool(self.root / "another installation/custom ripgrep")
+        result, report = self.run_probe("commands", "rg", values={
+            "PATH": str(fallback.parent) + os.pathsep + self.inherited["PATH"],
+            "RG_REAL": str(selected),
+        })
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(str(selected), report["commands"]["rg"]["executable"])
+        self.assertEqual(str(selected), report["environment"]["DOTFILES_TEST_RG_REAL"])
+        self.assert_private_home(report)
+
+    def test_explicit_wrappers_can_find_native_tools_without_exporting_raw_overrides(self) -> None:
+        selected = {tool: self.make_tool(self.root / "native tools" / tool / tool) for tool in ("bb", "java", "rg")}
+        values = {f"DOTFILES_TEST_{tool.upper()}_REAL": str(path) for tool, path in selected.items()}
+        wrappers = {
+            "bb": ROOT / "tools/agent-split/bb",
+            "java": ROOT / "libexec/agent-wrappers/java",
+            "rg": ROOT / "libexec/agent-wrappers/rg",
+        }
+        result, report = self.run_probe("commands", *map(str, wrappers.values()), values=values)
+        self.assertEqual(0, result.returncode, result.stderr)
+        for tool, wrapper in wrappers.items():
+            self.assertEqual(str(selected[tool]), report["commands"][str(wrapper)]["executable"])
+            self.assertNotIn(f"{tool.upper()}_REAL", report["environment"])
+        self.assert_private_home(report)
+
     def test_state_writes_are_private_and_cleanup_preserves_exit_status(self) -> None:
         for status in (0, 23):
             with self.subTest(status=status):
