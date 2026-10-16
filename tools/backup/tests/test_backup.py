@@ -60,7 +60,8 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
             f"backup --skip-if-unchanged "
-            f"--cache-dir {self.directory}/cache --tag documents-backup --exclude notes/ --dry-run .\n",
+            f"--cache-dir {self.directory}/cache --tag documents-backup "
+            "--exclude notes/ --exclude .session.vim --dry-run .\n",
             self.log.read_text(),
         )
 
@@ -119,6 +120,8 @@ class BackupResticIntegrationTests(unittest.TestCase):
         (self.documents / "backups" / "nested.txt").write_text("backup data\n")
         (self.documents / "letter.txt").write_text("document data\n")
         (self.documents / "notes" / "private.txt").write_text("excluded\n")
+        (self.documents / ".session.vim").write_text("temporary editor state\n")
+        (self.documents / "backups" / ".session.vim").write_text("nested editor state\n")
         self.repository = self.directory / "repository"
         self.cache = self.directory / "cache"
         self.env_file = self.directory / "restic.env"
@@ -180,6 +183,8 @@ class BackupResticIntegrationTests(unittest.TestCase):
         paths = [entry["path"] for entry in listing if entry.get("struct_type") == "node"]
         self.assertEqual(1, paths.count("/backups/nested.txt"))
         self.assertNotIn("/notes/private.txt", paths)
+        self.assertNotIn("/.session.vim", paths)
+        self.assertNotIn("/backups/.session.vim", paths)
 
         restore = self.directory / "restore"
         self.run_restic(
@@ -196,6 +201,8 @@ class BackupResticIntegrationTests(unittest.TestCase):
         )
         self.assertEqual("document data\n", (restore / "letter.txt").read_text())
         self.assertFalse((restore / "notes").exists())
+        self.assertFalse((restore / ".session.vim").exists())
+        self.assertFalse((restore / "backups/.session.vim").exists())
 
     def test_explicit_state_root_keeps_notes_and_archive_data(self) -> None:
         self.environment.update(BACKUP_ROOT=str(self.documents), BACKUP_TAG="mica-state",
@@ -208,6 +215,8 @@ class BackupResticIntegrationTests(unittest.TestCase):
                         "--target", str(restore))
         self.assertEqual("excluded\n", (restore / "notes/private.txt").read_text())
         self.assertEqual("backup data\n", (restore / "backups/nested.txt").read_text())
+        self.assertEqual("temporary editor state\n", (restore / ".session.vim").read_text())
+        self.assertEqual("nested editor state\n", (restore / "backups/.session.vim").read_text())
 
 
 if __name__ == "__main__":
