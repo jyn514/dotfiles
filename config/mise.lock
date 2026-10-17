@@ -364,6 +364,14 @@ version = "5.8.1"
 backend = "npm:bash-language-server"
 specifiers = ["latest"]
 
+[[tools."npm:obsidian-headless"]]
+version = "0.0.14"
+backend = "npm:obsidian-headless"
+specifiers = ["0.0.14"]
+
+[tools."npm:obsidian-headless".options]
+allow_builds = '["better-sqlite3"]'
+
 [[tools."npm:oxlint"]]
 version = "1.86.0"
 backend = "npm:oxlint"

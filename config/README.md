@@ -110,3 +110,50 @@ If no tmux server is running, start it now with
 `systemctl --user start tmux.service`. Otherwise, leave existing sessions running
 and let the service start on the next boot; starting the service cannot adopt an
 existing server. Stopping or restarting the service kills its sessions.
+
+## Headless Obsidian Sync
+
+After installing local packages, run `./setup services` interactively on each
+Linux or macOS machine where you want continuous syncing. An Obsidian Sync
+subscription is required. Setup installs the pinned official `obsidian-headless`
+client through mise. On first use, it connects the remote vault `notes` to
+`~/Documents/notes/`, prompting only for login and the vault encryption password.
+Setup checks whether it can disable GUI Sync before asking for credentials.
+Back up existing notes first: connecting an existing directory merges its contents with the
+remote vault.
+
+Setup disables GUI Sync before starting headless Sync. When Obsidian is running,
+its CLI must be enabled so setup can verify the selected vault and disable the
+Sync core plugin through the app. Setup supports both the `obsidian` executable
+and the Flatpak launcher. Enable the CLI in Settings → General → Advanced.
+When Obsidian is closed, setup updates the
+vault's core plugin settings directly. If the running app cannot accept the CLI
+command, close it and rerun setup. The headless client disables core plugin list
+syncing so this local choice does not disable Sync on your phone or get
+overwritten remotely.
+Other plugin choices and configuration sync categories are preserved.
+
+Each vault already configured in `ob sync-list-local` gets a background service;
+reruns reuse those vaults without prompting. To add another vault, run
+`ob sync-setup --vault NAME --path /absolute/path/to/vault`, then rerun
+`./setup services`. Authentication and encryption keys stay in the client's
+private configuration directory, outside this repository.
+
+On Linux, setup writes `obsidian-sync-*.service` files in
+`~/.config/systemd/user/`, enables them at boot, and starts them immediately.
+Inspect them with `systemctl --user status 'obsidian-sync-*'` and
+`journalctl --user -u 'obsidian-sync-*'`. Stop or disable an individual service
+with `systemctl --user disable --now SERVICE`.
+
+On macOS, setup writes and loads `obsidian-sync-*.plist` files in
+`~/Library/LaunchAgents/`. They start at login, with logs in
+`~/Library/Logs/obsidian-sync-*.log`. Unload an individual service with
+`launchctl bootout gui/$(id -u)/LABEL` and disable it with
+`launchctl disable gui/$(id -u)/LABEL`.
+
+Generated service names contain the encoded remote vault ID; setup prints the
+path for each vault. Services restart after failures. Rerunning setup refreshes
+their files and restarts sync to pick up updated executables and vault paths.
+Disabling a service does not unlink its vault; a later setup run
+enables it again. Use `ob sync-unlink --path /absolute/path/to/vault` after
+stopping its service if it should no longer participate in setup.

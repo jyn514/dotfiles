@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import os
+import shlex
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -208,11 +210,14 @@ class DotfileSetupTests(unittest.TestCase):
 
     def service_commands(self, platform: str = "Linux", fail: str = "") -> Path:
         log = self.home / "service-commands"
+        python = shlex.quote(shutil.which('python3'))
         for name, body in {
             "uname": f"echo {platform}\n",
             "id": "echo test-user\n",
             "loginctl": 'echo "loginctl $*" >> "$HOME/service-commands"\n',
             "systemctl": 'echo "systemctl $*" >> "$HOME/service-commands"\n',
+            "python3": 'case "$1" in libexec/setup/setup_obsidian_sync.py) exit 0;; esac\n'
+                       f'exec {python} "$@"\n',
         }.items():
             if name == fail:
                 body += "exit 1\n"
