@@ -55,6 +55,15 @@ The following words and phrases are banned as metaphors; use the suggested repla
 
 ## Commands and permissions
 
+### Sandbox escalation
+
+When a command needed for the task fails because of sandbox restrictions, retry it promptly using the harness's escalation mechanism.
+Do not stop at explaining the restriction or ask me to run the command myself.
+For read-only diagnostics of host services, authentication agents, sockets, or running applications,
+request execution outside the sandbox directly when sandbox isolation would make the result misleading.
+Request required approval through the tool call without a separate conversational permission question.
+Continue the diagnosis after approval.
+
 ### Tool selection
 
 For version-sensitive CLI questions, check the installed command's built-in help before searching online documentation.
