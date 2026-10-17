@@ -1,0 +1,3 @@
+# Tests add a shebang to a disposable copy of this fixture.
+if true; then
+	printf '%s\n' 'missing fi'

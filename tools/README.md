@@ -38,6 +38,9 @@ Every tracked `tools/` subsystem is indexed here. Follow linked READMEs and desi
 
 ## Desktop and shell commands
 
+- [`copy`](../bin/copy) and [`paste`](../bin/paste) use the installed X11, Wayland, or macOS clipboard backend.
+  Pass `--primary` for the primary selection, or `--type MIME` before it for xclip and Wayland backends.
+  The MIME value stays one literal backend argument, including any spaces or glob characters.
 - [`mosh-agent`](mosh-agent/) keeps an autossh agent tunnel open alongside mosh, using a fixed remote socket for existing tmux shells.
 - [`backup`](backup/) backs up Documents and consistent Mica state to restic, using systemd timers on Linux and a LaunchDaemon on macOS.
 - [`macos-preferences`](macos-preferences/) checks, previews, and applies the semantic macOS preference policy in `lib/macos-preferences.json`. `apply` writes only differing keys and refuses to proceed while an affected application is running.

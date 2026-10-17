@@ -17,18 +17,9 @@ main() {
 	# X11
 	if exists xclip; then
 		prog=xclip
-		type=--type
-		in=-in
-		out=-out
-		primary="-selection primary"
-		clipboard="-selection clipboard"
 	# X11, no --type support
 	elif exists xsel; then
 		prog=xsel
-		in=--input
-		out=--output
-		primary=--primary
-		clipboard=--clipboard
 
 	# Wayland
 	elif exists wl-copy; then
@@ -37,11 +28,6 @@ main() {
 		else
 			prog=wl-paste
 		fi
-		type=--type
-		in=
-		out=
-		primary=--primary
-		clipboard=
 
 	# MacOS, no --type support currently.
 	# might be possible to add using `osascript`.
@@ -51,32 +37,56 @@ main() {
 		else
 			prog=pbpaste
 		fi
-		in=
-		out=
-		primary="-pboard find"
-		clipboard="-pboard general"
 	else
 		# TODO: windows
 		fatal "no clipboard manager detected"
 	fi
 
+	type_set=false
 	if [ "$1" = --type ]; then
-		if [ -z "$type" ]; then
-			fatal "$prog doesn't support --type"
-		else
-			type="$type $2"
-			shift; shift
-		fi
-	else
-		type=
+		case "$prog" in
+			xclip|wl-copy|wl-paste)
+				type=$2
+				type_set=true
+				shift; shift
+				;;
+			*) fatal "$prog doesn't support --type";;
+		esac
 	fi
 
-	case "${mode}:${1:-}" in
-		copy:--primary) $prog $in $type $primary;;
-		paste:--primary) $prog $out $type $primary;;
-		copy:*) $prog $in $type $clipboard;;
-		paste:*) $prog $out $type $clipboard;;
+	selection=clipboard
+	if [ "${1:-}" = --primary ]; then
+		selection=primary
+	fi
+
+	# Build native argv directly: MIME values must never undergo splitting or globbing.
+	case "$prog:$mode" in
+		xclip:copy) set -- -in;;
+		xclip:paste) set -- -out;;
+		xsel:copy) set -- --input;;
+		xsel:paste) set -- --output;;
+		*) set --;;
 	esac
+	if [ "$type_set" = true ]; then
+		set -- "$@" --type "$type"
+	fi
+	case "$prog" in
+		xclip) set -- "$@" -selection "$selection";;
+		xsel) set -- "$@" "--$selection";;
+		wl-copy|wl-paste)
+			if [ "$selection" = primary ]; then
+				set -- "$@" --primary
+			fi
+			;;
+		pbcopy|pbpaste)
+			if [ "$selection" = primary ]; then
+				set -- "$@" -pboard find
+			else
+				set -- "$@" -pboard general
+			fi
+			;;
+	esac
+	"$prog" "$@"
 }
 
 mode=$(basename "$0")

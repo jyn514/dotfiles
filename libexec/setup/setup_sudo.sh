@@ -31,7 +31,7 @@ should_copy_global() {
 		exit 1
 	fi
 
-	printf "confirm: install ./global/$local to $DEST? [y/N] "
+	printf 'confirm: install ./global/%s to %s? [y/N] ' "$local" "$DEST"
 	read -r REPLY
 	if ! [ "$REPLY" = y ]; then
 		echo "ok, skipping"
@@ -114,6 +114,17 @@ fscrypt_supported() {
 	[ "$fstype" = ext4 ]
 }
 
+setup_fscrypt_profile() {
+	# can't be a link because we're about to encrypt the home drive
+	cp "$DIR"/../../lib/02-pam-unlock.sh /etc/profile.d
+	if [ -e /etc/zshenv ]; then
+		zenv=/etc/zshenv
+	else
+		zenv=/etc/zsh/zshenv
+	fi
+	echo ". /etc/profile" >> "$zenv"
+}
+
 encrypt_home_dir() {
  if fscrypt status "$my_home" | grep "encrypted with fscrypt">/dev/null; then
 	 return;
@@ -126,27 +137,20 @@ encrypt_home_dir() {
 	fi
 
 	fscrypt setup --all-users
-	# can't be a link because we're about to encrypt the home drive
-	cp "$DIR"/../../lib/02-pam-unlock.sh /etc/profile.d
-	if [ -e /etc/zshenv ]; then
-		zenv=/etc/zshenv
-	else
-		zenv=/etc/zsh/zshenv
-	fi
-	echo ". /etc/profile" >> $zenv
+	setup_fscrypt_profile
 
 	# this is the dangerous part
-	backup=$(dirname $my_home)/$(basename $my_home).bak
-	mv $my_home $backup
-	mkdir $my_home
-	chown $SUDO_USER:$SUDO_USER $my_home
-	fscrypt encrypt --source=pam_passphrase --user=$SUDO_USER $my_home
+	backup=$(dirname "$my_home")/$(basename "$my_home").bak
+	mv "$my_home" "$backup"
+	mkdir "$my_home"
+	chown "$SUDO_USER:$SUDO_USER" "$my_home"
+	fscrypt encrypt --source=pam_passphrase --user="$SUDO_USER" "$my_home"
 	# we have to copy anyway to encrypt, may as well use cp instead of mv so we can confirm it's correct
-	rsync -azAHX --info=progress2 $backup/ $my_home
+	rsync -azAHX --info=progress2 "$backup/" "$my_home"
 	echo "setup encrypted home drive; delete backup? [y/N]" >/dev/tty
-	if read -r; [ "$REPLY" = y ]; then
+	if read -r REPLY && [ "$REPLY" = y ]; then
 		echo "deleting" >&2
-		rm -rf $backup
+		rm -rf "$backup"
 	else
 		echo "retaining backup in $backup" >&2
 	fi

@@ -66,8 +66,8 @@ is_wsl() {
 cmd_alias() {
 	to=$1
 	from=$2
-	if ! [ -x ~/.local/bin/$to ] && exists $from; then
-		ln -sf "$(command -v $from)" ~/.local/bin/$to
+	if ! [ -x "$HOME/.local/bin/$to" ] && exists "$from"; then
+		ln -sf "$(command -v "$from")" "$HOME/.local/bin/$to"
 	fi
 }
 

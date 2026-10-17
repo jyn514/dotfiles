@@ -101,7 +101,10 @@ The ShellCheck stage requires ShellCheck and ripgrep on PATH and replaces the fo
 It checks files beginning with `#!/bin/sh` in the existing setup, command, library, and test roots.
 Discovery honors root and nested `.gitignore` rules, including negations, and includes non-ignored hidden scripts.
 Ripgrep configuration and other ignore-file formats cannot override those rules.
-ShellCheck findings fail the runner; existing findings are not suppressed or baselined.
+SC2015 (compound guards) and SC1091 (unfollowed sources) are suppressed.
+Reviewed codes SC1007, SC2002, SC2016, SC2034, SC2119, SC2120, SC2237, SC2317, and SC3013 print nonblocking warnings.
+Every other diagnostic fails the runner, regardless of ShellCheck's native severity; new SC2086 quoting findings still fail.
+Discovery, dependency, and ShellCheck execution or report failures also fail the runner.
 Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/` and `tools/`.
 Other suites need an existing discovery route or explicit dispatch in `dev/test`, by default or through a documented opt-in mode.
 Check that intended cases execute through that route, not only through a focused command.

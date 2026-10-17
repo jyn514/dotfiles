@@ -1,0 +1,3 @@
+# Tests add a shebang to a disposable copy of this fixture.
+[ -f "$1" ] && [ ! -L "$1" ] || { printf '%s\n' 'unsafe file' >&2; exit 1; }
+. ./missing-fixture-library.sh

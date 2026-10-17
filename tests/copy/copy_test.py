@@ -1,11 +1,145 @@
+import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class NativeClipboardTest(unittest.TestCase):
+    BACKENDS = (
+        ("xclip",),
+        ("xsel",),
+        ("wl-copy", "wl-paste"),
+        ("pbcopy", "pbpaste"),
+    )
+    INPUT = b"input\n\n\0\xff"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+        self.arguments = self.directory / "arguments.json"
+        self.stdin = self.directory / "stdin"
+        # Exclude host clipboard managers so each backend, including fallback
+        # priority, is exercised independently of the machine running the suite.
+        for name, target in (("basename", shutil.which("basename")),
+                             ("python3", sys.executable)):
+            self.assertIsNotNone(target)
+            (self.directory / name).symlink_to(target)
+        self.environment = os.environ | {
+            "PATH": str(self.directory),
+            "MOCK_ARGUMENTS": str(self.arguments),
+            "MOCK_STDIN": str(self.stdin),
+            "MOCK_STATUS": "0",
+        }
+        for name in ("a", "b", "glob-aa"):
+            (self.directory / name).touch()
+
+    def install_backends(self, first: int) -> None:
+        for index, names in enumerate(self.BACKENDS):
+            for name in names:
+                path = self.directory / name
+                path.unlink(missing_ok=True)
+                if index >= first:
+                    source = ROOT / "tests/copy/fixtures/native-backend.py"
+                    subprocess.run(["cp", source, path], check=True)
+                    subprocess.run(["cmp", source, path], check=True)
+                    path.chmod(0o755)
+
+    def run_native(
+        self, mode: str, options: list[str], status: int = 0
+    ) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(
+            [str(ROOT / "bin" / mode), *options],
+            check=False,
+            input=self.INPUT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.directory,
+            env=self.environment | {"MOCK_STATUS": str(status)},
+        )
+
+    def assert_native(
+        self, mode: str, backend: str, options: list[str], expected: list[str],
+        status: int = 0,
+    ) -> None:
+        result = self.run_native(mode, options, status)
+        self.assertEqual(status, result.returncode, result.stderr)
+        self.assertEqual(b"", result.stderr)
+        self.assertEqual(b"native output\n\n", result.stdout)
+        self.assertEqual(
+            {"backend": backend, "argv": expected},
+            json.loads(self.arguments.read_text()),
+        )
+        self.assertEqual(self.INPUT, self.stdin.read_bytes())
+
+    def test_native_argv_preserves_optional_flags_and_literal_types(self) -> None:
+        # Native argv is the compatibility oracle: flags are separate values,
+        # absent flags add no empty values, and the supplied type stays literal.
+        # Include both a standalone matching glob and whitespace plus metacharacters.
+        types = (None, "", "image/png", "text/plain; charset=utf-8", "*", "*?[ab]",
+                 "image/png; charset=utf-8 * ? [ab]\tline\nbreak")
+        for index, names in enumerate(self.BACKENDS):
+            self.install_backends(index)
+            supported_types = types if index in (0, 2) else (None,)
+            for mode in ("copy", "paste"):
+                backend = names[0] if mode == "copy" else names[-1]
+                for primary in (False, True):
+                    for mime in supported_types:
+                        with self.subTest(backend=backend, mode=mode,
+                                          primary=primary, mime=mime):
+                            options = [] if mime is None else ["--type", mime]
+                            if primary:
+                                options.append("--primary")
+                            selection = "primary" if primary else "clipboard"
+                            if index == 0:
+                                expected = ["-in" if mode == "copy" else "-out"]
+                            elif index == 1:
+                                expected = ["--input" if mode == "copy" else "--output"]
+                            else:
+                                expected = []
+                            if mime is not None:
+                                expected += ["--type", mime]
+                            if index == 0:
+                                expected += ["-selection", selection]
+                            elif index == 1:
+                                expected += ["--" + selection]
+                            elif index == 2 and primary:
+                                expected += ["--primary"]
+                            elif index == 3:
+                                expected += ["-pboard", "find" if primary else "general"]
+                            self.assert_native(mode, backend, options, expected)
+
+    def test_native_exit_status_is_propagated_in_both_modes(self) -> None:
+        for index, names in enumerate(self.BACKENDS):
+            self.install_backends(index)
+            for mode in ("copy", "paste"):
+                backend = names[0] if mode == "copy" else names[-1]
+                with self.subTest(backend=backend, mode=mode):
+                    result = self.run_native(mode, [], status=37)
+                    self.assertEqual(37, result.returncode, result.stderr)
+                    self.assertEqual(backend, json.loads(self.arguments.read_text())["backend"])
+                    self.assertEqual(self.INPUT, self.stdin.read_bytes())
+
+    def test_unsupported_type_fails_without_invoking_native_backend(self) -> None:
+        for index in (1, 3):
+            self.install_backends(index)
+            for mode in ("copy", "paste"):
+                names = self.BACKENDS[index]
+                backend = names[0] if mode == "copy" else names[-1]
+                with self.subTest(backend=backend, mode=mode):
+                    result = self.run_native(mode, ["--type", "image/png", "--primary"])
+                    self.assertEqual(1, result.returncode)
+                    self.assertEqual(f"{backend} doesn't support --type\n".encode(),
+                                     result.stderr)
+                    self.assertFalse(self.arguments.exists())
+                    self.assertFalse(self.stdin.exists())
 
 
 class ClipboardTest(unittest.TestCase):
@@ -34,44 +168,6 @@ class ClipboardTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             env=self.environment | environment,
         )
-
-    def test_xclip_receives_type_and_primary_selection(self) -> None:
-        arguments = self.directory / "arguments"
-        stdin = self.directory / "stdin"
-        self.executable(
-            "xclip",
-            'printf "%s\\n" "$@" > "$MOCK_ARGUMENTS"\n'
-            'cat > "$MOCK_STDIN"\n',
-        )
-
-        result = self.run_command(
-            [str(ROOT / "bin/copy"), "--type", "image/png", "--primary"],
-            MOCK_ARGUMENTS=str(arguments),
-            MOCK_STDIN=str(stdin),
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(
-            ["-in", "--type", "image/png", "-selection", "primary"],
-            arguments.read_text().splitlines(),
-        )
-        self.assertEqual(b"input\n\n", stdin.read_bytes())
-
-    def test_xsel_uses_clipboard_option(self) -> None:
-        arguments = self.directory / "arguments"
-        self.executable(
-            "xsel",
-            'printf "%s\\n" "$@" > "$MOCK_ARGUMENTS"\n'
-            'cat >/dev/null\n',
-        )
-
-        result = self.run_command(
-            [str(ROOT / "bin/copy")],
-            MOCK_ARGUMENTS=str(arguments),
-        )
-
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(["--input", "--clipboard"], arguments.read_text().splitlines())
 
     def test_terminal_selection_copy_removes_prompt_text(self) -> None:
         clipboard = self.directory / "clipboard"
