@@ -40,6 +40,16 @@ node --test --test-reporter=tap --experimental-strip-types 'test/**/*.test.ts'
 Check the process exit status and assertion diagnostics, not just reporter text,
 to distinguish an expected regression failure from a setup or import failure.
 
+To check real Codex recordings without adding their contents to the test suite, supply a read-only corpus explicitly:
+
+```bash
+PI_SESSION_SEARCH_TEST_CODEX_ROOT="$PWD/private/codex-sessions" npm test
+```
+
+The optional test checks search-to-read round trips through Pi's loader, paging, version selection, and unchanged file checksums.
+It skips when the variable is unset and does not establish support for every Codex item type.
+Synthetic fixtures remain the decoding and inherited-history tests.
+
 ## Contributor License Agreement
 
 All third-party contributions to this project must be accompanied by a signed contributor
