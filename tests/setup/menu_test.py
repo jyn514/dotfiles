@@ -24,6 +24,7 @@ setup_install_local() { record local; }
 setup_install_global() { record global; }
 setup_kde() { record kde; }
 setup_sandbox() { record sandbox; }
+setup_services() { record services; }
 """
         source = (ROOT / "setup").read_text()
         marker = 'if ! [ $# = 0 ]; then\n'
@@ -40,6 +41,8 @@ setup_sandbox() { record sandbox; }
             "8": ["kde"],
             "9": ["global", "local", "basics", "shell", "python", "vim", "sandbox"],
             "10": ["sandbox"],
+            "11": ["services"],
+            "services": ["services"],
         }
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -218,12 +221,14 @@ setup_sandbox() { record sandbox; }
         self.assertGreaterEqual(setup.count("unset JJ_CONFIG_PATH"), 4)
 
     def test_menu_has_no_dead_routes_and_reports_full_numbered_range(self) -> None:
-        setup = (ROOT / "setup").read_text()
-
-        self.assertNotIn("setup_macos", setup)
-        self.assertNotIn("macos|10", setup)
-        self.assertIn("sandbox*|10) setup_sandbox", setup)
-        self.assertIn("Please enter a number 0-10", setup)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                ["./setup"], cwd=ROOT, env=os.environ | {"HOME": directory},
+                input="not-a-choice\n0\n", text=True, capture_output=True,
+            )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("[services|11]", result.stdout)
+        self.assertIn("Please enter a number 0-11", result.stdout)
 
     def test_global_setup_runs_main_directly_as_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
