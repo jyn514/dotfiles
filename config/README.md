@@ -92,16 +92,15 @@ Existing shells pick it up when you run `python3 "$DOTFILES/libexec/tmux/default
 Remove pane overrides with `tmux set-option -pu window-style` and `tmux set-option -pu window-active-style` to query a newly attached terminal again.
 These commands also remove any other pane-specific style overrides.
 
-On machines with systemd and tmux installed at `/usr/bin/tmux`, install the
-configuration links with `./setup dotfiles`, then run:
+On machines with systemd and tmux installed at `/usr/bin/tmux`, run:
 
 ```sh
-loginctl enable-linger "$USER"
-systemctl --user daemon-reload
-systemctl --user enable tmux.service
+./setup services
 ```
 
 Lingering starts the user manager at boot and keeps it running after logout.
+The command refreshes configuration links, enables lingering, reloads the user
+manager, and enables tmux for future boots without starting or restarting it.
 The [tmux service](systemd/user/tmux.service) starts an empty server under
 `default.target`, independent of the graphical session. Run `tmux` to create a
 session or `tmux attach` to reconnect. Closing the last session leaves the server

@@ -11,6 +11,13 @@ links. Conflicting regular files move to `~/.local/config/`. Other `./setup`
 options can install packages or change system configuration; read the relevant
 function before running them on a new machine.
 
+Run `./setup services` separately from package installation to configure local
+user services. It refreshes configuration links and, on Linux, enables lingering
+and tmux startup for future boots without disturbing running sessions. Install
+tmux first with the package setup. On macOS it only refreshes configuration links,
+including LaunchAgents. Backup and sandbox provisioning retain their separate
+setup commands; `./setup all` does not enable user services.
+
 Mise's Python is scoped to bootstrap tasks, including `pi-install`; it is not a global shell default.
 Shell startup removes stale mise shim directories from PATH, including in non-interactive shells.
 Non-interactive shells load the configured tool directories directly without prompt hooks.

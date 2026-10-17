@@ -32,13 +32,13 @@ class DotfileSetupTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def run_setup(self) -> subprocess.CompletedProcess[str]:
+    def run_setup(self, option: str = "dotfiles") -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.update(
             HOME=str(self.home),
             PATH=f"{self.bin}:{env['PATH']}",
         )
-        command = f"{env.get('SETUP_COMMAND_PREFIX') or './setup'} dotfiles"
+        command = f"{env.get('SETUP_COMMAND_PREFIX') or './setup'} {option}"
         return subprocess.run(
             ["sh", "-c", command],
             cwd=ROOT,
@@ -205,6 +205,64 @@ class DotfileSetupTests(unittest.TestCase):
         self.assertEqual(0, first.returncode, first.stderr)
         self.assertEqual(0, second.returncode, second.stderr)
         self.assert_all_dotfiles_installed()
+
+    def service_commands(self, platform: str = "Linux", fail: str = "") -> Path:
+        log = self.home / "service-commands"
+        for name, body in {
+            "uname": f"echo {platform}\n",
+            "id": "echo test-user\n",
+            "loginctl": 'echo "loginctl $*" >> "$HOME/service-commands"\n',
+            "systemctl": 'echo "systemctl $*" >> "$HOME/service-commands"\n',
+        }.items():
+            if name == fail:
+                body += "exit 1\n"
+            path = self.bin / name
+            path.write_text("#!/bin/sh\n" + body)
+            path.chmod(0o755)
+        return log
+
+    def test_services_enables_future_tmux_startup_without_starting_existing_server(self) -> None:
+        log = self.service_commands()
+
+        first = self.run_setup("services")
+        second = self.run_setup("services")
+
+        self.assertEqual(0, first.returncode, first.stderr)
+        self.assertEqual(0, second.returncode, second.stderr)
+        self.assert_all_dotfiles_installed()
+        self.assertEqual([
+            "loginctl enable-linger test-user",
+            "systemctl --user daemon-reload",
+            "systemctl --user enable tmux.service",
+        ] * 2, log.read_text().splitlines())
+
+    def test_services_stops_when_lingering_cannot_be_enabled(self) -> None:
+        log = self.service_commands(fail="loginctl")
+
+        result = self.run_setup("services")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(["loginctl enable-linger test-user"], log.read_text().splitlines())
+
+    def test_services_does_not_enable_unit_when_reload_fails(self) -> None:
+        log = self.service_commands(fail="systemctl")
+
+        result = self.run_setup("services")
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual([
+            "loginctl enable-linger test-user",
+            "systemctl --user daemon-reload",
+        ], log.read_text().splitlines())
+
+    def test_macos_services_preserves_link_only_setup(self) -> None:
+        log = self.service_commands(platform="Darwin")
+
+        result = self.run_setup("services")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assert_all_dotfiles_installed()
+        self.assertFalse(log.exists())
 
     def test_collision_is_backed_up_before_target_is_linked(self) -> None:
         destination = self.home / ".config/readline/inputrc"
