@@ -116,7 +116,9 @@ def helper_fixture(reference, receipt, mode):
         'cwd': str(Path.cwd()),
         'pid': os.getpid(),
     }))
-    print('helper diagnostic', file=sys.stderr)
+    # One diagnostic is one pipe write. With PYTHONUNBUFFERED, print splits
+    # text and newline, letting independent helpers interleave those writes.
+    os.write(2, b'helper diagnostic\n')
     sys.stdout.write(reference + '\r\n')
     if mode.startswith('overlap-') or mode == 'fail-peer':
         Path(receipt).with_suffix('.ready').touch()
