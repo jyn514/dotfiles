@@ -18,6 +18,9 @@ fi
 line=$name
 for argument do line="$line <$argument>"; done
 printf '%s\n' "$line" >> "$TEST_LOG"
+if [ "$name" = python3 ] && [ "${1:-}" = dev/check-shell.py ]; then
+	exit "${TEST_SHELLCHECK_STATUS:-0}"
+fi
 if [ "$name" = pytest ]; then
 	printf 'dispatch-home <%s>\n' "$HOME" >> "$TEST_LOG"
 	exit "${TEST_PYTEST_STATUS:-0}"

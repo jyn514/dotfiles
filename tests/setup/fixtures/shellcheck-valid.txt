@@ -1,0 +1,2 @@
+# Tests add a shebang to a disposable copy of this fixture.
+printf '%s\n' 'must not execute' > "${SHELLCHECK_EXECUTION_MARKER:?}"

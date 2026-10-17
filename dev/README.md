@@ -41,8 +41,7 @@ Use [Testing and probes](#testing-and-probes) for dependencies and isolation:
 - `dev/test` runs the suite and repository checks.
 - `python3 tools/open/tests/test_open.py` tests the editor/open wrapper.
 - `python3 tests/wezterm/wezterm_test.py` tests selectors in `config/wezterm.lua`.
-- `shellcheck setup track bin/* dev/* libexec/**/*.sh tools/**/*.sh` checks applicable
-  shell files; some entries are not shell scripts.
+- `dev/test-environment python3 dev/check-shell.py` runs the ShellCheck pass without the other suites.
 
 Keep subsystem tests under `tools/<name>/tests/` and cross-cutting tests under
 `tests/<feature>/`. Name Python files `*_test.py` or `test_*.py`, and name test
@@ -98,6 +97,11 @@ Installed-Pi tests need that build's APIs, not the older locked unit-test SDK in
 Run `dev/test` for the suite, including `tests/pi`, with these prerequisites.
 It checks for Bun on PATH before running any suite and stops with installation guidance if Bun is missing.
 It invokes `dev/test-environment` automatically; a failing Pi test stops the runner.
+The ShellCheck stage requires ShellCheck and ripgrep on PATH and replaces the former `sh -n` pass.
+It checks files beginning with `#!/bin/sh` in the existing setup, command, library, and test roots.
+Discovery honors root and nested `.gitignore` rules, including negations, and includes non-ignored hidden scripts.
+Ripgrep configuration and other ignore-file formats cannot override those rules.
+ShellCheck findings fail the runner; existing findings are not suppressed or baselined.
 Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/` and `tools/`.
 Other suites need an existing discovery route or explicit dispatch in `dev/test`, by default or through a documented opt-in mode.
 Check that intended cases execute through that route, not only through a focused command.

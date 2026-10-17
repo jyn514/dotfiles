@@ -269,7 +269,7 @@ class TestRunnerTests(unittest.TestCase):
                     self.assertIn("All checks passed", result.stdout)
 
     def run_native_containers(self, *, metadata=None, containers=True,
-                              pytest_status=0, probe_status=0):
+                              pytest_status=0, probe_status=0, shellcheck_status=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
@@ -302,6 +302,7 @@ class TestRunnerTests(unittest.TestCase):
                 "TEST_LOG": str(log), "TEST_PYTHON_REAL": shutil.which("python3"),
                 "TEST_PYTEST_STATUS": str(pytest_status),
                 "TEST_PROBE_STATUS": str(probe_status),
+                "TEST_SHELLCHECK_STATUS": str(shellcheck_status),
                 # A stale inherited capture must never replace the actual marker.
                 "DOTFILES_TEST_PI_REVISION": "f" * 40,
             }
@@ -361,6 +362,19 @@ class TestRunnerTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("dispatch-home") for line in commands))
         self.assertFalse(any("image_runtime_integration.py" in line for line in commands))
         self.assertIn("All checks passed", result.stdout)
+
+    def test_shellcheck_is_dispatched_and_failure_stops_the_runner(self) -> None:
+        for status in (0, 37):
+            with self.subTest(status=status):
+                result, commands, _ = self.run_native_containers(
+                    containers=False, shellcheck_status=status)
+                self.assertEqual(status, result.returncode, result.stderr)
+                self.assertEqual(1, commands.count("python3 <dev/check-shell.py>"))
+                if status:
+                    self.assertNotIn("python3 <-m> <json.tool> <install.conf.json>", commands)
+                    self.assertNotIn("All checks passed", result.stdout)
+                else:
+                    self.assertIn("All checks passed", result.stdout)
 
     def test_native_containers_preserve_test_and_probe_failure_status(self) -> None:
         for pytest_status, probe_status in ((23, 0), (0, 31)):

@@ -98,13 +98,7 @@ else
 	cargo test --manifest-path tools/jj-proxy/Cargo.toml --lib --bins
 fi
 
-shell_files=$(find setup track bin dev lib libexec tests tools \
-	-name __pycache__ -prune -o -type f \
-	-exec grep -Il '^#!/bin/sh$' {} + 2>/dev/null || true)
-if [ -n "$shell_files" ]; then
-	printf '%s\n' "$shell_files" |
-		xargs -n1 -P "$jobs" sh -n
-fi
+python3 dev/check-shell.py
 
 python3 -m json.tool install.conf.json >/dev/null
 python3 -m json.tool lib/mimetypes.json >/dev/null
