@@ -349,7 +349,14 @@ test("two replies in one held inbox batch retain distinct references across real
   hub.hold = { entered: enter, response };
   const compaction = hub.session.compact("Summarize the fixture conversation.");
   t.after(() => release(fauxAssistantMessage("Fixture summary.")));
-  await Promise.race([entered, pause(5000).then(() => { throw new Error("manual compaction did not reach summarizer"); })]);
+  let enterTimer;
+  try {
+    await Promise.race([entered, new Promise((_, reject) => {
+      enterTimer = setTimeout(() => reject(new Error("manual compaction did not reach summarizer")), 5000);
+    })]);
+  } finally {
+    clearTimeout(enterTimer);
+  }
   const before = links(hub).length;
   const reply1 = messageId(await send(alice, "hub", "held reply one", first));
   const reply2 = messageId(await send(bob, "hub", "held reply two", second));
