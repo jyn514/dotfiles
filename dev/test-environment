@@ -10,6 +10,59 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+
+def enable_child_subreaper() -> None:
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0):  # PR_SET_CHILD_SUBREAPER
+        raise OSError(ctypes.get_errno(), "cannot adopt orphaned test processes")
+
+
+def reap_exited_children(command_pid: int | None = None) -> bool:
+    """Reap adopted descendants, leaving the command's status to Popen."""
+    while True:
+        try:
+            child = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            return False
+        if child is None or child.si_pid == command_pid:
+            return True
+        os.waitpid(child.si_pid, 0)
+
+
+def signal_children(signum: int) -> None:
+    # This single-threaded wrapper creates only its command. After that command
+    # is reaped, every remaining child is an adopted member of its test subtree.
+    children = Path(f"/proc/self/task/{os.getpid()}/children")
+    for pid in children.read_text().split():
+        try:
+            os.kill(int(pid), signum)
+        except ProcessLookupError:
+            pass
+
+
+def wait_for_test_processes(process: subprocess.Popen) -> int:
+    try:
+        while True:
+            try:
+                return process.wait(timeout=0.05)
+            except subprocess.TimeoutExpired:
+                reap_exited_children(process.pid)
+    finally:
+        # Popen alone consumes the main command's status, including signals.
+        # Never race its wait/poll methods with a generic waitpid(-1) reaper.
+        if process.returncode is None:
+            process.kill()
+            process.wait()
+        signal_children(signal.SIGTERM)
+        deadline = time.monotonic() + 1
+        while reap_exited_children():
+            if time.monotonic() >= deadline:
+                signal_children(signal.SIGKILL)
+            time.sleep(0.01)
 
 
 def mise_tool_path(tool: str, environment: dict[str, str]) -> str:
@@ -139,8 +192,11 @@ def main(arguments: list[str]) -> int:
         for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             previous[signum] = signal.signal(signum, forward)
         try:
+            linux = sys.platform.startswith("linux")
+            if linux:
+                enable_child_subreaper()
             process = subprocess.Popen(arguments, env=environment)
-            return process.wait()
+            return wait_for_test_processes(process) if linux else process.wait()
         finally:
             for signum, handler in previous.items():
                 signal.signal(signum, handler)

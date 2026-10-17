@@ -538,6 +538,27 @@ class TestEnvironmentTest(unittest.TestCase):
         for name in generated:
             self.assertEqual("local state\n", (checkout / name).read_text())
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux orphan adoption required")
+    def test_detached_descendants_are_reaped_without_losing_command_status(self) -> None:
+        fixture = ROOT / "tests/fixtures/test_environment_orphans.py"
+        for mode in ("exited", "live", "resistant", "signal", "forwarded", "nested"):
+            with self.subTest(mode=mode):
+                result = subprocess.run(
+                    [sys.executable, fixture, "guard", WRAPPER, mode],
+                    env=self.inherited, text=True, capture_output=True, timeout=20,
+                    start_new_session=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                report = json.loads(result.stdout)
+                self.assertEqual(-signal.SIGTERM if mode in ("signal", "forwarded") else 23,
+                                 report["status"], report["errors"])
+                self.assertFalse(report["remaining"], "wrapper left a live or zombie descendant")
+                self.assertTrue(report["home_removed"])
+                self.assertTrue(report["unrelated_alive"], "cleanup reached outside the command subtree")
+                if mode in ("exited", "nested"):
+                    self.assertTrue(report["reaped_while_running"],
+                                    "orphans must not accumulate during a long command")
+
     def test_stdin_reaches_child_unchanged(self) -> None:
         text = "ordinary stdin\nsecond line\twith spaces\n"
         result, report = self.run_probe("stdin", input=text)

@@ -5,6 +5,12 @@ It requires Python 3 and creates a private HOME plus Pi and XDG state directorie
 It removes those directories after normal exit, nonzero exit, or a forwarded signal, while preserving stdin, stdout, stderr, and exit status.
 This is environment isolation, not a filesystem sandbox.
 
+On Linux, the wrapper also adopts orphaned descendants and reaps them while the command runs.
+After the command exits, the wrapper sends SIGTERM to its adopted children and allows one second for cleanup.
+It then kills and reaps remaining descendants before removing HOME.
+The command's exit status is preserved; processes outside this invocation's subtree are not signaled.
+This cleanup cannot run if the wrapper itself receives SIGKILL.
+
 OpenJDK's `user.home` property also points at the private HOME, overriding inherited home properties through `_JAVA_OPTIONS` while preserving other options.
 Native Babashka ignores JVM option variables, so [its preload](test-environment.clj) sets `user.home` before inherited `BABASHKA_PRELOADS` and test code run.
 These settings reach absolute executable paths and script shebangs as well as commands found on PATH.
