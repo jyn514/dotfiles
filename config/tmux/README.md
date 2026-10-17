@@ -66,9 +66,10 @@ Detach and reattach existing clients through the launcher to establish their sou
 The launcher and locks use POSIX interfaces, but runtime verification currently covers Linux only.
 Run the attachment regressions with `dev/test-environment python3 tests/tmux/attach_session_test.py`.
 
-Fish startup replaces an unset or unreachable SSH agent with a reachable 1Password agent only for local clients.
+Fish startup selects the 1Password agent only when `SSH_AUTH_SOCK` is unset or empty and the client is local.
 Inside tmux, it uses the live source record for the client tmux selects for the current pane (the most recently active client when several qualify).
-Remote, unknown, and detached clients retain their agent selection, and reachable agents with no keys are preserved.
+Remote, unknown, and detached clients retain their agent selection, and supplied socket paths are preserved.
+Startup does not query agents, so a disconnected forwarding tunnel cannot block the shell while it checks agent availability.
 The local agent uses `~/.1password/agent.sock` on Linux and 1Password's Group Containers socket on macOS.
 Existing Fish shells can repeat the startup check with `source "$DOTFILES/lib/shell/ssh-agent.fish"`.
 Run its selection regressions with `dev/test-environment python3 tests/setup/ssh_agent_test.py`.
