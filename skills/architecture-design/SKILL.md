@@ -70,6 +70,13 @@ Use history as evidence when useful, but do not equate churn with pain. Check wh
 Classify responsibilities by reason to change: parsing, normalization, validation, domain policy, lifecycle, effects, projection, compatibility, and orchestration.
 Record data shapes, effect owners, dynamic state, and dependency direction before naming destination modules or components.
 
+#### Design risk applicability
+
+Before choosing boundaries, check for shared state or external effects, asynchronous work, resource or performance constraints,
+trust crossings, independent deployments or persisted formats, and diagnosis or recovery needs.
+Read the corresponding [design-risk checks](references/design-risks.md#applicability) for each applicable case.
+Establish a concrete constraint or failure case before adding a mechanism; reuse settled contracts rather than reopening them.
+
 ### 2. Find credible seams
 
 A useful seam has a one-sentence job, a named boundary value, mostly one-way dependencies, and independent callers or tests. For existing subsystems, seek a concrete payoff such as removing a cycle, dependency, broad fixture, or recurring coupled edit. For a staged greenfield new tool, justify responsibility, data, and effect seams by approved requirements and lifecycle ownership instead of extraction payoff.
@@ -91,6 +98,9 @@ For each viable seam, state:
 - Effect and mutable-state ownership
 - Public, internal, and private API treatment, plus host/guest boundaries when the repository defines them
 - Facade justification and removal condition
+
+Reapply the design-risk scan to risks introduced or changed by the proposed boundary.
+Revisit only affected reference sections and contracts, not settled questions unrelated to the change.
 
 Prefer an existing domain owner for single-consumer policy.
 Create a module or component for a coherent lifecycle or shared contract, not a bag of helpers.

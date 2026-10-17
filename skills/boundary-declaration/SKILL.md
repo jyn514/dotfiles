@@ -29,25 +29,36 @@ For example, workers preparing pronunciation analyses and executable rule data m
 
 ## Procedure
 
-1. Identify the sole owner and writers of each mutable state.
+1. Identify the sole owner and permitted writers of each mutable state.
+   Where calls overlap or results arrive late, state the invariant and how conflicting or stale updates are ordered or rejected, including ownership transfer.
 2. Identify where side effects are permitted and which effects form one publication.
-3. Identify authoritative raw representations and every derived, normalized, serialized, or displayed projection. Validate before a projection can discard distinctions needed by later checks.
+   State the commit or visibility point and what observers may see before and after it; name any partial visibility intentionally allowed.
+3. Identify authoritative raw representations and every derived, normalized, serialized, or displayed projection.
+   Validate before a projection can discard distinctions needed by later checks.
 4. Identify object identity independently of names and ambient state: filesystem identity, selected revision, provider, platform, and configuration scope where applicable.
-5. Identify lifecycle states, invalid transitions, deadlines, cancellation owners, and whether failure can leave a committed or outcome-unknown effect.
-6. For destructive or multi-step work, identify recovery authority and durable state that remain available if primary paths move or disappear.
+   At trust crossings, state whose authority permits the effect and where it is enforced, including alternate entry points.
+5. Identify lifecycle states, invalid transitions, deadlines, and cancellation owners.
+   State who owns outstanding work and resource cleanup after cancellation or shutdown, and whether failure can leave an effect committed, failed, or outcome-unknown.
+6. For destructive or multi-step work, identify recovery authority and the evidence available after interruption, including durable state when needed.
+   Ensure required recovery evidence remains available if primary paths move or disappear.
+   State which effects can safely retry, how repeated requests are recognized if necessary, and what must be reconciled before retrying an unknown outcome.
+   Do not require persistence, deduplication, or compensation without a supported recovery need.
 7. Identify APIs across which ownership, identity, representation, or lifecycle assumptions must not leak.
+   Name independently deployed or persisted contracts and their required compatibility using
+   [Change with evidence](../references/change-with-evidence.md#compatibility).
 8. Keep the declaration short enough to review before coding.
+   Include only applicable contracts; reuse settled ones rather than inventing new policies or implementation machinery.
 
 ## Output
 
 A compact declaration containing:
 
-- ownership and effect boundaries
-- publication boundary
+- ownership and effect boundaries, including authority at trust crossings
+- publication boundary and concurrency invariants where applicable
 - authoritative and derived representations
 - object and ambient-state identities
 - lifecycle, timeout, and invariant statements
-- recovery authority for destructive work
+- recovery authority, outcome evidence, and safe retry conditions for destructive or multi-step work
 - explicit non-goals
 
 ## Constraints

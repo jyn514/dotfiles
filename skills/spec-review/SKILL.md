@@ -84,6 +84,10 @@ Look for missing inputs, results, failure behavior, lifecycle ownership, and
 acceptance evidence where they affect the design's claims. Do not demand a full
 API catalog or implementation plan from a high-level sketch.
 
+Use the [design-risk applicability scan](../architecture-design/references/design-risks.md#applicability)
+to select checks for the proposed behavior, including runtime progress for asynchronous lifecycles.
+Match findings to the artifact's maturity; these checks do not authorize redesign or require new mechanisms.
+
 ## Rationale and principles
 
 Review against the project's stated principles; distinguish violations from
