@@ -195,6 +195,46 @@ conversation and active tool schemas. Its source labels use current base prompt
 inputs; extension additions appear in the remainder rather than as separate rows.
 These are local estimates, not provider token accounting.
 
+## Session titles
+
+`session-title.ts` adds the saved title to successful `read_session` transcript results.
+The reader should return the resolved absolute path in `details.sessionFile`, including for ID-only reads.
+The hook prefers that path and falls back to the input's `sessionFile` for older reader versions.
+It does not resolve session IDs itself or pick a file from a version list.
+Pi files use Pi's session API.
+Codex files use the header's thread ID to read `threads.name` from `$CODEX_HOME/state_5.sqlite`, defaulting to `~/.codex/state_5.sqlite`.
+The database opens read-only with a 100ms lock timeout; it is never created, migrated, or updated.
+This depends on Codex's private schema, not a stable public API.
+Custom SQLite storage outside `CODEX_HOME` is not discovered.
+
+An empty or null name is a valid unnamed session.
+A missing thread row quietly leaves the result unchanged: absent metadata does not establish that a session is untitled.
+An unreadable database, changed schema, invalid title value, or malformed header produces a UI warning
+and a model-visible warning with `details.sessionTitleWarning`; the transcript and its details remain available.
+Failures are not labeled `(untitled)`.
+ID-only reads without a resolved path and version lists remain unchanged.
+Format detection reads only the first JSONL header, with a 5 MiB limit.
+Run `/reload` in Pi to load this hook change.
+
+`set_current_session_title` and `edit_session_title` still change Pi titles only.
+Test title enrichment with the installed Pi and real SQLite fixtures:
+
+```sh
+dev/test-environment node --test tests/pi/native_session_title.mjs
+```
+
+For the real reader-plus-title-hook check, set `PI_SESSION_SEARCH_PACKAGE_DIR` to an installed session-search package or checkout:
+
+```sh
+PI_SESSION_SEARCH_PACKAGE_DIR=/path/to/pi-session-search \
+  dev/test-environment node --test tests/pi/native_session_reader_title.mjs
+```
+
+This loads both extensions through Pi and feeds actual reader results into the title hook, using disposable recordings and SQLite fixtures.
+Cases cover named, unnamed, and missing-title ID reads, version lists, and selected-child titles in inherited context.
+`dev/test` includes this check when the variable is set; otherwise it reports the integration test as skipped.
+It never fetches the reader package or assumes a neighboring checkout.
+
 ## Subscription usage: `/usage`
 
 `/usage` fetches your ChatGPT account limits, credit balance, and additional limits

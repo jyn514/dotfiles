@@ -85,6 +85,7 @@ node --test tests/agent-wrappers/jj-conflict.test.mjs
 node --test tests/pi/native_prompt_sections.mjs tests/pi/native_web_search.mjs tests/pi/native_subscription_usage.mjs tests/pi/native_validate_skill.mjs tests/pi/native_transport_diagnostics.mjs
 node --test tests/pi/native_footer.mjs
 node --test --test-isolation=none tests/pi/native_prompt_history.mjs
+node --test tests/pi/native_session_title.mjs tests/pi/native_session_reader_title.mjs
 bun test tests/pi
 bun test tools/codex-sandbox/tests/guest_tools_test.ts
 bun test tools/codex-sandbox/tests/session_handoff_test.ts

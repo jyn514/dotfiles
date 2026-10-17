@@ -1,3 +1,4 @@
+import { open, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import {
@@ -31,6 +32,10 @@ export interface SessionTitleBatchResult {
   failure?: SessionTitleFailure;
 }
 
+export type SessionTitleLookup =
+  | { found: true; title: string | undefined }
+  | { found: false };
+
 export function resolveSession(
   sessions: readonly SessionInfo[],
   reference: string,
@@ -60,12 +65,81 @@ export function resolveReadSessionPath(
   return isAbsolute(sessionFile) ? resolve(sessionFile) : resolve(sessionsRoot, sessionFile);
 }
 
-export function readSessionTitle(
+// Inspect only the first bounded JSONL record to select its owning reader.
+// Pi remains responsible for Pi's format; Codex names are not in its rollout.
+const MAX_SESSION_HEADER_BYTES = 5 * 1024 * 1024;
+
+async function readSessionHeader(path: string): Promise<unknown> {
+  if (!(await stat(path)).isFile()) throw new Error("Session path is not a regular file");
+  const file = await open(path, "r");
+  try {
+    const parts: Buffer[] = [];
+    let size = 0;
+    while (size <= MAX_SESSION_HEADER_BYTES) {
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_SESSION_HEADER_BYTES + 1 - size));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, null);
+      if (!bytesRead) break;
+      const bytes = buffer.subarray(0, bytesRead);
+      const newline = bytes.indexOf(10);
+      const part = newline < 0 ? bytes : bytes.subarray(0, newline);
+      parts.push(part);
+      size += part.length;
+      if (size > MAX_SESSION_HEADER_BYTES) throw new Error("Session header exceeds 5 MiB");
+      if (newline >= 0) break;
+    }
+    try {
+      return JSON.parse(Buffer.concat(parts, size).toString("utf8"));
+    } catch {
+      throw new Error("Cannot parse session header as JSON");
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+async function readCodexSessionTitle(threadId: string): Promise<SessionTitleLookup> {
+  // Private Codex schema, intentionally isolated here. Do not discover a newer
+  // database or migrate it: schema/version changes must warn and leave reads usable.
+  const databasePath = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "state_5.sqlite");
+  // Lazy import keeps the Pi-only path usable on runtimes without node:sqlite.
+  const { DatabaseSync } = await import("node:sqlite");
+  let database: InstanceType<typeof DatabaseSync> | undefined;
+  try {
+    database = new DatabaseSync(databasePath, { readOnly: true });
+    // This connection-local setting also works on Node 22, which lacks the
+    // constructor's timeout option. Never use immutable=1 on Codex's live WAL DB.
+    database.exec("PRAGMA busy_timeout = 100");
+    const row = database.prepare("SELECT name FROM threads WHERE id = ?").get(threadId);
+    if (!row) return { found: false };
+    if (row.name === null) return { found: true, title: undefined };
+    if (typeof row.name !== "string") throw new Error("Codex thread name is not text or null");
+    return { found: true, title: row.name.trim() || undefined };
+  } catch (error) {
+    throw new Error(`Codex title database ${databasePath}: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    database?.close();
+  }
+}
+
+export async function readSessionTitle(
   sessionFile: string,
   sessionsRoot = sessionSearchRoot(),
-): string | undefined {
-  return SessionManager.open(resolveReadSessionPath(sessionFile, sessionsRoot))
-    .getSessionName()?.trim() || undefined;
+): Promise<SessionTitleLookup> {
+  const path = resolveReadSessionPath(sessionFile, sessionsRoot);
+  const header = await readSessionHeader(path);
+  if (!header || typeof header !== "object" || !("type" in header)) {
+    throw new Error("Session header has no format type");
+  }
+  if (header.type === "session") {
+    return { found: true, title: SessionManager.open(path).getSessionName()?.trim() || undefined };
+  }
+  if (header.type !== "session_meta") throw new Error("Unrecognized session format");
+  const payload = "payload" in header ? header.payload : undefined;
+  if (!payload || typeof payload !== "object" || !("id" in payload) ||
+      typeof payload.id !== "string" || !payload.id.trim()) {
+    throw new Error("Codex session header has no thread ID");
+  }
+  return readCodexSessionTitle(payload.id);
 }
 
 export function normalizeSessionTitle(title: string): string | undefined {
@@ -198,21 +272,29 @@ export default function sessionTitle(pi: ExtensionAPI) {
     },
   });
 
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", async (event, ctx) => {
     if (event.toolName !== "read_session" || event.isError) return;
-    const sessionFile = event.input.sessionFile;
-    if (typeof sessionFile !== "string") return;
-
-    const title = readSessionTitle(sessionFile);
-    const details = event.details && typeof event.details === "object"
-      ? { ...event.details, sessionTitle: title }
-      : { sessionTitle: title };
-    return {
-      content: [
-        sessionTitleContent(title),
-        ...event.content,
-      ],
-      details,
-    };
+    const details: Record<string, unknown> = event.details && typeof event.details === "object" ? { ...event.details } : {};
+    if (Array.isArray(details.versions)) return;
+    const sessionFile = typeof details.sessionFile === "string" ? details.sessionFile : event.input.sessionFile;
+    if (typeof sessionFile !== "string" || !sessionFile.trim()) return;
+    try {
+      const lookup = await readSessionTitle(sessionFile);
+      if (!lookup.found) return;
+      const title = lookup.title;
+      return {
+        content: [sessionTitleContent(title), ...event.content],
+        structuredContent: event.structuredContent,
+        details: { ...details, sessionTitle: title },
+      };
+    } catch (error) {
+      const warning = `Could not read session title for ${sessionFile}: ${error instanceof Error ? error.message : String(error)}`;
+      ctx.ui.notify(warning, "warning");
+      return {
+        content: [{ type: "text" as const, text: `Warning: ${warning}` }, ...event.content],
+        structuredContent: event.structuredContent,
+        details: { ...details, sessionTitleWarning: warning },
+      };
+    }
   });
 }

@@ -79,8 +79,8 @@ describe("historic session title editing", () => {
       const secondEntries = (await readFile(secondPath, "utf8")).trim().split("\n").map(JSON.parse);
       expect(firstEntries.at(-1).name).toBe("New title");
       expect(secondEntries.at(-1).name).toBe("");
-      expect(readSessionTitle(firstPath)).toBe("New title");
-      expect(readSessionTitle(secondPath)).toBeUndefined();
+      expect(await readSessionTitle(firstPath)).toEqual({ found: true, title: "New title" });
+      expect(await readSessionTitle(secondPath)).toEqual({ found: true, title: undefined });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
