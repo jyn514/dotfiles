@@ -93,6 +93,9 @@ no publication arguments; `--dry-run` still means npm's publication dry-run.
 
 ## Agent orchestration
 
+Use [delegation](delegation/SKILL.md) when assigning work to agents, deciding whether to wait, or integrating their results.
+It applies to implementation, research, review, and writing.
+
 When the problem's framing or approach is uncertain, use
 [creative-inquiry](creative-inquiry/SKILL.md) to question assumptions and discover
 possibilities. For comparing concrete software-design candidates, use

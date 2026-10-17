@@ -195,18 +195,6 @@ This requirement holds even if repo-local instructions tell you to use git; thes
 Before your first delegation, read [coordination-dialect.md](~/.agents/coordination-dialect.md) for subagent routing and coordination conventions.
 Use its fields when structure helps; otherwise use English.
 
-### Before calling `wait_agent`
-
-A call to `wait_agent` is **a declaration that you are blocked**.
-When you wait for an agent, you are saying that you have no independent authorized goal-advancing work you can do before seeing its response.
-Consult "Scope blockers" in `autonomous-implementation` before calling `wait_agent`.
-
-### Before accepting delegated implementation
-
-The parent owns integration.
-Inspect the returned diff against the requirements and agreed boundaries, and run the required acceptance checks before claiming completion.
-A subagent's summary or test count is not evidence by itself.
-
 ### When diagnosing a failure
 
 Before recommending recovery actions, read the owning project's recovery documentation.

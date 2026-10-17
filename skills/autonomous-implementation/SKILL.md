@@ -68,27 +68,12 @@ Do not rely on compaction to provide all necessary information.
 You can use `ask_user` to ask me questions and I will answer them when I have time.
 Continue independent authorized work while waiting. If none remains, mark the goal blocked with the missing decision; see [Scope blockers and preserve resumable state](#scope-blockers-and-preserve-resumable-state).
 
-## Delegate, but retain integration ownership
+## Delegated work and integrated milestones
 
-Default to delegating tasks.
-You are a coordinator and integrator, not a worker:
-your responsibility is to make sure that integrated work makes progress towards the goal, not to do the work yourself.
-
-Before delegating coupled implementation, apply [boundary-declaration's delegation readiness check](../boundary-declaration/SKILL.md#delegation-readiness) to settle shared contracts. Reuse an existing contract when it settles the shared choices.
-
-Delegate only tasks permitted by [Choose work that closes the path](#choose-work-that-closes-the-path), with clear inputs and expected outputs whose integration can be checked without repeating the worker's task. Use independent review for consequential judgment. Perform small inspections directly.
-
-Include the open acceptance condition, remaining integration obligation, declared ownership/contracts, owned files, protected work, and local checks in each worker packet; repository delegation rules still apply.
-Ask reviewers whether the mechanism is necessary, not only whether its implementation is correct.
-Give them the original diagnostic or acceptance question, authoritative constraints, and cumulative added mechanisms—not just the latest patch.
-Ask whether a smaller approach answers that question without inheriting conditions from the chosen mechanism.
-A correctness-only review does not justify the approach.
-
-Record progress in existing task state as **integrated**, **local-only**, or **blocked**, with the exact acceptance check and evidence. Apply [double-check's evidence standards](../double-check/SKILL.md#evidence-and-integration-status) to determine which scope the result establishes.
-
-Worker completion alone does not enable dependent capability work; an integrated result enables only the scope its evidence proves. Local-only or blocked results permit work to integrate them or resolve their blockers, and independent work permitted by [Choose work that closes the path](#choose-work-that-closes-the-path)—not expansion based on assumed acceptance. Keep the open condition and next permitted action visible.
-
-If producer and consumer disagree about required behavior, stop work across that boundary. Resolve the contract from governing authority or ask for a decision under [Choose work that closes the path](#choose-work-that-closes-the-path); neither worker may silently choose the interpretation. Continue only independent authorized tasks while the contract remains unresolved.
+Delegate only tasks permitted by [Choose work that closes the path](#choose-work-that-closes-the-path).
+Use [delegation](../delegation/SKILL.md) for assignments, useful parallel work, waiting, review, and integration.
+Record progress in existing task state as **integrated**, **local-only**, or **blocked**, with the exact acceptance check and evidence.
+An integrated result enables only the milestone scope its evidence proves; keep the open acceptance condition and next permitted action visible.
 
 When a task is marked as **integrated**, commit it using [commit-quality](../commit-quality/SKILL.md).
 Do not wait until the end of the session to commit your work.
