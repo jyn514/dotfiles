@@ -19,10 +19,14 @@ def record(event):
 
 
 if name == 'ssh-add':
+    (directory / 'checked-agent').write_text(os.environ.get('SSH_AUTH_SOCK', ''))
     sys.exit(int(os.environ.get('AGENT_STATUS', '0')))
 
 remote_environment = dict(os.environ, HOME=str(directory / 'remote home'))
 if name == 'ssh' and len(sys.argv) > 1:
+    if sys.argv[1] == '-G':
+        print('identityagent ' + os.environ.get('IDENTITY_AGENT', 'SSH_AUTH_SOCK'))
+        sys.exit(int(os.environ.get('SSH_CONFIG_STATUS', '0')))
     if os.environ.get('SSH_DISCOVERY_STATUS'):
         sys.exit(int(os.environ['SSH_DISCOVERY_STATUS']))
     sys.exit(subprocess.run(['/bin/sh', '-c', sys.argv[-1]], env=remote_environment).returncode)

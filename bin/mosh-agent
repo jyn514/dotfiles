@@ -19,8 +19,15 @@ for tool in autossh mosh ssh ssh-add; do
 		exit 1
 	}
 done
-if [ -z "${SSH_AUTH_SOCK:-}" ] || ! ssh-add -l >/dev/null 2>&1; then
-	printf '%s\n' 'mosh-agent: SSH_AUTH_SOCK must point to an available agent with keys' >&2
+config=$(ssh -G "$host") || exit
+agent=$(printf '%s\n' "$config" | awk '/^identityagent / {sub(/^identityagent /, ""); print; exit}')
+case "$agent" in
+	none) printf '%s\n' 'mosh-agent: IdentityAgent is disabled for this host' >&2; exit 1 ;;
+	''|SSH_AUTH_SOCK) agent=${SSH_AUTH_SOCK:-} ;;
+	\$*) agent=$(printenv "${agent#\$}") || agent= ;;
+esac
+if [ -z "$agent" ] || ! SSH_AUTH_SOCK="$agent" ssh-add -l >/dev/null 2>&1; then
+	printf '%s\n' 'mosh-agent: configured IdentityAgent (or SSH_AUTH_SOCK) must point to an available agent with keys' >&2
 	exit 1
 fi
 
@@ -32,7 +39,7 @@ case "$remote_socket" in
 	/*) ;;
 	*) printf '%s\n' 'mosh-agent: SSH did not return an absolute remote socket path' >&2; exit 1 ;;
 esac
-case "$remote_socket:$SSH_AUTH_SOCK" in
+case "$remote_socket:$agent" in
 	*:*:*) printf '%s\n' 'mosh-agent: socket paths cannot contain a colon' >&2; exit 1 ;;
 esac
 
@@ -62,7 +69,7 @@ AUTOSSH_GATETIME=0 autossh -M 0 -N -T \
 	-o BatchMode=yes -o ControlMaster=no -o ControlPath=none \
 	-o ExitOnForwardFailure=yes -o ConnectTimeout=10 \
 	-o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
-	-R "$remote_socket:$SSH_AUTH_SOCK" "$host" </dev/null 3<&- &
+	-R "$remote_socket:$agent" "$host" </dev/null 3<&- &
 tunnel_pid=$!
 # Explicit stdin preserves the terminal; wait lets shell traps run immediately.
 mosh --server="env SSH_AUTH_SOCK=\"\$HOME/$socket_relative\" mosh-server" "$@" <&3 3<&- &

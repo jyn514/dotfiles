@@ -68,6 +68,52 @@ class MoshAgentTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_stopped()
 
+    def test_configured_agent_is_checked_and_forwarded(self):
+        for selection in ('path', 'environment', 'SSH_AUTH_SOCK'):
+            with self.subTest(selection=selection):
+                agent = str(self.directory / f'{selection} agent.sock')
+                if selection == 'environment':
+                    self.environment['IDENTITY_AGENT'] = '$MOSH_TEST_AGENT'
+                    self.environment['MOSH_TEST_AGENT'] = agent
+                elif selection == 'SSH_AUTH_SOCK':
+                    self.environment['IDENTITY_AGENT'] = selection
+                    self.environment['SSH_AUTH_SOCK'] = agent
+                else:
+                    self.environment['IDENTITY_AGENT'] = agent
+                    self.environment.pop('SSH_AUTH_SOCK')
+                result = self.run_wrapper('devbox')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((self.directory / 'checked-agent').read_text(), agent)
+                arguments = [event[3] for event in self.events()
+                    if event[:2] == ['autossh', 'started']][-1]
+                self.assertEqual(arguments[arguments.index('-R') + 1].split(':', 1)[1], agent)
+
+    def test_configured_agent_overrides_stale_environment(self):
+        agent = str(self.directory / 'configured agent.sock')
+        self.environment['IDENTITY_AGENT'] = agent
+        result = self.run_wrapper('devbox')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.directory / 'checked-agent').read_text(), agent)
+        arguments = next(event[3] for event in self.events() if event[:2] == ['autossh', 'started'])
+        self.assertEqual(arguments[arguments.index('-R') + 1].split(':', 1)[1], agent)
+
+    def test_disabled_or_unset_configured_agent_starts_no_children(self):
+        for agent in ('none', '$MOSH_MISSING_AGENT'):
+            with self.subTest(agent=agent):
+                self.environment.pop('MOSH_MISSING_AGENT', None)
+                self.environment['IDENTITY_AGENT'] = agent
+                result = self.run_wrapper('devbox')
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('mosh-agent:', result.stderr)
+                self.assertEqual(self.events(), [])
+
+    def test_failed_config_discovery_starts_no_children(self):
+        self.environment['SSH_CONFIG_STATUS'] = '255'
+        result = self.run_wrapper('devbox')
+        self.assertEqual(result.returncode, 255, result.stderr)
+        self.assertFalse((self.directory / 'checked-agent').exists())
+        self.assertEqual(self.events(), [])
+
     def test_termination_stops_both_children(self):
         self.environment['MOSH_WAIT'] = '1'
         process = subprocess.Popen([str(WRAPPER), 'devbox'],

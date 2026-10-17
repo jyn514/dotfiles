@@ -36,7 +36,9 @@ Mosh starts with `SSH_AUTH_SOCK` set to this path; no remote shell configuration
 Ordinary SSH sessions keep their normal agent selection.
 Remove any global fixed-socket override added for the earlier two-argument version.
 Existing tmux panes keep their old environment; set `SSH_AUTH_SOCK` to this path once in those panes, or start new shells from the mosh session.
-The local agent must be available through `SSH_AUTH_SOCK`; an `IdentityAgent` setting alone does not select the socket being forwarded.
+The wrapper uses `ssh -G HOST` to select the local `IdentityAgent`, including a configured 1Password agent.
+Without an `IdentityAgent` override, it uses `SSH_AUTH_SOCK`.
+The selected agent must be reachable and have keys loaded; `IdentityAgent none` disables startup.
 Use one wrapper per remote account at a time, including across laptops and host aliases.
 A second tunnel would replace the first tunnel's socket.
 HOST must be the first argument.
