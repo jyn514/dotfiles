@@ -287,6 +287,28 @@ class AttachmentTests(unittest.TestCase):
         self.tmux("new-session", "-d", "-s", "scripted", "sleep", "300")
         self.assertIn("scripted", self.tmux("list-sessions", "-F", "#{session_name}"))
 
+    def test_incoming_client_guard_ignores_another_clients_last_session(self):
+        self.tmux("set-option", "-s", attachment.DISABLE_OPTION, "1")
+        _, competing = self.start(command="attach-session", name="seed")
+        _, incoming = self.start("100.64.0.2", name="retained")
+        self.tmux("new-session", "-d", "-s", "destination", "sleep", "300")
+        names = dict(line.split("\t") for line in self.tmux(
+            "list-clients", "-F", "#{client_pid}\t#{client_name}").splitlines())
+        self.tmux("switch-client", "-c", names[competing], "-t", "destination")
+        self.tmux("set-option", "-su", attachment.DISABLE_OPTION)
+        created = self.tmux("display-message", "-p", "-t", "retained", "#{session_id}")
+        destination = self.tmux("display-message", "-p", "-t", "destination", "#{session_id}")
+        server = self.tmux("display-message", "-p", "#{pid}")
+        tmux = attachment.Tmux(NATIVE, self.socket)
+        # A hook/helper's default target can belong to another client. Its
+        # nonempty last-session must not suppress a newly attached client.
+        with mock.patch.dict(os.environ, {"TMUX": f"{self.socket},{server},{destination[1:]}"}):
+            attachment.attach(tmux, self.socket, names[incoming], created, server)
+            self.assertEqual(self.session(incoming), "seed")
+            # The competing client's intentional switch must still be honored.
+            attachment.attach(tmux, self.socket, names[competing], destination, server)
+            self.assertEqual(self.session(competing), "destination")
+
     def test_simultaneous_same_source_clients_do_not_claim_same_session(self):
         processes = [self.start("100.64.0.1", name=f"race-{index}", wait=False)
                      for index in range(2)]

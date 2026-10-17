@@ -228,8 +228,9 @@ def attach(tmux: Tmux, socket: str, client: str, created: str, server_pid: str,
         diagnostics = []
     if tmux.run("show-option", "-sqv", DISABLE_OPTION):
         return
-    # The hook supplies stable targets before numeric session renaming.
-    if not client or tmux.run("display-message", "-p", "-c", client, "#{client_last_session}"):
+    # Bind both targets: a different default session can make tmux format
+    # another client's history despite -c. Keep the hook's stable session ID.
+    if not client or tmux.run("display-message", "-p", "-c", client, "-t", created, "#{client_last_session}"):
         return
     with selection_lock(socket, server_pid):
         live = tmux.clients()

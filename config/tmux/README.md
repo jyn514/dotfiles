@@ -40,6 +40,7 @@ A session is eligible when it is detached or every attached client has a known, 
 Detached sessions take priority, with tmux listing order preserved within each group.
 The new session is excluded; if no candidate qualifies, it remains available.
 Explicit session creation inside tmux, detached scripted creation, and named attachments retain their behavior.
+Another client's earlier session switch does not prevent reuse for the incoming client.
 Sources identify the connection seen by the server, so NAT or jump hosts can make machines share an IP.
 
 Tailscale names are optional display labels; IP addresses define identity and remain the fallback label.
