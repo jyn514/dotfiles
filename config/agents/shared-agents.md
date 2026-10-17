@@ -186,6 +186,10 @@ Always use `jj`, not `git`, for change management; it supports undo and history 
 without modifying the working tree. Create commits with `jj commit`, not `jj describe`.
 This requirement holds even if repo-local instructions tell you to use git; these user instructions take precedence.
 
+Coordinate with other active agents before history edits that can invalidate their revision targets, such as splits, rebases, or squashes.
+Routine disjoint path-only commits need no hold unless another active operation requires an unchanged revision.
+Hold only the conflicting mutations, not independent work, and release the hold with the resulting revision IDs.
+
 ## Reasoning and judgment
 
 - **Naming:** Prefer names that encode the project's governing philosophy, not merely its contents.
