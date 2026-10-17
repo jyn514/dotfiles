@@ -16,6 +16,8 @@ landlock = "0.4.5"
 [profile.release]
 debug = 1
 strip = false
-lto = true
-codegen-units = 1
+# The proxy mostly validates requests and waits for jj. Prefer Cargo's parallel
+# code generation over whole-program optimization, including in image tests.
+lto = false
+codegen-units = 16
 panic = "abort"
