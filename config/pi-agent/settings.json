@@ -32,6 +32,7 @@
   "collapseChangelog": true,
   "quietStartup": true,
   "outputPadY": 0,
+  "toolPreviewLines": 3,
   "doubleEscapeAction": "tree",
   "fullscreenExitOutput": "resume-hint",
   "defaultProvider": "openai-codex",
