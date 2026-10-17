@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = --test-environment-ready ]; then
+	shift
+else
+	exec "$root/dev/test-environment" "$root/dev/pytest" --test-environment-ready "$@"
+fi
+
+installed_pytest_works() {
+	command -v pytest >/dev/null 2>&1 || return 1
+	pytest_help=$(pytest --help 2>/dev/null) || return 1
+	for option in --instafail --numprocesses --force-sugar; do
+		case $pytest_help in
+			*"$option"*) ;;
+			*) return 1;;
+		esac
+	done
+}
+
+# pytest-sugar renders compact progress; pytest-instafail streams tracebacks.
+if installed_pytest_works; then
+	exec pytest "$@"
+elif command -v uvx >/dev/null 2>&1; then
+	pytest_requirement=$(grep '^pytest==' "$root/install/test.txt")
+	xdist_requirement=$(grep '^pytest-xdist==' "$root/install/test.txt")
+	sugar_requirement=$(grep '^pytest-sugar==' "$root/install/test.txt")
+	instafail_requirement=$(grep '^pytest-instafail==' "$root/install/test.txt")
+	exec uvx --from "$pytest_requirement" \
+		--with "$xdist_requirement" \
+		--with "$sugar_requirement" \
+		--with "$instafail_requirement" \
+		pytest "$@"
+else
+	echo "pytest with xdist, sugar, and instafail is required; install uv to run the pinned requirements in install/test.txt" >&2
+	exit 1
+fi

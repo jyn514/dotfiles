@@ -66,30 +66,8 @@ pytest_args="-n $jobs --dist loadfile --quiet --no-header --instafail -p no:cach
 if [ "$verbose" = 1 ]; then
 	pytest_args="-n $jobs --dist loadfile --verbose --instafail -p no:cacheprovider"
 fi
-# pytest-sugar renders compact progress; pytest-instafail streams tracebacks.
 # shellcheck disable=SC2086
-if command -v pytest >/dev/null 2>&1 \
-	&& pytest --help 2>/dev/null | grep -q -- --instafail \
-	&& pytest --help 2>/dev/null | grep -q -- --numprocesses \
-	&& pytest --help 2>/dev/null | grep -q -- --force-sugar
-then
-	# shellcheck disable=SC2086
-	pytest $pytest_args
-elif command -v uv >/dev/null 2>&1; then
-	pytest_requirement=$(grep '^pytest==' install/test.txt)
-	xdist_requirement=$(grep '^pytest-xdist==' install/test.txt)
-	sugar_requirement=$(grep '^pytest-sugar==' install/test.txt)
-	instafail_requirement=$(grep '^pytest-instafail==' install/test.txt)
-	# shellcheck disable=SC2086
-	uvx --from "$pytest_requirement" \
-		--with "$xdist_requirement" \
-		--with "$sugar_requirement" \
-		--with "$instafail_requirement" \
-		pytest $pytest_args
-else
-	echo "pytest with xdist, sugar, and instafail is required; install uv to run the pinned requirements in install/test.txt" >&2
-	exit 1
-fi
+"$root/dev/pytest" --test-environment-ready $pytest_args
 
 bb_command=${DOTFILES_TEST_BB_REAL:-bb}
 "$bb_command" tools/extract-chat/tests/extract_chat_test.clj

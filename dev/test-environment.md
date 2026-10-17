@@ -5,6 +5,10 @@ It requires Python 3 and creates a private HOME plus Pi and XDG state directorie
 It removes those directories after normal exit, nonzero exit, or a forwarded signal, while preserving stdin, stdout, stderr, and exit status.
 This is environment isolation, not a filesystem sandbox.
 
+For Python tests, use `dev/pytest [ARGS...]`; it applies this isolation and selects
+a working pytest with the repository's required plugins, using pinned `uvx`
+dependencies when necessary.
+
 On Linux, the wrapper also adopts orphaned descendants and reaps them while the command runs.
 After the command exits, the wrapper sends SIGTERM to its adopted children and allows one second for cleanup.
 It then kills and reaps remaining descendants before removing HOME.

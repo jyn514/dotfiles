@@ -101,13 +101,17 @@ It invokes `dev/test-environment` automatically; a failing Pi test stops the run
 Python discovery follows `pytest.ini`: `*_test.py` and `test_*.py` under `tests/` and `tools/`.
 Other suites need an existing discovery route or explicit dispatch in `dev/test`, by default or through a documented opt-in mode.
 Check that intended cases execute through that route, not only through a focused command.
-For focused Python suites, use the installed `pytest` entrypoint through the test environment:
+For focused Python suites, use `dev/pytest`:
 
 ```sh
-dev/test-environment pytest -q -p no:cacheprovider tests/chat-history/chat_history_test.py
+dev/pytest -q -p no:cacheprovider tests/chat-history/chat_history_test.py
 ```
 
-`python3 -m pytest` can select a different interpreter without pytest even when the installed entrypoint works.
+Both `dev/test` and `dev/pytest` select pytest inside the isolated environment.
+They use an installed pytest with the required plugins when it works, or fall
+back to `uvx` with the pinned requirements in `install/test.txt`. Install uv if
+pytest is unavailable there: user-installed Python packages are hidden by the
+private HOME. Pytest arguments and exit status pass through unchanged.
 For focused tests and ad-hoc Pi probes, including `--help` checks, use `dev/test-environment COMMAND [ARGS...]`:
 
 ```sh

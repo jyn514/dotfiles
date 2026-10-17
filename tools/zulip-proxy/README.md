@@ -88,7 +88,7 @@ In a sandbox, it uses only the mounted proxy socket and never falls back locally
 Run unit and admission checks from the repository root through the isolated test environment:
 
 ```sh
-dev/test-environment pytest tools/zulip-proxy/tests/zulip_proxy_test.py tools/zulip-proxy/tests/caddy_admission_test.py
+dev/pytest tools/zulip-proxy/tests/zulip_proxy_test.py tools/zulip-proxy/tests/caddy_admission_test.py
 ```
 
 Normal `dev/test` discovery includes both files.

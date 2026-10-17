@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
 
@@ -12,11 +13,92 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestRunnerTests(unittest.TestCase):
-    def run_fallback(self, *, missing_plugin=False, uv_available=True):
+    def run_focused(self, *, user_installed_pytest=False, uv_available=True):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("pytest", "test-environment", "test-environment.clj"):
+                destination = root / "dev" / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / "dev" / name, destination)
+            (root / "install").mkdir()
+            shutil.copy2(ROOT / "install/test.txt", root / "install/test.txt")
+            home = root / "host-home"
+            home.mkdir()
+            (home / ".pytest-ready").touch()
+            binaries = root / "bin"
+            binaries.mkdir()
+            for name in ("dirname", "grep"):
+                (binaries / name).symlink_to(shutil.which(name))
+            (binaries / "python3").symlink_to(sys.executable)
+            log = root / "arguments"
+            home_log = root / "child-home"
+            dispatch = (
+                'printf "%s\\n" "$HOME" > "$TEST_HOME_LOG"\n'
+                'printf "%s\\n" "$@" > "$TEST_LOG"\n'
+                'exit 23\n'
+            )
+            pytest = binaries / "pytest"
+            pytest.write_text(
+                '#!/bin/sh\n'
+                'if [ "${1:-}" = --help ]; then\n'
+                + ('  [ -e "$HOME/.pytest-ready" ] || exit 1\n' if user_installed_pytest else '')
+                + '  echo "--instafail --numprocesses --force-sugar"\n'
+                '  exit 0\nfi\n' + dispatch
+            )
+            pytest.chmod(0o755)
+            if uv_available:
+                uvx = binaries / "uvx"
+                uvx.write_text('#!/bin/sh\n' + dispatch)
+                uvx.chmod(0o755)
+            arguments = ['-q', '-k', 'first or second', 'tests/path with spaces.py::test_case']
+            environment = os.environ | {
+                'HOME': str(home), 'PATH': str(binaries),
+                'TEST_LOG': str(log), 'TEST_HOME_LOG': str(home_log),
+                'DOTFILES_TEST_CARGO_HOME': str(root / 'cargo'),
+            }
+            # The launcher works under the original HOME, as the reported one did.
+            baseline = subprocess.run([pytest, '--help'], env=environment,
+                                      text=True, capture_output=True)
+            self.assertEqual(0, baseline.returncode, baseline.stderr)
+            result = subprocess.run([root / 'dev/pytest', *arguments], cwd=root,
+                                    env=environment, text=True, capture_output=True)
+            actual = log.read_text().splitlines() if log.exists() else []
+            child_home = home_log.read_text().strip() if home_log.exists() else None
+            if child_home:
+                self.assertNotEqual(str(home), child_home)
+                self.assertFalse(Path(child_home).exists())
+            self.assertTrue((home / '.pytest-ready').exists())
+            return result, actual, arguments
+
+    def test_focused_runner_preserves_arguments_exit_status_and_home_isolation(self):
+        result, actual, expected = self.run_focused()
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertEqual(expected, actual)
+
+    def test_focused_runner_falls_back_when_isolation_hides_user_install(self):
+        result, actual, expected = self.run_focused(user_installed_pytest=True)
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertEqual(expected, actual[-len(expected):])
+        requirements = (ROOT / 'install/test.txt').read_text().splitlines()
+        self.assertEqual([
+            '--from', requirements[0], '--with', requirements[1],
+            '--with', requirements[2], '--with', requirements[3], 'pytest',
+        ], actual[:-len(expected)])
+
+    def test_focused_runner_explains_missing_fallback_after_isolation(self):
+        result, actual, _ = self.run_focused(user_installed_pytest=True, uv_available=False)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual([], actual)
+        self.assertIn('install uv', result.stderr)
+
+    def run_fallback(self, *, missing_plugin=False, broken_pytest=False, uv_available=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
-            (root / "dev/test").write_bytes((ROOT / "dev/test").read_bytes())
+            for name in ("test", "pytest"):
+                path = root / "dev" / name
+                path.write_bytes((ROOT / "dev" / name).read_bytes())
+                path.chmod(0o755)
             (root / "install").mkdir()
             (root / "install/test.txt").write_bytes((ROOT / "install/test.txt").read_bytes())
             bin_directory = root / "bin"
@@ -25,7 +107,7 @@ class TestRunnerTests(unittest.TestCase):
                 (bin_directory / command).symlink_to(shutil.which(command))
             (bin_directory / "bun").symlink_to(shutil.which("true"))
             log = root / "uvx.args"
-            if missing_plugin:
+            if missing_plugin or broken_pytest:
                 pytest = bin_directory / "pytest"
                 pytest.write_text(
                     "#!/bin/sh\n"
@@ -36,6 +118,8 @@ class TestRunnerTests(unittest.TestCase):
                     "exit 99\n"
                 )
                 pytest.chmod(0o755)
+                if broken_pytest:
+                    pytest.write_text("#!/bin/sh\necho 'ModuleNotFoundError: No module named pytest' >&2\nexit 1\n")
             if uv_available:
                 for command in ("uv", "uvx"):
                     executable = bin_directory / command
@@ -71,6 +155,11 @@ class TestRunnerTests(unittest.TestCase):
         self.assertEqual(23, result.returncode, result.stderr)
         self.assertIn("pytest", arguments)
 
+    def test_broken_installed_pytest_uses_uvx(self) -> None:
+        result, arguments = self.run_fallback(broken_pytest=True)
+        self.assertEqual(23, result.returncode, result.stderr)
+        self.assertIn("pytest", arguments)
+
     def test_missing_uv_explains_how_to_get_pinned_test_dependencies(self) -> None:
         result, arguments = self.run_fallback(uv_available=False)
         self.assertEqual(1, result.returncode, result.stderr)
@@ -82,7 +171,7 @@ class TestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "dev").mkdir()
-            for name in ("test", "test-environment", "test-environment.clj"):
+            for name in ("test", "pytest", "test-environment", "test-environment.clj"):
                 subprocess.run(["cp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
                 subprocess.run(["cmp", ROOT / f"dev/{name}", root / f"dev/{name}"], check=True)
                 (root / f"dev/{name}").chmod(0o755)
@@ -151,6 +240,7 @@ class TestRunnerTests(unittest.TestCase):
                 runner = root / "dev/test"
                 subprocess.run(["cp", ROOT / "dev/test", runner], check=True)
                 subprocess.run(["cmp", ROOT / "dev/test", runner], check=True)
+                shutil.copy2(ROOT / "dev/pytest", root / "dev/pytest")
                 binaries = root / "bin"
                 binaries.mkdir()
                 for command in ("pytest", "bb", "node", "bun", "cargo", "python3"):
@@ -183,7 +273,7 @@ class TestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in (
-                "dev/test", "dev/test-environment", "dev/test-environment.clj",
+                "dev/test", "dev/pytest", "dev/test-environment", "dev/test-environment.clj",
                 "tools/codex-sandbox/owned_images.py",
                 "tests/fixtures/native_test_runner_command.sh",
             ):
