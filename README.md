@@ -15,6 +15,8 @@ Mise's Python is scoped to bootstrap tasks, including `pi-install`; it is not a 
 Shell startup removes stale mise shim directories from PATH, including in non-interactive shells.
 Non-interactive shells load the configured tool directories directly without prompt hooks.
 Run `mise run bootstrap-python -- <arguments>` from the repository root for bootstrap scripts.
+Mise tasks do not automatically install missing tools; use `mise install` explicitly.
+`./setup local` installs configured tools and bootstrap Python before running tasks.
 Run `./setup py` to install runtime libraries from `install/python.txt` into system Python's per-user package directory.
 This does not overwrite distro-owned packages; user packages can still take precedence over distro packages when imported.
 On Windows, install native Python with its `py` launcher before running `setup.ps1`.
