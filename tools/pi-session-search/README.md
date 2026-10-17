@@ -165,7 +165,10 @@ Use at most one of `tail: true`, `after`, `aroundEntryId`, and `aroundTimestamp`
 `maxMessages: 0` returns no messages and preserves the starting cursor position.
 With `tail: true`, it instead selects the safe end of the file so you can follow only future messages.
 Each message shows its actual eligible-message position, role, timestamp, and entry ID when present.
-Structured details return the message metadata, cursor, `hasMore`, and skipped-record counts, without echoing the requested selector or limits.
+Structured details include `sessionFile`, the resolved absolute realpath of the selected transcript, alongside message metadata,
+the cursor, `hasMore`, and skipped-record counts.
+Both file and ID selectors return this path, including empty reads; version lists omit the top-level `sessionFile`.
+The ID selector and positioning options are not echoed.
 
 Reads include nonempty user/assistant text and assistant tool-call summaries, not the entire raw transcript.
 They omit tool results, thinking-only messages, and custom entries.
@@ -183,7 +186,7 @@ A session ID can therefore name several files, not consecutive pieces of one con
 
 When several versions match, this returns a successful indexed list with each version's timestamp, cwd,
 first local user-message preview, and absolute `sessionFile`.
-Structured details contain `versions`, an empty `messages` list, and no `nextCursor`.
+Structured details contain `versions`, an empty `messages` list, and no top-level `sessionFile` or `nextCursor`.
 Pass a listed path unchanged to read that version:
 
 ```json

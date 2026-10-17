@@ -12,9 +12,9 @@ governing permissions and limitations under the License.
 
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { discoverAndLoadExtensions, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -66,6 +66,31 @@ describe("session navigation", () => {
 		assert.ok(!result.text.includes("excluded tool result"));
 		const initial = await readSession({ sessionFile, maxMessages: 1 });
 		assert.equal(initial.messages[0].entryId, "first", "the default remains a read from the start");
+	});
+
+	it("returns the resolved transcript path for either selector and every read position", async () => {
+		write([message("a", "first"), message("b", "second")]);
+		const expected = realpathSync(sessionFile);
+		for (const selector of [{ sessionId: "navigation-session" }, { sessionFile }, { sessionFile: relative(root, sessionFile) }]) {
+			for (const position of [{}, { tail: true }, { aroundEntryId: "a" }, { aroundTimestamp: time }, { maxMessages: 0 }]) {
+				const result = await readSession({ ...selector, ...position, maxMessages: position.maxMessages ?? 1 });
+				assert.equal(result.sessionFile, expected);
+				const continued = await readSession({ ...selector, after: result.nextCursor, maxMessages: 1 });
+				assert.equal(continued.sessionFile, expected);
+			}
+		}
+		write([]);
+		assert.equal((await readSession({ sessionId: "navigation-session" })).sessionFile, expected,
+			"empty transcripts still identify the resolved file");
+	});
+
+	it("returns the canonical target rather than echoing a symlink selector", { skip: process.platform === "win32" }, async () => {
+		write([message("a", "first")]);
+		const alias = join(root, "--fixture--", "alias.jsonl");
+		symlinkSync(sessionFile, alias);
+		const result = await readSession({ sessionFile: relative(root, alias) });
+		assert.equal(result.sessionFile, realpathSync(sessionFile));
+		assert.notEqual(result.sessionFile, alias);
 	});
 
 	it("round-trips search entry IDs even when multiple entries share a timestamp", async () => {
@@ -309,7 +334,9 @@ try {
 		assert.deepEqual(tail.details.messages, [{ index: 2, entryId: "b", role: "assistant", timestamp: time }]);
 		assert.ok("hasMore" in tail.details && tail.details.hasMore === false);
 		assert.match(JSON.stringify(tail.content), /message 2/);
-		for (const key of ["sessionFile", "sessionId", "maxMessages", "contextMessages", "tail", "text"]) {
+		assert.ok("sessionFile" in tail.details);
+		assert.equal(tail.details.sessionFile, realpathSync(sessionFile));
+		for (const key of ["sessionId", "maxMessages", "contextMessages", "tail", "text"]) {
 			assert.ok(!(key in tail.details), `metadata must not echo ${key}`);
 		}
 		appendFileSync(sessionFile, message("c", "third needle") + "\n");

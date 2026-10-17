@@ -11,7 +11,7 @@ governing permissions and limitations under the License.
 */
 
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,6 +71,12 @@ it("loads the package through Pi's real TypeScript extension loader", async () =
 				undefined, undefined, {} as Parameters<typeof read.execute>[4]);
 			assert.notEqual(result.isError, true, JSON.stringify(result.content));
 			assert.match(JSON.stringify(result.content), /native ID reader needle/);
+			assert.ok(result.details && typeof result.details === "object" && "sessionFile" in result.details);
+			assert.equal(result.details.sessionFile, realpathSync(source.getSessionFile()!));
+			const resolvedRead = await read.execute("native-read-resolved-path", { sessionFile: result.details.sessionFile as string },
+				undefined, undefined, {} as Parameters<typeof read.execute>[4]);
+			assert.notEqual(resolvedRead.isError, true, JSON.stringify(resolvedRead.content));
+			assert.match(JSON.stringify(resolvedRead.content), /native ID reader needle/);
 			source.appendMessage({ role: "user", content: "native ID reader needle again", timestamp: 2 });
 			const other = SessionManager.create(sandbox, join(sandbox, "sessions", "--native--"));
 			other.appendMessage({ role: "user", content: "native ID reader needle elsewhere", timestamp: 3 });

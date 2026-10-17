@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transcript read details include the selected file's resolved absolute `sessionFile`, for both file and ID selectors.
+  Version lists omit this top-level field because no single transcript is selected.
 - Search Pi and Codex JSONL history together with both tools and `/find-sessions`.
   Set `PI_SESSION_SEARCH_CODEX_ROOT` to configure Codex storage; the default honors `CODEX_HOME`.
 - Codex reads reconstruct inherited history for the selected version and preserve append-safe cursors.

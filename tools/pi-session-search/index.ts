@@ -789,6 +789,8 @@ export interface ReadSessionMessage {
 
 export interface ReadSessionResult {
 	text: string;
+	/** Resolved absolute realpath of the selected transcript; absent for version lists. */
+	sessionFile?: string;
 	messages: ReadSessionMessage[];
 	nextCursor?: string;
 	hasMore: boolean;
@@ -1013,7 +1015,7 @@ export async function readSession(opts: ReadSessionOptions): Promise<ReadSession
 			out.push(entry.text, "");
 		}
 		out.push(`# Navigation ${JSON.stringify({ nextCursor, hasMore, skippedRecords })}`);
-		return { text: out.join("\n"), messages, nextCursor, hasMore, skippedRecords };
+		return { text: out.join("\n"), sessionFile: last.file, messages, nextCursor, hasMore, skippedRecords };
 	} finally {
 		await Promise.all(segments.map(s => s.handle.close()));
 	}

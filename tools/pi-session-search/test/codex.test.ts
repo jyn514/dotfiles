@@ -11,7 +11,7 @@ governing permissions and limitations under the License.
 */
 
 import { strict as assert } from "node:assert";
-import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +116,8 @@ describe("Codex sessions through searchSessions and readSession", () => {
 		assert.equal(hit.entryId, "codex-target");
 		assert.equal(hit.sessionCwd, "/fixture/codex");
 		const read = await readSession({ sessionFile: hit.sessionFile, aroundEntryId: hit.entryId, maxMessages: 1 });
+		assert.equal(read.sessionFile, realpathSync(file));
+		assert.equal((await readSession({ sessionId: thread })).sessionFile, realpathSync(file));
 		assert.deepEqual(read.messages.map(item => item.entryId), ["codex-target"]);
 		assert.match(read.text, /mixed-source needle/);
 		assert.doesNotMatch(read.text, /later context/);
@@ -169,6 +171,7 @@ describe("Codex sessions through searchSessions and readSession", () => {
 			meta(thread, undefined, "/second/loader", "2026-10-15T09:00:00.000Z"),
 			message("loaded-other", "second loader version preview", 1), message("second-sentinel", "second full transcript sentinel", 2),
 		], thread, rolloutB, "2026-10-15");
+		const uniqueFile = writeCodex([meta(otherThread), message("unique-target", "unique Codex context", 1)], otherThread);
 		const packageDir = fileURLToPath(new URL("../", import.meta.url));
 		const loaded = await discoverAndLoadExtensions([packageDir], root, join(root, "isolated-agent"));
 		assert.deepEqual(loaded.errors, []);
@@ -199,12 +202,21 @@ describe("Codex sessions through searchSessions and readSession", () => {
 		assert.ok(exact.details && typeof exact.details === "object" && "messages" in exact.details);
 		assert.deepEqual(exact.details.messages, [{ index: 1, entryId: "loaded-target", role: "user", timestamp }]);
 
+		const byId = await read.execute("loaded-codex-id", { sessionId: otherThread, maxMessages: 1 }, undefined, undefined, ctx);
+		assert.notEqual(byId.isError, true, JSON.stringify(byId.content));
+		const resolved = byId.details as Omit<ReadSessionResult, "text">;
+		assert.equal(resolved.sessionFile, realpathSync(uniqueFile));
+		const byResolvedFile = await read.execute("loaded-resolved-file", { sessionFile: resolved.sessionFile, maxMessages: 1 }, undefined, undefined, ctx);
+		assert.notEqual(byResolvedFile.isError, true, JSON.stringify(byResolvedFile.content));
+		assert.deepEqual((byResolvedFile.details as Omit<ReadSessionResult, "text">).messages, resolved.messages);
+
 		const chooser = await read.execute("loaded-codex-versions", { sessionId: thread }, undefined, undefined, ctx);
 		assert.notEqual(chooser.isError, true, JSON.stringify(chooser.content));
 		const details = chooser.details as Omit<ReadSessionResult, "text">;
 		assert.deepEqual(details.messages, []);
 		assert.equal(details.hasMore, false);
 		assert.equal(details.nextCursor, undefined);
+		assert.ok(!("sessionFile" in details), "a version list has no single resolved transcript");
 		assert.equal(details.versions?.length, 2);
 		assert.deepEqual(details.versions?.map(version => version.index), [1, 2]);
 		assert.deepEqual(new Set(details.versions?.map(version => version.sessionFile)), new Set([firstFile, secondFile]));
@@ -393,6 +405,7 @@ describe("Codex sessions through searchSessions and readSession", () => {
 		assert.deepEqual(chooser.messages, []);
 		assert.equal(chooser.hasMore, false);
 		assert.equal(chooser.nextCursor, undefined);
+		assert.ok(!("sessionFile" in chooser));
 		assert.equal(chooser.skippedRecords, 0);
 		assert.doesNotMatch(chooser.text, /full transcript (?:first|second) sentinel/);
 		assert.equal(chooser.versions?.length, 2);
@@ -434,6 +447,7 @@ describe("Codex sessions through searchSessions and readSession", () => {
 			message("child-3", "child continuation", 4), message("child-4", "last child", 5),
 		], thread, rolloutB, "2026-10-15");
 		const first = await readSession({ sessionFile: childFile, maxMessages: 1 });
+		assert.equal(first.sessionFile, realpathSync(childFile), "an inherited window still identifies the selected child version");
 		assert.deepEqual(first.messages.map(item => [item.index, item.entryId]), [[1, "parent-1"]]);
 		assert.equal(first.hasMore, true);
 		const second = await readSession({ sessionFile: childFile, after: first.nextCursor, maxMessages: 2 });
