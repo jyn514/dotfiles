@@ -244,18 +244,20 @@
   (when executable?
     (.setExecutable (fs/file target) true false)))
 
-(defn- symlink-target [revision path]
-  ;; JJ file show intentionally excludes symlinks. Use JJ's backend location
-  ;; and immutable commit ID, then read the Git blob verbatim (no trimming).
-  (let [git-dir (str/trim-newline (:out (run-jj-read "preflight" "git" "root")))
-        commit (str/trim-newline
-                (:out (run-jj-read "preflight" "log" "-r" revision
-                                  "--no-graph" "-T" "commit_id")))]
-    (:out (run "preflight" "git" (str "--git-dir=" git-dir)
-               "cat-file" "blob" (str commit ":" path)))))
+(defn- symlink-target [git-dir commit path]
+  ;; JJ file show intentionally excludes symlinks. Read the Git blob verbatim.
+  (:out (run "preflight" "git" (str "--git-dir=" git-dir)
+             "cat-file" "blob" (str commit ":" path))))
 
 (defn- materialize-patch-paths! [revision paths target]
-  (let [entries (tree-entry-index revision)]
+  (let [entries (tree-entry-index revision)
+        ;; Resolve only if needed, once for this materialization, never across
+        ;; preflight and post-split verification or between invocations.
+        symlink-source (delay
+                         [(str/trim-newline (:out (run-jj-read "preflight" "git" "root")))
+                          (str/trim-newline
+                           (:out (run-jj-read "preflight" "log" "-r" revision
+                                             "--no-graph" "-T" "commit_id")))])]
     (doseq [path paths
             :let [{:keys [type executable?]} (get entries path)
                   target-path (fs/file target path)]]
@@ -264,7 +266,8 @@
         "file" (write-file-from-revision! revision path target-path executable?)
         "symlink" (do
                     (fs/create-dirs (fs/parent target-path))
-                    (fs/create-sym-link target-path (symlink-target revision path)))
+                    (let [[git-dir commit] @symlink-source]
+                      (fs/create-sym-link target-path (symlink-target git-dir commit path))))
         (fail! "preflight" (str "unsupported tree entry for " path ": " type))))))
 
 (defn- apply-patch! [tree patch]
@@ -351,7 +354,9 @@
     (doseq [tree [left right selected]] (fs/create-dirs tree))
     (materialize-patch-paths! left-revision original-paths left)
     (materialize-patch-paths! revision original-paths right)
-    (materialize-patch-paths! left-revision original-paths selected)
+    ;; Apply to an independent copy of the exact parent tree already read.
+    ;; Archive copy preserves raw bytes, executable bits and dangling symlinks.
+    (run "preflight" "cp" "-a" (str left "/.") (str selected))
     (spit (str remaining-patch) patch-text)
     (apply-patch! selected remaining-patch)
     (validate-contained!

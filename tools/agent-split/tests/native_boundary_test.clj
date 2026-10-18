@@ -2,11 +2,23 @@
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [cheshire.core :as json]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]))
 
 (def script (str (fs/canonicalize "tools/agent-split/src/scripts/agent-split.clj")))
 (def scratch (System/getProperty "java.io.tmpdir"))
+(def containment-cases
+  (edn/read-string (slurp "tools/agent-split/tests/fixtures/containment-cases.edn")))
+
+(defn- representative-cases [kind labels]
+  (mapv (fn [label]
+          (let [matches (filter #(= label (first %)) (get containment-cases kind))]
+            (when-not (= 1 (count matches))
+              (throw (ex-info "native representative must exist exactly once"
+                              {:kind kind :label label :matches (count matches)})))
+            (first matches)))
+        labels))
 
 (defn- run [repo & args]
   (apply process/shell {:dir (str repo) :out :string :err :string
@@ -43,26 +55,55 @@
 
 (declare commit-id)
 
+(defn- read-blobs [repo objects]
+  (if (empty? objects)
+    {}
+    (let [result (process/shell {:dir (str repo) :in (str (str/join "\n" objects) "\n")
+                                 :out :bytes :err :string :continue true :shutdown nil}
+                                "git" "cat-file" "--batch")]
+      (when-not (zero? (:exit result))
+        (throw (ex-info "cannot read revision blobs" {:result result})))
+      (with-open [input (java.io.ByteArrayInputStream. (:out result))]
+        (let [blobs
+              (reduce
+               (fn [blobs object]
+                 (let [header (loop [chars []]
+                                (let [b (.read input)]
+                                  (cond
+                                    (= -1 b) (throw (ex-info "truncated blob header" {:object object}))
+                                    (= 10 b) (apply str chars)
+                                    :else (recur (conj chars (char b))))))
+                       [_ actual size] (re-matches #"([0-9a-f]+) blob ([0-9]+)" header)]
+                   (when-not (= object actual)
+                     (throw (ex-info "unexpected blob header" {:object object :header header})))
+                   ;; Only headers are text. Git frames arbitrary bytes by their byte count.
+                   (let [size (Integer/parseInt size)
+                         content (.readNBytes input size)]
+                     (when-not (and (= size (alength content)) (= 10 (.read input)))
+                       (throw (ex-info "truncated blob contents" {:object object :size size})))
+                     (assoc blobs object (vec content)))))
+               {} objects)]
+          (when-not (= -1 (.read input))
+            (throw (ex-info "unexpected trailing blob data" {})))
+          blobs)))))
+
 (defn- revision-tree [repo revision]
-  ;; Read the colocated Git object store, not production's JJ materialization or
-  ;; diff parser. JJ file show does not return symlink targets on this JJ version.
-  ;; NUL-delimited paths and raw blob bytes also preserve binary/non-UTF-8 data.
+  ;; Keep the independent Git oracle, but read all blobs in one native process.
+  ;; Entries retain separate paths/modes even when their contents share an object ID.
   (let [inventory (checked repo "git" "ls-tree" "-r" "-z" "--full-tree"
-                           (commit-id repo revision))]
+                           (commit-id repo revision))
+        entries (mapv (fn [entry]
+                        (let [[_ mode object path] (re-matches #"([0-9]+) blob ([0-9a-f]+)\t(.*)" entry)]
+                          (when-not (#{"100644" "100755" "120000"} mode)
+                            (throw (ex-info "unsupported oracle entry" {:entry entry})))
+                          {:mode mode :object object :path path}))
+                      (remove str/blank? (str/split inventory #"\u0000")))
+        blobs (read-blobs repo (map :object entries))]
     (into (sorted-map)
-          (for [entry (remove str/blank? (str/split inventory #"\u0000"))
-                :let [[_ mode object path] (re-matches #"([0-9]+) blob ([0-9a-f]+)\t(.*)" entry)
-                      _ (when-not (#{"100644" "100755" "120000"} mode)
-                          (throw (ex-info "unsupported oracle entry" {:entry entry})))
-                      result (process/shell {:dir (str repo) :out :bytes :err :string
-                                             :continue true :shutdown nil}
-                                            "git" "cat-file" "blob" object)]]
-            (do
-              (when-not (zero? (:exit result))
-                (throw (ex-info "cannot read revision blob" {:path path :result result})))
-              [path {:type (if (= "120000" mode) "symlink" "file")
-                     :executable? (= "100755" mode)
-                     :bytes (vec (:out result))}])))))
+          (for [{:keys [mode object path]} entries]
+            [path {:type (if (= "120000" mode) "symlink" "file")
+                   :executable? (= "100755" mode)
+                   :bytes (get blobs object)}]))))
 
 (defn- working-tree [repo]
   (let [entries (atom (sorted-map))]
@@ -150,6 +191,42 @@
         (is (= (commit-id repo selected)
                (commit-id repo (str "parents(" remaining ")"))))))
     (is (= before-wc (working-tree repo)) "all workspace bytes, kinds and modes unchanged")))
+
+(deftest ^:needs/git ^:needs/jj native-tree-oracle-preserves-generated-bytes-with-constant-process-count
+  ;; Git is the producer; independent filesystem bytes/kinds/modes are the oracle.
+  ;; Increasing file count must not add a native process for each blob.
+  (with-repo
+    (fn [repo]
+      (put! repo "empty" [])
+      (checked repo "jj" "commit" "-m" "small tree")
+      (let [measure (fn []
+                      (let [calls (atom 0)
+                            original process/shell
+                            tree (with-redefs [process/shell
+                                               (fn [& args]
+                                                 (swap! calls inc)
+                                                 (apply original args))]
+                                   (revision-tree repo "@-"))]
+                        (is (= (working-tree repo) tree))
+                        @calls))
+            small-count (measure)
+            random (java.util.Random. 1621)]
+        (doseq [size [1 2 7 31 64 257]]
+          (put! repo (str "generated-" size)
+                (vec (repeatedly size #(- (.nextInt random 256) 128)))))
+        (put! repo "all bytes" (vec (range -128 128)))
+        (put! repo "same-a" [0 -1 10])
+        (put! repo "same-b" [0 -1 10])
+        (executable! repo "same-b" true)
+        (fs/create-sym-link (fs/file repo "link") " target with spaces\n")
+        (checked repo "jj" "commit" "-m" "larger binary tree")
+        (is (= small-count (measure)) "native process count is independent of blob count")))))
+
+(deftest ^:needs/git ^:needs/jj native-tree-oracle-rejects-missing-blobs
+  (with-repo
+    (fn [repo]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"unexpected blob header"
+                           (read-blobs repo [(apply str (repeat 40 "0"))]))))))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj native-split-checks-complete-trees-and-filesystem-metadata
   (doseq [selection [:text :content-without-mode :mode-without-content :mode-down
@@ -375,49 +452,10 @@
   (model-patch! repo "note.txt" base selected))
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj native-base-coordinate-and-multiplicity-decision-table
-  ;; Realistic regressions: line-string sets, bags without anchors, anchoring to
-  ;; shifted right coordinates, unpaired additions, and trimming CR/newlines.
-  ;; Valid changes allowed: independently selecting adjacent identical edits,
-  ;; context/hunk regrouping by Git, and unrelated earlier insertions/deletions.
+  ;; Representative CLI/publication boundaries; containment-test runs every
+  ;; authored case in-process with real Git-produced canonical diffs.
   (doseq [[label base original attempt valid?]
-          [[:excess-insertion "start\nend\n" "start\nnew\nend\n" "start\nnew\nnew\nend\n" false]
-           [:non-prefix-addition "start\nend\n" "start\nfirst\nsecond\nend\n"
-            "start\nsecond\nend\n" true]
-           [:non-adjacent-additions "start\nend\n" "start\nfirst\nsecond\nthird\nend\n"
-            "start\nfirst\nthird\nend\n" true]
-           [:non-prefix-addition-no-final-newline "start\n" "start\nfirst\nsecond"
-            "start\nsecond" true]
-           [:reordered-additions "start\nend\n" "start\nfirst\nsecond\nend\n"
-            "start\nsecond\nfirst\nend\n" false]
-           [:excess-non-prefix-addition "start\nend\n" "start\nfirst\nsecond\nend\n"
-            "start\nsecond\nsecond\nend\n" false]
-           [:non-prefix-deletion "start\nfirst\nsecond\nend\n" "start\nend\n"
-            "start\nfirst\nend\n" true]
-           [:fragmented-deletion "start\nfirst\nsecond\nthird\nend\n" "start\nend\n"
-            "start\nsecond\nend\n" true]
-           [:cross-paired "start\nalpha\nseparator\nbeta\nend\n"
-            "start\nALPHA\nseparator\nBETA\nend\n" "start\nBETA\nseparator\nbeta\nend\n" false]
-           [:adjacent-cross-paired "alpha\nbeta\nend\n" "ALPHA\nBETA\nend\n" "BETA\nbeta\nend\n" false]
-           [:adjacent-first "old\nold\nend\n" "new\nnew\nend\n" "new\nold\nend\n" true]
-           [:adjacent-second "old\nold\nend\n" "new\nnew\nend\n" "old\nnew\nend\n" true]
-           [:earlier-insertion "head\nanchor\nold\nend\n" "extra\nhead\nanchor\nnew\nend\n"
-            "head\nanchor\nnew\nend\n" true]
-           [:earlier-deletion "head\nanchor\nold\nend\n" "anchor\nnew\nend\n"
-            "head\nanchor\nnew\nend\n" true]
-           [:long-insertion-cross-pair "alpha\ns1\ns2\ns3\ns4\nbeta\nend\n"
-            "x\ny\nz\nw\nq\nBETA\ns1\ns2\ns3\ns4\nREAL\nend\n"
-            "alpha\ns1\ns2\ns3\ns4\nBETA\nend\n" false]
-           [:long-insertion-later-selection "alpha\ns1\ns2\ns3\ns4\nbeta\nend\n"
-            "x\ny\nz\nw\nq\nBETA\ns1\ns2\ns3\ns4\nREAL\nend\n"
-            "alpha\ns1\ns2\ns3\ns4\nREAL\nend\n" true]
-           [:earlier-unequal-replacement "alpha\nseparator\nbeta\nend\n"
-            "x\ny\nseparator\nBETA\nend\n" "alpha\nseparator\nBETA\nend\n" true]
-           [:unequal-cross-paired "alpha\nseparator\nbeta\nend\n"
-            "x\ny\nseparator\nBETA\nend\n" "BETA\nseparator\nbeta\nend\n" false]
-           [:legitimate-replacement-character "old\nend\n" "�new\nend\n"
-            "�new\nend\n" true]
-           [:crlf "before\r\nend\r\n" "after\r\nend\r\n" "after\r\nend\r\n" true]
-           [:invented-cr "before\r\nend\r\n" "after\r\nend\r\n" "after\nend\r\n" false]]]
+          (representative-cases :text [:non-prefix-addition :cross-paired :earlier-insertion])]
     (testing (name label)
       (with-repo
         (fn [repo]
@@ -460,12 +498,7 @@
 
 (deftest ^:needs/bb ^:needs/git ^:needs/jj native-whole-binary-selections-require-canonical-blob-equality
   (doseq [[label base original attempt valid?]
-          [[:addition nil [0 1 -1 10] [0 1 -1 10] true]
-           [:deletion [0 1 -1 10] nil nil true]
-           [:modification [0 1 -1 10] [0 2 -128 13 10] [0 2 -128 13 10] true]
-           [:invented-addition nil [0 1 -1 10] [0 2 -1 10] false]
-           [:invented-modification [0 1 -1 10] [0 2 -128 13 10] [0 3 -128 13 10] false]
-           [:unchanged-deletion [0 1 -1 10] [0 1 -1 10] nil false]]]
+          (representative-cases :binary [:modification :invented-modification])]
     (testing (name label)
       (with-repo
         (fn [repo]

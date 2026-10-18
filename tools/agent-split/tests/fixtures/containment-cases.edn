@@ -1,0 +1,119 @@
+;; Rows are [label base original attempt valid?].
+;; nil means an absent file; vectors are binary bytes, not text.
+{:text
+ [[:excess-insertion
+   "start\nend\n"
+   "start\nnew\nend\n"
+   "start\nnew\nnew\nend\n"
+   false]
+  [:non-prefix-addition
+   "start\nend\n"
+   "start\nfirst\nsecond\nend\n"
+   "start\nsecond\nend\n"
+   true]
+  [:non-adjacent-additions
+   "start\nend\n"
+   "start\nfirst\nsecond\nthird\nend\n"
+   "start\nfirst\nthird\nend\n"
+   true]
+  [:non-prefix-addition-no-final-newline
+   "start\n"
+   "start\nfirst\nsecond"
+   "start\nsecond"
+   true]
+  [:reordered-additions
+   "start\nend\n"
+   "start\nfirst\nsecond\nend\n"
+   "start\nsecond\nfirst\nend\n"
+   false]
+  [:excess-non-prefix-addition
+   "start\nend\n"
+   "start\nfirst\nsecond\nend\n"
+   "start\nsecond\nsecond\nend\n"
+   false]
+  [:non-prefix-deletion
+   "start\nfirst\nsecond\nend\n"
+   "start\nend\n"
+   "start\nfirst\nend\n"
+   true]
+  [:fragmented-deletion
+   "start\nfirst\nsecond\nthird\nend\n"
+   "start\nend\n"
+   "start\nsecond\nend\n"
+   true]
+  [:cross-paired
+   "start\nalpha\nseparator\nbeta\nend\n"
+   "start\nALPHA\nseparator\nBETA\nend\n"
+   "start\nBETA\nseparator\nbeta\nend\n"
+   false]
+  [:adjacent-cross-paired
+   "alpha\nbeta\nend\n"
+   "ALPHA\nBETA\nend\n"
+   "BETA\nbeta\nend\n"
+   false]
+  [:adjacent-first
+   "old\nold\nend\n"
+   "new\nnew\nend\n"
+   "new\nold\nend\n"
+   true]
+  [:adjacent-second
+   "old\nold\nend\n"
+   "new\nnew\nend\n"
+   "old\nnew\nend\n"
+   true]
+  [:earlier-insertion
+   "head\nanchor\nold\nend\n"
+   "extra\nhead\nanchor\nnew\nend\n"
+   "head\nanchor\nnew\nend\n"
+   true]
+  [:earlier-deletion
+   "head\nanchor\nold\nend\n"
+   "anchor\nnew\nend\n"
+   "head\nanchor\nnew\nend\n"
+   true]
+  [:long-insertion-cross-pair
+   "alpha\ns1\ns2\ns3\ns4\nbeta\nend\n"
+   "x\ny\nz\nw\nq\nBETA\ns1\ns2\ns3\ns4\nREAL\nend\n"
+   "alpha\ns1\ns2\ns3\ns4\nBETA\nend\n"
+   false]
+  [:long-insertion-later-selection
+   "alpha\ns1\ns2\ns3\ns4\nbeta\nend\n"
+   "x\ny\nz\nw\nq\nBETA\ns1\ns2\ns3\ns4\nREAL\nend\n"
+   "alpha\ns1\ns2\ns3\ns4\nREAL\nend\n"
+   true]
+  [:earlier-unequal-replacement
+   "alpha\nseparator\nbeta\nend\n"
+   "x\ny\nseparator\nBETA\nend\n"
+   "alpha\nseparator\nBETA\nend\n"
+   true]
+  [:unequal-cross-paired
+   "alpha\nseparator\nbeta\nend\n"
+   "x\ny\nseparator\nBETA\nend\n"
+   "BETA\nseparator\nbeta\nend\n"
+   false]
+  [:legitimate-replacement-character
+   "old\nend\n"
+   "�new\nend\n"
+   "�new\nend\n"
+   true]
+  [:crlf
+   "before\r\nend\r\n"
+   "after\r\nend\r\n"
+   "after\r\nend\r\n"
+   true]
+  [:invented-cr
+   "before\r\nend\r\n"
+   "after\r\nend\r\n"
+   "after\nend\r\n"
+   false]],
+ :binary
+ [[:addition nil [0 1 -1 10] [0 1 -1 10] true]
+  [:deletion [0 1 -1 10] nil nil true]
+  [:modification [0 1 -1 10] [0 2 -128 13 10] [0 2 -128 13 10] true]
+  [:invented-addition nil [0 1 -1 10] [0 2 -1 10] false]
+  [:invented-modification
+   [0 1 -1 10]
+   [0 2 -128 13 10]
+   [0 3 -128 13 10]
+   false]
+  [:unchanged-deletion [0 1 -1 10] [0 1 -1 10] nil false]]}

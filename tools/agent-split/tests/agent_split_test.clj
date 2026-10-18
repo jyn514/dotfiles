@@ -333,3 +333,90 @@
                         "jj" "file" "show" "-r" "@-" "note.txt") (nth @calls 3)))
     (is (= '("snapshot safety" "jj" "status" "--no-pager") (nth @calls 4)))
     (is (= '("verify" "jj" "describe" "-r" "remaining" "-m" "message") (nth @calls 5)))))
+
+(deftest ^:needs/git preflight-copies-the-parent-once-with-independent-bytes-modes-and-links
+  (let [root (fs/create-temp-dir {:prefix "agent-split-parent-copy"})
+        materialize! (ns-resolve 'scripts.jj-split-patch 'materialize-patch-paths!)
+        read! (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
+        preflight! (ns-resolve 'scripts.jj-split-patch 'preflight!)
+        calls (atom [])
+        patch (str "diff --git a/note.txt b/note.txt\n--- a/note.txt\n+++ b/note.txt\n"
+                   "@@ -1 +1 @@\n-before\n+after\n")
+        inventory (str patch
+                       "diff --git a/binary b/binary\n"
+                       "diff --git a/nested/run.sh b/nested/run.sh\n"
+                       "diff --git a/link b/link\n"
+                       "diff --git a/dangling b/dangling\n")
+        raw-bytes [0 -1 -128 13 10]
+        link-target " target with spaces\n"]
+    (try
+      (with-redefs-fn
+        {read! (fn [_ & args]
+                 (is (= ["diff" "--git" "-r" "revision"] (vec args)))
+                 {:out inventory})
+         materialize! (fn [revision _ target]
+                        ;; Negative control: the old third materialization fails.
+                        (when (some #{revision} @calls)
+                          (throw (ex-info "parent tree was redundantly read" {:revision revision})))
+                        (swap! calls conj revision)
+                        (fs/create-dirs (fs/file target "nested"))
+                        (spit (fs/file target "note.txt")
+                              (if (= revision "(revision)-") "before\n" "after\n"))
+                        (java.nio.file.Files/write (fs/path target "binary") (byte-array raw-bytes)
+                                                   (make-array java.nio.file.OpenOption 0))
+                        (spit (fs/file target "nested/run.sh") "#!/bin/sh\n")
+                        (is (.setExecutable (fs/file target "nested/run.sh") true false))
+                        (fs/create-sym-link (fs/file target "link") link-target)
+                        (fs/create-sym-link (fs/file target "dangling") "never-created"))}
+        (fn []
+          (let [result (preflight! patch "revision" root)
+                selected (:expected-selected-tree result)
+                left (fs/file root "left")]
+            (is (= ["(revision)-" "revision"] @calls))
+            (is (= "after\n" (slurp (fs/file selected "note.txt"))))
+            (is (= "before\n" (slurp (fs/file left "note.txt"))) "patch application never changes the parent")
+            (doseq [tree [left selected]]
+              (is (= raw-bytes (vec (java.nio.file.Files/readAllBytes (fs/path tree "binary"))))))
+            (is (= "#!/bin/sh\n" (slurp (fs/file selected "nested/run.sh"))))
+            (is (fs/executable? (fs/file selected "nested/run.sh")))
+            (is (fs/sym-link? (fs/file selected "link")))
+            (is (= link-target (str (fs/read-link (fs/file selected "link")))))
+            (is (fs/sym-link? (fs/file selected "dangling")))
+            (is (= "never-created" (str (fs/read-link (fs/file selected "dangling")))))
+            ;; Copies must not share mutable file storage (e.g. hard links).
+            (spit (fs/file selected "binary") "changed independently")
+            (is (= raw-bytes (vec (java.nio.file.Files/readAllBytes (fs/path left "binary"))))))))
+      (finally (fs/delete-tree root)))))
+
+(deftest symlink-source-lookups-are-lazy-and-local-to-each-materialization
+  (let [root (fs/create-temp-dir {:prefix "agent-split-link-lookups"})
+        materialize! (ns-resolve 'scripts.jj-split-patch 'materialize-patch-paths!)
+        reads (atom [])
+        blobs (atom [])
+        targets {"first" " leading target\n" "second" "missing-target"}]
+    (try
+      (with-redefs-fn
+        {(ns-resolve 'scripts.jj-split-patch 'tree-entry-index)
+         (constantly {"first" {:type "symlink"} "second" {:type "symlink"}})
+         (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
+         (fn [_ & args]
+           (swap! reads conj (vec args))
+           {:out (case (first args) "git" "/git-store\n" "log" "immutable-commit\n")})
+         (ns-resolve 'scripts.jj-split-patch 'run)
+         (fn [_ & args]
+           (swap! blobs conj (vec args))
+           {:out (get targets (subs (last args) (count "immutable-commit:")))})}
+        (fn []
+          (materialize! "revision" ["absent"] (fs/file root "empty"))
+          (is (empty? @reads) "no Git-root or commit lookup without selected symlinks")
+          (doseq [directory ["before" "verification"]]
+            (materialize! "revision" ["first" "second"] (fs/file root directory))
+            (doseq [[path target] targets]
+              (is (= target (str (fs/read-link (fs/file root directory path)))))))
+          (is (= [["git" "root"] ["log" "-r" "revision" "--no-graph" "-T" "commit_id"]
+                  ["git" "root"] ["log" "-r" "revision" "--no-graph" "-T" "commit_id"]]
+                 @reads)
+              "two metadata queries per materialization, not per symlink or persistent across verification")
+          (is (= 4 (count @blobs)))
+          (is (every? #(= ["git" "--git-dir=/git-store" "cat-file" "blob"] (subvec % 0 4)) @blobs))))
+      (finally (fs/delete-tree root)))))

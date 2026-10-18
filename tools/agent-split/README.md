@@ -109,7 +109,18 @@ dev/test-environment bb -cp tools/agent-split/src tools/agent-split/tests/run.cl
 dev/test-environment python3 -m unittest discover -s tools/agent-split/tests -p 'bb_wrapper_test.py'
 ```
 
-The Babashka suite includes unit and real-repository integration coverage and therefore requires `bb`, `git`, and `jj`. Its native boundary tests independently read complete Git trees and blob bytes, compare complete filesystem bytes/kinds/modes, and check commit/operation identity on rejection. They cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection. Repositories are disposable and outside the source repository; test artifacts remain ignored. `tests/run.clj` registers these tests and is invoked by `dev/test`. The Python suite checks wrapper dispatch and executable resolution.
+The Babashka suite includes unit and real-repository integration coverage and therefore requires `bb`, `git`, and `jj`.
+The shared [containment fixtures](tests/fixtures/containment-cases.edn) hold the authored text and binary selection expectations.
+The full table runs in-process against real Git-produced canonical diffs, without creating a JJ repository or starting a child BB per case.
+Representative CLI cases still verify publication and rejection against complete Git trees and blob bytes, filesystem bytes/kinds/modes, and commit/operation identity.
+Native file-kind, ancestor, malformed-UTF-8, routing, and recovery tests remain separate from the containment matrix.
+The Git oracle reads a tree's blobs in one `git cat-file --batch` process, preserving binary bytes and separate paths/modes for identical contents.
+A native regression verifies that increasing blob count does not increase the oracle's process count.
+Other regressions check independent parent-tree copying and symlink metadata queries scoped to each materialization.
+The tests cover duplicate occurrences, multiplicity, replacement pairing, newline/CRLF state, stored ancestors, and conversion rejection.
+Repositories are disposable and outside the source repository; test artifacts remain ignored.
+`tests/run.clj` registers these tests and is invoked by `dev/test`.
+The Python suite checks wrapper dispatch and executable resolution.
 
 ## Design and reference
 

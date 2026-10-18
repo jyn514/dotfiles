@@ -612,3 +612,37 @@
               (is (= "one\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n"
                      (:out (shell! repo "jj" "file" "show" "--ignore-working-copy"
                                    "-r" "@" "note.txt")))))))))))
+
+(deftest ^:needs/bb ^:needs/git ^:needs/jj native-materialization-shares-only-its-symlink-source-lookups
+  (with-repo*
+    (fn [{:keys [root repo]}]
+      (let [target (fs/file root "materialized")
+            binary [0 -1 -128 13 10]
+            links {"first-link" " missing target\n" "second-link" "also-missing"}
+            calls (atom [])
+            original-shell process/shell
+            materialize! (ns-resolve 'scripts.jj-split-patch 'materialize-patch-paths!)]
+        (doseq [[path value] links]
+          (fs/create-sym-link (fs/file repo path) value))
+        (java.nio.file.Files/write (fs/path repo "binary") (byte-array binary)
+                                   (make-array java.nio.file.OpenOption 0))
+        (write-file! (fs/file repo "run.sh") "#!/bin/sh\n")
+        (is (.setExecutable (fs/file repo "run.sh") true false))
+        (shell! repo "jj" "status")
+        (with-redefs [process/shell
+                      (fn [opts & args]
+                        (swap! calls conj (vec args))
+                        (apply original-shell (assoc opts :dir (str repo)) args))]
+          ;; Each materialization still inventories and reads the target revision.
+          (materialize! "@" ["first-link" "second-link" "binary" "run.sh"] target))
+        (is (= 1 (count (filter #(= ["jj" "git"] (subvec % 0 2)) @calls))))
+        (is (= 1 (count (filter #(= ["jj" "log"] (subvec % 0 2)) @calls))))
+        (is (= 1 (count (filter #(= ["jj" "file" "--ignore-working-copy" "list"]
+                                      (vec (take 4 %))) @calls))))
+        (is (<= (count (filter #(and (= "git" (first %)) (= "cat-file" (nth % 2))) @calls)) 2))
+        (doseq [[path value] links]
+          (is (fs/sym-link? (fs/file target path)))
+          (is (= value (str (fs/read-link (fs/file target path))))))
+        (is (= binary (vec (java.nio.file.Files/readAllBytes (fs/path target "binary")))))
+        (is (= "#!/bin/sh\n" (slurp (fs/file target "run.sh"))))
+        (is (fs/executable? (fs/file target "run.sh")))))))

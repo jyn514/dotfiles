@@ -4,11 +4,13 @@
 (load-file "tools/agent-split/tests/agent_split_editor_test.clj")
 (load-file "tools/agent-split/tests/integration_test.clj")
 (load-file "tools/agent-split/tests/native_boundary_test.clj")
+(load-file "tools/agent-split/tests/containment_test.clj")
 
 (let [{:keys [fail error]}
       (test/run-tests 'scripts.jj-split-patch-test
                       'flower.jj-agent-split-editor-test
                       'scripts.jj-split-patch-integration-test
-                      'scripts.agent-split-native-boundary-test)]
+                      'scripts.agent-split-native-boundary-test
+                      'scripts.agent-split-containment-test)]
   (when (pos? (+ fail error))
     (System/exit 1)))
