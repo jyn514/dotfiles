@@ -145,16 +145,24 @@
     (is (= 3 exit))
     (is (str/includes? err "verify: tree mismatch"))))
 
-(deftest jj-split-patch-restores-before-reporting-verification-failure
-  (let [restore-operation! (ns-resolve (quote scripts.jj-split-patch) (quote restore-operation!))
-        recover! (ns-resolve (quote scripts.jj-split-patch) (quote recover-verification-failure!))
-        {:keys [exit err]} (captured-failure
-                            (fn []
-                              (with-redefs-fn {restore-operation! (constantly true)}
-                                (fn []
-                                  (recover! {:backend "native" :workspace "/repo"} "operation-id" "tree mismatch")))))]
-    (is (= 3 exit))
-    (is (str/includes? err "restored operation operation-id"))))
+(deftest verification-failures-leave-history-intact-even-when-concurrency-is-unknown
+  (let [report! (ns-resolve 'scripts.jj-split-patch 'report-verification-failure!)
+        result-var (ns-resolve 'scripts.jj-split-patch '*split-result*)]
+    (doseq [concurrent? [nil false true]]
+      (let [result (with-redefs-fn
+                     {#'babashka.process/shell
+                      (fn [& _] (throw (Exception. "failure reporting must not mutate history")))}
+                     #(with-bindings {result-var (atom {:selected "selected-id"
+                                                        :concurrent-edits? concurrent?})}
+                        (captured-failure (fn [] (report! "original-op" "tree mismatch")))))]
+        (is (= 3 (:exit result)))
+        (is (str/includes? (:err result) "tree mismatch"))
+        (is (str/includes? (:err result) "split left intact; no automatic recovery attempted"))
+        (is (str/includes? (:err result) "Preflight operation: original-op"))
+        (is (str/includes? (:err result) "Selected change: selected-id"))
+        (is (str/includes? (:err result) "Remaining change: unavailable"))
+        (is (= (true? concurrent?)
+               (str/includes? (:err result) "concurrent edits observed")))))))
 
 (deftest jj-split-patch-selects-one-commit-from-a-divergent-change
   (let [matching-selected-commit (ns-resolve (quote scripts.jj-split-patch) (quote matching-selected-commit))
@@ -202,6 +210,35 @@
       (finally
         (fs/delete-tree root)))))
 
+(deftest verification-diagnostics-distinguish-selected-and-remainder-mismatches
+  (let [root (fs/create-temp-dir {:prefix "agent-split-diagnostics"})
+        expected (fs/file root "expected")
+        verify! (ns-resolve 'scripts.jj-split-patch 'verify!)
+        changed-paths (ns-resolve 'scripts.jj-split-patch 'changed-paths)
+        materialize! (ns-resolve 'scripts.jj-split-patch 'materialize-patch-paths!)
+        read! (ns-resolve 'scripts.jj-split-patch 'run-jj-read)]
+    (try
+      (fs/create-dirs expected)
+      (spit (fs/file expected "note.txt") "wanted\n")
+      (doseq [[kind diagnostic] [[:selected "selected patch mismatch"]
+                                 [:remaining "remainder mismatch"]
+                                 [:clean nil]]]
+        (let [helper (fs/file root (name kind))
+              _ (fs/create-dirs helper)
+              result (with-redefs-fn
+                       {changed-paths (constantly #{"note.txt"})
+                        materialize! (fn [_ _ target]
+                                       (spit (fs/file target "note.txt")
+                                             (if (= kind :selected) "wrong\n" "wanted\n")))
+                        read! (fn [& _] {:out (if (= kind :remaining) "note.txt\n" "")})}
+                       #(verify! {:original-paths ["note.txt"] :expected-selected-tree expected}
+                                 "input" {:selected-revision "selected" :remaining-revision "remaining"}
+                                 helper))]
+          (if diagnostic
+            (is (str/starts-with? result diagnostic))
+            (is (nil? result)))))
+      (finally (fs/delete-tree root)))))
+
 (deftest jj-split-patch-classifies-patch-artifact-safety
   (let [root (fs/path "/flower-jj-split-patch")
         repo (fs/file root "repo")
@@ -243,12 +280,11 @@
                   (ns-resolve 'scripts.jj-split-patch 'run) (fn [& _] (throw (Exception. "helper invoked")))}
     #(is (= "native" (:backend ((ns-resolve 'scripts.jj-split-patch 'split-route)))))))
 
-(deftest split-and-recovery-use-the-resolved-backend-not-socket-presence
+(deftest split-and-operation-inspection-use-the-resolved-backend-not-socket-presence
   (let [calls (atom [])
         shell (fn [opts & args] (swap! calls conj [opts (vec args)]) {:exit 0 :out "op-id"})
         run-read (ns-resolve 'scripts.jj-split-patch 'run-jj-read)
         capture (ns-resolve 'scripts.jj-split-patch 'current-operation-id)
-        restore (ns-resolve 'scripts.jj-split-patch 'restore-operation!)
         split (ns-resolve 'scripts.jj-split-patch 'run-split!)
         native {:backend "native" :workspace "/tmp/independent"}
         proxy {:backend "proxy" :workspace "/src/protected"}]
@@ -257,26 +293,12 @@
                     (ns-resolve 'scripts.jj-split-patch 'sandbox-proxy-dir) (constantly "/mounted")}
       (fn []
         (is (= "op-id" (capture native)))
-        (is (true? (restore native "op-id")))
         (split native "/patch" "message" "@")
         (is (nil? (capture proxy)))
-        (is (nil? (restore proxy "op-id")))
         (split proxy "/opaque -R patch" "--message" "--revision")))
     (is (= {:dir "/tmp/independent"} (second (first @calls))))
-    (is (= "/tmp/independent" (:dir (first (second @calls)))))
-    (is (= ["jj" "op" "restore" "op-id"] (second (second @calls))))
     (is (= ["jj" "--agent-split" "/opaque -R patch" "--message" "--revision"]
            (second (last @calls))))))
-
-(deftest recovery-launch-failure-preserves-the-original-diagnostic
-  (let [route {:backend "native" :workspace "/tmp/repo"}
-        result (with-redefs-fn {#'babashka.process/shell (fn [& _] (throw (Exception. "recovery launch failed")))}
-                 #(captured-failure
-                   (fn [] ((ns-resolve 'scripts.jj-split-patch 'recover-verification-failure!)
-                           route "original-op" "original tree mismatch"))))]
-    (is (= 3 (:exit result)))
-    (is (str/includes? (:err result) "original tree mismatch"))
-    (is (str/includes? (:err result) "jj op restore original-op"))))
 
 (deftest unexpected-exceptions-are-captured-only-after-mutation
   (let [capture (ns-resolve 'scripts.jj-split-patch 'capture-failure)
@@ -290,20 +312,16 @@
     (is (str/includes? (:error (capture #(throw (ex-info "discovery failed" {})) true))
                        "discovery failed"))))
 
-(deftest proxy-post-split-exceptions-never-attempt-local-operation-recovery
+(deftest proxy-post-split-exceptions-retain-the-original-diagnostic
   (let [capture (ns-resolve 'scripts.jj-split-patch 'capture-failure)
-        recover (ns-resolve 'scripts.jj-split-patch 'recover-verification-failure!)
+        report! (ns-resolve 'scripts.jj-split-patch 'report-verification-failure!)
         original (capture #(throw (java.io.IOException. "proxy verification launch failed")) true)
         calls (atom [])
-        result (with-redefs-fn {#'babashka.process/shell (fn [& args]
-                                                        (swap! calls conj args)
-                                                        (throw (Exception. "native recovery forbidden")))}
-                 #(captured-failure
-                   (fn [] (recover {:backend "proxy" :workspace "/protected"}
-                                   nil (:error original)))))]
+        result (with-redefs-fn {#'babashka.process/shell (fn [& args] (swap! calls conj args))}
+                 #(captured-failure (fn [] (report! nil (:error original)))))]
     (is (= 3 (:exit result)))
     (is (str/includes? (:err result) "proxy verification launch failed"))
-    (is (str/includes? (:err result) "automatic recovery was unavailable"))
+    (is (str/includes? (:err result) "no automatic recovery attempted"))
     (is (empty? @calls))))
 
 (deftest revision-read-dispatch-keeps-inspection-scoped-to-proxy-queries

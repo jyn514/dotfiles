@@ -24,6 +24,15 @@
 
 (def ^:dynamic *preflight-revision* nil)
 (def ^:dynamic *read-backend* "native")
+(def ^:dynamic *split-result* nil)
+
+(defn- split-result-text []
+  (when-let [result (some-> *split-result* deref)]
+    (str "\nSelected change: " (or (:selected result) "unavailable")
+         "\nSelected commit: " (or (:selected-revision result) "unavailable")
+         "\nRemaining change: " (or (:remaining result) "unavailable")
+         "\nRemaining commit: " (or (:remaining-revision result) "unavailable")
+         "\nSplit input commit: " (or (:input-revision result) "unavailable"))))
 
 (defn- failure-text [step message]
   (str step ": " message
@@ -89,6 +98,7 @@
   (println "Runs jj split with the repository's non-interactive jj-agent-split-editor, then verifies both resulting revisions.")
   (println "The split changes workspace history; preflight failures return before invoking jj split or the editor.")
   (println "Exit status 1 means preflight failure, 2 means jj split failure, and 3 means post-split verification failure.")
+  (println "Verification failures leave the split intact and report all known resulting revision IDs.")
   (println "--json suppresses human progress output and prints full selected and remaining change IDs as JSON.")
   (println "--remaining-message describes the remaining commit before verification completes.")
   (println "Repeat -m to join message paragraphs with a blank line; each value is literal text.")
@@ -444,16 +454,6 @@
                         "op" "log" "--limit" "1" "--no-graph"
                         "-T" "id.short()")))))
 
-(defn- restore-operation! [route operation-id]
-  (when (and (= "native" (:backend route)) operation-id)
-    (let [result (process/shell {:dir (:workspace route)
-                                 :out :string
-                                 :err :string
-                                 :shutdown nil
-                                 :continue true}
-                                "jj" "op" "restore" operation-id)]
-      (zero? (:exit result)))))
-
 (def change-id-template "change_id.short(32) ++ \"\\n\"")
 (def commit-id-template "commit_id.short(40) ++ \"\\n\"")
 
@@ -487,31 +487,70 @@
 (declare revision-matches-selected-tree?)
 
 (defn- matching-selected-commit [preflight change-id message original-parents helper-root]
-  (let [candidates (revision-ids change-id commit-id-template)
-        matches (filter #(and (= message (revision-description %))
-                              (= original-parents (parent-commit-ids %))
-                              (revision-matches-selected-tree? preflight % helper-root))
-                        candidates)]
+  (let [candidates (filter #(and (= message (revision-description %))
+                                 (= original-parents (parent-commit-ids %)))
+                           (revision-ids change-id commit-id-template))
+        ;; Identify before verifying: even a mismatched selected tree must leave
+        ;; the caller with the commit IDs needed to inspect the completed split.
+        matches (if (= 1 (count candidates))
+                  candidates
+                  (filter #(revision-matches-selected-tree? preflight % helper-root)
+                          candidates))]
     (when-not (= 1 (count matches))
       (verify-fail!
        (str "expected one selected commit for change " change-id
             ", found " (count matches))))
     (first matches)))
 
+(defn- record-split-result! [result]
+  (when *split-result* (swap! *split-result* merge result))
+  result)
+
+(defn- evolution-entries [revision limit]
+  (let [result (apply run-jj-read "verify" "evolog" "-r" revision "--no-graph"
+                      "-T" (str "json({\"commit\" => commit.commit_id(), "
+                                 "\"operation\" => operation.id(), "
+                                 "\"predecessors\" => predecessors.map(|c| c.commit_id())}) ++ \"\\n\"")
+                      (when limit ["--limit" (str limit)]))]
+    (vec (json/parsed-seq (java.io.StringReader. (:out result)) true))))
+
+(defn- split-evolution [selected-commit]
+  ;; JJ records the exact input as the selected commit's predecessor, and both
+  ;; split outputs belong to the same operation. Follow those immutable entries
+  ;; instead of accepting a later working-copy snapshot as the split remainder.
+  (let [entry (first (evolution-entries selected-commit 1))]
+    (when-not (and (= selected-commit (:commit entry))
+                   (= 1 (count (:predecessors entry))))
+      (verify-fail! "expected one split input predecessor"))
+    entry))
+
 (defn- discover-split-revisions [preflight change-id message original-parents helper-root]
   (let [selected-commit (matching-selected-commit preflight change-id message
                                                    original-parents helper-root)
+        _ (record-split-result! {:selected-revision selected-commit})
         remaining-commits (revision-ids (str "children(" selected-commit ")")
                                         commit-id-template)]
     (when-not (= 1 (count remaining-commits))
       (verify-fail!
        (str "expected one remaining child of commit " selected-commit
             ", found " (count remaining-commits))))
-    (let [remaining-commit (first remaining-commits)]
-      {:selected (revision-change-id selected-commit)
-       :remaining (revision-change-id remaining-commit)
-       :selected-revision selected-commit
-       :remaining-revision remaining-commit})))
+    (let [current-remaining (first remaining-commits)
+          _ (record-split-result! {:remaining (revision-change-id current-remaining)
+                                   :remaining-revision current-remaining})
+          entry (split-evolution selected-commit)
+          input (first (:predecessors entry))
+          _ (record-split-result! {:input-revision input})
+          versions (filter #(= (:operation entry) (:operation %))
+                           (evolution-entries current-remaining nil))]
+      (when-not (= 1 (count versions))
+        (verify-fail! (str "expected one remaining commit from the split operation, found " (count versions))))
+      (record-split-result!
+       {:selected (revision-change-id selected-commit)
+        :remaining (revision-change-id current-remaining)
+        :selected-revision selected-commit
+        :remaining-revision (:commit (first versions))
+        :current-remaining-revision current-remaining
+        :input-revision input}))))
 
 (defn- describe-revision! [revision message]
   (run "verify" "jj" "describe" "-r" revision "-m" message))
@@ -565,10 +604,10 @@
            (str/join ", " (sort unexpected-paths)))
 
       (not (str/blank? selected-diff))
-      "selected commit does not match supplied patch"
+      "selected patch mismatch: selected commit does not match supplied patch"
 
       (not (str/blank? remaining-diff))
-      "remaining tree differs from the revision before the split"
+      "remainder mismatch: remaining tree differs from the actual split input"
 
       :else nil)))
 
@@ -580,14 +619,14 @@
                *exit!* (fn [status]
                          (throw (ex-info "captured exit" {:status status})))]
        (try
-         {:value (f)}
+         (let [value (f)] {:value value :stderr (str err)})
          (catch Exception ex
            (if-let [status (:status (ex-data ex))]
              {:status status
               :error (str/trim (str err))}
              (if post-split?
                ;; Once split succeeds, launch/discovery exceptions need the same
-               ;; recovery boundary as an explicit verification failure.
+               ;; failure status and result diagnostics as a tree mismatch.
                {:status 3
                 :error (str/join "\n"
                                  (remove str/blank?
@@ -595,15 +634,16 @@
                                           (failure-text "verify" (str ex))]))}
                (throw ex)))))))))
 
-(defn- recover-verification-failure! [route operation-id message]
-  ;; A failed recovery launch must not replace the original verification failure.
-  (if (try (restore-operation! route operation-id)
-           (catch Exception _ false))
-    (verify-fail! (str message "; restored operation " operation-id))
-    (verify-fail! (str message
-                       (if operation-id
-                         (str "; automatic recovery was unavailable; use jj op restore " operation-id " to recover")
-                         "; automatic recovery was unavailable; inspect repository history before retrying")))))
+(defn- report-verification-failure! [operation-id message]
+  ;; An operation-wide restore can erase another writer's work, even if our
+  ;; last inspection saw no concurrent edits. Failed splits remain inspectable.
+  (verify-fail!
+   (str message
+        (when (some-> *split-result* deref :concurrent-edits?)
+          "; concurrent edits observed")
+        "; split left intact; no automatic recovery attempted"
+        (when operation-id (str "\nPreflight operation: " operation-id))
+        (split-result-text))))
 
 (defn- hunk-summary [patch-text]
   (loop [[line & more] (str/split-lines patch-text)
@@ -644,54 +684,85 @@
                                          :prefix "jj-split-patch"})]
     (try
       (check-artifact-root-ignored! repo-root)
-      (let [selected-change-id (revision-change-id revision)
-            original-commit (revision-commit-id revision)
-            original-parents (parent-commit-ids revision)
+      (let [original-commit (revision-commit-id revision)
+            selected-change-id (revision-change-id original-commit)
+            original-parents (parent-commit-ids original-commit)
             preflight (binding [*preflight-revision* {:revision revision
                                                      :commit original-commit
                                                      :parents original-parents}]
-                        (let [preflight (preflight! patch-text revision helper-root)]
+                        (let [preflight (preflight! patch-text original-commit helper-root)]
                           (check-snapshot-safety! repo-root artifact-root patch helper-root)
-                          (reject-already-applied! preflight revision message helper-root)
+                          (reject-already-applied! preflight original-commit message helper-root)
                           preflight))]
         (let [operation-id (current-operation-id route)
-              _ (run-split! route patch message revision)
-              post-split (capture-failure
-                          #(let [split-revisions (discover-split-revisions preflight
-                                                                           selected-change-id
-                                                                           message
-                                                                           original-parents
-                                                                           helper-root)
-                                 _ (when remaining-message
-                                     (describe-revision! (:remaining-revision split-revisions)
-                                                         remaining-message))]
-                             {:split-revisions split-revisions
-                              :verification-error (verify! preflight
-                                                           original-commit
-                                                           split-revisions
-                                                           helper-root)})
-                          true)]
-          (when-let [error (:error post-split)]
-            (recover-verification-failure! route operation-id error))
-          (let [{:keys [split-revisions verification-error]} (:value post-split)]
-            (when verification-error
-              (recover-verification-failure! route operation-id verification-error))
-            (if json?
-              (println (json/generate-string (select-keys split-revisions
-                                                          [:selected :remaining])))
-              (do
-                (print-summary! patch-text)
-                (println (str "selected revision: " (:selected split-revisions)))
-                (println (str "remaining revision: " (:remaining split-revisions))))))))
+              _ (run-split! route patch message revision)]
+          (binding [*split-result* (atom {:selected selected-change-id})]
+            (let [post-split
+                  (capture-failure
+                   #(let [split-revisions (discover-split-revisions preflight
+                                                                    selected-change-id message
+                                                                    original-parents helper-root)
+                          input-commit (:input-revision split-revisions)
+                          _ (record-split-result! {:input-revision input-commit})
+                          changed (when-not (= original-commit input-commit)
+                                    (:out (run-jj-read "verify" "diff" "--from" original-commit
+                                                       "--to" input-commit "--name-only")))
+                          _ (when-not (str/blank? changed)
+                              (record-split-result! {:concurrent-edits? true}))
+                          later-edits (when-not (= (:remaining-revision split-revisions)
+                                                    (:current-remaining-revision split-revisions))
+                                        (:out (run-jj-read "verify" "diff"
+                                                           "--from" (:remaining-revision split-revisions)
+                                                           "--to" (:current-remaining-revision split-revisions)
+                                                           "--name-only")))
+                          _ (record-split-result!
+                             {:concurrent-edits? (or (not (str/blank? changed))
+                                                     (not (str/blank? later-edits)))})
+                          ;; Native editors validate at split time. Revalidate
+                          ;; here too for the protected editor, whose interface
+                          ;; only applies a patch and cannot return a receipt.
+                          recheck (when-not (str/blank? changed)
+                                    (capture-failure
+                                     (fn [] (preflight! patch-text input-commit
+                                                        (fs/file helper-root "split-input")))))
+                          _ (when (:status recheck)
+                              (verify-fail!
+                               (str "selected source changed since preflight: " (:error recheck))))
+                          _ (when remaining-message
+                              (describe-revision! (:current-remaining-revision split-revisions)
+                                                  remaining-message))]
+                      {:split-revisions split-revisions
+                       :verification-error (verify! preflight input-commit
+                                                    split-revisions helper-root)})
+                   true)]
+              (when-let [error (:error post-split)]
+                (report-verification-failure! operation-id error))
+              (let [{:keys [split-revisions verification-error]} (:value post-split)]
+                (when verification-error
+                  (report-verification-failure! operation-id verification-error))
+                (when (:concurrent-edits? @*split-result*)
+                  (binding [*out* *err*]
+                    (println "concurrent edits observed; remainder verified against the actual split input")))
+                (if json?
+                  (println (json/generate-string (select-keys split-revisions [:selected :remaining])))
+                  (do
+                    (print-summary! patch-text)
+                    (println (str "selected revision: " (:selected split-revisions)))
+                    (println (str "remaining revision: " (:remaining split-revisions))))))))))
       (finally
         (fs/delete-tree helper-root)))))))
 
 (defn main [args]
   ;; Defer process exit until execute-main's artifact cleanup has run.
   (let [result (capture-failure #(execute-main args))]
-    (when-let [status (:status result)]
-      (binding [*out* *err*] (println (:error result)))
-      (*exit!* status))))
+    (if-let [status (:status result)]
+      (do
+        (binding [*out* *err*] (println (:error result)))
+        (*exit!* status))
+      (when (seq (:stderr result))
+        (binding [*out* *err*]
+          (print (:stderr result))
+          (flush))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (main *command-line-args*))

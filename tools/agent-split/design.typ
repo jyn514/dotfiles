@@ -206,6 +206,7 @@ Protected queries use the proxy's inspection request mode without that forbidden
 the trusted executor injects its own working-copy-ignore flag after validation.
 Inspection mode remains local to each query; snapshots, structured splits, and descriptions retain mutation authority.
 The mutating `jj split` command still snapshots normally, so the working-copy revision uses current workspace bytes.
+Preflight reads use one immutable commit, not repeated resolutions of the requested revision.
 Stored revisions retain their trees without rescanning unrelated files for every metadata or tree query.]
 
 #requirement[Before invoking `jj split`, the agent and wrapper must ensure no split helper files, selected-patch files, or other workflow artifacts are visible to Jujutsu's working-copy snapshot.
@@ -219,12 +220,20 @@ The `-m` argument is mandatory for this workflow because it prevents a selected-
 The wrapper describes the discovered remainder before post-split verification completes, without opening a commit-message editor.]
 
 #requirement[After the split, the wrapper verifies resulting trees rather than comparing textual diff fragments.
-The selected tree must equal the left tree with the supplied patch applied, and the remaining revision's resulting tree must equal the immutable commit recorded before the split.
-This preserves duplicate lines and changes whose textual hunks are normalized differently by Jujutsu or Git.
+The selected tree must equal the left tree with the supplied patch applied, and the original remainder's tree must equal the actual split input.
+Jujutsu's selected-commit evolution entry identifies the exact input predecessor and split operation.
+The remainder's evolution entry from that same operation identifies its immutable output, even after later working-copy snapshots.
+If the input tree changed after preflight, containment is rechecked against that input; changed selected source fails verification even when a protected editor applied the patch.
+This preserves concurrent unselected edits, duplicate lines, and changes whose textual hunks are normalized differently by Jujutsu or Git.
 The agent should then inspect `jj status` and the relevant `jj diff --git -r <selected>` and `jj diff --git -r <remaining>` output before committing or continuing.]
 
 #requirement[Preflight, split execution, and post-split verification failures use distinct exit statuses 1, 2, and 3.
-If verification fails outside the sandbox proxy, the wrapper restores the operation recorded before mutation; when automatic restoration is unavailable, it names the required `jj op restore` recovery action.
+Verification failures leave the split intact; the wrapper never automatically restores an earlier operation.
+An operation-wide restore can erase another writer's work even when the last freshness check saw no concurrent edits.
+Native failures report the preflight operation for investigation, not as an instruction to restore it.
+Post-split failures include all known selected and remaining change and commit IDs, and the actual input commit when available.
+Unavailable identities are marked explicitly.
+Selected patch mismatches, remainder mismatches, and observed concurrent edits have distinct diagnostics.
 It must not silently continue with a bad history boundary.]
 
 #requirement[If the requested patch and message already describe the selected revision, the wrapper rejects the duplicate split before mutation.
@@ -332,7 +341,9 @@ The post-split comparison catches wrong hunks, missing adjacent lines, and accid
 
 == Materialized expected revision <agent-jj-split-expected-revision>
 
-A wrapper may make validation easier by materializing the selected patch as a temporary Jujutsu revision before the real split.
+The implemented wrapper materializes the expected selection in independent temporary filesystem trees, without creating or restoring repository revisions.
+The following alternative requires an isolated disposable repository; it is unsafe in a shared checkout.
+A wrapper could materialize the selected patch as a temporary Jujutsu revision before the real split.
 It records the current operation, creates a new revision from the split base, applies the selected patch there, validates that revision, and then restores the original operation before invoking `jj split`.
 This is useful for preflight validation even if the temporary revision is discarded before the real split.
 

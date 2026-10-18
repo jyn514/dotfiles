@@ -69,6 +69,9 @@ bb agent-split --json target/jj-split/my-change.patch \
 ```
 
 The revision defaults to `@`. `--json` emits full selected and remaining change IDs for automation. Use `--` to stop wrapper-option parsing.
+Verification uses immutable commit IDs from the split operation; the reported change IDs can acquire newer edits afterward.
+Jujutsu's evolution entries identify the actual split input and original remainder, including when split snapshots edits made after preflight.
+Unselected edits made before or after the split are preserved and reported on stderr without corrupting the success JSON.
 Repeat `-m` to join message paragraphs with a blank line, in argument order.
 Each `-m` consumes the next argument as literal text, even when it looks like an option.
 
@@ -98,8 +101,17 @@ Run tests or lint appropriate to each newly separated change.
   If both checks fail, the error retains the normal Git failure without attributing it to zero-context matching.
   For exit `2`, inspect `jj status` and `jj op log` before retrying.
 - Independent container-local repositories use native `jj split`, even with a sandbox proxy mounted. The shared JJ router resolves the workspace and backing metadata against effective mounts, not socket presence. Rootfs, private tmpfs, and guest-created volumes are supported; a local workspace linked to protected host metadata is not independent.
-- Native verification failures trigger restoration of the operation captured in the same workspace before the split. If recovery fails, the original failure and `jj op restore <operation>` guidance remain on stderr. Inspect the operation before further history edits.
-- Protected repositories use the wrapper's structured proxy split, which resolves the active agent identity. Proxy failures never retry natively or attempt native operation recovery; inspect repository history before retrying.
+- Post-split errors report the known selected and remaining change and commit IDs, plus the split input commit when available.
+  If an identity query fails, the diagnostic marks the unavailable ID instead of guessing.
+  Selected patch mismatches, remainder mismatches, and observed concurrent edits have distinct diagnostics.
+- Verification failures leave the split intact; the wrapper never automatically restores an older operation.
+  A writer can commit or snapshot edits after any freshness check, so operation-wide rollback could erase unrelated work.
+  Inspect the reported revisions before retrying or making a scoped repair.
+  Native failures also report the preflight operation for investigation, not as an instruction to restore it.
+- Protected repositories use the wrapper's structured proxy split, which resolves the active agent identity.
+  Proxy failures never retry natively; inspect repository history before retrying.
+  The protected shell editor applies the patch without containment validation, so changed split inputs are revalidated afterward.
+  A selected-source change detected there exits `3` with the completed split IDs; native editors reject it during the split.
 - With a sandbox proxy active, `JJ_ROUTE_HELPER` selects the shared routing helper (configured by the image); source checkouts otherwise use `tools/jj-proxy/route.py`. Ordinary non-sandbox hosts need neither the helper nor Linux mount information.
 - A successful mechanical split can still be behaviorally incoherent. Include required adjacent/generated changes or choose a different boundary.
 
@@ -116,7 +128,11 @@ The Babashka suite includes unit and real-repository integration coverage and th
 The shared [containment fixtures](tests/fixtures/containment-cases.edn) hold the authored text and binary selection expectations.
 The full table runs in-process against real Git-produced canonical diffs, without creating a JJ repository or starting a child BB per case.
 Representative CLI cases still verify publication and rejection against complete Git trees and blob bytes, filesystem bytes/kinds/modes, and commit/operation identity.
-Native file-kind, ancestor, malformed-UTF-8, routing, and recovery tests remain separate from the containment matrix.
+Native file-kind, ancestor, malformed-UTF-8, routing, and failure-reporting tests remain separate from the containment matrix.
+Concurrent-writer cases snapshot changes to another file and an unselected hunk before and after the split, and reject changed selected source.
+Failure cases retain those edits even when discovery fails or a writer starts during verification.
+Protected-path cases use the real shell editor with relocated executable and patch paths.
+Boundary cases distinguish whole-section deletion across empty separators from unrelated or excess blank-line deletion.
 The Git oracle reads a tree's blobs in one `git cat-file --batch` process, preserving binary bytes and separate paths/modes for identical contents.
 A native regression verifies that increasing blob count does not increase the oracle's process count.
 Other regressions check independent parent-tree copying and symlink metadata queries scoped to each materialization.
