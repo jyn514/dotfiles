@@ -28,6 +28,15 @@ Exact allowlisted skills may route a subagent through the `luna` template.
 Absent, unknown, or mixed skill sets inherit the parent model.
 Use the explicit `parent` template to bypass automatic routing or for generic delegation so the child receives its startup instructions.
 
+Use [`goal-scout`](pi-codex-subagents/agents/goal-scout.md) for a bounded independent investigation before extending repeated work toward an active goal.
+Pass the literal goal, references to governing constraints and acceptance conditions, and product/output/current-work evidence entrypoints.
+Do not prepare a per-outcome assessment, repeat the scout procedure, or supply a preferred next task.
+The template owns evidence inspection and the report format; the parent owns when to scout and which task to choose.
+It inherits the parent's model and thinking level and restricts active tools to `read`, `grep`, `find`, and `ls`.
+Its four-lookup and 200-word budgets are instructions, not runtime limits.
+Reload Pi after installing a template so the tool description advertises it.
+Adding this template does not replace separately packaged `/goal` coordinator guidance.
+
 ## Installation and update routes
 
 Pi has separate installation and update paths. Choose the owner for the component
