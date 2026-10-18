@@ -12,6 +12,15 @@ pi -e ./config/pi-agent/pi-extensions/index.ts
 
 Do not load `ask-user.ts` independently alongside the bundle.
 
+`openrouter-output-cap.ts` limits OpenRouter chat requests to 10,000 output tokens.
+Start Pi with `--openrouter-max-tokens 6000` to choose another cap (minimum 2048).
+Smaller existing limits remain unchanged; model capability metadata and other providers remain unchanged.
+The cap includes reasoning on providers that count reasoning against output.
+Explicit thinking budgets are lowered when needed to leave Pi's 1024-token answer allowance; adaptive thinking and effort settings are preserved.
+Requests without an output-limit field are unchanged.
+This reduces maximum request cost but does not guarantee sufficient credit for the prompt and output.
+Run `/reload` to load the extension in an existing session.
+
 `pi-notify.ts` sends an OSC 777 desktop notification when an interactive run settles.
 Inside tmux, it also sends a standalone bell so tmux can mark background windows with a bell alert.
 The desktop notification uses DCS passthrough and requires `set -g allow-passthrough on` (already in this repository's tmux config).

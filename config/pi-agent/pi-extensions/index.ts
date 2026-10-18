@@ -8,6 +8,7 @@ import skillReferenceAutocomplete from "./skill-reference-autocomplete.ts";
 import instructionIncludes from "./pi-instruction-includes.ts";
 import lunaCompaction from "./luna-compaction.ts";
 import notifyWhenSettled from "./pi-notify.ts";
+import openRouterOutputCap from "./openrouter-output-cap.ts";
 import promptHistorySearch from "./prompt-history-search.ts";
 import runtimeIdentity from "./runtime-identity.ts";
 import sessionTitle from "./session-title.ts";
@@ -43,4 +44,5 @@ export default function dotfilesExtensions(pi: ExtensionAPI) {
   taskDirectedDocs(pi);
   validateSkill(pi);
   webSearch(pi);
+  openRouterOutputCap(pi);
 }
